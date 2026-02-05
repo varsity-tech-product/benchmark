@@ -10,9 +10,6 @@ Datasets:
 """
 
 import argparse
-import json
-import os
-import subprocess
 import sys
 from pathlib import Path
 
@@ -65,7 +62,9 @@ def ingest_fiqa():
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Download from BEIR directly
-    zip_url = "https://public.ukp.informatik.tu-darmstadt.de/thakur/BEIR/datasets/fiqa.zip"
+    zip_url = (
+        "https://public.ukp.informatik.tu-darmstadt.de/thakur/BEIR/datasets/fiqa.zip"
+    )
     zip_path = output_dir / "fiqa.zip"
 
     # Check if already extracted
@@ -83,7 +82,8 @@ def ingest_fiqa():
         # Extract zip file
         print("  Extracting...")
         import zipfile
-        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+
+        with zipfile.ZipFile(zip_path, "r") as zip_ref:
             zip_ref.extractall(output_dir)
 
         # Move files from nested directory if needed
@@ -124,10 +124,7 @@ def ingest_finqa():
     output_dir = RAW_DATA_DIR / "finqa"
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # Clone or download from GitHub
-    repo_url = "https://github.com/czyssrs/FinQA"
-
-    # Download the dataset files directly
+    # Download the dataset files directly from GitHub
     base_url = "https://raw.githubusercontent.com/czyssrs/FinQA/main/dataset"
 
     files_to_download = [
@@ -186,7 +183,8 @@ def ingest_convfinqa():
         # Extract zip file
         print("  Extracting...")
         import zipfile
-        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+
+        with zipfile.ZipFile(zip_path, "r") as zip_ref:
             zip_ref.extractall(output_dir)
 
         # Clean up zip file
@@ -215,7 +213,9 @@ def ingest_tatqa():
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Download from GitHub - the dataset is in the repository
-    base_url = "https://raw.githubusercontent.com/NExTplusplus/TAT-QA/master/dataset_raw"
+    base_url = (
+        "https://raw.githubusercontent.com/NExTplusplus/TAT-QA/master/dataset_raw"
+    )
 
     files_to_download = [
         "tatqa_dataset_train.json",

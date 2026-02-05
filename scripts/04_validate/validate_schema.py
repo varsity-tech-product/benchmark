@@ -75,11 +75,15 @@ def validate_file(
         total_lines = sum(1 for _ in f)
 
     # Process records
-    with open(input_path) as f_in, \
-         open(output_path, "w") as f_out, \
-         open(error_log_path, "w") as f_err:
+    with (
+        open(input_path) as f_in,
+        open(output_path, "w") as f_out,
+        open(error_log_path, "w") as f_err,
+    ):
 
-        for line_num, line in enumerate(tqdm(f_in, total=total_lines, desc="Validating"), 1):
+        for line_num, line in enumerate(
+            tqdm(f_in, total=total_lines, desc="Validating"), 1
+        ):
             stats["total"] += 1
 
             try:
@@ -119,13 +123,19 @@ def print_summary(stats: dict):
     print("Validation Summary")
     print("=" * 60)
     print(f"Total records:   {stats['total']}")
-    print(f"Valid records:   {stats['valid']} ({100*stats['valid']/max(stats['total'],1):.1f}%)")
-    print(f"Invalid records: {stats['invalid']} ({100*stats['invalid']/max(stats['total'],1):.1f}%)")
+    print(
+        f"Valid records:   {stats['valid']} ({100*stats['valid']/max(stats['total'],1):.1f}%)"
+    )
+    print(
+        f"Invalid records: {stats['invalid']} ({100*stats['invalid']/max(stats['total'],1):.1f}%)"
+    )
 
     if stats["errors"]:
         print("\nSample errors (first 5):")
         for error in stats["errors"][:5]:
-            print(f"  - Line {error.get('line', '?')}: {error.get('error', 'unknown')[:100]}")
+            print(
+                f"  - Line {error.get('line', '?')}: {error.get('error', 'unknown')[:100]}"
+            )
 
 
 def main():

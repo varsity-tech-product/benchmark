@@ -7,12 +7,11 @@ Extracts Q&A pairs using heuristics and optionally LLM assistance.
 """
 
 import argparse
-import asyncio
 import json
 import re
 import sys
 from pathlib import Path
-from typing import Iterator, Optional
+from typing import Iterator
 
 from bs4 import BeautifulSoup
 from tqdm import tqdm
@@ -43,7 +42,11 @@ def extract_text_content(soup: BeautifulSoup) -> str:
         element.decompose()
 
     # Try to find main content area
-    main_content = soup.find("main") or soup.find("article") or soup.find("div", class_=re.compile(r"content|main|article"))
+    main_content = (
+        soup.find("main")
+        or soup.find("article")
+        or soup.find("div", class_=re.compile(r"content|main|article"))
+    )
 
     if main_content:
         return main_content.get_text(separator="\n", strip=True)
@@ -75,7 +78,12 @@ def extract_qa_heuristic(soup: BeautifulSoup, url: str) -> list[dict]:
         heading_text = heading.get_text(strip=True)
 
         # Skip navigation-like headings
-        if len(heading_text) < 10 or heading_text.lower() in ["menu", "navigation", "search", "share"]:
+        if len(heading_text) < 10 or heading_text.lower() in [
+            "menu",
+            "navigation",
+            "search",
+            "share",
+        ]:
             continue
 
         # Collect following siblings until next heading
@@ -91,10 +99,12 @@ def extract_qa_heuristic(soup: BeautifulSoup, url: str) -> list[dict]:
         if answer_parts:
             answer = "\n\n".join(answer_parts)
             if len(answer.split()) >= 50:  # Minimum answer length
-                qa_pairs.append({
-                    "question": heading_text,
-                    "answer": answer,
-                })
+                qa_pairs.append(
+                    {
+                        "question": heading_text,
+                        "answer": answer,
+                    }
+                )
 
     # Strategy 2: Definition lists
     for dl in soup.find_all("dl"):
@@ -106,10 +116,12 @@ def extract_qa_heuristic(soup: BeautifulSoup, url: str) -> list[dict]:
             answer = dd.get_text(strip=True)
 
             if question and answer and len(answer.split()) >= 30:
-                qa_pairs.append({
-                    "question": question,
-                    "answer": answer,
-                })
+                qa_pairs.append(
+                    {
+                        "question": question,
+                        "answer": answer,
+                    }
+                )
 
     # Strategy 3: FAQ sections
     faq_sections = soup.find_all(class_=re.compile(r"faq|accordion|question", re.I))
@@ -122,10 +134,12 @@ def extract_qa_heuristic(soup: BeautifulSoup, url: str) -> list[dict]:
             answer = a_elem.get_text(strip=True)
 
             if question and answer:
-                qa_pairs.append({
-                    "question": question,
-                    "answer": answer,
-                })
+                qa_pairs.append(
+                    {
+                        "question": question,
+                        "answer": answer,
+                    }
+                )
 
     return qa_pairs
 

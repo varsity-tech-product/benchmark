@@ -3,13 +3,19 @@ Unit tests for parser functions.
 """
 
 import json
-import pytest
+import sys
 from pathlib import Path
 
-import sys
+import pytest
+
 sys.path.insert(0, str(Path(__file__).parent.parent / "scripts"))
 
-from lib.schemas import StructuredQA, LearnerProfile, TutoringStrategy, FinalBenchmarkRecord
+from lib.schemas import (
+    FinalBenchmarkRecord,
+    LearnerProfile,
+    StructuredQA,
+    TutoringStrategy,
+)
 
 
 class TestStructuredQA:
@@ -168,7 +174,10 @@ class TestFinalBenchmarkRecord:
         json_str = record.model_dump_json()
         parsed = FinalBenchmarkRecord.model_validate_json(json_str)
         assert parsed.id == record.id
-        assert parsed.learner_profile.knowledge_level == record.learner_profile.knowledge_level
+        assert (
+            parsed.learner_profile.knowledge_level
+            == record.learner_profile.knowledge_level
+        )
 
 
 class TestTableFormatting:
@@ -176,10 +185,11 @@ class TestTableFormatting:
 
     def test_format_table_markdown(self):
         """Test table to markdown conversion."""
-        from scripts.lib.schemas import StructuredQA
 
         # Import the function
-        sys.path.insert(0, str(Path(__file__).parent.parent / "scripts" / "02_structure"))
+        sys.path.insert(
+            0, str(Path(__file__).parent.parent / "scripts" / "02_structure")
+        )
         from structure_research_datasets import format_table_markdown
 
         table = [
@@ -199,7 +209,9 @@ class TestHTMLToMarkdown:
 
     def test_clean_html_to_markdown(self):
         """Test HTML to markdown conversion."""
-        sys.path.insert(0, str(Path(__file__).parent.parent / "scripts" / "02_structure"))
+        sys.path.insert(
+            0, str(Path(__file__).parent.parent / "scripts" / "02_structure")
+        )
         from structure_stack_exchange import clean_html_to_markdown
 
         html = "<p>This is a <strong>test</strong> paragraph.</p>"

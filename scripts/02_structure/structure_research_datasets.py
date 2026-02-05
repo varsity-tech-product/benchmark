@@ -247,17 +247,21 @@ def parse_convfinqa(sample_limit: int = None) -> Iterator[StructuredQA]:
                     question_body=question,
                     answer_body=answer_text,
                     context=context,
-                    conversation_history=conversation_history.copy() if conversation_history else None,
+                    conversation_history=(
+                        conversation_history.copy() if conversation_history else None
+                    ),
                     tags=["conversational", "numerical-reasoning", "financial-reports"],
                 )
                 yield record
                 count += 1
 
                 # Add to history for next turn
-                conversation_history.append({
-                    "question": question,
-                    "answer": answer,
-                })
+                conversation_history.append(
+                    {
+                        "question": question,
+                        "answer": answer,
+                    }
+                )
 
                 if sample_limit and count >= sample_limit:
                     return

@@ -14,7 +14,6 @@ import argparse
 import asyncio
 import json
 import sys
-import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -26,12 +25,12 @@ from tqdm.asyncio import tqdm
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from lib.llm_utils import call_llm_with_json, call_llm, MODELS, LLMError
+from lib.llm_utils import LLMError, call_llm, call_llm_with_json
 from lib.schemas import (
-    StructuredQA,
-    LearnerProfile,
-    TutoringStrategy,
     FinalBenchmarkRecord,
+    LearnerProfile,
+    StructuredQA,
+    TutoringStrategy,
 )
 
 # Base paths
@@ -75,7 +74,9 @@ class SynthesisPipeline:
             with open(self.checkpoint_file) as f:
                 data = json.load(f)
                 self.processed_ids = set(data.get("processed_ids", []))
-            print(f"Loaded checkpoint: {len(self.processed_ids)} records already processed")
+            print(
+                f"Loaded checkpoint: {len(self.processed_ids)} records already processed"
+            )
 
     def _save_checkpoint(self):
         """Save checkpoint to file."""
@@ -159,7 +160,11 @@ class SynthesisPipeline:
             approach=strategy.approach,
             steps="\n".join(f"- {s}" for s in strategy.steps),
             key_concepts=", ".join(strategy.key_concepts),
-            analogies_or_examples=", ".join(strategy.analogies_or_examples) if strategy.analogies_or_examples else "None specified",
+            analogies_or_examples=(
+                ", ".join(strategy.analogies_or_examples)
+                if strategy.analogies_or_examples
+                else "None specified"
+            ),
             reference_answer=qa.answer_body[:2000],  # Truncate long answers
         )
 
@@ -184,7 +189,9 @@ class SynthesisPipeline:
         async with self.semaphore:
             try:
                 # Step 1: Generate learner profile
-                profile, profile_model = await self.generate_learner_profile(qa, session)
+                profile, profile_model = await self.generate_learner_profile(
+                    qa, session
+                )
 
                 # Step 2: Generate tutoring strategy
                 strategy, strategy_model = await self.generate_tutoring_strategy(
@@ -246,7 +253,9 @@ class SynthesisPipeline:
 
         # Filter out already processed records
         to_process = [r for r in records if r.source_id not in self.processed_ids]
-        print(f"Processing {len(to_process)} records ({len(self.processed_ids)} already done)")
+        print(
+            f"Processing {len(to_process)} records ({len(self.processed_ids)} already done)"
+        )
 
         if not to_process:
             print("All records already processed!")
@@ -261,7 +270,9 @@ class SynthesisPipeline:
                 tasks = [self.process_record(qa, session) for qa in to_process]
 
                 if progress_bar:
-                    iterator = tqdm.as_completed(tasks, total=len(tasks), desc="Synthesizing")
+                    iterator = tqdm.as_completed(
+                        tasks, total=len(tasks), desc="Synthesizing"
+                    )
                 else:
                     iterator = asyncio.as_completed(tasks)
 
@@ -399,9 +410,7 @@ def main():
     print()
 
     try:
-        success_count = asyncio.run(
-            pipeline.process_batch(records, args.output)
-        )
+        success_count = asyncio.run(pipeline.process_batch(records, args.output))
     except KeyboardInterrupt:
         print("\n\nInterrupted! Progress has been checkpointed.")
         sys.exit(1)

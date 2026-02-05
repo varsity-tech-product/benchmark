@@ -6,7 +6,6 @@ Downloads the 7z archive and extracts XML files.
 """
 
 import argparse
-import os
 import sys
 from pathlib import Path
 
@@ -80,7 +79,9 @@ def download_archive(dest_path: Path, resume: bool = True) -> bool:
                 unit_scale=True,
                 desc="Downloading",
             ) as pbar:
-                for chunk in response.iter_content(chunk_size=1024 * 1024):  # 1MB chunks
+                for chunk in response.iter_content(
+                    chunk_size=1024 * 1024
+                ):  # 1MB chunks
                     size = f.write(chunk)
                     pbar.update(size)
 
@@ -188,7 +189,7 @@ def main():
     # Step 2: Check if already extracted
     posts_xml = RAW_DATA_DIR / "Posts.xml"
     if args.skip_extract and posts_xml.exists():
-        print(f"\nSkipping extraction, Posts.xml exists")
+        print("\nSkipping extraction, Posts.xml exists")
     else:
         if not extract_archive(archive_path, RAW_DATA_DIR):
             sys.exit(1)
@@ -200,7 +201,7 @@ def main():
 
     # Step 4: Optionally remove archive
     if not args.keep_archive and archive_path.exists():
-        print(f"\nRemoving archive to save space...")
+        print("\nRemoving archive to save space...")
         archive_path.unlink()
         print("✓ Archive removed")
 

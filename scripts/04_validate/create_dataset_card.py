@@ -15,14 +15,12 @@ import sys
 from collections import Counter
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
 from tqdm import tqdm
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from lib.schemas import FinalBenchmarkRecord
 
 # Base paths
 SCRIPT_DIR = Path(__file__).parent
@@ -78,9 +76,7 @@ def compute_statistics(input_path: Path) -> dict:
                 stats["tag_distribution"][tag] += 1
 
             # Text lengths (word count)
-            stats["text_lengths"]["question"].append(
-                len(record["question"].split())
-            )
+            stats["text_lengths"]["question"].append(len(record["question"].split()))
             stats["text_lengths"]["reference_answer"].append(
                 len(record["reference_answer"].split())
             )
@@ -279,9 +275,7 @@ Please verify compliance with original source licenses before use.
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Create dataset card with statistics"
-    )
+    parser = argparse.ArgumentParser(description="Create dataset card with statistics")
     parser.add_argument(
         "--input",
         type=Path,

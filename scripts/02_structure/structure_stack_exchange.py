@@ -12,10 +12,8 @@ Filter criteria:
 
 import argparse
 import html
-import json
 import re
 import sys
-from datetime import datetime
 from pathlib import Path
 from typing import Iterator, Optional
 from xml.etree.ElementTree import iterparse
@@ -128,10 +126,7 @@ class PostsParser:
             # Check if it's a question (PostTypeId = 1)
             if post["post_type"] == "1":
                 # Check filter criteria
-                if (
-                    post["score"] >= self.min_score
-                    and post["accepted_answer_id"]
-                ):
+                if post["score"] >= self.min_score and post["accepted_answer_id"]:
                     self.questions[post["id"]] = post
                     self.accepted_answers[post["accepted_answer_id"]] = post["id"]
                     count += 1
@@ -185,9 +180,7 @@ class PostsParser:
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Structure Money Stack Exchange data"
-    )
+    parser = argparse.ArgumentParser(description="Structure Money Stack Exchange data")
     parser.add_argument(
         "--min-score",
         type=int,
