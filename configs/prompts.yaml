@@ -1,0 +1,101 @@
+# Prompt templates for Quant Tutor Benchmark synthesis
+
+learner_profile_prompt: |
+  Analyze the following financial question and infer a learner profile.
+
+  Question Title: {title}
+  Question: {question}
+  Tags: {tags}
+
+  Based on this question, create a learner profile with:
+  1. Knowledge level (beginner/intermediate/advanced)
+  2. Financial background (e.g., retail investor, finance student, professional)
+  3. Learning goals (what they're trying to understand)
+  4. Potential misconceptions they might have
+  5. Emotional context if detectable (e.g., anxious, curious, frustrated)
+
+  Respond with JSON in this exact format:
+  {{
+    "knowledge_level": "beginner|intermediate|advanced",
+    "financial_background": "description",
+    "learning_goals": ["goal1", "goal2"],
+    "potential_misconceptions": ["misconception1", "misconception2"],
+    "emotional_context": "description or null"
+  }}
+
+tutoring_strategy_prompt: |
+  Design a tutoring strategy for a learner with the following profile:
+
+  Learner Profile:
+  - Knowledge Level: {knowledge_level}
+  - Background: {financial_background}
+  - Goals: {learning_goals}
+  - Potential Misconceptions: {potential_misconceptions}
+  - Emotional Context: {emotional_context}
+
+  Original Question: {question}
+
+  Create a pedagogical strategy that:
+  1. Chooses an appropriate tutoring approach
+  2. Outlines 3-5 concrete steps to guide the learner
+  3. Identifies key concepts to teach
+  4. Suggests helpful analogies or examples
+  5. Prepares follow-up questions to check understanding
+
+  Respond with JSON in this exact format:
+  {{
+    "approach": "Socratic|direct instruction|scaffolded|exploratory",
+    "steps": ["step1", "step2", "step3"],
+    "key_concepts": ["concept1", "concept2"],
+    "analogies_or_examples": ["analogy1", "example1"],
+    "follow_up_questions": ["question1", "question2"]
+  }}
+
+response_generation_prompt: |
+  You are a skilled financial tutor. Generate a tutoring response for this learner.
+
+  LEARNER PROFILE:
+  - Knowledge Level: {knowledge_level}
+  - Background: {financial_background}
+  - Goals: {learning_goals}
+  - Emotional Context: {emotional_context}
+
+  THEIR QUESTION:
+  {question}
+
+  TUTORING STRATEGY TO FOLLOW:
+  - Approach: {approach}
+  - Steps: {steps}
+  - Key Concepts to Teach: {key_concepts}
+  - Analogies/Examples to Use: {analogies_or_examples}
+
+  REFERENCE ANSWER (for factual accuracy):
+  {reference_answer}
+
+  Generate a warm, educational response that:
+  1. Acknowledges where the learner is coming from
+  2. Follows the tutoring strategy steps
+  3. Uses appropriate analogies and examples
+  4. Explains concepts at the right level
+  5. Encourages further learning
+
+  Important: Be accurate and educational, not just friendly. Teach, don't just answer.
+
+  Your tutoring response:
+
+# System prompts for different synthesis stages
+system_prompts:
+  learner_analysis: |
+    You are an expert educational psychologist specializing in financial literacy.
+    Your role is to analyze learner questions and infer their knowledge state,
+    background, and needs. Be specific and evidence-based in your analysis.
+
+  strategy_design: |
+    You are an expert instructional designer for financial education.
+    Your role is to design effective tutoring strategies that meet learners
+    where they are and guide them to understanding. Focus on pedagogy.
+
+  response_generation: |
+    You are an expert financial tutor with deep knowledge of personal finance,
+    investing, taxation, and financial planning. You explain complex concepts
+    clearly and adapt your teaching style to each learner's needs.
