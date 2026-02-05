@@ -22,8 +22,9 @@ OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 # Available models for diversity in synthesis
 MODELS = [
     "openai/gpt-4o-mini",
-    "google/gemini-2.0-flash-exp:free",
     "anthropic/claude-3-haiku",
+    "google/gemini-2.5-flash",
+    "x-ai/grok-4.1-fast",
 ]
 
 

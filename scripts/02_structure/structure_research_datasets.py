@@ -34,13 +34,14 @@ def parse_fiqa(sample_limit: int = None) -> Iterator[StructuredQA]:
     Parse FiQA dataset.
 
     FiQA contains question-answer pairs from financial forums.
-    Uses the corpus and queries files.
+    Uses queries, corpus, and qrels files to match Q&A pairs.
     """
     print("\nParsing FiQA dataset...")
 
     fiqa_dir = RAW_DATA_DIR / "fiqa"
     corpus_path = fiqa_dir / "corpus.jsonl"
     queries_path = fiqa_dir / "queries.jsonl"
+    qrels_dir = fiqa_dir / "qrels"
 
     if not corpus_path.exists():
         print(f"  Warning: FiQA corpus not found at {corpus_path}")
@@ -61,28 +62,37 @@ def parse_fiqa(sample_limit: int = None) -> Iterator[StructuredQA]:
                 query = json.loads(line)
                 queries[query["_id"]] = query
 
-    # For FiQA, we'll use corpus entries that have both title and text
-    # as Q&A pairs (title as question, text as answer)
-    count = 0
-    for doc_id, doc in tqdm(corpus.items(), desc="Processing FiQA"):
-        title = doc.get("title", "").strip()
-        text = doc.get("text", "").strip()
+    # Load qrels (query-to-document relevance mappings)
+    qrels = []
+    for qrel_file in ["train.tsv", "dev.tsv", "test.tsv"]:
+        qrel_path = qrels_dir / qrel_file
+        if qrel_path.exists():
+            with open(qrel_path) as f:
+                next(f)  # Skip header
+                for line in f:
+                    parts = line.strip().split("\t")
+                    if len(parts) >= 2:
+                        qrels.append((parts[0], parts[1]))
 
-        if not text:
+    # Match queries to corpus documents using qrels
+    count = 0
+    for query_id, corpus_id in tqdm(qrels, desc="Processing FiQA"):
+        if query_id not in queries or corpus_id not in corpus:
             continue
 
-        # Use title as question if available, otherwise use first sentence
-        if title:
-            question = title
-            answer = text
-        else:
-            # Skip entries without clear question
+        query = queries[query_id]
+        doc = corpus[corpus_id]
+
+        question = query.get("text", "").strip()
+        answer = doc.get("text", "").strip()
+
+        if not question or not answer:
             continue
 
         record = StructuredQA(
-            source_id=f"fiqa_{doc_id}",
+            source_id=f"fiqa_{query_id}_{corpus_id}",
             source_dataset="fiqa",
-            title=title if title else None,
+            title=None,
             question_body=question,
             answer_body=answer,
             tags=["financial-qa"],
@@ -215,56 +225,52 @@ def parse_convfinqa(sample_limit: int = None) -> Iterator[StructuredQA]:
 
             context = "\n\n".join(context_parts)
 
-            # Process conversation turns
+            # ConvFinQA has the main Q&A in the 'qa' field
+            # dialogue_break contains prior turn questions as strings
+            qa_data = item.get("qa", {})
+            if not qa_data or not isinstance(qa_data, dict):
+                continue
+
+            question = qa_data.get("question", "")
+            answer = qa_data.get("answer", "")
+            program = qa_data.get("program", "")
+
+            if not question:
+                continue
+
+            # Build conversation history from dialogue_break (prior questions)
             annotation = item.get("annotation", {})
-            turns = annotation.get("dialogue_break", [])
-
-            if not turns:
-                # Fallback to qa field
-                qa = item.get("qa", {})
-                if qa:
-                    turns = [qa]
-
-            # Build conversation history
+            dialogue_break = annotation.get("dialogue_break", [])
             conversation_history = []
+            if dialogue_break and isinstance(dialogue_break, list):
+                for prior_q in dialogue_break:
+                    if isinstance(prior_q, str):
+                        conversation_history.append({"question": prior_q, "answer": ""})
 
-            for turn_idx, turn in enumerate(turns):
-                question = turn.get("question", "")
-                answer = turn.get("answer", "")
-                program = turn.get("program", "")
+            # Format answer
+            answer_parts = [f"**Answer:** {answer}"]
+            if program:
+                answer_parts.append(f"**Reasoning:** {program}")
 
-                # Format answer
-                answer_parts = [f"**Answer:** {answer}"]
-                if program:
-                    answer_parts.append(f"**Reasoning:** {program}")
+            answer_text = "\n\n".join(answer_parts)
 
-                answer_text = "\n\n".join(answer_parts)
+            # Create record with conversation history
+            record = StructuredQA(
+                source_id=f"convfinqa_{split}_{doc_idx}",
+                source_dataset="convfinqa",
+                question_body=question,
+                answer_body=answer_text,
+                context=context,
+                conversation_history=(
+                    conversation_history if conversation_history else None
+                ),
+                tags=["conversational", "numerical-reasoning", "financial-reports"],
+            )
+            yield record
+            count += 1
 
-                # Create record with conversation history
-                record = StructuredQA(
-                    source_id=f"convfinqa_{split}_{doc_idx}_{turn_idx}",
-                    source_dataset="convfinqa",
-                    question_body=question,
-                    answer_body=answer_text,
-                    context=context,
-                    conversation_history=(
-                        conversation_history.copy() if conversation_history else None
-                    ),
-                    tags=["conversational", "numerical-reasoning", "financial-reports"],
-                )
-                yield record
-                count += 1
-
-                # Add to history for next turn
-                conversation_history.append(
-                    {
-                        "question": question,
-                        "answer": answer,
-                    }
-                )
-
-                if sample_limit and count >= sample_limit:
-                    return
+            if sample_limit and count >= sample_limit:
+                return
 
     print(f"  Parsed {count} ConvFinQA records")
 
