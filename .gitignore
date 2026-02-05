@@ -4,15 +4,11 @@
 venv/
 env/
 
-# Data files (large)
-data/00_raw/
-data/01_structured/
-data/02_synthesized/
+# Data files - never commit datasets
+data/
 *.7z
 *.xml
-
-# Keep packaged output
-!data/03_packaged/
+*.jsonl
 
 # Python
 __pycache__/
