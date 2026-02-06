@@ -180,6 +180,61 @@ class TestFinalBenchmarkRecord:
         )
 
 
+class TestRedditStructuredQA:
+    """Tests for Reddit-sourced StructuredQA records."""
+
+    def test_minimal_reddit_record(self):
+        """Test creating a minimal Reddit QA record."""
+        record = StructuredQA(
+            source_id="abc123",
+            source_dataset="reddit.personalfinance",
+            question_body="How should I start investing in my 20s?",
+            answer_body="Start with your employer 401k match, then open a Roth IRA.",
+        )
+        assert record.source_id == "abc123"
+        assert record.source_dataset == "reddit.personalfinance"
+        assert record.tags == []
+        assert record.title is None
+
+    def test_full_reddit_record(self):
+        """Test creating a full Reddit record with all fields."""
+        record = StructuredQA(
+            source_id="xyz789",
+            source_dataset="reddit.investing",
+            title="Best strategy for long-term investing?",
+            question_body="I have $10k to invest. What should I do?",
+            answer_body="Consider a three-fund portfolio with low-cost index funds.",
+            tags=["investing", "Investing Strategy"],
+            creation_date="2024-06-15T12:00:00+00:00",
+            source_url="https://www.reddit.com/r/investing/comments/xyz789/",
+        )
+        assert record.title == "Best strategy for long-term investing?"
+        assert len(record.tags) == 2
+        assert record.source_url.startswith("https://www.reddit.com")
+        assert record.creation_date is not None
+
+    def test_reddit_serialization_roundtrip(self):
+        """Test JSON serialization roundtrip for Reddit records."""
+        record = StructuredQA(
+            source_id="rt_001",
+            source_dataset="reddit.stocks",
+            title="When to sell?",
+            question_body="How do I know when to sell a stock?",
+            answer_body="Set target prices and rebalance periodically.",
+            tags=["stocks", "Discussion"],
+        )
+        json_str = record.model_dump_json()
+        parsed = json.loads(json_str)
+        assert parsed["source_id"] == "rt_001"
+        assert parsed["source_dataset"] == "reddit.stocks"
+        assert parsed["tags"] == ["stocks", "Discussion"]
+
+        # Roundtrip through model
+        restored = StructuredQA.model_validate_json(json_str)
+        assert restored.source_id == record.source_id
+        assert restored.source_dataset == record.source_dataset
+
+
 class TestTableFormatting:
     """Tests for table formatting utilities."""
 

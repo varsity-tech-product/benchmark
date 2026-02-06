@@ -9,6 +9,7 @@ data/
 *.7z
 *.xml
 *.jsonl
+*.zst
 
 # Python
 __pycache__/

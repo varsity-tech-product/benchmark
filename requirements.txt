@@ -10,6 +10,10 @@ lxml>=4.9.0
 
 # File Handling
 py7zr>=0.20.0
+zstandard>=0.22.0
+
+# Hugging Face Hub
+huggingface_hub>=0.20.0
 
 # LLM API (OpenRouter uses OpenAI-compatible API)
 openai>=1.0.0
