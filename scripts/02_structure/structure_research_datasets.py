@@ -193,11 +193,16 @@ def parse_convfinqa(sample_limit: int = None) -> Iterator[StructuredQA]:
 
     convfinqa_dir = RAW_DATA_DIR / "convfinqa"
 
+    # The zip extracts into a nested data/ subdirectory
+    data_dir = (
+        convfinqa_dir / "data" if (convfinqa_dir / "data").exists() else convfinqa_dir
+    )
+
     files = ["train.json", "dev.json", "test.json"]
     count = 0
 
     for filename in files:
-        filepath = convfinqa_dir / filename
+        filepath = data_dir / filename
         if not filepath.exists():
             print(f"  Warning: {filename} not found")
             continue

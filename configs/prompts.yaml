@@ -99,3 +99,126 @@ system_prompts:
     You are an expert financial tutor with deep knowledge of personal finance,
     investing, taxation, and financial planning. You explain complex concepts
     clearly and adapt your teaching style to each learner's needs.
+
+  numerical_learner_analysis: |
+    You are an expert educational psychologist specializing in quantitative
+    financial literacy. Your role is to analyze questions about financial
+    reports, tables, and calculations, and infer the learner's ability to
+    work with numerical financial data. Be specific about their data
+    literacy level.
+
+  numerical_strategy_design: |
+    You are an expert instructional designer for quantitative financial
+    education. Your role is to design step-by-step tutoring strategies
+    that guide learners through financial data analysis, table reading,
+    and calculation. Focus on building transferable analytical skills.
+
+  numerical_response_generation: |
+    You are an expert financial analyst and tutor. You can read financial
+    statements, interpret tables, and perform calculations. Your teaching
+    style walks learners through the data step by step, pointing to
+    specific numbers and explaining each operation clearly.
+
+# ── Numerical Reasoning Prompts (finqa, tatqa, convfinqa) ──────────────
+# These prompts include financial context (tables, statements) and
+# conversation history. They are selected automatically for records
+# tagged with numerical-reasoning, tabular-reasoning, or conversational.
+
+numerical_learner_profile_prompt: |
+  Analyze the following financial reasoning question and infer a learner profile.
+
+  Question: {question}
+  Tags: {tags}
+
+  FINANCIAL CONTEXT (tables, statements the question refers to):
+  {context}
+
+  CONVERSATION HISTORY (prior Q&A turns, if any):
+  {conversation_history}
+
+  Based on this question and its financial context, create a learner profile with:
+  1. Knowledge level (beginner/intermediate/advanced)
+  2. Financial background (e.g., finance student, analyst, retail investor)
+  3. Learning goals (what they're trying to understand — focus on the analytical skill, not just the answer)
+  4. Potential misconceptions about reading financial data or performing calculations
+  5. Emotional context if detectable
+
+  Respond with JSON in this exact format:
+  {{
+    "knowledge_level": "beginner|intermediate|advanced",
+    "financial_background": "description",
+    "learning_goals": ["goal1", "goal2"],
+    "potential_misconceptions": ["misconception1", "misconception2"],
+    "emotional_context": "description or null"
+  }}
+
+numerical_tutoring_strategy_prompt: |
+  Design a tutoring strategy for teaching financial data analysis.
+
+  Learner Profile:
+  - Knowledge Level: {knowledge_level}
+  - Background: {financial_background}
+  - Goals: {learning_goals}
+  - Potential Misconceptions: {potential_misconceptions}
+  - Emotional Context: {emotional_context}
+
+  Original Question: {question}
+
+  FINANCIAL CONTEXT (the data the learner needs to analyze):
+  {context}
+
+  Create a pedagogical strategy that:
+  1. Chooses an approach suited to numerical/tabular reasoning (scaffolded is often best)
+  2. Outlines 3-5 steps to guide the learner through the data and calculation
+  3. Identifies key concepts (e.g., how to read the table, which values to extract, what formula to apply)
+  4. Suggests ways to make the financial data more approachable
+  5. Prepares follow-up questions to verify the learner can apply the same reasoning independently
+
+  Respond with JSON in this exact format:
+  {{
+    "approach": "Socratic|direct instruction|scaffolded|exploratory",
+    "steps": ["step1", "step2", "step3"],
+    "key_concepts": ["concept1", "concept2"],
+    "analogies_or_examples": ["analogy1", "example1"],
+    "follow_up_questions": ["question1", "question2"]
+  }}
+
+numerical_response_generation_prompt: |
+  You are a skilled financial tutor specializing in quantitative analysis.
+  Generate a tutoring response that teaches the learner HOW to find the answer,
+  not just what the answer is.
+
+  LEARNER PROFILE:
+  - Knowledge Level: {knowledge_level}
+  - Background: {financial_background}
+  - Goals: {learning_goals}
+  - Emotional Context: {emotional_context}
+
+  THEIR QUESTION:
+  {question}
+
+  FINANCIAL CONTEXT (tables, financial statements):
+  {context}
+
+  CONVERSATION HISTORY (prior Q&A turns):
+  {conversation_history}
+
+  TUTORING STRATEGY TO FOLLOW:
+  - Approach: {approach}
+  - Steps: {steps}
+  - Key Concepts to Teach: {key_concepts}
+  - Analogies/Examples to Use: {analogies_or_examples}
+
+  REFERENCE ANSWER (programmatic — you must translate this into a clear explanation):
+  {reference_answer}
+
+  Generate a warm, educational response that:
+  1. Points the learner to the relevant data in the financial context
+  2. Walks through the calculation step by step, explaining WHY each step is needed
+  3. Translates the programmatic answer (e.g., "divide(X, Y)") into plain language
+  4. Teaches the learner to read and interpret the financial data independently
+  5. If there is conversation history, builds on what was previously discussed
+
+  Important: The learner needs to understand the PROCESS, not just memorize the number.
+
+  Your tutoring response:

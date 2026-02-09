@@ -85,26 +85,55 @@ class SynthesisPipeline:
             with open(self.checkpoint_file, "w") as f:
                 json.dump({"processed_ids": list(self.processed_ids)}, f)
 
+    @staticmethod
+    def _is_numerical_reasoning(qa: StructuredQA) -> bool:
+        """Check if a record is a numerical/tabular reasoning type."""
+        numerical_tags = {"numerical-reasoning", "tabular-reasoning", "conversational"}
+        return bool(set(qa.tags) & numerical_tags)
+
+    @staticmethod
+    def _format_conversation_history(qa: StructuredQA) -> str:
+        """Format conversation history for prompt injection."""
+        if not qa.conversation_history:
+            return "N/A"
+        parts = []
+        for turn in qa.conversation_history:
+            q = turn.get("question", "")
+            a = turn.get("answer", "")
+            parts.append(f"Q: {q}")
+            if a:
+                parts.append(f"A: {a}")
+        return "\n".join(parts)
+
     async def generate_learner_profile(
         self,
         qa: StructuredQA,
         session: aiohttp.ClientSession,
     ) -> tuple[LearnerProfile, str]:
         """Generate learner profile for a Q&A pair."""
-        prompt_template = self.prompts["learner_profile_prompt"]
-
-        prompt = prompt_template.format(
-            title=qa.title or "N/A",
-            question=qa.question_body,
-            tags=", ".join(qa.tags) if qa.tags else "N/A",
-        )
-
-        system_prompt = self.prompts["system_prompts"]["learner_analysis"]
+        if self._is_numerical_reasoning(qa):
+            prompt_template = self.prompts["numerical_learner_profile_prompt"]
+            prompt = prompt_template.format(
+                question=qa.question_body,
+                tags=", ".join(qa.tags) if qa.tags else "N/A",
+                context=qa.context or "N/A",
+                conversation_history=self._format_conversation_history(qa),
+            )
+            system_prompt = self.prompts["system_prompts"]["numerical_learner_analysis"]
+        else:
+            prompt_template = self.prompts["learner_profile_prompt"]
+            prompt = prompt_template.format(
+                title=qa.title or "N/A",
+                question=qa.question_body,
+                tags=", ".join(qa.tags) if qa.tags else "N/A",
+            )
+            system_prompt = self.prompts["system_prompts"]["learner_analysis"]
 
         data, model_used = await call_llm_with_json(
             prompt=prompt,
             system_prompt=system_prompt,
             session=session,
+            model="x-ai/grok-4.1-fast",
         )
 
         # Validate and create LearnerProfile
@@ -118,9 +147,7 @@ class SynthesisPipeline:
         session: aiohttp.ClientSession,
     ) -> tuple[TutoringStrategy, str]:
         """Generate tutoring strategy based on learner profile."""
-        prompt_template = self.prompts["tutoring_strategy_prompt"]
-
-        prompt = prompt_template.format(
+        common_kwargs = dict(
             knowledge_level=profile.knowledge_level,
             financial_background=profile.financial_background,
             learning_goals=", ".join(profile.learning_goals),
@@ -129,12 +156,23 @@ class SynthesisPipeline:
             question=qa.question_body,
         )
 
-        system_prompt = self.prompts["system_prompts"]["strategy_design"]
+        if self._is_numerical_reasoning(qa):
+            prompt_template = self.prompts["numerical_tutoring_strategy_prompt"]
+            prompt = prompt_template.format(
+                **common_kwargs,
+                context=qa.context or "N/A",
+            )
+            system_prompt = self.prompts["system_prompts"]["numerical_strategy_design"]
+        else:
+            prompt_template = self.prompts["tutoring_strategy_prompt"]
+            prompt = prompt_template.format(**common_kwargs)
+            system_prompt = self.prompts["system_prompts"]["strategy_design"]
 
         data, model_used = await call_llm_with_json(
             prompt=prompt,
             system_prompt=system_prompt,
             session=session,
+            model="x-ai/grok-4.1-fast",
         )
 
         # Validate and create TutoringStrategy
@@ -149,9 +187,7 @@ class SynthesisPipeline:
         session: aiohttp.ClientSession,
     ) -> tuple[str, str]:
         """Generate synthetic tutoring response."""
-        prompt_template = self.prompts["response_generation_prompt"]
-
-        prompt = prompt_template.format(
+        common_kwargs = dict(
             knowledge_level=profile.knowledge_level,
             financial_background=profile.financial_background,
             learning_goals=", ".join(profile.learning_goals),
@@ -165,10 +201,23 @@ class SynthesisPipeline:
                 if strategy.analogies_or_examples
                 else "None specified"
             ),
-            reference_answer=qa.answer_body[:2000],  # Truncate long answers
+            reference_answer=qa.answer_body[:2000],
         )
 
-        system_prompt = self.prompts["system_prompts"]["response_generation"]
+        if self._is_numerical_reasoning(qa):
+            prompt_template = self.prompts["numerical_response_generation_prompt"]
+            prompt = prompt_template.format(
+                **common_kwargs,
+                context=(qa.context or "N/A")[:3000],
+                conversation_history=self._format_conversation_history(qa),
+            )
+            system_prompt = self.prompts["system_prompts"][
+                "numerical_response_generation"
+            ]
+        else:
+            prompt_template = self.prompts["response_generation_prompt"]
+            prompt = prompt_template.format(**common_kwargs)
+            system_prompt = self.prompts["system_prompts"]["response_generation"]
 
         response, model_used = await call_llm(
             prompt=prompt,
@@ -176,6 +225,7 @@ class SynthesisPipeline:
             temperature=0.7,
             max_tokens=2048,
             session=session,
+            model="x-ai/grok-4.1-fast",
         )
 
         return response, model_used

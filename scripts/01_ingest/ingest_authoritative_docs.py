@@ -32,8 +32,14 @@ RAW_DATA_DIR = PROJECT_ROOT / "data" / "00_raw"
 # Rate limiting
 REQUEST_DELAY = 1.0  # seconds between requests
 
-# User agent
-USER_AGENT = "QuantTutorBenchmark/1.0 (Educational research; contact@example.com)"
+# User agents
+# Custom UA: Used for sites that allow research/educational crawlers (CFPB, FINRA)
+CUSTOM_USER_AGENT = (
+    "QuantTutorBenchmark/1.0 (Educational research; contact@example.com)"
+)
+
+# Browser UA: Required for sites with strict CDN protection (SEC/investor.gov)
+BROWSER_USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
 
 class RespectfulScraper:
@@ -43,8 +49,17 @@ class RespectfulScraper:
         self.base_url = base_url
         self.output_dir = output_dir
         self.delay = delay
+
+        # Select appropriate User-Agent based on domain
+        if "investor.gov" in base_url:
+            self.user_agent = BROWSER_USER_AGENT
+            print(f"  Using browser User-Agent for {base_url}")
+        else:
+            self.user_agent = CUSTOM_USER_AGENT
+            print(f"  Using custom User-Agent for {base_url}")
+
         self.session = requests.Session()
-        self.session.headers.update({"User-Agent": USER_AGENT})
+        self.session.headers.update({"User-Agent": self.user_agent})
         self.robot_parser = urllib.robotparser.RobotFileParser()
         self.last_request_time = 0
         self.visited_urls: set[str] = set()
@@ -62,15 +77,19 @@ class RespectfulScraper:
         robots_url = f"{parsed.scheme}://{parsed.netloc}/robots.txt"
 
         try:
-            self.robot_parser.set_url(robots_url)
-            self.robot_parser.read()
+            # Manually fetch robots.txt using our session (with correct User-Agent)
+            response = self.session.get(robots_url, timeout=10)
+            response.raise_for_status()
+
+            # Parse the content
+            self.robot_parser.parse(response.text.splitlines())
             print(f"Loaded robots.txt from {robots_url}")
         except Exception as e:
             print(f"Warning: Could not load robots.txt: {e}")
 
     def can_fetch(self, url: str) -> bool:
         """Check if URL is allowed by robots.txt."""
-        return self.robot_parser.can_fetch(USER_AGENT, url)
+        return self.robot_parser.can_fetch(self.user_agent, url)
 
     def _rate_limit(self):
         """Enforce rate limiting between requests."""
@@ -161,18 +180,28 @@ def scrape_sec_investor_gov():
     scraper = RespectfulScraper("https://www.investor.gov", output_dir)
 
     # Key educational pages to scrape
+    # Updated 2026-02-06: Fixed 404 URLs after site restructure
     pages = [
+        # Core pages
         "/introduction-investing",
-        "/introduction-investing/investing-basics",
-        "/introduction-investing/investing-basics/what-is-risk",
-        "/introduction-investing/investing-basics/investment-products",
-        "/introduction-investing/general-resources/glossary",
-        "/additional-resources/general-resources/publications/ask-save-invest",
         "/protect-your-investments",
-        "/protect-your-investments/fraud",
         "/research-before-you-invest",
-        "/research-before-you-invest/research",
         "/financial-tools-calculators/calculators/compound-interest-calculator",
+        # Investing basics
+        "/introduction-investing/investing-basics/investment-products",
+        "/introduction-investing/investing-basics/save-and-invest",
+        "/introduction-investing/investing-basics/invest-your-goals",
+        "/introduction-investing/investing-basics/how-stock-markets-work",
+        "/introduction-investing/investing-basics/what-risk",
+        "/introduction-investing/investing-basics/role-sec",
+        "/introduction-investing/investing-basics/glossary",
+        # Getting started
+        "/introduction-investing/getting-started/five-questions-ask-you-invest",
+        "/introduction-investing/getting-started/researching-investments",
+        # Fraud prevention
+        "/protect-your-investments/fraud/types-fraud",
+        "/protect-your-investments/fraud/how-avoid-fraud",
+        "/protect-your-investments/fraud/resources-victims-securities-law-violations",
     ]
 
     count = 0
@@ -244,19 +273,20 @@ def scrape_finra():
     scraper = RespectfulScraper("https://www.finra.org", output_dir)
 
     # Key educational pages
+    # Note: FINRA restructured URLs - updated to new paths (verified 2026-02-06)
+    # Removed duplicate: old asset-allocation URL (100% identical to new version)
     pages = [
         "/investors",
         "/investors/learn-to-invest",
         "/investors/learn-to-invest/types-investments",
         "/investors/learn-to-invest/types-investments/stocks",
         "/investors/learn-to-invest/types-investments/bonds",
-        "/investors/learn-to-invest/types-investments/mutual-funds",
-        "/investors/learn-to-invest/types-investments/exchange-traded-funds-etfs",
+        "/investors/investing/investment-products/mutual-funds",  # Updated: old path 404
+        "/investors/investing/investment-products/exchange-traded-funds-and-products",  # Updated: old path 404
         "/investors/learn-to-invest/key-investing-concepts",
-        "/investors/learn-to-invest/key-investing-concepts/asset-allocation",
-        "/investors/learn-to-invest/key-investing-concepts/diversification",
+        "/investors/investing/investing-basics/asset-allocation-diversification",  # Updated: old path 404
         "/investors/protect-your-money",
-        "/investors/protect-your-money/fraud",
+        "/investors/protect-your-money/avoid-fraud",  # Updated: old path 404
         "/investors/tools-and-calculators",
         "/investors/alerts",
     ]

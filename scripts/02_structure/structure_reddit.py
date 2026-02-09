@@ -226,6 +226,12 @@ def main():
         help="Minimum comment score (default: 5)",
     )
     parser.add_argument(
+        "--min-comment-words",
+        type=int,
+        default=50,
+        help="Minimum comment word count (default: 50)",
+    )
+    parser.add_argument(
         "--sample",
         type=int,
         default=None,
@@ -260,6 +266,7 @@ def main():
                 sub,
                 min_post_score=args.min_post_score,
                 min_comment_score=args.min_comment_score,
+                min_comment_words=args.min_comment_words,
             )
             reddit_parser.first_pass()
 

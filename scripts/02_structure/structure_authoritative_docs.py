@@ -3,22 +3,30 @@
 Structure authoritative financial education documents.
 
 Parses scraped HTML from SEC, CFPB, and FINRA.
-Extracts Q&A pairs using heuristics and optionally LLM assistance.
+Extracts Q&A pairs using heuristics, then uses LLM to rewrite
+section headings into natural user questions.
+
+Two-phase approach:
+  Phase 1: Extract Q&A pairs from HTML using heuristic strategies
+  Phase 2: Rewrite question_body via LLM (section heading -> natural question)
 """
 
 import argparse
+import asyncio
 import json
 import re
 import sys
 from pathlib import Path
-from typing import Iterator
 
+import aiohttp
 from bs4 import BeautifulSoup
 from tqdm import tqdm
+from tqdm.asyncio import tqdm as atqdm
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from lib.llm_utils import call_llm
 from lib.schemas import StructuredQA
 
 # Base paths
@@ -29,6 +37,33 @@ OUTPUT_DIR = PROJECT_ROOT / "data" / "01_structured"
 
 # Minimum word count for content
 MIN_WORD_COUNT = 200
+
+# LLM rewrite settings
+REWRITE_MODEL = "x-ai/grok-4.1-fast"
+MAX_CONCURRENT = 5
+
+REWRITE_SYSTEM_PROMPT = """\
+You are a financial literacy expert. Your task is to convert a document \
+section heading into a natural question that a real person might ask.
+
+Rules:
+- The question must be answerable by the provided content
+- Write from the perspective of someone seeking financial guidance
+- Keep it concise (1-2 sentences)
+- Use natural, conversational language
+- Output ONLY the question text, nothing else"""
+
+REWRITE_USER_PROMPT = """\
+Document title: {title}
+Section heading: {section_heading}
+
+Section content (first 500 chars):
+{answer_preview}
+
+Generate a natural question that someone might ask, which this content answers:"""
+
+
+# ── Phase 1: Heuristic extraction ─────────────────────────────────────
 
 
 def extract_text_content(soup: BeautifulSoup) -> str:
@@ -144,25 +179,32 @@ def extract_qa_heuristic(soup: BeautifulSoup, url: str) -> list[dict]:
     return qa_pairs
 
 
-def parse_sec_docs(sample_limit: int = None) -> Iterator[StructuredQA]:
-    """Parse SEC Investor.gov documents."""
-    print("\nParsing SEC documents...")
+def parse_source_docs(
+    source_name: str,
+    source_dir: Path,
+    source_dataset: str,
+    tags: list[str],
+    sample_limit: int = None,
+) -> list[StructuredQA]:
+    """Parse HTML documents from a single source."""
+    print(f"\nParsing {source_name} documents...")
 
-    sec_dir = RAW_DATA_DIR / "sec"
-    if not sec_dir.exists():
-        print(f"  Warning: SEC directory not found at {sec_dir}")
-        return
+    if not source_dir.exists():
+        print(f"  Warning: directory not found at {source_dir}")
+        return []
 
     # Load metadata
-    metadata_path = sec_dir / "metadata.json"
+    metadata_path = source_dir / "metadata.json"
     metadata = {}
     if metadata_path.exists():
         with open(metadata_path) as f:
             metadata_list = json.load(f)
             metadata = {m["filename"]: m for m in metadata_list}
 
-    count = 0
-    for html_file in tqdm(list(sec_dir.glob("*.html")), desc="Processing SEC"):
+    records = []
+    for html_file in tqdm(
+        list(source_dir.glob("*.html")), desc=f"Processing {source_name}"
+    ):
         with open(html_file, encoding="utf-8") as f:
             html = f.read()
 
@@ -183,133 +225,72 @@ def parse_sec_docs(sample_limit: int = None) -> Iterator[StructuredQA]:
 
         for idx, qa in enumerate(qa_pairs):
             record = StructuredQA(
-                source_id=f"sec_{html_file.stem}_{idx}",
-                source_dataset="sec_investor_gov",
+                source_id=f"{source_dataset.split('_')[0]}_{html_file.stem}_{idx}",
+                source_dataset=source_dataset,
                 title=title,
                 question_body=qa["question"],
                 answer_body=qa["answer"],
                 source_url=url,
-                tags=["regulatory", "investor-education"],
+                tags=tags,
             )
-            yield record
-            count += 1
+            records.append(record)
 
-            if sample_limit and count >= sample_limit:
-                return
+            if sample_limit and len(records) >= sample_limit:
+                print(f"  Reached sample limit of {sample_limit}")
+                return records
 
-    print(f"  Parsed {count} SEC Q&A pairs")
-
-
-def parse_cfpb_docs(sample_limit: int = None) -> Iterator[StructuredQA]:
-    """Parse CFPB consumer resources."""
-    print("\nParsing CFPB documents...")
-
-    cfpb_dir = RAW_DATA_DIR / "cfpb"
-    if not cfpb_dir.exists():
-        print(f"  Warning: CFPB directory not found at {cfpb_dir}")
-        return
-
-    # Load metadata
-    metadata_path = cfpb_dir / "metadata.json"
-    metadata = {}
-    if metadata_path.exists():
-        with open(metadata_path) as f:
-            metadata_list = json.load(f)
-            metadata = {m["filename"]: m for m in metadata_list}
-
-    count = 0
-    for html_file in tqdm(list(cfpb_dir.glob("*.html")), desc="Processing CFPB"):
-        with open(html_file, encoding="utf-8") as f:
-            html = f.read()
-
-        soup = BeautifulSoup(html, "lxml")
-
-        # Check word count
-        text = extract_text_content(soup)
-        if len(text.split()) < MIN_WORD_COUNT:
-            continue
-
-        # Get metadata
-        file_meta = metadata.get(html_file.name, {})
-        url = file_meta.get("url", "")
-        title = file_meta.get("title", "")
-
-        # Extract Q&A pairs
-        qa_pairs = extract_qa_heuristic(soup, url)
-
-        for idx, qa in enumerate(qa_pairs):
-            record = StructuredQA(
-                source_id=f"cfpb_{html_file.stem}_{idx}",
-                source_dataset="cfpb",
-                title=title,
-                question_body=qa["question"],
-                answer_body=qa["answer"],
-                source_url=url,
-                tags=["consumer-finance", "regulatory"],
-            )
-            yield record
-            count += 1
-
-            if sample_limit and count >= sample_limit:
-                return
-
-    print(f"  Parsed {count} CFPB Q&A pairs")
+    print(f"  Extracted {len(records)} {source_name} Q&A pairs")
+    return records
 
 
-def parse_finra_docs(sample_limit: int = None) -> Iterator[StructuredQA]:
-    """Parse FINRA investor education documents."""
-    print("\nParsing FINRA documents...")
+# ── Phase 2: LLM question rewrite ─────────────────────────────────────
 
-    finra_dir = RAW_DATA_DIR / "finra"
-    if not finra_dir.exists():
-        print(f"  Warning: FINRA directory not found at {finra_dir}")
-        return
 
-    # Load metadata
-    metadata_path = finra_dir / "metadata.json"
-    metadata = {}
-    if metadata_path.exists():
-        with open(metadata_path) as f:
-            metadata_list = json.load(f)
-            metadata = {m["filename"]: m for m in metadata_list}
+async def rewrite_question(
+    record: StructuredQA,
+    session: aiohttp.ClientSession,
+    semaphore: asyncio.Semaphore,
+) -> StructuredQA:
+    """Rewrite a single record's question_body using LLM."""
+    async with semaphore:
+        prompt = REWRITE_USER_PROMPT.format(
+            title=record.title or "N/A",
+            section_heading=record.question_body,
+            answer_preview=record.answer_body[:500],
+        )
 
-    count = 0
-    for html_file in tqdm(list(finra_dir.glob("*.html")), desc="Processing FINRA"):
-        with open(html_file, encoding="utf-8") as f:
-            html = f.read()
+        response, _ = await call_llm(
+            prompt=prompt,
+            model=REWRITE_MODEL,
+            system_prompt=REWRITE_SYSTEM_PROMPT,
+            temperature=0.3,
+            max_tokens=150,
+            session=session,
+        )
 
-        soup = BeautifulSoup(html, "lxml")
+        record.question_body = response.strip().strip('"').strip("'")
+        return record
 
-        # Check word count
-        text = extract_text_content(soup)
-        if len(text.split()) < MIN_WORD_COUNT:
-            continue
 
-        # Get metadata
-        file_meta = metadata.get(html_file.name, {})
-        url = file_meta.get("url", "")
-        title = file_meta.get("title", "")
+async def rewrite_all_questions(records: list[StructuredQA]) -> list[StructuredQA]:
+    """Rewrite all question_body fields using LLM."""
+    print(f"\nRewriting {len(records)} questions via LLM...")
 
-        # Extract Q&A pairs
-        qa_pairs = extract_qa_heuristic(soup, url)
+    semaphore = asyncio.Semaphore(MAX_CONCURRENT)
 
-        for idx, qa in enumerate(qa_pairs):
-            record = StructuredQA(
-                source_id=f"finra_{html_file.stem}_{idx}",
-                source_dataset="finra",
-                title=title,
-                question_body=qa["question"],
-                answer_body=qa["answer"],
-                source_url=url,
-                tags=["investor-education", "regulatory"],
-            )
-            yield record
-            count += 1
+    async with aiohttp.ClientSession() as session:
+        tasks = [rewrite_question(r, session, semaphore) for r in records]
+        results = []
+        for coro in atqdm.as_completed(
+            tasks, total=len(tasks), desc="Rewriting questions"
+        ):
+            result = await coro
+            results.append(result)
 
-            if sample_limit and count >= sample_limit:
-                return
+    return results
 
-    print(f"  Parsed {count} FINRA Q&A pairs")
+
+# ── Main ───────────────────────────────────────────────────────────────
 
 
 def main():
@@ -334,38 +315,82 @@ def main():
         default=OUTPUT_DIR / "authoritative_docs.jsonl",
         help="Output file path",
     )
+    parser.add_argument(
+        "--skip-rewrite",
+        action="store_true",
+        help="Skip LLM question rewrite (output raw headings as questions)",
+    )
 
     args = parser.parse_args()
 
     # Ensure output directory exists
     args.output.parent.mkdir(parents=True, exist_ok=True)
 
-    # Collect parsers to run
-    parsers = []
-    if args.source in ["sec", "all"]:
-        parsers.append(("SEC", parse_sec_docs))
-    if args.source in ["cfpb", "all"]:
-        parsers.append(("CFPB", parse_cfpb_docs))
-    if args.source in ["finra", "all"]:
-        parsers.append(("FINRA", parse_finra_docs))
+    # Source configs
+    sources = {
+        "sec": (
+            "SEC",
+            RAW_DATA_DIR / "sec",
+            "sec_investor_gov",
+            ["regulatory", "investor-education"],
+        ),
+        "cfpb": (
+            "CFPB",
+            RAW_DATA_DIR / "cfpb",
+            "cfpb",
+            ["consumer-finance", "regulatory"],
+        ),
+        "finra": (
+            "FINRA",
+            RAW_DATA_DIR / "finra",
+            "finra",
+            ["investor-education", "regulatory"],
+        ),
+    }
 
-    # Process and write output
-    total_count = 0
+    # Phase 1: Heuristic extraction
+    print("=" * 60)
+    print("Phase 1: Extracting Q&A pairs from HTML")
+    print("=" * 60)
+
+    all_records = []
+    source_keys = [args.source] if args.source != "all" else ["sec", "cfpb", "finra"]
+
+    for key in source_keys:
+        name, dir_path, dataset, tags = sources[key]
+        records = parse_source_docs(
+            name, dir_path, dataset, tags, sample_limit=args.sample
+        )
+        all_records.extend(records)
+
+    if not all_records:
+        print("No records extracted!")
+        sys.exit(1)
+
+    print(f"\nPhase 1 complete: {len(all_records)} records extracted")
+
+    # Phase 2: LLM question rewrite
+    if not args.skip_rewrite:
+        print("\n" + "=" * 60)
+        print("Phase 2: Rewriting questions via LLM")
+        print("=" * 60)
+
+        all_records = asyncio.run(rewrite_all_questions(all_records))
+
+        print(f"Phase 2 complete: {len(all_records)} questions rewritten")
+    else:
+        print("\nSkipping LLM rewrite (--skip-rewrite)")
+
+    # Write output
     with open(args.output, "w") as f:
-        for name, parser_fn in parsers:
-            source_count = 0
-            for record in parser_fn(sample_limit=args.sample):
-                f.write(record.model_dump_json() + "\n")
-                source_count += 1
-                total_count += 1
-
-            print(f"  {name}: {source_count} records")
+        for record in all_records:
+            f.write(record.model_dump_json() + "\n")
 
     print("\n" + "=" * 60)
     print("Authoritative docs structuring complete!")
     print("=" * 60)
     print(f"Output: {args.output}")
-    print(f"Total records: {total_count}")
+    print(f"Total records: {len(all_records)}")
 
 
 if __name__ == "__main__":

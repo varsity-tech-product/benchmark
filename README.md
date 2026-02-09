@@ -62,7 +62,7 @@ python scripts/01_ingest/ingest_research_datasets.py
 # Stack Exchange Money Q&A (~200 MB download)
 python scripts/01_ingest/ingest_stack_exchange.py
 
-# Reddit finance subreddits (Arctic Shift dumps)
+# Reddit finance subreddits (Arctic Shift API)
 python scripts/01_ingest/ingest_reddit.py                  # all 6 subreddits
 python scripts/01_ingest/ingest_reddit.py --subreddit tax   # single subreddit
 
@@ -236,7 +236,7 @@ All scripts support `--help` for full option listing.
 
 **`ModuleNotFoundError`**: Make sure the virtual environment is activated (`source .venv/bin/activate`) and dependencies are installed (`pip install -r requirements.txt`).
 
-**Reddit download fails**: Arctic Shift dumps are large. Check your internet connection and disk space. The script supports resume -- re-run and it will pick up where it left off.
+**Reddit download slow or fails**: The script uses the Arctic Shift API and is resumable -- if interrupted, re-run and it will pick up where it left off. Large subreddits (e.g. r/personalfinance) may take a while due to API pagination.
 
 **Synthesis interrupted**: The pipeline is checkpoint-based. Re-run the same `synthesize_tsr.py` command and it will continue from the last saved checkpoint.
 
