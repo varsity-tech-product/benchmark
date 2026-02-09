@@ -8,11 +8,26 @@ For each structured Q&A record, generates:
 3. Synthetic Response - generated tutoring response
 
 Uses async processing with checkpointing for resumability.
+Randomly selects from 10 diverse models per API call.
+
+Usage:
+    # Synthesize all datasets
+    python synthesize_tsr.py --all
+
+    # Synthesize a specific dataset with sample limit
+    python synthesize_tsr.py --dataset personal_finance_planning --sample 100
+
+    # Synthesize multiple datasets
+    python synthesize_tsr.py --dataset tax_and_accounting regulatory_compliance
+
+    # List available datasets
+    python synthesize_tsr.py --list
 """
 
 import argparse
 import asyncio
 import json
+import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -25,7 +40,7 @@ from tqdm.asyncio import tqdm
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from lib.llm_utils import LLMError, call_llm, call_llm_with_json
+from lib.llm_utils import LLMError, call_llm, call_llm_with_json, select_random_model
 from lib.schemas import (
     FinalBenchmarkRecord,
     LearnerProfile,
@@ -36,7 +51,7 @@ from lib.schemas import (
 # Base paths
 SCRIPT_DIR = Path(__file__).parent
 PROJECT_ROOT = SCRIPT_DIR.parent.parent
-STRUCTURED_DIR = PROJECT_ROOT / "data" / "01_structured"
+CLASSIFIED_DIR = PROJECT_ROOT / "data" / "01_structured" / "classified"
 OUTPUT_DIR = PROJECT_ROOT / "data" / "02_synthesized"
 CONFIG_DIR = PROJECT_ROOT / "configs"
 
@@ -46,6 +61,29 @@ def load_prompts() -> dict:
     prompts_path = CONFIG_DIR / "prompts.yaml"
     with open(prompts_path) as f:
         return yaml.safe_load(f)
+
+
+def list_datasets(classified_dir: Path) -> list[str]:
+    """List available dataset names from classified directory."""
+    return sorted(f.stem for f in classified_dir.glob("*.jsonl"))
+
+
+def _normalize_string_list(items: list) -> list[str]:
+    """Convert list items that may be dicts into flat strings.
+
+    Some models return structured objects like {"step_number": 1, "title": "...", "description": "..."}
+    instead of plain strings. This flattens them.
+    """
+    result = []
+    for item in items:
+        if isinstance(item, str):
+            result.append(item)
+        elif isinstance(item, dict):
+            parts = [str(v) for v in item.values() if v is not None]
+            result.append(" - ".join(parts))
+        else:
+            result.append(str(item))
+    return result
 
 
 class SynthesisPipeline:
@@ -88,6 +126,8 @@ class SynthesisPipeline:
     @staticmethod
     def _is_numerical_reasoning(qa: StructuredQA) -> bool:
         """Check if a record is a numerical/tabular reasoning type."""
+        if not qa.tags:
+            return False
         numerical_tags = {"numerical-reasoning", "tabular-reasoning", "conversational"}
         return bool(set(qa.tags) & numerical_tags)
 
@@ -129,14 +169,19 @@ class SynthesisPipeline:
             )
             system_prompt = self.prompts["system_prompts"]["learner_analysis"]
 
+        model = select_random_model()
         data, model_used = await call_llm_with_json(
             prompt=prompt,
             system_prompt=system_prompt,
             session=session,
-            model="x-ai/grok-4.1-fast",
+            model=model,
         )
 
-        # Validate and create LearnerProfile
+        # Normalize list fields (some models return dicts instead of strings)
+        for key in ("learning_goals", "potential_misconceptions"):
+            if key in data and isinstance(data[key], list):
+                data[key] = _normalize_string_list(data[key])
+
         profile = LearnerProfile(**data)
         return profile, model_used
 
@@ -168,14 +213,24 @@ class SynthesisPipeline:
             prompt = prompt_template.format(**common_kwargs)
             system_prompt = self.prompts["system_prompts"]["strategy_design"]
 
+        model = select_random_model()
         data, model_used = await call_llm_with_json(
             prompt=prompt,
             system_prompt=system_prompt,
             session=session,
-            model="x-ai/grok-4.1-fast",
+            model=model,
         )
 
-        # Validate and create TutoringStrategy
+        # Normalize list fields (some models return dicts instead of strings)
+        for key in (
+            "steps",
+            "key_concepts",
+            "analogies_or_examples",
+            "follow_up_questions",
+        ):
+            if key in data and isinstance(data[key], list):
+                data[key] = _normalize_string_list(data[key])
+
         strategy = TutoringStrategy(**data)
         return strategy, model_used
 
@@ -219,14 +274,18 @@ class SynthesisPipeline:
             prompt = prompt_template.format(**common_kwargs)
             system_prompt = self.prompts["system_prompts"]["response_generation"]
 
+        model = select_random_model()
         response, model_used = await call_llm(
             prompt=prompt,
             system_prompt=system_prompt,
             temperature=0.7,
             max_tokens=2048,
             session=session,
-            model="x-ai/grok-4.1-fast",
+            model=model,
         )
+
+        # Clean up excessive whitespace (some models pad markdown tables with thousands of spaces)
+        response = re.sub(r" {4,}", "    ", response)
 
         return response, model_used
 
@@ -269,7 +328,7 @@ class SynthesisPipeline:
                     learner_profile=profile,
                     tutoring_strategy=strategy,
                     synthetic_response=response,
-                    teacher_model=response_model,  # Record which model generated response
+                    teacher_model=response_model,
                     synthesis_timestamp=datetime.now(timezone.utc).isoformat(),
                 )
 
@@ -344,45 +403,97 @@ class SynthesisPipeline:
 
 
 def load_structured_data(
-    structured_dir: Path,
+    classified_dir: Path,
+    datasets: Optional[list[str]] = None,
     sample: Optional[int] = None,
-) -> list[StructuredQA]:
-    """Load all structured JSONL files."""
-    records = []
+) -> dict[str, list[StructuredQA]]:
+    """Load structured JSONL files from classified directory, grouped by dataset.
 
-    jsonl_files = list(structured_dir.glob("*.jsonl"))
+    Args:
+        classified_dir: Path to classified data directory
+        datasets: List of dataset names to load (None = all)
+        sample: Max records per dataset (None = all)
+
+    Returns:
+        Dict mapping dataset name (file stem) to list of records
+    """
+    result: dict[str, list[StructuredQA]] = {}
+
+    if datasets:
+        jsonl_files = []
+        for name in datasets:
+            filepath = classified_dir / f"{name}.jsonl"
+            if not filepath.exists():
+                print(f"Warning: Dataset '{name}' not found at {filepath}")
+                continue
+            jsonl_files.append(filepath)
+    else:
+        jsonl_files = sorted(classified_dir.glob("*.jsonl"))
+
     if not jsonl_files:
-        print(f"Warning: No JSONL files found in {structured_dir}")
-        return records
+        print(f"Warning: No JSONL files found in {classified_dir}")
+        return result
 
-    print(f"Loading structured data from {structured_dir}")
+    print(f"Loading structured data from {classified_dir}")
+    total = 0
 
     for filepath in jsonl_files:
+        ds_name = filepath.stem
+        records = []
         print(f"  Loading {filepath.name}...")
         with open(filepath) as f:
             for line in f:
-                record = StructuredQA.model_validate_json(line)
-                records.append(record)
-
+                records.append(StructuredQA.model_validate_json(line))
                 if sample and len(records) >= sample:
                     break
 
-        if sample and len(records) >= sample:
-            break
+        result[ds_name] = records
+        total += len(records)
+        print(f"    -> {len(records)} records loaded")
 
-    print(f"Loaded {len(records)} records total")
-    return records
+    print(f"Loaded {total} records total across {len(result)} datasets")
+    return result
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Synthesize tutoring data for benchmark"
+        description="Synthesize tutoring data for benchmark",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  %(prog)s --all                          Synthesize all datasets
+  %(prog)s --dataset tax_and_accounting   Synthesize one dataset
+  %(prog)s --dataset tax_and_accounting regulatory_compliance
+                                          Synthesize multiple datasets
+  %(prog)s --all --sample 50             50 records per dataset
+  %(prog)s --list                         List available datasets
+        """,
     )
+
+    # Dataset selection (mutually exclusive)
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument(
+        "--all",
+        action="store_true",
+        help="Synthesize all datasets",
+    )
+    group.add_argument(
+        "--dataset",
+        nargs="+",
+        metavar="NAME",
+        help="Dataset name(s) to synthesize (stem of JSONL file)",
+    )
+    group.add_argument(
+        "--list",
+        action="store_true",
+        help="List available datasets and exit",
+    )
+
     parser.add_argument(
         "--sample",
         type=int,
         default=None,
-        help="Process only N records (for testing)",
+        help="Max records per dataset (for testing)",
     )
     parser.add_argument(
         "--max-concurrent",
@@ -399,14 +510,14 @@ def main():
     parser.add_argument(
         "--input-dir",
         type=Path,
-        default=STRUCTURED_DIR,
-        help="Input directory with structured JSONL files",
+        default=CLASSIFIED_DIR,
+        help="Input directory with classified JSONL files",
     )
     parser.add_argument(
-        "--output",
+        "--output-dir",
         type=Path,
-        default=OUTPUT_DIR / "synthesized_data.jsonl",
-        help="Output file path",
+        default=OUTPUT_DIR,
+        help="Output directory for synthesized data",
     )
     parser.add_argument(
         "--no-checkpoint",
@@ -421,55 +532,90 @@ def main():
 
     args = parser.parse_args()
 
+    # Handle --list
+    if args.list:
+        datasets = list_datasets(args.input_dir)
+        if not datasets:
+            print(f"No datasets found in {args.input_dir}")
+            sys.exit(1)
+        print("Available datasets:")
+        for name in datasets:
+            filepath = args.input_dir / f"{name}.jsonl"
+            line_count = sum(1 for _ in open(filepath))
+            print(f"  {name:45s} ({line_count:,} records)")
+        sys.exit(0)
+
+    # Determine which datasets to process
+    dataset_names = None if args.all else args.dataset
+
+    # Resolve datasets for output file naming and reset
+    if dataset_names:
+        target_datasets = dataset_names
+    else:
+        target_datasets = list_datasets(args.input_dir)
+
     # Handle reset
     if args.reset:
-        checkpoint_file = OUTPUT_DIR / "synthesis_checkpoint.json"
-        if checkpoint_file.exists():
-            checkpoint_file.unlink()
-            print("Checkpoint reset")
-        if args.output.exists():
-            args.output.unlink()
-            print("Output file reset")
+        for ds_name in target_datasets:
+            checkpoint = args.output_dir / f"{ds_name}_checkpoint.json"
+            output = args.output_dir / f"{ds_name}.jsonl"
+            if checkpoint.exists():
+                checkpoint.unlink()
+                print(f"Checkpoint reset: {ds_name}")
+            if output.exists():
+                output.unlink()
+                print(f"Output reset: {ds_name}")
 
-    # Load structured data
-    records = load_structured_data(args.input_dir, sample=args.sample)
+    # Load structured data (grouped by dataset file)
+    records_by_dataset = load_structured_data(
+        args.input_dir, datasets=dataset_names, sample=args.sample
+    )
 
-    if not records:
+    if not records_by_dataset:
         print("No records to process!")
         sys.exit(1)
 
-    # Set up checkpoint
-    checkpoint_file = None
-    if not args.no_checkpoint:
-        checkpoint_file = OUTPUT_DIR / "synthesis_checkpoint.json"
+    total_records = sum(len(v) for v in records_by_dataset.values())
+    total_success = 0
 
-    # Create pipeline
-    pipeline = SynthesisPipeline(
-        max_concurrent=args.max_concurrent,
-        checkpoint_every=args.checkpoint_every,
-        checkpoint_file=checkpoint_file,
-    )
-
-    # Run synthesis
     print("\n" + "=" * 60)
     print("Starting synthesis pipeline")
     print("=" * 60)
-    print(f"Input records: {len(records)}")
+    print(f"Datasets: {len(records_by_dataset)}")
+    print(f"Total records: {total_records}")
     print(f"Max concurrent: {args.max_concurrent}")
-    print(f"Output: {args.output}")
+    print("Models: 10 (random selection per API call)")
+    print(f"Output dir: {args.output_dir}")
     print()
 
-    try:
-        success_count = asyncio.run(pipeline.process_batch(records, args.output))
-    except KeyboardInterrupt:
-        print("\n\nInterrupted! Progress has been checkpointed.")
-        sys.exit(1)
+    for ds_name, ds_records in records_by_dataset.items():
+        output_file = args.output_dir / f"{ds_name}.jsonl"
+        checkpoint_file = None
+        if not args.no_checkpoint:
+            checkpoint_file = args.output_dir / f"{ds_name}_checkpoint.json"
+
+        pipeline = SynthesisPipeline(
+            max_concurrent=args.max_concurrent,
+            checkpoint_every=args.checkpoint_every,
+            checkpoint_file=checkpoint_file,
+        )
+
+        print(f"\n--- [{ds_name}] {len(ds_records)} records -> {output_file.name} ---")
+
+        try:
+            success_count = asyncio.run(pipeline.process_batch(ds_records, output_file))
+            total_success += success_count
+        except KeyboardInterrupt:
+            print("\n\nInterrupted! Progress has been checkpointed.")
+            sys.exit(1)
+
+        print(f"--- [{ds_name}] Done: {success_count} records ---")
 
     print("\n" + "=" * 60)
     print("Synthesis complete!")
     print("=" * 60)
-    print(f"Successfully processed: {success_count} records")
-    print(f"Output: {args.output}")
+    print(f"Successfully processed: {total_success} records")
+    print(f"Output directory: {args.output_dir}")
 
 
 if __name__ == "__main__":

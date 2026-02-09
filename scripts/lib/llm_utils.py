@@ -19,13 +19,45 @@ load_dotenv()
 # OpenRouter API endpoint
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 
-# Available models for diversity in synthesis
+# # Available models for diversity in synthesis (10 models) — FULL
+# MODELS = [
+#     # Claude (2)
+#     "anthropic/claude-opus-4.6",
+#     "anthropic/claude-sonnet-4.5",
+#     # OpenAI (2)
+#     "openai/gpt-5.2",
+#     "openai/gpt-oss-120b",
+#     # Gemini (3)
+#     "google/gemini-3-pro-preview",
+#     "google/gemini-2.5-pro",
+#     "google/gemini-3-flash-preview",
+#     # DeepSeek (1)
+#     "deepseek/deepseek-v3.2",
+#     # Qwen (1)
+#     "qwen/qwen3-max",
+#     # Grok (1)
+#     "x-ai/grok-4.1-fast",
+# ]
+
+# Available models for diversity in synthesis (10 models) — LITE
 MODELS = [
-    "openai/gpt-4o-mini",
-    "anthropic/claude-3-haiku",
+    # Claude (2)
+    "anthropic/claude-opus-4.5",
+    "anthropic/claude-sonnet-4.5",
+    # OpenAI (2)
+    "openai/gpt-oss-120b",
+    "openai/gpt-5-mini",
+    # Gemini (2)
+    "google/gemini-3-flash-preview",
     "google/gemini-2.5-flash",
+    # DeepSeek (1)
+    "deepseek/deepseek-chat-v3.1",
+    # Grok (1)
     "x-ai/grok-4.1-fast",
 ]
+
+# Fallback model: stable, reliable for structured JSON output
+FALLBACK_MODEL = "anthropic/claude-sonnet-4.5"
 
 
 class LLMError(Exception):
@@ -36,6 +68,12 @@ class LLMError(Exception):
 
 class RateLimitError(LLMError):
     """Rate limit exceeded."""
+
+    pass
+
+
+class ServerError(LLMError):
+    """Server-side error (5xx)."""
 
     pass
 
@@ -56,7 +94,7 @@ def select_random_model() -> str:
 
 
 @retry(
-    retry=retry_if_exception_type(RateLimitError),
+    retry=retry_if_exception_type((RateLimitError, ServerError)),
     wait=wait_exponential(multiplier=1, min=4, max=60),
     stop=stop_after_attempt(5),
 )
@@ -122,6 +160,10 @@ async def call_llm(
             if response.status == 429:
                 raise RateLimitError("Rate limit exceeded")
 
+            if 500 <= response.status < 600:
+                error_text = await response.text()
+                raise ServerError(f"Server error {response.status}: {error_text}")
+
             if response.status != 200:
                 error_text = await response.text()
                 raise LLMError(f"API error {response.status}: {error_text}")
@@ -129,7 +171,11 @@ async def call_llm(
             data = await response.json()
 
             if "error" in data:
-                raise LLMError(f"API returned error: {data['error']}")
+                error_info = data["error"]
+                code = error_info.get("code", 0) if isinstance(error_info, dict) else 0
+                if isinstance(code, int) and 500 <= code < 600:
+                    raise ServerError(f"Server error: {error_info}")
+                raise LLMError(f"API returned error: {error_info}")
 
             content = data["choices"][0]["message"]["content"]
             return content, model
@@ -139,51 +185,116 @@ async def call_llm(
             await session.close()
 
 
+def _extract_json(text: str) -> dict:
+    """Extract a JSON object from text that may contain extra content.
+
+    Handles:
+    - Pure JSON responses
+    - Markdown ```json ... ``` code blocks
+    - Reasoning/thinking text before or after the JSON object
+    """
+    import json
+    import re
+
+    text = text.strip()
+
+    # 1. Strip markdown code blocks
+    if text.startswith("```json"):
+        text = text[7:]
+    elif text.startswith("```"):
+        text = text[3:]
+    if text.endswith("```"):
+        text = text[:-3]
+    text = text.strip()
+
+    # 2. Try direct parse
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        pass
+
+    # 3. Find the outermost { ... } in the text (handles reasoning leakage)
+    match = re.search(r"\{", text)
+    if match:
+        start = match.start()
+        # Walk forward to find matching closing brace
+        depth = 0
+        in_string = False
+        escape = False
+        for i in range(start, len(text)):
+            c = text[i]
+            if escape:
+                escape = False
+                continue
+            if c == "\\":
+                escape = True
+                continue
+            if c == '"' and not escape:
+                in_string = not in_string
+                continue
+            if in_string:
+                continue
+            if c == "{":
+                depth += 1
+            elif c == "}":
+                depth -= 1
+                if depth == 0:
+                    candidate = text[start : i + 1]
+                    try:
+                        return json.loads(candidate)
+                    except json.JSONDecodeError:
+                        break
+
+    raise LLMError(
+        f"Failed to parse JSON response: no valid JSON object found\nResponse: {text[:500]}"
+    )
+
+
 async def call_llm_with_json(
     prompt: str,
     model: Optional[str] = None,
     system_prompt: Optional[str] = None,
     session: Optional[aiohttp.ClientSession] = None,
+    max_retries: int = 2,
 ) -> tuple[dict, str]:
     """
     Call LLM and parse JSON response.
 
+    Retry strategy on parse failure:
+      attempt 0: requested model (or random)
+      attempt 1: different random model
+      attempt 2: fallback to FALLBACK_MODEL (stable, guaranteed JSON)
+
     Returns:
         Tuple of (parsed_json, model_used)
     """
-    import json
-
-    # Add JSON instruction to system prompt
     json_system = (system_prompt or "") + "\n\nRespond with valid JSON only."
 
-    response, model_used = await call_llm(
-        prompt=prompt,
-        model=model,
-        system_prompt=json_system,
-        temperature=0.3,  # Lower temperature for structured output
-        session=session,
-    )
-
-    # Try to extract JSON from response
-    response = response.strip()
-
-    # Handle markdown code blocks
-    if response.startswith("```json"):
-        response = response[7:]
-    elif response.startswith("```"):
-        response = response[3:]
-    if response.endswith("```"):
-        response = response[:-3]
-
-    response = response.strip()
-
-    try:
-        parsed = json.loads(response)
-        return parsed, model_used
-    except json.JSONDecodeError as e:
-        raise LLMError(
-            f"Failed to parse JSON response: {e}\nResponse: {response[:500]}"
-        )
+    last_error = None
+    for attempt in range(1 + max_retries):
+        if attempt == 0:
+            current_model = model or select_random_model()
+        elif attempt < max_retries:
+            current_model = select_random_model()
+        else:
+            # Final attempt: use stable fallback model
+            current_model = FALLBACK_MODEL
+        try:
+            response, model_used = await call_llm(
+                prompt=prompt,
+                model=current_model,
+                system_prompt=json_system,
+                temperature=0.3,  # Lower temperature for structured output
+                max_tokens=4096,  # Higher limit to prevent JSON truncation
+                session=session,
+            )
+            parsed = _extract_json(response)
+            return parsed, model_used
+        except LLMError as e:
+            last_error = e
+            if attempt < max_retries:
+                await asyncio.sleep(1)
+    raise last_error
 
 
 class LLMBatchProcessor:

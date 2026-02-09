@@ -89,16 +89,18 @@ def cmd_estimate(args):
     print()
 
     # Run synthesis
-    print(f"[2/3] Running synthesis on {sample} records...")
+    print(f"[2/3] Running synthesis on {sample} records per dataset...")
     print("-" * 50)
+    tmp_output_dir = PROJECT_ROOT / "data" / "02_synthesized" / "_cost_estimate"
     synth_cmd = [
         sys.executable,
         str(PROJECT_ROOT / "scripts" / "03_synthesize" / "synthesize_tsr.py"),
+        "--all",
         "--sample",
         str(sample),
         "--no-checkpoint",
-        "--output",
-        str(PROJECT_ROOT / "data" / "02_synthesized" / "cost_estimate_run.jsonl"),
+        "--output-dir",
+        str(tmp_output_dir),
     ]
     result = subprocess.run(synth_cmd)
     print("-" * 50)
@@ -114,15 +116,25 @@ def cmd_estimate(args):
     print_balance(after)
     print()
 
+    # Count actual records synthesized
+    actual_sample = 0
+    if tmp_output_dir.exists():
+        for f in tmp_output_dir.glob("*.jsonl"):
+            actual_sample += sum(1 for _ in open(f))
+
+    effective_sample = actual_sample if actual_sample > 0 else sample
+
     # Calculate
     spent = after["total_usage"] - before["total_usage"]
-    cost_per_record = spent / sample if sample > 0 else 0
+    cost_per_record = spent / effective_sample if effective_sample > 0 else 0
     estimated_total = cost_per_record * total
 
     print("=" * 50)
     print("Results")
     print("=" * 50)
-    print(f"  Sample size:           {sample} records")
+    print(
+        f"  Sample size:           {effective_sample} records (requested {sample}/dataset)"
+    )
     print(f"  Actual cost (sample):  ${spent:.6f}")
     print(f"  Cost per record:       ${cost_per_record:.6f}")
     print()
@@ -155,9 +167,10 @@ def cmd_estimate(args):
     print(f"\n  Report saved: {report_path}")
 
     # Cleanup temp output
-    tmp_output = PROJECT_ROOT / "data" / "02_synthesized" / "cost_estimate_run.jsonl"
-    if tmp_output.exists():
-        tmp_output.unlink()
+    if tmp_output_dir.exists():
+        import shutil
+
+        shutil.rmtree(tmp_output_dir)
 
 
 # ── monitor command ──────────────────────────────────────────────
@@ -213,7 +226,7 @@ def main():
         "--sample", type=int, default=100, help="Sample size (default: 100)"
     )
     est.add_argument(
-        "--total", type=int, default=212503, help="Total records to estimate for"
+        "--total", type=int, default=119441, help="Total records to estimate for"
     )
 
     mon = sub.add_parser("monitor", help="Monitor balance in real-time")

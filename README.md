@@ -109,35 +109,81 @@ wc -l data/01_structured/*.jsonl
 
 ---
 
-## Step 5: Synthesize Tutoring Data
+## Step 4.5: Classify Data
 
-This step calls LLM APIs to generate learner profiles, tutoring strategies, and synthetic responses. **This costs money** -- see the cost table below.
+Classify structured records into 7 categories (reddit, fiqa, authoritative_docs, stack_exchange, finqa, tatqa, convfinqa) based on `source_dataset`. Output goes to `data/01_structured/classified/`.
 
 ```bash
-# Quick test (50 records, ~$0.25)
-python scripts/03_synthesize/synthesize_tsr.py --sample 50
+python scripts/02_structure/classify_data.py
+```
 
-# Full run
-python scripts/03_synthesize/synthesize_tsr.py
+**Verify:**
+
+```bash
+ls data/01_structured/classified/
+# Expected: reddit.jsonl  fiqa.jsonl  authoritative_docs.jsonl  stack_exchange.jsonl  finqa.jsonl  tatqa.jsonl  convfinqa.jsonl
+```
+
+Optionally, inspect data quality before synthesis:
+
+```bash
+# Inspect all structured datasets
+python scripts/02_structure/inspect_quality.py
+
+# Inspect a specific file
+python scripts/02_structure/inspect_quality.py --file data/01_structured/stack_exchange.jsonl
+
+# Reddit-specific quality inspection
+python scripts/02_structure/inspect_reddit_quality.py
+```
+
+---
+
+## Step 5: Synthesize Tutoring Data
+
+This step calls LLM APIs to generate learner profiles, tutoring strategies, and synthetic responses. **This costs money** -- use the cost estimation tool below.
+
+The synthesis reads from `data/01_structured/classified/` and writes per-dataset output files to `data/02_synthesized/`. It randomly selects from 10 diverse models per API call.
+
+```bash
+# List available datasets
+python scripts/03_synthesize/synthesize_tsr.py --list
+
+# Quick test (50 records per dataset)
+python scripts/03_synthesize/synthesize_tsr.py --all --sample 50
+
+# Synthesize all datasets
+python scripts/03_synthesize/synthesize_tsr.py --all
+
+# Synthesize specific dataset(s)
+python scripts/03_synthesize/synthesize_tsr.py --dataset stack_exchange
+python scripts/03_synthesize/synthesize_tsr.py --dataset finqa tatqa
 
 # With options
-python scripts/03_synthesize/synthesize_tsr.py \
+python scripts/03_synthesize/synthesize_tsr.py --all \
     --max-concurrent 5 \
     --checkpoint-every 50
 ```
 
 The synthesis is **resumable** -- if interrupted, re-run the same command to continue from the last checkpoint.
 
-| Records | Est. API Calls | Est. Cost (GPT-4o-mini) |
-|---------|----------------|-------------------------|
-| 100     | 300            | ~$0.50                  |
-| 1,000   | 3,000          | ~$5                     |
-| 10,000  | 30,000         | ~$50                    |
+### Cost Estimation
+
+```bash
+# Check current OpenRouter balance
+python scripts/estimate_cost.py balance
+
+# Run sample and estimate full cost
+python scripts/estimate_cost.py estimate --sample 100 --total 119441
+
+# Monitor balance in real-time during synthesis
+python scripts/estimate_cost.py monitor --interval 60
+```
 
 **Verify:**
 
 ```bash
-wc -l data/02_synthesized/*.jsonl
+ls data/02_synthesized/*.jsonl
 ```
 
 ---
@@ -183,17 +229,24 @@ benchmark/
 ├── data/
 │   ├── 00_raw/                # Downloaded raw data
 │   ├── 01_structured/         # Parsed JSONL files
+│   │   └── classified/        # Category-split JSONL files
 │   ├── 02_synthesized/        # LLM-augmented data
 │   └── 03_packaged/           # Final validated output
 ├── scripts/
 │   ├── 01_ingest/             # Data download scripts
-│   ├── 02_structure/          # Parsing scripts
+│   ├── 02_structure/          # Parsing, classification & quality inspection
+│   │   ├── structure_*.py     # Parsing scripts
+│   │   ├── classify_data.py   # Data classification into 7 categories
+│   │   ├── inspect_quality.py # General quality inspection
+│   │   └── inspect_reddit_quality.py
 │   ├── 03_synthesize/         # LLM synthesis pipeline
 │   ├── 04_validate/           # Validation & dataset card
 │   ├── 05_upload/             # HuggingFace upload
+│   ├── estimate_cost.py       # OpenRouter cost estimation tool
 │   └── lib/                   # Shared utilities
 │       ├── schemas.py         # Pydantic models
 │       └── llm_utils.py       # LLM API utilities
+├── eval/                      # Evaluation system (separate requirements)
 ├── tests/                     # Unit tests
 ├── notebooks/                 # EDA notebooks
 ├── .env.template              # Environment template
@@ -208,15 +261,20 @@ All scripts support `--help` for full option listing.
 
 | Flag | Description |
 |------|-------------|
-| `--sample N` | Process only N records (for testing) |
+| `--sample N` | Process only N records per dataset (for testing) |
 | `--help` | Show all available options |
 
 ### Synthesis-specific options:
 
 | Flag | Description |
 |------|-------------|
+| `--all` | Synthesize all classified datasets |
+| `--dataset NAME [NAME ...]` | Synthesize specific dataset(s) by name |
+| `--list` | List available datasets and exit |
 | `--max-concurrent N` | Max parallel API calls (default: 5) |
 | `--checkpoint-every N` | Save progress every N records (default: 50) |
+| `--input-dir PATH` | Input directory with classified JSONL files |
+| `--output-dir PATH` | Output directory for synthesized data |
 | `--reset` | Clear checkpoint and start fresh |
 | `--no-checkpoint` | Disable checkpointing |
 
@@ -275,7 +333,7 @@ Dataset sources have varying licenses:
 ```bibtex
 @dataset{quant_tutor_benchmark,
   title={Quant Tutor Benchmark Dataset},
-  year={2024},
+  year={2025},
   description={Financial QA benchmark with synthesized tutoring components}
 }
 ```
