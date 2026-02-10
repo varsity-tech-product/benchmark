@@ -80,6 +80,7 @@ response_generation_prompt: |
   5. Encourages further learning
 
   Important: Be accurate and educational, not just friendly. Teach, don't just answer.
+  Keep your response between 300-800 words. Be concise but thorough.
 
   Your tutoring response:
 
@@ -220,5 +221,6 @@ numerical_response_generation_prompt: |
   5. If there is conversation history, builds on what was previously discussed
 
   Important: The learner needs to understand the PROCESS, not just memorize the number.
+  Keep your response between 300-800 words. Be concise but thorough.
 
   Your tutoring response:

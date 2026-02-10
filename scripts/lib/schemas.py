@@ -103,7 +103,13 @@ class FinalBenchmarkRecord(BaseModel):
     synthetic_response: str = Field(description="LLM-generated tutoring response")
 
     # Synthesis metadata
-    teacher_model: str = Field(description="Model used for synthesis")
+    teacher_model: str = Field(description="Model used for response generation")
+    profile_model: Optional[str] = Field(
+        default=None, description="Model used for learner profile generation"
+    )
+    strategy_model: Optional[str] = Field(
+        default=None, description="Model used for tutoring strategy generation"
+    )
     synthesis_timestamp: str = Field(description="ISO timestamp of synthesis")
 
     model_config = {

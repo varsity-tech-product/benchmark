@@ -27,6 +27,7 @@ Usage:
 import argparse
 import asyncio
 import json
+import random
 import re
 import sys
 from datetime import datetime, timezone
@@ -54,6 +55,23 @@ PROJECT_ROOT = SCRIPT_DIR.parent.parent
 CLASSIFIED_DIR = PROJECT_ROOT / "data" / "01_structured" / "classified"
 OUTPUT_DIR = PROJECT_ROOT / "data" / "02_synthesized"
 CONFIG_DIR = PROJECT_ROOT / "configs"
+
+# ── Model lists by dataset complexity ──────────────────────────────────
+COMPLEX_DATASETS = {"convfinqa", "finqa", "tatqa"}
+
+COMPLEX_MODELS = [
+    "openai/gpt-5.2",
+    "anthropic/claude-sonnet-4.5",
+    "google/gemini-3-flash-preview",
+    "openai/gpt-oss-120b",
+]
+
+SIMPLE_MODELS = [
+    "google/gemini-3-flash-preview",
+    "openai/gpt-oss-120b",
+    "deepseek/deepseek-v3.2",
+    "deepseek/deepseek-chat-v3.1",
+]
 
 
 def load_prompts() -> dict:
@@ -94,14 +112,24 @@ class SynthesisPipeline:
         max_concurrent: int = 5,
         checkpoint_every: int = 50,
         checkpoint_file: Optional[Path] = None,
+        forced_model: Optional[str] = None,
+        forced_models: Optional[list[str]] = None,
+        dataset_name: Optional[str] = None,
     ):
         self.max_concurrent = max_concurrent
         self.checkpoint_every = checkpoint_every
         self.checkpoint_file = checkpoint_file
+        self.forced_model = forced_model
+        self.forced_models = forced_models
+        self.dataset_name = dataset_name
         self.prompts = load_prompts()
         self.processed_ids: set[str] = set()
+        self.failures: list[dict] = []
         self.results: list[dict] = []
         self.semaphore: Optional[asyncio.Semaphore] = None
+
+        # strict_model only when a single model is forced (for stability testing)
+        self._strict = bool(forced_model) and not forced_models
 
         if checkpoint_file:
             self._load_checkpoint()
@@ -122,6 +150,19 @@ class SynthesisPipeline:
             self.checkpoint_file.parent.mkdir(parents=True, exist_ok=True)
             with open(self.checkpoint_file, "w") as f:
                 json.dump({"processed_ids": list(self.processed_ids)}, f)
+
+    def _pick_model(self) -> str:
+        """Pick a model: forced single > forced list > auto by dataset > global random."""
+        if self.forced_model:
+            return self.forced_model
+        if self.forced_models:
+            return random.choice(self.forced_models)
+        # Auto-select by dataset complexity
+        if self.dataset_name and self.dataset_name in COMPLEX_DATASETS:
+            return random.choice(COMPLEX_MODELS)
+        if self.dataset_name:
+            return random.choice(SIMPLE_MODELS)
+        return select_random_model()
 
     @staticmethod
     def _is_numerical_reasoning(qa: StructuredQA) -> bool:
@@ -169,12 +210,13 @@ class SynthesisPipeline:
             )
             system_prompt = self.prompts["system_prompts"]["learner_analysis"]
 
-        model = select_random_model()
+        model = self._pick_model()
         data, model_used = await call_llm_with_json(
             prompt=prompt,
             system_prompt=system_prompt,
             session=session,
             model=model,
+            strict_model=self._strict,
         )
 
         # Normalize list fields (some models return dicts instead of strings)
@@ -183,6 +225,9 @@ class SynthesisPipeline:
                 data[key] = _normalize_string_list(data[key])
 
         profile = LearnerProfile(**data)
+        # Numerical questions are mechanical; emotional_context is always fabricated noise
+        if self._is_numerical_reasoning(qa):
+            profile.emotional_context = None
         return profile, model_used
 
     async def generate_tutoring_strategy(
@@ -213,12 +258,13 @@ class SynthesisPipeline:
             prompt = prompt_template.format(**common_kwargs)
             system_prompt = self.prompts["system_prompts"]["strategy_design"]
 
-        model = select_random_model()
+        model = self._pick_model()
         data, model_used = await call_llm_with_json(
             prompt=prompt,
             system_prompt=system_prompt,
             session=session,
             model=model,
+            strict_model=self._strict,
         )
 
         # Normalize list fields (some models return dicts instead of strings)
@@ -274,12 +320,12 @@ class SynthesisPipeline:
             prompt = prompt_template.format(**common_kwargs)
             system_prompt = self.prompts["system_prompts"]["response_generation"]
 
-        model = select_random_model()
+        model = self._pick_model()
         response, model_used = await call_llm(
             prompt=prompt,
             system_prompt=system_prompt,
             temperature=0.7,
-            max_tokens=2048,
+            max_tokens=3072,
             session=session,
             model=model,
         )
@@ -329,6 +375,8 @@ class SynthesisPipeline:
                     tutoring_strategy=strategy,
                     synthetic_response=response,
                     teacher_model=response_model,
+                    profile_model=profile_model,
+                    strategy_model=strategy_model,
                     synthesis_timestamp=datetime.now(timezone.utc).isoformat(),
                 )
 
@@ -336,9 +384,31 @@ class SynthesisPipeline:
 
             except LLMError as e:
                 print(f"\n  LLM error for {qa.source_id}: {e}")
+                self.failures.append(
+                    {
+                        "source_id": qa.source_id,
+                        "model": self.forced_model
+                        or (self.forced_models and ",".join(self.forced_models))
+                        or "random",
+                        "error_type": type(e).__name__,
+                        "error_message": str(e)[:500],
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                    }
+                )
                 return None
             except Exception as e:
                 print(f"\n  Error processing {qa.source_id}: {e}")
+                self.failures.append(
+                    {
+                        "source_id": qa.source_id,
+                        "model": self.forced_model
+                        or (self.forced_models and ",".join(self.forced_models))
+                        or "random",
+                        "error_type": type(e).__name__,
+                        "error_message": str(e)[:500],
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                    }
+                )
                 return None
 
     async def process_batch(
@@ -399,6 +469,16 @@ class SynthesisPipeline:
 
         # Final checkpoint
         self._save_checkpoint()
+
+        # Write failures log if any
+        if self.failures:
+            failures_file = output_file.with_suffix(".failures.jsonl")
+            with open(failures_file, "a") as ff:
+                for failure in self.failures:
+                    ff.write(json.dumps(failure) + "\n")
+            print(f"  {len(self.failures)} failures logged to {failures_file.name}")
+            self.failures.clear()
+
         return success_count
 
 
@@ -496,6 +576,14 @@ Examples:
         help="Max records per dataset (for testing)",
     )
     parser.add_argument(
+        "--model",
+        type=str,
+        default=None,
+        help="Force model(s) for ALL 3 LLM calls. "
+        "Single model: use that model exclusively (strict_model=True). "
+        "Comma-separated: randomly select from these models per call.",
+    )
+    parser.add_argument(
         "--max-concurrent",
         type=int,
         default=5,
@@ -575,6 +663,16 @@ Examples:
         print("No records to process!")
         sys.exit(1)
 
+    # Parse model argument: single model or comma-separated list
+    forced_model = None
+    forced_models = None
+    if args.model:
+        parts = [m.strip() for m in args.model.split(",") if m.strip()]
+        if len(parts) == 1:
+            forced_model = parts[0]
+        else:
+            forced_models = parts
+
     total_records = sum(len(v) for v in records_by_dataset.values())
     total_success = 0
 
@@ -584,7 +682,14 @@ Examples:
     print(f"Datasets: {len(records_by_dataset)}")
     print(f"Total records: {total_records}")
     print(f"Max concurrent: {args.max_concurrent}")
-    print("Models: 10 (random selection per API call)")
+    if forced_model:
+        print(f"Model: {forced_model} (forced, strict_model=True)")
+    elif forced_models:
+        print(f"Models: random from {forced_models}")
+    else:
+        print("Models: auto-select by dataset (complex/simple)")
+        print(f"  Complex ({', '.join(COMPLEX_DATASETS)}): {COMPLEX_MODELS}")
+        print(f"  Simple (others): {SIMPLE_MODELS}")
     print(f"Output dir: {args.output_dir}")
     print()
 
@@ -598,6 +703,9 @@ Examples:
             max_concurrent=args.max_concurrent,
             checkpoint_every=args.checkpoint_every,
             checkpoint_file=checkpoint_file,
+            forced_model=forced_model,
+            forced_models=forced_models,
+            dataset_name=ds_name,
         )
 
         print(f"\n--- [{ds_name}] {len(ds_records)} records -> {output_file.name} ---")

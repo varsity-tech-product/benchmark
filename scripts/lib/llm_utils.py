@@ -94,7 +94,15 @@ def select_random_model() -> str:
 
 
 @retry(
-    retry=retry_if_exception_type((RateLimitError, ServerError)),
+    retry=retry_if_exception_type(
+        (
+            RateLimitError,
+            ServerError,
+            aiohttp.ClientError,
+            asyncio.TimeoutError,
+            ConnectionError,
+        )
+    ),
     wait=wait_exponential(multiplier=1, min=4, max=60),
     stop=stop_after_attempt(5),
 )
@@ -156,6 +164,7 @@ async def call_llm(
             f"{OPENROUTER_BASE_URL}/chat/completions",
             headers=headers,
             json=payload,
+            timeout=aiohttp.ClientTimeout(total=120),
         ) as response:
             if response.status == 429:
                 raise RateLimitError("Rate limit exceeded")
@@ -168,7 +177,18 @@ async def call_llm(
                 error_text = await response.text()
                 raise LLMError(f"API error {response.status}: {error_text}")
 
-            data = await response.json()
+            try:
+                data = await response.json()
+            except (aiohttp.ContentTypeError, ValueError) as e:
+                body = await response.text()
+                raise ServerError(
+                    f"Failed to parse API response as JSON: {e}\nBody: {body[:300]}"
+                )
+
+            if not isinstance(data, dict):
+                raise ServerError(
+                    f"API returned unexpected response: {str(data)[:200]}"
+                )
 
             if "error" in data:
                 error_info = data["error"]
@@ -177,7 +197,12 @@ async def call_llm(
                     raise ServerError(f"Server error: {error_info}")
                 raise LLMError(f"API returned error: {error_info}")
 
-            content = data["choices"][0]["message"]["content"]
+            try:
+                content = data["choices"][0]["message"]["content"]
+            except (KeyError, IndexError, TypeError) as e:
+                raise ServerError(
+                    f"Malformed API response structure: {e}\nData: {str(data)[:300]}"
+                )
             return content, model
 
     finally:
@@ -256,24 +281,32 @@ async def call_llm_with_json(
     system_prompt: Optional[str] = None,
     session: Optional[aiohttp.ClientSession] = None,
     max_retries: int = 2,
+    strict_model: bool = False,
 ) -> tuple[dict, str]:
     """
     Call LLM and parse JSON response.
 
     Retry strategy on parse failure:
       attempt 0: requested model (or random)
-      attempt 1: different random model
-      attempt 2: fallback to FALLBACK_MODEL (stable, guaranteed JSON)
+      attempt 1: different random model (or same if strict_model)
+      attempt 2: fallback to FALLBACK_MODEL (or same if strict_model)
+
+    Args:
+        strict_model: If True, all retry attempts use the same model
+                      (no fallback). Useful for per-model stability testing.
 
     Returns:
         Tuple of (parsed_json, model_used)
     """
     json_system = (system_prompt or "") + "\n\nRespond with valid JSON only."
+    initial_model = model or select_random_model()
 
     last_error = None
     for attempt in range(1 + max_retries):
-        if attempt == 0:
-            current_model = model or select_random_model()
+        if strict_model:
+            current_model = initial_model
+        elif attempt == 0:
+            current_model = initial_model
         elif attempt < max_retries:
             current_model = select_random_model()
         else:
@@ -290,7 +323,7 @@ async def call_llm_with_json(
             )
             parsed = _extract_json(response)
             return parsed, model_used
-        except LLMError as e:
+        except Exception as e:
             last_error = e
             if attempt < max_retries:
                 await asyncio.sleep(1)
