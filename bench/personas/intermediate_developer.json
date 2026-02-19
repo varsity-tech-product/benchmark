@@ -1,0 +1,40 @@
+{
+  "persona_id": "intermediate_developer",
+  "knowledge_level": "intermediate",
+  "description": "A software developer proficient in Python and pandas who understands basic finance concepts like stocks, returns, and portfolios, but lacks experience with quantitative trading strategies, statistical tests, and systematic backtesting.",
+  "known_concepts": [
+    "python_advanced",
+    "pandas",
+    "numpy",
+    "data_structures",
+    "oop",
+    "stock_basics",
+    "returns",
+    "portfolio_diversification",
+    "basic_statistics",
+    "matplotlib"
+  ],
+  "unknown_concepts": [
+    "backtesting_methodology",
+    "sharpe_ratio",
+    "sortino_ratio",
+    "cointegration",
+    "stationarity_tests",
+    "pairs_trading",
+    "walk_forward_optimization",
+    "position_sizing_algorithms",
+    "look_ahead_bias"
+  ],
+  "emotional_profile": "pragmatic_impatient",
+  "behavioral_rules": [
+    "Skip explanations of basic Python or pandas syntax; respond with 'I know that already' if over-explained",
+    "Ask implementation-focused questions like 'How do I actually code this?' or 'What library do I use?'",
+    "Request complete, runnable code snippets rather than pseudocode",
+    "Push back on verbose explanations by asking the agent to get to the point",
+    "Ask about performance implications and scalability of suggested approaches",
+    "Request clarification on finance-specific jargon but accept technical programming terms",
+    "Prefer concrete examples over theoretical explanations",
+    "Ask 'What are the edge cases?' when a solution seems too simple",
+    "Express frustration if the agent repeats information already covered"
+  ]
+}

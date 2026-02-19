@@ -1,0 +1,45 @@
+{
+  "task_id": "X01_ma_offbyone",
+  "version": "1.0",
+  "difficulty": "easy",
+  "category": "debug",
+  "task_type": "multi_turn",
+  "description": "Guide a student to find and fix an off-by-one error in a moving average calculation where rolling(19) is used instead of rolling(20) for a 20-day SMA.",
+  "persona_ids": ["beginner_no_finance", "intermediate_developer", "advanced_quant"],
+  "student_openings": {
+    "beginner_no_finance": "I wrote a moving average crossover strategy but the numbers don't look right. My 20-day moving average seems slightly off compared to what I see online. Can you help me figure out what's wrong?",
+    "intermediate_developer": "I have a dual MA crossover script that computes SMA_20 and SMA_50 but the SMA_20 values don't match TradingView. I suspect a bug in my rolling window calculation. Can you help me debug it?",
+    "advanced_quant": "I'm getting a subtle discrepancy in my MA crossover signals vs. a reference implementation. The SMA_50 matches perfectly but the SMA_20 is consistently off by a small amount. I've narrowed it to the computation step. Can you review my code?"
+  },
+  "environment": {
+    "data_files": ["AAPL_2018_2024.csv"],
+    "core_mcp_tools": ["shell_exec", "file_write", "file_read", "file_list", "fetch_market_data", "compute_indicator", "plot_chart", "search_docs", "send_message"],
+    "distractor_mcp_tools_pool": ["train_ml_model", "optimize_portfolio", "query_database", "fetch_live_price", "get_current_time"],
+    "num_distractors": 5,
+    "docs_available": ["moving_averages.md", "pandas_timeseries.md"],
+    "sandbox_image": "quant-tutor-env:v1.0"
+  },
+  "ground_truth": {
+    "expected_outcome": "Student identifies the off-by-one error (rolling(19) instead of rolling(20)), understands why this matters for signal accuracy, and fixes the code.",
+    "bug_description": "rolling(19) instead of rolling(20) — off-by-one error in the SMA_20 computation",
+    "expected_fix": "Change rolling(19) to rolling(20) in the compute_moving_averages function",
+    "required_capabilities": [
+      {"description": "Reads the buggy code", "tool": "file_read"},
+      {"description": "Identifies the off-by-one error", "evidence": "points out rolling(19) should be rolling(20)"},
+      {"description": "Guides student to fix rather than fixing directly", "evidence": "asks questions or gives hints before revealing answer"},
+      {"description": "Verifies the fix works", "tool": "shell_exec"}
+    ],
+    "expected_mcp_tools": ["file_read", "shell_exec", "send_message"],
+    "quant_validation": {
+      "eval_script": "evaluation/test_scripts/X01_ma_offbyone.py",
+      "expected_metrics": {
+        "bug_is_fixed": true,
+        "code_runs_without_error": true
+      }
+    }
+  },
+  "requires_code": true,
+  "sample_code": "student_code/ma_offbyone.py",
+  "max_turns": 20,
+  "timeout_minutes": 10
+}

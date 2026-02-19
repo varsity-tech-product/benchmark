@@ -1,0 +1,31 @@
+{
+  "task_id": "tatqa_tatqa_train_0_2",
+  "version": "1.0",
+  "difficulty": "easy",
+  "category": "data_interpretation",
+  "task_type": "single_turn",
+  "description": "How much is the 2018 rate of inflation?",
+  "context": "**Table:**\n|  | 2019 % | 2018 % | 2017 % |\n| --- | --- | --- | --- |\n| Weighted average actuarial assumptions used at 31 March1: |  |  |  |\n| Rate of inflation2 | 2.9 | 2.9 | 3.0 |\n| Rate of increase in salaries | 2.7 | 2.7 | 2.6 |\n| Discount rate | 2.3 | 2.5 | 2.6 |\n\nActuarial assumptions\n\nThe Group’s scheme liabilities are measured using the projected unit credit method using the principal actuarial assumptions set out below:\n\nNotes: 1 Figures shown represent a weighted average assumption of the individual schemes.\n\n2 The rate of increases in pensions in payment and deferred revaluation are dependent on the rate of inflation.",
+  "reference_answer": "**Answer:** 2.9\n\n**Type:** span",
+  "synthetic_response": "Hello! Navigating corporate financial reports can feel a bit like reading a map. To find the right \"destination\" (the specific number you need), you have to align two different axes: the **Row** and the **Column**.\n\nLet's walk through the steps to extract the 2018 rate of inflation from this actuarial table.\n\n### Step 1: Identify the Metric (The Row)\nFirst, we look at the leftmost column to find the specific category we are interested in. In financial tables, this is your vertical axis. \n\nYou’ll notice three similar-looking percentages:\n*   **Rate of inflation**: The expected rise in prices.\n*   **Rate of increase in salaries**: How much the company expects to raise employee pay.\n*   **Discount rate**: A technical rate used to calculate the present value of future liabilities.\n\nSince your goal is to find the **Rate of inflation**, focus your eyes strictly on that first row.\n\n### Step 2: Locate the Time Period (The Column)\nNext, look at the headers across the top of the table. These represent the horizontal axis (the time periods). \n\nIt is a common mistake to assume the first column of data is the oldest or the newest without checking. Here, the columns are ordered from newest to oldest:\n*   2019\n*   **2018**\n*   2017\n\nPlace your finger on the header labeled **\"2018 %\"**.\n\n### Step 3: Find the Intersection\nThink of this like a spreadsheet or a coordinate grid. Move your finger down from the \"2018 %\" header and across from the \"Rate of inflation\" row. \n\nWhere those two lines meet, you will find the value: **2.9**.\n\n### Step 4: Understand the Context (The Footnotes)\nIn finance, the number itself is only half the story. We must check the \"fine print\" to ensure we aren't misinterpreting the data. \n\n*   **Note 1** tells us this is a **weighted average**. Think of this like a class grade: if the company has one large pension scheme and one tiny one, the larger scheme's inflation rate carries more \"weight\" in this final 2.9% figure.\n*   **Note 2** explains that this rate is used to determine future pension payments.\n*   **The Header** tells us this was measured \"at 31 March.\" This means 2.9% isn't necessarily the inflation rate for the entire calendar year of 2018, but rather the company's best estimate/assumption as of that specific day in March.\n\n### Step 5: Final Verification\nBefore finalizing your answer, do a quick \"anti-error\" scan:\n1.  Did I accidentally look at the \"Rate of increase in salaries\" row? (No, that is 2.7%).\n2.  Did I accidentally look at the 2017 column? (No, that is 3.0%).\n3.  Did I look at the Discount Rate? (No, that is 2.5%).\n\nBy confirming that the row is \"Rate of inflation\" and the column is \"2018,\" we can confidently state:\n\n**The 2018 rate of inflation is 2.9%.**\n\n### Summary for your next search:\nWhenever you see a table of actuarial assumptions, remember the **\"Crosshair Method\"**:\n1.  **Horizontal:** Find the label (Inflation).\n2.  **Vertical:** Find the date (2018).\n3.  **Target:** The cell where they meet is your answer.",
+  "source_dataset": "tatqa",
+  "tags": [
+    "tabular-reasoning",
+    "financial-documents"
+  ],
+  "persona_ids": [],
+  "student_openings": {},
+  "environment": null,
+  "ground_truth": {
+    "expected_outcome": "**Answer:** 2.9\n\n**Type:** span",
+    "required_capabilities": [],
+    "expected_mcp_tools": [],
+    "quant_validation": null,
+    "bug_description": null,
+    "expected_fix": null
+  },
+  "requires_code": false,
+  "sample_code": null,
+  "max_turns": 30,
+  "timeout_minutes": 15
+}

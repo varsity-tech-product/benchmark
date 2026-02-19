@@ -1,0 +1,149 @@
+"""MCP Proxy Layer for QuantTutorBench.
+
+Intercepts all tool calls from the Agent Under Test, logs them,
+forwards to real implementations, logs results, and returns to agent.
+"""
+
+import time
+from dataclasses import dataclass
+from typing import Callable, Optional
+
+
+@dataclass
+class ToolCallLog:
+    """Record of a single tool call."""
+
+    name: str
+    args: dict
+    result: str = ""
+    timestamp: float = 0.0
+    duration_ms: float = 0.0
+    success: bool = True
+    turn_index: int = 0
+
+
+class MCPProxy:
+    """Transparent proxy that logs all tool calls.
+
+    Usage:
+        proxy = MCPProxy()
+        proxy.register_tool("shell_exec", shell_exec_func)
+        proxy.register_distractor("search_web", "Error: No network")
+
+        # Agent calls tool through proxy:
+        result = proxy.call_tool("shell_exec", command="ls", timeout=10)
+
+        # After conversation, get all logs:
+        logs = proxy.get_logs()
+    """
+
+    def __init__(self):
+        self._tools: dict[str, Callable] = {}
+        self._distractors: dict[str, str] = {}
+        self._tool_schemas: dict[str, dict] = {}
+        self._logs: list[ToolCallLog] = []
+        self._current_turn: int = 0
+
+    def register_tool(
+        self,
+        name: str,
+        func: Callable,
+        description: str = "",
+        params: Optional[dict] = None,
+    ):
+        """Register a real tool implementation."""
+        self._tools[name] = func
+        self._tool_schemas[name] = {
+            "name": name,
+            "description": description,
+            "parameters": params or {},
+        }
+
+    def register_distractor(
+        self,
+        name: str,
+        error_message: str,
+        description: str = "",
+        params: Optional[dict] = None,
+    ):
+        """Register a distractor tool (always returns error)."""
+        self._distractors[name] = error_message
+        self._tool_schemas[name] = {
+            "name": name,
+            "description": description,
+            "parameters": params or {},
+        }
+
+    def set_turn(self, turn_index: int):
+        """Set the current conversation turn index."""
+        self._current_turn = turn_index
+
+    def get_available_tools(self) -> list[dict]:
+        """Get the list of all available tools (core + distractors) for the agent."""
+        return list(self._tool_schemas.values())
+
+    def call_tool(self, name: str, **kwargs) -> str:
+        """Call a tool through the proxy, logging the interaction."""
+        start_time = time.time()
+        timestamp = start_time
+
+        log = ToolCallLog(
+            name=name, args=kwargs, timestamp=timestamp, turn_index=self._current_turn
+        )
+
+        try:
+            if name in self._distractors:
+                result = self._distractors[name]
+                log.success = False
+            elif name in self._tools:
+                result = self._tools[name](**kwargs)
+                log.success = True
+            else:
+                result = f"Error: Unknown tool '{name}'"
+                log.success = False
+
+            log.result = str(result)
+        except Exception as e:
+            log.result = f"Error: {type(e).__name__}: {str(e)}"
+            log.success = False
+
+        log.duration_ms = (time.time() - start_time) * 1000
+        self._logs.append(log)
+
+        return log.result
+
+    def get_logs(self) -> list[ToolCallLog]:
+        """Get all recorded tool call logs."""
+        return list(self._logs)
+
+    def get_logs_for_turn(self, turn_index: int) -> list[ToolCallLog]:
+        """Get logs for a specific conversation turn."""
+        return [entry for entry in self._logs if entry.turn_index == turn_index]
+
+    def get_tool_names_called(self) -> list[str]:
+        """Get unique tool names that were called."""
+        return list(set(entry.name for entry in self._logs))
+
+    def get_distractor_calls(self) -> list[ToolCallLog]:
+        """Get all calls to distractor tools."""
+        return [entry for entry in self._logs if entry.name in self._distractors]
+
+    def reset(self):
+        """Reset all logs."""
+        self._logs.clear()
+        self._current_turn = 0
+
+    def to_dict(self) -> list[dict]:
+        """Export logs as list of dicts."""
+        return [
+            {
+                "name": entry.name,
+                "args": entry.args,
+                "result": entry.result[:500],  # Truncate for storage
+                "timestamp": entry.timestamp,
+                "duration_ms": round(entry.duration_ms, 2),
+                "success": entry.success,
+                "turn_index": entry.turn_index,
+            }
+            for entry in self._logs
+        ]

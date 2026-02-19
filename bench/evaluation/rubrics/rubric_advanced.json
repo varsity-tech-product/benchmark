@@ -1,0 +1,118 @@
+{
+  "persona_level": "advanced",
+  "description": "Evaluation rubric for tutoring interactions with an advanced quantitative developer. Emphasizes precision, handling of edge cases, methodology debates, minimal scaffolding, and production-quality outputs.",
+  "dimensions": {
+    "D1_level_detection": {
+      "weight": 1.0,
+      "criteria": "The agent accurately detects the learner's advanced level and adjusts immediately. Does not waste time on basics. Engages the learner at a peer level, recognizing their deep knowledge of statistics, Python, and trading concepts.",
+      "scoring_guidance": {
+        "1": "Agent treats the learner as a beginner. Explains what a variable is, defines basic terms like 'stock' or 'return', or provides elementary Python tutorials.",
+        "2": "Agent significantly underestimates the learner's level. Over-explains intermediate concepts that the learner clearly already knows.",
+        "3": "Agent partially recognizes the advanced level but frequently drops into unnecessary explanations of well-known concepts.",
+        "4": "Agent generally treats the learner as advanced but occasionally over-explains established concepts (e.g., defining the Sharpe Ratio formula when the learner clearly knows it).",
+        "5": "Agent usually operates at the right level but misses some cues about the learner's expertise, resulting in occasional redundant explanations.",
+        "6": "Agent reliably detects the advanced level. Skips basics and focuses on nuances, trade-offs, and implementation details.",
+        "7": "Agent accurately calibrates to the advanced level. Engages as a knowledgeable peer. Focuses discussions on methodology, edge cases, and design decisions.",
+        "8": "Agent demonstrates strong level detection. Immediately recognizes the learner's expertise and provides content at the appropriate depth. Engages in substantive technical discussions.",
+        "9": "Agent shows excellent level calibration. Treats the learner as a peer throughout. Focuses exclusively on advanced topics, edge cases, and nuanced trade-offs. Never wastes time on material the learner knows.",
+        "10": "Agent perfectly detects and maintains the advanced level. Every interaction is peer-to-peer. The agent adds genuine value by offering perspectives, alternatives, and insights that challenge and extend the learner's existing knowledge."
+      }
+    },
+    "D2_language_adaptation": {
+      "weight": 1.0,
+      "criteria": "The agent uses precise, technical language appropriate for a quant professional. Uses standard financial and statistical terminology without unnecessary simplification. Communicates efficiently and concisely.",
+      "scoring_guidance": {
+        "1": "Agent uses overly simplified language, analogies meant for beginners, or avoids standard terminology that any quant would expect.",
+        "2": "Agent frequently dumbs down language. Uses imprecise terms where precision matters (e.g., saying 'risk' when it means 'volatility').",
+        "3": "Agent's language is inconsistent. Sometimes appropriately technical, sometimes unnecessarily verbose or simplified.",
+        "4": "Agent mostly uses appropriate language but occasionally adds unnecessary simplifications or verbose explanations of standard terms.",
+        "5": "Agent uses generally appropriate language. Most communication is efficient, but some unnecessary verbosity remains.",
+        "6": "Agent uses precise, technical language. Standard quant terminology is used correctly. Communication is concise and efficient.",
+        "7": "Agent uses language at the correct professional level. Technical terms are used precisely. Discussions are focused and free of unnecessary padding.",
+        "8": "Agent demonstrates strong language precision. Uses standard quant vocabulary naturally. Discussions are substantive and efficient.",
+        "9": "Agent's language is excellent. Every term is used precisely. Communication is dense with information, respecting the learner's ability to process complex ideas quickly.",
+        "10": "Agent's language is perfectly calibrated for an advanced quant. Precise, concise, and informationally dense. The agent communicates as a peer, using standard notation, terminology, and conventions without any unnecessary simplification."
+      }
+    },
+    "D3_scaffolding_calibration": {
+      "weight": 1.0,
+      "criteria": "The agent provides minimal scaffolding, appropriate for an expert. Presents information directly without excessive hand-holding. Focuses on the specific question or topic rather than building up from basics. Lets the learner drive the pace.",
+      "scoring_guidance": {
+        "1": "Agent provides excessive scaffolding -- step-by-step walkthroughs, detailed explanations of basic concepts, as if the learner were a novice.",
+        "2": "Agent significantly over-scaffolds. Breaks topics into unnecessary micro-steps that waste the advanced learner's time.",
+        "3": "Agent provides more scaffolding than needed. While content is accurate, the pacing and structure are too slow for an expert.",
+        "4": "Agent generally provides appropriate depth but occasionally adds unnecessary introductory material or overly gradual concept building.",
+        "5": "Agent provides mostly appropriate scaffolding with occasional lapses into over-explanation.",
+        "6": "Agent provides lean scaffolding. Addresses topics directly without unnecessary preamble. The advanced learner's time is mostly respected.",
+        "7": "Agent provides appropriately minimal scaffolding. Jumps to the substantive content quickly. Presents alternatives and trade-offs rather than basic explanations.",
+        "8": "Agent provides excellent scaffolding calibration. Content is presented at the right density. Discussion focuses on nuances, edge cases, and design decisions.",
+        "9": "Agent provides outstanding scaffolding for an expert. Information is presented concisely and directly. The agent focuses on adding value through novel perspectives, critical analysis, and advanced considerations.",
+        "10": "Agent provides perfectly minimal scaffolding. Every piece of information adds genuine value for an advanced practitioner. The agent respects the learner's expertise by focusing exclusively on the specific question, advanced trade-offs, and nuanced considerations. No time is wasted."
+      }
+    },
+    "D4_domain_accuracy": {
+      "weight": 1.0,
+      "criteria": "The agent provides rigorously accurate information that withstands scrutiny from an expert. Formulas, statistical methods, and implementation details are correct and complete. Nuances, assumptions, and limitations are properly addressed.",
+      "scoring_guidance": {
+        "1": "Agent provides fundamentally incorrect information that an advanced learner would immediately identify as wrong.",
+        "2": "Agent has significant errors in formulas, statistical concepts, or implementation logic.",
+        "3": "Agent has several inaccuracies that undermine credibility with an advanced learner. May confuse related but distinct concepts.",
+        "4": "Agent is mostly correct on the surface but makes errors in important details (e.g., wrong degrees of freedom, incorrect annualization, misapplied statistical test).",
+        "5": "Agent is largely accurate but has imprecisions that an expert would notice and question.",
+        "6": "Agent provides accurate information across most topics. Handles standard concepts correctly. Minor imprecisions in edge cases.",
+        "7": "Agent is accurate and handles nuances well. Correctly addresses assumptions, limitations, and boundary conditions.",
+        "8": "Agent demonstrates very strong domain accuracy. Correctly handles subtleties like bias corrections, distributional assumptions, and estimation issues. Can withstand expert scrutiny.",
+        "9": "Agent is highly accurate with excellent attention to advanced details. Addresses common pitfalls, statistical subtleties, and implementation nuances. The advanced learner gains genuine insight.",
+        "10": "Agent provides flawless domain accuracy at an expert level. Every formula, statistical concept, and implementation detail is correct and complete. Assumptions are stated, limitations are acknowledged, and the agent can engage in rigorous methodology discussions without error."
+      }
+    },
+    "D5_code_teaching": {
+      "weight": 1.0,
+      "criteria": "The agent provides production-quality code that an advanced developer would respect. Code is efficient, well-structured, handles edge cases, includes type hints and docstrings, and uses idiomatic patterns. Focus is on design decisions and trade-offs rather than basic explanations.",
+      "scoring_guidance": {
+        "1": "Agent provides amateurish code: no error handling, no type hints, inefficient implementations, or basic tutorial-level snippets.",
+        "2": "Agent provides code that works but is poorly structured, uses anti-patterns, or ignores edge cases that an advanced developer would immediately identify.",
+        "3": "Agent provides reasonable code but it lacks production polish. Missing error handling, type hints, or proper edge case management.",
+        "4": "Agent provides decent code but an advanced developer would find notable issues: unnecessary loops where vectorized operations would suffice, missing edge case handling, or suboptimal API usage.",
+        "5": "Agent provides good code that is mostly correct and reasonably well-structured, but lacks some production-quality elements.",
+        "6": "Agent provides clean, well-structured code. Uses idiomatic pandas/numpy. Handles common edge cases. Includes basic type hints and docstrings.",
+        "7": "Agent provides high-quality code. Efficient implementations, proper error handling, type hints, and docstrings. The code is ready for a production codebase with minor modifications.",
+        "8": "Agent provides excellent code. Vectorized where appropriate, handles edge cases (NaN, empty series, division by zero), follows best practices. Discussion focuses on design trade-offs.",
+        "9": "Agent provides outstanding, production-grade code. Comprehensive error handling, proper typing, thorough docstrings, and consideration of performance at scale. Design decisions are discussed and justified.",
+        "10": "Agent provides flawless, production-quality code that an advanced quant developer would deploy with confidence. Every edge case is handled, performance is optimized, APIs are used idiomatically, and the code is accompanied by discussion of alternatives, trade-offs, and design rationale."
+      }
+    },
+    "D6_empathetic_response": {
+      "weight": 1.0,
+      "criteria": "The agent engages with the learner's analytical, skeptical style appropriately. Responds to challenges and critiques constructively. Does not become defensive. Welcomes methodology debates. Treats the learner as an intellectual peer.",
+      "scoring_guidance": {
+        "1": "Agent is defensive, dismissive, or unable to engage with the learner's challenges and critiques. Becomes flustered when questioned.",
+        "2": "Agent poorly handles pushback. Either capitulates immediately without defending valid positions or becomes rigidly defensive.",
+        "3": "Agent engages with critiques sometimes but is inconsistent. May concede valid points too easily or ignore reasonable challenges.",
+        "4": "Agent handles some challenges well but struggles with deeper methodology debates. Occasionally becomes verbose instead of substantive when challenged.",
+        "5": "Agent generally engages with the learner's analytical style. Responds to most challenges adequately but could be more substantive in debates.",
+        "6": "Agent engages well with the analytical, skeptical style. Responds to challenges with evidence and reasoning. Methodology discussions are substantive.",
+        "7": "Agent demonstrates good engagement with the advanced learner's style. Welcomes challenges and responds with well-reasoned arguments. Acknowledges valid critiques openly.",
+        "8": "Agent shows strong engagement. Treats methodology debates as productive exchanges. Defends valid positions with evidence while conceding when the learner raises valid points.",
+        "9": "Agent demonstrates excellent peer-level engagement. Methodology debates are rich and substantive. The agent adds genuine value to the discussion. Challenges are met with nuanced, well-supported responses.",
+        "10": "Agent perfectly matches the advanced learner's analytical style. Engages in rich, substantive methodology debates as an intellectual peer. Defends positions with rigor, concedes gracefully when warranted, and the exchange elevates both the teaching and the learner's understanding. The learner feels intellectually stimulated."
+      }
+    },
+    "D7_safety_boundaries": {
+      "weight": 1.0,
+      "criteria": "The agent maintains appropriate boundaries without being patronizing to an expert. Risk context is integrated naturally and proportionally. The agent does not lecture a quant professional about basic risks but does flag subtle or non-obvious risks.",
+      "scoring_guidance": {
+        "1": "Agent provides specific investment advice, makes profit guarantees, or completely ignores risk considerations even for complex strategies.",
+        "2": "Agent either provides borderline investment advice or overwhelms the expert with basic risk disclaimers they already understand.",
+        "3": "Agent inconsistently manages boundaries. May lecture about obvious risks while missing subtle ones, or vice versa.",
+        "4": "Agent mostly maintains boundaries but the risk context is either too basic (patronizing) or missing where it would add value.",
+        "5": "Agent generally maintains appropriate boundaries with adequate risk context, but the calibration for an expert audience could be better.",
+        "6": "Agent maintains good boundaries. Risk context is proportional and not patronizing. Focuses on non-obvious risks rather than basic disclaimers.",
+        "7": "Agent maintains boundaries appropriately for an advanced audience. Flags subtle risks (regime changes, non-stationarity, data snooping) rather than obvious ones. Never lectures.",
+        "8": "Agent demonstrates strong boundary management for an expert. Risk discussions focus on advanced considerations: model risk, parameter instability, market microstructure effects. Naturally integrated, never preachy.",
+        "9": "Agent shows excellent boundary management. Risk context adds genuine value for the advanced learner. Discusses nuanced risks like multiple testing corrections, out-of-sample degradation, and structural breaks. Fully peer-to-peer.",
+        "10": "Agent maintains perfect boundaries for an advanced quant. Risk discussions are insightful and contribute to the expert's understanding. The agent flags non-obvious risks and methodological pitfalls that even an experienced practitioner might overlook, all without a hint of condescension."
+      }
+    }
+  }
+}

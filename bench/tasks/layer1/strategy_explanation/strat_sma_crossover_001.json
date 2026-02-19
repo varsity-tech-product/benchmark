@@ -1,0 +1,32 @@
+{
+  "task_id": "strat_sma_crossover_001",
+  "version": "1.0",
+  "difficulty": "easy",
+  "category": "strategy_explanation",
+  "task_type": "single_turn",
+  "description": "Can you explain what a moving average crossover strategy is and how it works for trading stocks?",
+  "context": null,
+  "reference_answer": "A moving average crossover strategy generates buy/sell signals when a short-term moving average (e.g., 50-day SMA) crosses above or below a long-term moving average (e.g., 200-day SMA). A 'golden cross' (short crosses above long) signals a buy, while a 'death cross' (short crosses below long) signals a sell. The strategy is trend-following: it profits in sustained trends but suffers in sideways/choppy markets due to whipsaw signals. Key parameters include the lookback windows and the choice between SMA vs. EMA. Transaction costs and slippage must be considered. The strategy lags by construction — it identifies trends after they begin, not at the start.",
+  "synthetic_response": "Great question! Let me walk you through this step by step.\n\n## What Is a Moving Average?\n\nA moving average is like checking the average temperature over the past week instead of just today's reading. It smooths out daily noise to reveal the underlying trend.\n\nFor stocks, a **50-day Simple Moving Average (SMA)** adds up the last 50 closing prices and divides by 50. Each day, the oldest price drops off and the newest one is added.\n\n## The Crossover Strategy\n\nThe idea is simple: use **two** moving averages with different timeframes:\n- **Fast MA** (e.g., 50-day): Reacts quickly to recent price changes\n- **Slow MA** (e.g., 200-day): Shows the longer-term trend\n\n**Buy Signal (Golden Cross):** When the fast MA crosses ABOVE the slow MA, it suggests the recent trend is turning bullish — prices are rising faster than the long-term average.\n\n**Sell Signal (Death Cross):** When the fast MA crosses BELOW the slow MA, it suggests the trend is turning bearish.\n\n## A Real Example\n\nDuring the 2020 COVID crash, SPY's 50-day SMA crossed below the 200-day SMA in late March (death cross). Then in early July, it crossed back above (golden cross), signaling the recovery trend.\n\n## Important Limitations\n\n1. **It's a lagging indicator**: By the time the crossover happens, the trend has already been underway. You'll never buy at the bottom or sell at the top.\n2. **Whipsaw in sideways markets**: If the stock bounces in a range, the MAs will keep crossing back and forth, generating false signals and racking up transaction costs.\n3. **No guarantee**: Past crossovers don't predict future ones.\n\nWould you like to see how to code this in Python and test it on real data?",
+  "source_dataset": "strategy_explanation",
+  "tags": [
+    "strategy",
+    "trend-following",
+    "moving-averages"
+  ],
+  "persona_ids": [],
+  "student_openings": {},
+  "environment": null,
+  "ground_truth": {
+    "expected_outcome": "A moving average crossover strategy generates buy/sell signals when a short-term moving average (e.g., 50-day SMA) crosses above or below a long-term moving average (e.g., 200-day SMA). A 'golden cross' (short crosses above long) signals a buy, while a 'death cross' (short crosses below long) signals a sell. The strategy is trend-following: it profits in sustained trends but suffers in sideways/choppy markets due to whipsaw signals. Key parameters include the lookback windows and the choice between SMA vs. EMA. Transaction costs and slippage must be considered. The strategy lags by construction — it identifies trends after they begin, not at the start.",
+    "required_capabilities": [],
+    "expected_mcp_tools": [],
+    "quant_validation": null,
+    "bug_description": null,
+    "expected_fix": null
+  },
+  "requires_code": false,
+  "sample_code": null,
+  "max_turns": 30,
+  "timeout_minutes": 15
+}

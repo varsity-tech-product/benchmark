@@ -1,0 +1,33 @@
+{
+  "task_id": "strat_momentum_004",
+  "version": "1.0",
+  "difficulty": "medium",
+  "category": "strategy_explanation",
+  "task_type": "single_turn",
+  "description": "How does a momentum strategy work in practice? I understand the basic idea of 'buy winners, sell losers' but want to know the implementation details and risks.",
+  "context": null,
+  "reference_answer": "Cross-sectional momentum ranks a universe of assets by past returns (typically 12-month return, skipping the most recent month to avoid short-term reversal). Long the top decile, short the bottom decile, rebalance monthly. The 1-month skip ('formation gap') avoids the short-term reversal effect. Key implementation details: (1) universe selection and liquidity filters, (2) signal construction (total return vs. risk-adjusted), (3) portfolio weighting (equal-weight vs. volatility-adjusted), (4) rebalance frequency and turnover management. Major risks: momentum crashes (sharp reversals after market downturns, e.g., 2009 March), high turnover and transaction costs, crowding when too many funds run the same strategy, and underperformance during market regime transitions.",
+  "synthetic_response": "Good question — let's go beyond 'buy winners' and into the actual mechanics.\n\n## Cross-Sectional vs. Time-Series Momentum\n\nFirst, an important distinction:\n- **Time-series momentum**: Does each asset's OWN past return predict its future return? (Trend-following)\n- **Cross-sectional momentum**: Does an asset's return RELATIVE TO PEERS predict its future relative return? (What we're discussing)\n\nCross-sectional momentum doesn't care about absolute direction — in a market crash, the 'winners' might just be the stocks that fell least.\n\n## The Classic Implementation (Jegadeesh & Titman, 1993)\n\n### Step 1: Signal Construction\n- Compute each stock's **cumulative return over months t-12 to t-2** (the 12-1 month lookback)\n- The most recent month (t-1) is intentionally **skipped**\n\n### Step 2: Why Skip the Last Month?\nThere's a well-documented **short-term reversal** effect: stocks that rose sharply last month tend to fall slightly this month (microstructure effects, bid-ask bounce, short-term mean reversion). Including it would contaminate the momentum signal.\n\n### Step 3: Portfolio Construction\n- Rank all stocks by their 12-1 momentum signal\n- **Long** the top decile (10% of stocks with highest past returns)\n- **Short** the bottom decile (10% with lowest past returns)\n- Rebalance monthly\n\n### Step 4: Practical Enhancements\n- **Liquidity filter**: Exclude micro-caps and illiquid stocks (they distort returns and can't be traded at scale)\n- **Volatility scaling**: Weight positions inversely to volatility to prevent a few volatile stocks from dominating\n- **Sector neutrality**: Run momentum within sectors to avoid unintended sector bets\n\n## The Dark Side: Momentum Crashes\n\nMomentum's biggest risk is **sharp, sudden reversals**, typically after market downturns:\n\n**Case study — March 2009**: After the financial crisis bottom, beaten-down bank stocks surged 100%+ while defensive winners lagged. A momentum portfolio was short banks (past losers) and long defensives (past winners) — the exact wrong positioning. Losses of -40% to -60% in a single quarter.\n\nThis happens because momentum portfolios develop option-like payoffs: short convexity during market reversals.\n\n## Transaction Costs\n\nMomentum has inherently **high turnover** (~100-200% annually). Each rebalance involves buying new winners and selling former winners. At institutional scale, this cost drag can consume 2-4% of annual returns.\n\nWant to build this in Python using real stock data?",
+  "source_dataset": "strategy_explanation",
+  "tags": [
+    "strategy",
+    "momentum",
+    "cross-sectional",
+    "factor-investing"
+  ],
+  "persona_ids": [],
+  "student_openings": {},
+  "environment": null,
+  "ground_truth": {
+    "expected_outcome": "Cross-sectional momentum ranks a universe of assets by past returns (typically 12-month return, skipping the most recent month to avoid short-term reversal). Long the top decile, short the bottom decile, rebalance monthly. The 1-month skip ('formation gap') avoids the short-term reversal effect. Key implementation details: (1) universe selection and liquidity filters, (2) signal construction (total return vs. risk-adjusted), (3) portfolio weighting (equal-weight vs. volatility-adjusted), (4) rebalance frequency and turnover management. Major risks: momentum crashes (sharp reversals after market downturns, e.g., 2009 March), high turnover and transaction costs, crowding when too many funds run the same strategy, and underperformance during market regime transitions.",
+    "required_capabilities": [],
+    "expected_mcp_tools": [],
+    "quant_validation": null,
+    "bug_description": null,
+    "expected_fix": null
+  },
+  "requires_code": false,
+  "sample_code": null,
+  "max_turns": 30,
+  "timeout_minutes": 15
+}
