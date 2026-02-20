@@ -1,9 +1,12 @@
 """OpenAI Agent SDK adapter for QuantTutorBench.
 
-Wraps agents built with the OpenAI Agents SDK (openai-agents) to work
-with the benchmark's conversation loop and MCP proxy.
+Uses the SDK's Runner agent loop for multi-step reasoning: the agent can
+make multiple tool calls autonomously within a single generate_response()
+call, controlled by max_turns. Dynamic instructions inject per-task context.
 
-Uses native OpenAI API with OPENAI_API_KEY from .env.
+Supports both native OpenAI API and OpenRouter routing.
+When base_url is provided (e.g. OpenRouter), uses OpenAIChatCompletionsModel
+with a custom AsyncOpenAI client for clean isolation from env vars.
 
 Install: pip install openai-agents
 
@@ -27,38 +30,97 @@ from config.llm_config import OPENAI_AGENT_MODEL
 
 try:
     from agents import Agent, Runner
+    from agents.model_settings import ModelSettings
     from agents.tool import FunctionTool
 
     OPENAI_AGENTS_AVAILABLE = True
 except ImportError:
     OPENAI_AGENTS_AVAILABLE = False
 
+# Max LLM invocations per generate_response() call.
+# The SDK agent loop: LLM call -> tool execution -> LLM call -> ...
+# until final text output. Each LLM call counts as one turn.
+DEFAULT_AGENT_MAX_TURNS = 8
+
 
 class OpenAIAgentAdapter(BaseAgentAdapter):
     """Adapter for agents built with the OpenAI Agents SDK.
 
-    Uses native OpenAI API (not OpenRouter). Requires OPENAI_API_KEY in .env.
+    Uses the SDK's Runner for true agentic behavior: the agent can chain
+    multiple tool calls autonomously within a single conversation turn.
+
+    Supports two modes:
+      - Native OpenAI API (default): uses OPENAI_API_KEY
+      - OpenRouter routing: pass base_url to route through OpenRouter
     """
 
     def __init__(
         self,
         model: str = OPENAI_AGENT_MODEL,
         api_key: Optional[str] = None,
+        base_url: Optional[str] = None,
         system_prompt: str = "",
         agent_name: str = "openai_agent_sdk",
+        max_turns: int = DEFAULT_AGENT_MAX_TURNS,
     ):
         super().__init__(agent_name=agent_name)
         self.model = model
-        self.api_key = api_key or os.environ.get("OPENAI_API_KEY", "")
+        self.base_url = base_url
         self.system_prompt = system_prompt or TUTOR_SYSTEM_PROMPT
+        self.max_turns = max_turns
+        self._task_context = ""
+
+        if base_url:
+            # Custom provider (e.g. OpenRouter): prefer OPENROUTER_API_KEY
+            self.api_key = (
+                api_key
+                or os.environ.get("OPENROUTER_API_KEY", "")
+                or os.environ.get("OPENAI_API_KEY", "")
+            )
+        else:
+            # Native OpenAI
+            self.api_key = api_key or os.environ.get("OPENAI_API_KEY", "")
 
         if not self.api_key:
-            raise ValueError("OPENAI_API_KEY not set in .env")
+            key_name = "OPENROUTER_API_KEY" if base_url else "OPENAI_API_KEY"
+            raise ValueError(f"{key_name} not set in .env")
 
-        # Set env vars for the Agent SDK to pick up (native OpenAI, no base_url override)
-        os.environ["OPENAI_API_KEY"] = self.api_key
-        # Remove any OpenRouter base_url that might have been set globally
-        os.environ.pop("OPENAI_BASE_URL", None)
+        if not base_url:
+            # Native OpenAI mode: set env vars for the Agent SDK
+            os.environ["OPENAI_API_KEY"] = self.api_key
+            os.environ.pop("OPENAI_BASE_URL", None)
+
+    def set_task_context(self, context: str):
+        """Set per-task dynamic context injected into system prompt."""
+        self._task_context = context
+
+    def _dynamic_instructions(self, ctx, agent):
+        """Dynamic instructions callable for the Agent.
+
+        The SDK calls this before each LLM invocation, allowing per-task
+        context to be injected alongside the base system prompt.
+        """
+        base = self.system_prompt
+        if self._task_context:
+            base += "\n\n" + self._task_context
+        return base
+
+    def _resolve_model(self):
+        """Resolve the model object for the Agent SDK.
+
+        When base_url is set, returns an OpenAIChatCompletionsModel with a
+        custom AsyncOpenAI client. Otherwise returns the model name string
+        for native OpenAI.
+        """
+        if self.base_url:
+            from agents.models.openai_chatcompletions import (
+                OpenAIChatCompletionsModel,
+            )
+            from openai import AsyncOpenAI
+
+            client = AsyncOpenAI(api_key=self.api_key, base_url=self.base_url)
+            return OpenAIChatCompletionsModel(model=self.model, openai_client=client)
+        return self.model
 
     def generate_response(
         self,
@@ -66,7 +128,12 @@ class OpenAIAgentAdapter(BaseAgentAdapter):
         available_tools: list[dict],
         tool_callback: Optional[callable] = None,
     ) -> str:
-        """Generate a response using the OpenAI Agents SDK."""
+        """Generate a response using the OpenAI Agents SDK.
+
+        The SDK's Runner handles the agent loop internally:
+        LLM call -> tool execution -> LLM call -> ... -> final text output.
+        This allows the agent to chain multiple tool calls autonomously.
+        """
         if not OPENAI_AGENTS_AVAILABLE:
             return self._fallback_completions(messages, available_tools, tool_callback)
 
@@ -75,19 +142,28 @@ class OpenAIAgentAdapter(BaseAgentAdapter):
 
             agent = Agent(
                 name="quant_tutor",
-                instructions=self.system_prompt,
-                model=self.model,
+                instructions=self._dynamic_instructions,
+                model=self._resolve_model(),
                 tools=agent_tools,
+                model_settings=ModelSettings(tool_choice="auto"),
             )
 
-            # Get the last user message
-            last_user_msg = ""
-            for msg in reversed(messages):
-                if msg["role"] == "user":
-                    last_user_msg = msg["content"]
-                    break
+            # Pass full conversation history to Runner.run_sync().
+            # The SDK accepts list[TResponseInputItem] — standard
+            # {"role": "user"|"assistant", "content": "..."} dicts.
+            # Filter to user/assistant only; system prompt is set via
+            # Agent(instructions=...).
+            input_items = [
+                {"role": msg["role"], "content": msg["content"]}
+                for msg in messages
+                if msg["role"] in ("user", "assistant")
+            ]
 
-            result = Runner.run_sync(agent, last_user_msg)
+            result = Runner.run_sync(
+                agent,
+                input_items,
+                max_turns=self.max_turns,
+            )
             return result.final_output or ""
 
         except Exception as e:
@@ -119,18 +195,29 @@ class OpenAIAgentAdapter(BaseAgentAdapter):
             fn = make_tool_fn(tool_name, tool_callback)
 
             properties = {}
-            required = []
-            for param_name in params:
-                properties[param_name] = {
-                    "type": "string",
-                    "description": f"{param_name} parameter",
-                }
-                required.append(param_name)
+            required_list = []
+            for param_name, param_info in params.items():
+                if isinstance(param_info, dict):
+                    prop = {
+                        "type": param_info.get("type", "string"),
+                        "description": param_info.get("description", param_name),
+                    }
+                    if "items" in param_info:
+                        prop["items"] = param_info["items"]
+                    properties[param_name] = prop
+                    if param_info.get("required", False):
+                        required_list.append(param_name)
+                else:
+                    properties[param_name] = {
+                        "type": "string",
+                        "description": param_name,
+                    }
 
             schema = {
                 "type": "object",
                 "properties": properties,
-                "required": required,
+                "required": required_list,
+                "additionalProperties": False,
             }
 
             agent_tools.append(
@@ -139,6 +226,7 @@ class OpenAIAgentAdapter(BaseAgentAdapter):
                     description=tool_desc,
                     params_json_schema=schema,
                     on_invoke_tool=fn,
+                    strict_json_schema=False,
                 )
             )
 
@@ -156,7 +244,10 @@ class OpenAIAgentAdapter(BaseAgentAdapter):
         except ImportError:
             return "[Error: neither openai-agents nor openai package available]"
 
-        client = OpenAI(api_key=self.api_key)
+        client_kwargs = {"api_key": self.api_key}
+        if self.base_url:
+            client_kwargs["base_url"] = self.base_url
+        client = OpenAI(**client_kwargs)
 
         api_messages = [{"role": "system", "content": self.system_prompt}]
         api_messages.extend(messages)
@@ -213,11 +304,30 @@ class OpenAIAgentAdapter(BaseAgentAdapter):
         for tool in tools:
             params = tool.get("parameters", {})
             properties = {}
-            for param_name, param_type in params.items():
-                properties[param_name] = {
-                    "type": "string",
-                    "description": f"{param_name} parameter",
-                }
+            required_list = []
+            for param_name, param_info in params.items():
+                if isinstance(param_info, dict):
+                    prop = {
+                        "type": param_info.get("type", "string"),
+                        "description": param_info.get("description", param_name),
+                    }
+                    if "items" in param_info:
+                        prop["items"] = param_info["items"]
+                    properties[param_name] = prop
+                    if param_info.get("required", False):
+                        required_list.append(param_name)
+                else:
+                    properties[param_name] = {
+                        "type": "string",
+                        "description": param_name,
+                    }
+
+            schema = {
+                "type": "object",
+                "properties": properties,
+            }
+            if required_list:
+                schema["required"] = required_list
 
             formatted.append(
                 {
@@ -225,10 +335,7 @@ class OpenAIAgentAdapter(BaseAgentAdapter):
                     "function": {
                         "name": tool["name"],
                         "description": tool.get("description", ""),
-                        "parameters": {
-                            "type": "object",
-                            "properties": properties,
-                        },
+                        "parameters": schema,
                     },
                 }
             )

@@ -432,7 +432,82 @@ Successfully completed with the following verified:
 
 ## Known Limitations
 
-1. **GenericLLMAdapter**: Only supports 1 round of tool calls per `generate_response()` invocation. Multi-step tool chains require multiple conversation turns.
-2. **Max turns**: The `--max-turns` default is 5 for single task runs. Tasks with `max_turns: 20` in their JSON may need more turns for meaningful tool usage.
+1. **GenericLLMAdapter**: Only supports 1 round of tool calls per `generate_response()` invocation. Multi-step tool chains require multiple conversation turns. This makes it a pseudo-agent baseline rather than a true agent.
+2. **Max turns**: The `--max-turns` default is 5 for single task runs. Tests show multi-step tasks (S01, I01, X01) benefit significantly from `--max-turns 10` when using the OpenAI SDK adapter.
 3. **Layer 1 scale**: Currently ~40 items. The pipeline supports scaling to ~2000 items as described in the design doc.
 4. **Layer 2 tasks**: 7 of 41 planned base tasks are implemented. Each has full eval scripts, rubrics, and persona support.
+5. **Tool path mismatch**: Agents may solve tasks through different tool paths than `expected_mcp_tools` defines (e.g., using `fetch_market_data` + `compute_indicator` instead of `file_read` + `shell_exec`), resulting in Tool F1 = 0 even when the agent produces correct outputs.
+6. **Tutor dimension weakness**: D6 (Empathetic Response) and D7 (Safety Boundaries) score systematically low (~0.3) across all adapters, suggesting the system prompt needs stronger guidance for these dimensions.
+
+---
+
+## Changelog
+
+### 2026-02-13: Systematic 5-Layer Fix (Agent + Tool + Eval)
+
+Through 7-task × 2-adapter comparison testing, code audit, and OpenAI Agents SDK source study, identified and fixed 5 layers of issues. Pre-fix OpenAI SDK mean Overall = 0.331, GenericLLM = 0.337 (nearly identical, indicating SDK had no agent advantage).
+
+#### Layer 0 — Critical Bug Fix: `args` vs `input_args` key mismatch
+
+- **File**: `mcp_servers/proxy/mcp_proxy.py`
+- **Problem**: `to_dict()` exported `"args"` key, but all 7 eval scripts read `log.get("input_args", {})` → always empty → eval scripts could never extract tool parameters (send_message text, shell_exec commands, etc.)
+- **Fix**: Changed `"args"` → `"input_args"` in `to_dict()` (1 line)
+
+#### Layer 1 — Tool Parameter Description Enhancement
+
+- **Files**: `mcp_servers/core/tools.py`, `mcp_servers/distractors/distractor_tools.py`, both adapters
+- **Problem**: All tool parameter descriptions were `f"{param_name} parameter"` (meaningless). Models had no idea what values to pass, what format to use, or which params were optional.
+- **Fix**: Enhanced all 14 core tools + 15 distractor tools with proper `type`, `description`, and `required` fields. Updated both adapters to parse the new param structure. Also fixed missing `"items"` field for array-type parameters (`format_table.columns`, `compare_series.paths`, `optimize_portfolio.weights`) that caused OpenAI API 400 errors.
+
+#### Layer 2 — True Agent Architecture (OpenAI SDK)
+
+- **File**: `orchestrator/agent_adapters/openai_adapter.py`
+- **Problem**: Adapter only did single LLM call + manual tool execution, not using SDK's agent loop. No multi-step reasoning.
+- **Fix**: Rewrote to use `Agent(instructions=callable)` for dynamic per-task context injection + `Runner.run_sync(max_turns=8)` for autonomous multi-step reasoning. Built complete JSON schemas for `FunctionTool` from enhanced param structures.
+
+#### Layer 3 — System Prompt Optimization
+
+- **File**: `config/prompt_config.py`
+- **Problem**: Prompt rule 3 ("Ask leading questions") discouraged action while rule 5 ("USE TOOLS proactively") demanded it — contradictory.
+- **Fix**: Rewrote rules 3-5 to guide tool usage with good judgment: teach with real data when appropriate, scaffold learning, but don't force tool calls for simple conceptual questions.
+
+#### Layer 4 — Eval Script Improvements
+
+- **Files**: All 7 eval scripts in `evaluation/test_scripts/`
+- Added `conversation=None` parameter to all eval `evaluate()` signatures for future conversation-based fallback scoring
+- Added process metrics to D01 (`data_exploration_attempted`, `code_executed`) and X01 (`buggy_code_read`, `fix_verified_by_execution`)
+- Improved Sharpe ratio regex in S01 with strict-first pattern matching
+- Updated `orchestrator.py` to pass conversation to eval scripts
+
+#### Post-Fix Benchmark Results (7 tasks × 2 adapters, Docker sandbox)
+
+**max-turns=5:**
+
+| Metric | OpenAI SDK | GenericLLM | Delta |
+|--------|-----------|------------|-------|
+| Overall (mean) | **0.414** | 0.391 | +0.023 |
+| Quant Result (mean) | **0.314** | 0.236 | +0.079 |
+| Tool F1 (mean) | 0.354 | 0.363 | -0.009 |
+| Tutor Score (mean) | 0.487 | **0.524** | -0.037 |
+
+**max-turns=10 (S01, I01, X01 only):**
+
+| Task | OpenAI SDK (t=5→t=10) | GenericLLM (t=5→t=10) |
+|------|----------------------|----------------------|
+| S01 | 0.33 → **0.57** (+73%) | 0.40 → 0.42 (+5%) |
+| I01 | 0.35 → 0.32 (-9%) | 0.42 → 0.39 (-7%) |
+| X01 | 0.26 → **0.62** (+139%, QR=1.0) | 0.22 → 0.23 (+5%) |
+
+Key findings:
+- Quant Result improved from ~0.04 to 0.314 (SDK) after Layer 0 fix
+- OpenAI SDK benefits significantly from more turns (S01 +73%, X01 +139%), Generic does not — confirming the agent loop works
+- S01/I01/X01 had QR=0 at max-turns=5; at max-turns=10, SDK achieved QR=0.60 (S01) and QR=1.00 (X01)
+- B01/X01 show Tool F1=0 due to agent choosing alternative tool paths vs expected_tools
+
+#### Open Issues for Investigation
+
+1. **Is the SDK adapter truly agentic?** — Need deeper analysis of Runner behavior and turn-by-turn tool calling patterns
+2. **Tool path divergence** — Agents prefer `fetch_market_data` + `compute_indicator` over `file_read` + `shell_exec`; need to revisit `expected_tools` definitions or add prompt guidance
+3. **D6/D7 systematically low** — Empathetic response and safety boundary scores are weak across all configurations
+4. **A01 tutor score anomaly** — Adversarial task scores QR=1.0 but tutor score is very low because irrelevant dimensions (D5 Code Teaching) penalize it
+5. **I01 remains QR=0 even at max-turns=10** — Agent produces file path inconsistencies (writes to one path, reads from another), a reasoning quality issue not solvable by more turns alone

@@ -116,11 +116,30 @@ class GenericLLMAdapter(BaseAgentAdapter):
         for tool in tools:
             params = tool.get("parameters", {})
             properties = {}
-            for param_name, param_type in params.items():
-                properties[param_name] = {
-                    "type": "string",
-                    "description": f"{param_name} parameter",
-                }
+            required_list = []
+            for param_name, param_info in params.items():
+                if isinstance(param_info, dict):
+                    prop = {
+                        "type": param_info.get("type", "string"),
+                        "description": param_info.get("description", param_name),
+                    }
+                    if "items" in param_info:
+                        prop["items"] = param_info["items"]
+                    properties[param_name] = prop
+                    if param_info.get("required", False):
+                        required_list.append(param_name)
+                else:
+                    properties[param_name] = {
+                        "type": "string",
+                        "description": param_name,
+                    }
+
+            schema = {
+                "type": "object",
+                "properties": properties,
+            }
+            if required_list:
+                schema["required"] = required_list
 
             formatted.append(
                 {
@@ -128,10 +147,7 @@ class GenericLLMAdapter(BaseAgentAdapter):
                     "function": {
                         "name": tool["name"],
                         "description": tool.get("description", ""),
-                        "parameters": {
-                            "type": "object",
-                            "properties": properties,
-                        },
+                        "parameters": schema,
                     },
                 }
             )

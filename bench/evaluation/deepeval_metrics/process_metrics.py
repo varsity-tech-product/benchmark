@@ -14,8 +14,10 @@ Metrics implemented:
 Reference: https://github.com/confident-ai/deepeval
 """
 
+import asyncio
 from typing import Optional
 
+import nest_asyncio
 from config.llm_config import resolve_deepeval_model
 
 try:
@@ -498,6 +500,269 @@ def evaluate_topic_adherence(
 
 
 # ──────────────────────────────────────────────────────────────
+# Async helpers for parallel metric evaluation
+# ──────────────────────────────────────────────────────────────
+
+
+def _run_async(coro):
+    """Run an async coroutine from synchronous code, handling existing event loops."""
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+    if loop and loop.is_running():
+        nest_asyncio.apply()
+        return loop.run_until_complete(coro)
+    else:
+        return asyncio.run(coro)
+
+
+async def _async_eval_tool_correctness(
+    task_description, actual_output, proxy_logs, expected_tool_names, model
+):
+    """Async wrapper for ToolCorrectness evaluation."""
+    try:
+        from evaluation.deepeval_metrics.mcp_metrics import (
+            create_tool_correctness_metric,
+            create_tool_test_case,
+        )
+
+        test_case = create_tool_test_case(
+            input_text=task_description,
+            actual_output=actual_output,
+            tools_called=[
+                {
+                    "name": log.name,
+                    "input_parameters": log.args,
+                    "output": log.result or "",
+                }
+                for log in proxy_logs
+            ],
+            expected_tools=[{"name": t} for t in expected_tool_names],
+        )
+        metric = create_tool_correctness_metric(threshold=0.5, model=model)
+        await metric.a_measure(test_case)
+        return {
+            "score": metric.score,
+            "reason": getattr(metric, "reason", ""),
+            "passed": metric.score >= 0.5,
+        }
+    except Exception as e:
+        from evaluation.deepeval_metrics.mcp_metrics import (
+            compute_tool_precision_recall,
+        )
+
+        tools_called_names = [log.name for log in proxy_logs]
+        metrics = compute_tool_precision_recall(
+            called_tools=tools_called_names,
+            expected_tools=expected_tool_names,
+            distractor_tools=[],
+        )
+        return {
+            "score": metrics["f1"],
+            "reason": f"Async eval failed ({e}), used manual computation",
+            "passed": metrics["f1"] >= 0.5,
+        }
+
+
+async def _async_eval_argument_correctness(
+    input_text, actual_output, proxy_logs, expected_tool_names, model, threshold=0.5
+):
+    """Async wrapper for ArgumentCorrectness evaluation."""
+    if not DEEPEVAL_AVAILABLE:
+        return {"score": 0.5, "reason": "deepeval not available", "passed": True}
+    test_case = LLMTestCase(
+        input=input_text,
+        actual_output=actual_output,
+        tools_called=_build_tool_calls(proxy_logs),
+        expected_tools=_build_expected_tools(expected_tool_names),
+    )
+    metric = ArgumentCorrectnessMetric(
+        threshold=threshold, model=resolve_deepeval_model(model)
+    )
+    try:
+        await metric.a_measure(test_case)
+        return {
+            "score": metric.score,
+            "reason": getattr(metric, "reason", ""),
+            "passed": metric.score >= threshold,
+        }
+    except Exception as e:
+        return {
+            "score": 0.5,
+            "reason": f"ArgumentCorrectnessMetric error: {e}",
+            "passed": True,
+        }
+
+
+async def _async_eval_mcp_use(
+    input_text,
+    actual_output,
+    proxy_logs,
+    core_tools,
+    distractor_tools,
+    model,
+    threshold=0.5,
+):
+    """Async wrapper for MCPUse evaluation."""
+    if not DEEPEVAL_AVAILABLE:
+        return {"score": 0.5, "reason": "deepeval not available", "passed": True}
+    test_case = LLMTestCase(
+        input=input_text,
+        actual_output=actual_output,
+        mcp_tools_called=_build_mcp_tool_calls(proxy_logs),
+        mcp_servers=_build_mcp_servers(core_tools, distractor_tools),
+    )
+    metric = MCPUseMetric(threshold=threshold, model=resolve_deepeval_model(model))
+    try:
+        await metric.a_measure(test_case)
+        return {
+            "score": metric.score,
+            "reason": getattr(metric, "reason", ""),
+            "passed": metric.score >= threshold,
+        }
+    except Exception as e:
+        return {"score": 0.5, "reason": f"MCPUseMetric error: {e}", "passed": True}
+
+
+async def _async_eval_step_efficiency(
+    input_text, actual_output, proxy_logs, model, threshold=0.5
+):
+    """Async wrapper for StepEfficiency evaluation."""
+    if not DEEPEVAL_AVAILABLE:
+        return {"score": 0.5, "reason": "deepeval not available", "passed": True}
+    test_case = LLMTestCase(
+        input=input_text,
+        actual_output=actual_output,
+        tools_called=_build_tool_calls(proxy_logs),
+    )
+    metric = StepEfficiencyMetric(
+        threshold=threshold, model=resolve_deepeval_model(model)
+    )
+    try:
+        await metric.a_measure(test_case)
+        return {
+            "score": metric.score,
+            "reason": getattr(metric, "reason", ""),
+            "passed": metric.score >= threshold,
+        }
+    except Exception as e:
+        return {
+            "score": 0.5,
+            "reason": f"StepEfficiencyMetric error: {e}",
+            "passed": True,
+        }
+
+
+async def _async_eval_multi_turn_mcp(
+    conversational_test_case, core_tools, distractor_tools, model, threshold=0.5
+):
+    """Async wrapper for MultiTurnMCPUse evaluation."""
+    if not DEEPEVAL_AVAILABLE:
+        return {"score": 0.5, "reason": "deepeval not available", "passed": True}
+    if conversational_test_case.mcp_servers is None:
+        conversational_test_case.mcp_servers = _build_mcp_servers(
+            core_tools, distractor_tools
+        )
+    metric = MultiTurnMCPUseMetric(
+        threshold=threshold, model=resolve_deepeval_model(model)
+    )
+    try:
+        await metric.a_measure(conversational_test_case)
+        return {
+            "score": metric.score,
+            "reason": getattr(metric, "reason", ""),
+            "passed": metric.score >= threshold,
+        }
+    except Exception as e:
+        return {
+            "score": 0.5,
+            "reason": f"MultiTurnMCPUseMetric error: {e}",
+            "passed": True,
+        }
+
+
+async def _async_eval_role_adherence(
+    conversational_test_case,
+    model,
+    chatbot_role="quantitative finance tutor",
+    threshold=0.5,
+):
+    """Async wrapper for RoleAdherence evaluation."""
+    if not DEEPEVAL_AVAILABLE:
+        return {"score": 0.5, "reason": "deepeval not available", "passed": True}
+    if conversational_test_case.chatbot_role is None:
+        conversational_test_case.chatbot_role = chatbot_role
+    metric = RoleAdherenceMetric(
+        threshold=threshold, model=resolve_deepeval_model(model)
+    )
+    try:
+        await metric.a_measure(conversational_test_case)
+        return {
+            "score": metric.score,
+            "reason": getattr(metric, "reason", ""),
+            "passed": metric.score >= threshold,
+        }
+    except Exception as e:
+        return {
+            "score": 0.5,
+            "reason": f"RoleAdherenceMetric error: {e}",
+            "passed": True,
+        }
+
+
+async def _async_eval_knowledge_retention(
+    conversational_test_case, model, threshold=0.5
+):
+    """Async wrapper for KnowledgeRetention evaluation."""
+    if not DEEPEVAL_AVAILABLE:
+        return {"score": 0.5, "reason": "deepeval not available", "passed": True}
+    metric = KnowledgeRetentionMetric(
+        threshold=threshold, model=resolve_deepeval_model(model)
+    )
+    try:
+        await metric.a_measure(conversational_test_case)
+        return {
+            "score": metric.score,
+            "reason": getattr(metric, "reason", ""),
+            "passed": metric.score >= threshold,
+        }
+    except Exception as e:
+        return {
+            "score": 0.5,
+            "reason": f"KnowledgeRetentionMetric error: {e}",
+            "passed": True,
+        }
+
+
+async def _async_eval_topic_adherence(
+    conversational_test_case, model, relevant_topics=None, threshold=0.5
+):
+    """Async wrapper for TopicAdherence evaluation."""
+    if not DEEPEVAL_AVAILABLE:
+        return {"score": 0.5, "reason": "deepeval not available", "passed": True}
+    topics = relevant_topics or QUANT_TUTOR_TOPICS
+    metric = TopicAdherenceMetric(
+        relevant_topics=topics,
+        threshold=threshold,
+        model=resolve_deepeval_model(model),
+    )
+    try:
+        await metric.a_measure(conversational_test_case)
+        return {
+            "score": metric.score,
+            "reason": getattr(metric, "reason", ""),
+            "passed": metric.score >= threshold,
+        }
+    except Exception as e:
+        return {
+            "score": 0.5,
+            "reason": f"TopicAdherenceMetric error: {e}",
+            "passed": True,
+        }
+
+
+# ──────────────────────────────────────────────────────────────
 # Aggregate evaluation entry point
 # ──────────────────────────────────────────────────────────────
 
@@ -512,9 +777,10 @@ def evaluate_all_process_metrics(
     conversational_test_case=None,
     model: Optional[str] = None,
 ) -> dict:
-    """Run all process-level DeepEval metrics and return consolidated results.
+    """Run all process-level DeepEval metrics in parallel and return consolidated results.
 
     This is the main entry point called from the orchestrator's _evaluate_task().
+    All metrics are run concurrently via asyncio.gather + a_measure() for speed.
 
     Args:
         task_description: Text description of the task (used as LLMTestCase input).
@@ -529,91 +795,93 @@ def evaluate_all_process_metrics(
     Returns:
         Dict with per-metric scores and an aggregate process score.
     """
-    results = {}
+    # Ensure mcp_servers / chatbot_role are set before parallel evaluation
+    # (these are one-time writes that must happen before concurrent reads)
+    if conversational_test_case is not None:
+        if conversational_test_case.mcp_servers is None:
+            conversational_test_case.mcp_servers = _build_mcp_servers(
+                core_tools, distractor_tools
+            )
+        if conversational_test_case.chatbot_role is None:
+            conversational_test_case.chatbot_role = "quantitative finance tutor"
+
+    # Build all async tasks
+    tasks = {}
 
     # --- Single-turn metrics (always run) ---
-
-    # ToolCorrectnessMetric (§4.6, §6.1.2): Precision/Recall against expected_mcp_tools
-    print("    Evaluating ToolCorrectness...")
-    try:
-        from evaluation.deepeval_metrics.mcp_metrics import evaluate_tool_correctness
-
-        tc_result = evaluate_tool_correctness(
-            input_text=task_description,
-            actual_output=actual_output,
-            tools_called=[
-                {
-                    "name": log.name,
-                    "input_parameters": log.args,
-                    "output": log.result or "",
-                }
-                for log in proxy_logs
-            ],
-            expected_tools=[{"name": t} for t in expected_tool_names],
-            model=model,
-        )
-        results["tool_correctness"] = tc_result
-    except Exception as e:
-        results["tool_correctness"] = {
-            "score": 0.5,
-            "reason": f"ToolCorrectnessMetric error: {e}",
-            "passed": True,
-        }
-
-    print("    Evaluating ArgumentCorrectness...")
-    results["argument_correctness"] = evaluate_argument_correctness(
-        input_text=task_description,
-        actual_output=actual_output,
-        proxy_logs=proxy_logs,
-        expected_tool_names=expected_tool_names,
-        model=model,
+    tasks["tool_correctness"] = _async_eval_tool_correctness(
+        task_description,
+        actual_output,
+        proxy_logs,
+        expected_tool_names,
+        model,
     )
-
-    print("    Evaluating MCPUse...")
-    results["mcp_use"] = evaluate_mcp_use(
-        input_text=task_description,
-        actual_output=actual_output,
-        proxy_logs=proxy_logs,
-        core_tools=core_tools,
-        distractor_tools=distractor_tools,
-        model=model,
+    tasks["argument_correctness"] = _async_eval_argument_correctness(
+        task_description,
+        actual_output,
+        proxy_logs,
+        expected_tool_names,
+        model,
     )
-
-    print("    Evaluating StepEfficiency...")
-    results["step_efficiency"] = evaluate_step_efficiency(
-        input_text=task_description,
-        actual_output=actual_output,
-        proxy_logs=proxy_logs,
-        model=model,
+    tasks["mcp_use"] = _async_eval_mcp_use(
+        task_description,
+        actual_output,
+        proxy_logs,
+        core_tools,
+        distractor_tools,
+        model,
+    )
+    tasks["step_efficiency"] = _async_eval_step_efficiency(
+        task_description,
+        actual_output,
+        proxy_logs,
+        model,
     )
 
     # --- Multi-turn metrics (only if conversational_test_case is available) ---
     if conversational_test_case is not None:
-        print("    Evaluating MultiTurnMCPUse...")
-        results["multi_turn_mcp"] = evaluate_multi_turn_mcp(
-            conversational_test_case=conversational_test_case,
-            core_tools=core_tools,
-            distractor_tools=distractor_tools,
-            model=model,
+        tasks["multi_turn_mcp"] = _async_eval_multi_turn_mcp(
+            conversational_test_case,
+            core_tools,
+            distractor_tools,
+            model,
+        )
+        tasks["role_adherence"] = _async_eval_role_adherence(
+            conversational_test_case,
+            model,
+        )
+        tasks["knowledge_retention"] = _async_eval_knowledge_retention(
+            conversational_test_case,
+            model,
+        )
+        tasks["topic_adherence"] = _async_eval_topic_adherence(
+            conversational_test_case,
+            model,
         )
 
-        print("    Evaluating RoleAdherence...")
-        results["role_adherence"] = evaluate_role_adherence(
-            conversational_test_case=conversational_test_case,
-            model=model,
-        )
+    # Run all metrics in parallel
+    metric_count = len(tasks)
+    print(f"    Running {metric_count} process metrics in parallel...")
 
-        print("    Evaluating KnowledgeRetention...")
-        results["knowledge_retention"] = evaluate_knowledge_retention(
-            conversational_test_case=conversational_test_case,
-            model=model,
-        )
+    keys = list(tasks.keys())
+    coros = list(tasks.values())
 
-        print("    Evaluating TopicAdherence...")
-        results["topic_adherence"] = evaluate_topic_adherence(
-            conversational_test_case=conversational_test_case,
-            model=model,
-        )
+    async def _run_all():
+        return await asyncio.gather(*coros, return_exceptions=True)
+
+    raw_results = _run_async(_run_all())
+
+    # Collect results (exceptions become fallback scores)
+    results = {}
+    for key, raw in zip(keys, raw_results):
+        if isinstance(raw, Exception):
+            results[key] = {
+                "score": 0.5,
+                "reason": f"{key} error: {raw}",
+                "passed": True,
+            }
+        else:
+            results[key] = raw
 
     # Compute aggregate process score
     all_scores = [

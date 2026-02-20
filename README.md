@@ -220,6 +220,148 @@ python scripts/05_upload/upload_to_huggingface.py \
 
 ---
 
+## Evaluation System (`bench/`)
+
+The `bench/` directory contains the QuantTutorBench evaluation framework -- a two-axis benchmark that evaluates agents on both **quantitative finance expertise** (70%) and **tutoring effectiveness** (30%).
+
+See `design_2026_2_12_updated.md` for the full design specification.
+
+### Architecture
+
+The evaluation system uses a three-LLM architecture:
+
+1. **Student Simulator** -- DeepEval `ConversationSimulator` generates realistic multi-turn student interactions using persona profiles
+2. **Agent Under Test (AUT)** -- The LLM agent being evaluated, accessed via adapter (generic OpenAI-compatible or OpenAI Agents SDK)
+3. **Judge LLM** -- DeepEval `ConversationalGEval` scores the agent's tutoring quality across 7 dimensions
+
+The evaluation follows a 5-phase per-task lifecycle: RESET → INTERACT → CAPTURE → EVALUATE → TEARDOWN.
+
+### Two-Layer Structure
+
+- **Layer 1** (~2000 single-turn Q&A): Tests quant domain knowledge via `LLMTestCase` + `GEval`
+- **Layer 2** (~500 multi-turn tutoring): Tests tutoring ability via `ConversationalTestCase` + `ConversationalGEval` with 7D rubric
+
+### Quick Start
+
+```bash
+# Validate the benchmark setup
+cd bench
+python run_benchmark.py test-e2e
+
+# Run full benchmark with default model
+python run_benchmark.py run --model deepseek/deepseek-chat-v3-0324
+
+# Run with OpenAI Agents SDK adapter and custom judge model
+python run_benchmark.py run --agent openai --model gpt-4o \
+    --eval-model openai/gpt-4o --simulator-model openai/gpt-4o
+
+# Run a single task for debugging
+python run_benchmark.py run-single --task S01_ma_crossover \
+    --persona beginner_no_finance --agent generic
+
+# Run Layer 1 single-turn evaluation
+python run_benchmark.py run-layer1 --max-items 50 \
+    --agent-model deepseek/deepseek-chat-v3-0324
+
+# List available tasks
+python run_benchmark.py list-tasks
+
+# Validate task schemas
+python run_benchmark.py validate-tasks
+```
+
+### CLI Options
+
+#### `run` -- Full benchmark
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--model` | `deepseek/deepseek-chat-v3-0324` | LLM model for agent under test (OpenRouter format) |
+| `--agent` | `generic` | Agent adapter: `generic` (OpenAI-compatible) or `openai` (Agents SDK) |
+| `--eval-model` | *(DeepEval default)* | LLM model for GEval judge |
+| `--simulator-model` | *(default)* | LLM model for student simulator |
+| `--tasks` | *(all)* | Comma-separated task IDs to run |
+| `--personas` | *(all)* | Comma-separated persona IDs |
+| `--trials` | `1` | Number of trials per task (for pass@k) |
+| `--max-turns` | `5` | Max conversation turns per task |
+| `--docker` | off | Use Docker sandbox for code execution |
+
+#### `run-single` -- Single task debugging
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--task` | *(required)* | Task ID to run |
+| `--persona` | `beginner_no_finance` | Persona ID |
+| `--model` | `deepseek/deepseek-chat-v3-0324` | LLM model for agent under test |
+| `--agent` | `generic` | Agent adapter type |
+| `--eval-model` | *(DeepEval default)* | Judge model |
+| `--simulator-model` | *(default)* | Simulator model |
+| `--max-turns` | `5` | Max turns |
+
+#### `run-layer1` -- Layer 1 single-turn evaluation
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--max-items` | *(all)* | Max items to evaluate |
+| `--agent-model` | `deepseek/deepseek-chat-v3-0324` | LLM model for agent |
+| `--eval-model` | *(DeepEval default)* | LLM model for GEval judge |
+| `--no-deepeval` | off | Disable DeepEval, use keyword-matching fallback |
+
+### Scoring System
+
+**Task Score** = 0.70 x Quant Score + 0.30 x Tutor Score
+
+- **Quant Score** = 0.50 x Result + 0.50 x Process
+  - Result: correctness of final answer (via eval scripts)
+  - Process: tool usage precision/recall + DeepEval process metrics
+- **Tutor Score** = mean of 7 dimensions (D1-D7), each judged on 1-10 scale with 3x shuffled runs
+
+### 7D Tutoring Rubric
+
+| Dimension | Description |
+|-----------|-------------|
+| D1 - Level Detection | Correctly identifies and adapts to the student's knowledge level |
+| D2 - Language Adaptation | Adjusts vocabulary and complexity to match the student |
+| D3 - Scaffolding Calibration | Provides appropriate hints/steps without over-helping |
+| D4 - Domain Accuracy | Financial/quant content is factually correct |
+| D5 - Code Teaching | Code examples are correct, explained, and pedagogically sound |
+| D6 - Empathetic Response | Handles confusion, mistakes, and frustration supportively |
+| D7 - Safety Boundaries | Refuses harmful advice, adds appropriate disclaimers |
+
+### Benchmark KPIs
+
+| KPI | Description |
+|-----|-------------|
+| **OAS** | Overall Agent Score (weighted mean of all task scores) |
+| **QAI** | Quant Agent Index (mean quant score across tasks) |
+| **TEI** | Tutoring Effectiveness Index (mean tutor score across tasks) |
+| **AS** | Adaptiveness Score (how well the agent adapts across personas) |
+| **TMS** | Tool Mastery Score (precision x recall of tool usage) |
+| **pass@k** | Fraction of tasks passing threshold in k trials |
+
+### DeepEval Integration
+
+The system uses 14 DeepEval components (v3.8.4+):
+
+| Component | Layer | Purpose |
+|-----------|-------|---------|
+| `GEval` | L1 | Single-turn quant knowledge scoring |
+| `ConversationalGEval` | L2 | 7D tutoring rubric evaluation |
+| `ConversationSimulator` | L2 | Student persona simulation |
+| `ConversationalGolden` | L2 | Task + persona configuration |
+| `LLMTestCase` | L1/L2 | Single-turn test container |
+| `ConversationalTestCase` | L2 | Multi-turn test container |
+| `ToolCorrectnessMetric` | L2 | Tool call correctness |
+| `ArgumentCorrectnessMetric` | L2 | Tool argument quality |
+| `MCPUseMetric` | L2 | Single-turn MCP tool usage |
+| `MultiTurnMCPUseMetric` | L2 | Multi-turn MCP tool usage |
+| `StepEfficiencyMetric` | L2 | Tool call efficiency |
+| `RoleAdherenceMetric` | L2 | Chatbot role consistency |
+| `KnowledgeRetentionMetric` | L2 | Cross-turn knowledge retention |
+| `TopicAdherenceMetric` | L2 | Topic focus maintenance |
+
+---
+
 ## Project Structure
 
 ```
@@ -232,23 +374,50 @@ benchmark/
 │   │   └── classified/        # Category-split JSONL files
 │   ├── 02_synthesized/        # LLM-augmented data
 │   └── 03_packaged/           # Final validated output
-├── scripts/
+├── bench/                     # Evaluation framework
+│   ├── run_benchmark.py       # CLI entry point
+│   ├── orchestrator/          # Core benchmark orchestration
+│   │   ├── orchestrator.py    # 5-phase lifecycle orchestrator
+│   │   ├── schemas.py         # Pydantic models (QuantTutorTask, TaskResult, etc.)
+│   │   ├── simulator_config.py # ConversationSimulator configuration
+│   │   ├── trace_assembler.py # Assembles DeepEval test cases from traces
+│   │   ├── container_manager.py # Docker sandbox management
+│   │   └── agent_adapters/    # Agent adapter plugins
+│   │       ├── base_adapter.py    # Abstract base adapter
+│   │       ├── generic_adapter.py # OpenAI-compatible API adapter
+│   │       └── openai_adapter.py  # OpenAI Agents SDK adapter
+│   ├── evaluation/            # Evaluation metrics and scoring
+│   │   ├── scoring.py         # Task scoring, benchmark KPIs (OAS/QAI/TEI/AS/TMS)
+│   │   ├── test_scripts/      # Per-task evaluation scripts
+│   │   └── deepeval_metrics/  # DeepEval metric wrappers
+│   │       ├── quant_geval.py       # Layer 1 GEval for quant knowledge
+│   │       ├── tutor_conv_geval.py  # 7D ConversationalGEval with 3x shuffled judge
+│   │       ├── mcp_metrics.py       # ToolCorrectness + precision/recall
+│   │       └── process_metrics.py   # 7 additional DeepEval process metrics
+│   ├── layer1/                # Layer 1 single-turn evaluation
+│   │   ├── data_loader.py     # Load synthesized Q&A items
+│   │   └── runner.py          # Layer 1 batch runner
+│   ├── mcp_servers/           # MCP tool servers
+│   │   ├── core/tools.py      # Core quant tools (fetch_data, run_code, etc.)
+│   │   ├── distractors/       # Distractor tools for tool selection testing
+│   │   ├── proxy/mcp_proxy.py # Transparent tool call logging proxy
+│   │   └── registry.py        # Tool registry
+│   ├── tasks/                 # Task definition JSONs
+│   ├── personas/              # Student persona JSONs
+│   ├── student_code/          # Buggy code samples for debugging tasks
+│   └── docs/reference/        # Reference materials for context
+├── scripts/                   # Data pipeline scripts
 │   ├── 01_ingest/             # Data download scripts
 │   ├── 02_structure/          # Parsing, classification & quality inspection
-│   │   ├── structure_*.py     # Parsing scripts
-│   │   ├── classify_data.py   # Data classification into 7 categories
-│   │   ├── inspect_quality.py # General quality inspection
-│   │   └── inspect_reddit_quality.py
 │   ├── 03_synthesize/         # LLM synthesis pipeline
 │   ├── 04_validate/           # Validation & dataset card
 │   ├── 05_upload/             # HuggingFace upload
 │   ├── estimate_cost.py       # OpenRouter cost estimation tool
 │   └── lib/                   # Shared utilities
-│       ├── schemas.py         # Pydantic models
-│       └── llm_utils.py       # LLM API utilities
-├── eval/                      # Evaluation system (separate requirements)
+├── eval/                      # Legacy evaluation notes
 ├── tests/                     # Unit tests
 ├── notebooks/                 # EDA notebooks
+├── design_2026_2_12_updated.md # Full design specification
 ├── .env.template              # Environment template
 ├── .pre-commit-config.yaml    # Pre-commit hooks
 ├── pyproject.toml             # Tool configuration
@@ -258,6 +427,8 @@ benchmark/
 ## CLI Quick Reference
 
 All scripts support `--help` for full option listing.
+
+### Data pipeline options:
 
 | Flag | Description |
 |------|-------------|
@@ -277,6 +448,17 @@ All scripts support `--help` for full option listing.
 | `--output-dir PATH` | Output directory for synthesized data |
 | `--reset` | Clear checkpoint and start fresh |
 | `--no-checkpoint` | Disable checkpointing |
+
+### Benchmark evaluation commands:
+
+| Command | Description |
+|---------|-------------|
+| `python bench/run_benchmark.py run` | Run full benchmark evaluation |
+| `python bench/run_benchmark.py run-single --task <ID>` | Run single task for debugging |
+| `python bench/run_benchmark.py run-layer1` | Run Layer 1 single-turn evaluation |
+| `python bench/run_benchmark.py list-tasks` | List available tasks |
+| `python bench/run_benchmark.py validate-tasks` | Validate task JSON schemas |
+| `python bench/run_benchmark.py test-e2e` | Run end-to-end validation checks |
 
 ## Data Sources
 

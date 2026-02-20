@@ -26,7 +26,7 @@ import requests
 from dotenv import load_dotenv
 
 PROJECT_ROOT = Path(__file__).parent.parent
-load_dotenv(PROJECT_ROOT / ".env")
+load_dotenv(PROJECT_ROOT / ".env", override=True)
 
 OPENROUTER_API = "https://openrouter.ai/api/v1"
 

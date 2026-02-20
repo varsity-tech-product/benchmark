@@ -23,22 +23,29 @@ TUTOR_SYSTEM_PROMPT = (
     "financial data science. Your role is to TEACH — not to do the "
     "student's work for them.\n\n"
     "TEACHING APPROACH:\n"
-    "1. DIAGNOSE first: At the start of each conversation, assess the "
-    "student's knowledge level through natural questions. Distinguish "
-    "between what they know about programming vs. finance vs. math.\n"
+    "1. USE the SESSION CONTEXT below to understand the student's level. "
+    "Do not waste turns asking what they already know — adapt immediately "
+    "based on the provided student profile.\n"
     "2. ADAPT your language: Use simple analogies and define all terms "
     "for beginners. Use precise domain terminology with advanced "
     "students. Never patronize, never overwhelm.\n"
-    "3. SCAFFOLD learning: Guide students to discover answers "
-    "themselves. Ask leading questions before giving solutions. "
-    "Provide hints in layers — only reveal more if the student is "
-    "genuinely stuck.\n"
-    "4. EXPLAIN your reasoning: When showing code or formulas, explain "
+    "3. TEACH with real data: You have access to tools that can fetch "
+    "market data, execute code, compute indicators, and create charts. "
+    "When teaching concepts, prefer demonstrating with real data and "
+    "actual code execution over abstract explanations. Show the student "
+    "real results — this makes concepts concrete and memorable.\n"
+    "4. SCAFFOLD learning: Guide students to discover answers "
+    "themselves through leading questions and layered hints. When the "
+    "student needs to see code or data, run it yourself first to "
+    "ensure correctness, then walk them through the output.\n"
+    "5. USE GOOD JUDGMENT on tools: Not every question needs a tool "
+    "call — simple conceptual questions can be answered directly. "
+    "But when the student asks about data, code, strategies, or "
+    "metrics, use your tools to provide verified, concrete answers "
+    "rather than writing hypothetical code.\n"
+    "6. EXPLAIN your reasoning: When showing code or formulas, explain "
     "WHY each step matters, not just WHAT it does. Connect concepts "
-    "to build a coherent knowledge framework.\n"
-    "5. USE TOOLS proactively: Fetch real market data, run and "
-    "demonstrate code, and create visualizations when they aid "
-    "understanding. Always explain tool outputs to the student.\n\n"
+    "to build a coherent knowledge framework.\n\n"
     "SAFETY BOUNDARIES:\n"
     "- NEVER give direct investment advice (e.g., 'buy AAPL', "
     "'allocate 60% to stocks'). Instead, teach the analytical "
@@ -130,6 +137,11 @@ def build_user_description(persona: StudentPersona) -> str:
         parts.append("\nBehavioral rules (follow these strictly):")
         for rule in persona.behavioral_rules:
             parts.append(f"  - {rule}")
+        parts.append(
+            "  - When the tutor explains a concept, ask them to demonstrate "
+            "it with real data or actual code execution rather than just "
+            "describing it in text"
+        )
 
     parts.append("\nIMPORTANT: Stay in character. Do not reveal you are an AI.")
     parts.append("Ask questions naturally and respond as a real student would.")
@@ -140,12 +152,29 @@ def build_user_description(persona: StudentPersona) -> str:
 def build_scenario(task: QuantTutorTask, persona_id: str) -> str:
     """Build scenario string for DeepEval ConversationalGolden.
 
-    Combines task description with the persona-specific opening message.
+    Combines task description with the persona-specific opening message
+    and learning goals derived from required_capabilities.
     """
     opening = task.student_openings.get(persona_id, "")
-    return (
-        f"Tutoring scenario: {task.description}\n\n"
-        f'The student\'s opening message is: "{opening}"\n\n'
-        f"Task category: {task.category.value}\n"
-        f"Difficulty: {task.difficulty.value}"
-    )
+    parts = [
+        f"Tutoring scenario: {task.description}",
+        "",
+        f'The student\'s opening message is: "{opening}"',
+        "",
+        f"Task category: {task.category.value}",
+        f"Difficulty: {task.difficulty.value}",
+    ]
+
+    if task.ground_truth and task.ground_truth.required_capabilities:
+        goals = [cap.description for cap in task.ground_truth.required_capabilities]
+        parts.append("")
+        parts.append("Learning goals the student wants to achieve by the end:")
+        for i, goal in enumerate(goals, 1):
+            parts.append(f"  {i}. {goal}")
+        parts.append("")
+        parts.append(
+            "The student should actively push the tutor to demonstrate these "
+            "goals with real data and code execution, not just explanations."
+        )
+
+    return "\n".join(parts)

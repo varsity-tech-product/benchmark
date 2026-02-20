@@ -138,7 +138,7 @@ class MCPProxy:
         return [
             {
                 "name": entry.name,
-                "args": entry.args,
+                "input_args": entry.args,
                 "result": entry.result[:500],  # Truncate for storage
                 "timestamp": entry.timestamp,
                 "duration_ms": round(entry.duration_ms, 2),

@@ -32,8 +32,15 @@ sys.path.insert(0, str(BENCH_ROOT))
 # Load .env from project root
 load_dotenv(PROJECT_ROOT / ".env")
 
-# Bridge OpenRouter env vars to OpenAI env vars for DeepEval compatibility.
-# DeepEval uses the OpenAI SDK internally and looks for OPENAI_API_KEY.
+# API routing strategy:
+#   - Anthropic/Google SDK adapters use their own API keys directly.
+#   - OpenAI Agent SDK routes through OpenRouter by default for higher
+#     rate limits and parallelism.
+#   - Everything else (DeepEval judge, simulator, GenericLLM) goes through OpenRouter.
+#   - resolve_deepeval_model() always returns a GPTModel routed via OpenRouter,
+#     so DeepEval never competes with native SDK adapters for rate limits.
+#   - The env-var bridge below is a fallback for any DeepEval code that reads
+#     OPENAI_API_KEY directly instead of using our resolved model object.
 from config.conditions import CONDITION_NAMES, CONDITIONS
 from config.llm_config import (
     AGENT_DEFAULT_MODEL,
@@ -54,6 +61,9 @@ def _create_agent(args):
       --condition baseline         → SDK adapter + native model + BASELINE prompt
       --condition pure_llm         → GenericLLM + OpenRouter model + TUTOR prompt
       --condition pure_llm_baseline → GenericLLM + OpenRouter model + BASELINE prompt
+
+    OpenAI Agent SDK always routes through OpenRouter for higher rate limits.
+    Anthropic and Google SDKs use their native APIs.
     """
     from config.prompt_config import BASELINE_SYSTEM_PROMPT, TUTOR_SYSTEM_PROMPT
 
@@ -94,9 +104,13 @@ def _create_agent(args):
     elif agent_type == "openai":
         from orchestrator.agent_adapters.openai_adapter import OpenAIAgentAdapter
 
-        model = get_model_for_agent("openai")
+        # Always route through OpenRouter for higher rate limits / parallelism
+        model = get_model_for_agent("openai", use_openrouter=True)
         return OpenAIAgentAdapter(
-            model=model, system_prompt=system_prompt, agent_name=agent_name
+            model=model,
+            base_url=OPENROUTER_BASE_URL,
+            system_prompt=system_prompt,
+            agent_name=agent_name,
         )
     else:  # generic
         from orchestrator.agent_adapters.generic_adapter import GenericLLMAdapter

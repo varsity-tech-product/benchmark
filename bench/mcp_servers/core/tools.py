@@ -375,67 +375,202 @@ CORE_TOOLS = {
     "shell_exec": {
         "func": shell_exec,
         "description": "Execute a shell command in the sandbox",
-        "params": {"command": "str", "timeout": "int"},
+        "params": {
+            "command": {
+                "type": "string",
+                "description": "Shell command to execute. Can run Python scripts, e.g. 'python script.py'",
+                "required": True,
+            },
+            "timeout": {
+                "type": "integer",
+                "description": "Timeout in seconds. Default: 30. Optional.",
+                "required": False,
+            },
+        },
     },
     "file_write": {
         "func": file_write,
         "description": "Write content to a file in the workspace",
-        "params": {"path": "str", "content": "str"},
+        "params": {
+            "path": {
+                "type": "string",
+                "description": "File path relative to workspace, e.g. 'strategy.py' or 'results/output.csv'",
+                "required": True,
+            },
+            "content": {
+                "type": "string",
+                "description": "Full file content to write",
+                "required": True,
+            },
+        },
     },
     "file_read": {
         "func": file_read,
-        "description": "Read a file from workspace, data, docs, or student_code",
-        "params": {"path": "str"},
+        "description": "Read a file from workspace, data, docs, or student_code directories",
+        "params": {
+            "path": {
+                "type": "string",
+                "description": "File path to read. Searches workspace/, data/, docs/, student_code/ directories.",
+                "required": True,
+            },
+        },
     },
     "file_list": {
         "func": file_list,
         "description": "List files in a directory",
-        "params": {"directory": "str"},
+        "params": {
+            "directory": {
+                "type": "string",
+                "description": "Directory path to list. Default: workspace root. Use '.' for current workspace.",
+                "required": False,
+            },
+        },
     },
     "fetch_market_data": {
         "func": fetch_market_data,
         "description": "Return OHLCV data from frozen CSV for a given symbol and date range",
-        "params": {"symbol": "str", "start": "str", "end": "str"},
+        "params": {
+            "symbol": {
+                "type": "string",
+                "description": "Stock ticker symbol, e.g. 'AAPL', 'SPY', 'MSFT'",
+                "required": True,
+            },
+            "start": {
+                "type": "string",
+                "description": "Start date in YYYY-MM-DD format, e.g. '2020-01-01'. Omit for earliest available.",
+                "required": False,
+            },
+            "end": {
+                "type": "string",
+                "description": "End date in YYYY-MM-DD format. Omit for latest available.",
+                "required": False,
+            },
+        },
     },
     "compute_indicator": {
         "func": compute_indicator,
-        "description": "Compute a technical indicator (SMA, EMA, RSI, BOLLINGER, MACD) on a dataset",
-        "params": {"data_path": "str", "indicator": "str", "params": "dict"},
+        "description": "Compute a technical indicator on a dataset and return the last 20 rows",
+        "params": {
+            "data_path": {
+                "type": "string",
+                "description": "Path to CSV file with OHLCV data (must have 'Close' column)",
+                "required": True,
+            },
+            "indicator": {
+                "type": "string",
+                "description": "Indicator name: SMA, EMA, RSI, BOLLINGER, or MACD",
+                "required": True,
+            },
+            "params": {
+                "type": "object",
+                "description": 'Indicator parameters as JSON object, e.g. {"window": 20} for SMA, {"fast": 12, "slow": 26, "signal": 9} for MACD',
+                "required": False,
+            },
+        },
     },
     "run_backtest": {
         "func": run_backtest,
-        "description": "Execute a backtest script and return structured results",
-        "params": {"script_path": "str"},
+        "description": "Execute a Python backtest script in the workspace and return its output",
+        "params": {
+            "script_path": {
+                "type": "string",
+                "description": "Path to a Python script in the workspace, e.g. 'backtest.py'",
+                "required": True,
+            },
+        },
     },
     "compute_statistics": {
         "func": compute_statistics,
-        "description": "Run statistical tests (ADF, CORRELATION, COINTEGRATION) on data",
-        "params": {"data_path": "str", "method": "str", "params": "dict"},
+        "description": "Run statistical tests on data (stationarity, correlation, cointegration)",
+        "params": {
+            "data_path": {
+                "type": "string",
+                "description": "Path to CSV file with numeric data",
+                "required": True,
+            },
+            "method": {
+                "type": "string",
+                "description": "Statistical method: ADF (stationarity test), CORRELATION (correlation matrix), or COINTEGRATION",
+                "required": True,
+            },
+            "params": {
+                "type": "object",
+                "description": 'Method parameters as JSON object, e.g. {"column": "Close"} for ADF, {"column1": "AAPL", "column2": "SPY"} for COINTEGRATION',
+                "required": False,
+            },
+        },
     },
     "plot_chart": {
         "func": plot_chart,
-        "description": "Execute matplotlib code, save and return the image path",
-        "params": {"python_code": "str"},
+        "description": "Execute matplotlib Python code, save chart as PNG, and return the image path",
+        "params": {
+            "python_code": {
+                "type": "string",
+                "description": "Complete matplotlib Python code. Chart is auto-saved (no need to call plt.savefig).",
+                "required": True,
+            },
+        },
     },
     "format_table": {
         "func": format_table,
-        "description": "Format data into a clean markdown table",
-        "params": {"data": "str", "columns": "list", "title": "str"},
+        "description": "Format CSV data into a clean markdown table",
+        "params": {
+            "data": {
+                "type": "string",
+                "description": "CSV-formatted string data to display as a table",
+                "required": True,
+            },
+            "columns": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Column names to include. Omit to show all columns.",
+                "required": False,
+            },
+            "title": {
+                "type": "string",
+                "description": "Optional table title displayed as a markdown heading",
+                "required": False,
+            },
+        },
     },
     "compare_series": {
         "func": compare_series,
-        "description": "Compare multiple return series on a metric (sharpe, volatility, total_return)",
-        "params": {"paths": "list", "metric": "str"},
+        "description": "Compare multiple return series on a performance metric",
+        "params": {
+            "paths": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "List of CSV file paths to compare, e.g. ['strategy_a.csv', 'strategy_b.csv']",
+                "required": True,
+            },
+            "metric": {
+                "type": "string",
+                "description": "Comparison metric: 'sharpe', 'volatility', or 'total_return'. Default: 'sharpe'.",
+                "required": False,
+            },
+        },
     },
     "search_docs": {
         "func": search_docs,
-        "description": "Full-text search across the /docs/ directory",
-        "params": {"query": "str"},
+        "description": "Full-text search across reference documentation in /docs/",
+        "params": {
+            "query": {
+                "type": "string",
+                "description": "Search query string, e.g. 'moving average', 'Sharpe ratio', 'backtest'",
+                "required": True,
+            },
+        },
     },
     "send_message": {
         "func": send_message,
         "description": "Send a message to the student (primary tutoring action)",
-        "params": {"text": "str"},
+        "params": {
+            "text": {
+                "type": "string",
+                "description": "Message text to send to the student",
+                "required": True,
+            },
+        },
     },
     "get_environment_info": {
         "func": get_environment_info,

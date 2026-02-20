@@ -169,7 +169,12 @@ class BenchmarkOrchestrator:
             # context so it knows what to teach and who the student is.
             original_system_prompt = agent.system_prompt
             dynamic_context = build_tutor_context(task, persona)
-            agent.system_prompt = f"{original_system_prompt}\n\n{dynamic_context}"
+            # Use set_task_context() if available (OpenAI SDK adapter uses
+            # dynamic instructions callable); fall back to direct mutation.
+            if hasattr(agent, "set_task_context"):
+                agent.set_task_context(dynamic_context)
+            else:
+                agent.system_prompt = f"{original_system_prompt}\n\n{dynamic_context}"
 
             # === PHASE 2: INTERACT (via DeepEval ConversationSimulator or manual fallback) ===
             # Design doc §4.3: ConversationSimulator manages the interaction loop.
@@ -242,6 +247,8 @@ class BenchmarkOrchestrator:
                         )
             finally:
                 # Restore original system prompt for next task+persona
+                if hasattr(agent, "set_task_context"):
+                    agent.set_task_context("")
                 agent.system_prompt = original_system_prompt
 
             # === PHASE 3: CAPTURE ===
@@ -469,7 +476,9 @@ class BenchmarkOrchestrator:
                     )
                     module = importlib.util.module_from_spec(spec)
                     spec.loader.exec_module(module)
-                    eval_result = module.evaluate(workspace_path, proxy.to_dict())
+                    eval_result = module.evaluate(
+                        workspace_path, proxy.to_dict(), conversation
+                    )
                     results["quant_result"] = eval_result.get("score", 0.0)
                 except Exception as e:
                     results["quant_result_error"] = str(e)

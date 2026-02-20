@@ -5,12 +5,15 @@ import os
 import re
 
 
-def evaluate(workspace_path: str, tool_logs: list = None) -> dict:
+def evaluate(
+    workspace_path: str, tool_logs: list = None, conversation: list = None
+) -> dict:
     """Evaluate whether the agent helped build a valid MA crossover strategy.
 
     Args:
         workspace_path: Path to the agent's workspace directory.
         tool_logs: List of dicts recording each MCP tool call.
+        conversation: List of {role, content} dicts from the conversation.
 
     Returns:
         Dict with boolean metrics and a float score in [0, 1].
@@ -40,15 +43,22 @@ def evaluate(workspace_path: str, tool_logs: list = None) -> dict:
     if tool_logs:
         for log in tool_logs:
             output = str(log.get("result", ""))
-            # Check for Sharpe ratio in output
-            sharpe_match = re.search(r"[Ss]harpe.*?(-?\d+\.?\d*)", output)
-            if sharpe_match:
-                try:
-                    sharpe = float(sharpe_match.group(1))
-                    if -0.5 <= sharpe <= 3.0:
-                        results["sharpe_ratio_in_range"] = True
-                except ValueError:
-                    pass
+            # Check for Sharpe ratio in output — use strict patterns first
+            sharpe_patterns = [
+                r"[Ss]harpe\s*[Rr]atio\s*[:=]\s*(-?\d+\.?\d*)",
+                r"[Ss]harpe\s*[:=]\s*(-?\d+\.?\d*)",
+                r"[Ss]harpe.*?(-?\d+\.?\d*)",
+            ]
+            for sp in sharpe_patterns:
+                sharpe_match = re.search(sp, output)
+                if sharpe_match:
+                    try:
+                        sharpe = float(sharpe_match.group(1))
+                        if -0.5 <= sharpe <= 3.0:
+                            results["sharpe_ratio_in_range"] = True
+                    except ValueError:
+                        pass
+                    break
             # Check for return output
             if re.search(r"[Rr]eturn.*?-?\d+\.?\d*%?", output):
                 results["backtest_produces_return"] = True

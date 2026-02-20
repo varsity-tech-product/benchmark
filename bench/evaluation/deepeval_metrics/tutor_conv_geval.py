@@ -16,11 +16,13 @@ DeepEval API (v3.8+):
     from deepeval.test_case import ConversationalTestCase, Turn
 """
 
+import asyncio
 import json
 import random
 from pathlib import Path
 from typing import Optional
 
+import nest_asyncio
 from config.llm_config import resolve_deepeval_model
 
 try:
@@ -204,6 +206,19 @@ def create_tutor_geval_metrics(
     return metrics
 
 
+def _run_async(coro):
+    """Run an async coroutine from synchronous code, handling existing event loops."""
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+    if loop and loop.is_running():
+        nest_asyncio.apply()
+        return loop.run_until_complete(coro)
+    else:
+        return asyncio.run(coro)
+
+
 def evaluate_tutor_dimensions(
     conversation_turns: list[dict],
     persona_level: str,
@@ -248,11 +263,11 @@ def evaluate_tutor_dimensions(
             user_description=user_description,
         )
 
-    # Accumulate scores across shuffled runs
-    accumulated_scores: dict[str, list[float]] = {d: [] for d in DIMENSIONS}
+    # Build all 3×7=21 metric instances upfront for parallel execution
+    all_metrics = []
+    task_keys = []  # (run_idx, dim_name) for each metric
 
     for run_idx in range(num_judge_runs):
-        # Shuffle dimension order for each run (design doc §4.1, §6.2)
         shuffled_dims = DIMENSIONS.copy()
         random.shuffle(shuffled_dims)
 
@@ -266,20 +281,35 @@ def evaluate_tutor_dimensions(
             model=model,
             dimension_order=shuffled_dims,
         )
-
         for metric in metrics:
-            try:
-                metric.measure(test_case)
-                raw_score = metric.score
-                # §6.2: "Each dimension: 1-10 scale, normalized to 0-1."
-                # DeepEval may return scores in 0-1 or 0-10 range depending on version.
-                # Normalize: if score > 1.0, assume it's on a 1-10 scale.
-                if raw_score > 1.0:
-                    raw_score = raw_score / 10.0
-                accumulated_scores[metric.name].append(max(0.0, min(1.0, raw_score)))
-            except Exception as e:
-                accumulated_scores[metric.name].append(0.5)
-                print(f"    Warning: {metric.name} run {run_idx + 1} failed: {e}")
+            all_metrics.append(metric)
+            task_keys.append((run_idx, metric.name))
+
+    # Run all 21 judge calls in parallel via asyncio.gather + a_measure
+    print(f"    Running {len(all_metrics)} judge calls in parallel...")
+
+    async def _run_all():
+        return await asyncio.gather(
+            *[m.a_measure(test_case) for m in all_metrics],
+            return_exceptions=True,
+        )
+
+    results = _run_async(_run_all())
+
+    # Accumulate scores by dimension name
+    accumulated_scores: dict[str, list[float]] = {d: [] for d in DIMENSIONS}
+    for i, (run_idx, dim_name) in enumerate(task_keys):
+        if isinstance(results[i], Exception):
+            accumulated_scores[dim_name].append(0.5)
+            print(f"    Warning: {dim_name} run {run_idx + 1} failed: {results[i]}")
+        else:
+            raw_score = all_metrics[i].score
+            # §6.2: "Each dimension: 1-10 scale, normalized to 0-1."
+            # DeepEval may return scores in 0-1 or 0-10 range depending on version.
+            # Normalize: if score > 1.0, assume it's on a 1-10 scale.
+            if raw_score > 1.0:
+                raw_score = raw_score / 10.0
+            accumulated_scores[dim_name].append(max(0.0, min(1.0, raw_score)))
 
     # Average across runs
     final_scores = {}

@@ -5,12 +5,15 @@ import os
 import re
 
 
-def evaluate(workspace_path: str, tool_logs: list = None) -> dict:
+def evaluate(
+    workspace_path: str, tool_logs: list = None, conversation: list = None
+) -> dict:
     """Evaluate whether the agent helped implement a correct SMA calculation.
 
     Args:
         workspace_path: Path to the agent's workspace directory.
         tool_logs: List of dicts recording each MCP tool call.
+        conversation: List of {role, content} dicts from the conversation.
 
     Returns:
         Dict with boolean metrics and a float score in [0, 1].

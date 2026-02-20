@@ -4,13 +4,16 @@ import json
 import os
 
 
-def evaluate(workspace_path: str, tool_logs: list = None) -> dict:
+def evaluate(
+    workspace_path: str, tool_logs: list = None, conversation: list = None
+) -> dict:
     """Evaluate whether the agent successfully helped load and inspect data.
 
     Args:
         workspace_path: Path to the agent's workspace directory.
         tool_logs: List of dicts recording each MCP tool call, each with
             keys like 'name', 'input_args', 'result', 'success'.
+        conversation: List of {role, content} dicts from the conversation.
 
     Returns:
         Dict with boolean metrics and a float score in [0, 1].
@@ -18,6 +21,8 @@ def evaluate(workspace_path: str, tool_logs: list = None) -> dict:
     results = {
         "data_loaded_successfully": False,
         "basic_stats_computed": False,
+        "data_exploration_attempted": False,
+        "code_executed": False,
         "score": 0.0,
     }
 
@@ -32,7 +37,10 @@ def evaluate(workspace_path: str, tool_logs: list = None) -> dict:
             if log.get("name") in ("fetch_market_data", "file_read"):
                 if log.get("success", False):
                     results["data_loaded_successfully"] = True
+            if log.get("name") in ("file_list", "get_environment_info"):
+                results["data_exploration_attempted"] = True
             if log.get("name") == "shell_exec":
+                results["code_executed"] = True
                 output = log.get("result", "")
                 if any(
                     kw in output.lower()
@@ -54,13 +62,16 @@ def evaluate(workspace_path: str, tool_logs: list = None) -> dict:
             except (IOError, UnicodeDecodeError):
                 pass
 
-    # Score
-    score = 0.0
-    if results["data_loaded_successfully"]:
-        score += 0.5
-    if results["basic_stats_computed"]:
-        score += 0.5
-    results["score"] = score
+    # Score: data_loaded=0.35, stats=0.40, exploration=0.15, code_executed=0.10
+    score = sum(
+        [
+            0.35 if results["data_loaded_successfully"] else 0,
+            0.40 if results["basic_stats_computed"] else 0,
+            0.15 if results["data_exploration_attempted"] else 0,
+            0.10 if results["code_executed"] else 0,
+        ]
+    )
+    results["score"] = round(score, 2)
 
     return results
 
