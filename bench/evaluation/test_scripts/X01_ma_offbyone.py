@@ -8,105 +8,63 @@ import re
 def evaluate(
     workspace_path: str, tool_logs: list = None, conversation: list = None
 ) -> dict:
-    """Evaluate whether the agent helped fix the off-by-one bug.
+    """Evaluate whether the off-by-one bug was fixed in code artifacts.
 
-    The buggy code in student_code/ma_offbyone.py has rolling(19) instead
-    of rolling(20) for the 20-day SMA. The agent should guide the student
-    to find and fix this bug.
-
-    Args:
-        workspace_path: Path to the agent's workspace directory.
-        tool_logs: List of dicts recording each MCP tool call.
-        conversation: List of {role, content} dicts from the conversation.
-
-    Returns:
-        Dict with boolean metrics and a float score in [0, 1].
+    QR checks: Is rolling(20) present and rolling(19) absent in code artifacts?
+    Does the fixed code run successfully?
     """
     results = {
         "bug_is_fixed": False,
         "code_runs_without_error": False,
-        "buggy_code_read": False,
-        "fix_verified_by_execution": False,
         "score": 0.0,
     }
 
-    # Check workspace for fixed code files
-    for fname in os.listdir(workspace_path) if os.path.isdir(workspace_path) else []:
-        fpath = os.path.join(workspace_path, fname)
+    workspace_files = (
+        os.listdir(workspace_path) if os.path.isdir(workspace_path) else []
+    )
+
+    # Check workspace .py files for the fix
+    for fname in workspace_files:
         if fname.endswith(".py"):
+            fpath = os.path.join(workspace_path, fname)
             try:
                 with open(fpath) as f:
                     code = f.read()
-                # Check if the fix is present: rolling(20) for SMA_20
-                # The bug was rolling(19) for SMA_20
-                rolling_calls = re.findall(
-                    r'["\']?SMA_20["\']?\s*.*?rolling\((?:window\s*=\s*)?(\d+)\)',
-                    code,
-                    re.DOTALL,
-                )
-                # Also check generic pattern — if rolling(19) is gone and
-                # rolling(20) is present alongside rolling(50)
                 all_rolling = re.findall(r"rolling\((?:window\s*=\s*)?(\d+)\)", code)
                 has_20 = "20" in all_rolling
                 has_19 = "19" in all_rolling
                 has_50 = "50" in all_rolling
-
                 if has_20 and has_50 and not has_19:
-                    results["bug_is_fixed"] = True
-                elif rolling_calls and "20" in rolling_calls:
                     results["bug_is_fixed"] = True
             except (IOError, UnicodeDecodeError):
                 pass
 
-    # Check tool logs for evidence of the fix and process
-    bug_fixed_turn = None
+    # Scan ALL tool logs (tool-name agnostic)
     if tool_logs:
-        for idx, log in enumerate(tool_logs):
-            # Check if agent read the buggy file
-            if log.get("name") == "file_read":
-                path_arg = str(log.get("input_args", {}).get("path", ""))
-                if "offbyone" in path_arg.lower() or "ma_" in path_arg.lower():
-                    results["buggy_code_read"] = True
+        for log in tool_logs:
+            output = str(log.get("result", ""))
 
-            if log.get("name") == "shell_exec":
-                output = str(log.get("result", ""))
-                cmd = str(log.get("input_args", {}).get("command", ""))
+            # Check result for successful execution
+            if log.get("success", False) and "traceback" not in output.lower():
+                if any(
+                    kw in output.lower()
+                    for kw in ["sharpe", "return", "signal", "crossover", "sma"]
+                ):
+                    results["code_runs_without_error"] = True
 
-                # Check if the fixed code was executed successfully
-                if log.get("success", False) and "traceback" not in output.lower():
-                    # Look for signs the code ran to completion
-                    if any(
-                        kw in output.lower()
-                        for kw in ["sharpe", "return", "signal", "crossover", "sma"]
-                    ):
-                        results["code_runs_without_error"] = True
-
-                # Check if the fix appears in executed commands
-                if "rolling(20)" in cmd or "rolling(window=20)" in cmd:
-                    results["bug_is_fixed"] = True
-                    if bug_fixed_turn is None:
-                        bug_fixed_turn = idx
-
-                # Check if agent ran code to read the buggy file via cat/python
-                if "offbyone" in cmd.lower() or "ma_" in cmd.lower():
-                    results["buggy_code_read"] = True
-
-            # Check file_write for the fix
-            if log.get("name") == "file_write":
-                content = str(log.get("input_args", {}).get("content", ""))
-                all_rolling = re.findall(r"rolling\((?:window\s*=\s*)?(\d+)\)", content)
+            # Check all input_args for fix evidence
+            for key, value in log.get("input_args", {}).items():
+                text = str(value)
+                all_rolling = re.findall(r"rolling\((?:window\s*=\s*)?(\d+)\)", text)
                 has_20 = "20" in all_rolling
                 has_19 = "19" in all_rolling
                 if has_20 and not has_19:
                     results["bug_is_fixed"] = True
-                    if bug_fixed_turn is None:
-                        bug_fixed_turn = idx
+                # Check for fix in shell commands
+                if "rolling(20)" in text or "rolling(window=20)" in text:
+                    results["bug_is_fixed"] = True
 
-    # Check if the fix was verified by running code after fixing
-    if results["bug_is_fixed"] and results["code_runs_without_error"]:
-        results["fix_verified_by_execution"] = True
-
-    # Also check the original student_code path in case it was edited in-place
+    # Also check student_code path for in-place edits
     buggy_file = os.path.join(workspace_path, "..", "student_code", "ma_offbyone.py")
     if os.path.exists(buggy_file):
         try:
@@ -118,13 +76,10 @@ def evaluate(
         except (IOError, UnicodeDecodeError):
             pass
 
-    # bug_fixed=0.55, runs=0.25, code_read=0.10, verified=0.10
     score = sum(
         [
-            0.55 if results["bug_is_fixed"] else 0,
-            0.25 if results["code_runs_without_error"] else 0,
-            0.10 if results["buggy_code_read"] else 0,
-            0.10 if results["fix_verified_by_execution"] else 0,
+            0.65 if results["bug_is_fixed"] else 0,
+            0.35 if results["code_runs_without_error"] else 0,
         ]
     )
     results["score"] = round(score, 2)

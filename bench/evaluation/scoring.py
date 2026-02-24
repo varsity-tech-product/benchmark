@@ -34,6 +34,7 @@ def compute_task_score(
     quant_result_score: float,
     quant_process_score: float,
     tutor_dimension_scores: dict[str, float],
+    category: Optional[str] = None,
 ) -> dict:
     """Compute the overall task score.
 
@@ -41,21 +42,27 @@ def compute_task_score(
     Task Score = 0.70 × Quant Agent Score + 0.30 × Tutor Score
     Quant Agent Score = 0.50 × Result + 0.50 × Process
 
+    Tutor Score uses per-category dimension weights for weighted averaging
+    (see CATEGORY_DIMENSION_WEIGHTS in tutor_conv_geval.py).
+
     Args:
         quant_result_score: Score from eval scripts (0-1).
         quant_process_score: Score from DeepEval MCP metrics + tool precision/recall (0-1).
         tutor_dimension_scores: Dict of dimension_name -> score (0-1).
+        category: TaskCategory.value for per-category tutor dimension weighting.
 
     Returns:
         Dict with all sub-scores and overall score.
     """
+    from evaluation.deepeval_metrics.tutor_conv_geval import compute_tutor_score
+
     quant_score = (
         RESULT_WEIGHT * quant_result_score + PROCESS_WEIGHT * quant_process_score
     )
 
     tutor_score = 0.0
     if tutor_dimension_scores:
-        tutor_score = statistics.mean(tutor_dimension_scores.values())
+        tutor_score = compute_tutor_score(tutor_dimension_scores, category=category)
 
     overall = QUANT_WEIGHT * quant_score + TUTOR_WEIGHT * tutor_score
 
@@ -205,15 +212,19 @@ def compute_combined_benchmark_kpis(
     tei = statistics.mean(tutor_scores) if tutor_scores else 0.0
 
     # Blended Result Sub-score
+    # Formula: Result_Sub = λ × Layer1 + (1-λ) × Layer2, where λ = 0.40
+    # When a layer is absent, its contribution counts as 0 (not omitted).
     if "layer1" in layers and "layer2" in layers:
         result_sub = (
             LAYER1_RESULT_WEIGHT * layer1_mean_score
             + (1 - LAYER1_RESULT_WEIGHT) * l2_result_mean
         )
     elif "layer1" in layers:
-        result_sub = layer1_mean_score
+        # Only Layer 1: Layer 2 portion (0.6) is 0
+        result_sub = LAYER1_RESULT_WEIGHT * layer1_mean_score
     else:
-        result_sub = l2_result_mean
+        # Only Layer 2: Layer 1 portion (0.4) is 0
+        result_sub = (1 - LAYER1_RESULT_WEIGHT) * l2_result_mean
 
     # Process Sub-score is Layer 2 only
     process_sub = l2_process_mean

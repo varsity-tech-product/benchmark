@@ -287,6 +287,7 @@ class BenchmarkOrchestrator:
                 quant_result_score=result.quant_result_score,
                 quant_process_score=result.quant_process_score,
                 tutor_dimension_scores=result.tutor_scores,
+                category=task.category.value,
             )
             result.overall_score = score_breakdown["overall_score"]
 
@@ -370,7 +371,10 @@ class BenchmarkOrchestrator:
         all_result_objects = list(report.results_by_task.values())
         all_scores = [
             compute_task_score(
-                r.quant_result_score, r.quant_process_score, r.tutor_scores
+                r.quant_result_score,
+                r.quant_process_score,
+                r.tutor_scores,
+                category=r.category,
             )
             for r in all_result_objects
         ]
@@ -457,6 +461,7 @@ class BenchmarkOrchestrator:
                     proxy_logs=proxy.get_logs(),
                     core_tools=task.environment.core_mcp_tools,
                     distractor_tools=task.environment.distractor_mcp_tools_pool,
+                    tool_schemas=proxy.get_available_tools(),
                 )
             except Exception as e:
                 print(f"  Warning: Failed to enrich test case with MCP data: {e}")
@@ -538,13 +543,18 @@ class BenchmarkOrchestrator:
                     distractor_tools=task.environment.distractor_mcp_tools_pool,
                     conversational_test_case=conversational_test_case,
                     model=self.eval_model,
+                    tool_schemas=proxy.get_available_tools(),
                 )
                 results["process_metrics"] = process_results
 
-                # Combine: 50% manual precision/recall F1 + 50% DeepEval aggregate
+                # Combine: 50% tool F1 + 50% DeepEval aggregate
+                # F1 balances precision (avoid distractor calls) and recall
+                # (cover expected tools). Distractor tools are traps that
+                # always return errors — agents must learn to avoid them.
                 deepeval_process = process_results.get("aggregate_process_score", 0.5)
+                tool_score = tool_metrics["f1"]
                 results["quant_process"] = round(
-                    0.5 * tool_metrics["f1"] + 0.5 * deepeval_process, 4
+                    0.5 * tool_score + 0.5 * deepeval_process, 4
                 )
             except Exception as e:
                 results["process_eval_error"] = str(e)
@@ -560,6 +570,12 @@ class BenchmarkOrchestrator:
                     evaluate_tutor_dimensions,
                 )
 
+                # NOTE: Do NOT pass the enriched conversational_test_case here.
+                # enrich_test_case_with_mcp() inserts synthetic
+                # "[Executed tools: ...]" turns that the 7D rubric judge
+                # interprets as empty teaching — tanking D3/D5/D6 scores.
+                # Instead, let evaluate_tutor_dimensions build a clean
+                # ConversationalTestCase from conversation_turns (text only).
                 tutor_scores = evaluate_tutor_dimensions(
                     conversation_turns=conversation,
                     persona_level=persona.knowledge_level,
@@ -567,7 +583,7 @@ class BenchmarkOrchestrator:
                     expected_outcome=task.ground_truth.expected_outcome,
                     user_description=build_user_description(persona),
                     model=self.eval_model,
-                    conversational_test_case=conversational_test_case,
+                    category=task.category.value,
                 )
                 results["tutor_scores"] = tutor_scores
             except Exception as e:

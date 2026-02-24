@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 
 
 def evaluate(
@@ -9,50 +10,73 @@ def evaluate(
 ) -> dict:
     """Evaluate whether the agent successfully helped load and inspect data.
 
-    Args:
-        workspace_path: Path to the agent's workspace directory.
-        tool_logs: List of dicts recording each MCP tool call, each with
-            keys like 'name', 'input_args', 'result', 'success'.
-        conversation: List of {role, content} dicts from the conversation.
-
-    Returns:
-        Dict with boolean metrics and a float score in [0, 1].
+    QR checks: Are data artifacts present? Are statistical summaries produced?
+    Does NOT check which tools were used (that's QP's job).
     """
     results = {
         "data_loaded_successfully": False,
         "basic_stats_computed": False,
-        "data_exploration_attempted": False,
-        "code_executed": False,
         "score": 0.0,
     }
 
-    # Check if any data was loaded (look for evidence in workspace or logs)
     workspace_files = (
         os.listdir(workspace_path) if os.path.isdir(workspace_path) else []
     )
 
-    # Check tool logs for data loading
-    if tool_logs:
-        for log in tool_logs:
-            if log.get("name") in ("fetch_market_data", "file_read"):
-                if log.get("success", False):
-                    results["data_loaded_successfully"] = True
-            if log.get("name") in ("file_list", "get_environment_info"):
-                results["data_exploration_attempted"] = True
-            if log.get("name") == "shell_exec":
-                results["code_executed"] = True
-                output = log.get("result", "")
-                if any(
-                    kw in output.lower()
-                    for kw in ["describe", "mean", "std", "count", "dtype"]
-                ):
-                    results["basic_stats_computed"] = True
-
-    # Also check for saved exploration artifacts in workspace
+    # Check workspace for data files
     for fname in workspace_files:
         if fname.endswith((".csv", ".parquet")):
             results["data_loaded_successfully"] = True
-        if fname.endswith((".txt", ".log", ".md")):
+            break
+
+    # Scan ALL tool logs for evidence (tool-name agnostic)
+    if tool_logs:
+        for log in tool_logs:
+            # Check all result values for data evidence
+            output = str(log.get("result", "")).lower()
+            if any(
+                kw in output
+                for kw in [
+                    "ohlcv",
+                    "open",
+                    "high",
+                    "low",
+                    "close",
+                    "volume",
+                    "rows",
+                    "columns",
+                    "date range",
+                ]
+            ):
+                results["data_loaded_successfully"] = True
+            if any(
+                kw in output
+                for kw in [
+                    "describe",
+                    "mean",
+                    "std",
+                    "count",
+                    "dtype",
+                    "min",
+                    "max",
+                    "25%",
+                    "50%",
+                    "75%",
+                ]
+            ):
+                results["basic_stats_computed"] = True
+
+            # Check all input_args values for code/data artifacts
+            for key, value in log.get("input_args", {}).items():
+                text = str(value).lower()
+                if re.search(r"\.(describe|info|dtypes|head|tail|shape)\(\)", text):
+                    results["basic_stats_computed"] = True
+                if re.search(r"(read_csv|fetch_market|ohlcv)", text):
+                    results["data_loaded_successfully"] = True
+
+    # Check workspace text files for stats output
+    for fname in workspace_files:
+        if fname.endswith((".txt", ".log", ".md", ".json")):
             fpath = os.path.join(workspace_path, fname)
             try:
                 with open(fpath) as f:
@@ -62,17 +86,13 @@ def evaluate(
             except (IOError, UnicodeDecodeError):
                 pass
 
-    # Score: data_loaded=0.35, stats=0.40, exploration=0.15, code_executed=0.10
     score = sum(
         [
-            0.35 if results["data_loaded_successfully"] else 0,
-            0.40 if results["basic_stats_computed"] else 0,
-            0.15 if results["data_exploration_attempted"] else 0,
-            0.10 if results["code_executed"] else 0,
+            0.50 if results["data_loaded_successfully"] else 0,
+            0.50 if results["basic_stats_computed"] else 0,
         ]
     )
     results["score"] = round(score, 2)
-
     return results
 
 

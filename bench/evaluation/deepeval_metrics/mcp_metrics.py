@@ -264,6 +264,18 @@ def compute_tool_precision_recall(
     expected_set = set(expected_tools)
     distractor_set = set(distractor_tools)
 
+    # Edge case: no expected tools (e.g. adversarial tasks where tool use is
+    # optional).  Score based solely on distractor avoidance.
+    if not expected_set:
+        distractor_calls = list(called_set & distractor_set)
+        return {
+            "precision": 1.0 if not distractor_calls else 0.0,
+            "recall": 1.0,
+            "f1": 1.0 if not distractor_calls else 0.0,
+            "distractor_calls": distractor_calls,
+            "distractor_call_count": len(distractor_calls),
+        }
+
     # True positives: expected tools that were called
     tp = len(called_set & expected_set)
     # False positives: non-expected tools that were called (including distractors)

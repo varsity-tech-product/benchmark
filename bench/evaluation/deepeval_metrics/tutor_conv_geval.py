@@ -50,6 +50,98 @@ DIMENSIONS = [
 
 NUM_JUDGE_RUNS = 3  # §4.1: 3x shuffled prompts for judge stability
 
+# ──────────────────────────────────────────────────────────────
+# Per-category dimension weights
+# ──────────────────────────────────────────────────────────────
+# Maps TaskCategory.value → per-dimension weight (0.0 = skip, 1.0 = full).
+# Dimensions with weight 0 are NOT evaluated (saves API calls).
+# Dimensions with weight < 1 are evaluated but down-weighted in aggregation.
+# If a category is not listed, all dimensions default to weight 1.0.
+
+CATEGORY_DIMENSION_WEIGHTS: dict[str, dict[str, float]] = {
+    "data_analysis": {
+        "D1": 1.0,
+        "D2": 1.0,
+        "D3": 1.0,
+        "D4": 1.0,
+        "D5": 1.0,
+        "D6": 1.0,
+        "D7": 0.3,
+    },
+    "strategy": {
+        "D1": 1.0,
+        "D2": 1.0,
+        "D3": 1.0,
+        "D4": 1.0,
+        "D5": 1.0,
+        "D6": 1.0,
+        "D7": 1.0,
+    },
+    "implementation": {
+        "D1": 1.0,
+        "D2": 0.7,
+        "D3": 1.0,
+        "D4": 1.0,
+        "D5": 1.0,
+        "D6": 0.7,
+        "D7": 0.3,
+    },
+    "backtest": {
+        "D1": 1.0,
+        "D2": 1.0,
+        "D3": 1.0,
+        "D4": 1.0,
+        "D5": 1.0,
+        "D6": 1.0,
+        "D7": 1.0,
+    },
+    "debug": {
+        "D1": 0.7,
+        "D2": 0.7,
+        "D3": 1.0,
+        "D4": 1.0,
+        "D5": 1.0,
+        "D6": 0.7,
+        "D7": 0.3,
+    },
+    "end_to_end": {
+        "D1": 1.0,
+        "D2": 1.0,
+        "D3": 1.0,
+        "D4": 1.0,
+        "D5": 1.0,
+        "D6": 1.0,
+        "D7": 1.0,
+    },
+    "adversarial": {
+        "D1": 1.0,
+        "D2": 1.0,
+        "D3": 0.3,
+        "D4": 1.0,
+        "D5": 0.0,
+        "D6": 1.0,
+        "D7": 1.0,
+    },
+}
+
+
+def get_dimension_weight(category: Optional[str], dimension_name: str) -> float:
+    """Get the weight for a specific dimension given a task category.
+
+    Args:
+        category: TaskCategory.value string, or None for default weights.
+        dimension_name: Full dimension name (e.g. "D5_code_teaching").
+
+    Returns:
+        Weight in [0.0, 1.0]. Defaults to 1.0 if category is unknown.
+    """
+    if not category:
+        return 1.0
+    weights = CATEGORY_DIMENSION_WEIGHTS.get(category, {})
+    dim_key = dimension_name[:2]  # "D1", "D2", ...
+    return weights.get(dim_key, 1.0)
+
+
 # Rubric JSON directory
 _RUBRIC_DIR = Path(__file__).parent.parent / "rubrics"
 
@@ -228,11 +320,15 @@ def evaluate_tutor_dimensions(
     model: Optional[str] = None,
     conversational_test_case=None,
     num_judge_runs: int = NUM_JUDGE_RUNS,
+    category: Optional[str] = None,
 ) -> dict[str, float]:
-    """Evaluate all 7 tutoring dimensions with shuffled judge runs.
+    """Evaluate tutoring dimensions with shuffled judge runs.
 
     Design doc §6.2: Judge runs 3 times with shuffled dimension order,
     scores averaged for stability (§4.1: "3x shuffled prompts").
+
+    Dimensions with weight=0 for the given category are skipped entirely
+    (no API calls). Weights are stored in CATEGORY_DIMENSION_WEIGHTS.
 
     Args:
         conversation_turns: List of {"role": str, "content": str} dicts.
@@ -244,12 +340,23 @@ def evaluate_tutor_dimensions(
         conversational_test_case: Pre-built ConversationalTestCase from ConversationSimulator.
             If provided, uses this directly instead of building from conversation_turns.
         num_judge_runs: Number of shuffled judge runs (default: 3 per design doc).
+        category: TaskCategory.value string for per-category dimension weighting.
 
     Returns:
         Dict mapping dimension name to averaged score (0-1).
+        Skipped dimensions (weight=0) are not included in the dict.
     """
     if not DEEPEVAL_AVAILABLE:
         raise ImportError("deepeval is required. Install with: pip install deepeval")
+
+    # Filter out dimensions with weight=0 for this category
+    active_dims = [d for d in DIMENSIONS if get_dimension_weight(category, d) > 0.0]
+    skipped_dims = [d for d in DIMENSIONS if d not in active_dims]
+    if skipped_dims:
+        print(
+            f"    Skipping dimensions (weight=0 for {category}): "
+            f"{', '.join(d.split('_')[0] for d in skipped_dims)}"
+        )
 
     # Build or reuse test case
     if conversational_test_case is not None:
@@ -263,12 +370,12 @@ def evaluate_tutor_dimensions(
             user_description=user_description,
         )
 
-    # Build all 3×7=21 metric instances upfront for parallel execution
+    # Build metric instances only for active dimensions
     all_metrics = []
     task_keys = []  # (run_idx, dim_name) for each metric
 
     for run_idx in range(num_judge_runs):
-        shuffled_dims = DIMENSIONS.copy()
+        shuffled_dims = active_dims.copy()
         random.shuffle(shuffled_dims)
 
         print(
@@ -285,8 +392,9 @@ def evaluate_tutor_dimensions(
             all_metrics.append(metric)
             task_keys.append((run_idx, metric.name))
 
-    # Run all 21 judge calls in parallel via asyncio.gather + a_measure
-    print(f"    Running {len(all_metrics)} judge calls in parallel...")
+    # Run all judge calls in parallel via asyncio.gather + a_measure
+    total_calls = len(all_metrics)
+    print(f"    Running {total_calls} judge calls in parallel...")
 
     async def _run_all():
         return await asyncio.gather(
@@ -297,7 +405,7 @@ def evaluate_tutor_dimensions(
     results = _run_async(_run_all())
 
     # Accumulate scores by dimension name
-    accumulated_scores: dict[str, list[float]] = {d: [] for d in DIMENSIONS}
+    accumulated_scores: dict[str, list[float]] = {d: [] for d in active_dims}
     for i, (run_idx, dim_name) in enumerate(task_keys):
         if isinstance(results[i], Exception):
             accumulated_scores[dim_name].append(0.5)
@@ -313,7 +421,7 @@ def evaluate_tutor_dimensions(
 
     # Average across runs
     final_scores = {}
-    for dim_name in DIMENSIONS:
+    for dim_name in active_dims:
         scores = accumulated_scores[dim_name]
         if scores:
             final_scores[dim_name] = round(sum(scores) / len(scores), 4)
@@ -323,17 +431,33 @@ def evaluate_tutor_dimensions(
     return final_scores
 
 
-def compute_tutor_score(dimension_scores: dict[str, float]) -> float:
-    """Compute the aggregate tutor score from 7D scores.
+def compute_tutor_score(
+    dimension_scores: dict[str, float],
+    category: Optional[str] = None,
+) -> float:
+    """Compute the aggregate tutor score from dimension scores.
 
-    Design doc §6.3: Tutor Score = average of 7D rubric scores (each 0-1).
+    Uses per-category dimension weights for weighted averaging.
+    Dimensions not present in dimension_scores (e.g., skipped due to
+    weight=0) are excluded from the computation.
 
     Args:
         dimension_scores: Dict mapping dimension name to score (0-1).
+        category: TaskCategory.value for per-category weighting.
 
     Returns:
-        Average score across all dimensions (0-1).
+        Weighted average score across all evaluated dimensions (0-1).
     """
     if not dimension_scores:
         return 0.0
-    return round(sum(dimension_scores.values()) / len(dimension_scores), 4)
+
+    weighted_sum = 0.0
+    weight_total = 0.0
+    for dim_name, score in dimension_scores.items():
+        w = get_dimension_weight(category, dim_name)
+        weighted_sum += w * score
+        weight_total += w
+
+    if weight_total == 0.0:
+        return 0.0
+    return round(weighted_sum / weight_total, 4)

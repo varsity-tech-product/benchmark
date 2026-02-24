@@ -249,60 +249,102 @@ def enrich_test_case_with_mcp(
     proxy_logs: list,
     core_tools: list[str],
     distractor_tools: list[str],
+    tool_schemas: list[dict] | None = None,
 ) -> "ConversationalTestCase":
     """Enrich an existing ConversationalTestCase with MCP data from proxy logs.
 
     When the ConversationSimulator produces a test case, it doesn't include
-    MCP tool call data. This function attaches MCPToolCall objects from the
-    proxy logs to the appropriate turns, and sets mcp_servers.
+    MCP tool call data.  This function **rebuilds** assistant Turn objects
+    (rather than mutating them post-init) so that the Pydantic model_validator
+    sets ``_mcp_interaction = True`` — which MultiTurnMCPUseMetric needs to
+    recognise tool-call steps.
 
     Args:
         test_case: Existing ConversationalTestCase (from ConversationSimulator).
         proxy_logs: Raw tool call logs from MCPProxy.
         core_tools: Core tool names.
         distractor_tools: Distractor tool names.
+        tool_schemas: Full tool schema dicts from proxy.get_available_tools().
 
     Returns:
-        The same test case, enriched with MCP data (mutated in place).
+        The same test case, enriched with MCP data (turns replaced in place).
     """
     if not DEEPEVAL_AVAILABLE:
         return test_case
 
+    # Import the CallToolResult wrapper from process_metrics
+    from evaluation.deepeval_metrics.process_metrics import (
+        _build_mcp_servers,
+        _wrap_result_as_call_tool_result,
+    )
+
     # Group proxy logs by turn index
-    logs_by_turn = {}
+    logs_by_turn: dict[int, list] = {}
     for log in proxy_logs:
         turn_idx = getattr(log, "turn_index", 0) or 0
         logs_by_turn.setdefault(turn_idx, []).append(log)
 
-    # Attach MCPToolCall objects to assistant turns
+    # Rebuild assistant turns that have tool calls.
+    #
+    # MultiTurnMCPUseMetric._get_tasks() calls get_unit_interactions() which
+    # splits the conversation into units bounded by user→assistant boundaries.
+    # It then skips any unit with len <= 2.  Our conversation is normally
+    # [user, assistant, user, assistant, …], producing units of length 2 that
+    # are ALL skipped — yielding an empty task list and score 0.
+    #
+    # To fix this we split an assistant turn that has tool calls into TWO
+    # consecutive assistant turns:
+    #   1. A "tool execution" turn (with mcp_tools_called → _mcp_interaction=True)
+    #   2. A "response" turn (the original text reply)
+    # This gives units of length >= 3, which _get_tasks() processes.
+    new_turns = []
     assistant_turn_idx = 0
     for turn in test_case.turns:
         if turn.role == "assistant":
-            if assistant_turn_idx in logs_by_turn:
-                turn_logs = logs_by_turn[assistant_turn_idx]
-                turn.mcp_tools_called = [
+            turn_logs = logs_by_turn.get(assistant_turn_idx, [])
+            if turn_logs:
+                mcp_tool_calls = [
                     MCPToolCall(
                         name=log.name,
                         args=log.args,
-                        result=log.result[:500] if log.result else "",
+                        result=_wrap_result_as_call_tool_result(log.result or ""),
                     )
                     for log in turn_logs
                 ]
-                if turn.tools_called is None:
-                    turn.tools_called = [
-                        ToolCall(
-                            name=log.name,
-                            input_parameters=log.args,
-                            output=log.result[:500] if log.result else "",
-                        )
-                        for log in turn_logs
-                    ]
+                tool_calls = [
+                    ToolCall(
+                        name=log.name,
+                        input_parameters=log.args,
+                        output=log.result[:500] if log.result else "",
+                    )
+                    for log in turn_logs
+                ]
+                # Turn 1: tool execution step.
+                # NOTE: DeepEval has a bug where model_validator(mode="before")
+                # sets data["_mcp_interaction"] = True, but that doesn't
+                # propagate to the PrivateAttr.  We set it manually below.
+                tool_names = ", ".join(log.name for log in turn_logs)
+                tool_turn = Turn(
+                    role="assistant",
+                    content=f"[Executed tools: {tool_names}]",
+                    tools_called=tool_calls,
+                    mcp_tools_called=mcp_tool_calls,
+                )
+                tool_turn._mcp_interaction = True
+                new_turns.append(tool_turn)
+                # Turn 2: the actual text response
+                new_turns.append(Turn(role="assistant", content=turn.content))
+            else:
+                new_turns.append(turn)
             assistant_turn_idx += 1
+        else:
+            new_turns.append(turn)
 
-    # Set MCP servers
-    all_tools = core_tools + distractor_tools
-    test_case.mcp_servers = [
-        MCPServer(server_name="quant_tutor_bench", available_tools=all_tools)
-    ]
+    test_case.turns = new_turns
+
+    # Set MCP servers with proper mcp.types.Tool objects
+    test_case.mcp_servers = _build_mcp_servers(
+        core_tools, distractor_tools, tool_schemas
+    )
 
     return test_case

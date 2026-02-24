@@ -69,32 +69,54 @@ def file_write(path: str, content: str) -> str:
     return f"Written {len(content)} bytes to {path}"
 
 
+def _resolve_path(path: str) -> Optional[str]:
+    """Resolve a relative path across all search directories.
+
+    Handles the common case where the caller includes a known directory
+    prefix (e.g. ``student_code/foo.py``) — we strip the prefix so that
+    the search against the matching base directory doesn't double up.
+    """
+    bases = [_workspace_dir(), _data_dir(), _docs_dir(), _student_code_dir()]
+    # Known directory name prefixes that callers might include
+    _KNOWN_PREFIXES = ("workspace/", "data/", "docs/", "student_code/")
+
+    # 1. Direct search
+    for base in bases:
+        full = os.path.join(base, path) if not path.startswith("/") else path
+        if os.path.isfile(full) or os.path.isdir(full):
+            return full
+
+    # 2. Strip known directory prefix and retry
+    for prefix in _KNOWN_PREFIXES:
+        if path.startswith(prefix):
+            stripped = path[len(prefix) :]
+            for base in bases:
+                full = os.path.join(base, stripped)
+                if os.path.isfile(full) or os.path.isdir(full):
+                    return full
+            break  # Only one prefix can match
+
+    return None
+
+
 def file_read(path: str) -> str:
     """Read a file from workspace, data, docs, or student_code."""
-    for base in [_workspace_dir(), _data_dir(), _docs_dir(), _student_code_dir()]:
-        full = os.path.join(base, path) if not path.startswith("/") else path
-        if os.path.isfile(full):
-            with open(full, "r") as f:
-                content = f.read()
-            if len(content) > 50000:
-                return (
-                    content[:50000] + f"\n... (truncated, {len(content)} total bytes)"
-                )
-            return content
+    resolved = _resolve_path(path)
+    if resolved and os.path.isfile(resolved):
+        with open(resolved, "r") as f:
+            content = f.read()
+        if len(content) > 50000:
+            return content[:50000] + f"\n... (truncated, {len(content)} total bytes)"
+        return content
     return f"Error: File not found: {path}"
 
 
 def file_list(directory: str = ".") -> str:
     """List files in a directory."""
-    for base in [_workspace_dir(), _data_dir(), _docs_dir(), _student_code_dir()]:
-        full = (
-            os.path.join(base, directory)
-            if not directory.startswith("/")
-            else directory
-        )
-        if os.path.isdir(full):
-            entries = sorted(os.listdir(full))
-            return "\n".join(entries) if entries else "(empty directory)"
+    resolved = _resolve_path(directory)
+    if resolved and os.path.isdir(resolved):
+        entries = sorted(os.listdir(resolved))
+        return "\n".join(entries) if entries else "(empty directory)"
     return f"Error: Directory not found: {directory}"
 
 
@@ -113,7 +135,23 @@ def fetch_market_data(symbol: str, start: str = "", end: str = "") -> str:
         df = df[df["Date"] <= end]
     if df.empty:
         return f"No data for {symbol} in range {start} to {end}"
-    return df.to_csv(index=False)
+
+    # Save to workspace so subsequent tools can reference the file
+    out_name = f"{symbol}_data.csv"
+    out_path = os.path.join(_workspace_dir(), out_name)
+    df.to_csv(out_path, index=False)
+
+    # Return file path + compact summary instead of full CSV
+    date_col = "Date"
+    summary_parts = [
+        f"Saved {len(df)} rows to {out_name}",
+        f"Date range: {df[date_col].iloc[0]} to {df[date_col].iloc[-1]}",
+        f"Columns: {', '.join(df.columns)}",
+        "",
+        f"First 5 rows:\n{df.head().to_csv(index=False)}",
+        f"Last 5 rows:\n{df.tail().to_csv(index=False)}",
+    ]
+    return "\n".join(summary_parts)
 
 
 def compute_indicator(
@@ -165,7 +203,16 @@ def compute_indicator(
     else:
         return f"Error: Unknown indicator '{indicator}'. Supported: SMA, EMA, RSI, BOLLINGER, MACD"
 
-    return df.tail(20).to_csv(index=False)
+    # Save enriched data to workspace for subsequent tools
+    base_name = os.path.splitext(os.path.basename(data_path))[0]
+    out_name = f"{base_name}_{indicator.lower()}.csv"
+    out_path = os.path.join(_workspace_dir(), out_name)
+    df.to_csv(out_path, index=False)
+
+    return (
+        f"Computed {indicator} and saved to {out_name}\n\n"
+        f"Last 10 rows:\n{df.tail(10).to_csv(index=False)}"
+    )
 
 
 def run_backtest(script_path: str) -> str:
@@ -178,7 +225,40 @@ def run_backtest(script_path: str) -> str:
     )
     if not os.path.isfile(full_path):
         return f"Error: Script not found: {script_path}"
-    return shell_exec(f"python -u {full_path}", timeout=30)
+
+    # Snapshot workspace before execution
+    before = set(os.listdir(workspace)) if os.path.isdir(workspace) else set()
+
+    output = shell_exec(f"python -u {full_path}", timeout=30)
+
+    # If stdout is empty/minimal, report new workspace files
+    after = set(os.listdir(workspace)) if os.path.isdir(workspace) else set()
+    new_files = sorted(after - before)
+    if new_files and (not output.strip() or output.strip() == "(no output)"):
+        parts = (
+            [output.strip()]
+            if output.strip() and output.strip() != "(no output)"
+            else []
+        )
+        parts.append(
+            f"Script completed. New files in workspace: {', '.join(new_files)}"
+        )
+        for fname in new_files[:5]:
+            fpath = os.path.join(workspace, fname)
+            if fname.endswith((".csv", ".json", ".txt")):
+                try:
+                    with open(fpath) as f:
+                        content = f.read(1500)
+                    parts.append(f"\n--- {fname} ---\n{content}")
+                except Exception:
+                    pass
+            elif fname.endswith((".png", ".jpg", ".svg")):
+                parts.append(f"Chart saved: {fname}")
+        output = "\n".join(parts)
+    elif new_files:
+        output += f"\n\nNew workspace files: {', '.join(new_files)}"
+
+    return output.strip() or "(no output)"
 
 
 def compute_statistics(
@@ -303,6 +383,95 @@ def compare_series(paths: list, metric: str = "sharpe") -> str:
     return json.dumps(results, indent=2)
 
 
+def analyze_backtest_results(data_path: str, returns_column: str = "returns") -> str:
+    """Analyze a CSV with portfolio/strategy returns and compute performance metrics."""
+    import numpy as np
+    import pandas as pd
+
+    full_path = _resolve_path(data_path)
+    if not full_path:
+        return f"Error: File not found: {data_path}"
+
+    df = pd.read_csv(full_path)
+
+    # Auto-detect returns column
+    ret_col = None
+    for candidate in [
+        returns_column,
+        "returns",
+        "Returns",
+        "daily_return",
+        "daily_returns",
+        "strategy_return",
+        "strategy_returns",
+        "pnl",
+        "PnL",
+    ]:
+        if candidate in df.columns:
+            ret_col = candidate
+            break
+    if ret_col is None and "Close" in df.columns:
+        df["_returns"] = df["Close"].pct_change()
+        ret_col = "_returns"
+    if ret_col is None:
+        return f"Error: No returns column found. Available columns: {list(df.columns)}"
+
+    returns = df[ret_col].dropna()
+    if len(returns) < 2:
+        return f"Error: Not enough data points ({len(returns)}) to compute metrics."
+
+    annual_factor = 252
+    mean_ret = returns.mean()
+    std_ret = returns.std()
+
+    sharpe = (mean_ret / std_ret * np.sqrt(annual_factor)) if std_ret > 0 else 0.0
+    annual_return = (1 + mean_ret) ** annual_factor - 1
+    cumulative = (1 + returns).cumprod()
+    running_max = cumulative.cummax()
+    max_drawdown = ((cumulative / running_max) - 1).min()
+    win_rate = (returns > 0).mean()
+    volatility = std_ret * np.sqrt(annual_factor)
+
+    downside_returns = returns[returns < 0]
+    downside_std = downside_returns.std() if len(downside_returns) > 0 else 0.0
+    sortino = (
+        (mean_ret / downside_std * np.sqrt(annual_factor)) if downside_std > 0 else 0.0
+    )
+    calmar = (annual_return / abs(max_drawdown)) if max_drawdown != 0 else 0.0
+
+    total_return = float(cumulative.iloc[-1] - 1) if len(cumulative) > 0 else 0.0
+
+    metrics = {
+        "sharpe_ratio": round(float(sharpe), 4),
+        "annual_return": round(float(annual_return), 4),
+        "total_return": round(float(total_return), 4),
+        "max_drawdown": round(float(max_drawdown), 4),
+        "win_rate": round(float(win_rate), 4),
+        "volatility": round(float(volatility), 4),
+        "sortino_ratio": round(float(sortino), 4),
+        "calmar_ratio": round(float(calmar), 4),
+        "total_trading_days": len(returns),
+        "data_path": data_path,
+    }
+
+    # Save to workspace as structured JSON
+    out_path = os.path.join(_workspace_dir(), "backtest_analysis.json")
+    with open(out_path, "w") as f:
+        json.dump(metrics, f, indent=2)
+
+    return (
+        f"Backtest Analysis (saved to backtest_analysis.json):\n"
+        f"  Sharpe Ratio:   {metrics['sharpe_ratio']}\n"
+        f"  Annual Return:  {metrics['annual_return']:.2%}\n"
+        f"  Total Return:   {metrics['total_return']:.2%}\n"
+        f"  Max Drawdown:   {metrics['max_drawdown']:.2%}\n"
+        f"  Win Rate:       {metrics['win_rate']:.2%}\n"
+        f"  Volatility:     {metrics['volatility']:.2%}\n"
+        f"  Sortino Ratio:  {metrics['sortino_ratio']}\n"
+        f"  Calmar Ratio:   {metrics['calmar_ratio']}\n"
+    )
+
+
 def search_docs(query: str) -> str:
     """Full-text search across the /docs/ directory."""
     results = []
@@ -359,15 +528,8 @@ def get_environment_info() -> str:
     return json.dumps(info, indent=2)
 
 
-def _resolve_path(path: str) -> Optional[str]:
-    """Resolve a path by checking workspace, data, docs, student_code."""
-    if os.path.isfile(path):
-        return path
-    for base in [_workspace_dir(), _data_dir(), _docs_dir(), _student_code_dir()]:
-        full = os.path.join(base, path)
-        if os.path.isfile(full):
-            return full
-    return None
+# _resolve_path is defined near the top of this module (used by file_read,
+# file_list, and callers below).
 
 
 # Tool registry for the proxy layer
@@ -546,6 +708,22 @@ CORE_TOOLS = {
             "metric": {
                 "type": "string",
                 "description": "Comparison metric: 'sharpe', 'volatility', or 'total_return'. Default: 'sharpe'.",
+                "required": False,
+            },
+        },
+    },
+    "analyze_backtest_results": {
+        "func": analyze_backtest_results,
+        "description": "Analyze a CSV file containing portfolio/strategy returns and compute standard performance metrics (Sharpe Ratio, Annual Return, Max Drawdown, Win Rate, Sortino, Calmar). Saves structured results to backtest_analysis.json in workspace.",
+        "params": {
+            "data_path": {
+                "type": "string",
+                "description": "Path to CSV file with returns data. Must have a returns column or a 'Close' price column for automatic return computation.",
+                "required": True,
+            },
+            "returns_column": {
+                "type": "string",
+                "description": "Name of the returns column. Auto-detects from common names (returns, daily_return, strategy_return, pnl) if omitted. If only 'Close' exists, daily returns are computed automatically.",
                 "required": False,
             },
         },

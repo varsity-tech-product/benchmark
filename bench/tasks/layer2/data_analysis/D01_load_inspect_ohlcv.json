@@ -13,7 +13,7 @@
   },
   "environment": {
     "data_files": ["AAPL_2018_2024.csv", "SPY_2018_2024.csv"],
-    "core_mcp_tools": ["shell_exec", "file_write", "file_read", "file_list", "fetch_market_data", "plot_chart", "search_docs", "send_message", "get_environment_info"],
+    "core_mcp_tools": ["shell_exec", "file_write", "file_read", "file_list", "fetch_market_data", "compute_indicator", "plot_chart", "search_docs", "get_environment_info"],
     "distractor_mcp_tools_pool": ["search_web", "fetch_live_price", "query_database", "fetch_news_sentiment", "get_current_time"],
     "num_distractors": 5,
     "docs_available": ["pandas_timeseries.md"],
@@ -26,7 +26,7 @@
       {"description": "Explores data structure", "tool": "shell_exec", "output_contains": "describe"},
       {"description": "Explains OHLCV columns", "evidence": "explains what Open, High, Low, Close, Volume mean"}
     ],
-    "expected_mcp_tools": ["fetch_market_data", "shell_exec", "send_message"],
+    "expected_mcp_tools": ["fetch_market_data", "shell_exec", "compute_indicator", "file_read"],
     "quant_validation": {
       "eval_script": "evaluation/test_scripts/D01_load_inspect_ohlcv.py",
       "expected_metrics": {

@@ -70,6 +70,16 @@ class OpenAIAgentAdapter(BaseAgentAdapter):
         self.max_turns = max_turns
         self._task_context = ""
 
+        # Persistent agent state across conversation turns.
+        # Created once per task in _get_or_create_agent(), reused across turns.
+        self._agent = None
+        self._input_history: list = (
+            []
+        )  # Accumulated SDK input items (includes tool calls/results)
+        self._tool_callback = (
+            None  # Updated each turn, referenced by FunctionTool closures
+        )
+
         if base_url:
             # Custom provider (e.g. OpenRouter): prefer OPENROUTER_API_KEY
             self.api_key = (
@@ -91,8 +101,15 @@ class OpenAIAgentAdapter(BaseAgentAdapter):
             os.environ.pop("OPENAI_BASE_URL", None)
 
     def set_task_context(self, context: str):
-        """Set per-task dynamic context injected into system prompt."""
+        """Set per-task dynamic context injected into system prompt.
+
+        Resets the persistent agent and conversation state so a fresh
+        Agent is created for the new task.
+        """
         self._task_context = context
+        self._agent = None
+        self._input_history = []
+        self._tool_callback = None
 
     def _dynamic_instructions(self, ctx, agent):
         """Dynamic instructions callable for the Agent.
@@ -122,6 +139,25 @@ class OpenAIAgentAdapter(BaseAgentAdapter):
             return OpenAIChatCompletionsModel(model=self.model, openai_client=client)
         return self.model
 
+    def _get_or_create_agent(self, available_tools: list[dict]) -> "Agent":
+        """Create the Agent once per task, reuse across conversation turns.
+
+        The Agent and its FunctionTool bindings persist across turns so
+        the SDK can maintain full context — including previous tool calls
+        and their results — via accumulated input_history.
+        """
+        if self._agent is None:
+            agent_tools = self._build_agent_tools(available_tools)
+
+            self._agent = Agent(
+                name="quant_tutor",
+                instructions=self._dynamic_instructions,
+                model=self._resolve_model(),
+                tools=agent_tools,
+                model_settings=ModelSettings(tool_choice="auto"),
+            )
+        return self._agent
+
     def generate_response(
         self,
         messages: list[dict],
@@ -130,52 +166,63 @@ class OpenAIAgentAdapter(BaseAgentAdapter):
     ) -> str:
         """Generate a response using the OpenAI Agents SDK.
 
-        The SDK's Runner handles the agent loop internally:
-        LLM call -> tool execution -> LLM call -> ... -> final text output.
-        This allows the agent to chain multiple tool calls autonomously.
+        The Agent persists across conversation turns. Context is accumulated
+        via to_input_list(), which preserves all intermediate state including
+        tool call requests and results from previous turns. This enables
+        true multi-turn agentic behavior where the agent remembers what
+        tools it used and what results it obtained.
         """
         if not OPENAI_AGENTS_AVAILABLE:
             return self._fallback_completions(messages, available_tools, tool_callback)
 
         try:
-            agent_tools = self._build_agent_tools(available_tools, tool_callback)
+            # Update tool callback for this turn (FunctionTool closures reference this)
+            self._tool_callback = tool_callback
 
-            agent = Agent(
-                name="quant_tutor",
-                instructions=self._dynamic_instructions,
-                model=self._resolve_model(),
-                tools=agent_tools,
-                model_settings=ModelSettings(tool_choice="auto"),
-            )
+            agent = self._get_or_create_agent(available_tools)
 
-            # Pass full conversation history to Runner.run_sync().
-            # The SDK accepts list[TResponseInputItem] — standard
-            # {"role": "user"|"assistant", "content": "..."} dicts.
-            # Filter to user/assistant only; system prompt is set via
-            # Agent(instructions=...).
-            input_items = [
-                {"role": msg["role"], "content": msg["content"]}
-                for msg in messages
-                if msg["role"] in ("user", "assistant")
-            ]
+            # Extract only the latest user message from the conversation.
+            # Previous turns are already preserved in _input_history with
+            # full SDK context (tool calls, tool results, etc.).
+            new_user_msg = None
+            for msg in reversed(messages):
+                if msg["role"] == "user":
+                    new_user_msg = msg["content"]
+                    break
+
+            if new_user_msg is None:
+                return ""
+
+            # Append new user message to the accumulated SDK history
+            self._input_history.append({"role": "user", "content": new_user_msg})
 
             result = Runner.run_sync(
                 agent,
-                input_items,
+                self._input_history,
                 max_turns=self.max_turns,
             )
+
+            # Preserve full SDK context for next turn.
+            # to_input_list() merges original input + new items (tool calls,
+            # tool results, assistant messages) into a continuation-ready list.
+            self._input_history = result.to_input_list()
+
             return result.final_output or ""
 
         except Exception as e:
             return f"[OpenAI Agent SDK error: {str(e)}]"
 
-    def _build_agent_tools(self, available_tools: list[dict], tool_callback) -> list:
+    def _build_agent_tools(self, available_tools: list[dict]) -> list:
         """Build OpenAI Agent SDK tools from MCP tool schemas.
 
         FunctionTool.on_invoke_tool expects: async (ToolContext, str) -> Any
         where str is the JSON-encoded arguments from the LLM.
+
+        Tool closures reference self._tool_callback (updated each turn in
+        generate_response) so the same FunctionTool instances work across
+        all conversation turns.
         """
-        if not OPENAI_AGENTS_AVAILABLE or not tool_callback:
+        if not OPENAI_AGENTS_AVAILABLE:
             return []
 
         agent_tools = []
@@ -184,15 +231,15 @@ class OpenAIAgentAdapter(BaseAgentAdapter):
             tool_desc = tool_schema.get("description", f"Tool: {tool_name}")
             params = tool_schema.get("parameters", {})
 
-            def make_tool_fn(name, callback):
+            def make_tool_fn(name, adapter_ref):
                 async def tool_fn(ctx, args_json: str) -> str:
                     args = json.loads(args_json) if args_json else {}
-                    result = callback(name, **args)
+                    result = adapter_ref._tool_callback(name, **args)
                     return str(result)
 
                 return tool_fn
 
-            fn = make_tool_fn(tool_name, tool_callback)
+            fn = make_tool_fn(tool_name, self)
 
             properties = {}
             required_list = []

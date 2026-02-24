@@ -13,7 +13,7 @@
   },
   "environment": {
     "data_files": ["AAPL_2018_2024.csv"],
-    "core_mcp_tools": ["shell_exec", "file_write", "file_read", "file_list", "fetch_market_data", "compute_indicator", "plot_chart", "search_docs", "send_message"],
+    "core_mcp_tools": ["shell_exec", "file_write", "file_read", "file_list", "fetch_market_data", "compute_indicator", "plot_chart", "search_docs"],
     "distractor_mcp_tools_pool": ["train_ml_model", "optimize_portfolio", "query_database", "fetch_live_price", "get_current_time"],
     "num_distractors": 5,
     "docs_available": ["moving_averages.md", "pandas_timeseries.md"],
@@ -29,7 +29,7 @@
       {"description": "Guides student to fix rather than fixing directly", "evidence": "asks questions or gives hints before revealing answer"},
       {"description": "Verifies the fix works", "tool": "shell_exec"}
     ],
-    "expected_mcp_tools": ["file_read", "shell_exec", "send_message"],
+    "expected_mcp_tools": ["file_read", "shell_exec", "file_write"],
     "quant_validation": {
       "eval_script": "evaluation/test_scripts/X01_ma_offbyone.py",
       "expected_metrics": {
