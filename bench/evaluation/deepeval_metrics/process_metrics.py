@@ -15,6 +15,7 @@ Reference: https://github.com/confident-ai/deepeval
 """
 
 import asyncio
+import json as _json
 from typing import Optional
 
 import nest_asyncio
@@ -30,6 +31,7 @@ try:
         StepEfficiencyMetric,
         TopicAdherenceMetric,
     )
+    from deepeval.metrics.step_efficiency.template import StepEfficiencyTemplate
     from deepeval.test_case import (
         ConversationalTestCase,
         LLMTestCase,
@@ -724,6 +726,51 @@ async def _async_eval_mcp_use(
         return {"score": 0.5, "reason": f"MCPUseMetric error: {e}", "passed": True}
 
 
+def _patch_step_efficiency_template():
+    """Monkey-patch StepEfficiencyTemplate with tutoring-aware prompt.
+
+    DeepEval's built-in template uses a generic "minimum steps" evaluation
+    that penalizes pedagogically valuable tool calls (data fetching, code
+    execution, visualization). This patch replaces the prompt to evaluate
+    whether tool calls serve teaching purposes.
+    """
+    _original = StepEfficiencyTemplate.get_execution_efficiency
+
+    @staticmethod
+    def _tutoring_get_execution_efficiency(task: str, trace: dict) -> str:
+        return f"""You are evaluating the TOOL USAGE EFFICIENCY of a tool-augmented tutoring agent.
+
+CONTEXT: This agent teaches quantitative finance using tools that fetch market data,
+execute code, compute indicators, create charts, and run backtests. Tool calls that
+make teaching concrete and verifiable are PEDAGOGICALLY VALUABLE.
+
+EVALUATION CRITERIA:
+- EFFICIENT: Tool call serves a teaching purpose (demonstrate with real data, verify
+  code, compute metrics, create visualizations). Sequential calls building on each
+  other (fetch data -> compute indicator -> plot chart) are a GOOD pattern.
+- INEFFICIENT: Truly redundant (same tool, same args called again with no new purpose),
+  fetches data never referenced in any response, or distractor tool unrelated to task.
+
+SCORING:
+- 1.0: All tool calls serve clear teaching purposes
+- 0.75: Most calls purposeful, minor redundancy
+- 0.5: Mix of purposeful and redundant calls
+- 0.25: Mostly redundant or unnecessary calls
+- 0.0: All calls are wasteful
+
+TASK: {task}
+
+TRACE: {_json.dumps(trace, indent=2, default=str)}
+
+Return a JSON object: {{"score": <float 0.0-1.0>, "reason": "<brief explanation>"}}"""
+
+    StepEfficiencyTemplate.get_execution_efficiency = _tutoring_get_execution_efficiency
+
+
+if DEEPEVAL_AVAILABLE:
+    _patch_step_efficiency_template()
+
+
 def _build_trace_dict(input_text: str, proxy_logs: list) -> dict:
     """Build a synthetic execution trace dict for StepEfficiencyMetric.
 
@@ -800,6 +847,13 @@ async def _async_eval_multi_turn_mcp(
     """Async wrapper for MultiTurnMCPUse evaluation."""
     if not DEEPEVAL_AVAILABLE:
         return {"score": 0.5, "reason": "deepeval not available", "passed": True}
+    # Skip for conversations too short to meaningfully evaluate multi-turn patterns
+    if len(conversational_test_case.turns) < 4:
+        return {
+            "score": None,
+            "reason": "Conversation too short for multi-turn evaluation (< 4 turns)",
+            "passed": None,
+        }
     if conversational_test_case.mcp_servers is None:
         conversational_test_case.mcp_servers = _build_mcp_servers(
             core_tools, distractor_tools, tool_schemas
@@ -915,6 +969,7 @@ def evaluate_all_process_metrics(
     core_tools: list[str],
     distractor_tools: list[str],
     conversational_test_case=None,
+    enriched_test_case=None,
     model: Optional[str] = None,
     tool_schemas: Optional[list[dict]] = None,
 ) -> dict:
@@ -930,22 +985,30 @@ def evaluate_all_process_metrics(
         expected_tool_names: Expected tool names from task ground truth.
         core_tools: Core tool names from task environment.
         distractor_tools: Distractor tool names from task environment.
-        conversational_test_case: Pre-built ConversationalTestCase (for multi-turn metrics).
+        conversational_test_case: Clean ConversationalTestCase (for role_adherence,
+            knowledge_retention, topic_adherence — no synthetic tool-execution turns).
+        enriched_test_case: MCP-enriched ConversationalTestCase (for multi_turn_mcp —
+            has tool calls split into separate turns with _mcp_interaction=True).
+            Falls back to conversational_test_case if not provided.
         model: LLM judge model.
         tool_schemas: Full tool schema dicts from proxy.get_available_tools().
 
     Returns:
         Dict with per-metric scores and an aggregate process score.
     """
+    # Use enriched test case for multi_turn_mcp; fall back to clean if not provided
+    mcp_test_case = enriched_test_case or conversational_test_case
+
     # Ensure mcp_servers / chatbot_role are set before parallel evaluation
     # (these are one-time writes that must happen before concurrent reads)
-    if conversational_test_case is not None:
-        if conversational_test_case.mcp_servers is None:
-            conversational_test_case.mcp_servers = _build_mcp_servers(
-                core_tools, distractor_tools, tool_schemas
-            )
-        if conversational_test_case.chatbot_role is None:
-            conversational_test_case.chatbot_role = "quantitative finance tutor"
+    for tc in (conversational_test_case, mcp_test_case):
+        if tc is not None:
+            if tc.mcp_servers is None:
+                tc.mcp_servers = _build_mcp_servers(
+                    core_tools, distractor_tools, tool_schemas
+                )
+            if tc.chatbot_role is None:
+                tc.chatbot_role = "quantitative finance tutor"
 
     # Detect adversarial task (no expected tools)
     is_adversarial = len(expected_tool_names) == 0
@@ -1002,15 +1065,21 @@ def evaluate_all_process_metrics(
             model,
         )
 
-    # --- Multi-turn metrics (only if conversational_test_case is available) ---
-    if conversational_test_case is not None:
+    # --- Multi-turn metrics ---
+    # multi_turn_mcp needs the enriched test case (tool calls split into
+    # separate turns with _mcp_interaction=True so unit interactions have
+    # length >= 3 and pass DeepEval's internal filter).
+    # role_adherence/knowledge_retention/topic_adherence need the clean test
+    # case (no synthetic tool-execution turns that confuse turn indices).
+    if mcp_test_case is not None:
         tasks["multi_turn_mcp"] = _async_eval_multi_turn_mcp(
-            conversational_test_case,
+            mcp_test_case,
             core_tools,
             distractor_tools,
             model,
             tool_schemas=tool_schemas,
         )
+    if conversational_test_case is not None:
         tasks["role_adherence"] = _async_eval_role_adherence(
             conversational_test_case,
             model,

@@ -454,7 +454,12 @@ class BenchmarkOrchestrator:
         # ── Step 1: Build/enrich ConversationalTestCase with MCP data ──
         # If we got a test case from ConversationSimulator, enrich it with MCP data.
         # Otherwise, build one from the task result.
+        # Keep a clean copy for process metrics (role_adherence, knowledge_retention,
+        # topic_adherence) that don't need synthetic tool execution turns.
         if conversational_test_case is not None and DEEPEVAL_AVAILABLE:
+            import copy
+
+            clean_test_case = copy.deepcopy(conversational_test_case)
             try:
                 enrich_test_case_with_mcp(
                     test_case=conversational_test_case,
@@ -465,6 +470,15 @@ class BenchmarkOrchestrator:
                 )
             except Exception as e:
                 print(f"  Warning: Failed to enrich test case with MCP data: {e}")
+            # Copy MCP metadata to clean test case (for multi_turn_mcp)
+            # but don't copy the synthetic turns
+            for attr in ("mcp_tools_called", "mcp_servers"):
+                if hasattr(conversational_test_case, attr):
+                    setattr(
+                        clean_test_case, attr, getattr(conversational_test_case, attr)
+                    )
+        else:
+            clean_test_case = conversational_test_case
 
         # ── Step 2: Quant Result Score (custom eval scripts) ──
         print("  Evaluating Quant Result...")
@@ -541,7 +555,8 @@ class BenchmarkOrchestrator:
                     expected_tool_names=task.ground_truth.expected_mcp_tools,
                     core_tools=task.environment.core_mcp_tools,
                     distractor_tools=task.environment.distractor_mcp_tools_pool,
-                    conversational_test_case=conversational_test_case,
+                    conversational_test_case=clean_test_case,
+                    enriched_test_case=conversational_test_case,
                     model=self.eval_model,
                     tool_schemas=proxy.get_available_tools(),
                 )

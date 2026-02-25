@@ -68,7 +68,7 @@
     },
     "D5_code_teaching": {
       "weight": 1.0,
-      "criteria": "The agent provides clean, efficient, runnable code appropriate for a developer. Code focuses on quant-specific patterns and libraries rather than basic Python. Implementations are complete and production-aware.",
+      "criteria": "The agent provides clean, efficient code appropriate for a developer, with explanations focused on quant-specific patterns and financial logic rather than basic Python syntax. When the task does not require code, the agent appropriately focuses on implementation concepts and design patterns with minimal code snippets.",
       "scoring_guidance": {
         "1": "Agent provides no code, broken code, or trivially simple code that insults the learner's ability.",
         "2": "Agent provides code with errors, or wastes time explaining basic constructs (what import does, how to define a function).",
@@ -77,9 +77,9 @@
         "5": "Agent provides reasonable code with some quant-specific patterns. Explanations focus on the finance logic more than the syntax.",
         "6": "Agent provides good code that a developer can understand and extend. Quant-specific patterns (rolling windows, vectorized operations) are properly demonstrated.",
         "7": "Agent provides clean, well-structured code with proper quant patterns. Explanations focus on the financial logic and design decisions rather than Python syntax.",
-        "8": "Agent provides excellent code. Implementations are efficient, well-documented, and demonstrate best practices. Code is demonstrated with real data and actual execution where applicable. The developer can take the code and extend it immediately.",
-        "9": "Agent provides outstanding code. Uses idiomatic pandas/numpy, handles edge cases, includes type hints and docstrings. Code quality is near-production grade. Real execution output demonstrates correctness.",
-        "10": "Agent provides perfect code for an intermediate developer. Code is clean, efficient, well-documented, and addresses edge cases. The focus is entirely on the quant-specific implementation patterns, not basic programming. The developer learns new financial engineering patterns through the code itself, demonstrated with real data and verified by actual execution."
+        "8": "Agent provides excellent code. Implementations are efficient and demonstrate best practices. Explanations discuss design choices and trade-offs. Key results are summarized clearly rather than dumped as raw output.",
+        "9": "Agent provides outstanding code. Uses idiomatic pandas/numpy, handles edge cases. Explanations are precise, correct, and focused on quant-specific design decisions. The developer can take the code and extend it immediately.",
+        "10": "Agent provides perfect code for an intermediate developer. Code is clean, efficient, and addresses edge cases. Explanations focus entirely on quant-specific patterns and design rationale. The developer learns new financial engineering patterns through well-explained code and clear result summaries."
       }
     },
     "D6_empathetic_response": {

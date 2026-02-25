@@ -6,7 +6,7 @@ They should NOT be called by the agent. If called, they return an error.
 
 DISTRACTOR_TOOLS = {
     "search_web": {
-        "description": "Search the web for information",
+        "description": "Search the public internet for information. Requires network access.",
         "params": {
             "query": {
                 "type": "string",
@@ -17,7 +17,7 @@ DISTRACTOR_TOOLS = {
         "error": "Error: No network access available in this sandbox environment.",
     },
     "fetch_live_price": {
-        "description": "Fetch the current live market price for a symbol",
+        "description": "Fetch the current real-time market price for a symbol via live exchange feed. Requires network access.",
         "params": {
             "symbol": {
                 "type": "string",
@@ -28,7 +28,7 @@ DISTRACTOR_TOOLS = {
         "error": "Error: No network access. All market data is pre-loaded in /data/.",
     },
     "train_ml_model": {
-        "description": "Train a machine learning model on data",
+        "description": "Train a supervised ML model (linear regression, random forest, LSTM) for price prediction. Requires labeled training data with feature and target columns.",
         "params": {
             "model_type": {
                 "type": "string",
@@ -44,7 +44,7 @@ DISTRACTOR_TOOLS = {
         "error": "Error: ML model training is not available for this task.",
     },
     "optimize_portfolio": {
-        "description": "Run portfolio optimization with given weights and objective",
+        "description": "Run Markowitz mean-variance portfolio optimization across multiple assets. Requires returns data for multiple securities.",
         "params": {
             "weights": {
                 "type": "array",
@@ -61,7 +61,7 @@ DISTRACTOR_TOOLS = {
         "error": "Error: Portfolio optimization is not relevant to this task.",
     },
     "submit_order": {
-        "description": "Submit a live trading order",
+        "description": "Submit a LIVE trading order to a brokerage for real-money execution. Not for backtesting or educational use.",
         "params": {
             "symbol": {
                 "type": "string",
@@ -82,7 +82,7 @@ DISTRACTOR_TOOLS = {
         "error": "Error: This is a backtesting environment. Live trading is not available.",
     },
     "fetch_options_chain": {
-        "description": "Fetch options chain data for a symbol",
+        "description": "Fetch options chain data (calls/puts, strikes, expiries) for a symbol from a live options exchange feed.",
         "params": {
             "symbol": {
                 "type": "string",
@@ -98,7 +98,7 @@ DISTRACTOR_TOOLS = {
         "error": "Error: Options data is not available in this environment.",
     },
     "fetch_news_sentiment": {
-        "description": "Fetch news sentiment analysis for a symbol",
+        "description": "Fetch recent news articles for a ticker and compute NLP-based sentiment scores. Requires internet access to news APIs.",
         "params": {
             "symbol": {
                 "type": "string",
@@ -114,7 +114,7 @@ DISTRACTOR_TOOLS = {
         "error": "Error: News sentiment data is not available.",
     },
     "translate_text": {
-        "description": "Translate text to a target language",
+        "description": "Translate text to a target language using a translation API. Not related to financial analysis.",
         "params": {
             "text": {
                 "type": "string",
@@ -130,12 +130,12 @@ DISTRACTOR_TOOLS = {
         "error": "Error: Translation service is not available.",
     },
     "get_current_time": {
-        "description": "Get the current date and time",
+        "description": "Get the current system date and time. Not needed for historical data analysis.",
         "params": {},
         "error": "Error: Time is frozen in this benchmark environment.",
     },
     "query_database": {
-        "description": "Execute a SQL query against the database",
+        "description": "Execute a SQL query against a relational database. Data in this environment is file-based (CSV), not in a database.",
         "params": {
             "sql": {
                 "type": "string",
@@ -146,7 +146,7 @@ DISTRACTOR_TOOLS = {
         "error": "Error: No database is available. Use file-based data in /data/.",
     },
     "send_email": {
-        "description": "Send an email notification",
+        "description": "Send an email notification to an external recipient. Not related to tutoring or data analysis.",
         "params": {
             "to": {
                 "type": "string",
@@ -167,7 +167,7 @@ DISTRACTOR_TOOLS = {
         "error": "Error: Email service is not available.",
     },
     "generate_image": {
-        "description": "Generate an image from a text prompt",
+        "description": "Generate an AI image from a text prompt using a generative model. Not related to financial charting — use plot_chart for data visualizations.",
         "params": {
             "prompt": {
                 "type": "string",
@@ -178,7 +178,7 @@ DISTRACTOR_TOOLS = {
         "error": "Error: Image generation is not available.",
     },
     "fetch_crypto_data": {
-        "description": "Fetch cryptocurrency market data",
+        "description": "Fetch cryptocurrency (BTC, ETH) market data from a crypto exchange. This environment focuses on equities — use fetch_market_data for stock data.",
         "params": {
             "symbol": {
                 "type": "string",
@@ -189,7 +189,7 @@ DISTRACTOR_TOOLS = {
         "error": "Error: Cryptocurrency data is not available for equity-focused tasks.",
     },
     "run_monte_carlo": {
-        "description": "Run Monte Carlo simulation with given parameters",
+        "description": "Run Monte Carlo price simulation with configurable parameters. For advanced stochastic modeling, not basic strategy backtesting.",
         "params": {
             "params": {
                 "type": "object",
@@ -200,7 +200,7 @@ DISTRACTOR_TOOLS = {
         "error": "Error: Monte Carlo simulation is not needed for this task.",
     },
     "fetch_economic_calendar": {
-        "description": "Fetch upcoming economic events and releases",
+        "description": "Fetch upcoming economic events (FOMC, NFP, CPI releases) from a macro data provider. Requires internet access.",
         "params": {},
         "error": "Error: Economic calendar data is not available.",
     },

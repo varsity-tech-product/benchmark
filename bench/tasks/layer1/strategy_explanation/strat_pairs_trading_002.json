@@ -4,6 +4,7 @@
   "difficulty": "medium",
   "category": "strategy_explanation",
   "task_type": "single_turn",
+  "requires_tool": false,
   "description": "I've heard about pairs trading in quantitative finance. How does it work and what are the key assumptions?",
   "context": null,
   "reference_answer": "Pairs trading is a market-neutral strategy that identifies two historically correlated securities (e.g., Coca-Cola and Pepsi). When their price ratio or spread deviates significantly from the historical mean, the strategy goes long the underperformer and short the outperformer, betting on mean reversion. Key assumptions: (1) the pair relationship is stable (cointegration, not just correlation), (2) deviations are temporary, (3) no structural break has occurred. Implementation requires: cointegration testing (Engle-Granger or Johansen), z-score calculation for entry/exit signals, and risk controls for divergence scenarios. Risks include: regime changes breaking the pair, unlimited loss on the short leg, and liquidity constraints.",
@@ -14,20 +15,5 @@
     "statistical-arbitrage",
     "pairs-trading",
     "market-neutral"
-  ],
-  "persona_ids": [],
-  "student_openings": {},
-  "environment": null,
-  "ground_truth": {
-    "expected_outcome": "Pairs trading is a market-neutral strategy that identifies two historically correlated securities (e.g., Coca-Cola and Pepsi). When their price ratio or spread deviates significantly from the historical mean, the strategy goes long the underperformer and short the outperformer, betting on mean reversion. Key assumptions: (1) the pair relationship is stable (cointegration, not just correlation), (2) deviations are temporary, (3) no structural break has occurred. Implementation requires: cointegration testing (Engle-Granger or Johansen), z-score calculation for entry/exit signals, and risk controls for divergence scenarios. Risks include: regime changes breaking the pair, unlimited loss on the short leg, and liquidity constraints.",
-    "required_capabilities": [],
-    "expected_mcp_tools": [],
-    "quant_validation": null,
-    "bug_description": null,
-    "expected_fix": null
-  },
-  "requires_code": false,
-  "sample_code": null,
-  "max_turns": 30,
-  "timeout_minutes": 15
+  ]
 }

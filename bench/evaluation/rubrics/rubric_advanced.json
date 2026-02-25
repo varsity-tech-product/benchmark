@@ -68,18 +68,18 @@
     },
     "D5_code_teaching": {
       "weight": 1.0,
-      "criteria": "The agent provides production-quality code that an advanced developer would respect. Code is efficient, well-structured, handles edge cases, includes type hints and docstrings, and uses idiomatic patterns. Focus is on design decisions and trade-offs rather than basic explanations.",
+      "criteria": "The agent provides production-quality code that an advanced developer would respect. Code is efficient, well-structured, handles edge cases, and uses idiomatic patterns. Discussion focuses on design decisions, trade-offs, and alternatives rather than basic explanations. When the task does not require code, the agent discusses architectural considerations and methodology with minimal code.",
       "scoring_guidance": {
-        "1": "Agent provides amateurish code: no error handling, no type hints, inefficient implementations, or basic tutorial-level snippets.",
+        "1": "Agent provides amateurish code: no error handling, inefficient implementations, or basic tutorial-level snippets.",
         "2": "Agent provides code that works but is poorly structured, uses anti-patterns, or ignores edge cases that an advanced developer would immediately identify.",
-        "3": "Agent provides reasonable code but it lacks production polish. Missing error handling, type hints, or proper edge case management.",
+        "3": "Agent provides reasonable code but it lacks production polish. Missing error handling or proper edge case management.",
         "4": "Agent provides decent code but an advanced developer would find notable issues: unnecessary loops where vectorized operations would suffice, missing edge case handling, or suboptimal API usage.",
         "5": "Agent provides good code that is mostly correct and reasonably well-structured, but lacks some production-quality elements.",
-        "6": "Agent provides clean, well-structured code. Uses idiomatic pandas/numpy. Handles common edge cases. Includes basic type hints and docstrings.",
-        "7": "Agent provides high-quality code. Efficient implementations, proper error handling, type hints, and docstrings. The code is ready for a production codebase with minor modifications.",
-        "8": "Agent provides excellent code. Vectorized where appropriate, handles edge cases (NaN, empty series, division by zero), follows best practices. Code is demonstrated with real data and actual execution where applicable. Discussion focuses on design trade-offs.",
-        "9": "Agent provides outstanding, production-grade code. Comprehensive error handling, proper typing, thorough docstrings, and consideration of performance at scale. Real execution output demonstrates correctness. Design decisions are discussed and justified.",
-        "10": "Agent provides flawless, production-quality code that an advanced quant developer would deploy with confidence. Every edge case is handled, performance is optimized, APIs are used idiomatically. Code is verified by actual execution with real data. The code is accompanied by discussion of alternatives, trade-offs, and design rationale."
+        "6": "Agent provides clean, well-structured code. Uses idiomatic pandas/numpy. Handles common edge cases.",
+        "7": "Agent provides high-quality code. Efficient implementations, proper error handling, idiomatic patterns. Discussion focuses on design trade-offs and alternatives.",
+        "8": "Agent provides excellent code. Vectorized where appropriate, handles edge cases (NaN, empty series, division by zero), follows best practices. Discussion focuses on design trade-offs and architectural considerations.",
+        "9": "Agent provides outstanding, production-grade code with comprehensive error handling and consideration of performance at scale. Design decisions are discussed and justified with clear rationale.",
+        "10": "Agent provides flawless, production-quality code that an advanced quant developer would deploy with confidence. Every edge case is handled, performance is optimized, APIs are used idiomatically. Discussion covers alternatives, trade-offs, and design rationale at a peer level."
       }
     },
     "D6_empathetic_response": {

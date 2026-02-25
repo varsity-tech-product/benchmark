@@ -7,20 +7,20 @@ import os
 
 # --- Generic / Baseline (via OpenRouter) ---
 # AGENT_DEFAULT_MODEL = "google/gemini-3-flash-preview"
-AGENT_DEFAULT_MODEL = "openai/gpt-4o"
+AGENT_DEFAULT_MODEL = "openai/gpt-5.2"
 
 # --- Per-SDK agent models (native API format) ---
-OPENAI_AGENT_MODEL = "gpt-4o"
+OPENAI_AGENT_MODEL = "gpt-5.2"
 ANTHROPIC_AGENT_MODEL = "claude-sonnet-4-6"
 GOOGLE_AGENT_MODEL = "gemini-2.5-flash"
 
 # --- Corresponding OpenRouter names (for baseline controlled comparison) ---
-OPENAI_AGENT_MODEL_OR = "openai/gpt-4o"
+OPENAI_AGENT_MODEL_OR = "openai/gpt-5.2"
 ANTHROPIC_AGENT_MODEL_OR = "anthropic/claude-sonnet-4.6"
 GOOGLE_AGENT_MODEL_OR = "google/gemini-2.5-flash-preview"
 
 # --- Evaluation / Simulation ---
-SIMULATOR_DEFAULT_MODEL = "openai/gpt-4o"
+SIMULATOR_DEFAULT_MODEL = "openai/gpt-5.2"
 EVAL_DEFAULT_MODEL = "anthropic/claude-sonnet-4.6"
 SYNTHESIS_DEFAULT_MODEL = "google/gemini-2.5-flash-preview"
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"

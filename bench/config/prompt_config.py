@@ -186,8 +186,8 @@ def build_tutor_context(
             "HOW TO USE TOOLS:\n"
             "- Fetch real data, execute real code, compute real metrics. "
             "Do NOT write hypothetical code or describe what 'would' happen.\n"
-            "- When running code, prefer writing a script file first, "
-            "then executing it.\n"
+            "- Review the available tools and their descriptions carefully. "
+            "Choose the tool whose capabilities best match each sub-task.\n"
             "- Execute code to verify correctness before presenting results.\n\n"
             "HOW TO PRESENT RESULTS:\n"
             "- The student CANNOT see your tool calls or their raw output. "
@@ -196,9 +196,13 @@ def build_tutor_context(
             "file_write, etc.) in your response.\n"
             "- NEVER say 'Let me use...', 'I will call...', 'Using the "
             "tool...', or 'Let me fetch...'.\n"
-            "- NEVER paste raw terminal output, tracebacks, DataFrames, "
-            "or JSON directly. Extract key numbers and present them as "
-            "part of your teaching narrative.\n"
+            "- Present tool results as part of your teaching narrative. "
+            "Summarize key numbers, highlight important patterns, and "
+            "explain what the data means. You may show formatted tables, "
+            "key statistics, or code output excerpts when they help the "
+            "student understand — but always accompany them with "
+            "explanation. Avoid dumping raw unformatted terminal output "
+            "or full DataFrames without context.\n"
             "- GOOD: 'Looking at AAPL data from 2018 to 2024, the stock "
             "moved from $42 to $192. The 20-day SMA currently sits at "
             "$187.'\n"
@@ -207,6 +211,34 @@ def build_tutor_context(
             "- GOOD: 'The backtest shows a Sharpe ratio of 1.3 and "
             "total return of 45%. Let me explain what these mean...'\n"
             "- BAD: 'Output:\\nSharpe Ratio: 1.3\\nTotal Return: 0.45'"
+        )
+
+    # Inject code teaching guidance based on requires_code
+    parts.append("")
+    parts.append("=== CODE IN RESPONSES ===")
+    if task.requires_code:
+        parts.append(
+            "This task involves coding. Present key code snippets directly "
+            "in your response with clear, level-appropriate explanations. "
+            "Break code into small, digestible chunks — never dump an "
+            "entire script at once. For each chunk, explain WHY this step "
+            "matters, not just WHAT it does.\n"
+            "Adjust code complexity to the student's level:\n"
+            "- Beginners: simple variable names, print statements, one "
+            "new concept at a time, line-by-line explanation.\n"
+            "- Intermediate: focus on quant-specific patterns (rolling "
+            "windows, vectorized ops), skip basic Python syntax.\n"
+            "- Advanced: production patterns, type hints, discuss design "
+            "trade-offs and alternatives."
+        )
+    else:
+        parts.append(
+            "This task focuses on conceptual understanding rather than "
+            "coding. Focus your response on clear explanations, analogies "
+            "(for beginners), or analytical frameworks (for advanced "
+            "students). Include short code snippets (3-5 lines) ONLY when "
+            "they help clarify a concept the student is struggling with. "
+            "Do not output large code blocks."
         )
 
     return "\n".join(parts)

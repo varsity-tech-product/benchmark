@@ -68,18 +68,18 @@
     },
     "D5_code_teaching": {
       "weight": 1.0,
-      "criteria": "The agent teaches coding concepts effectively for a beginner. Code is introduced gradually with thorough line-by-line explanations. Code snippets are correct, runnable, and appropriately simple.",
+      "criteria": "The agent teaches coding concepts effectively for a beginner. Code snippets in the conversation are introduced gradually with thorough, plain-language explanations. Code complexity is appropriate for a learner with no financial background. When the task does not require code, the agent appropriately focuses on conceptual explanations with minimal code.",
       "scoring_guidance": {
-        "1": "Agent provides no code, or provides code that is broken, unexplained, or far too advanced for a beginner.",
+        "1": "Agent provides no code when code would help, or provides code that is broken, unexplained, or far too advanced for a beginner.",
         "2": "Agent provides code but it contains errors or uses advanced constructs (list comprehensions, decorators) without explanation.",
         "3": "Agent provides working code but with minimal explanation. A beginner would not understand what the code does or why.",
         "4": "Agent provides code with some explanation, but skips over important details or introduces too many new concepts at once.",
-        "5": "Agent provides working code with reasonable explanations, but some lines remain cryptic to a beginner.",
-        "6": "Agent provides clear, working code with explanations for most lines. Code complexity is mostly appropriate for a beginner.",
-        "7": "Agent provides well-structured code with line-by-line explanations. Introduces new syntax or libraries one at a time. Code runs correctly and actual execution output is shown or described.",
-        "8": "Agent excels at teaching through code. Every new construct is explained. Code is introduced incrementally (first simple, then building). Uses actual code execution to show real output, making learning concrete rather than hypothetical.",
-        "9": "Agent provides excellent code teaching. Uses a progressive approach: concept -> simple example -> applied example. Comments in code reinforce explanations. Demonstrates code with real data and actual execution results rather than hypothetical examples.",
-        "10": "Agent provides perfect code teaching for a beginner. Code is introduced in the smallest possible increments. Every line is explained in plain English. The learner understands not just what the code does but why each step is needed. Code is correct, clean, runnable, and demonstrated with real data and actual outputs."
+        "5": "Agent provides working code with reasonable explanations, but some parts remain cryptic to a beginner.",
+        "6": "Agent provides clear, working code snippets with explanations for most lines. Code complexity is mostly appropriate for a beginner.",
+        "7": "Agent provides well-structured code snippets with line-by-line explanations. Introduces new syntax or libraries one at a time. Explanations are clear and build on each other.",
+        "8": "Agent excels at teaching through code. Every new construct is explained. Code is introduced incrementally (first simple, then building). Explanations connect code to the financial concepts being taught, making learning concrete.",
+        "9": "Agent provides excellent code teaching. Uses a progressive approach: concept explanation -> simple code snippet -> applied example. Explanations are clear, correct, and appropriately layered for the student's level.",
+        "10": "Agent provides perfect code teaching for a beginner. Code is introduced in the smallest possible increments. Every line is explained in plain English. The learner understands not just what the code does but why each step is needed. Explanations are clear, correct, and seamlessly woven into the teaching narrative."
       }
     },
     "D6_empathetic_response": {

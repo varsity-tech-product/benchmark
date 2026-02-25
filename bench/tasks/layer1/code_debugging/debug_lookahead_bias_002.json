@@ -4,6 +4,7 @@
   "difficulty": "medium",
   "category": "code_debugging",
   "task_type": "single_turn",
+  "requires_tool": true,
   "description": "I built a moving average crossover backtest but the results are suspiciously good — 40% annual return with Sharpe > 3. Can you review my code for bugs?\n\n```python\nimport pandas as pd\nimport numpy as np\n\ndf = pd.read_csv('spy_data.csv', parse_dates=['Date'], index_col='Date')\ndf['sma_20'] = df['Close'].rolling(20).mean()\ndf['sma_50'] = df['Close'].rolling(50).mean()\n\n# Generate signal: 1 when fast > slow\ndf['signal'] = np.where(df['sma_20'] > df['sma_50'], 1, -1)\n\n# Calculate strategy returns\ndf['returns'] = df['Close'].pct_change()\ndf['strategy_returns'] = df['signal'] * df['returns']\n\nprint(f\"Annual return: {df['strategy_returns'].mean() * 252:.1%}\")\nprint(f\"Sharpe: {df['strategy_returns'].mean() / df['strategy_returns'].std() * np.sqrt(252):.2f}\")\n```",
   "context": null,
   "reference_answer": "The bug is a classic look-ahead bias: the signal at time t uses data up to and including time t (the rolling mean includes today's Close), and then multiplies by the return at time t (which also uses today's Close). The fix is `df['signal'] = df['signal'].shift(1)` — today's signal should only affect tomorrow's return. The suspiciously high Sharpe ratio (>3) is a red flag that almost always indicates look-ahead bias. A realistic equity strategy rarely sustains Sharpe > 2.0. Additionally, using -1 for the short signal assumes you can freely short-sell, which has borrowing costs not accounted for.",
@@ -14,20 +15,5 @@
     "backtesting",
     "look-ahead-bias",
     "moving-averages"
-  ],
-  "persona_ids": [],
-  "student_openings": {},
-  "environment": null,
-  "ground_truth": {
-    "expected_outcome": "The bug is a classic look-ahead bias: the signal at time t uses data up to and including time t (the rolling mean includes today's Close), and then multiplies by the return at time t (which also uses today's Close). The fix is `df['signal'] = df['signal'].shift(1)` — today's signal should only affect tomorrow's return. The suspiciously high Sharpe ratio (>3) is a red flag that almost always indicates look-ahead bias. A realistic equity strategy rarely sustains Sharpe > 2.0. Additionally, using -1 for the short signal assumes you can freely short-sell, which has borrowing costs not accounted for.",
-    "required_capabilities": [],
-    "expected_mcp_tools": [],
-    "quant_validation": null,
-    "bug_description": null,
-    "expected_fix": null
-  },
-  "requires_code": false,
-  "sample_code": null,
-  "max_turns": 30,
-  "timeout_minutes": 15
+  ]
 }

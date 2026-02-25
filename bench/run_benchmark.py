@@ -69,19 +69,26 @@ def _create_agent(args):
 
     agent_type = getattr(args, "agent", "generic")
     condition = CONDITIONS[getattr(args, "condition", "agent")]
+    model_override = getattr(args, "model", None)
 
     system_prompt = (
         TUTOR_SYSTEM_PROMPT
         if condition.prompt_mode == "tutor"
         else BASELINE_SYSTEM_PROMPT
     )
-    agent_name = f"{agent_type}_{condition.name}"
+
+    # Include model short name in agent_name for distinguishable results
+    if model_override:
+        model_short = model_override.split("/")[-1]
+        agent_name = f"{agent_type}_{condition.name}_{model_short}"
+    else:
+        agent_name = f"{agent_type}_{condition.name}"
 
     # Pure LLM conditions: no SDK framework needed, use GenericLLM via OpenRouter
     if not condition.tools_enabled:
         from orchestrator.agent_adapters.generic_adapter import GenericLLMAdapter
 
-        model = get_model_for_agent(agent_type, use_openrouter=True)
+        model = model_override or get_model_for_agent(agent_type, use_openrouter=True)
         return GenericLLMAdapter(
             model=model, system_prompt=system_prompt, agent_name=agent_name
         )
@@ -90,14 +97,14 @@ def _create_agent(args):
     if agent_type == "anthropic":
         from orchestrator.agent_adapters.anthropic_adapter import ClaudeAgentAdapter
 
-        model = get_model_for_agent("anthropic")
+        model = model_override or get_model_for_agent("anthropic")
         return ClaudeAgentAdapter(
             model=model, system_prompt=system_prompt, agent_name=agent_name
         )
     elif agent_type == "google":
         from orchestrator.agent_adapters.google_adapter import GoogleAdapter
 
-        model = get_model_for_agent("google")
+        model = model_override or get_model_for_agent("google")
         return GoogleAdapter(
             model=model, system_prompt=system_prompt, agent_name=agent_name
         )
@@ -105,7 +112,7 @@ def _create_agent(args):
         from orchestrator.agent_adapters.openai_adapter import OpenAIAgentAdapter
 
         # Always route through OpenRouter for higher rate limits / parallelism
-        model = get_model_for_agent("openai", use_openrouter=True)
+        model = model_override or get_model_for_agent("openai", use_openrouter=True)
         return OpenAIAgentAdapter(
             model=model,
             base_url=OPENROUTER_BASE_URL,
@@ -115,20 +122,23 @@ def _create_agent(args):
     else:  # generic
         from orchestrator.agent_adapters.generic_adapter import GenericLLMAdapter
 
-        model = get_model_for_agent("generic")
+        model = model_override or get_model_for_agent("generic")
         return GenericLLMAdapter(
             model=model, system_prompt=system_prompt, agent_name=agent_name
         )
 
 
 def _make_layer1_callback(agent):
-    """Bridge a BaseAgentAdapter to Layer1Runner's callback(question, context) -> str.
+    """Bridge a BaseAgentAdapter to Layer1Runner's callback interface.
 
-    Layer 1 is always single-turn with no tools. The agent's system prompt
-    (tutor vs baseline) is already set by _create_agent().
+    Supports two calling conventions:
+    1. Pure Q&A: callback(context, question) -> str
+    2. Tool-enabled: callback(context, question, tools=..., tool_callback=...) -> str
+
+    The agent's system prompt (tutor vs baseline) is already set by _create_agent().
     """
 
-    def callback(question: str, context: str) -> str:
+    def callback(context: str, question: str, tools=None, tool_callback=None) -> str:
         if context:
             messages = [
                 {
@@ -138,7 +148,11 @@ def _make_layer1_callback(agent):
             ]
         else:
             messages = [{"role": "user", "content": question}]
-        return agent.generate_response(messages=messages, available_tools=[])
+        return agent.generate_response(
+            messages=messages,
+            available_tools=tools or [],
+            tool_callback=tool_callback,
+        )
 
     return callback
 
@@ -183,6 +197,7 @@ def cmd_run(args):
         print("=== Phase 1: Layer 1 (single-turn knowledge) ===")
         from layer1.data_loader import get_layer1_stats, load_layer1_items
         from layer1.runner import Layer1Runner
+        from orchestrator.container_manager import ContainerManager
 
         l1_max = getattr(args, "l1_max_items", None)
         items = load_layer1_items(max_items=l1_max)
@@ -192,10 +207,13 @@ def cmd_run(args):
             print(f"  By category: {stats['by_category']}")
 
             callback = _make_layer1_callback(agent)
+            l1_container_manager = ContainerManager(use_docker=args.docker)
             runner = Layer1Runner(
                 agent_callback=callback,
                 use_deepeval=not getattr(args, "no_deepeval", False),
                 eval_model=getattr(args, "eval_model", None),
+                container_manager=l1_container_manager,
+                use_docker=args.docker,
             )
             l1_results = runner.run_batch(items, max_items=l1_max)
             l1_summary = Layer1Runner.compute_layer1_scores(l1_results)
@@ -387,6 +405,7 @@ def cmd_run_layer1(args):
     from layer1.data_loader import get_layer1_stats, load_layer1_items
     from layer1.runner import Layer1Runner
     from orchestrator.agent_adapters.generic_adapter import GenericLLMAdapter
+    from orchestrator.container_manager import ContainerManager
 
     eval_model_name = args.eval_model or None
 
@@ -410,27 +429,18 @@ def cmd_run_layer1(args):
         agent_name=f"generic_{AGENT_DEFAULT_MODEL}",
     )
 
-    def agent_callback(question: str, context: str) -> str:
-        """Call the real LLM agent to answer the question."""
-        messages = []
-        if context:
-            messages.append(
-                {
-                    "role": "user",
-                    "content": f"Context:\n{context}\n\nQuestion: {question}",
-                }
-            )
-        else:
-            messages.append({"role": "user", "content": question})
-        return agent.generate_response(messages=messages, available_tools=[])
+    callback = _make_layer1_callback(agent)
 
     # Configure eval model for Layer 1 GEval judge.
     # DeepEval accepts a model string and uses OPENAI_API_KEY + OPENAI_BASE_URL
     # from environment (already bridged from OPENROUTER_API_KEY at top of this file).
+    l1_container_manager = ContainerManager(use_docker=False)
     runner = Layer1Runner(
-        agent_callback=agent_callback,
+        agent_callback=callback,
         use_deepeval=not args.no_deepeval,
         eval_model=eval_model_name,
+        container_manager=l1_container_manager,
+        use_docker=False,
     )
 
     results = runner.run_batch(items, max_items=args.max_items)
@@ -716,6 +726,11 @@ def main():
         action="store_true",
         help="Disable DeepEval for Layer 1 (use simple scoring)",
     )
+    run_parser.add_argument(
+        "--model",
+        default=None,
+        help="Override agent model (OpenRouter format, e.g. 'openai/gpt-5.2')",
+    )
 
     # run-single command
     single_parser = subparsers.add_parser("run-single", help="Run single task")
@@ -748,6 +763,11 @@ def main():
         "--simulator-model",
         default=None,
         help="LLM model for student simulator (OpenRouter format)",
+    )
+    single_parser.add_argument(
+        "--model",
+        default=None,
+        help="Override agent model (OpenRouter format, e.g. 'openai/gpt-5.2')",
     )
 
     # run-layer1 command

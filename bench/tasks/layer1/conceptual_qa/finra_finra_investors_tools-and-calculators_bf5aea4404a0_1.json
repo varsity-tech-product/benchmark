@@ -4,6 +4,7 @@
   "difficulty": "easy",
   "category": "conceptual_qa",
   "task_type": "single_turn",
+  "requires_tool": false,
   "description": "What calculators can help me plan for retirement, like checking my Social Security earnings or required minimum distributions?",
   "context": null,
   "reference_answer": "Make sure you have enough to see you through your retirement years.\n\nEstimate your actual Social Security earnings record.\n\nDetermine your Required Minimum Distribution (RMD) from a traditional 401(k) or IRA.\n\nDetermine if you are on track to \"save the max\" in your 401(k) by maximizing your contributions each pay period so you can reach the allowed IRS limits.\n\nSee how a consistent approach to investing can make your money grow.\n\nCalculate the amount you must invest each year to have enough money to cover the cost of education.\n\nDetermine the monthly payment for a fixed-rate loan such as a car loan or mortgage. Compare different offers or the merits of refinancing.\n\nInterest on a bond accrues between regularly scheduled payments. To find out how much interest is owed on a given bond, use our accrued interest calculator.",
@@ -12,20 +13,5 @@
   "tags": [
     "investor-education",
     "regulatory"
-  ],
-  "persona_ids": [],
-  "student_openings": {},
-  "environment": null,
-  "ground_truth": {
-    "expected_outcome": "Make sure you have enough to see you through your retirement years.\n\nEstimate your actual Social Security earnings record.\n\nDetermine your Required Minimum Distribution (RMD) from a traditional 401(k) or IRA.\n\nDetermine if you are on track to \"save the max\" in your 401(k) by maximizing your contributions each pay period so you can reach the allowed IRS limits.\n\nSee how a consistent approach to investing can make your money grow.\n\nCalculate the amount you must invest each year to have enough money to cover the cost of education.\n\nDetermine the monthly payment for a fixed-rate loan such as a car loan or mortgage. Compare different offers or the merits of refinancing.\n\nInterest on a bond accrues between regularly scheduled payments. To find out how much interest is owed on a given bond, use our accrued interest calculator.",
-    "required_capabilities": [],
-    "expected_mcp_tools": [],
-    "quant_validation": null,
-    "bug_description": null,
-    "expected_fix": null
-  },
-  "requires_code": false,
-  "sample_code": null,
-  "max_turns": 30,
-  "timeout_minutes": 15
+  ]
 }

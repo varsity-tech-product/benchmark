@@ -95,6 +95,7 @@ class QuantTutorTask(BaseModel):
     environment: Optional[EnvironmentConfig] = None
     ground_truth: Optional[GroundTruth] = None
     requires_code: bool = False
+    requires_tool: bool = False
     sample_code: Optional[str] = None
     max_turns: int = 30
     timeout_minutes: int = 15

@@ -4,6 +4,7 @@
   "difficulty": "medium",
   "category": "code_debugging",
   "task_type": "single_turn",
+  "requires_tool": true,
   "description": "I calculated the Sharpe ratio for my strategy but it seems too high. My strategy returns about 8% annually with 15% volatility, so I'd expect a Sharpe around 0.5. But my code gives 7.9. What's wrong?\n\n```python\nimport numpy as np\nimport pandas as pd\n\nreturns = pd.read_csv('strategy_returns.csv')['daily_return']\n\nmean_return = returns.mean()\nvol = returns.std()\n\nsharpe = mean_return / vol * 252  # annualize\nprint(f\"Sharpe ratio: {sharpe:.2f}\")\n```",
   "context": null,
   "reference_answer": "The bug is in the annualization. The code multiplies by 252, but the correct annualization factor for the Sharpe ratio is sqrt(252) ≈ 15.87, not 252. The reason: the mean return scales linearly with time (×252) but the standard deviation scales with the square root of time (×√252). Since Sharpe = mean/std, the annualization is: (mean × 252) / (std × √252) = (mean/std) × √252. The code effectively annualizes as if both mean and std scale linearly, overstating Sharpe by a factor of √252 ≈ 15.87. Fix: `sharpe = mean_return / vol * np.sqrt(252)`.",
@@ -14,20 +15,5 @@
     "Sharpe-ratio",
     "annualization",
     "risk-metrics"
-  ],
-  "persona_ids": [],
-  "student_openings": {},
-  "environment": null,
-  "ground_truth": {
-    "expected_outcome": "The bug is in the annualization. The code multiplies by 252, but the correct annualization factor for the Sharpe ratio is sqrt(252) ≈ 15.87, not 252. The reason: the mean return scales linearly with time (×252) but the standard deviation scales with the square root of time (×√252). Since Sharpe = mean/std, the annualization is: (mean × 252) / (std × √252) = (mean/std) × √252. The code effectively annualizes as if both mean and std scale linearly, overstating Sharpe by a factor of √252 ≈ 15.87. Fix: `sharpe = mean_return / vol * np.sqrt(252)`.",
-    "required_capabilities": [],
-    "expected_mcp_tools": [],
-    "quant_validation": null,
-    "bug_description": null,
-    "expected_fix": null
-  },
-  "requires_code": false,
-  "sample_code": null,
-  "max_turns": 30,
-  "timeout_minutes": 15
+  ]
 }

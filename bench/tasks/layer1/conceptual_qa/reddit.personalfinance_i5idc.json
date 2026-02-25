@@ -4,6 +4,7 @@
   "difficulty": "medium",
   "category": "conceptual_qa",
   "task_type": "single_turn",
+  "requires_tool": false,
   "description": "Hello All,\n\nAs we continue to grow very rapidly I'm seeing many repeat questions. I'm hoping we can create a massive FAQ list here for newcomers. Please add anything you see appropriate. Thanks!!",
   "context": null,
   "reference_answer": "Some of my ideas:\n\n* Pay off debt with highest interest rate first\n* Do your banking with a Credit Union\n* [Mint](http://www.mint.com) can be a great tool to manage income/expenses across multiple accounts. \n* Establish a Emergency Fund\n* Put money into a 401k or IRA and contribute monthly regardless what the stock market does until you retire. \n\n**Saving/Investment Options**\n\n* [I Bonds issued by US Treasury](http://www.treasurydirect.gov/indiv/research/indepth/ibonds/res_ibonds_iratesandterms.htm) - Inflation protected and higher yield then you get at a bank. \n\n* For Mutual Fund/Index Investing, I'd check out [Vanguard](http://www.vanguard.com/)",
@@ -11,20 +12,5 @@
   "source_dataset": "reddit.personalfinance",
   "tags": [
     "personalfinance"
-  ],
-  "persona_ids": [],
-  "student_openings": {},
-  "environment": null,
-  "ground_truth": {
-    "expected_outcome": "Some of my ideas:\n\n* Pay off debt with highest interest rate first\n* Do your banking with a Credit Union\n* [Mint](http://www.mint.com) can be a great tool to manage income/expenses across multiple accounts. \n* Establish a Emergency Fund\n* Put money into a 401k or IRA and contribute monthly regardless what the stock market does until you retire. \n\n**Saving/Investment Options**\n\n* [I Bonds issued by US Treasury](http://www.treasurydirect.gov/indiv/research/indepth/ibonds/res_ibonds_iratesandterms.htm) - Inflation protected and higher yield then you get at a bank. \n\n* For Mutual Fund/Index Investing, I'd check out [Vanguard](http://www.vanguard.com/)",
-    "required_capabilities": [],
-    "expected_mcp_tools": [],
-    "quant_validation": null,
-    "bug_description": null,
-    "expected_fix": null
-  },
-  "requires_code": false,
-  "sample_code": null,
-  "max_turns": 30,
-  "timeout_minutes": 15
+  ]
 }

@@ -4,6 +4,7 @@
   "difficulty": "easy",
   "category": "conceptual_qa",
   "task_type": "single_turn",
+  "requires_tool": false,
   "description": "Starting a new online business",
   "context": null,
   "reference_answer": "Most US states have rules that go something like this: You will almost certainly have to pay some registration fees, as noted above.  Depending on how you organize, you may or may not need to file a separate tax return for the business. (If you're sole proprietor for tax purposes, then you file on Schedule C on your personal Form 1040.)  Whether or not you pay taxes depends on whether you have net income.  It's possible that some losses might also be deductible. (Note that you may have to file a return even if you don't have net income - Filing and needing to pay are not the same since your return may indicate no tax due.)  In addition, at the state level, you may have to pay additional fees or taxes beyond income tax depending on what you sell and how you sell it. (Sales tax, for example, might come into play as might franchise taxes.)  You'll need to check your own state law for that. As always, it could be wise to get professional tax and accounting advice that's tailored to your situation and your state.  This is just an outline of some things that you'll need to consider.",
@@ -11,20 +12,5 @@
   "source_dataset": "fiqa",
   "tags": [
     "financial-qa"
-  ],
-  "persona_ids": [],
-  "student_openings": {},
-  "environment": null,
-  "ground_truth": {
-    "expected_outcome": "Most US states have rules that go something like this: You will almost certainly have to pay some registration fees, as noted above.  Depending on how you organize, you may or may not need to file a separate tax return for the business. (If you're sole proprietor for tax purposes, then you file on Schedule C on your personal Form 1040.)  Whether or not you pay taxes depends on whether you have net income.  It's possible that some losses might also be deductible. (Note that you may have to file a return even if you don't have net income - Filing and needing to pay are not the same since your return may indicate no tax due.)  In addition, at the state level, you may have to pay additional fees or taxes beyond income tax depending on what you sell and how you sell it. (Sales tax, for example, might come into play as might franchise taxes.)  You'll need to check your own state law for that. As always, it could be wise to get professional tax and accounting advice that's tailored to your situation and your state.  This is just an outline of some things that you'll need to consider.",
-    "required_capabilities": [],
-    "expected_mcp_tools": [],
-    "quant_validation": null,
-    "bug_description": null,
-    "expected_fix": null
-  },
-  "requires_code": false,
-  "sample_code": null,
-  "max_turns": 30,
-  "timeout_minutes": 15
+  ]
 }

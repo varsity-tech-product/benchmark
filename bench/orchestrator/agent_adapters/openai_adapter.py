@@ -29,7 +29,7 @@ load_dotenv(_PROJECT_ROOT / ".env")
 from config.llm_config import OPENAI_AGENT_MODEL
 
 try:
-    from agents import Agent, Runner
+    from agents import Agent, MaxTurnsExceeded, Runner
     from agents.model_settings import ModelSettings
     from agents.tool import FunctionTool
 
@@ -40,7 +40,7 @@ except ImportError:
 # Max LLM invocations per generate_response() call.
 # The SDK agent loop: LLM call -> tool execution -> LLM call -> ...
 # until final text output. Each LLM call counts as one turn.
-DEFAULT_AGENT_MAX_TURNS = 8
+DEFAULT_AGENT_MAX_TURNS = 15
 
 
 class OpenAIAgentAdapter(BaseAgentAdapter):
@@ -209,8 +209,27 @@ class OpenAIAgentAdapter(BaseAgentAdapter):
 
             return result.final_output or ""
 
+        except MaxTurnsExceeded:
+            # Agent used all available tool-calling turns within this conversation turn.
+            # Return a graceful response instead of leaking SDK internals.
+            if hasattr(self, "_input_history") and self._input_history:
+                for item in reversed(self._input_history):
+                    if isinstance(item, dict) and item.get("role") == "assistant":
+                        content = item.get("content", "")
+                        if content:
+                            return content
+            return (
+                "I've been working through several steps to help you with this. "
+                "Let me summarize what we've covered so far and continue from here."
+            )
         except Exception as e:
-            return f"[OpenAI Agent SDK error: {str(e)}]"
+            import logging
+
+            logging.getLogger(__name__).error(f"Agent SDK error: {e}")
+            return (
+                "I encountered a technical issue. Let me try a different approach "
+                "to help you with your question."
+            )
 
     def _build_agent_tools(self, available_tools: list[dict]) -> list:
         """Build OpenAI Agent SDK tools from MCP tool schemas.

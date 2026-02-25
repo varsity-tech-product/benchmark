@@ -4,6 +4,7 @@
   "difficulty": "easy",
   "category": "code_debugging",
   "task_type": "single_turn",
+  "requires_tool": true,
   "description": "My code calculates daily returns but the results look wrong — I'm getting returns that are way too large. Can you help me find the bug?\n\n```python\nimport pandas as pd\n\ndf = pd.read_csv('prices.csv')\ndf['return'] = (df['Close'] - df['Close'].shift(-1)) / df['Close'].shift(-1)\nprint(df[['Close', 'return']].head(10))\n```\n\nThe first few returns show values like -0.02 when the stock went up. What's wrong?",
   "context": null,
   "reference_answer": "The bug is in the shift direction. `shift(-1)` looks FORWARD in time (tomorrow's price), not backward. The formula computes `(today - tomorrow) / tomorrow`, which gives the negative of what you want and uses future data (look-ahead bias). The fix is to use `shift(1)` (yesterday's price): `df['return'] = (df['Close'] - df['Close'].shift(1)) / df['Close'].shift(1)`. Or more simply: `df['return'] = df['Close'].pct_change()`. The sign was flipped because subtracting tomorrow from today gives a negative value when prices are rising. This is also a look-ahead bias: you're using tomorrow's price to calculate today's return.",
@@ -14,20 +15,5 @@
     "pandas",
     "returns",
     "look-ahead-bias"
-  ],
-  "persona_ids": [],
-  "student_openings": {},
-  "environment": null,
-  "ground_truth": {
-    "expected_outcome": "The bug is in the shift direction. `shift(-1)` looks FORWARD in time (tomorrow's price), not backward. The formula computes `(today - tomorrow) / tomorrow`, which gives the negative of what you want and uses future data (look-ahead bias). The fix is to use `shift(1)` (yesterday's price): `df['return'] = (df['Close'] - df['Close'].shift(1)) / df['Close'].shift(1)`. Or more simply: `df['return'] = df['Close'].pct_change()`. The sign was flipped because subtracting tomorrow from today gives a negative value when prices are rising. This is also a look-ahead bias: you're using tomorrow's price to calculate today's return.",
-    "required_capabilities": [],
-    "expected_mcp_tools": [],
-    "quant_validation": null,
-    "bug_description": null,
-    "expected_fix": null
-  },
-  "requires_code": false,
-  "sample_code": null,
-  "max_turns": 30,
-  "timeout_minutes": 15
+  ]
 }

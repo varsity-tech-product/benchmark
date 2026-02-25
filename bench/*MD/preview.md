@@ -42,7 +42,7 @@
 
 Tests foundational quant knowledge via single-turn Q&A, sourced from FiQA, TAT-QA, FinQA, ConvFinQA, StackExchange, Reddit, CFPB, FINRA, SEC.
 
-| Category             | Eval Method                       |
+| Category             | Eval Method<br />                 |
 | -------------------- | --------------------------------- |
 | Conceptual Q&A       | DeepEval GEval (domain rubric)    |
 | Strategy Explanation | DeepEval GEval (strategy rubric)  |

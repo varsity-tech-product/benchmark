@@ -611,7 +611,7 @@ CORE_TOOLS = {
     },
     "compute_indicator": {
         "func": compute_indicator,
-        "description": "Compute a technical indicator on a dataset and return the last 20 rows",
+        "description": "Compute a technical indicator (SMA, EMA, RSI, Bollinger Bands, MACD) on a CSV dataset with a 'Close' column. Adds the indicator as new column(s), saves the enriched dataset to workspace, and returns the last 10 rows.",
         "params": {
             "data_path": {
                 "type": "string",
@@ -632,7 +632,7 @@ CORE_TOOLS = {
     },
     "run_backtest": {
         "func": run_backtest,
-        "description": "Execute a Python backtest script in the workspace and return its output",
+        "description": "Execute a Python backtest script in the workspace. Returns stdout and reports any new files created in workspace during execution (CSV results, charts, etc.).",
         "params": {
             "script_path": {
                 "type": "string",
@@ -664,7 +664,7 @@ CORE_TOOLS = {
     },
     "plot_chart": {
         "func": plot_chart,
-        "description": "Execute matplotlib Python code, save chart as PNG, and return the image path",
+        "description": "Execute matplotlib Python code and save the resulting chart as PNG. Automatically appends plt.savefig() and plt.close() — just provide the plotting code. Returns the saved image file path.",
         "params": {
             "python_code": {
                 "type": "string",
@@ -714,7 +714,7 @@ CORE_TOOLS = {
     },
     "analyze_backtest_results": {
         "func": analyze_backtest_results,
-        "description": "Analyze a CSV file containing portfolio/strategy returns and compute standard performance metrics (Sharpe Ratio, Annual Return, Max Drawdown, Win Rate, Sortino, Calmar). Saves structured results to backtest_analysis.json in workspace.",
+        "description": "Compute standard performance metrics (Sharpe Ratio, Annual Return, Total Return, Max Drawdown, Win Rate, Volatility, Sortino, Calmar) from a CSV of portfolio/strategy returns. Auto-detects the returns column from common names. Saves structured results to backtest_analysis.json in workspace.",
         "params": {
             "data_path": {
                 "type": "string",

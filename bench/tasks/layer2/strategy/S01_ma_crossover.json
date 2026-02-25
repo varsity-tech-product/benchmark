@@ -59,11 +59,11 @@
       },
       {
         "description": "Computes indicators",
-        "tool": "shell_exec"
+        "tool_any_of": ["compute_indicator", "shell_exec"]
       },
       {
         "description": "Runs backtest",
-        "tool": "shell_exec"
+        "tool_any_of": ["run_backtest", "shell_exec"]
       },
       {
         "description": "Visualizes results",

@@ -80,6 +80,10 @@ class Layer1Item:
         return self._task.tags
 
     @property
+    def requires_tool(self) -> bool:
+        return self._task.requires_tool
+
+    @property
     def task(self) -> QuantTutorTask:
         """Access the underlying QuantTutorTask."""
         return self._task

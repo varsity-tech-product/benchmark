@@ -4,6 +4,7 @@
   "difficulty": "easy",
   "category": "data_interpretation",
   "task_type": "single_turn",
+  "requires_tool": false,
   "description": "What does the Weighted average actuarial assumptions consist of?",
   "context": "**Table:**\n|  | 2019 % | 2018 % | 2017 % |\n| --- | --- | --- | --- |\n| Weighted average actuarial assumptions used at 31 March1: |  |  |  |\n| Rate of inflation2 | 2.9 | 2.9 | 3.0 |\n| Rate of increase in salaries | 2.7 | 2.7 | 2.6 |\n| Discount rate | 2.3 | 2.5 | 2.6 |\n\nActuarial assumptions\n\nThe Group’s scheme liabilities are measured using the projected unit credit method using the principal actuarial assumptions set out below:\n\nNotes: 1 Figures shown represent a weighted average assumption of the individual schemes.\n\n2 The rate of increases in pensions in payment and deferred revaluation are dependent on the rate of inflation.",
   "reference_answer": "**Answer:** Rate of inflation, Rate of increase in salaries, Discount rate\n\n**Type:** multi-span",
@@ -12,20 +13,5 @@
   "tags": [
     "tabular-reasoning",
     "financial-documents"
-  ],
-  "persona_ids": [],
-  "student_openings": {},
-  "environment": null,
-  "ground_truth": {
-    "expected_outcome": "**Answer:** Rate of inflation, Rate of increase in salaries, Discount rate\n\n**Type:** multi-span",
-    "required_capabilities": [],
-    "expected_mcp_tools": [],
-    "quant_validation": null,
-    "bug_description": null,
-    "expected_fix": null
-  },
-  "requires_code": false,
-  "sample_code": null,
-  "max_turns": 30,
-  "timeout_minutes": 15
+  ]
 }
