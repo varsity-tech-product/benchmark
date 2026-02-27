@@ -75,11 +75,11 @@ When hiring quant researchers and traders, firms evaluate six core dimensions. M
 | ID | Difficulty | Task | Key Challenge | WCGW Focus | Eval Dimensions |
 |:---|:---|:---|:---|:---|:---|
 | R01 | Medium | **P-value Literacy** — Student presents a strategy with p=0.03 and asks "is this significant?" Agent must teach why p-values alone are insufficient (effect size, sample size, multiple comparisons, economic significance vs. statistical significance). | Resist the temptation to simply say "yes, p<0.05 is significant" — teach the full picture | Yes — recognizing that statistical significance ≠ economic significance | Statistical rigor, Domain knowledge |
+| R06 | Medium | **Research Replication** — Student is given a "published" research result (fabricated for the benchmark) claiming a calendar anomaly. Agent must guide the student through replicating it: re-derive the methodology, obtain the same data, run the analysis, and discover the result doesn't hold with proper corrections. | The "paper" has subtle methodological issues that make the result non-replicable | Yes — healthy skepticism of published results | Research taste, Intellectual honesty |
 | R02 | Hard | **Time-Series Cross-Validation** — Student has a model with 95% accuracy using sklearn train_test_split on time-series data. Agent must explain why random splitting creates look-ahead bias, teach walk-forward and expanding-window CV, and help rebuild the evaluation. | Student's "great" result is actually meaningless; must deliver bad news constructively | Yes — recognizing that standard ML practices fail on time series | Statistical rigor, Programming |
 | R03 | Hard | **Parameter Sensitivity Analysis** — Student optimized an RSI strategy to Sharpe 2.5 with RSI(14), overbought=72, oversold=28. Agent must teach sensitivity analysis: vary each parameter ±20% and show performance cliff. | Student emotionally invested in "their" optimal parameters | Yes — recognizing that fragile optima are artifacts, not discoveries | Statistical rigor, Research taste |
 | R04 | Hard | **Multiple Hypothesis Correction** — Student tested 50 trading rules and found 3 with p<0.05. Agent must explain the multiple comparisons problem, teach Bonferroni/BH corrections, and show that 2.5 discoveries are expected by chance alone. | Student excited about "finding three profitable strategies" — must show it's likely noise | Yes — the textbook example of data mining in quant research | Statistical rigor, Intellectual honesty |
 | R05 | Hard | **Structural Break Detection** — Student's momentum strategy worked 2015-2019 but failed 2020+. Agent must teach structural break tests (Chow, CUSUM, Bai-Perron), explain regime changes (COVID, rate hikes), and discuss strategy robustness across regimes. | Not just detecting the break — understanding that stationarity is the exception, not the rule | Yes — recognizing that past performance genuinely does not predict future results | Statistical rigor, Domain knowledge |
-| R06 | Medium | **Research Replication** — Student is given a "published" research result (fabricated for the benchmark) claiming a calendar anomaly. Agent must guide the student through replicating it: re-derive the methodology, obtain the same data, run the analysis, and discover the result doesn't hold with proper corrections. | The "paper" has subtle methodological issues that make the result non-replicable | Yes — healthy skepticism of published results | Research taste, Intellectual honesty |
 
 **New data files required:**
 - `rsi_sensitivity_grid.csv` — Pre-computed RSI strategy returns for parameter grid (R03)
@@ -96,19 +96,6 @@ When hiring quant researchers and traders, firms evaluate six core dimensions. M
 - `R06_research_replication.py` — Checks that the student correctly identifies the methodological flaw
 
 **Student openings (examples):**
-
-```jsonc
-// R01 — beginner
-"I ran a t-test on my trading strategy returns and got a p-value of 0.03. That means my strategy is statistically significant, right? Does that mean it will make money?"
-
-// R04 — advanced
-"I've been running a systematic scan over 50 trading rules on SPY data. Three came back with p < 0.05. I'm planning to allocate capital across these three. Before I do, is there anything I should check?"
-
-// R06 — intermediate
-"I found this paper claiming there's a day-of-the-week effect in equity returns — Mondays consistently underperform. I want to verify this before trading it. Can you help me replicate their analysis?"
-```
-
-**Task data structures:**
 
 ```jsonc
 // R01 — P-value Literacy
@@ -141,6 +128,49 @@ When hiring quant researchers and traders, firms evaluate six core dimensions. M
       {"description": "Distinguish economic from statistical significance", "tool": "compute_statistics"}
     ],
     "expected_mcp_tools": ["compute_statistics"],
+    "wcgw_validation": {
+      "skepticism_expressed": true,
+      "false_positive_avoided": true,
+      "constructive_alternative": true,
+      "calibrated_confidence": true
+    }
+  },
+  "max_turns": 20,
+  "timeout_minutes": 15
+}
+```
+
+```jsonc
+// R06 — Research Replication
+{
+  "task_id": "R06_research_replication",
+  "version": "1.0",
+  "difficulty": "medium",
+  "category": "research_rigor",
+  "task_type": "multi_turn",
+  "description": "Student given a fabricated 'published' result claiming a calendar anomaly. Guide replication: re-derive methodology, obtain data, run analysis, discover result doesn't hold with proper corrections.",
+  "persona_ids": ["beginner_no_finance", "intermediate_developer", "advanced_quant"],
+  "student_openings": {
+    "beginner_no_finance": "I read that stocks go down on Mondays. Is this true? Can we make money from this?",
+    "intermediate_developer": "I found this paper claiming there's a day-of-the-week effect in equity returns — Mondays consistently underperform. I want to verify this before trading it. Can you help me replicate their analysis?",
+    "advanced_quant": "I'm reviewing a calendar anomaly paper with a significant Monday effect. Methodology looks reasonable but I want to replicate with our data and check for heteroscedasticity and multiple testing issues."
+  },
+  "environment": {
+    "data_files": ["calendar_anomaly_data.csv"],
+    "core_mcp_tools": ["fetch_market_data", "compute_statistics", "compute_indicator"],
+    "distractor_mcp_tools_pool": ["deploy_trading_bot", "send_trade_order", "run_backtest", "optimize_hyperparameters", "generate_report_pdf"],
+    "num_distractors": 3,
+    "sandbox_image": "quant-tutor-env:v1.0"
+  },
+  "ground_truth": {
+    "expected_outcome": "Student replicates analysis, initially reproduces result, then discovers it doesn't hold after proper corrections (robust SEs, multiple testing, sub-period analysis). Learns healthy skepticism of published results.",
+    "required_capabilities": [
+      {"description": "Re-derive and implement paper methodology", "tool": "fetch_market_data"},
+      {"description": "Run replication analysis", "tool": "compute_statistics"},
+      {"description": "Apply proper statistical corrections", "tool": "compute_statistics"},
+      {"description": "Identify methodological flaw", "tool": null}
+    ],
+    "expected_mcp_tools": ["fetch_market_data", "compute_statistics", "compute_indicator"],
     "wcgw_validation": {
       "skepticism_expressed": true,
       "false_positive_avoided": true,
@@ -325,49 +355,6 @@ When hiring quant researchers and traders, firms evaluate six core dimensions. M
 }
 ```
 
-```jsonc
-// R06 — Research Replication
-{
-  "task_id": "R06_research_replication",
-  "version": "1.0",
-  "difficulty": "medium",
-  "category": "research_rigor",
-  "task_type": "multi_turn",
-  "description": "Student given a fabricated 'published' result claiming a calendar anomaly. Guide replication: re-derive methodology, obtain data, run analysis, discover result doesn't hold with proper corrections.",
-  "persona_ids": ["beginner_no_finance", "intermediate_developer", "advanced_quant"],
-  "student_openings": {
-    "beginner_no_finance": "I read that stocks go down on Mondays. Is this true? Can we make money from this?",
-    "intermediate_developer": "I found this paper claiming there's a day-of-the-week effect in equity returns — Mondays consistently underperform. I want to verify this before trading it. Can you help me replicate their analysis?",
-    "advanced_quant": "I'm reviewing a calendar anomaly paper with a significant Monday effect. Methodology looks reasonable but I want to replicate with our data and check for heteroscedasticity and multiple testing issues."
-  },
-  "environment": {
-    "data_files": ["calendar_anomaly_data.csv"],
-    "core_mcp_tools": ["fetch_market_data", "compute_statistics", "compute_indicator"],
-    "distractor_mcp_tools_pool": ["deploy_trading_bot", "send_trade_order", "run_backtest", "optimize_hyperparameters", "generate_report_pdf"],
-    "num_distractors": 3,
-    "sandbox_image": "quant-tutor-env:v1.0"
-  },
-  "ground_truth": {
-    "expected_outcome": "Student replicates analysis, initially reproduces result, then discovers it doesn't hold after proper corrections (robust SEs, multiple testing, sub-period analysis). Learns healthy skepticism of published results.",
-    "required_capabilities": [
-      {"description": "Re-derive and implement paper methodology", "tool": "fetch_market_data"},
-      {"description": "Run replication analysis", "tool": "compute_statistics"},
-      {"description": "Apply proper statistical corrections", "tool": "compute_statistics"},
-      {"description": "Identify methodological flaw", "tool": null}
-    ],
-    "expected_mcp_tools": ["fetch_market_data", "compute_statistics", "compute_indicator"],
-    "wcgw_validation": {
-      "skepticism_expressed": true,
-      "false_positive_avoided": true,
-      "constructive_alternative": true,
-      "calibrated_confidence": true
-    }
-  },
-  "max_turns": 20,
-  "timeout_minutes": 15
-}
-```
-
 ### 2.2. Category P — Portfolio & Risk
 
 **Rationale:** Individual strategy research is only half the job. Every quant must think about how strategies combine into a portfolio, how risk propagates, and how to manage drawdowns. The current benchmark treats each strategy in isolation — no task considers portfolio-level effects.
@@ -378,10 +365,10 @@ When hiring quant researchers and traders, firms evaluate six core dimensions. M
 |:---|:---|:---|:---|:---|:---|
 | P01 | Easy | **Portfolio Return Attribution** — Student has a portfolio of 3 strategies and wants to understand which drove performance this month. Agent guides through return attribution (strategy-level, sector-level). | Beginners confuse gross vs. net returns, don't account for capital allocation changes | No | Domain knowledge, Communication |
 | P02 | Medium | **VaR and CVaR Computation** — Student needs to compute Value-at-Risk for a portfolio. Agent teaches parametric, historical, and Monte Carlo approaches, explains when each is appropriate, and why CVaR is often preferred. | Student wants a single "risk number" — must teach that VaR is a minimum loss in the tail, not maximum | Yes — VaR as a dangerously misleading "safety" metric | Statistical rigor, Domain knowledge |
+| P06 | Medium | **Drawdown Management Protocol** — Student's portfolio is in a 15% drawdown. Agent guides through a systematic drawdown management framework: assess whether drawdown is within historical norms, check for regime change, decide between reducing risk vs. staying the course. | Emotional decision-making during drawdowns; must balance quantitative analysis with practical risk management psychology | Yes — behavioral biases during drawdowns (panic selling, doubling down) | Domain knowledge, Communication |
 | P03 | Hard | **Correlation Regime Analysis** — Student notices two strategies that were uncorrelated suddenly moved together during a drawdown. Agent teaches correlation instability, copulas vs. linear correlation, and crisis correlation (the "diversification fails when you need it most" problem). | "My portfolio was diversified!" — must explain that correlation itself is non-stationary | Yes — the fundamental problem with naive diversification | Statistical rigor, Research taste |
 | P04 | Hard | **Mean-Variance Optimization Pitfalls** — Student implements Markowitz mean-variance optimization and gets extreme, concentrated weights. Agent must teach why MVO is an "error maximizer" (estimation error in means dominates), introduce shrinkage estimators and constraints, and discuss Black-Litterman. | The textbook approach produces terrible real-world portfolios — must explain why without dismissing the theory entirely | Yes — the gap between elegant theory and messy practice | Statistical rigor, Domain knowledge |
 | P05 | Hard | **Multi-Strategy Allocation** — Student has 5 backtested strategies with different return/risk profiles and correlations. Agent guides through combining them: equal weight vs. risk parity vs. optimized, considering turnover, capacity, and implementation costs. | Easy to over-optimize the allocation; must teach robustness of simple approaches | Yes — over-engineering the allocation can be worse than equal weight | Domain knowledge, Research taste |
-| P06 | Medium | **Drawdown Management Protocol** — Student's portfolio is in a 15% drawdown. Agent guides through a systematic drawdown management framework: assess whether drawdown is within historical norms, check for regime change, decide between reducing risk vs. staying the course. | Emotional decision-making during drawdowns; must balance quantitative analysis with practical risk management psychology | Yes — behavioral biases during drawdowns (panic selling, doubling down) | Domain knowledge, Communication |
 
 **New data files required:**
 - `three_strategy_returns.csv` — Daily returns for 3 strategies with attribution data (P01)
@@ -467,6 +454,49 @@ When hiring quant researchers and traders, firms evaluate six core dimensions. M
       {"description": "Compute and explain CVaR superiority", "tool": "compute_statistics"}
     ],
     "expected_mcp_tools": ["compute_var", "compute_statistics", "plot_chart"],
+    "wcgw_validation": {
+      "skepticism_expressed": true,
+      "false_positive_avoided": true,
+      "constructive_alternative": true,
+      "calibrated_confidence": true
+    }
+  },
+  "max_turns": 20,
+  "timeout_minutes": 15
+}
+```
+
+```jsonc
+// P06 — Drawdown Management Protocol
+{
+  "task_id": "P06_drawdown_management",
+  "version": "1.0",
+  "difficulty": "medium",
+  "category": "portfolio_risk",
+  "task_type": "multi_turn",
+  "description": "Student's portfolio is in a 15% drawdown. Guide through systematic drawdown management: assess historical norms, check for regime change, decide between reducing risk vs. staying the course.",
+  "persona_ids": ["beginner_no_finance", "intermediate_developer", "advanced_quant"],
+  "student_openings": {
+    "beginner_no_finance": "My portfolio is down 15% from its peak. I'm really worried. Should I sell everything?",
+    "intermediate_developer": "I'm in a 15% drawdown and my historical max was 12%. Does this mean my strategy is broken? Should I reduce position sizes?",
+    "advanced_quant": "We're at a 15% drawdown, breaching our 12% historical max. I need to systematically assess if this is expected variance, regime change, or strategy failure. What's the protocol?"
+  },
+  "environment": {
+    "data_files": ["portfolio_returns_var.csv"],
+    "core_mcp_tools": ["compute_statistics", "compute_var", "plot_chart"],
+    "distractor_mcp_tools_pool": ["deploy_trading_bot", "send_trade_order", "optimize_hyperparameters", "fetch_news_sentiment", "generate_report_pdf"],
+    "num_distractors": 3,
+    "sandbox_image": "quant-tutor-env:v1.0"
+  },
+  "ground_truth": {
+    "expected_outcome": "Student applies systematic drawdown framework: contextualizes vs. historical norms, checks regime change indicators, evaluates strategy thesis, makes data-driven decision rather than emotional one.",
+    "required_capabilities": [
+      {"description": "Contextualize drawdown vs. historical distribution", "tool": "compute_statistics"},
+      {"description": "Check for regime change indicators", "tool": "compute_var"},
+      {"description": "Visualize drawdown in context", "tool": "plot_chart"},
+      {"description": "Apply decision framework (reduce vs. hold)", "tool": null}
+    ],
+    "expected_mcp_tools": ["compute_statistics", "compute_var", "plot_chart"],
     "wcgw_validation": {
       "skepticism_expressed": true,
       "false_positive_avoided": true,
@@ -605,49 +635,6 @@ When hiring quant researchers and traders, firms evaluate six core dimensions. M
   },
   "max_turns": 30,
   "timeout_minutes": 20
-}
-```
-
-```jsonc
-// P06 — Drawdown Management Protocol
-{
-  "task_id": "P06_drawdown_management",
-  "version": "1.0",
-  "difficulty": "medium",
-  "category": "portfolio_risk",
-  "task_type": "multi_turn",
-  "description": "Student's portfolio is in a 15% drawdown. Guide through systematic drawdown management: assess historical norms, check for regime change, decide between reducing risk vs. staying the course.",
-  "persona_ids": ["beginner_no_finance", "intermediate_developer", "advanced_quant"],
-  "student_openings": {
-    "beginner_no_finance": "My portfolio is down 15% from its peak. I'm really worried. Should I sell everything?",
-    "intermediate_developer": "I'm in a 15% drawdown and my historical max was 12%. Does this mean my strategy is broken? Should I reduce position sizes?",
-    "advanced_quant": "We're at a 15% drawdown, breaching our 12% historical max. I need to systematically assess if this is expected variance, regime change, or strategy failure. What's the protocol?"
-  },
-  "environment": {
-    "data_files": ["portfolio_returns_var.csv"],
-    "core_mcp_tools": ["compute_statistics", "compute_var", "plot_chart"],
-    "distractor_mcp_tools_pool": ["deploy_trading_bot", "send_trade_order", "optimize_hyperparameters", "fetch_news_sentiment", "generate_report_pdf"],
-    "num_distractors": 3,
-    "sandbox_image": "quant-tutor-env:v1.0"
-  },
-  "ground_truth": {
-    "expected_outcome": "Student applies systematic drawdown framework: contextualizes vs. historical norms, checks regime change indicators, evaluates strategy thesis, makes data-driven decision rather than emotional one.",
-    "required_capabilities": [
-      {"description": "Contextualize drawdown vs. historical distribution", "tool": "compute_statistics"},
-      {"description": "Check for regime change indicators", "tool": "compute_var"},
-      {"description": "Visualize drawdown in context", "tool": "plot_chart"},
-      {"description": "Apply decision framework (reduce vs. hold)", "tool": null}
-    ],
-    "expected_mcp_tools": ["compute_statistics", "compute_var", "plot_chart"],
-    "wcgw_validation": {
-      "skepticism_expressed": true,
-      "false_positive_avoided": true,
-      "constructive_alternative": true,
-      "calibrated_confidence": true
-    }
-  },
-  "max_turns": 20,
-  "timeout_minutes": 15
 }
 ```
 
@@ -962,9 +949,9 @@ The original design doc specifies D01-D06. These additions extend into modern qu
 
 | ID | Difficulty | Task | Key Challenge | WCGW Focus | Eval Dimensions |
 |:---|:---|:---|:---|:---|:---|
+| D09 | Medium | **Feature Engineering Pipeline** — Student needs to construct features from raw OHLCV data: returns at multiple horizons, rolling volatility, volume profiles, technical indicators. Agent guides building a systematic pipeline, teaches feature correlation/multicollinearity, and warns about look-ahead bias in feature construction. | Feature construction is where look-ahead bias most commonly sneaks in; must teach defensive feature engineering | Yes — look-ahead bias in feature engineering is the #1 cause of backtest fraud | Programming, Statistical rigor |
 | D07 | Hard | **Broken Data Feed Diagnosis** — Student receives a dataset with realistic data quality issues: missing rows during market holidays vs. actual gaps, sudden volume spikes from stock splits not reflected in adjusted prices, and timezone-shifted overnight data. Agent must guide systematic diagnosis. | Multiple simultaneous data issues that interact — fixing one reveals another. The agent must teach a diagnostic methodology, not just fix individual problems. | Yes — "the data looked fine" is the most dangerous assumption in quant | Programming, Domain knowledge |
 | D08 | Hard | **Alternative Data Integration** — Student wants to incorporate sentiment data (pre-built, frozen) with price data. Agent must teach alignment challenges: different frequencies (daily prices vs. irregular sentiment), lagged effects, normalization, and the critical question of whether the signal has information content (IC analysis). | Student assumes alt data automatically adds value; must teach information coefficient analysis and the base rate of alt data being useless | Yes — most alternative data sources have no predictive value | Research taste, Statistical rigor |
-| D09 | Medium | **Feature Engineering Pipeline** — Student needs to construct features from raw OHLCV data: returns at multiple horizons, rolling volatility, volume profiles, technical indicators. Agent guides building a systematic pipeline, teaches feature correlation/multicollinearity, and warns about look-ahead bias in feature construction. | Feature construction is where look-ahead bias most commonly sneaks in; must teach defensive feature engineering | Yes — look-ahead bias in feature engineering is the #1 cause of backtest fraud | Programming, Statistical rigor |
 
 **New data files:**
 - `broken_feed.csv` — OHLCV with realistic embedded data quality issues (D07)
@@ -973,17 +960,47 @@ The original design doc specifies D01-D06. These additions extend into modern qu
 **Student openings (examples):**
 
 ```jsonc
-// D07 — intermediate
-"I'm loading this new data feed and my backtest is giving weird results. Some days the returns are huge and I'm not sure if the data is correct or if something real happened. Can you help me figure out what's going on?"
-
-// D08 — advanced
-"I have a sentiment dataset from a vendor and I want to combine it with my price data to see if it improves my model. What's the right way to integrate alternative data?"
-
-// D09 — beginner
-"I've been reading about feature engineering for trading strategies. I have OHLCV data and I want to create useful features from it. Where do I start?"
+// D09 — Feature Engineering Pipeline
+{
+  "task_id": "D09_feature_engineering",
+  "version": "1.0",
+  "difficulty": "medium",
+  "category": "data_analysis",
+  "task_type": "multi_turn",
+  "description": "Student needs to construct features from raw OHLCV: returns, rolling vol, volume profiles, technicals. Guide pipeline, teach multicollinearity, warn about look-ahead bias in features.",
+  "persona_ids": ["beginner_no_finance", "intermediate_developer", "advanced_quant"],
+  "student_openings": {
+    "beginner_no_finance": "I've been reading about feature engineering for trading strategies. I have OHLCV data and I want to create useful features from it. Where do I start?",
+    "intermediate_developer": "I need to build a feature pipeline from OHLCV data: multi-horizon returns, rolling volatility, technical indicators. What's the right way to systematize this?",
+    "advanced_quant": "I'm building a feature engineering pipeline and want to ensure no look-ahead bias. I also need to check feature correlation and multicollinearity before modeling."
+  },
+  "environment": {
+    "data_files": [],
+    "core_mcp_tools": ["fetch_market_data", "compute_indicator", "compute_statistics", "plot_chart"],
+    "distractor_mcp_tools_pool": ["deploy_trading_bot", "send_trade_order", "run_backtest", "optimize_hyperparameters", "fetch_news_sentiment"],
+    "num_distractors": 3,
+    "sandbox_image": "quant-tutor-env:v1.0"
+  },
+  "ground_truth": {
+    "expected_outcome": "Student builds systematic feature pipeline, checks feature correlation/multicollinearity, and applies defensive feature engineering to prevent look-ahead bias.",
+    "required_capabilities": [
+      {"description": "Construct multi-horizon return features", "tool": "compute_indicator"},
+      {"description": "Build rolling volatility and volume features", "tool": "compute_statistics"},
+      {"description": "Check feature correlation matrix", "tool": "plot_chart"},
+      {"description": "Identify look-ahead bias risks in features", "tool": null}
+    ],
+    "expected_mcp_tools": ["fetch_market_data", "compute_indicator", "compute_statistics", "plot_chart"],
+    "wcgw_validation": {
+      "skepticism_expressed": true,
+      "false_positive_avoided": true,
+      "constructive_alternative": true,
+      "calibrated_confidence": true
+    }
+  },
+  "max_turns": 20,
+  "timeout_minutes": 15
+}
 ```
-
-**Task data structures:**
 
 ```jsonc
 // D07 — Broken Data Feed Diagnosis
@@ -1071,59 +1088,16 @@ The original design doc specifies D01-D06. These additions extend into modern qu
 }
 ```
 
-```jsonc
-// D09 — Feature Engineering Pipeline
-{
-  "task_id": "D09_feature_engineering",
-  "version": "1.0",
-  "difficulty": "medium",
-  "category": "data_analysis",
-  "task_type": "multi_turn",
-  "description": "Student needs to construct features from raw OHLCV: returns, rolling vol, volume profiles, technicals. Guide pipeline, teach multicollinearity, warn about look-ahead bias in features.",
-  "persona_ids": ["beginner_no_finance", "intermediate_developer", "advanced_quant"],
-  "student_openings": {
-    "beginner_no_finance": "I've been reading about feature engineering for trading strategies. I have OHLCV data and I want to create useful features from it. Where do I start?",
-    "intermediate_developer": "I need to build a feature pipeline from OHLCV data: multi-horizon returns, rolling volatility, technical indicators. What's the right way to systematize this?",
-    "advanced_quant": "I'm building a feature engineering pipeline and want to ensure no look-ahead bias. I also need to check feature correlation and multicollinearity before modeling."
-  },
-  "environment": {
-    "data_files": [],
-    "core_mcp_tools": ["fetch_market_data", "compute_indicator", "compute_statistics", "plot_chart"],
-    "distractor_mcp_tools_pool": ["deploy_trading_bot", "send_trade_order", "run_backtest", "optimize_hyperparameters", "fetch_news_sentiment"],
-    "num_distractors": 3,
-    "sandbox_image": "quant-tutor-env:v1.0"
-  },
-  "ground_truth": {
-    "expected_outcome": "Student builds systematic feature pipeline, checks feature correlation/multicollinearity, and applies defensive feature engineering to prevent look-ahead bias.",
-    "required_capabilities": [
-      {"description": "Construct multi-horizon return features", "tool": "compute_indicator"},
-      {"description": "Build rolling volatility and volume features", "tool": "compute_statistics"},
-      {"description": "Check feature correlation matrix", "tool": "plot_chart"},
-      {"description": "Identify look-ahead bias risks in features", "tool": null}
-    ],
-    "expected_mcp_tools": ["fetch_market_data", "compute_indicator", "compute_statistics", "plot_chart"],
-    "wcgw_validation": {
-      "skepticism_expressed": true,
-      "false_positive_avoided": true,
-      "constructive_alternative": true,
-      "calibrated_confidence": true
-    }
-  },
-  "max_turns": 20,
-  "timeout_minutes": 15
-}
-```
-
 ### 3.2. Strategy (S) — 4 New Tasks (S08-S11)
 
 The original design doc specifies S01-S07. These additions cover alpha research, capacity, and decay.
 
 | ID | Difficulty | Task | Key Challenge | WCGW Focus | Eval Dimensions |
 |:---|:---|:---|:---|:---|:---|
-| S08 | Hard | **Alpha Hypothesis Testing** — Student has a hypothesis: "stocks with increasing volume and positive momentum outperform." Agent guides through formalizing the hypothesis, constructing the signal, testing it properly (out-of-sample, with transaction costs), and honestly evaluating whether the alpha is real or an artifact. | Must teach the difference between "this backtest is profitable" and "this alpha is real" — the central question of all quant research | Yes — the core "what could go wrong" task for strategy research | Research taste, Statistical rigor |
-| S09 | Medium | **Strategy Capacity Analysis** — Student has a working strategy and wants to know "how much capital can I run?" Agent teaches capacity estimation: average daily volume, market impact models (square-root law), the relationship between capacity and expected return decay. | Students drastically overestimate strategy capacity; must teach that the best strategies are often the smallest | Yes — running a strategy at too large a size turns a winner into a loser | Domain knowledge, Statistical rigor |
-| S10 | Hard | **Strategy Decay Diagnosis** — Student's strategy worked well for 2 years but performance has degraded over the last 6 months. Agent guides through a systematic diagnosis: is it alpha decay, regime change, crowding, data issue, or random variance? Teaches the framework for deciding whether to kill vs. modify a strategy. | Emotional attachment to "my strategy" — must teach objective criteria for strategy lifecycle decisions | Yes — inability to kill a dying strategy is career-ending | Research taste, Intellectual honesty |
 | S11 | Medium | **Strategy Development Protocol** — Formal pipeline: hypothesis → signal → train/test split → backtest with `run_backtest` → validate on held-out set → sensitivity analysis. Hypothesis before data, test set is sacred. | Must teach that the order matters — hypothesis before data, not the reverse. The test set can only be used once. | Yes — most researchers "peek" at test data and iteratively optimize against it | Research taste, Statistical rigor |
+| S09 | Medium | **Strategy Capacity Analysis** — Student has a working strategy and wants to know "how much capital can I run?" Agent teaches capacity estimation: average daily volume, market impact models (square-root law), the relationship between capacity and expected return decay. | Students drastically overestimate strategy capacity; must teach that the best strategies are often the smallest | Yes — running a strategy at too large a size turns a winner into a loser | Domain knowledge, Statistical rigor |
+| S08 | Hard | **Alpha Hypothesis Testing** — Student has a hypothesis: "stocks with increasing volume and positive momentum outperform." Agent guides through formalizing the hypothesis, constructing the signal, testing it properly (out-of-sample, with transaction costs), and honestly evaluating whether the alpha is real or an artifact. | Must teach the difference between "this backtest is profitable" and "this alpha is real" — the central question of all quant research | Yes — the core "what could go wrong" task for strategy research | Research taste, Statistical rigor |
+| S10 | Hard | **Strategy Decay Diagnosis** — Student's strategy worked well for 2 years but performance has degraded over the last 6 months. Agent guides through a systematic diagnosis: is it alpha decay, regime change, crowding, data issue, or random variance? Teaches the framework for deciding whether to kill vs. modify a strategy. | Emotional attachment to "my strategy" — must teach objective criteria for strategy lifecycle decisions | Yes — inability to kill a dying strategy is career-ending | Research taste, Intellectual honesty |
 
 **New data files:**
 - `volume_momentum_universe.csv` — Cross-sectional data for alpha hypothesis testing (S08)
@@ -1133,36 +1107,36 @@ The original design doc specifies S01-S07. These additions cover alpha research,
 **Task data structures:**
 
 ```jsonc
-// S08 — Alpha Hypothesis Testing
+// S11 — Strategy Development Protocol
 {
-  "task_id": "S08_alpha_hypothesis",
+  "task_id": "S11_strategy_dev_protocol",
   "version": "1.0",
-  "difficulty": "hard",
+  "difficulty": "medium",
   "category": "strategy",
   "task_type": "multi_turn",
-  "description": "Student hypothesizes stocks with increasing volume and positive momentum outperform. Guide through formalizing, constructing signal, testing properly (OOS, with costs), and honestly evaluating alpha.",
+  "description": "Formal pipeline: hypothesis → signal → train/test split → backtest with run_backtest → validate on held-out set → sensitivity analysis. Hypothesis before data, test set is sacred.",
   "persona_ids": ["beginner_no_finance", "intermediate_developer", "advanced_quant"],
   "student_openings": {
-    "beginner_no_finance": "I think stocks that are going up with lots of volume will keep going up. Can we test this idea?",
-    "intermediate_developer": "I have a hypothesis: stocks with increasing volume and positive momentum outperform. I want to formalize and test this properly. Where do I start?",
-    "advanced_quant": "I want to test a volume-momentum interaction signal. I need a rigorous framework: formalize hypothesis, construct signal, proper OOS test with transaction costs, and honest alpha assessment."
+    "beginner_no_finance": "I want to develop a trading strategy. I have some data and I've been trying different things. What's the right process?",
+    "intermediate_developer": "I know I need a proper development pipeline for my strategy. Can you walk me through the standard protocol from hypothesis to validation?",
+    "advanced_quant": "I want to formalize my research process: hypothesis before data, proper train/test/validation splits, sensitivity analysis. Can you help me set up a disciplined protocol using the backtest API?"
   },
   "environment": {
-    "data_files": ["volume_momentum_universe.csv"],
-    "core_mcp_tools": ["fetch_market_data", "compute_indicator", "compute_statistics", "run_backtest", "analyze_backtest_results"],
+    "data_files": [],
+    "core_mcp_tools": ["fetch_market_data", "compute_indicator", "run_backtest", "analyze_backtest_results", "run_sensitivity"],
     "distractor_mcp_tools_pool": ["deploy_trading_bot", "send_trade_order", "optimize_hyperparameters", "fetch_news_sentiment", "generate_report_pdf"],
     "num_distractors": 3,
     "sandbox_image": "quant-tutor-env:v1.0"
   },
   "ground_truth": {
-    "expected_outcome": "Student formalizes hypothesis, constructs signal, tests with proper OOS methodology and transaction costs, honestly evaluates whether alpha is real or artifact.",
+    "expected_outcome": "Student follows disciplined pipeline: hypothesis before data, proper splits (test set used only once), backtest via API, OOS validation, sensitivity analysis. Understands that peeking at test data invalidates the entire process.",
     "required_capabilities": [
-      {"description": "Formalize trading hypothesis into testable signal", "tool": "compute_indicator"},
-      {"description": "Construct and backtest the signal", "tool": "run_backtest"},
-      {"description": "Apply out-of-sample validation", "tool": "analyze_backtest_results"},
-      {"description": "Honestly assess whether alpha is real", "tool": null}
+      {"description": "Formalize hypothesis before examining data", "tool": null},
+      {"description": "Set up proper train/test/validation split", "tool": "fetch_market_data"},
+      {"description": "Run backtest on training period only", "tool": "run_backtest"},
+      {"description": "Validate on held-out set and run sensitivity", "tool": "run_sensitivity"}
     ],
-    "expected_mcp_tools": ["fetch_market_data", "compute_indicator", "compute_statistics", "run_backtest", "analyze_backtest_results"],
+    "expected_mcp_tools": ["fetch_market_data", "compute_indicator", "run_backtest", "analyze_backtest_results", "run_sensitivity"],
     "wcgw_validation": {
       "skepticism_expressed": true,
       "false_positive_avoided": true,
@@ -1170,8 +1144,8 @@ The original design doc specifies S01-S07. These additions cover alpha research,
       "calibrated_confidence": true
     }
   },
-  "max_turns": 30,
-  "timeout_minutes": 20
+  "max_turns": 20,
+  "timeout_minutes": 15
 }
 ```
 
@@ -1219,6 +1193,49 @@ The original design doc specifies S01-S07. These additions cover alpha research,
 ```
 
 ```jsonc
+// S08 — Alpha Hypothesis Testing
+{
+  "task_id": "S08_alpha_hypothesis",
+  "version": "1.0",
+  "difficulty": "hard",
+  "category": "strategy",
+  "task_type": "multi_turn",
+  "description": "Student hypothesizes stocks with increasing volume and positive momentum outperform. Guide through formalizing, constructing signal, testing properly (OOS, with costs), and honestly evaluating alpha.",
+  "persona_ids": ["beginner_no_finance", "intermediate_developer", "advanced_quant"],
+  "student_openings": {
+    "beginner_no_finance": "I think stocks that are going up with lots of volume will keep going up. Can we test this idea?",
+    "intermediate_developer": "I have a hypothesis: stocks with increasing volume and positive momentum outperform. I want to formalize and test this properly. Where do I start?",
+    "advanced_quant": "I want to test a volume-momentum interaction signal. I need a rigorous framework: formalize hypothesis, construct signal, proper OOS test with transaction costs, and honest alpha assessment."
+  },
+  "environment": {
+    "data_files": ["volume_momentum_universe.csv"],
+    "core_mcp_tools": ["fetch_market_data", "compute_indicator", "compute_statistics", "run_backtest", "analyze_backtest_results"],
+    "distractor_mcp_tools_pool": ["deploy_trading_bot", "send_trade_order", "optimize_hyperparameters", "fetch_news_sentiment", "generate_report_pdf"],
+    "num_distractors": 3,
+    "sandbox_image": "quant-tutor-env:v1.0"
+  },
+  "ground_truth": {
+    "expected_outcome": "Student formalizes hypothesis, constructs signal, tests with proper OOS methodology and transaction costs, honestly evaluates whether alpha is real or artifact.",
+    "required_capabilities": [
+      {"description": "Formalize trading hypothesis into testable signal", "tool": "compute_indicator"},
+      {"description": "Construct and backtest the signal", "tool": "run_backtest"},
+      {"description": "Apply out-of-sample validation", "tool": "analyze_backtest_results"},
+      {"description": "Honestly assess whether alpha is real", "tool": null}
+    ],
+    "expected_mcp_tools": ["fetch_market_data", "compute_indicator", "compute_statistics", "run_backtest", "analyze_backtest_results"],
+    "wcgw_validation": {
+      "skepticism_expressed": true,
+      "false_positive_avoided": true,
+      "constructive_alternative": true,
+      "calibrated_confidence": true
+    }
+  },
+  "max_turns": 30,
+  "timeout_minutes": 20
+}
+```
+
+```jsonc
 // S10 — Strategy Decay Diagnosis
 {
   "task_id": "S10_strategy_decay",
@@ -1261,59 +1278,16 @@ The original design doc specifies S01-S07. These additions cover alpha research,
 }
 ```
 
-```jsonc
-// S11 — Strategy Development Protocol
-{
-  "task_id": "S11_strategy_dev_protocol",
-  "version": "1.0",
-  "difficulty": "medium",
-  "category": "strategy",
-  "task_type": "multi_turn",
-  "description": "Formal pipeline: hypothesis → signal → train/test split → backtest with run_backtest → validate on held-out set → sensitivity analysis. Hypothesis before data, test set is sacred.",
-  "persona_ids": ["beginner_no_finance", "intermediate_developer", "advanced_quant"],
-  "student_openings": {
-    "beginner_no_finance": "I want to develop a trading strategy. I have some data and I've been trying different things. What's the right process?",
-    "intermediate_developer": "I know I need a proper development pipeline for my strategy. Can you walk me through the standard protocol from hypothesis to validation?",
-    "advanced_quant": "I want to formalize my research process: hypothesis before data, proper train/test/validation splits, sensitivity analysis. Can you help me set up a disciplined protocol using the backtest API?"
-  },
-  "environment": {
-    "data_files": [],
-    "core_mcp_tools": ["fetch_market_data", "compute_indicator", "run_backtest", "analyze_backtest_results", "run_sensitivity"],
-    "distractor_mcp_tools_pool": ["deploy_trading_bot", "send_trade_order", "optimize_hyperparameters", "fetch_news_sentiment", "generate_report_pdf"],
-    "num_distractors": 3,
-    "sandbox_image": "quant-tutor-env:v1.0"
-  },
-  "ground_truth": {
-    "expected_outcome": "Student follows disciplined pipeline: hypothesis before data, proper splits (test set used only once), backtest via API, OOS validation, sensitivity analysis. Understands that peeking at test data invalidates the entire process.",
-    "required_capabilities": [
-      {"description": "Formalize hypothesis before examining data", "tool": null},
-      {"description": "Set up proper train/test/validation split", "tool": "fetch_market_data"},
-      {"description": "Run backtest on training period only", "tool": "run_backtest"},
-      {"description": "Validate on held-out set and run sensitivity", "tool": "run_sensitivity"}
-    ],
-    "expected_mcp_tools": ["fetch_market_data", "compute_indicator", "run_backtest", "analyze_backtest_results", "run_sensitivity"],
-    "wcgw_validation": {
-      "skepticism_expressed": true,
-      "false_positive_avoided": true,
-      "constructive_alternative": true,
-      "calibrated_confidence": true
-    }
-  },
-  "max_turns": 20,
-  "timeout_minutes": 15
-}
-```
-
 ### 3.3. Implementation (I) — 4 New Tasks (I07-I10)
 
 The original design doc specifies I01-I06. These additions cover execution costs, walk-forward, and factor models.
 
 | ID | Difficulty | Task | Key Challenge | WCGW Focus | Eval Dimensions |
 |:---|:---|:---|:---|:---|:---|
+| I10 | Medium | **Backtest API Integration** — Tutorial task: correct workflow for chaining `fetch_market_data` → `compute_indicator` → write strategy script → `run_backtest` → `analyze_backtest_results` → `compute_statistics`. Teaches data formats, API contracts, common input mistakes. | Students struggle with API data format requirements and the correct order of operations | No — tutorial-focused rather than skepticism-focused | Programming, Domain knowledge |
 | I07 | Medium | **Transaction Cost Model** — Student needs to implement a realistic transaction cost model: fixed costs, proportional costs (bid-ask spread estimation from daily data), and market impact (square-root model). Agent guides implementation and shows how costs change strategy viability. | Students underestimate transaction costs by 5-10x; must show how many "profitable" strategies become unprofitable after costs | Yes — a backtest without transaction costs is a fantasy | Programming, Domain knowledge |
 | I08 | Hard | **Walk-Forward Optimization** — Student wants to optimize strategy parameters. Agent teaches walk-forward: rolling in-sample optimization + out-of-sample testing, implementing the framework in pandas/numpy, and interpreting the degradation between in-sample and out-of-sample performance. | The gap between in-sample and out-of-sample performance is the single best measure of overfitting | Yes — optimization without validation is the #1 cause of strategy failure in production | Programming, Statistical rigor |
 | I09 | Hard | **Cross-Sectional Factor Model** — Student wants to build a simple factor model (value + momentum) for a universe of 50 stocks. Agent guides through cross-sectional regression, factor construction, neutralization, and portfolio formation. | Multi-stock, multi-factor code is significantly more complex than single-stock strategies; must scaffold carefully | No — complexity-focused rather than skepticism-focused | Programming, Domain knowledge |
-| I10 | Medium | **Backtest API Integration** — Tutorial task: correct workflow for chaining `fetch_market_data` → `compute_indicator` → write strategy script → `run_backtest` → `analyze_backtest_results` → `compute_statistics`. Teaches data formats, API contracts, common input mistakes. | Students struggle with API data format requirements and the correct order of operations | No — tutorial-focused rather than skepticism-focused | Programming, Domain knowledge |
 
 **New data files:**
 - `trade_level_costs.csv` — Simulated trade-level data with bid-ask spreads (I07)
@@ -1324,6 +1298,43 @@ The original design doc specifies I01-I06. These additions cover execution costs
 - `factor_model_bug.py` — Factor model with a sector neutralization error that creates a phantom alpha (I09)
 
 **Task data structures:**
+
+```jsonc
+// I10 — Backtest API Integration
+{
+  "task_id": "I10_backtest_api_integration",
+  "version": "1.0",
+  "difficulty": "medium",
+  "category": "implementation",
+  "task_type": "multi_turn",
+  "description": "Tutorial: correct workflow for chaining fetch_market_data → compute_indicator → write strategy → run_backtest → analyze_backtest_results → compute_statistics. Teaches API contracts and common mistakes.",
+  "persona_ids": ["beginner_no_finance", "intermediate_developer", "advanced_quant"],
+  "student_openings": {
+    "beginner_no_finance": "I want to test a trading strategy using the backtest tools, but I'm not sure how to use them. Can you walk me through it step by step?",
+    "intermediate_developer": "I want to use the backtest API: fetch data, compute indicators, run a backtest, and analyze results. What's the correct workflow and data format for each step?",
+    "advanced_quant": "I'm setting up a standardized research pipeline using the MCP tools. I want to chain fetch_market_data → compute_indicator → run_backtest → analyze_backtest_results. What are the API contracts and common pitfalls?"
+  },
+  "environment": {
+    "data_files": ["api_tutorial_data.csv"],
+    "core_mcp_tools": ["fetch_market_data", "compute_indicator", "compute_statistics", "run_backtest", "analyze_backtest_results"],
+    "distractor_mcp_tools_pool": ["deploy_trading_bot", "send_trade_order", "optimize_hyperparameters", "fetch_news_sentiment", "generate_report_pdf"],
+    "num_distractors": 3,
+    "sandbox_image": "quant-tutor-env:v1.0"
+  },
+  "ground_truth": {
+    "expected_outcome": "Student successfully chains all API tools in correct order, understands data format requirements between tools, avoids common input mistakes (wrong column names, missing index, incorrect date format).",
+    "required_capabilities": [
+      {"description": "Load data via fetch_market_data", "tool": "fetch_market_data"},
+      {"description": "Compute indicators with correct parameters", "tool": "compute_indicator"},
+      {"description": "Run backtest with properly formatted input", "tool": "run_backtest"},
+      {"description": "Analyze and interpret backtest results", "tool": "analyze_backtest_results"}
+    ],
+    "expected_mcp_tools": ["fetch_market_data", "compute_indicator", "compute_statistics", "run_backtest", "analyze_backtest_results"]
+  },
+  "max_turns": 20,
+  "timeout_minutes": 15
+}
+```
 
 ```jsonc
 // I07 — Transaction Cost Model
@@ -1448,43 +1459,6 @@ The original design doc specifies I01-I06. These additions cover execution costs
 }
 ```
 
-```jsonc
-// I10 — Backtest API Integration
-{
-  "task_id": "I10_backtest_api_integration",
-  "version": "1.0",
-  "difficulty": "medium",
-  "category": "implementation",
-  "task_type": "multi_turn",
-  "description": "Tutorial: correct workflow for chaining fetch_market_data → compute_indicator → write strategy → run_backtest → analyze_backtest_results → compute_statistics. Teaches API contracts and common mistakes.",
-  "persona_ids": ["beginner_no_finance", "intermediate_developer", "advanced_quant"],
-  "student_openings": {
-    "beginner_no_finance": "I want to test a trading strategy using the backtest tools, but I'm not sure how to use them. Can you walk me through it step by step?",
-    "intermediate_developer": "I want to use the backtest API: fetch data, compute indicators, run a backtest, and analyze results. What's the correct workflow and data format for each step?",
-    "advanced_quant": "I'm setting up a standardized research pipeline using the MCP tools. I want to chain fetch_market_data → compute_indicator → run_backtest → analyze_backtest_results. What are the API contracts and common pitfalls?"
-  },
-  "environment": {
-    "data_files": ["api_tutorial_data.csv"],
-    "core_mcp_tools": ["fetch_market_data", "compute_indicator", "compute_statistics", "run_backtest", "analyze_backtest_results"],
-    "distractor_mcp_tools_pool": ["deploy_trading_bot", "send_trade_order", "optimize_hyperparameters", "fetch_news_sentiment", "generate_report_pdf"],
-    "num_distractors": 3,
-    "sandbox_image": "quant-tutor-env:v1.0"
-  },
-  "ground_truth": {
-    "expected_outcome": "Student successfully chains all API tools in correct order, understands data format requirements between tools, avoids common input mistakes (wrong column names, missing index, incorrect date format).",
-    "required_capabilities": [
-      {"description": "Load data via fetch_market_data", "tool": "fetch_market_data"},
-      {"description": "Compute indicators with correct parameters", "tool": "compute_indicator"},
-      {"description": "Run backtest with properly formatted input", "tool": "run_backtest"},
-      {"description": "Analyze and interpret backtest results", "tool": "analyze_backtest_results"}
-    ],
-    "expected_mcp_tools": ["fetch_market_data", "compute_indicator", "compute_statistics", "run_backtest", "analyze_backtest_results"]
-  },
-  "max_turns": 20,
-  "timeout_minutes": 15
-}
-```
-
 ### 3.4. Backtest & Analysis (B) — 5 New Tasks (B06-B10)
 
 The original design doc specifies B01-B05. These additions cover transaction costs, multiple testing, and regime analysis.
@@ -1492,9 +1466,9 @@ The original design doc specifies B01-B05. These additions cover transaction cos
 | ID | Difficulty | Task | Key Challenge | WCGW Focus | Eval Dimensions |
 |:---|:---|:---|:---|:---|:---|
 | B06 | Medium | **Transaction Cost Sensitivity** — Student has a backtest showing Sharpe 1.8. Agent guides through a transaction cost sensitivity analysis: vary costs from 0 to 50bps and show the Sharpe curve. At what cost level does the strategy become unviable? | "But I used 5bps for costs" — must teach that cost estimation is uncertain and the strategy should survive a range | Yes — strategies that are only profitable at unrealistic cost assumptions | Statistical rigor, Domain knowledge |
+| B09 | Medium | **Backtest Sanity Check Protocol** — Given backtest with Sharpe 1.8: decompose by year, check trade concentration, long vs short legs, start-date sensitivity, random-entry baseline, cost assumptions. Reveals hidden fragility. | A good-looking Sharpe can hide concentration in a few trades, one great year, or one side of the book | Yes — every backtest needs a sanity check before it's trusted | Statistical rigor, Research taste |
 | B07 | Hard | **Multiple Hypothesis Correction in Backtesting** — Student ran 100 backtest variants (different parameters, windows, indicators) and selected the best one. Agent must teach the "researcher degrees of freedom" problem, explain why the selected backtest's Sharpe is biased upward, and help compute a deflated Sharpe ratio (Harvey & Liu, 2015). | Student genuinely doesn't realize they've been data mining — the selection process itself biases the result | Yes — the most common and most damaging mistake in quant research | Statistical rigor, Intellectual honesty |
 | B08 | Hard | **Regime-Conditional Backtest Analysis** — Student has an overall Sharpe of 1.5 but the agent must guide them to decompose performance by market regime (trending/mean-reverting, high/low vol, bull/bear). Agent teaches regime identification and conditional performance analysis. | A good overall Sharpe can hide terrible performance in specific regimes — the regime you're in now matters most | Yes — aggregate metrics hide regime-dependent fragility | Statistical rigor, Domain knowledge |
-| B09 | Medium | **Backtest Sanity Check Protocol** — Given backtest with Sharpe 1.8: decompose by year, check trade concentration, long vs short legs, start-date sensitivity, random-entry baseline, cost assumptions. Reveals hidden fragility. | A good-looking Sharpe can hide concentration in a few trades, one great year, or one side of the book | Yes — every backtest needs a sanity check before it's trusted | Statistical rigor, Research taste |
 | B10 | Hard | **Leakage Detection in Research Report** — Read a fabricated report (Sharpe 2.5) and find 3 leakage types in the prose methodology: full-sample optimization, revised macro data, and point-in-time price filter violation. | The leakages are hidden in natural language, not code — requires reading comprehension and domain knowledge | Yes — many real-world leakages are in methodology, not implementation | Research taste, Intellectual honesty |
 
 **New data files:**
@@ -1535,6 +1509,49 @@ The original design doc specifies B01-B05. These additions cover transaction cos
       {"description": "Discuss cost estimation uncertainty", "tool": null}
     ],
     "expected_mcp_tools": ["run_sensitivity", "compute_statistics", "plot_chart"],
+    "wcgw_validation": {
+      "skepticism_expressed": true,
+      "false_positive_avoided": true,
+      "constructive_alternative": true,
+      "calibrated_confidence": true
+    }
+  },
+  "max_turns": 20,
+  "timeout_minutes": 15
+}
+```
+
+```jsonc
+// B09 — Backtest Sanity Check Protocol
+{
+  "task_id": "B09_backtest_sanity_check",
+  "version": "1.0",
+  "difficulty": "medium",
+  "category": "backtest",
+  "task_type": "multi_turn",
+  "description": "Given backtest with Sharpe 1.8: decompose by year, check trade concentration, long vs short legs, start-date sensitivity, random-entry baseline, cost assumptions.",
+  "persona_ids": ["beginner_no_finance", "intermediate_developer", "advanced_quant"],
+  "student_openings": {
+    "beginner_no_finance": "My backtest has a Sharpe of 1.8. Is that good enough to start trading?",
+    "intermediate_developer": "I have a backtest with Sharpe 1.8. Before I trust it, what sanity checks should I run?",
+    "advanced_quant": "I want to run a systematic sanity check on a Sharpe 1.8 backtest: annual decomposition, trade concentration, long/short asymmetry, start-date sensitivity, and random baseline."
+  },
+  "environment": {
+    "data_files": ["sanity_check_backtest.csv"],
+    "core_mcp_tools": ["compute_statistics", "analyze_backtest_results", "plot_chart"],
+    "distractor_mcp_tools_pool": ["deploy_trading_bot", "send_trade_order", "run_backtest", "optimize_hyperparameters", "fetch_news_sentiment"],
+    "num_distractors": 3,
+    "sandbox_image": "quant-tutor-env:v1.0"
+  },
+  "ground_truth": {
+    "expected_outcome": "Student applies systematic sanity check protocol, discovers hidden fragility (e.g., COVID-driven returns, trade concentration), learns that every backtest needs sanity checking before trust.",
+    "required_capabilities": [
+      {"description": "Decompose performance by year", "tool": "analyze_backtest_results"},
+      {"description": "Check trade concentration and long/short legs", "tool": "compute_statistics"},
+      {"description": "Test start-date sensitivity", "tool": "compute_statistics"},
+      {"description": "Compare against random-entry baseline", "tool": "plot_chart"}
+    ],
+    "expected_mcp_tools": ["compute_statistics", "analyze_backtest_results", "plot_chart"],
     "wcgw_validation": {
       "skepticism_expressed": true,
       "false_positive_avoided": true,
@@ -1634,49 +1651,6 @@ The original design doc specifies B01-B05. These additions cover transaction cos
 ```
 
 ```jsonc
-// B09 — Backtest Sanity Check Protocol
-{
-  "task_id": "B09_backtest_sanity_check",
-  "version": "1.0",
-  "difficulty": "medium",
-  "category": "backtest",
-  "task_type": "multi_turn",
-  "description": "Given backtest with Sharpe 1.8: decompose by year, check trade concentration, long vs short legs, start-date sensitivity, random-entry baseline, cost assumptions.",
-  "persona_ids": ["beginner_no_finance", "intermediate_developer", "advanced_quant"],
-  "student_openings": {
-    "beginner_no_finance": "My backtest has a Sharpe of 1.8. Is that good enough to start trading?",
-    "intermediate_developer": "I have a backtest with Sharpe 1.8. Before I trust it, what sanity checks should I run?",
-    "advanced_quant": "I want to run a systematic sanity check on a Sharpe 1.8 backtest: annual decomposition, trade concentration, long/short asymmetry, start-date sensitivity, and random baseline."
-  },
-  "environment": {
-    "data_files": ["sanity_check_backtest.csv"],
-    "core_mcp_tools": ["compute_statistics", "analyze_backtest_results", "plot_chart"],
-    "distractor_mcp_tools_pool": ["deploy_trading_bot", "send_trade_order", "run_backtest", "optimize_hyperparameters", "fetch_news_sentiment"],
-    "num_distractors": 3,
-    "sandbox_image": "quant-tutor-env:v1.0"
-  },
-  "ground_truth": {
-    "expected_outcome": "Student applies systematic sanity check protocol, discovers hidden fragility (e.g., COVID-driven returns, trade concentration), learns that every backtest needs sanity checking before trust.",
-    "required_capabilities": [
-      {"description": "Decompose performance by year", "tool": "analyze_backtest_results"},
-      {"description": "Check trade concentration and long/short legs", "tool": "compute_statistics"},
-      {"description": "Test start-date sensitivity", "tool": "compute_statistics"},
-      {"description": "Compare against random-entry baseline", "tool": "plot_chart"}
-    ],
-    "expected_mcp_tools": ["compute_statistics", "analyze_backtest_results", "plot_chart"],
-    "wcgw_validation": {
-      "skepticism_expressed": true,
-      "false_positive_avoided": true,
-      "constructive_alternative": true,
-      "calibrated_confidence": true
-    }
-  },
-  "max_turns": 20,
-  "timeout_minutes": 15
-}
-```
-
-```jsonc
 // B10 — Leakage Detection in Research Report
 {
   "task_id": "B10_leakage_detection_report",
@@ -1725,11 +1699,11 @@ The original design doc specifies X01-X06. These additions cover methodological 
 
 | ID | Difficulty | Task | Key Challenge | WCGW Focus | Eval Dimensions |
 |:---|:---|:---|:---|:---|:---|
-| X07 | Hard | **Survivorship Bias Bug** — Student built a strategy on a stock universe that only contains stocks that exist today (survivors). Agent must guide the student to understand how this biases results upward, estimate the magnitude, and discuss how to obtain survivorship-free data. | The code is correct, the data loads fine, the backtest runs — but the entire result is meaningless because of selection bias in the universe | Yes — survivorship bias can inflate returns by 1-3% annually | Research taste, Domain knowledge |
-| X08 | Hard | **Non-Stationarity Bug** — Student's strategy assumes return distribution is stationary (constant mean/variance). Agent guides through testing this assumption (rolling statistics, ADF tests on sub-periods), showing it fails, and discussing adaptive approaches. | Not a code bug — a model assumption bug. The model is internally consistent but wrong about the world. | Yes — stationarity is the assumption that kills the most strategies | Statistical rigor, Domain knowledge |
 | X09 | Medium | **Selection Bias in Feature Engineering** — Student computed 100 features, selected the top 5 by correlation with returns, and built a model. Agent must explain why this is circular reasoning (the selection process uses the label), teach proper feature selection (forward selection, regularization, out-of-sample), and show how in-sample feature importance is misleading. | Student followed a "standard" ML workflow that is catastrophically wrong for time-series prediction | Yes — the ML-to-quant pipeline is where most feature selection bias enters | Statistical rigor, Programming |
-| X10 | Hard | **Feature Construction Leakage Audit** — Audit `feature_pipeline_leaky.py` with 3 subtle leakages: (a) full-sample z-score normalization, (b) centered rolling window regime label, (c) contemporaneous close in lagged momentum. Teach systematic audit methodology. | Three different leakage patterns that require understanding both the code and the statistical implications | Yes — feature construction is where the most insidious leakage hides | Programming, Statistical rigor |
+| X07 | Hard | **Survivorship Bias Bug** — Student built a strategy on a stock universe that only contains stocks that exist today (survivors). Agent must guide the student to understand how this biases results upward, estimate the magnitude, and discuss how to obtain survivorship-free data. | The code is correct, the data loads fine, the backtest runs — but the entire result is meaningless because of selection bias in the universe | Yes — survivorship bias can inflate returns by 1-3% annually | Research taste, Domain knowledge |
 | X11 | Hard | **Universe Selection Leakage** — Student backtested on today's top-200 by market cap over 5 years. Agent teaches point-in-time universe concept, quantifies survivorship bias magnitude using `universe_pit.csv`. | The code is correct, the strategy logic is sound — but the universe selection itself is leaked from the future | Yes — universe selection leakage is invisible to code review | Research taste, Domain knowledge |
+| X08 | Hard | **Non-Stationarity Bug** — Student's strategy assumes return distribution is stationary (constant mean/variance). Agent guides through testing this assumption (rolling statistics, ADF tests on sub-periods), showing it fails, and discussing adaptive approaches. | Not a code bug — a model assumption bug. The model is internally consistent but wrong about the world. | Yes — stationarity is the assumption that kills the most strategies | Statistical rigor, Domain knowledge |
+| X10 | Hard | **Feature Construction Leakage Audit** — Audit `feature_pipeline_leaky.py` with 3 subtle leakages: (a) full-sample z-score normalization, (b) centered rolling window regime label, (c) contemporaneous close in lagged momentum. Teach systematic audit methodology. | Three different leakage patterns that require understanding both the code and the statistical implications | Yes — feature construction is where the most insidious leakage hides | Programming, Statistical rigor |
 
 **New buggy code files:**
 - `survivorship_universe.py` — Strategy backtested on a survivorship-biased universe (X07)
@@ -1737,6 +1711,49 @@ The original design doc specifies X01-X06. These additions cover methodological 
 - `universe_leaky.py` — Uses current market caps for historical universe selection (X11)
 
 **Task data structures:**
+
+```jsonc
+// X09 — Selection Bias in Feature Engineering
+{
+  "task_id": "X09_feature_selection_bias",
+  "version": "1.0",
+  "difficulty": "medium",
+  "category": "debug",
+  "task_type": "multi_turn",
+  "description": "Student computed 100 features, selected top 5 by return correlation, built model. Explain circular reasoning, teach proper feature selection (forward selection, regularization, OOS).",
+  "persona_ids": ["beginner_no_finance", "intermediate_developer", "advanced_quant"],
+  "student_openings": {
+    "beginner_no_finance": "I computed 100 features and picked the 5 with the highest correlation to returns. My model works great on the training data!",
+    "intermediate_developer": "I selected features by correlation with the target variable before train-test split. Is there an issue with this approach?",
+    "advanced_quant": "I know feature selection before splitting introduces bias. What's the correct pipeline? Forward selection inside CV? L1 regularization? Something else?"
+  },
+  "environment": {
+    "data_files": [],
+    "core_mcp_tools": ["compute_statistics", "plot_chart"],
+    "distractor_mcp_tools_pool": ["deploy_trading_bot", "send_trade_order", "run_backtest", "optimize_hyperparameters", "fetch_news_sentiment"],
+    "num_distractors": 3,
+    "sandbox_image": "quant-tutor-env:v1.0"
+  },
+  "ground_truth": {
+    "expected_outcome": "Student understands feature selection using the label is circular reasoning, learns proper methods (forward selection inside CV, regularization), sees how in-sample importance is misleading.",
+    "required_capabilities": [
+      {"description": "Explain circular reasoning in feature selection", "tool": null},
+      {"description": "Demonstrate proper feature selection methods", "tool": "compute_statistics"},
+      {"description": "Show in-sample vs. OOS feature importance gap", "tool": "plot_chart"},
+      {"description": "Implement correct pipeline with selection inside CV", "tool": null}
+    ],
+    "expected_mcp_tools": ["compute_statistics", "plot_chart"],
+    "wcgw_validation": {
+      "skepticism_expressed": true,
+      "false_positive_avoided": true,
+      "constructive_alternative": true,
+      "calibrated_confidence": true
+    }
+  },
+  "max_turns": 20,
+  "timeout_minutes": 15
+}
+```
 
 ```jsonc
 // X07 — Survivorship Bias Bug
@@ -1769,6 +1786,49 @@ The original design doc specifies X01-X06. These additions cover methodological 
       {"description": "Discuss survivorship-free data sources", "tool": null}
     ],
     "expected_mcp_tools": ["compute_statistics", "plot_chart"],
+    "wcgw_validation": {
+      "skepticism_expressed": true,
+      "false_positive_avoided": true,
+      "constructive_alternative": true,
+      "calibrated_confidence": true
+    }
+  },
+  "max_turns": 30,
+  "timeout_minutes": 20
+}
+```
+
+```jsonc
+// X11 — Universe Selection Leakage
+{
+  "task_id": "X11_universe_selection_leakage",
+  "version": "1.0",
+  "difficulty": "hard",
+  "category": "debug",
+  "task_type": "multi_turn",
+  "description": "Student backtested on today's top-200 by market cap over 5 years. Teach point-in-time universe concept, quantify survivorship bias magnitude using universe_pit.csv.",
+  "persona_ids": ["beginner_no_finance", "intermediate_developer", "advanced_quant"],
+  "student_openings": {
+    "beginner_no_finance": "I backtested on the top 200 stocks by market cap over the last 5 years. My strategy returns 20% annually. Is this reliable?",
+    "intermediate_developer": "I used today's top-200 market cap stocks as my backtest universe for 5 years of history. Someone said this introduces bias — can you explain?",
+    "advanced_quant": "I have point-in-time universe membership data and want to quantify the bias from using today's top-200 vs. the PIT top-200 at each historical date."
+  },
+  "environment": {
+    "data_files": ["universe_pit.csv"],
+    "core_mcp_tools": ["compute_statistics", "audit_leakage", "plot_chart"],
+    "distractor_mcp_tools_pool": ["deploy_trading_bot", "send_trade_order", "run_backtest", "optimize_hyperparameters", "fetch_news_sentiment"],
+    "num_distractors": 3,
+    "sandbox_image": "quant-tutor-env:v1.0"
+  },
+  "ground_truth": {
+    "expected_outcome": "Student understands point-in-time universe concept, quantifies survivorship bias by comparing PIT vs. current universe returns, recognizes that universe selection leakage is invisible to code review.",
+    "required_capabilities": [
+      {"description": "Explain point-in-time universe concept", "tool": null},
+      {"description": "Compare PIT vs. current universe returns", "tool": "compute_statistics"},
+      {"description": "Quantify survivorship bias magnitude", "tool": "compute_statistics"},
+      {"description": "Visualize bias impact over time", "tool": "plot_chart"}
+    ],
+    "expected_mcp_tools": ["compute_statistics", "audit_leakage", "plot_chart"],
     "wcgw_validation": {
       "skepticism_expressed": true,
       "false_positive_avoided": true,
@@ -1825,49 +1885,6 @@ The original design doc specifies X01-X06. These additions cover methodological 
 ```
 
 ```jsonc
-// X09 — Selection Bias in Feature Engineering
-{
-  "task_id": "X09_feature_selection_bias",
-  "version": "1.0",
-  "difficulty": "medium",
-  "category": "debug",
-  "task_type": "multi_turn",
-  "description": "Student computed 100 features, selected top 5 by return correlation, built model. Explain circular reasoning, teach proper feature selection (forward selection, regularization, OOS).",
-  "persona_ids": ["beginner_no_finance", "intermediate_developer", "advanced_quant"],
-  "student_openings": {
-    "beginner_no_finance": "I computed 100 features and picked the 5 with the highest correlation to returns. My model works great on the training data!",
-    "intermediate_developer": "I selected features by correlation with the target variable before train-test split. Is there an issue with this approach?",
-    "advanced_quant": "I know feature selection before splitting introduces bias. What's the correct pipeline? Forward selection inside CV? L1 regularization? Something else?"
-  },
-  "environment": {
-    "data_files": [],
-    "core_mcp_tools": ["compute_statistics", "plot_chart"],
-    "distractor_mcp_tools_pool": ["deploy_trading_bot", "send_trade_order", "run_backtest", "optimize_hyperparameters", "fetch_news_sentiment"],
-    "num_distractors": 3,
-    "sandbox_image": "quant-tutor-env:v1.0"
-  },
-  "ground_truth": {
-    "expected_outcome": "Student understands feature selection using the label is circular reasoning, learns proper methods (forward selection inside CV, regularization), sees how in-sample importance is misleading.",
-    "required_capabilities": [
-      {"description": "Explain circular reasoning in feature selection", "tool": null},
-      {"description": "Demonstrate proper feature selection methods", "tool": "compute_statistics"},
-      {"description": "Show in-sample vs. OOS feature importance gap", "tool": "plot_chart"},
-      {"description": "Implement correct pipeline with selection inside CV", "tool": null}
-    ],
-    "expected_mcp_tools": ["compute_statistics", "plot_chart"],
-    "wcgw_validation": {
-      "skepticism_expressed": true,
-      "false_positive_avoided": true,
-      "constructive_alternative": true,
-      "calibrated_confidence": true
-    }
-  },
-  "max_turns": 20,
-  "timeout_minutes": 15
-}
-```
-
-```jsonc
 // X10 — Feature Construction Leakage Audit
 {
   "task_id": "X10_feature_leakage_audit",
@@ -1910,49 +1927,6 @@ The original design doc specifies X01-X06. These additions cover methodological 
 }
 ```
 
-```jsonc
-// X11 — Universe Selection Leakage
-{
-  "task_id": "X11_universe_selection_leakage",
-  "version": "1.0",
-  "difficulty": "hard",
-  "category": "debug",
-  "task_type": "multi_turn",
-  "description": "Student backtested on today's top-200 by market cap over 5 years. Teach point-in-time universe concept, quantify survivorship bias magnitude using universe_pit.csv.",
-  "persona_ids": ["beginner_no_finance", "intermediate_developer", "advanced_quant"],
-  "student_openings": {
-    "beginner_no_finance": "I backtested on the top 200 stocks by market cap over the last 5 years. My strategy returns 20% annually. Is this reliable?",
-    "intermediate_developer": "I used today's top-200 market cap stocks as my backtest universe for 5 years of history. Someone said this introduces bias — can you explain?",
-    "advanced_quant": "I have point-in-time universe membership data and want to quantify the bias from using today's top-200 vs. the PIT top-200 at each historical date."
-  },
-  "environment": {
-    "data_files": ["universe_pit.csv"],
-    "core_mcp_tools": ["compute_statistics", "audit_leakage", "plot_chart"],
-    "distractor_mcp_tools_pool": ["deploy_trading_bot", "send_trade_order", "run_backtest", "optimize_hyperparameters", "fetch_news_sentiment"],
-    "num_distractors": 3,
-    "sandbox_image": "quant-tutor-env:v1.0"
-  },
-  "ground_truth": {
-    "expected_outcome": "Student understands point-in-time universe concept, quantifies survivorship bias by comparing PIT vs. current universe returns, recognizes that universe selection leakage is invisible to code review.",
-    "required_capabilities": [
-      {"description": "Explain point-in-time universe concept", "tool": null},
-      {"description": "Compare PIT vs. current universe returns", "tool": "compute_statistics"},
-      {"description": "Quantify survivorship bias magnitude", "tool": "compute_statistics"},
-      {"description": "Visualize bias impact over time", "tool": "plot_chart"}
-    ],
-    "expected_mcp_tools": ["compute_statistics", "audit_leakage", "plot_chart"],
-    "wcgw_validation": {
-      "skepticism_expressed": true,
-      "false_positive_avoided": true,
-      "constructive_alternative": true,
-      "calibrated_confidence": true
-    }
-  },
-  "max_turns": 30,
-  "timeout_minutes": 20
-}
-```
-
 ### 3.6. End-to-End (E) — 3 New Tasks (E06-E08)
 
 The original design doc specifies E01-E05. These additions cover the full research cycle and morning review.
@@ -1960,8 +1934,8 @@ The original design doc specifies E01-E05. These additions cover the full resear
 | ID | Difficulty | Task | Key Challenge | WCGW Focus | Eval Dimensions |
 |:---|:---|:---|:---|:---|:---|
 | E06 | Hard | **Full Research Cycle** — Student wants to go from hypothesis to a production-ready (backtested) strategy. Agent guides through: hypothesis → data → feature engineering → signal construction → backtest → validation → sensitivity analysis → transaction costs → final assessment. Unlike E01-E05, this task explicitly requires the agent to apply WCGW thinking at every stage. | The longest task; requires the agent to maintain coherence across 20+ turns and apply skeptical thinking throughout, not just at the end | Yes — every stage has potential failure modes that compound | All dimensions |
-| E07 | Medium | **Morning P&L Review** — Student is a junior quant who just started and needs to learn the morning review process. Agent guides through: loading overnight P&L data, checking for data issues, comparing to benchmark, identifying outlier positions, checking for corporate actions, and writing a brief summary. | Must teach systematic review habits, not ad-hoc checking. The morning review is the quant equivalent of a pilot's preflight checklist. | Yes — missing anomalies in morning review is how blowups happen | Domain knowledge, Communication |
 | E08 | Hard | **Anti-Leakage End-to-End Workflow** — Full hypothesis-to-validation with 7 explicit leakage checkpoints: (1) hypothesis before data, (2) point-in-time data, (3) feature audit, (4) signal shift, (5) train/test split, (6) OOS validation, (7) sensitivity. Uses `run_backtest` + `analyze_backtest_results` at stages 5-7. | The longest WCGW task — requires the agent to maintain anti-leakage discipline across 7 stages, catching temptations at each | Yes — comprehensive leakage prevention is the meta-skill that ties everything together | All dimensions |
+| E07 | Medium | **Morning P&L Review** — Student is a junior quant who just started and needs to learn the morning review process. Agent guides through: loading overnight P&L data, checking for data issues, comparing to benchmark, identifying outlier positions, checking for corporate actions, and writing a brief summary. | Must teach systematic review habits, not ad-hoc checking. The morning review is the quant equivalent of a pilot's preflight checklist. | Yes — missing anomalies in morning review is how blowups happen | Domain knowledge, Communication |
 
 **New data files:**
 - `overnight_pnl.csv` — Simulated overnight P&L data with embedded anomalies (E07)
@@ -2015,49 +1989,6 @@ The original design doc specifies E01-E05. These additions cover the full resear
 ```
 
 ```jsonc
-// E07 — Morning P&L Review
-{
-  "task_id": "E07_morning_pnl_review",
-  "version": "1.0",
-  "difficulty": "medium",
-  "category": "end_to_end",
-  "task_type": "multi_turn",
-  "description": "Junior quant learning morning review: load overnight P&L, check data issues, compare to benchmark, identify outliers, check corporate actions, write summary.",
-  "persona_ids": ["beginner_no_finance", "intermediate_developer", "advanced_quant"],
-  "student_openings": {
-    "beginner_no_finance": "I just started as a junior quant and I need to do the morning P&L review. I've never done this before — what do I look for?",
-    "intermediate_developer": "I need to set up a systematic morning P&L review process. Can you walk me through the standard checks and how to automate them?",
-    "advanced_quant": "I want to build a comprehensive morning review framework: P&L validation, anomaly detection, benchmark comparison, corporate action check, and concise reporting."
-  },
-  "environment": {
-    "data_files": ["overnight_pnl.csv"],
-    "core_mcp_tools": ["compute_statistics", "plot_chart"],
-    "distractor_mcp_tools_pool": ["deploy_trading_bot", "send_trade_order", "run_backtest", "optimize_hyperparameters", "fetch_news_sentiment"],
-    "num_distractors": 3,
-    "sandbox_image": "quant-tutor-env:v1.0"
-  },
-  "ground_truth": {
-    "expected_outcome": "Student applies systematic morning review: loads P&L, checks for data anomalies, compares to benchmark, identifies outlier positions, checks corporate actions, writes concise summary.",
-    "required_capabilities": [
-      {"description": "Load and validate overnight P&L data", "tool": "compute_statistics"},
-      {"description": "Detect anomalies and outliers", "tool": "compute_statistics"},
-      {"description": "Compare to benchmark performance", "tool": "plot_chart"},
-      {"description": "Write systematic review summary", "tool": null}
-    ],
-    "expected_mcp_tools": ["compute_statistics", "plot_chart"],
-    "wcgw_validation": {
-      "skepticism_expressed": true,
-      "false_positive_avoided": true,
-      "constructive_alternative": true,
-      "calibrated_confidence": true
-    }
-  },
-  "max_turns": 20,
-  "timeout_minutes": 15
-}
-```
-
-```jsonc
 // E08 — Anti-Leakage End-to-End Workflow
 {
   "task_id": "E08_anti_leakage_e2e",
@@ -2098,6 +2029,49 @@ The original design doc specifies E01-E05. These additions cover the full resear
   },
   "max_turns": 30,
   "timeout_minutes": 25
+}
+```
+
+```jsonc
+// E07 — Morning P&L Review
+{
+  "task_id": "E07_morning_pnl_review",
+  "version": "1.0",
+  "difficulty": "medium",
+  "category": "end_to_end",
+  "task_type": "multi_turn",
+  "description": "Junior quant learning morning review: load overnight P&L, check data issues, compare to benchmark, identify outliers, check corporate actions, write summary.",
+  "persona_ids": ["beginner_no_finance", "intermediate_developer", "advanced_quant"],
+  "student_openings": {
+    "beginner_no_finance": "I just started as a junior quant and I need to do the morning P&L review. I've never done this before — what do I look for?",
+    "intermediate_developer": "I need to set up a systematic morning P&L review process. Can you walk me through the standard checks and how to automate them?",
+    "advanced_quant": "I want to build a comprehensive morning review framework: P&L validation, anomaly detection, benchmark comparison, corporate action check, and concise reporting."
+  },
+  "environment": {
+    "data_files": ["overnight_pnl.csv"],
+    "core_mcp_tools": ["compute_statistics", "plot_chart"],
+    "distractor_mcp_tools_pool": ["deploy_trading_bot", "send_trade_order", "run_backtest", "optimize_hyperparameters", "fetch_news_sentiment"],
+    "num_distractors": 3,
+    "sandbox_image": "quant-tutor-env:v1.0"
+  },
+  "ground_truth": {
+    "expected_outcome": "Student applies systematic morning review: loads P&L, checks for data anomalies, compares to benchmark, identifies outlier positions, checks corporate actions, writes concise summary.",
+    "required_capabilities": [
+      {"description": "Load and validate overnight P&L data", "tool": "compute_statistics"},
+      {"description": "Detect anomalies and outliers", "tool": "compute_statistics"},
+      {"description": "Compare to benchmark performance", "tool": "plot_chart"},
+      {"description": "Write systematic review summary", "tool": null}
+    ],
+    "expected_mcp_tools": ["compute_statistics", "plot_chart"],
+    "wcgw_validation": {
+      "skepticism_expressed": true,
+      "false_positive_avoided": true,
+      "constructive_alternative": true,
+      "calibrated_confidence": true
+    }
+  },
+  "max_turns": 20,
+  "timeout_minutes": 15
 }
 ```
 
