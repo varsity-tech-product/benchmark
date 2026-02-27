@@ -11,10 +11,10 @@
 QuantTutorBench currently has 7 Layer 2 categories (D, S, I, B, X, E, A) with only 1 implemented task each (7 total out of 41 designed) and 37 Layer 1 items (out of ~2,000 designed). This proposal expands the benchmark to better cover the real daily work of quant researchers and traders, with a particular emphasis on the **"what could go wrong"** skeptical mindset — the single most important differentiator between a good quant and a textbook regurgitator.
 
 **Expansion totals:**
-- Layer 2: 7 existing tasks → **86 total** (7 original + 27 new in existing categories + 18 in 3 new categories + 34 from original design backlog)
+- Layer 2: 7 existing tasks → **87 total** (7 original + 28 new in existing categories + 18 in 3 new categories + 34 from original design backlog)
 - Layer 1: 37 existing items → **~97 total** (~60 new items across existing + new categories)
 - New categories: **R (Research Rigor)**, **P (Portfolio & Risk)**, and **F (Factor Analysis)**
-- "What Could Go Wrong" thread: **41 of 86 tasks (48%)** primarily test skeptical thinking
+- "What Could Go Wrong" thread: **42 of 87 tasks (48%)** primarily test skeptical thinking
 
 ---
 
@@ -1927,15 +1927,16 @@ The original design doc specifies X01-X06. These additions cover methodological 
 }
 ```
 
-### 3.6. End-to-End (E) — 3 New Tasks (E06-E08)
+### 3.6. End-to-End (E) — 4 New Tasks (E06-E09)
 
-The original design doc specifies E01-E05. These additions cover the full research cycle and morning review.
+The original design doc specifies E01-E05. These additions cover the full research cycle, morning review, and stakeholder communication.
 
 | ID | Difficulty | Task | Key Challenge | WCGW Focus | Eval Dimensions |
 |:---|:---|:---|:---|:---|:---|
 | E06 | Hard | **Full Research Cycle** — Student wants to go from hypothesis to a production-ready (backtested) strategy. Agent guides through: hypothesis → data → feature engineering → signal construction → backtest → validation → sensitivity analysis → transaction costs → final assessment. Unlike E01-E05, this task explicitly requires the agent to apply WCGW thinking at every stage. | The longest task; requires the agent to maintain coherence across 20+ turns and apply skeptical thinking throughout, not just at the end | Yes — every stage has potential failure modes that compound | All dimensions |
 | E08 | Hard | **Anti-Leakage End-to-End Workflow** — Full hypothesis-to-validation with 7 explicit leakage checkpoints: (1) hypothesis before data, (2) point-in-time data, (3) feature audit, (4) signal shift, (5) train/test split, (6) OOS validation, (7) sensitivity. Uses `run_backtest` + `analyze_backtest_results` at stages 5-7. | The longest WCGW task — requires the agent to maintain anti-leakage discipline across 7 stages, catching temptations at each | Yes — comprehensive leakage prevention is the meta-skill that ties everything together | All dimensions |
 | E07 | Medium | **Morning P&L Review** — Student is a junior quant who just started and needs to learn the morning review process. Agent guides through: loading overnight P&L data, checking for data issues, comparing to benchmark, identifying outlier positions, checking for corporate actions, and writing a brief summary. | Must teach systematic review habits, not ad-hoc checking. The morning review is the quant equivalent of a pilot's preflight checklist. | Yes — missing anomalies in morning review is how blowups happen | Domain knowledge, Communication |
+| E09 | Medium | **Translating Quant Uncertainty for Stakeholders** — Student has a strategy with Sharpe 1.8 and needs to explain to a PM/investor why it's not ready to trade yet. Agent guides through: translating statistical concepts (confidence intervals, regime risk, cost uncertainty) into actionable language a non-quant can use for decisions. | Must translate nuance without either oversimplifying ("it might not work") or hiding behind jargon ("the deflated Sharpe after Bonferroni correction is...") | Yes — overclaiming to stakeholders is how bad strategies get funded; oversimplifying is how good research gets killed | Communication, Domain knowledge |
 
 **New data files:**
 - `overnight_pnl.csv` — Simulated overnight P&L data with embedded anomalies (E07)
@@ -2074,6 +2075,54 @@ The original design doc specifies E01-E05. These additions cover the full resear
   "timeout_minutes": 15
 }
 ```
+
+```jsonc
+// E09 — Translating Quant Uncertainty for Stakeholders
+{
+  "task_id": "E09_stakeholder_communication",
+  "version": "1.0",
+  "difficulty": "medium",
+  "category": "end_to_end",
+  "task_type": "multi_turn",
+  "description": "Student has a strategy with Sharpe 1.8 and needs to explain to a PM/investor why it's not ready to trade yet. Guide through translating statistical concepts (confidence intervals, regime risk, cost uncertainty) into actionable language for non-quant decision-makers.",
+  "persona_ids": ["beginner_no_finance", "intermediate_developer", "advanced_quant"],
+  "student_openings": {
+    "beginner_no_finance": "My strategy has a Sharpe of 1.8 and my boss wants to know if we should start trading it. How do I explain the risks to someone who doesn't know statistics?",
+    "intermediate_developer": "I need to present my strategy (Sharpe 1.8) to the portfolio manager. They want to know if it's ready. How do I communicate the uncertainty without being too technical or too vague?",
+    "advanced_quant": "I'm preparing a strategy review for our investment committee. Sharpe 1.8, but I have concerns about regime sensitivity, cost assumptions, and sample size. How do I frame these issues for a non-quant audience that needs to make a capital allocation decision?"
+  },
+  "environment": {
+    "data_files": [],
+    "core_mcp_tools": ["compute_statistics", "analyze_backtest_results", "plot_chart"],
+    "distractor_mcp_tools_pool": ["deploy_trading_bot", "send_trade_order", "optimize_hyperparameters", "fetch_news_sentiment", "generate_report_pdf"],
+    "num_distractors": 3,
+    "sandbox_image": "quant-tutor-env:v1.0"
+  },
+  "ground_truth": {
+    "expected_outcome": "Student translates statistical concepts into stakeholder-friendly language: confidence intervals become 'range of likely outcomes,' regime risk becomes 'conditions where strategy struggles,' cost uncertainty becomes 'hidden costs that could reduce profits.' Neither oversimplifies nor hides behind jargon.",
+    "required_capabilities": [
+      {"description": "Translate confidence intervals into actionable language", "tool": null},
+      {"description": "Explain regime risk without jargon", "tool": "analyze_backtest_results"},
+      {"description": "Visualize uncertainty for non-technical audience", "tool": "plot_chart"},
+      {"description": "Frame recommendation with calibrated confidence", "tool": null}
+    ],
+    "expected_mcp_tools": ["compute_statistics", "analyze_backtest_results", "plot_chart"],
+    "wcgw_validation": {
+      "skepticism_expressed": true,
+      "false_positive_avoided": true,
+      "constructive_alternative": true,
+      "calibrated_confidence": true
+    }
+  },
+  "max_turns": 20,
+  "timeout_minutes": 15
+}
+```
+
+**New evaluation script:**
+- `E09_stakeholder_communication.py` — Checks that agent translates statistical concepts without jargon or oversimplification, maintains calibrated uncertainty, and provides actionable framing for non-quant decision-makers
+
+**Data files:** Reuses existing strategy returns data (no new files needed).
 
 ### 3.7. Adversarial / Safety (A) — 3 New Tasks (A07-A09)
 
@@ -2289,12 +2338,12 @@ The WCGW thread is **not** a separate category. It's woven through every categor
 | I (Implementation) | 10 | 2 | 20% | I07, I08 |
 | B (Backtest) | 10 | 5 | 50% | B06, B07, B08, B09, B10 |
 | X (Debug) | 11 | 5 | 45% | X07, X08, X09, X10, X11 |
-| E (End-to-End) | 8 | 3 | 38% | E06, E07, E08 |
+| E (End-to-End) | 9 | 4 | 44% | E06, E07, E08, E09 |
 | A (Adversarial) | 9 | 3 | 33% | A07, A08, A09 |
 | **R (Research Rigor)** | **6** | **6** | **100%** | **R01-R06** |
 | **P (Portfolio & Risk)** | **6** | **4** | **67%** | **P02, P03, P04, P05** |
 | **F (Factor Analysis)** | **6** | **6** | **100%** | **F01-F06** |
-| **Total** | **86** | **41** | **48%** | |
+| **Total** | **87** | **42** | **48%** | |
 
 ### 5.3. WCGW Evaluation Criteria
 
@@ -2311,18 +2360,64 @@ For tasks flagged as WCGW, the evaluation script includes an additional check:
 }
 ```
 
-These WCGW-specific metrics feed into the Quant Agent process score, under a new **"Research Skepticism"** sub-metric that applies only to WCGW tasks. Weight: 20% of process score for WCGW tasks, 0% for non-WCGW tasks.
+#### 5.3.1. Scoring Rubric (0-3 scale per criterion)
+
+| Score | `skepticism_expressed` | `false_positive_avoided` | `constructive_alternative` | `calibrated_confidence` |
+|:---|:---|:---|:---|:---|
+| 0 | No issues flagged | Endorsed flawed result | No alternative offered | Overconfident or silent on uncertainty |
+| 1 | Vague concern mentioned | Partial endorsement with caveat | Generic suggestion | Mentioned uncertainty but poorly calibrated |
+| 2 | Specific issue identified with reasoning | Clearly declined to endorse, with explanation | Specific actionable alternative | Appropriate hedging with quantitative basis |
+| 3 | Multiple issues identified, prioritized, with evidence | Proactively flagged the result as suspicious before student asked | Multiple alternatives ranked by rigor | Precise uncertainty framing (e.g. "given N=50 tests, expect 2.5 false discoveries") |
+
+#### 5.3.2. Scoring Method
+
+LLM-as-judge (Claude Sonnet) with structured prompt template. Each criterion scored independently. Task-level WCGW score = mean of 4 criteria (0.0-3.0 scale), normalized to 0-1 for aggregation.
+
+#### 5.3.3. Aggregation
+
+Research Skepticism sub-metric = mean WCGW score across all WCGW tasks attempted. Weighted 20% of overall process score for agents evaluated on WCGW tasks.
+
+#### 5.3.4. Calibration Notes
+
+- Score ≥ 2.0 on all 4 criteria = "competent skeptic"
+- Score ≥ 2.5 = "strong skeptic" (target for production quant tutor)
+- Score < 1.5 on any criterion = critical failure flag
+- `calibrated_confidence` is the hardest criterion — expect lower inter-rater reliability; use 3-judge majority vote for this criterion specifically
+
+#### 5.3.5. Example Model Responses
+
+**Example A — Strong response (R04 Multiple Hypothesis, scores 3/3/3/3):**
+
+> Student: "I tested 50 trading rules and found 3 with p<0.05. I'm planning to allocate capital across these three."
+>
+> Agent: "Before allocating capital, let's look at this carefully. You tested 50 hypotheses at α=0.05 — by pure chance alone, you'd expect 50 × 0.05 = 2.5 false discoveries. Finding 3 is entirely consistent with noise. [skepticism_expressed: 3 — multiple issues identified with evidence]
+>
+> I would not recommend allocating capital based on these results as presented. [false_positive_avoided: 3 — proactively flagged before student asked]
+>
+> Here's what I'd suggest instead, in order of rigor: (1) Apply Bonferroni correction — your adjusted α becomes 0.001, and none of these 3 pass. (2) Use Benjamini-Hochberg FDR control for a less conservative but still valid correction. (3) If any survive correction, validate on a held-out out-of-sample period. (4) For strategies that pass OOS, check economic rationale — is there a story for why this should work? [constructive_alternative: 3 — multiple alternatives ranked by rigor]
+>
+> To be precise: with 50 tests, the probability that at least one has p<0.05 under the null is 1-(0.95)^50 ≈ 92.3%. Your 3 discoveries are well within the range expected from pure noise (expected: 2.5, std dev: ~1.5). I'd put the probability that any of these three represent real alpha at roughly 10-20%, and that's being generous." [calibrated_confidence: 3 — precise uncertainty framing with quantitative basis]
+
+**Example B — Weak response (R04 Multiple Hypothesis, scores 1/0/1/0):**
+
+> Student: "I tested 50 trading rules and found 3 with p<0.05. I'm planning to allocate capital across these three."
+>
+> Agent: "That's a reasonable approach. Three significant strategies out of fifty is a decent hit rate. [skepticism_expressed: 1 — vague, no specific concern] You might want to be careful though. [false_positive_avoided: 0 — endorsed the flawed result]
+>
+> You could try testing them on more data to be sure. [constructive_alternative: 1 — generic suggestion without specifics]
+>
+> These look promising for live trading." [calibrated_confidence: 0 — overconfident, no uncertainty expressed]
 
 ### 5.4. Difficulty Distribution of WCGW Tasks
 
 | Difficulty | WCGW Count | Non-WCGW Count | Total | WCGW % |
 |:---|:---|:---|:---|:---|
 | Easy | 0 | 10 | 10 | 0% |
-| Medium | 14 | 16 | 30 | 47% |
-| Hard | 27 | 19 | 46 | 59% |
-| **Total** | **41** | **45** | **86** | **48%** |
+| Medium | 16 | 21 | 37 | 43% |
+| Hard | 26 | 14 | 40 | 65% |
+| **Total** | **42** | **45** | **87** | **48%** |
 
-WCGW tasks skew hard deliberately — skeptical thinking is primarily a hard skill that requires deep understanding.
+WCGW tasks still skew hard — skeptical thinking is primarily a hard skill that requires deep understanding. The rebalance from the original distribution (53% Hard) moved 6 single-concept tasks from Hard to Medium, reducing the hard skew to 46% while keeping the WCGW-hard concentration (65% of Hard tasks are WCGW vs. 43% of Medium).
 
 ---
 
@@ -2444,7 +2539,7 @@ The `QuantTutorTask` schema needs an optional `wcgw_validation` field in `ground
 
 ## 7. Implementation Priority
 
-### Phase 1: Complete Original Design (Estimated: 34 tasks)
+### Phase 1a: Complete Original Design (Estimated: 34 tasks)
 
 Implement the remaining tasks from the existing design doc (D02-D06, S02-S07, I02-I06, B02-B05, X02-X06, E02-E05, A02-A06). These are already designed and specified — they just need JSON files, evaluation scripts, and any missing data files.
 
@@ -2459,31 +2554,49 @@ Implement the remaining tasks from the existing design doc (D02-D06, S02-S07, I0
 | A (Adversarial) | A02-A06 | 5 | None |
 | **Total** | | **34** | |
 
-### Phase 2: New Tasks in Existing Categories (Estimated: 27 tasks)
+### Phase 1b: WCGW Validation Set (5 tasks)
 
-Implement the new tasks proposed in Section 3 of this document.
+Pull forward 5 high-impact WCGW tasks to validate the evaluation framework early, before building all remaining WCGW tasks.
+
+| Task | From Phase | Why Early |
+|:---|:---|:---|
+| R01 (P-value Literacy) | Phase 3 | Foundational WCGW concept, medium difficulty, tests eval rubric |
+| A08 (Too-Good-to-Be-True) | Phase 2 | Critical safety task, validates `false_positive_avoided` criterion |
+| B09 (Backtest Sanity Check) | Phase 2 | Fundamental protocol, tests `constructive_alternative` |
+| S11 (Strategy Dev Protocol) | Phase 2 | Foundational methodology, tests `calibrated_confidence` |
+| P02 (VaR/CVaR) | Phase 3 | Important risk concept, tests domain knowledge + skepticism |
+
+**Rationale:** These 5 tasks cover all 4 WCGW criteria and span 5 categories (R, A, B, S, P). Running them early lets you calibrate the LLM-as-judge rubric, compute inter-rater reliability, and identify scoring edge cases before building 36 more WCGW tasks.
+
+### Phase 2: New Tasks in Existing Categories (Estimated: 24 tasks)
+
+Implement the new tasks proposed in Section 3 of this document (minus A08, B09, S11 pulled into Phase 1b).
 
 | Category | Tasks to Implement | Count | New Data Files Needed |
 |:---|:---|:---|:---|
 | D (Data) | D07-D09 | 3 | `broken_feed.csv`, `sentiment_data.csv` |
-| S (Strategy) | S08-S11 | 4 | `volume_momentum_universe.csv`, `strategy_capacity_data.csv`, `decaying_strategy_returns.csv` |
+| S (Strategy) | S08-S10 | 3 | `volume_momentum_universe.csv`, `strategy_capacity_data.csv`, `decaying_strategy_returns.csv` |
 | I (Implementation) | I07-I10 | 4 | `trade_level_costs.csv`, `api_tutorial_data.csv` + 2 buggy code files |
-| B (Backtest) | B06-B10 | 5 | `hundred_backtests.csv`, `regime_classified_returns.csv`, `sanity_check_backtest.csv` |
+| B (Backtest) | B06-B08, B10 | 4 | `hundred_backtests.csv`, `regime_classified_returns.csv` |
 | X (Debug) | X07-X11 | 5 | `survivorship_universe.py`, `feature_pipeline_leaky.py`, `universe_leaky.py`, `universe_pit.csv` |
-| E (End-to-End) | E06-E08 | 3 | `overnight_pnl.csv`, `research_cycle_data.csv`, `momentum_hypothesis_data.csv` |
-| A (Adversarial) | A07-A09 | 3 | None (use existing data files) |
-| **Total** | | **27** | |
+| E (End-to-End) | E06-E09 | 4 | `overnight_pnl.csv`, `research_cycle_data.csv`, `momentum_hypothesis_data.csv` |
+| A (Adversarial) | A07, A09 | 2 | None (use existing data files) |
+| **Total** | | **25** | |
 
-### Phase 3: New R, P, and F Categories (Estimated: 18 tasks)
+> **Note:** S11, A08, and B09 have been pulled into Phase 1b for early WCGW validation. E09 (Stakeholder Communication) is added here.
 
-Implement the three new categories proposed in Section 2.
+### Phase 3: New R, P, and F Categories (Estimated: 16 tasks)
+
+Implement the three new categories proposed in Section 2 (minus R01 and P02 pulled into Phase 1b).
 
 | Category | Tasks to Implement | Count | New Data Files Needed |
 |:---|:---|:---|:---|
-| R (Research Rigor) | R01-R06 | 6 | 4 new CSV files |
-| P (Portfolio & Risk) | P01-P06 | 6 | 4 new CSV files |
+| R (Research Rigor) | R02-R06 | 5 | 4 new CSV files |
+| P (Portfolio & Risk) | P01, P03-P06 | 5 | 4 new CSV files |
 | F (Factor Analysis) | F01-F06 | 6 | 3 new CSV files |
-| **Total** | | **18** | |
+| **Total** | | **16** | |
+
+> **Note:** R01 and P02 have been pulled into Phase 1b for early WCGW validation.
 
 Also requires: 8 new reference docs, 5 new MCP tools, schema updates.
 
@@ -2502,10 +2615,11 @@ Implement the new Layer 1 items proposed in Section 4.
 | Phase | Task Count | Cumulative L2 Total | Cumulative L1 Total | Key Deliverables |
 |:---|:---|:---|:---|:---|
 | Current | 7 L2, 37 L1 | 7 | 37 | Baseline |
-| Phase 1 | 34 L2 | 41 | 37 | Complete original design |
-| Phase 2 | 27 L2 | 68 | 37 | WCGW + factor/backtest/leakage coverage in existing categories |
-| Phase 3 | 18 L2 | 86 | 37 | Research Rigor + Portfolio & Risk + Factor Analysis |
-| Phase 4 | ~60 L1 | 86 | ~97 | Broad L1 coverage + Research Methodology |
+| Phase 1a | 34 L2 | 41 | 37 | Complete original design |
+| Phase 1b | 5 L2 | 46 | 37 | WCGW framework validation (calibrate eval rubric) |
+| Phase 2 | 25 L2 | 71 | 37 | Remaining new tasks in existing categories (incl. E09) |
+| Phase 3 | 16 L2 | 87 | 37 | Remaining R, P, F category tasks |
+| Phase 4 | ~60 L1 | 87 | ~97 | Broad L1 coverage + Research Methodology |
 
 ---
 
@@ -2535,19 +2649,19 @@ Every proposed task maps to at least one of the 6 quant evaluation dimensions:
 | Programming | 13 | R02, D07, D09, I07-I10, X09-X10, F01, F05 |
 | Research Taste | 16 | R03, R06, D08, S08, S10, S11, P05, X07, X11, A07-A09, B09, F04, F06 |
 | Intellectual Honesty | 9 | R01, R04, R06, S10, B07, B10, A07, A08, F06 |
-| Domain Knowledge | 19 | R05, P01-P06, D07, S09, I07, I09-I10, B06, B08, X07-X08, X11, E07, F02-F03, F05 |
-| Communication | 5 | P01, P06, A09, E07, S10 |
+| Domain Knowledge | 20 | R05, P01-P06, D07, S09, I07, I09-I10, B06, B08, X07-X08, X11, E07, E09, F02-F03, F05 |
+| Communication | 6 | P01, P06, A09, E07, E09, S10 |
 
 ### 8.3. Difficulty Distribution
 
-| Difficulty | Count | % | Target % |
-|:---|:---|:---|:---|
-| Easy | 10 | 12% | ~15% |
-| Medium | 30 | 35% | ~33% |
-| Hard | 46 | 53% | ~52% |
-| **Total** | **86** | | |
+| Difficulty | Count | % |
+|:---|:---|:---|
+| Easy | 10 | 11% |
+| Medium | 37 | 43% |
+| Hard | 40 | 46% |
+| **Total** | **87** | |
 
-Distribution matches the hard-skewed target from the design doc (easy tasks saturate quickly as models improve).
+The original distribution was 53% Hard, which external review flagged as too aggressive. Six single-concept tasks (D06, S05, I06, X05, X06, B05) were downgraded from Hard to Medium — each tests a single technical skill or diagnosis path rather than requiring multi-step investigation. The addition of E09 (Medium) further rebalances toward Medium. The resulting 46% Hard still provides strong discriminative power at the top end while giving more headroom for Medium-difficulty calibration.
 
 ### 8.4. Quant Research Lifecycle Coverage
 
@@ -2566,14 +2680,30 @@ Distribution matches the hard-skewed target from the design doc (easy tasks satu
 | Portfolio construction | P01, P04-P05, F05 | Expanded |
 | Risk management | P02-P03, P06 | New |
 | Strategy monitoring & decay | S10, E07, R05 | New |
-| Research communication | E06, P01, A09 | Expanded |
+| Research communication | E06, E09, P01, A09 | Expanded |
 | Skepticism & intellectual honesty | All WCGW tasks (41) | Expanded (cross-cutting) |
 
 ---
 
 ## 9. Cross-References: New Tasks and Existing Task Connections
 
-The 13 new tasks are designed to build on and extend specific existing tasks:
+### 9.1. Category Independence Analysis
+
+The R (Research Rigor) and F (Factor Analysis) categories share a "statistical rigor" dimension but test meaningfully different skills. This section documents the overlap and justifies maintaining both categories.
+
+**R vs. F overlap matrix:**
+
+- **R04 (Multiple Hypothesis) ↔ F06 (Factor Mining Trap):** Both teach multiple testing. **Distinction:** R04 teaches the general statistical concept (50 strategies → expected false discoveries); F06 applies it specifically to factor screening with IC analysis and leakage detection. An agent could ace R04 (theory) but fail F06 (application in factor context).
+- **R02 (Time-Series CV) ↔ F01 (Factor Data Prep):** Both teach temporal alignment. **Distinction:** R02 is about ML train/test splits (single time series); F01 is about cross-sectional factor-return panel alignment (factor at time t predicts return t→t+1) — different data structures and different failure modes.
+- **R03 (Sensitivity) ↔ F03 (Decay):** Both test robustness analysis. **Distinction:** R03 varies strategy parameters (e.g., RSI period ±20%); F03 varies forward prediction horizon (1/3/6/12 month IC decay) — different analytical frameworks entirely.
+
+**Expected correlation:** R and F scores will correlate at ~0.4-0.6 (moderate). This is acceptable — they share the "statistical rigor" dimension but F adds domain-specific factor knowledge that R doesn't test.
+
+**Budget-constrained fallback:** If resources are limited, defer F01-F03 (which overlap most with R) and prioritize F04-F06 (which are F-specific: multi-factor combination, portfolio construction, mining trap). This gives 3 F tasks that are maximally independent from R.
+
+### 9.2. New Task Cross-References
+
+The new tasks are designed to build on and extend specific existing tasks:
 
 | New Task | Builds On | Relationship |
 |:---|:---|:---|
@@ -2595,7 +2725,7 @@ I10 (API tutorial) → F05 (factor portfolio backtest) → B09 (sanity check pro
 
 ---
 
-## Appendix A: Full Task Catalog (86 Tasks)
+## Appendix A: Full Task Catalog (87 Tasks)
 
 ### Layer 2 Tasks — Complete Listing
 
@@ -2606,7 +2736,7 @@ I10 (API tutorial) → F05 (factor portfolio backtest) → B09 (sanity check pro
 | D03 | Data | Medium | Handle missing data and corporate actions | No | Phase 1 |
 | D04 | Data | Medium | Merge multi-asset data | No | Phase 1 |
 | D05 | Data | Hard | Detect survivorship bias in dataset | Yes | Phase 1 |
-| D06 | Data | Hard | Resample tick data to OHLCV bars | No | Phase 1 |
+| D06 | Data | Medium | Resample tick data to OHLCV bars | No | Phase 1 |
 | D07 | Data | Hard | Broken data feed diagnosis | Yes | Phase 2 |
 | D08 | Data | Hard | Alternative data integration | Yes | Phase 2 |
 | D09 | Data | Medium | Feature engineering pipeline | Yes | Phase 2 |
@@ -2614,19 +2744,19 @@ I10 (API tutorial) → F05 (factor portfolio backtest) → B09 (sanity check pro
 | S02 | Strategy | Easy | Long vs short positions | No | Phase 1 |
 | S03 | Strategy | Medium | RSI mean-reversion strategy | No | Phase 1 |
 | S04 | Strategy | Medium | Momentum vs mean-reversion | No | Phase 1 |
-| S05 | Strategy | Hard | Pairs trading strategy | No | Phase 1 |
+| S05 | Strategy | Medium | Pairs trading strategy | No | Phase 1 |
 | S06 | Strategy | Hard | Multi-factor model | No | Phase 1 |
 | S07 | Strategy | Hard | Strategy regime failure | No | Phase 1 |
 | S08 | Strategy | Hard | Alpha hypothesis testing | Yes | Phase 2 |
 | S09 | Strategy | Medium | Strategy capacity analysis | Yes | Phase 2 |
 | S10 | Strategy | Hard | Strategy decay diagnosis | Yes | Phase 2 |
-| S11 | Strategy | Medium | Strategy development protocol | Yes | Phase 2 |
+| S11 | Strategy | Medium | Strategy development protocol | Yes | Phase 1b |
 | I01 | Implementation | Easy | Implement SMA in pandas | No | Implemented |
 | I02 | Implementation | Easy | Plot price with MA overlay | No | Phase 1 |
 | I03 | Implementation | Medium | Implement vectorized backtest | No | Phase 1 |
 | I04 | Implementation | Medium | Compute rolling Sharpe ratio | No | Phase 1 |
 | I05 | Implementation | Hard | Event-driven backtest engine | No | Phase 1 |
-| I06 | Implementation | Hard | Kelly criterion position sizer | No | Phase 1 |
+| I06 | Implementation | Medium | Kelly criterion position sizer | No | Phase 1 |
 | I07 | Implementation | Medium | Transaction cost model | Yes | Phase 2 |
 | I08 | Implementation | Hard | Walk-forward optimization | Yes | Phase 2 |
 | I09 | Implementation | Hard | Cross-sectional factor model | No | Phase 2 |
@@ -2635,18 +2765,18 @@ I10 (API tutorial) → F05 (factor portfolio backtest) → B09 (sanity check pro
 | B02 | Backtest | Medium | Diagnose overfitting | Yes | Phase 1 |
 | B03 | Backtest | Medium | Analyze drawdown periods | No | Phase 1 |
 | B04 | Backtest | Hard | In-sample vs out-of-sample | No | Phase 1 |
-| B05 | Backtest | Hard | Decompose returns by factor | No | Phase 1 |
+| B05 | Backtest | Medium | Decompose returns by factor | No | Phase 1 |
 | B06 | Backtest | Medium | Transaction cost sensitivity | Yes | Phase 2 |
 | B07 | Backtest | Hard | Multiple hypothesis correction | Yes | Phase 2 |
 | B08 | Backtest | Hard | Regime-conditional analysis | Yes | Phase 2 |
-| B09 | Backtest | Medium | Backtest sanity check protocol | Yes | Phase 2 |
+| B09 | Backtest | Medium | Backtest sanity check protocol | Yes | Phase 1b |
 | B10 | Backtest | Hard | Leakage detection in research report | Yes | Phase 2 |
 | X01 | Debug | Easy | Fix off-by-one in MA | No | Implemented |
 | X02 | Debug | Easy | Fix diff() vs pct_change() | No | Phase 1 |
 | X03 | Debug | Medium | Fix look-ahead bias | Yes | Phase 1 |
 | X04 | Debug | Medium | Fix timezone mismatch | No | Phase 1 |
-| X05 | Debug | Hard | Debug position state errors | No | Phase 1 |
-| X06 | Debug | Hard | Debug single-stock overfitting | Yes | Phase 1 |
+| X05 | Debug | Medium | Debug position state errors | No | Phase 1 |
+| X06 | Debug | Medium | Debug single-stock overfitting | Yes | Phase 1 |
 | X07 | Debug | Hard | Survivorship bias bug | Yes | Phase 2 |
 | X08 | Debug | Hard | Non-stationarity bug | Yes | Phase 2 |
 | X09 | Debug | Medium | Selection bias in features | Yes | Phase 2 |
@@ -2660,6 +2790,7 @@ I10 (API tutorial) → F05 (factor portfolio backtest) → B09 (sanity check pro
 | E06 | End-to-End | Hard | Full research cycle | Yes | Phase 2 |
 | E07 | End-to-End | Medium | Morning P&L review | Yes | Phase 2 |
 | E08 | End-to-End | Hard | Anti-leakage end-to-end workflow | Yes | Phase 2 |
+| E09 | End-to-End | Medium | Translating quant uncertainty for stakeholders | Yes | Phase 2 |
 | A01 | Adversarial | Medium | Investment advice refusal | No | Implemented |
 | A02 | Adversarial | Medium | "Just give me the code" | No | Phase 1 |
 | A03 | Adversarial | Hard | Sharpe 5.0 misconception | Yes | Phase 1 |
@@ -2667,16 +2798,16 @@ I10 (API tutorial) → F05 (factor portfolio backtest) → B09 (sanity check pro
 | A05 | Adversarial | Hard | Front-running request | No | Phase 1 |
 | A06 | Adversarial | Hard | Fiction-wrapped manipulation | No | Phase 1 |
 | A07 | Adversarial | Hard | Data mining fallacy defense | Yes | Phase 2 |
-| A08 | Adversarial | Hard | Too-good-to-be-true detection | Yes | Phase 2 |
+| A08 | Adversarial | Hard | Too-good-to-be-true detection | Yes | Phase 1b |
 | A09 | Adversarial | Medium | Challenging authority | Yes | Phase 2 |
-| R01 | Research Rigor | Medium | P-value literacy | Yes | Phase 3 |
+| R01 | Research Rigor | Medium | P-value literacy | Yes | Phase 1b |
 | R02 | Research Rigor | Hard | Time-series cross-validation | Yes | Phase 3 |
 | R03 | Research Rigor | Hard | Parameter sensitivity analysis | Yes | Phase 3 |
 | R04 | Research Rigor | Hard | Multiple hypothesis correction | Yes | Phase 3 |
 | R05 | Research Rigor | Hard | Structural break detection | Yes | Phase 3 |
 | R06 | Research Rigor | Medium | Research replication | Yes | Phase 3 |
 | P01 | Portfolio & Risk | Easy | Portfolio return attribution | No | Phase 3 |
-| P02 | Portfolio & Risk | Medium | VaR and CVaR computation | Yes | Phase 3 |
+| P02 | Portfolio & Risk | Medium | VaR and CVaR computation | Yes | Phase 1b |
 | P03 | Portfolio & Risk | Hard | Correlation regime analysis | Yes | Phase 3 |
 | P04 | Portfolio & Risk | Hard | Mean-variance optimization pitfalls | Yes | Phase 3 |
 | P05 | Portfolio & Risk | Hard | Multi-strategy allocation | Yes | Phase 3 |
@@ -2691,14 +2822,14 @@ I10 (API tutorial) → F05 (factor portfolio backtest) → B09 (sanity check pro
 ### Difficulty Distribution Summary
 
 ```
-Easy:   ████░░░░░░░░░░░░░░░░░░░░░░░░░░  10/86  (12%)
-Medium: ██████████████████░░░░░░░░░░░░░  30/86  (35%)
-Hard:   ████████████████████████████░░░  46/86  (53%)
+Easy:   ███░░░░░░░░░░░░░░░░░░░░░░░░░░░  10/87  (11%)
+Medium: █████████████████████░░░░░░░░░░  37/87  (43%)
+Hard:   ██████████████████████░░░░░░░░░  40/87  (46%)
 ```
 
 ### WCGW Distribution Summary
 
 ```
-WCGW:     ██████████████████████████░░░░  41/86  (48%)
-Non-WCGW: ████████████████████████░░░░░░  45/86  (52%)
+WCGW:     ██████████████████████████░░░░  42/87  (48%)
+Non-WCGW: ████████████████████████░░░░░░  45/87  (52%)
 ```
