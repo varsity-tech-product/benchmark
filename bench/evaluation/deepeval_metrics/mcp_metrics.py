@@ -300,3 +300,103 @@ def compute_tool_precision_recall(
         "distractor_calls": distractor_calls,
         "distractor_call_count": len(distractor_calls),
     }
+
+
+def compute_optional_tool_value(
+    proxy_logs: list,
+    core_tools: list[str],
+    distractor_tools: list[str],
+) -> dict:
+    """Compute optional tool bonus/penalty for Track A tasks.
+
+    In Track A, tools are optional: no expected-tool list and no ordering checks.
+    This metric rewards useful tool usage while keeping the no-tool path valid.
+
+    Returns:
+        Dict with bonus, penalty, tool_value_score, and diagnostics.
+    """
+    if not proxy_logs:
+        return {
+            "bonus": 0.0,
+            "penalty": 0.0,
+            "tool_value_score": 0.0,
+            "core_calls": 0,
+            "successful_core_calls": 0,
+            "failed_core_calls": 0,
+            "distractor_calls": 0,
+            "redundant_calls": 0,
+            "used_tools": False,
+        }
+
+    core_set = set(core_tools or [])
+    distractor_set = set(distractor_tools or [])
+
+    total_calls = len(proxy_logs)
+    core_calls = [log for log in proxy_logs if getattr(log, "name", "") in core_set]
+    core_success = [log for log in core_calls if getattr(log, "success", False)]
+    core_failed = [log for log in core_calls if not getattr(log, "success", False)]
+    distractor_calls = [
+        log for log in proxy_logs if getattr(log, "name", "") in distractor_set
+    ]
+
+    # Simple redundancy estimate: repeated (tool_name, normalized_args) tuples.
+    # Normalize args via JSON to avoid unhashable nested values.
+    import json
+
+    def _normalize_args(args: dict) -> str:
+        try:
+            return json.dumps(args or {}, sort_keys=True, default=str)
+        except Exception:
+            return repr(args)
+
+    seen = set()
+    redundant_calls = 0
+    for log in proxy_logs:
+        args = getattr(log, "args", {}) or {}
+        sig = (getattr(log, "name", ""), _normalize_args(args))
+        if sig in seen:
+            redundant_calls += 1
+        else:
+            seen.add(sig)
+
+    bonus = 0.0
+    # +0.05: any successful core tool call
+    if len(core_success) >= 1:
+        bonus += 0.05
+    # +0.07: at least two successful core calls (typically evidence of grounding)
+    if len(core_success) >= 2:
+        bonus += 0.07
+    # +0.03: efficient usage (low noise)
+    if (
+        len(distractor_calls) == 0
+        and len(core_failed) <= 1
+        and redundant_calls <= max(1, total_calls // 4)
+    ):
+        bonus += 0.03
+    bonus = min(0.15, bonus)
+
+    penalty = 0.0
+    # Distractor tools are always misuse in this benchmark.
+    penalty += min(0.15, 0.05 * len(distractor_calls))
+    # Penalize repeated failed core calls after the first.
+    if len(core_failed) > 1:
+        penalty += min(0.06, 0.02 * (len(core_failed) - 1))
+    # Mild spam penalty when call volume is high with little diversity.
+    unique_tool_names = {getattr(log, "name", "") for log in proxy_logs}
+    if total_calls > 8 and len(unique_tool_names) <= 2:
+        penalty += 0.02
+    penalty = min(0.15, penalty)
+
+    tool_value_score = max(0.0, min(1.0, bonus - penalty))
+
+    return {
+        "bonus": round(bonus, 4),
+        "penalty": round(penalty, 4),
+        "tool_value_score": round(tool_value_score, 4),
+        "core_calls": len(core_calls),
+        "successful_core_calls": len(core_success),
+        "failed_core_calls": len(core_failed),
+        "distractor_calls": len(distractor_calls),
+        "redundant_calls": redundant_calls,
+        "used_tools": total_calls > 0,
+    }

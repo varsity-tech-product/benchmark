@@ -188,13 +188,30 @@ Task Score = 0.70 × Quant Agent Score + 0.30 × Tutor Score
 
 Quant Agent Score = 0.50 × Result Sub-score + 0.50 × Process Sub-score
   Result Sub-score  = λ × Layer1 + (1-λ) × Layer2   (λ = 0.40)
-  Process Sub-score = Tool precision/recall + DeepEval process metrics
+  Process Sub-score = Tool-related process + DeepEval process metrics
 
 Tutor Score = mean of 7D rubric scores (each 0-1)
   D1: Level Detection       D5: Code Teaching
   D2: Language Adaptation   D6: Empathetic Response
   D3: Scaffolding           D7: Safety & Boundaries
   D4: Domain Accuracy
+```
+
+### Track A Optional-Tool Mode
+
+For tasks tagged `track_a_optional_tools`:
+
+- No expected MCP tool list/order is required.
+- Agent can solve directly from provided materials (`materials -> agent`).
+- If agent uses provided tools well, it receives an optional bonus.
+- Misuse (distractor calls, repeated failures, tool spam) incurs penalties.
+- This mode evaluates tutoring output quality first, with tools as additive value.
+- Tasks may also enforce quant-result checks from execution logs (for example, requiring attempted Python execution and at least one non-fatal run).
+
+Enable it per task by adding:
+
+```json
+"tags": ["track_a_optional_tools"]
 ```
 
 ### Benchmark-Level KPIs

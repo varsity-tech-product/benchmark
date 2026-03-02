@@ -8,13 +8,12 @@
 
 ## Executive Summary
 
-QuantTutorBench currently has 7 Layer 2 categories (D, S, I, B, X, E, A) with only 1 implemented task each (7 total out of 41 designed) and 37 Layer 1 items (out of ~2,000 designed). This proposal expands the benchmark to better cover the real daily work of quant researchers and traders, with a particular emphasis on the **"what could go wrong"** skeptical mindset — the single most important differentiator between a good quant and a textbook regurgitator.
+QuantTutorBench currently has 7 Layer 2 categories (D, S, I, B, X, E, A) with only 1 implemented task each (7 total out of 41 designed) and 37 Layer 1 items (out of ~2,000 designed). This proposal expands the benchmark to better cover the real daily work of quant researchers and traders.
 
 **Expansion totals:**
 - Layer 2: 7 existing tasks → **87 total** (7 original + 28 new in existing categories + 18 in 3 new categories + 34 from original design backlog)
 - Layer 1: 37 existing items → **~97 total** (~60 new items across existing + new categories)
 - New categories: **R (Research Rigor)**, **P (Portfolio & Risk)**, and **F (Factor Analysis)**
-- "What Could Go Wrong" thread: **42 of 87 tasks (48%)** primarily test skeptical thinking
 
 ---
 
@@ -52,7 +51,6 @@ When hiring quant researchers and traders, firms evaluate six core dimensions. M
 | Priority | Gap | Impact | Proposed Solution |
 |:---|:---|:---|:---|
 | **P0** | No alpha research / hypothesis testing | Cannot evaluate core quant skill | New R category (R01-R06) |
-| **P0** | No "what could go wrong" skepticism | Misses the #1 differentiator | Cross-cutting WCGW thread (24 tasks) |
 | **P0** | No portfolio/risk management | Missing entire workflow phase | New P category (P01-P06) |
 | **P1** | No feature engineering | Missing core research activity | D07-D09 expansion |
 | **P1** | No execution/transaction costs | Ignores real-world constraints | B06-B08, I07 expansion |
@@ -72,14 +70,14 @@ When hiring quant researchers and traders, firms evaluate six core dimensions. M
 
 **Category-level evaluation dimensions:** Statistical rigor, Intellectual honesty, Research taste
 
-| ID | Difficulty | Task | Key Challenge | WCGW Focus | Eval Dimensions |
-|:---|:---|:---|:---|:---|:---|
-| R01 | Medium | **P-value Literacy** — Student presents a strategy with p=0.03 and asks "is this significant?" Agent must teach why p-values alone are insufficient (effect size, sample size, multiple comparisons, economic significance vs. statistical significance). | Resist the temptation to simply say "yes, p<0.05 is significant" — teach the full picture | Yes — recognizing that statistical significance ≠ economic significance | Statistical rigor, Domain knowledge |
-| R06 | Medium | **Research Replication** — Student is given a "published" research result (fabricated for the benchmark) claiming a calendar anomaly. Agent must guide the student through replicating it: re-derive the methodology, obtain the same data, run the analysis, and discover the result doesn't hold with proper corrections. | The "paper" has subtle methodological issues that make the result non-replicable | Yes — healthy skepticism of published results | Research taste, Intellectual honesty |
-| R02 | Hard | **Time-Series Cross-Validation** — Student has a model with 95% accuracy using sklearn train_test_split on time-series data. Agent must explain why random splitting creates look-ahead bias, teach walk-forward and expanding-window CV, and help rebuild the evaluation. | Student's "great" result is actually meaningless; must deliver bad news constructively | Yes — recognizing that standard ML practices fail on time series | Statistical rigor, Programming |
-| R03 | Hard | **Parameter Sensitivity Analysis** — Student optimized an RSI strategy to Sharpe 2.5 with RSI(14), overbought=72, oversold=28. Agent must teach sensitivity analysis: vary each parameter ±20% and show performance cliff. | Student emotionally invested in "their" optimal parameters | Yes — recognizing that fragile optima are artifacts, not discoveries | Statistical rigor, Research taste |
-| R04 | Hard | **Multiple Hypothesis Correction** — Student tested 50 trading rules and found 3 with p<0.05. Agent must explain the multiple comparisons problem, teach Bonferroni/BH corrections, and show that 2.5 discoveries are expected by chance alone. | Student excited about "finding three profitable strategies" — must show it's likely noise | Yes — the textbook example of data mining in quant research | Statistical rigor, Intellectual honesty |
-| R05 | Hard | **Structural Break Detection** — Student's momentum strategy worked 2015-2019 but failed 2020+. Agent must teach structural break tests (Chow, CUSUM, Bai-Perron), explain regime changes (COVID, rate hikes), and discuss strategy robustness across regimes. | Not just detecting the break — understanding that stationarity is the exception, not the rule | Yes — recognizing that past performance genuinely does not predict future results | Statistical rigor, Domain knowledge |
+| ID | Difficulty | Task | Key Challenge | Eval Dimensions |
+|:---|:---|:---|:---|:---|
+| R01 | Medium | **P-value Literacy** — Student presents a strategy with p=0.03 and asks "is this significant?" Agent must teach why p-values alone are insufficient (effect size, sample size, multiple comparisons, economic significance vs. statistical significance). | Resist the temptation to simply say "yes, p<0.05 is significant" — teach the full picture | Statistical rigor, Domain knowledge |
+| R06 | Medium | **Research Replication** — Student is given a "published" research result (fabricated for the benchmark) claiming a calendar anomaly. Agent must guide the student through replicating it: re-derive the methodology, obtain the same data, run the analysis, and discover the result doesn't hold with proper corrections. | The "paper" has subtle methodological issues that make the result non-replicable | Research taste, Intellectual honesty |
+| R02 | Hard | **Time-Series Cross-Validation** — Student has a model with 95% accuracy using sklearn train_test_split on time-series data. Agent must explain why random splitting creates look-ahead bias, teach walk-forward and expanding-window CV, and help rebuild the evaluation. | Student's "great" result is actually meaningless; must deliver bad news constructively | Statistical rigor, Programming |
+| R03 | Hard | **Parameter Sensitivity Analysis** — Student optimized an RSI strategy to Sharpe 2.5 with RSI(14), overbought=72, oversold=28. Agent must teach sensitivity analysis: vary each parameter ±20% and show performance cliff. | Student emotionally invested in "their" optimal parameters | Statistical rigor, Research taste |
+| R04 | Hard | **Multiple Hypothesis Correction** — Student tested 50 trading rules and found 3 with p<0.05. Agent must explain the multiple comparisons problem, teach Bonferroni/BH corrections, and show that 2.5 discoveries are expected by chance alone. | Student excited about "finding three profitable strategies" — must show it's likely noise | Statistical rigor, Intellectual honesty |
+| R05 | Hard | **Structural Break Detection** — Student's momentum strategy worked 2015-2019 but failed 2020+. Agent must teach structural break tests (Chow, CUSUM, Bai-Perron), explain regime changes (COVID, rate hikes), and discuss strategy robustness across regimes. | Not just detecting the break — understanding that stationarity is the exception, not the rule | Statistical rigor, Domain knowledge |
 
 **New data files required:**
 - `rsi_sensitivity_grid.csv` — Pre-computed RSI strategy returns for parameter grid (R03)
@@ -127,13 +125,7 @@ When hiring quant researchers and traders, firms evaluate six core dimensions. M
       {"description": "Address multiple comparisons problem", "tool": null},
       {"description": "Distinguish economic from statistical significance", "tool": "compute_statistics"}
     ],
-    "expected_mcp_tools": ["compute_statistics"],
-    "wcgw_validation": {
-      "skepticism_expressed": true,
-      "false_positive_avoided": true,
-      "constructive_alternative": true,
-      "calibrated_confidence": true
-    }
+    "expected_mcp_tools": ["compute_statistics"]
   },
   "max_turns": 20,
   "timeout_minutes": 15
@@ -170,13 +162,7 @@ When hiring quant researchers and traders, firms evaluate six core dimensions. M
       {"description": "Apply proper statistical corrections", "tool": "compute_statistics"},
       {"description": "Identify methodological flaw", "tool": null}
     ],
-    "expected_mcp_tools": ["fetch_market_data", "compute_statistics", "compute_indicator"],
-    "wcgw_validation": {
-      "skepticism_expressed": true,
-      "false_positive_avoided": true,
-      "constructive_alternative": true,
-      "calibrated_confidence": true
-    }
+    "expected_mcp_tools": ["fetch_market_data", "compute_statistics", "compute_indicator"]
   },
   "max_turns": 20,
   "timeout_minutes": 15
@@ -213,13 +199,7 @@ When hiring quant researchers and traders, firms evaluate six core dimensions. M
       {"description": "Implement time-respecting cross-validation", "tool": "compute_statistics"},
       {"description": "Reinterpret model performance after proper validation", "tool": "analyze_backtest_results"}
     ],
-    "expected_mcp_tools": ["compute_statistics", "run_backtest", "analyze_backtest_results"],
-    "wcgw_validation": {
-      "skepticism_expressed": true,
-      "false_positive_avoided": true,
-      "constructive_alternative": true,
-      "calibrated_confidence": true
-    }
+    "expected_mcp_tools": ["compute_statistics", "run_backtest", "analyze_backtest_results"]
   },
   "max_turns": 30,
   "timeout_minutes": 20
@@ -256,13 +236,7 @@ When hiring quant researchers and traders, firms evaluate six core dimensions. M
       {"description": "Identify fragile optimum pattern", "tool": "compute_statistics"},
       {"description": "Explain why fragile optima suggest overfitting", "tool": null}
     ],
-    "expected_mcp_tools": ["run_sensitivity", "compute_statistics", "plot_chart"],
-    "wcgw_validation": {
-      "skepticism_expressed": true,
-      "false_positive_avoided": true,
-      "constructive_alternative": true,
-      "calibrated_confidence": true
-    }
+    "expected_mcp_tools": ["run_sensitivity", "compute_statistics", "plot_chart"]
   },
   "max_turns": 30,
   "timeout_minutes": 20
@@ -299,13 +273,7 @@ When hiring quant researchers and traders, firms evaluate six core dimensions. M
       {"description": "Apply Benjamini-Hochberg FDR correction", "tool": "compute_statistics"},
       {"description": "Calculate expected false discovery count", "tool": null}
     ],
-    "expected_mcp_tools": ["compute_statistics"],
-    "wcgw_validation": {
-      "skepticism_expressed": true,
-      "false_positive_avoided": true,
-      "constructive_alternative": true,
-      "calibrated_confidence": true
-    }
+    "expected_mcp_tools": ["compute_statistics"]
   },
   "max_turns": 30,
   "timeout_minutes": 20
@@ -342,13 +310,7 @@ When hiring quant researchers and traders, firms evaluate six core dimensions. M
       {"description": "Explain regime change mechanisms", "tool": null},
       {"description": "Assess strategy robustness framework", "tool": null}
     ],
-    "expected_mcp_tools": ["compute_statistics", "compute_indicator", "plot_chart"],
-    "wcgw_validation": {
-      "skepticism_expressed": true,
-      "false_positive_avoided": true,
-      "constructive_alternative": true,
-      "calibrated_confidence": true
-    }
+    "expected_mcp_tools": ["compute_statistics", "compute_indicator", "plot_chart"]
   },
   "max_turns": 30,
   "timeout_minutes": 20
@@ -361,14 +323,14 @@ When hiring quant researchers and traders, firms evaluate six core dimensions. M
 
 **Category-level evaluation dimensions:** Domain knowledge, Statistical rigor, Communication
 
-| ID | Difficulty | Task | Key Challenge | WCGW Focus | Eval Dimensions |
-|:---|:---|:---|:---|:---|:---|
-| P01 | Easy | **Portfolio Return Attribution** — Student has a portfolio of 3 strategies and wants to understand which drove performance this month. Agent guides through return attribution (strategy-level, sector-level). | Beginners confuse gross vs. net returns, don't account for capital allocation changes | No | Domain knowledge, Communication |
-| P02 | Medium | **VaR and CVaR Computation** — Student needs to compute Value-at-Risk for a portfolio. Agent teaches parametric, historical, and Monte Carlo approaches, explains when each is appropriate, and why CVaR is often preferred. | Student wants a single "risk number" — must teach that VaR is a minimum loss in the tail, not maximum | Yes — VaR as a dangerously misleading "safety" metric | Statistical rigor, Domain knowledge |
-| P06 | Medium | **Drawdown Management Protocol** — Student's portfolio is in a 15% drawdown. Agent guides through a systematic drawdown management framework: assess whether drawdown is within historical norms, check for regime change, decide between reducing risk vs. staying the course. | Emotional decision-making during drawdowns; must balance quantitative analysis with practical risk management psychology | Yes — behavioral biases during drawdowns (panic selling, doubling down) | Domain knowledge, Communication |
-| P03 | Hard | **Correlation Regime Analysis** — Student notices two strategies that were uncorrelated suddenly moved together during a drawdown. Agent teaches correlation instability, copulas vs. linear correlation, and crisis correlation (the "diversification fails when you need it most" problem). | "My portfolio was diversified!" — must explain that correlation itself is non-stationary | Yes — the fundamental problem with naive diversification | Statistical rigor, Research taste |
-| P04 | Hard | **Mean-Variance Optimization Pitfalls** — Student implements Markowitz mean-variance optimization and gets extreme, concentrated weights. Agent must teach why MVO is an "error maximizer" (estimation error in means dominates), introduce shrinkage estimators and constraints, and discuss Black-Litterman. | The textbook approach produces terrible real-world portfolios — must explain why without dismissing the theory entirely | Yes — the gap between elegant theory and messy practice | Statistical rigor, Domain knowledge |
-| P05 | Hard | **Multi-Strategy Allocation** — Student has 5 backtested strategies with different return/risk profiles and correlations. Agent guides through combining them: equal weight vs. risk parity vs. optimized, considering turnover, capacity, and implementation costs. | Easy to over-optimize the allocation; must teach robustness of simple approaches | Yes — over-engineering the allocation can be worse than equal weight | Domain knowledge, Research taste |
+| ID | Difficulty | Task | Key Challenge | Eval Dimensions |
+|:---|:---|:---|:---|:---|
+| P01 | Easy | **Portfolio Return Attribution** — Student has a portfolio of 3 strategies and wants to understand which drove performance this month. Agent guides through return attribution (strategy-level, sector-level). | Beginners confuse gross vs. net returns, don't account for capital allocation changes | Domain knowledge, Communication |
+| P02 | Medium | **VaR and CVaR Computation** — Student needs to compute Value-at-Risk for a portfolio. Agent teaches parametric, historical, and Monte Carlo approaches, explains when each is appropriate, and why CVaR is often preferred. | Student wants a single "risk number" — must teach that VaR is a minimum loss in the tail, not maximum | Statistical rigor, Domain knowledge |
+| P06 | Medium | **Drawdown Management Protocol** — Student's portfolio is in a 15% drawdown. Agent guides through a systematic drawdown management framework: assess whether drawdown is within historical norms, check for regime change, decide between reducing risk vs. staying the course. | Emotional decision-making during drawdowns; must balance quantitative analysis with practical risk management psychology | Domain knowledge, Communication |
+| P03 | Hard | **Correlation Regime Analysis** — Student notices two strategies that were uncorrelated suddenly moved together during a drawdown. Agent teaches correlation instability, copulas vs. linear correlation, and crisis correlation (the "diversification fails when you need it most" problem). | "My portfolio was diversified!" — must explain that correlation itself is non-stationary | Statistical rigor, Research taste |
+| P04 | Hard | **Mean-Variance Optimization Pitfalls** — Student implements Markowitz mean-variance optimization and gets extreme, concentrated weights. Agent must teach why MVO is an "error maximizer" (estimation error in means dominates), introduce shrinkage estimators and constraints, and discuss Black-Litterman. | The textbook approach produces terrible real-world portfolios — must explain why without dismissing the theory entirely | Statistical rigor, Domain knowledge |
+| P05 | Hard | **Multi-Strategy Allocation** — Student has 5 backtested strategies with different return/risk profiles and correlations. Agent guides through combining them: equal weight vs. risk parity vs. optimized, considering turnover, capacity, and implementation costs. | Easy to over-optimize the allocation; must teach robustness of simple approaches | Domain knowledge, Research taste |
 
 **New data files required:**
 - `three_strategy_returns.csv` — Daily returns for 3 strategies with attribution data (P01)
@@ -453,13 +415,7 @@ When hiring quant researchers and traders, firms evaluate six core dimensions. M
       {"description": "Compute Monte Carlo VaR", "tool": "compute_var"},
       {"description": "Compute and explain CVaR superiority", "tool": "compute_statistics"}
     ],
-    "expected_mcp_tools": ["compute_var", "compute_statistics", "plot_chart"],
-    "wcgw_validation": {
-      "skepticism_expressed": true,
-      "false_positive_avoided": true,
-      "constructive_alternative": true,
-      "calibrated_confidence": true
-    }
+    "expected_mcp_tools": ["compute_var", "compute_statistics", "plot_chart"]
   },
   "max_turns": 20,
   "timeout_minutes": 15
@@ -496,13 +452,7 @@ When hiring quant researchers and traders, firms evaluate six core dimensions. M
       {"description": "Visualize drawdown in context", "tool": "plot_chart"},
       {"description": "Apply decision framework (reduce vs. hold)", "tool": null}
     ],
-    "expected_mcp_tools": ["compute_statistics", "compute_var", "plot_chart"],
-    "wcgw_validation": {
-      "skepticism_expressed": true,
-      "false_positive_avoided": true,
-      "constructive_alternative": true,
-      "calibrated_confidence": true
-    }
+    "expected_mcp_tools": ["compute_statistics", "compute_var", "plot_chart"]
   },
   "max_turns": 20,
   "timeout_minutes": 15
@@ -539,13 +489,7 @@ When hiring quant researchers and traders, firms evaluate six core dimensions. M
       {"description": "Explain copulas vs. linear correlation", "tool": null},
       {"description": "Design crisis-aware portfolio construction", "tool": null}
     ],
-    "expected_mcp_tools": ["compute_statistics", "plot_chart"],
-    "wcgw_validation": {
-      "skepticism_expressed": true,
-      "false_positive_avoided": true,
-      "constructive_alternative": true,
-      "calibrated_confidence": true
-    }
+    "expected_mcp_tools": ["compute_statistics", "plot_chart"]
   },
   "max_turns": 30,
   "timeout_minutes": 20
@@ -582,13 +526,7 @@ When hiring quant researchers and traders, firms evaluate six core dimensions. M
       {"description": "Compare constrained vs. unconstrained optimization", "tool": "plot_chart"},
       {"description": "Explain Black-Litterman as alternative", "tool": null}
     ],
-    "expected_mcp_tools": ["compute_statistics", "compute_factor_exposure", "plot_chart"],
-    "wcgw_validation": {
-      "skepticism_expressed": true,
-      "false_positive_avoided": true,
-      "constructive_alternative": true,
-      "calibrated_confidence": true
-    }
+    "expected_mcp_tools": ["compute_statistics", "compute_factor_exposure", "plot_chart"]
   },
   "max_turns": 30,
   "timeout_minutes": 20
@@ -625,13 +563,7 @@ When hiring quant researchers and traders, firms evaluate six core dimensions. M
       {"description": "Visualize allocation tradeoffs", "tool": "plot_chart"},
       {"description": "Discuss practical constraints (turnover, capacity)", "tool": null}
     ],
-    "expected_mcp_tools": ["compute_statistics", "compute_factor_exposure", "plot_chart"],
-    "wcgw_validation": {
-      "skepticism_expressed": true,
-      "false_positive_avoided": true,
-      "constructive_alternative": true,
-      "calibrated_confidence": true
-    }
+    "expected_mcp_tools": ["compute_statistics", "compute_factor_exposure", "plot_chart"]
   },
   "max_turns": 30,
   "timeout_minutes": 20
@@ -644,14 +576,14 @@ When hiring quant researchers and traders, firms evaluate six core dimensions. M
 
 **Category-level evaluation dimensions:** Statistical rigor, Domain knowledge, Research taste, Programming
 
-| ID | Difficulty | Task | Key Challenge | WCGW Focus | Eval Dimensions |
-|:---|:---|:---|:---|:---|:---|
-| F01 | Medium | **Factor Data Prep & Return Alignment** — Prepare cross-sectional factor-return panel; teach forward return alignment (factor at t predicts return t→t+1, not contemporaneous). | Students commonly correlate factor with same-period return, creating massive look-ahead bias. Must teach the temporal alignment principle. | Yes — contemporaneous factor-return correlation is the #1 factor analysis error | Programming, Statistical rigor |
-| F02 | Medium | **Single Factor IC Analysis** — Compute rank IC (Spearman), IC time series, mean IC, IC_IR, hit rate; calibrate expectations (|IC|>0.03 interesting, >0.05 strong, >0.10 suspicious). | Students expect factor ICs in the 0.3+ range (like ML accuracy); must recalibrate to the reality that |IC|>0.05 is genuinely strong in equity factors. | Yes — miscalibrated IC expectations lead to rejecting good factors and accepting data-mined ones | Statistical rigor, Domain knowledge |
-| F03 | Hard | **Factor Decay Analysis** — IC at multiple forward horizons (1/3/6/12 month), decay curve, optimal holding period, turnover-cost tradeoff. | Connecting factor decay profile to practical portfolio decisions (holding period, rebalance frequency, transaction cost budget). | Yes — a factor with high 1-month IC but fast decay may be untradeable after costs | Statistical rigor, Domain knowledge |
-| F04 | Hard | **Multi-Factor Combination** — Combine 3 factors (value, momentum, quality) via equal-weight z-score, IC-weighted, orthogonalized; warn that optimizing combination weights overfits. | Students want to optimize factor weights, which overfits even more readily than strategy parameters due to small effective sample sizes. | Yes — optimized factor weights are the fastest path to overfitting in factor investing | Statistical rigor, Research taste |
-| F05 | Hard | **Factor Portfolio Construction** — Long-short quintile portfolio, sector neutralization, proper use of `run_backtest` and `analyze_backtest_results` to evaluate. | Must connect factor signal to actual portfolio, handling practical issues: sector neutralization, rebalance frequency, turnover, capacity. | Yes — a good factor signal does not automatically make a good portfolio | Domain knowledge, Programming |
-| F06 | Hard | **Factor Data Mining Trap** — Student screened 200 factors, found 1 "winner." Agent teaches multiple testing correction, economic rationale check, out-of-sample test, leakage detection → factor rejected. | The student's factor has a great IC and backtest — but was selected from 200 candidates with no hypothesis, making it almost certainly a false discovery. | Yes — the textbook factor mining trap that destroys most systematic equity research | Research taste, Intellectual honesty |
+| ID | Difficulty | Task | Key Challenge | Eval Dimensions |
+|:---|:---|:---|:---|:---|
+| F01 | Medium | **Factor Data Prep & Return Alignment** — Prepare cross-sectional factor-return panel; teach forward return alignment (factor at t predicts return t→t+1, not contemporaneous). | Students commonly correlate factor with same-period return, creating massive look-ahead bias. Must teach the temporal alignment principle. | Programming, Statistical rigor |
+| F02 | Medium | **Single Factor IC Analysis** — Compute rank IC (Spearman), IC time series, mean IC, IC_IR, hit rate; calibrate expectations (|IC| Students expect factor ICs in the 0.3+ range (like ML accuracy); must recalibrate to the reality that |IC|>0.05 is genuinely strong in equity factors. | Yes — miscalibrated IC expectations lead to rejecting good factors and accepting data-mined ones | Statistical rigor, Domain knowledge |
+| F03 | Hard | **Factor Decay Analysis** — IC at multiple forward horizons (1/3/6/12 month), decay curve, optimal holding period, turnover-cost tradeoff. | Connecting factor decay profile to practical portfolio decisions (holding period, rebalance frequency, transaction cost budget). | Statistical rigor, Domain knowledge |
+| F04 | Hard | **Multi-Factor Combination** — Combine 3 factors (value, momentum, quality) via equal-weight z-score, IC-weighted, orthogonalized; warn that optimizing combination weights overfits. | Students want to optimize factor weights, which overfits even more readily than strategy parameters due to small effective sample sizes. | Statistical rigor, Research taste |
+| F05 | Hard | **Factor Portfolio Construction** — Long-short quintile portfolio, sector neutralization, proper use of `run_backtest` and `analyze_backtest_results` to evaluate. | Must connect factor signal to actual portfolio, handling practical issues: sector neutralization, rebalance frequency, turnover, capacity. | Domain knowledge, Programming |
+| F06 | Hard | **Factor Data Mining Trap** — Student screened 200 factors, found 1 "winner." Agent teaches multiple testing correction, economic rationale check, out-of-sample test, leakage detection → factor rejected. | The student's factor has a great IC and backtest — but was selected from 200 candidates with no hypothesis, making it almost certainly a false discovery. | Research taste, Intellectual honesty |
 
 **New data files required:**
 - `factor_panel_raw.csv` (~120 KB) — 50 stocks × 60 months, with PE_Ratio, ROE, Momentum_12M, Revenue_Growth, Sector (F01-F06)
@@ -711,13 +643,7 @@ When hiring quant researchers and traders, firms evaluate six core dimensions. M
       {"description": "Verify no contemporaneous return leakage", "tool": "compute_ic"},
       {"description": "Explain temporal alignment principle", "tool": null}
     ],
-    "expected_mcp_tools": ["fetch_market_data", "compute_statistics", "compute_ic"],
-    "wcgw_validation": {
-      "skepticism_expressed": true,
-      "false_positive_avoided": true,
-      "constructive_alternative": true,
-      "calibrated_confidence": true
-    }
+    "expected_mcp_tools": ["fetch_market_data", "compute_statistics", "compute_ic"]
   },
   "max_turns": 20,
   "timeout_minutes": 15
@@ -754,13 +680,7 @@ When hiring quant researchers and traders, firms evaluate six core dimensions. M
       {"description": "Visualize IC time series and distribution", "tool": "plot_chart"},
       {"description": "Calibrate IC expectations for equity factors", "tool": null}
     ],
-    "expected_mcp_tools": ["compute_ic", "compute_statistics", "plot_chart"],
-    "wcgw_validation": {
-      "skepticism_expressed": true,
-      "false_positive_avoided": true,
-      "constructive_alternative": true,
-      "calibrated_confidence": true
-    }
+    "expected_mcp_tools": ["compute_ic", "compute_statistics", "plot_chart"]
   },
   "max_turns": 20,
   "timeout_minutes": 15
@@ -797,13 +717,7 @@ When hiring quant researchers and traders, firms evaluate six core dimensions. M
       {"description": "Analyze turnover-cost tradeoff", "tool": "compute_statistics"},
       {"description": "Determine optimal holding period", "tool": null}
     ],
-    "expected_mcp_tools": ["compute_ic", "compute_statistics", "plot_chart"],
-    "wcgw_validation": {
-      "skepticism_expressed": true,
-      "false_positive_avoided": true,
-      "constructive_alternative": true,
-      "calibrated_confidence": true
-    }
+    "expected_mcp_tools": ["compute_ic", "compute_statistics", "plot_chart"]
   },
   "max_turns": 30,
   "timeout_minutes": 20
@@ -840,13 +754,7 @@ When hiring quant researchers and traders, firms evaluate six core dimensions. M
       {"description": "Implement orthogonalized combination", "tool": "compute_statistics"},
       {"description": "Warn about overfitting combination weights", "tool": null}
     ],
-    "expected_mcp_tools": ["compute_ic", "compute_statistics", "plot_chart"],
-    "wcgw_validation": {
-      "skepticism_expressed": true,
-      "false_positive_avoided": true,
-      "constructive_alternative": true,
-      "calibrated_confidence": true
-    }
+    "expected_mcp_tools": ["compute_ic", "compute_statistics", "plot_chart"]
   },
   "max_turns": 30,
   "timeout_minutes": 20
@@ -883,13 +791,7 @@ When hiring quant researchers and traders, firms evaluate six core dimensions. M
       {"description": "Run factor portfolio backtest", "tool": "run_backtest"},
       {"description": "Analyze backtest results", "tool": "analyze_backtest_results"}
     ],
-    "expected_mcp_tools": ["compute_ic", "compute_statistics", "run_backtest", "analyze_backtest_results", "plot_chart"],
-    "wcgw_validation": {
-      "skepticism_expressed": true,
-      "false_positive_avoided": true,
-      "constructive_alternative": true,
-      "calibrated_confidence": true
-    }
+    "expected_mcp_tools": ["compute_ic", "compute_statistics", "run_backtest", "analyze_backtest_results", "plot_chart"]
   },
   "max_turns": 30,
   "timeout_minutes": 20
@@ -926,13 +828,7 @@ When hiring quant researchers and traders, firms evaluate six core dimensions. M
       {"description": "Run out-of-sample validation", "tool": "compute_ic"},
       {"description": "Audit for data leakage", "tool": "audit_leakage"}
     ],
-    "expected_mcp_tools": ["compute_ic", "compute_statistics", "audit_leakage", "plot_chart"],
-    "wcgw_validation": {
-      "skepticism_expressed": true,
-      "false_positive_avoided": true,
-      "constructive_alternative": true,
-      "calibrated_confidence": true
-    }
+    "expected_mcp_tools": ["compute_ic", "compute_statistics", "audit_leakage", "plot_chart"]
   },
   "max_turns": 30,
   "timeout_minutes": 20
@@ -943,19 +839,27 @@ When hiring quant researchers and traders, firms evaluate six core dimensions. M
 
 ## 3. Expanded Existing Categories
 
-### 3.1. Data Analysis (D) — 3 New Tasks (D07-D09)
+### 3.1. Data Analysis (D) — 3 New Tasks (D07-D09) + 2 Data Ingestion Prereqs (D10-D11)
 
 The original design doc specifies D01-D06. These additions extend into modern quant data workflows.
 
-| ID | Difficulty | Task | Key Challenge | WCGW Focus | Eval Dimensions |
-|:---|:---|:---|:---|:---|:---|
-| D09 | Medium | **Feature Engineering Pipeline** — Student needs to construct features from raw OHLCV data: returns at multiple horizons, rolling volatility, volume profiles, technical indicators. Agent guides building a systematic pipeline, teaches feature correlation/multicollinearity, and warns about look-ahead bias in feature construction. | Feature construction is where look-ahead bias most commonly sneaks in; must teach defensive feature engineering | Yes — look-ahead bias in feature engineering is the #1 cause of backtest fraud | Programming, Statistical rigor |
-| D07 | Hard | **Broken Data Feed Diagnosis** — Student receives a dataset with realistic data quality issues: missing rows during market holidays vs. actual gaps, sudden volume spikes from stock splits not reflected in adjusted prices, and timezone-shifted overnight data. Agent must guide systematic diagnosis. | Multiple simultaneous data issues that interact — fixing one reveals another. The agent must teach a diagnostic methodology, not just fix individual problems. | Yes — "the data looked fine" is the most dangerous assumption in quant | Programming, Domain knowledge |
-| D08 | Hard | **Alternative Data Integration** — Student wants to incorporate sentiment data (pre-built, frozen) with price data. Agent must teach alignment challenges: different frequencies (daily prices vs. irregular sentiment), lagged effects, normalization, and the critical question of whether the signal has information content (IC analysis). | Student assumes alt data automatically adds value; must teach information coefficient analysis and the base rate of alt data being useless | Yes — most alternative data sources have no predictive value | Research taste, Statistical rigor |
+Operational ordering addendum for Tier 1 Data Foundation:
+`D10 (historical fetch) → D11 (realtime fetch) → D01-D09`.
+`D10` and `D11` are pre-foundation ingestion gates for execution order and are not included in the 87-task catalog counts in this proposal version.
+Evaluation policy addendum for D10/D11: use Track A optional-tool process scoring plus hybrid quant-result checks (tutoring adaptation + evidence of runnable Python execution from tool logs).
+
+| ID | Difficulty | Task | Key Challenge | Eval Dimensions |
+|:---|:---|:---|:---|:---|
+| D10 | Easy | **Historical Data Fetch** — Student receives only official API docs and must write code to fetch historical market prices + macroeconomic series and persist clean CSV outputs. | Must acquire external data programmatically (no preloaded file shortcuts), normalize schema, and teach adjusted prices, revisions/release lag, and point-in-time usage | Programming, Domain knowledge |
+| D11 | Medium | **Realtime Data Fetch** — Student receives only streaming/polling API docs and must write code to capture timestamped realtime updates and save them as CSV. | Must collect multiple live updates (not one snapshot), handle endpoint quirks/rate limits, and teach trade-vs-quote semantics, latency/out-of-order risk, and timezone/session boundaries | Programming, Statistical rigor |
+| D07 | Hard | **Broken Data Feed Diagnosis** — Student receives a dataset with realistic data quality issues: missing rows during market holidays vs. actual gaps, sudden volume spikes from stock splits not reflected in adjusted prices, and timezone-shifted overnight data. Agent must guide systematic diagnosis. | Multiple simultaneous data issues that interact — fixing one reveals another. The agent must teach a diagnostic methodology, not just fix individual problems. | Programming, Domain knowledge |
+| D09 | Medium | **Feature Engineering Pipeline** — Student needs to construct features from raw OHLCV data: returns at multiple horizons, rolling volatility, volume profiles, technical indicators. Agent guides building a systematic pipeline, teaches feature correlation/multicollinearity, and warns about look-ahead bias in feature construction. | Feature construction is where look-ahead bias most commonly sneaks in; must teach defensive feature engineering | Programming, Statistical rigor |
+| D08 | Hard | **Alternative Data Integration** — Student wants to incorporate sentiment data (pre-built, frozen) with price data. Agent must teach alignment challenges: different frequencies (daily prices vs. irregular sentiment), lagged effects, normalization, and the critical question of whether the signal has information content (IC analysis). | Student assumes alt data automatically adds value; must teach information coefficient analysis and the base rate of alt data being useless | Research taste, Statistical rigor |
 
 **New data files:**
 - `broken_feed.csv` — OHLCV with realistic embedded data quality issues (D07)
 - `sentiment_data.csv` — Frozen sentiment scores at irregular intervals (D08)
+- D10/D11 use no frozen input files; the agent must fetch externally from documentation and produce workspace CSV artifacts.
 
 **Student openings (examples):**
 
@@ -989,13 +893,7 @@ The original design doc specifies D01-D06. These additions extend into modern qu
       {"description": "Check feature correlation matrix", "tool": "plot_chart"},
       {"description": "Identify look-ahead bias risks in features", "tool": null}
     ],
-    "expected_mcp_tools": ["fetch_market_data", "compute_indicator", "compute_statistics", "plot_chart"],
-    "wcgw_validation": {
-      "skepticism_expressed": true,
-      "false_positive_avoided": true,
-      "constructive_alternative": true,
-      "calibrated_confidence": true
-    }
+    "expected_mcp_tools": ["fetch_market_data", "compute_indicator", "compute_statistics", "plot_chart"]
   },
   "max_turns": 20,
   "timeout_minutes": 15
@@ -1032,13 +930,7 @@ The original design doc specifies D01-D06. These additions extend into modern qu
       {"description": "Visualize suspicious data points", "tool": "plot_chart"},
       {"description": "Distinguish data errors from real events", "tool": null}
     ],
-    "expected_mcp_tools": ["fetch_market_data", "compute_statistics", "plot_chart"],
-    "wcgw_validation": {
-      "skepticism_expressed": true,
-      "false_positive_avoided": true,
-      "constructive_alternative": true,
-      "calibrated_confidence": true
-    }
+    "expected_mcp_tools": ["fetch_market_data", "compute_statistics", "plot_chart"]
   },
   "max_turns": 30,
   "timeout_minutes": 20
@@ -1075,13 +967,7 @@ The original design doc specifies D01-D06. These additions extend into modern qu
       {"description": "Test information content via IC analysis", "tool": "compute_ic"},
       {"description": "Assess base rate of alt data being useless", "tool": null}
     ],
-    "expected_mcp_tools": ["fetch_market_data", "compute_statistics", "compute_ic", "plot_chart"],
-    "wcgw_validation": {
-      "skepticism_expressed": true,
-      "false_positive_avoided": true,
-      "constructive_alternative": true,
-      "calibrated_confidence": true
-    }
+    "expected_mcp_tools": ["fetch_market_data", "compute_statistics", "compute_ic", "plot_chart"]
   },
   "max_turns": 30,
   "timeout_minutes": 20
@@ -1092,12 +978,12 @@ The original design doc specifies D01-D06. These additions extend into modern qu
 
 The original design doc specifies S01-S07. These additions cover alpha research, capacity, and decay.
 
-| ID | Difficulty | Task | Key Challenge | WCGW Focus | Eval Dimensions |
-|:---|:---|:---|:---|:---|:---|
-| S11 | Medium | **Strategy Development Protocol** — Formal pipeline: hypothesis → signal → train/test split → backtest with `run_backtest` → validate on held-out set → sensitivity analysis. Hypothesis before data, test set is sacred. | Must teach that the order matters — hypothesis before data, not the reverse. The test set can only be used once. | Yes — most researchers "peek" at test data and iteratively optimize against it | Research taste, Statistical rigor |
-| S09 | Medium | **Strategy Capacity Analysis** — Student has a working strategy and wants to know "how much capital can I run?" Agent teaches capacity estimation: average daily volume, market impact models (square-root law), the relationship between capacity and expected return decay. | Students drastically overestimate strategy capacity; must teach that the best strategies are often the smallest | Yes — running a strategy at too large a size turns a winner into a loser | Domain knowledge, Statistical rigor |
-| S08 | Hard | **Alpha Hypothesis Testing** — Student has a hypothesis: "stocks with increasing volume and positive momentum outperform." Agent guides through formalizing the hypothesis, constructing the signal, testing it properly (out-of-sample, with transaction costs), and honestly evaluating whether the alpha is real or an artifact. | Must teach the difference between "this backtest is profitable" and "this alpha is real" — the central question of all quant research | Yes — the core "what could go wrong" task for strategy research | Research taste, Statistical rigor |
-| S10 | Hard | **Strategy Decay Diagnosis** — Student's strategy worked well for 2 years but performance has degraded over the last 6 months. Agent guides through a systematic diagnosis: is it alpha decay, regime change, crowding, data issue, or random variance? Teaches the framework for deciding whether to kill vs. modify a strategy. | Emotional attachment to "my strategy" — must teach objective criteria for strategy lifecycle decisions | Yes — inability to kill a dying strategy is career-ending | Research taste, Intellectual honesty |
+| ID | Difficulty | Task | Key Challenge | Eval Dimensions |
+|:---|:---|:---|:---|:---|
+| S11 | Medium | **Strategy Development Protocol** — Formal pipeline: hypothesis → signal → train/test split → backtest with `run_backtest` → validate on held-out set → sensitivity analysis. Hypothesis before data, test set is sacred. | Must teach that the order matters — hypothesis before data, not the reverse. The test set can only be used once. | Research taste, Statistical rigor |
+| S09 | Medium | **Strategy Capacity Analysis** — Student has a working strategy and wants to know "how much capital can I run?" Agent teaches capacity estimation: average daily volume, market impact models (square-root law), the relationship between capacity and expected return decay. | Students drastically overestimate strategy capacity; must teach that the best strategies are often the smallest | Domain knowledge, Statistical rigor |
+| S08 | Hard | **Alpha Hypothesis Testing** — Student has a hypothesis: "stocks with increasing volume and positive momentum outperform." Agent guides through formalizing the hypothesis, constructing the signal, testing it properly (out-of-sample, with transaction costs), and honestly evaluating whether the alpha is real or an artifact. | Must teach the difference between "this backtest is profitable" and "this alpha is real" — the central question of all quant research | Research taste, Statistical rigor |
+| S10 | Hard | **Strategy Decay Diagnosis** — Student's strategy worked well for 2 years but performance has degraded over the last 6 months. Agent guides through a systematic diagnosis: is it alpha decay, regime change, crowding, data issue, or random variance? Teaches the framework for deciding whether to kill vs. modify a strategy. | Emotional attachment to "my strategy" — must teach objective criteria for strategy lifecycle decisions | Research taste, Intellectual honesty |
 
 **New data files:**
 - `volume_momentum_universe.csv` — Cross-sectional data for alpha hypothesis testing (S08)
@@ -1136,13 +1022,7 @@ The original design doc specifies S01-S07. These additions cover alpha research,
       {"description": "Run backtest on training period only", "tool": "run_backtest"},
       {"description": "Validate on held-out set and run sensitivity", "tool": "run_sensitivity"}
     ],
-    "expected_mcp_tools": ["fetch_market_data", "compute_indicator", "run_backtest", "analyze_backtest_results", "run_sensitivity"],
-    "wcgw_validation": {
-      "skepticism_expressed": true,
-      "false_positive_avoided": true,
-      "constructive_alternative": true,
-      "calibrated_confidence": true
-    }
+    "expected_mcp_tools": ["fetch_market_data", "compute_indicator", "run_backtest", "analyze_backtest_results", "run_sensitivity"]
   },
   "max_turns": 20,
   "timeout_minutes": 15
@@ -1179,13 +1059,7 @@ The original design doc specifies S01-S07. These additions cover alpha research,
       {"description": "Visualize capacity-return tradeoff", "tool": "plot_chart"},
       {"description": "Explain why best strategies are often smallest", "tool": null}
     ],
-    "expected_mcp_tools": ["compute_statistics", "plot_chart"],
-    "wcgw_validation": {
-      "skepticism_expressed": true,
-      "false_positive_avoided": true,
-      "constructive_alternative": true,
-      "calibrated_confidence": true
-    }
+    "expected_mcp_tools": ["compute_statistics", "plot_chart"]
   },
   "max_turns": 20,
   "timeout_minutes": 15
@@ -1222,13 +1096,7 @@ The original design doc specifies S01-S07. These additions cover alpha research,
       {"description": "Apply out-of-sample validation", "tool": "analyze_backtest_results"},
       {"description": "Honestly assess whether alpha is real", "tool": null}
     ],
-    "expected_mcp_tools": ["fetch_market_data", "compute_indicator", "compute_statistics", "run_backtest", "analyze_backtest_results"],
-    "wcgw_validation": {
-      "skepticism_expressed": true,
-      "false_positive_avoided": true,
-      "constructive_alternative": true,
-      "calibrated_confidence": true
-    }
+    "expected_mcp_tools": ["fetch_market_data", "compute_indicator", "compute_statistics", "run_backtest", "analyze_backtest_results"]
   },
   "max_turns": 30,
   "timeout_minutes": 20
@@ -1265,13 +1133,7 @@ The original design doc specifies S01-S07. These additions cover alpha research,
       {"description": "Visualize performance degradation", "tool": "plot_chart"},
       {"description": "Apply objective strategy lifecycle framework", "tool": null}
     ],
-    "expected_mcp_tools": ["compute_statistics", "compute_indicator", "plot_chart"],
-    "wcgw_validation": {
-      "skepticism_expressed": true,
-      "false_positive_avoided": true,
-      "constructive_alternative": true,
-      "calibrated_confidence": true
-    }
+    "expected_mcp_tools": ["compute_statistics", "compute_indicator", "plot_chart"]
   },
   "max_turns": 30,
   "timeout_minutes": 20
@@ -1282,12 +1144,12 @@ The original design doc specifies S01-S07. These additions cover alpha research,
 
 The original design doc specifies I01-I06. These additions cover execution costs, walk-forward, and factor models.
 
-| ID | Difficulty | Task | Key Challenge | WCGW Focus | Eval Dimensions |
-|:---|:---|:---|:---|:---|:---|
-| I10 | Medium | **Backtest API Integration** — Tutorial task: correct workflow for chaining `fetch_market_data` → `compute_indicator` → write strategy script → `run_backtest` → `analyze_backtest_results` → `compute_statistics`. Teaches data formats, API contracts, common input mistakes. | Students struggle with API data format requirements and the correct order of operations | No — tutorial-focused rather than skepticism-focused | Programming, Domain knowledge |
-| I07 | Medium | **Transaction Cost Model** — Student needs to implement a realistic transaction cost model: fixed costs, proportional costs (bid-ask spread estimation from daily data), and market impact (square-root model). Agent guides implementation and shows how costs change strategy viability. | Students underestimate transaction costs by 5-10x; must show how many "profitable" strategies become unprofitable after costs | Yes — a backtest without transaction costs is a fantasy | Programming, Domain knowledge |
-| I08 | Hard | **Walk-Forward Optimization** — Student wants to optimize strategy parameters. Agent teaches walk-forward: rolling in-sample optimization + out-of-sample testing, implementing the framework in pandas/numpy, and interpreting the degradation between in-sample and out-of-sample performance. | The gap between in-sample and out-of-sample performance is the single best measure of overfitting | Yes — optimization without validation is the #1 cause of strategy failure in production | Programming, Statistical rigor |
-| I09 | Hard | **Cross-Sectional Factor Model** — Student wants to build a simple factor model (value + momentum) for a universe of 50 stocks. Agent guides through cross-sectional regression, factor construction, neutralization, and portfolio formation. | Multi-stock, multi-factor code is significantly more complex than single-stock strategies; must scaffold carefully | No — complexity-focused rather than skepticism-focused | Programming, Domain knowledge |
+| ID | Difficulty | Task | Key Challenge | Eval Dimensions |
+|:---|:---|:---|:---|:---|
+| I10 | Medium | **Backtest API Integration** — Tutorial task: correct workflow for chaining `fetch_market_data` → `compute_indicator` → write strategy script → `run_backtest` → `analyze_backtest_results` → `compute_statistics`. Teaches data formats, API contracts, common input mistakes. | Students struggle with API data format requirements and the correct order of operations | Programming, Domain knowledge |
+| I07 | Medium | **Transaction Cost Model** — Student needs to implement a realistic transaction cost model: fixed costs, proportional costs (bid-ask spread estimation from daily data), and market impact (square-root model). Agent guides implementation and shows how costs change strategy viability. | Students underestimate transaction costs by 5-10x; must show how many "profitable" strategies become unprofitable after costs | Programming, Domain knowledge |
+| I08 | Hard | **Walk-Forward Optimization** — Student wants to optimize strategy parameters. Agent teaches walk-forward: rolling in-sample optimization + out-of-sample testing, implementing the framework in pandas/numpy, and interpreting the degradation between in-sample and out-of-sample performance. | The gap between in-sample and out-of-sample performance is the single best measure of overfitting | Programming, Statistical rigor |
+| I09 | Hard | **Cross-Sectional Factor Model** — Student wants to build a simple factor model (value + momentum) for a universe of 50 stocks. Agent guides through cross-sectional regression, factor construction, neutralization, and portfolio formation. | Multi-stock, multi-factor code is significantly more complex than single-stock strategies; must scaffold carefully | Programming, Domain knowledge |
 
 **New data files:**
 - `trade_level_costs.csv` — Simulated trade-level data with bid-ask spreads (I07)
@@ -1366,13 +1228,7 @@ The original design doc specifies I01-I06. These additions cover execution costs
       {"description": "Implement square-root market impact model", "tool": "compute_statistics"},
       {"description": "Visualize cost-sensitivity curve", "tool": "plot_chart"}
     ],
-    "expected_mcp_tools": ["compute_statistics", "plot_chart"],
-    "wcgw_validation": {
-      "skepticism_expressed": true,
-      "false_positive_avoided": true,
-      "constructive_alternative": true,
-      "calibrated_confidence": true
-    }
+    "expected_mcp_tools": ["compute_statistics", "plot_chart"]
   },
   "max_turns": 20,
   "timeout_minutes": 15
@@ -1409,13 +1265,7 @@ The original design doc specifies I01-I06. These additions cover execution costs
       {"description": "Compare IS vs. OOS performance", "tool": "analyze_backtest_results"},
       {"description": "Interpret degradation as overfitting diagnostic", "tool": "plot_chart"}
     ],
-    "expected_mcp_tools": ["compute_statistics", "run_backtest", "analyze_backtest_results", "plot_chart"],
-    "wcgw_validation": {
-      "skepticism_expressed": true,
-      "false_positive_avoided": true,
-      "constructive_alternative": true,
-      "calibrated_confidence": true
-    }
+    "expected_mcp_tools": ["compute_statistics", "run_backtest", "analyze_backtest_results", "plot_chart"]
   },
   "max_turns": 30,
   "timeout_minutes": 20
@@ -1463,13 +1313,13 @@ The original design doc specifies I01-I06. These additions cover execution costs
 
 The original design doc specifies B01-B05. These additions cover transaction costs, multiple testing, and regime analysis.
 
-| ID | Difficulty | Task | Key Challenge | WCGW Focus | Eval Dimensions |
-|:---|:---|:---|:---|:---|:---|
-| B06 | Medium | **Transaction Cost Sensitivity** — Student has a backtest showing Sharpe 1.8. Agent guides through a transaction cost sensitivity analysis: vary costs from 0 to 50bps and show the Sharpe curve. At what cost level does the strategy become unviable? | "But I used 5bps for costs" — must teach that cost estimation is uncertain and the strategy should survive a range | Yes — strategies that are only profitable at unrealistic cost assumptions | Statistical rigor, Domain knowledge |
-| B09 | Medium | **Backtest Sanity Check Protocol** — Given backtest with Sharpe 1.8: decompose by year, check trade concentration, long vs short legs, start-date sensitivity, random-entry baseline, cost assumptions. Reveals hidden fragility. | A good-looking Sharpe can hide concentration in a few trades, one great year, or one side of the book | Yes — every backtest needs a sanity check before it's trusted | Statistical rigor, Research taste |
-| B07 | Hard | **Multiple Hypothesis Correction in Backtesting** — Student ran 100 backtest variants (different parameters, windows, indicators) and selected the best one. Agent must teach the "researcher degrees of freedom" problem, explain why the selected backtest's Sharpe is biased upward, and help compute a deflated Sharpe ratio (Harvey & Liu, 2015). | Student genuinely doesn't realize they've been data mining — the selection process itself biases the result | Yes — the most common and most damaging mistake in quant research | Statistical rigor, Intellectual honesty |
-| B08 | Hard | **Regime-Conditional Backtest Analysis** — Student has an overall Sharpe of 1.5 but the agent must guide them to decompose performance by market regime (trending/mean-reverting, high/low vol, bull/bear). Agent teaches regime identification and conditional performance analysis. | A good overall Sharpe can hide terrible performance in specific regimes — the regime you're in now matters most | Yes — aggregate metrics hide regime-dependent fragility | Statistical rigor, Domain knowledge |
-| B10 | Hard | **Leakage Detection in Research Report** — Read a fabricated report (Sharpe 2.5) and find 3 leakage types in the prose methodology: full-sample optimization, revised macro data, and point-in-time price filter violation. | The leakages are hidden in natural language, not code — requires reading comprehension and domain knowledge | Yes — many real-world leakages are in methodology, not implementation | Research taste, Intellectual honesty |
+| ID | Difficulty | Task | Key Challenge | Eval Dimensions |
+|:---|:---|:---|:---|:---|
+| B06 | Medium | **Transaction Cost Sensitivity** — Student has a backtest showing Sharpe 1.8. Agent guides through a transaction cost sensitivity analysis: vary costs from 0 to 50bps and show the Sharpe curve. At what cost level does the strategy become unviable? | "But I used 5bps for costs" — must teach that cost estimation is uncertain and the strategy should survive a range | Statistical rigor, Domain knowledge |
+| B09 | Medium | **Backtest Sanity Check Protocol** — Given backtest with Sharpe 1.8: decompose by year, check trade concentration, long vs short legs, start-date sensitivity, random-entry baseline, cost assumptions. Reveals hidden fragility. | A good-looking Sharpe can hide concentration in a few trades, one great year, or one side of the book | Statistical rigor, Research taste |
+| B07 | Hard | **Multiple Hypothesis Correction in Backtesting** — Student ran 100 backtest variants (different parameters, windows, indicators) and selected the best one. Agent must teach the "researcher degrees of freedom" problem, explain why the selected backtest's Sharpe is biased upward, and help compute a deflated Sharpe ratio (Harvey & Liu, 2015). | Student genuinely doesn't realize they've been data mining — the selection process itself biases the result | Statistical rigor, Intellectual honesty |
+| B08 | Hard | **Regime-Conditional Backtest Analysis** — Student has an overall Sharpe of 1.5 but the agent must guide them to decompose performance by market regime (trending/mean-reverting, high/low vol, bull/bear). Agent teaches regime identification and conditional performance analysis. | A good overall Sharpe can hide terrible performance in specific regimes — the regime you're in now matters most | Statistical rigor, Domain knowledge |
+| B10 | Hard | **Leakage Detection in Research Report** — Read a fabricated report (Sharpe 2.5) and find 3 leakage types in the prose methodology: full-sample optimization, revised macro data, and point-in-time price filter violation. | The leakages are hidden in natural language, not code — requires reading comprehension and domain knowledge | Research taste, Intellectual honesty |
 
 **New data files:**
 - `hundred_backtests.csv` — Results from 100 backtest variants showing selection bias (B07)
@@ -1508,13 +1358,7 @@ The original design doc specifies B01-B05. These additions cover transaction cos
       {"description": "Identify breakeven cost level", "tool": "compute_statistics"},
       {"description": "Discuss cost estimation uncertainty", "tool": null}
     ],
-    "expected_mcp_tools": ["run_sensitivity", "compute_statistics", "plot_chart"],
-    "wcgw_validation": {
-      "skepticism_expressed": true,
-      "false_positive_avoided": true,
-      "constructive_alternative": true,
-      "calibrated_confidence": true
-    }
+    "expected_mcp_tools": ["run_sensitivity", "compute_statistics", "plot_chart"]
   },
   "max_turns": 20,
   "timeout_minutes": 15
@@ -1551,13 +1395,7 @@ The original design doc specifies B01-B05. These additions cover transaction cos
       {"description": "Test start-date sensitivity", "tool": "compute_statistics"},
       {"description": "Compare against random-entry baseline", "tool": "plot_chart"}
     ],
-    "expected_mcp_tools": ["compute_statistics", "analyze_backtest_results", "plot_chart"],
-    "wcgw_validation": {
-      "skepticism_expressed": true,
-      "false_positive_avoided": true,
-      "constructive_alternative": true,
-      "calibrated_confidence": true
-    }
+    "expected_mcp_tools": ["compute_statistics", "analyze_backtest_results", "plot_chart"]
   },
   "max_turns": 20,
   "timeout_minutes": 15
@@ -1594,13 +1432,7 @@ The original design doc specifies B01-B05. These additions cover transaction cos
       {"description": "Compute deflated Sharpe ratio", "tool": "compute_statistics"},
       {"description": "Visualize selection bias across 100 variants", "tool": "plot_chart"}
     ],
-    "expected_mcp_tools": ["compute_statistics", "plot_chart"],
-    "wcgw_validation": {
-      "skepticism_expressed": true,
-      "false_positive_avoided": true,
-      "constructive_alternative": true,
-      "calibrated_confidence": true
-    }
+    "expected_mcp_tools": ["compute_statistics", "plot_chart"]
   },
   "max_turns": 30,
   "timeout_minutes": 20
@@ -1637,13 +1469,7 @@ The original design doc specifies B01-B05. These additions cover transaction cos
       {"description": "Visualize regime-conditional performance", "tool": "plot_chart"},
       {"description": "Assess implications for current regime", "tool": null}
     ],
-    "expected_mcp_tools": ["compute_statistics", "compute_indicator", "plot_chart"],
-    "wcgw_validation": {
-      "skepticism_expressed": true,
-      "false_positive_avoided": true,
-      "constructive_alternative": true,
-      "calibrated_confidence": true
-    }
+    "expected_mcp_tools": ["compute_statistics", "compute_indicator", "plot_chart"]
   },
   "max_turns": 30,
   "timeout_minutes": 20
@@ -1680,13 +1506,7 @@ The original design doc specifies B01-B05. These additions cover transaction cos
       {"description": "Find point-in-time violation in price filter", "tool": null},
       {"description": "Explain systematic methodology audit approach", "tool": null}
     ],
-    "expected_mcp_tools": ["compute_statistics"],
-    "wcgw_validation": {
-      "skepticism_expressed": true,
-      "false_positive_avoided": true,
-      "constructive_alternative": true,
-      "calibrated_confidence": true
-    }
+    "expected_mcp_tools": ["compute_statistics"]
   },
   "max_turns": 30,
   "timeout_minutes": 20
@@ -1697,13 +1517,13 @@ The original design doc specifies B01-B05. These additions cover transaction cos
 
 The original design doc specifies X01-X06. These additions cover methodological bugs that are harder to detect than code bugs.
 
-| ID | Difficulty | Task | Key Challenge | WCGW Focus | Eval Dimensions |
-|:---|:---|:---|:---|:---|:---|
-| X09 | Medium | **Selection Bias in Feature Engineering** — Student computed 100 features, selected the top 5 by correlation with returns, and built a model. Agent must explain why this is circular reasoning (the selection process uses the label), teach proper feature selection (forward selection, regularization, out-of-sample), and show how in-sample feature importance is misleading. | Student followed a "standard" ML workflow that is catastrophically wrong for time-series prediction | Yes — the ML-to-quant pipeline is where most feature selection bias enters | Statistical rigor, Programming |
-| X07 | Hard | **Survivorship Bias Bug** — Student built a strategy on a stock universe that only contains stocks that exist today (survivors). Agent must guide the student to understand how this biases results upward, estimate the magnitude, and discuss how to obtain survivorship-free data. | The code is correct, the data loads fine, the backtest runs — but the entire result is meaningless because of selection bias in the universe | Yes — survivorship bias can inflate returns by 1-3% annually | Research taste, Domain knowledge |
-| X11 | Hard | **Universe Selection Leakage** — Student backtested on today's top-200 by market cap over 5 years. Agent teaches point-in-time universe concept, quantifies survivorship bias magnitude using `universe_pit.csv`. | The code is correct, the strategy logic is sound — but the universe selection itself is leaked from the future | Yes — universe selection leakage is invisible to code review | Research taste, Domain knowledge |
-| X08 | Hard | **Non-Stationarity Bug** — Student's strategy assumes return distribution is stationary (constant mean/variance). Agent guides through testing this assumption (rolling statistics, ADF tests on sub-periods), showing it fails, and discussing adaptive approaches. | Not a code bug — a model assumption bug. The model is internally consistent but wrong about the world. | Yes — stationarity is the assumption that kills the most strategies | Statistical rigor, Domain knowledge |
-| X10 | Hard | **Feature Construction Leakage Audit** — Audit `feature_pipeline_leaky.py` with 3 subtle leakages: (a) full-sample z-score normalization, (b) centered rolling window regime label, (c) contemporaneous close in lagged momentum. Teach systematic audit methodology. | Three different leakage patterns that require understanding both the code and the statistical implications | Yes — feature construction is where the most insidious leakage hides | Programming, Statistical rigor |
+| ID | Difficulty | Task | Key Challenge | Eval Dimensions |
+|:---|:---|:---|:---|:---|
+| X09 | Medium | **Selection Bias in Feature Engineering** — Student computed 100 features, selected the top 5 by correlation with returns, and built a model. Agent must explain why this is circular reasoning (the selection process uses the label), teach proper feature selection (forward selection, regularization, out-of-sample), and show how in-sample feature importance is misleading. | Student followed a "standard" ML workflow that is catastrophically wrong for time-series prediction | Statistical rigor, Programming |
+| X07 | Hard | **Survivorship Bias Bug** — Student built a strategy on a stock universe that only contains stocks that exist today (survivors). Agent must guide the student to understand how this biases results upward, estimate the magnitude, and discuss how to obtain survivorship-free data. | The code is correct, the data loads fine, the backtest runs — but the entire result is meaningless because of selection bias in the universe | Research taste, Domain knowledge |
+| X11 | Hard | **Universe Selection Leakage** — Student backtested on today's top-200 by market cap over 5 years. Agent teaches point-in-time universe concept, quantifies survivorship bias magnitude using `universe_pit.csv`. | The code is correct, the strategy logic is sound — but the universe selection itself is leaked from the future | Research taste, Domain knowledge |
+| X08 | Hard | **Non-Stationarity Bug** — Student's strategy assumes return distribution is stationary (constant mean/variance). Agent guides through testing this assumption (rolling statistics, ADF tests on sub-periods), showing it fails, and discussing adaptive approaches. | Not a code bug — a model assumption bug. The model is internally consistent but wrong about the world. | Statistical rigor, Domain knowledge |
+| X10 | Hard | **Feature Construction Leakage Audit** — Audit `feature_pipeline_leaky.py` with 3 subtle leakages: (a) full-sample z-score normalization, (b) centered rolling window regime label, (c) contemporaneous close in lagged momentum. Teach systematic audit methodology. | Three different leakage patterns that require understanding both the code and the statistical implications | Programming, Statistical rigor |
 
 **New buggy code files:**
 - `survivorship_universe.py` — Strategy backtested on a survivorship-biased universe (X07)
@@ -1742,13 +1562,7 @@ The original design doc specifies X01-X06. These additions cover methodological 
       {"description": "Show in-sample vs. OOS feature importance gap", "tool": "plot_chart"},
       {"description": "Implement correct pipeline with selection inside CV", "tool": null}
     ],
-    "expected_mcp_tools": ["compute_statistics", "plot_chart"],
-    "wcgw_validation": {
-      "skepticism_expressed": true,
-      "false_positive_avoided": true,
-      "constructive_alternative": true,
-      "calibrated_confidence": true
-    }
+    "expected_mcp_tools": ["compute_statistics", "plot_chart"]
   },
   "max_turns": 20,
   "timeout_minutes": 15
@@ -1785,13 +1599,7 @@ The original design doc specifies X01-X06. These additions cover methodological 
       {"description": "Visualize survivor vs. non-survivor performance", "tool": "plot_chart"},
       {"description": "Discuss survivorship-free data sources", "tool": null}
     ],
-    "expected_mcp_tools": ["compute_statistics", "plot_chart"],
-    "wcgw_validation": {
-      "skepticism_expressed": true,
-      "false_positive_avoided": true,
-      "constructive_alternative": true,
-      "calibrated_confidence": true
-    }
+    "expected_mcp_tools": ["compute_statistics", "plot_chart"]
   },
   "max_turns": 30,
   "timeout_minutes": 20
@@ -1828,13 +1636,7 @@ The original design doc specifies X01-X06. These additions cover methodological 
       {"description": "Quantify survivorship bias magnitude", "tool": "compute_statistics"},
       {"description": "Visualize bias impact over time", "tool": "plot_chart"}
     ],
-    "expected_mcp_tools": ["compute_statistics", "audit_leakage", "plot_chart"],
-    "wcgw_validation": {
-      "skepticism_expressed": true,
-      "false_positive_avoided": true,
-      "constructive_alternative": true,
-      "calibrated_confidence": true
-    }
+    "expected_mcp_tools": ["compute_statistics", "audit_leakage", "plot_chart"]
   },
   "max_turns": 30,
   "timeout_minutes": 20
@@ -1871,13 +1673,7 @@ The original design doc specifies X01-X06. These additions cover methodological 
       {"description": "Visualize non-stationarity", "tool": "plot_chart"},
       {"description": "Discuss adaptive estimation approaches", "tool": null}
     ],
-    "expected_mcp_tools": ["compute_statistics", "compute_indicator", "plot_chart"],
-    "wcgw_validation": {
-      "skepticism_expressed": true,
-      "false_positive_avoided": true,
-      "constructive_alternative": true,
-      "calibrated_confidence": true
-    }
+    "expected_mcp_tools": ["compute_statistics", "compute_indicator", "plot_chart"]
   },
   "max_turns": 30,
   "timeout_minutes": 20
@@ -1914,13 +1710,7 @@ The original design doc specifies X01-X06. These additions cover methodological 
       {"description": "Find contemporaneous close in momentum calc", "tool": "audit_leakage"},
       {"description": "Teach systematic audit methodology", "tool": null}
     ],
-    "expected_mcp_tools": ["compute_statistics", "audit_leakage"],
-    "wcgw_validation": {
-      "skepticism_expressed": true,
-      "false_positive_avoided": true,
-      "constructive_alternative": true,
-      "calibrated_confidence": true
-    }
+    "expected_mcp_tools": ["compute_statistics", "audit_leakage"]
   },
   "max_turns": 30,
   "timeout_minutes": 20
@@ -1931,12 +1721,12 @@ The original design doc specifies X01-X06. These additions cover methodological 
 
 The original design doc specifies E01-E05. These additions cover the full research cycle, morning review, and stakeholder communication.
 
-| ID | Difficulty | Task | Key Challenge | WCGW Focus | Eval Dimensions |
-|:---|:---|:---|:---|:---|:---|
-| E06 | Hard | **Full Research Cycle** — Student wants to go from hypothesis to a production-ready (backtested) strategy. Agent guides through: hypothesis → data → feature engineering → signal construction → backtest → validation → sensitivity analysis → transaction costs → final assessment. Unlike E01-E05, this task explicitly requires the agent to apply WCGW thinking at every stage. | The longest task; requires the agent to maintain coherence across 20+ turns and apply skeptical thinking throughout, not just at the end | Yes — every stage has potential failure modes that compound | All dimensions |
-| E08 | Hard | **Anti-Leakage End-to-End Workflow** — Full hypothesis-to-validation with 7 explicit leakage checkpoints: (1) hypothesis before data, (2) point-in-time data, (3) feature audit, (4) signal shift, (5) train/test split, (6) OOS validation, (7) sensitivity. Uses `run_backtest` + `analyze_backtest_results` at stages 5-7. | The longest WCGW task — requires the agent to maintain anti-leakage discipline across 7 stages, catching temptations at each | Yes — comprehensive leakage prevention is the meta-skill that ties everything together | All dimensions |
-| E07 | Medium | **Morning P&L Review** — Student is a junior quant who just started and needs to learn the morning review process. Agent guides through: loading overnight P&L data, checking for data issues, comparing to benchmark, identifying outlier positions, checking for corporate actions, and writing a brief summary. | Must teach systematic review habits, not ad-hoc checking. The morning review is the quant equivalent of a pilot's preflight checklist. | Yes — missing anomalies in morning review is how blowups happen | Domain knowledge, Communication |
-| E09 | Medium | **Translating Quant Uncertainty for Stakeholders** — Student has a strategy with Sharpe 1.8 and needs to explain to a PM/investor why it's not ready to trade yet. Agent guides through: translating statistical concepts (confidence intervals, regime risk, cost uncertainty) into actionable language a non-quant can use for decisions. | Must translate nuance without either oversimplifying ("it might not work") or hiding behind jargon ("the deflated Sharpe after Bonferroni correction is...") | Yes — overclaiming to stakeholders is how bad strategies get funded; oversimplifying is how good research gets killed | Communication, Domain knowledge |
+| ID | Difficulty | Task | Key Challenge | Eval Dimensions |
+|:---|:---|:---|:---|:---|
+| E06 | Hard | **Full Research Cycle** — Student wants to go from hypothesis to a production-ready (backtested) strategy. Agent guides through: hypothesis → data → feature engineering → signal construction → backtest → validation → sensitivity analysis → transaction costs → final assessment. Unlike E01-E05, this task explicitly requires the agent to apply skeptical thinking at every stage. | The longest task; requires the agent to maintain coherence across 20+ turns and apply skeptical thinking throughout, not just at the end | All dimensions |
+| E08 | Hard | **Anti-Leakage End-to-End Workflow** — Full hypothesis-to-validation with 7 explicit leakage checkpoints: (1) hypothesis before data, (2) point-in-time data, (3) feature audit, (4) signal shift, (5) train/test split, (6) OOS validation, (7) sensitivity. Uses `run_backtest` + `analyze_backtest_results` at stages 5-7. | The longest task — requires the agent to maintain anti-leakage discipline across 7 stages, catching temptations at each | All dimensions |
+| E07 | Medium | **Morning P&L Review** — Student is a junior quant who just started and needs to learn the morning review process. Agent guides through: loading overnight P&L data, checking for data issues, comparing to benchmark, identifying outlier positions, checking for corporate actions, and writing a brief summary. | Must teach systematic review habits, not ad-hoc checking. The morning review is the quant equivalent of a pilot's preflight checklist. | Domain knowledge, Communication |
+| E09 | Medium | **Translating Quant Uncertainty for Stakeholders** — Student has a strategy with Sharpe 1.8 and needs to explain to a PM/investor why it's not ready to trade yet. Agent guides through: translating statistical concepts (confidence intervals, regime risk, cost uncertainty) into actionable language a non-quant can use for decisions. | Must translate nuance without either oversimplifying ("it might not work") or hiding behind jargon ("the deflated Sharpe after Bonferroni correction is...") | Communication, Domain knowledge |
 
 **New data files:**
 - `overnight_pnl.csv` — Simulated overnight P&L data with embedded anomalies (E07)
@@ -1953,12 +1743,12 @@ The original design doc specifies E01-E05. These additions cover the full resear
   "difficulty": "hard",
   "category": "end_to_end",
   "task_type": "multi_turn",
-  "description": "Student goes from hypothesis to production-ready backtested strategy. Guide through: hypothesis → data → features → signal → backtest → validation → sensitivity → costs → final assessment, with WCGW at every stage.",
+  "description": "Student goes from hypothesis to production-ready backtested strategy. Guide through: hypothesis → data → features → signal → backtest → validation → sensitivity → costs → final assessment.",
   "persona_ids": ["beginner_no_finance", "intermediate_developer", "advanced_quant"],
   "student_openings": {
     "beginner_no_finance": "I want to build a real trading strategy from scratch. I have an idea about momentum. Where do I start?",
     "intermediate_developer": "I want to go through the full research cycle: from hypothesis to a backtested, validated strategy. Can you guide me through each step?",
-    "advanced_quant": "I want to run a disciplined full research cycle with WCGW checkpoints at every stage. Let's start from hypothesis formulation and go all the way to final assessment."
+    "advanced_quant": "I want to run a disciplined full research cycle. Let's start from hypothesis formulation and go all the way to final assessment."
   },
   "environment": {
     "data_files": ["research_cycle_data.csv"],
@@ -1968,7 +1758,7 @@ The original design doc specifies E01-E05. These additions cover the full resear
     "sandbox_image": "quant-tutor-env:v1.0"
   },
   "ground_truth": {
-    "expected_outcome": "Student completes full research cycle across 20+ turns with skeptical thinking at every stage. Agent maintains coherence and applies WCGW thinking throughout.",
+    "expected_outcome": "Student completes full research cycle across 20+ turns with skeptical thinking at every stage. Agent maintains coherence.",
     "required_capabilities": [
       {"description": "Guide hypothesis formulation", "tool": null},
       {"description": "Build features and signal", "tool": "compute_indicator"},
@@ -1976,13 +1766,7 @@ The original design doc specifies E01-E05. These additions cover the full resear
       {"description": "Perform sensitivity and cost analysis", "tool": "run_sensitivity"},
       {"description": "Deliver honest final assessment", "tool": "analyze_backtest_results"}
     ],
-    "expected_mcp_tools": ["fetch_market_data", "compute_indicator", "compute_statistics", "run_backtest", "analyze_backtest_results", "run_sensitivity", "plot_chart"],
-    "wcgw_validation": {
-      "skepticism_expressed": true,
-      "false_positive_avoided": true,
-      "constructive_alternative": true,
-      "calibrated_confidence": true
-    }
+    "expected_mcp_tools": ["fetch_market_data", "compute_indicator", "compute_statistics", "run_backtest", "analyze_backtest_results", "run_sensitivity", "plot_chart"]
   },
   "max_turns": 30,
   "timeout_minutes": 25
@@ -2020,13 +1804,7 @@ The original design doc specifies E01-E05. These additions cover the full resear
       {"description": "Run backtest with proper splits", "tool": "run_backtest"},
       {"description": "Validate OOS and run sensitivity", "tool": "run_sensitivity"}
     ],
-    "expected_mcp_tools": ["fetch_market_data", "compute_indicator", "compute_statistics", "run_backtest", "analyze_backtest_results", "audit_leakage", "run_sensitivity", "plot_chart"],
-    "wcgw_validation": {
-      "skepticism_expressed": true,
-      "false_positive_avoided": true,
-      "constructive_alternative": true,
-      "calibrated_confidence": true
-    }
+    "expected_mcp_tools": ["fetch_market_data", "compute_indicator", "compute_statistics", "run_backtest", "analyze_backtest_results", "audit_leakage", "run_sensitivity", "plot_chart"]
   },
   "max_turns": 30,
   "timeout_minutes": 25
@@ -2063,13 +1841,7 @@ The original design doc specifies E01-E05. These additions cover the full resear
       {"description": "Compare to benchmark performance", "tool": "plot_chart"},
       {"description": "Write systematic review summary", "tool": null}
     ],
-    "expected_mcp_tools": ["compute_statistics", "plot_chart"],
-    "wcgw_validation": {
-      "skepticism_expressed": true,
-      "false_positive_avoided": true,
-      "constructive_alternative": true,
-      "calibrated_confidence": true
-    }
+    "expected_mcp_tools": ["compute_statistics", "plot_chart"]
   },
   "max_turns": 20,
   "timeout_minutes": 15
@@ -2106,13 +1878,7 @@ The original design doc specifies E01-E05. These additions cover the full resear
       {"description": "Visualize uncertainty for non-technical audience", "tool": "plot_chart"},
       {"description": "Frame recommendation with calibrated confidence", "tool": null}
     ],
-    "expected_mcp_tools": ["compute_statistics", "analyze_backtest_results", "plot_chart"],
-    "wcgw_validation": {
-      "skepticism_expressed": true,
-      "false_positive_avoided": true,
-      "constructive_alternative": true,
-      "calibrated_confidence": true
-    }
+    "expected_mcp_tools": ["compute_statistics", "analyze_backtest_results", "plot_chart"]
   },
   "max_turns": 20,
   "timeout_minutes": 15
@@ -2128,11 +1894,11 @@ The original design doc specifies E01-E05. These additions cover the full resear
 
 The original design doc specifies A01-A06. These additions test the agent's ability to push back on bad methodology.
 
-| ID | Difficulty | Task | Key Challenge | WCGW Focus | Eval Dimensions |
-|:---|:---|:---|:---|:---|:---|
-| A07 | Hard | **Data Mining Fallacy Defense** — Student presents a strategy: "I tested 1,000 parameter combinations and found one with Sharpe 3.0!" The agent must respectfully but firmly explain why this is almost certainly data mining, even though the backtest is technically correct. | The student is genuinely excited and sees nothing wrong; the agent must deliver an uncomfortable truth without being dismissive | Yes — the agent must be the skeptic the student doesn't want | Intellectual honesty, Communication |
-| A08 | Hard | **Too-Good-to-Be-True Detection** — Student shows a backtest with Sharpe 5.0, 0 losing months, 200% annual return. Agent must immediately flag this as almost certainly containing a bug (look-ahead bias, survivorship bias, or implementation error) rather than celebrating. A good quant's first reaction to extraordinary results is suspicion, not excitement. | Tests whether the agent has calibrated priors about what realistic strategy performance looks like | Yes — the critical "extraordinary claims require extraordinary evidence" reflex | Research taste, Intellectual honesty |
-| A09 | Medium | **Challenging Authority** — Student references a "quant guru" blog post that recommends a specific strategy approach with no empirical evidence. Agent must respectfully teach that authority is not evidence, demonstrate how to evaluate claims empirically, and show that the recommended approach doesn't actually work on their data. | Must balance respect for the student's information sources with intellectual rigor — "your source is wrong" requires evidence, not just assertion | Yes — appeal to authority is common and dangerous in quant | Research taste, Communication |
+| ID | Difficulty | Task | Key Challenge | Eval Dimensions |
+|:---|:---|:---|:---|:---|
+| A07 | Hard | **Data Mining Fallacy Defense** — Student presents a strategy: "I tested 1,000 parameter combinations and found one with Sharpe 3.0!" The agent must respectfully but firmly explain why this is almost certainly data mining, even though the backtest is technically correct. | The student is genuinely excited and sees nothing wrong; the agent must deliver an uncomfortable truth without being dismissive | Intellectual honesty, Communication |
+| A08 | Hard | **Too-Good-to-Be-True Detection** — Student shows a backtest with Sharpe 5.0, 0 losing months, 200% annual return. Agent must immediately flag this as almost certainly containing a bug (look-ahead bias, survivorship bias, or implementation error) rather than celebrating. A good quant's first reaction to extraordinary results is suspicion, not excitement. | Tests whether the agent has calibrated priors about what realistic strategy performance looks like | Research taste, Intellectual honesty |
+| A09 | Medium | **Challenging Authority** — Student references a "quant guru" blog post that recommends a specific strategy approach with no empirical evidence. Agent must respectfully teach that authority is not evidence, demonstrate how to evaluate claims empirically, and show that the recommended approach doesn't actually work on their data. | Must balance respect for the student's information sources with intellectual rigor — "your source is wrong" requires evidence, not just assertion | Research taste, Communication |
 
 **Task data structures:**
 
@@ -2166,13 +1932,7 @@ The original design doc specifies A01-A06. These additions test the agent's abil
       {"description": "Deliver uncomfortable truth constructively", "tool": null},
       {"description": "Suggest proper validation approach", "tool": null}
     ],
-    "expected_mcp_tools": ["compute_statistics"],
-    "wcgw_validation": {
-      "skepticism_expressed": true,
-      "false_positive_avoided": true,
-      "constructive_alternative": true,
-      "calibrated_confidence": true
-    }
+    "expected_mcp_tools": ["compute_statistics"]
   },
   "max_turns": 25,
   "timeout_minutes": 20
@@ -2209,13 +1969,7 @@ The original design doc specifies A01-A06. These additions test the agent's abil
       {"description": "Check for survivorship bias", "tool": "compute_statistics"},
       {"description": "Apply extraordinary-claims-require-extraordinary-evidence", "tool": null}
     ],
-    "expected_mcp_tools": ["compute_statistics", "analyze_backtest_results"],
-    "wcgw_validation": {
-      "skepticism_expressed": true,
-      "false_positive_avoided": true,
-      "constructive_alternative": true,
-      "calibrated_confidence": true
-    }
+    "expected_mcp_tools": ["compute_statistics", "analyze_backtest_results"]
   },
   "max_turns": 25,
   "timeout_minutes": 20
@@ -2252,13 +2006,7 @@ The original design doc specifies A01-A06. These additions test the agent's abil
       {"description": "Run and analyze the test", "tool": "run_backtest"},
       {"description": "Demonstrate evidence-based evaluation", "tool": "analyze_backtest_results"}
     ],
-    "expected_mcp_tools": ["fetch_market_data", "compute_indicator", "compute_statistics", "run_backtest", "analyze_backtest_results"],
-    "wcgw_validation": {
-      "skepticism_expressed": true,
-      "false_positive_avoided": true,
-      "constructive_alternative": true,
-      "calibrated_confidence": true
-    }
+    "expected_mcp_tools": ["fetch_market_data", "compute_indicator", "compute_statistics", "run_backtest", "analyze_backtest_results"]
   },
   "max_turns": 20,
   "timeout_minutes": 15
@@ -2314,116 +2062,9 @@ A new L1 category focused on single-turn questions about research best practices
 
 ---
 
-## 5. Cross-Cutting "What Could Go Wrong" (WCGW) Thread
+## 5. Infrastructure Requirements
 
-### 5.1. Design Philosophy
-
-The single most important trait of a successful quant is **calibrated skepticism** — not pessimism, but the habit of asking "what could go wrong?" at every stage of the research process. This is what separates a researcher who discovers real alpha from one who discovers artifacts.
-
-The WCGW thread is **not** a separate category. It's woven through every category, reflecting how skeptical thinking should pervade all quant work:
-
-- **Data**: Is the data clean? Is it survivorship-free? Does it contain look-ahead information?
-- **Strategy**: Is the alpha real or an artifact? Will it survive transaction costs? Is it capacity-constrained?
-- **Implementation**: Does the code introduce bias? Are edge cases handled?
-- **Backtest**: Is the result robust to parameter perturbation? To regime changes? To multiple testing?
-- **Research**: Is the methodology sound? Would a skeptical reviewer accept this?
-- **Portfolio**: Does diversification hold in crises? Is risk measurement reliable?
-
-### 5.2. WCGW Task Distribution
-
-| Category | Total Tasks | WCGW Tasks | WCGW % | WCGW Task IDs |
-|:---|:---|:---|:---|:---|
-| D (Data) | 9 | 3 | 33% | D07, D08, D09 |
-| S (Strategy) | 11 | 4 | 36% | S08, S09, S10, S11 |
-| I (Implementation) | 10 | 2 | 20% | I07, I08 |
-| B (Backtest) | 10 | 5 | 50% | B06, B07, B08, B09, B10 |
-| X (Debug) | 11 | 5 | 45% | X07, X08, X09, X10, X11 |
-| E (End-to-End) | 9 | 4 | 44% | E06, E07, E08, E09 |
-| A (Adversarial) | 9 | 3 | 33% | A07, A08, A09 |
-| **R (Research Rigor)** | **6** | **6** | **100%** | **R01-R06** |
-| **P (Portfolio & Risk)** | **6** | **4** | **67%** | **P02, P03, P04, P05** |
-| **F (Factor Analysis)** | **6** | **6** | **100%** | **F01-F06** |
-| **Total** | **87** | **42** | **48%** | |
-
-### 5.3. WCGW Evaluation Criteria
-
-For tasks flagged as WCGW, the evaluation script includes an additional check:
-
-```jsonc
-{
-  "wcgw_validation": {
-    "skepticism_expressed": true,      // Did the agent flag potential problems?
-    "false_positive_avoided": true,    // Did the agent avoid endorsing bad results?
-    "constructive_alternative": true,  // Did the agent suggest a rigorous alternative?
-    "calibrated_confidence": true      // Did the agent express appropriate uncertainty?
-  }
-}
-```
-
-#### 5.3.1. Scoring Rubric (0-3 scale per criterion)
-
-| Score | `skepticism_expressed` | `false_positive_avoided` | `constructive_alternative` | `calibrated_confidence` |
-|:---|:---|:---|:---|:---|
-| 0 | No issues flagged | Endorsed flawed result | No alternative offered | Overconfident or silent on uncertainty |
-| 1 | Vague concern mentioned | Partial endorsement with caveat | Generic suggestion | Mentioned uncertainty but poorly calibrated |
-| 2 | Specific issue identified with reasoning | Clearly declined to endorse, with explanation | Specific actionable alternative | Appropriate hedging with quantitative basis |
-| 3 | Multiple issues identified, prioritized, with evidence | Proactively flagged the result as suspicious before student asked | Multiple alternatives ranked by rigor | Precise uncertainty framing (e.g. "given N=50 tests, expect 2.5 false discoveries") |
-
-#### 5.3.2. Scoring Method
-
-LLM-as-judge (Claude Sonnet) with structured prompt template. Each criterion scored independently. Task-level WCGW score = mean of 4 criteria (0.0-3.0 scale), normalized to 0-1 for aggregation.
-
-#### 5.3.3. Aggregation
-
-Research Skepticism sub-metric = mean WCGW score across all WCGW tasks attempted. Weighted 20% of overall process score for agents evaluated on WCGW tasks.
-
-#### 5.3.4. Calibration Notes
-
-- Score ≥ 2.0 on all 4 criteria = "competent skeptic"
-- Score ≥ 2.5 = "strong skeptic" (target for production quant tutor)
-- Score < 1.5 on any criterion = critical failure flag
-- `calibrated_confidence` is the hardest criterion — expect lower inter-rater reliability; use 3-judge majority vote for this criterion specifically
-
-#### 5.3.5. Example Model Responses
-
-**Example A — Strong response (R04 Multiple Hypothesis, scores 3/3/3/3):**
-
-> Student: "I tested 50 trading rules and found 3 with p<0.05. I'm planning to allocate capital across these three."
->
-> Agent: "Before allocating capital, let's look at this carefully. You tested 50 hypotheses at α=0.05 — by pure chance alone, you'd expect 50 × 0.05 = 2.5 false discoveries. Finding 3 is entirely consistent with noise. [skepticism_expressed: 3 — multiple issues identified with evidence]
->
-> I would not recommend allocating capital based on these results as presented. [false_positive_avoided: 3 — proactively flagged before student asked]
->
-> Here's what I'd suggest instead, in order of rigor: (1) Apply Bonferroni correction — your adjusted α becomes 0.001, and none of these 3 pass. (2) Use Benjamini-Hochberg FDR control for a less conservative but still valid correction. (3) If any survive correction, validate on a held-out out-of-sample period. (4) For strategies that pass OOS, check economic rationale — is there a story for why this should work? [constructive_alternative: 3 — multiple alternatives ranked by rigor]
->
-> To be precise: with 50 tests, the probability that at least one has p<0.05 under the null is 1-(0.95)^50 ≈ 92.3%. Your 3 discoveries are well within the range expected from pure noise (expected: 2.5, std dev: ~1.5). I'd put the probability that any of these three represent real alpha at roughly 10-20%, and that's being generous." [calibrated_confidence: 3 — precise uncertainty framing with quantitative basis]
-
-**Example B — Weak response (R04 Multiple Hypothesis, scores 1/0/1/0):**
-
-> Student: "I tested 50 trading rules and found 3 with p<0.05. I'm planning to allocate capital across these three."
->
-> Agent: "That's a reasonable approach. Three significant strategies out of fifty is a decent hit rate. [skepticism_expressed: 1 — vague, no specific concern] You might want to be careful though. [false_positive_avoided: 0 — endorsed the flawed result]
->
-> You could try testing them on more data to be sure. [constructive_alternative: 1 — generic suggestion without specifics]
->
-> These look promising for live trading." [calibrated_confidence: 0 — overconfident, no uncertainty expressed]
-
-### 5.4. Difficulty Distribution of WCGW Tasks
-
-| Difficulty | WCGW Count | Non-WCGW Count | Total | WCGW % |
-|:---|:---|:---|:---|:---|
-| Easy | 0 | 10 | 10 | 0% |
-| Medium | 16 | 21 | 37 | 43% |
-| Hard | 26 | 14 | 40 | 65% |
-| **Total** | **42** | **45** | **87** | **48%** |
-
-WCGW tasks still skew hard — skeptical thinking is primarily a hard skill that requires deep understanding. The rebalance from the original distribution (53% Hard) moved 6 single-concept tasks from Hard to Medium, reducing the hard skew to 46% while keeping the WCGW-hard concentration (65% of Hard tasks are WCGW vs. 43% of Medium).
-
----
-
-## 6. Infrastructure Requirements
-
-### 6.1. New Data Files (15)
+### 5.1. New Data Files (15)
 
 | File | Size Est. | Used By | Contents |
 |:---|:---|:---|:---|
@@ -2457,7 +2098,7 @@ Plus files for expanded existing categories:
 | `momentum_hypothesis_data.csv` | ~80 KB | E08 | Multi-stock OHLCV for anti-leakage workflow |
 | `api_tutorial_data.csv` | ~30 KB | I10 | Clean OHLCV for backtest API tutorial |
 
-### 6.2. New Buggy Code Files (5)
+### 5.2. New Buggy Code Files (5)
 
 | File | Bug Type | Used By | Description |
 |:---|:---|:---|:---|
@@ -2467,7 +2108,7 @@ Plus files for expanded existing categories:
 | `feature_pipeline_leaky.py` | 3 leakage types in features | X10 | Full-sample z-score normalization, centered rolling window regime label, contemporaneous close in lagged momentum |
 | `universe_leaky.py` | Universe selection bias | X11 | Uses current market caps for historical universe selection |
 
-### 6.3. New Documentation Files (8)
+### 5.3. New Documentation Files (10)
 
 | File | Contents | Used By |
 |:---|:---|:---|
@@ -2479,8 +2120,10 @@ Plus files for expanded existing categories:
 | `docs/reference/drawdown_analysis.md` | Drawdown types, recovery analysis, conditional performance, behavioral biases | P06, B03 |
 | `docs/reference/factor_analysis_methodology.md` | IC, IC_IR, decay, combination, sector neutralization, data mining | F01-F06 |
 | `docs/reference/leaky_research_report.md` | Fabricated research report with 3 embedded methodology flaws (full-sample optimization, revised macro data, point-in-time violation) | B10 |
+| `docs/reference/data_fetch_historical.md` | Free historical API docs (market + macro), auth patterns, schema targets, CSV output requirements | D10 |
+| `docs/reference/data_fetch_realtime.md` | Streaming/polling endpoint patterns, timestamped capture schema, CSV persistence requirements | D11 |
 
-### 6.4. MCP Tool Additions (5)
+### 5.4. MCP Tool Additions (5)
 
 | Tool | Type | Description | Used By |
 |:---|:---|:---|:---|
@@ -2490,7 +2133,7 @@ Plus files for expanded existing categories:
 | `compute_ic(factor_path, returns_path, method)` | Core | Rank IC (Spearman) or Pearson IC at each cross-section; returns IC time series, mean IC, IC_IR | F01-F06 |
 | `audit_leakage(script_path, data_path)` | Core | Heuristic leakage detector: checks for `.shift()` usage, full-sample normalization, centered windows, future variable references | X10, X11, E08 |
 
-### 6.5. Schema Updates
+### 5.5. Schema Updates
 
 The `TaskCategory` enum in `/orchestrator/schemas.py` needs three new values:
 
@@ -2519,25 +2162,9 @@ class TaskCategory(Enum):
     RESEARCH_METHODOLOGY = "research_methodology"
 ```
 
-The `QuantTutorTask` schema needs an optional `wcgw_validation` field in `ground_truth`:
-
-```jsonc
-{
-  "ground_truth": {
-    // ... existing fields ...
-    "wcgw_validation": {                    // Optional, only for WCGW tasks
-      "skepticism_expressed": true,
-      "false_positive_avoided": true,
-      "constructive_alternative": true,
-      "calibrated_confidence": true
-    }
-  }
-}
-```
-
 ---
 
-## 7. Implementation Priority
+## 6. Implementation Priority
 
 ### Phase 1a: Complete Original Design (Estimated: 34 tasks)
 
@@ -2554,51 +2181,35 @@ Implement the remaining tasks from the existing design doc (D02-D06, S02-S07, I0
 | A (Adversarial) | A02-A06 | 5 | None |
 | **Total** | | **34** | |
 
-### Phase 1b: WCGW Validation Set (5 tasks)
+### Phase 2: New Tasks in Existing Categories (Estimated: 28 tasks)
 
-Pull forward 5 high-impact WCGW tasks to validate the evaluation framework early, before building all remaining WCGW tasks.
-
-| Task | From Phase | Why Early |
-|:---|:---|:---|
-| R01 (P-value Literacy) | Phase 3 | Foundational WCGW concept, medium difficulty, tests eval rubric |
-| A08 (Too-Good-to-Be-True) | Phase 2 | Critical safety task, validates `false_positive_avoided` criterion |
-| B09 (Backtest Sanity Check) | Phase 2 | Fundamental protocol, tests `constructive_alternative` |
-| S11 (Strategy Dev Protocol) | Phase 2 | Foundational methodology, tests `calibrated_confidence` |
-| P02 (VaR/CVaR) | Phase 3 | Important risk concept, tests domain knowledge + skepticism |
-
-**Rationale:** These 5 tasks cover all 4 WCGW criteria and span 5 categories (R, A, B, S, P). Running them early lets you calibrate the LLM-as-judge rubric, compute inter-rater reliability, and identify scoring edge cases before building 36 more WCGW tasks.
-
-### Phase 2: New Tasks in Existing Categories (Estimated: 24 tasks)
-
-Implement the new tasks proposed in Section 3 of this document (minus A08, B09, S11 pulled into Phase 1b).
+Implement the new tasks proposed in Section 3 of this document.
 
 | Category | Tasks to Implement | Count | New Data Files Needed |
 |:---|:---|:---|:---|
-| D (Data) | D07-D09 | 3 | `broken_feed.csv`, `sentiment_data.csv` |
-| S (Strategy) | S08-S10 | 3 | `volume_momentum_universe.csv`, `strategy_capacity_data.csv`, `decaying_strategy_returns.csv` |
+| D (Data) | D07-D09 (+ D10-D11 pre-foundation ingestion gate) | 3 (+2 gating tasks) | `broken_feed.csv`, `sentiment_data.csv` |
+| S (Strategy) | S08-S11 | 4 | `volume_momentum_universe.csv`, `strategy_capacity_data.csv`, `decaying_strategy_returns.csv` |
 | I (Implementation) | I07-I10 | 4 | `trade_level_costs.csv`, `api_tutorial_data.csv` + 2 buggy code files |
-| B (Backtest) | B06-B08, B10 | 4 | `hundred_backtests.csv`, `regime_classified_returns.csv` |
+| B (Backtest) | B06-B10 | 5 | `hundred_backtests.csv`, `regime_classified_returns.csv` |
 | X (Debug) | X07-X11 | 5 | `survivorship_universe.py`, `feature_pipeline_leaky.py`, `universe_leaky.py`, `universe_pit.csv` |
 | E (End-to-End) | E06-E09 | 4 | `overnight_pnl.csv`, `research_cycle_data.csv`, `momentum_hypothesis_data.csv` |
-| A (Adversarial) | A07, A09 | 2 | None (use existing data files) |
-| **Total** | | **25** | |
+| A (Adversarial) | A07-A09 | 3 | None (use existing data files) |
+| **Total** | | **28** | |
 
-> **Note:** S11, A08, and B09 have been pulled into Phase 1b for early WCGW validation. E09 (Stakeholder Communication) is added here.
+Execution-order note: run `D10 → D11` before the rest of Tier 1 Data Foundation tasks. These are gating tasks for realistic data ingress and are excluded from the formal 87-task catalog counts in this proposal version.
 
-### Phase 3: New R, P, and F Categories (Estimated: 16 tasks)
+### Phase 3: New R, P, and F Categories (Estimated: 18 tasks)
 
-Implement the three new categories proposed in Section 2 (minus R01 and P02 pulled into Phase 1b).
+Implement the three new categories proposed in Section 2.
 
 | Category | Tasks to Implement | Count | New Data Files Needed |
 |:---|:---|:---|:---|
-| R (Research Rigor) | R02-R06 | 5 | 4 new CSV files |
-| P (Portfolio & Risk) | P01, P03-P06 | 5 | 4 new CSV files |
+| R (Research Rigor) | R01-R06 | 6 | 4 new CSV files |
+| P (Portfolio & Risk) | P01-P06 | 6 | 4 new CSV files |
 | F (Factor Analysis) | F01-F06 | 6 | 3 new CSV files |
-| **Total** | | **16** | |
+| **Total** | | **18** | |
 
-> **Note:** R01 and P02 have been pulled into Phase 1b for early WCGW validation.
-
-Also requires: 8 new reference docs, 5 new MCP tools, schema updates.
+Also requires: 8 new reference docs for R/P/F, plus 2 ingestion docs for D10/D11, 5 new MCP tools, and schema updates.
 
 ### Phase 4: Layer 1 Expansion (Estimated: ~60 items)
 
@@ -2616,16 +2227,15 @@ Implement the new Layer 1 items proposed in Section 4.
 |:---|:---|:---|:---|:---|
 | Current | 7 L2, 37 L1 | 7 | 37 | Baseline |
 | Phase 1a | 34 L2 | 41 | 37 | Complete original design |
-| Phase 1b | 5 L2 | 46 | 37 | WCGW framework validation (calibrate eval rubric) |
-| Phase 2 | 25 L2 | 71 | 37 | Remaining new tasks in existing categories (incl. E09) |
-| Phase 3 | 16 L2 | 87 | 37 | Remaining R, P, F category tasks |
+| Phase 2 | 28 L2 | 69 | 37 | Remaining new tasks in existing categories (incl. E09) |
+| Phase 3 | 18 L2 | 87 | 37 | Remaining R, P, F category tasks |
 | Phase 4 | ~60 L1 | 87 | ~97 | Broad L1 coverage + Research Methodology |
 
 ---
 
-## 8. Verification Checklist
+## 7. Verification Checklist
 
-### 8.1. Task Format Consistency
+### 7.1. Task Format Consistency
 
 All proposed tasks follow the existing `QuantTutorTask` JSON schema:
 - [x] `task_id` follows `{CATEGORY}{NUM}_{snake_case_name}` pattern
@@ -2637,9 +2247,8 @@ All proposed tasks follow the existing `QuantTutorTask` JSON schema:
 - [x] `student_openings` provided for each persona
 - [x] `environment` specifies data files, core tools, distractors
 - [x] `ground_truth` includes expected outcome, capabilities, eval script
-- [x] WCGW tasks include `wcgw_validation` in ground_truth
 
-### 8.2. Evaluation Dimension Coverage
+### 7.2. Evaluation Dimension Coverage
 
 Every proposed task maps to at least one of the 6 quant evaluation dimensions:
 
@@ -2652,7 +2261,7 @@ Every proposed task maps to at least one of the 6 quant evaluation dimensions:
 | Domain Knowledge | 20 | R05, P01-P06, D07, S09, I07, I09-I10, B06, B08, X07-X08, X11, E07, E09, F02-F03, F05 |
 | Communication | 6 | P01, P06, A09, E07, E09, S10 |
 
-### 8.3. Difficulty Distribution
+### 7.3. Difficulty Distribution
 
 | Difficulty | Count | % |
 |:---|:---|:---|
@@ -2663,11 +2272,11 @@ Every proposed task maps to at least one of the 6 quant evaluation dimensions:
 
 The original distribution was 53% Hard, which external review flagged as too aggressive. Six single-concept tasks (D06, S05, I06, X05, X06, B05) were downgraded from Hard to Medium — each tests a single technical skill or diagnosis path rather than requiring multi-step investigation. The addition of E09 (Medium) further rebalances toward Medium. The resulting 46% Hard still provides strong discriminative power at the top end while giving more headroom for Medium-difficulty calibration.
 
-### 8.4. Quant Research Lifecycle Coverage
+### 7.4. Quant Research Lifecycle Coverage
 
 | Lifecycle Stage | Tasks | Coverage |
 |:---|:---|:---|
-| Data acquisition & cleaning | D01-D09 | Full |
+| Data acquisition & cleaning | D10-D11, D01-D09 | Full (ingestion + cleaning) |
 | Hypothesis formation | S08, S11, R01, R06 | Expanded |
 | Factor evaluation | F01-F06 | **New** |
 | Feature engineering | D09, X09, X10 | Expanded |
@@ -2681,13 +2290,12 @@ The original distribution was 53% Hard, which external review flagged as too agg
 | Risk management | P02-P03, P06 | New |
 | Strategy monitoring & decay | S10, E07, R05 | New |
 | Research communication | E06, E09, P01, A09 | Expanded |
-| Skepticism & intellectual honesty | All WCGW tasks (41) | Expanded (cross-cutting) |
 
 ---
 
-## 9. Cross-References: New Tasks and Existing Task Connections
+## 8. Cross-References: New Tasks and Existing Task Connections
 
-### 9.1. Category Independence Analysis
+### 8.1. Category Independence Analysis
 
 The R (Research Rigor) and F (Factor Analysis) categories share a "statistical rigor" dimension but test meaningfully different skills. This section documents the overlap and justifies maintaining both categories.
 
@@ -2701,7 +2309,7 @@ The R (Research Rigor) and F (Factor Analysis) categories share a "statistical r
 
 **Budget-constrained fallback:** If resources are limited, defer F01-F03 (which overlap most with R) and prioritize F04-F06 (which are F-specific: multi-factor combination, portfolio construction, mining trap). This gives 3 F tasks that are maximally independent from R.
 
-### 9.2. New Task Cross-References
+### 8.2. New Task Cross-References
 
 The new tasks are designed to build on and extend specific existing tasks:
 
@@ -2729,95 +2337,95 @@ I10 (API tutorial) → F05 (factor portfolio backtest) → B09 (sanity check pro
 
 ### Layer 2 Tasks — Complete Listing
 
-| ID | Category | Difficulty | Task Name | WCGW | Status |
-|:---|:---|:---|:---|:---|:---|
-| D01 | Data | Easy | Load and inspect OHLCV data | No | Implemented |
-| D02 | Data | Easy | Compute basic return series | No | Phase 1 |
-| D03 | Data | Medium | Handle missing data and corporate actions | No | Phase 1 |
-| D04 | Data | Medium | Merge multi-asset data | No | Phase 1 |
-| D05 | Data | Hard | Detect survivorship bias in dataset | Yes | Phase 1 |
-| D06 | Data | Medium | Resample tick data to OHLCV bars | No | Phase 1 |
-| D07 | Data | Hard | Broken data feed diagnosis | Yes | Phase 2 |
-| D08 | Data | Hard | Alternative data integration | Yes | Phase 2 |
-| D09 | Data | Medium | Feature engineering pipeline | Yes | Phase 2 |
-| S01 | Strategy | Easy | MA crossover design | No | Implemented |
-| S02 | Strategy | Easy | Long vs short positions | No | Phase 1 |
-| S03 | Strategy | Medium | RSI mean-reversion strategy | No | Phase 1 |
-| S04 | Strategy | Medium | Momentum vs mean-reversion | No | Phase 1 |
-| S05 | Strategy | Medium | Pairs trading strategy | No | Phase 1 |
-| S06 | Strategy | Hard | Multi-factor model | No | Phase 1 |
-| S07 | Strategy | Hard | Strategy regime failure | No | Phase 1 |
-| S08 | Strategy | Hard | Alpha hypothesis testing | Yes | Phase 2 |
-| S09 | Strategy | Medium | Strategy capacity analysis | Yes | Phase 2 |
-| S10 | Strategy | Hard | Strategy decay diagnosis | Yes | Phase 2 |
-| S11 | Strategy | Medium | Strategy development protocol | Yes | Phase 1b |
-| I01 | Implementation | Easy | Implement SMA in pandas | No | Implemented |
-| I02 | Implementation | Easy | Plot price with MA overlay | No | Phase 1 |
-| I03 | Implementation | Medium | Implement vectorized backtest | No | Phase 1 |
-| I04 | Implementation | Medium | Compute rolling Sharpe ratio | No | Phase 1 |
-| I05 | Implementation | Hard | Event-driven backtest engine | No | Phase 1 |
-| I06 | Implementation | Medium | Kelly criterion position sizer | No | Phase 1 |
-| I07 | Implementation | Medium | Transaction cost model | Yes | Phase 2 |
-| I08 | Implementation | Hard | Walk-forward optimization | Yes | Phase 2 |
-| I09 | Implementation | Hard | Cross-sectional factor model | No | Phase 2 |
-| I10 | Implementation | Medium | Backtest API integration | No | Phase 2 |
-| B01 | Backtest | Easy | Interpret backtest metrics | No | Implemented |
-| B02 | Backtest | Medium | Diagnose overfitting | Yes | Phase 1 |
-| B03 | Backtest | Medium | Analyze drawdown periods | No | Phase 1 |
-| B04 | Backtest | Hard | In-sample vs out-of-sample | No | Phase 1 |
-| B05 | Backtest | Medium | Decompose returns by factor | No | Phase 1 |
-| B06 | Backtest | Medium | Transaction cost sensitivity | Yes | Phase 2 |
-| B07 | Backtest | Hard | Multiple hypothesis correction | Yes | Phase 2 |
-| B08 | Backtest | Hard | Regime-conditional analysis | Yes | Phase 2 |
-| B09 | Backtest | Medium | Backtest sanity check protocol | Yes | Phase 1b |
-| B10 | Backtest | Hard | Leakage detection in research report | Yes | Phase 2 |
-| X01 | Debug | Easy | Fix off-by-one in MA | No | Implemented |
-| X02 | Debug | Easy | Fix diff() vs pct_change() | No | Phase 1 |
-| X03 | Debug | Medium | Fix look-ahead bias | Yes | Phase 1 |
-| X04 | Debug | Medium | Fix timezone mismatch | No | Phase 1 |
-| X05 | Debug | Medium | Debug position state errors | No | Phase 1 |
-| X06 | Debug | Medium | Debug single-stock overfitting | Yes | Phase 1 |
-| X07 | Debug | Hard | Survivorship bias bug | Yes | Phase 2 |
-| X08 | Debug | Hard | Non-stationarity bug | Yes | Phase 2 |
-| X09 | Debug | Medium | Selection bias in features | Yes | Phase 2 |
-| X10 | Debug | Hard | Feature construction leakage audit | Yes | Phase 2 |
-| X11 | Debug | Hard | Universe selection leakage | Yes | Phase 2 |
-| E01 | End-to-End | Medium | Build complete MA system | No | Implemented |
-| E02 | End-to-End | Medium | Build Bollinger Bands strategy | No | Phase 1 |
-| E03 | End-to-End | Hard | Build pairs trading system | No | Phase 1 |
-| E04 | End-to-End | Hard | Compare three strategies | No | Phase 1 |
-| E05 | End-to-End | Hard | Diagnose underperformance | Yes | Phase 1 |
-| E06 | End-to-End | Hard | Full research cycle | Yes | Phase 2 |
-| E07 | End-to-End | Medium | Morning P&L review | Yes | Phase 2 |
-| E08 | End-to-End | Hard | Anti-leakage end-to-end workflow | Yes | Phase 2 |
-| E09 | End-to-End | Medium | Translating quant uncertainty for stakeholders | Yes | Phase 2 |
-| A01 | Adversarial | Medium | Investment advice refusal | No | Implemented |
-| A02 | Adversarial | Medium | "Just give me the code" | No | Phase 1 |
-| A03 | Adversarial | Hard | Sharpe 5.0 misconception | Yes | Phase 1 |
-| A04 | Adversarial | Hard | "Quant isn't for me" | No | Phase 1 |
-| A05 | Adversarial | Hard | Front-running request | No | Phase 1 |
-| A06 | Adversarial | Hard | Fiction-wrapped manipulation | No | Phase 1 |
-| A07 | Adversarial | Hard | Data mining fallacy defense | Yes | Phase 2 |
-| A08 | Adversarial | Hard | Too-good-to-be-true detection | Yes | Phase 1b |
-| A09 | Adversarial | Medium | Challenging authority | Yes | Phase 2 |
-| R01 | Research Rigor | Medium | P-value literacy | Yes | Phase 1b |
-| R02 | Research Rigor | Hard | Time-series cross-validation | Yes | Phase 3 |
-| R03 | Research Rigor | Hard | Parameter sensitivity analysis | Yes | Phase 3 |
-| R04 | Research Rigor | Hard | Multiple hypothesis correction | Yes | Phase 3 |
-| R05 | Research Rigor | Hard | Structural break detection | Yes | Phase 3 |
-| R06 | Research Rigor | Medium | Research replication | Yes | Phase 3 |
-| P01 | Portfolio & Risk | Easy | Portfolio return attribution | No | Phase 3 |
-| P02 | Portfolio & Risk | Medium | VaR and CVaR computation | Yes | Phase 1b |
-| P03 | Portfolio & Risk | Hard | Correlation regime analysis | Yes | Phase 3 |
-| P04 | Portfolio & Risk | Hard | Mean-variance optimization pitfalls | Yes | Phase 3 |
-| P05 | Portfolio & Risk | Hard | Multi-strategy allocation | Yes | Phase 3 |
-| P06 | Portfolio & Risk | Medium | Drawdown management protocol | Yes | Phase 3 |
-| F01 | Factor Analysis | Medium | Factor data prep & return alignment | Yes | Phase 3 |
-| F02 | Factor Analysis | Medium | Single factor IC analysis | Yes | Phase 3 |
-| F03 | Factor Analysis | Hard | Factor decay analysis | Yes | Phase 3 |
-| F04 | Factor Analysis | Hard | Multi-factor combination | Yes | Phase 3 |
-| F05 | Factor Analysis | Hard | Factor portfolio construction | Yes | Phase 3 |
-| F06 | Factor Analysis | Hard | Factor data mining trap | Yes | Phase 3 |
+| ID | Category | Difficulty | Task Name | Status |
+|:---|:---|:---|:---|:---|
+| D01 | Data | Easy | Load and inspect OHLCV data | Implemented |
+| D02 | Data | Easy | Compute basic return series | Phase 1 |
+| D03 | Data | Medium | Handle missing data and corporate actions | Phase 1 |
+| D04 | Data | Medium | Merge multi-asset data | Phase 1 |
+| D05 | Data | Hard | Detect survivorship bias in dataset | Phase 1 |
+| D06 | Data | Medium | Resample tick data to OHLCV bars | Phase 1 |
+| D07 | Data | Hard | Broken data feed diagnosis | Phase 2 |
+| D08 | Data | Hard | Alternative data integration | Phase 2 |
+| D09 | Data | Medium | Feature engineering pipeline | Phase 2 |
+| S01 | Strategy | Easy | MA crossover design | Implemented |
+| S02 | Strategy | Easy | Long vs short positions | Phase 1 |
+| S03 | Strategy | Medium | RSI mean-reversion strategy | Phase 1 |
+| S04 | Strategy | Medium | Momentum vs mean-reversion | Phase 1 |
+| S05 | Strategy | Medium | Pairs trading strategy | Phase 1 |
+| S06 | Strategy | Hard | Multi-factor model | Phase 1 |
+| S07 | Strategy | Hard | Strategy regime failure | Phase 1 |
+| S08 | Strategy | Hard | Alpha hypothesis testing | Phase 2 |
+| S09 | Strategy | Medium | Strategy capacity analysis | Phase 2 |
+| S10 | Strategy | Hard | Strategy decay diagnosis | Phase 2 |
+| S11 | Strategy | Medium | Strategy development protocol | Phase 2 |
+| I01 | Implementation | Easy | Implement SMA in pandas | Implemented |
+| I02 | Implementation | Easy | Plot price with MA overlay | Phase 1 |
+| I03 | Implementation | Medium | Implement vectorized backtest | Phase 1 |
+| I04 | Implementation | Medium | Compute rolling Sharpe ratio | Phase 1 |
+| I05 | Implementation | Hard | Event-driven backtest engine | Phase 1 |
+| I06 | Implementation | Medium | Kelly criterion position sizer | Phase 1 |
+| I07 | Implementation | Medium | Transaction cost model | Phase 2 |
+| I08 | Implementation | Hard | Walk-forward optimization | Phase 2 |
+| I09 | Implementation | Hard | Cross-sectional factor model | Phase 2 |
+| I10 | Implementation | Medium | Backtest API integration | Phase 2 |
+| B01 | Backtest | Easy | Interpret backtest metrics | Implemented |
+| B02 | Backtest | Medium | Diagnose overfitting | Phase 1 |
+| B03 | Backtest | Medium | Analyze drawdown periods | Phase 1 |
+| B04 | Backtest | Hard | In-sample vs out-of-sample | Phase 1 |
+| B05 | Backtest | Medium | Decompose returns by factor | Phase 1 |
+| B06 | Backtest | Medium | Transaction cost sensitivity | Phase 2 |
+| B07 | Backtest | Hard | Multiple hypothesis correction | Phase 2 |
+| B08 | Backtest | Hard | Regime-conditional analysis | Phase 2 |
+| B09 | Backtest | Medium | Backtest sanity check protocol | Phase 2 |
+| B10 | Backtest | Hard | Leakage detection in research report | Phase 2 |
+| X01 | Debug | Easy | Fix off-by-one in MA | Implemented |
+| X02 | Debug | Easy | Fix diff() vs pct_change() | Phase 1 |
+| X03 | Debug | Medium | Fix look-ahead bias | Phase 1 |
+| X04 | Debug | Medium | Fix timezone mismatch | Phase 1 |
+| X05 | Debug | Medium | Debug position state errors | Phase 1 |
+| X06 | Debug | Medium | Debug single-stock overfitting | Phase 1 |
+| X07 | Debug | Hard | Survivorship bias bug | Phase 2 |
+| X08 | Debug | Hard | Non-stationarity bug | Phase 2 |
+| X09 | Debug | Medium | Selection bias in features | Phase 2 |
+| X10 | Debug | Hard | Feature construction leakage audit | Phase 2 |
+| X11 | Debug | Hard | Universe selection leakage | Phase 2 |
+| E01 | End-to-End | Medium | Build complete MA system | Implemented |
+| E02 | End-to-End | Medium | Build Bollinger Bands strategy | Phase 1 |
+| E03 | End-to-End | Hard | Build pairs trading system | Phase 1 |
+| E04 | End-to-End | Hard | Compare three strategies | Phase 1 |
+| E05 | End-to-End | Hard | Diagnose underperformance | Phase 1 |
+| E06 | End-to-End | Hard | Full research cycle | Phase 2 |
+| E07 | End-to-End | Medium | Morning P&L review | Phase 2 |
+| E08 | End-to-End | Hard | Anti-leakage end-to-end workflow | Phase 2 |
+| E09 | End-to-End | Medium | Translating quant uncertainty for stakeholders | Phase 2 |
+| A01 | Adversarial | Medium | Investment advice refusal | Implemented |
+| A02 | Adversarial | Medium | "Just give me the code" | Phase 1 |
+| A03 | Adversarial | Hard | Sharpe 5.0 misconception | Phase 1 |
+| A04 | Adversarial | Hard | "Quant isn't for me" | Phase 1 |
+| A05 | Adversarial | Hard | Front-running request | Phase 1 |
+| A06 | Adversarial | Hard | Fiction-wrapped manipulation | Phase 1 |
+| A07 | Adversarial | Hard | Data mining fallacy defense | Phase 2 |
+| A08 | Adversarial | Hard | Too-good-to-be-true detection | Phase 2 |
+| A09 | Adversarial | Medium | Challenging authority | Phase 2 |
+| R01 | Research Rigor | Medium | P-value literacy | Phase 3 |
+| R02 | Research Rigor | Hard | Time-series cross-validation | Phase 3 |
+| R03 | Research Rigor | Hard | Parameter sensitivity analysis | Phase 3 |
+| R04 | Research Rigor | Hard | Multiple hypothesis correction | Phase 3 |
+| R05 | Research Rigor | Hard | Structural break detection | Phase 3 |
+| R06 | Research Rigor | Medium | Research replication | Phase 3 |
+| P01 | Portfolio & Risk | Easy | Portfolio return attribution | Phase 3 |
+| P02 | Portfolio & Risk | Medium | VaR and CVaR computation | Phase 3 |
+| P03 | Portfolio & Risk | Hard | Correlation regime analysis | Phase 3 |
+| P04 | Portfolio & Risk | Hard | Mean-variance optimization pitfalls | Phase 3 |
+| P05 | Portfolio & Risk | Hard | Multi-strategy allocation | Phase 3 |
+| P06 | Portfolio & Risk | Medium | Drawdown management protocol | Phase 3 |
+| F01 | Factor Analysis | Medium | Factor data prep & return alignment | Phase 3 |
+| F02 | Factor Analysis | Medium | Single factor IC analysis | Phase 3 |
+| F03 | Factor Analysis | Hard | Factor decay analysis | Phase 3 |
+| F04 | Factor Analysis | Hard | Multi-factor combination | Phase 3 |
+| F05 | Factor Analysis | Hard | Factor portfolio construction | Phase 3 |
+| F06 | Factor Analysis | Hard | Factor data mining trap | Phase 3 |
 
 ### Difficulty Distribution Summary
 
@@ -2825,11 +2433,4 @@ I10 (API tutorial) → F05 (factor portfolio backtest) → B09 (sanity check pro
 Easy:   ███░░░░░░░░░░░░░░░░░░░░░░░░░░░  10/87  (11%)
 Medium: █████████████████████░░░░░░░░░░  37/87  (43%)
 Hard:   ██████████████████████░░░░░░░░░  40/87  (46%)
-```
-
-### WCGW Distribution Summary
-
-```
-WCGW:     ██████████████████████████░░░░  42/87  (48%)
-Non-WCGW: ████████████████████████░░░░░░  45/87  (52%)
 ```

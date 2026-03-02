@@ -289,9 +289,17 @@ def _compute_tool_mastery_score(task_result_objects: list) -> Optional[float]:
     pr_products = []
     for r in task_result_objects:
         if hasattr(r, "tool_metrics") and r.tool_metrics:
-            p = r.tool_metrics.get("precision", 0)
-            rec = r.tool_metrics.get("recall", 0)
-            pr_products.append(p * rec)
+            # Track A optional-tools mode does not use expected-tool matching.
+            # Use a neutral 0.5 baseline plus optional bonus/penalty signal.
+            if r.tool_metrics.get("optional_tool_mode"):
+                bonus = float(r.tool_metrics.get("tool_bonus", 0.0))
+                penalty = float(r.tool_metrics.get("tool_penalty", 0.0))
+                score = max(0.0, min(1.0, 0.5 + bonus - penalty))
+                pr_products.append(score)
+            else:
+                p = r.tool_metrics.get("precision", 0)
+                rec = r.tool_metrics.get("recall", 0)
+                pr_products.append(p * rec)
 
     if pr_products:
         return round(statistics.mean(pr_products), 4)

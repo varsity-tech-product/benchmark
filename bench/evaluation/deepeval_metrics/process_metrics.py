@@ -972,6 +972,7 @@ def evaluate_all_process_metrics(
     enriched_test_case=None,
     model: Optional[str] = None,
     tool_schemas: Optional[list[dict]] = None,
+    optional_tool_bonus_mode: bool = False,
 ) -> dict:
     """Run all process-level DeepEval metrics in parallel and return consolidated results.
 
@@ -992,6 +993,8 @@ def evaluate_all_process_metrics(
             Falls back to conversational_test_case if not provided.
         model: LLM judge model.
         tool_schemas: Full tool schema dicts from proxy.get_available_tools().
+        optional_tool_bonus_mode: Track A mode where tool usage is optional and
+            not matched against expected-tool lists.
 
     Returns:
         Dict with per-metric scores and an aggregate process score.
@@ -1010,8 +1013,9 @@ def evaluate_all_process_metrics(
             if tc.chatbot_role is None:
                 tc.chatbot_role = "quantitative finance tutor"
 
-    # Detect adversarial task (no expected tools)
-    is_adversarial = len(expected_tool_names) == 0
+    # Adversarial mode (strict no-tool expectation) unless Track A optional mode.
+    is_adversarial = len(expected_tool_names) == 0 and not optional_tool_bonus_mode
+    is_optional_tool_mode = optional_tool_bonus_mode
 
     # Build all async tasks
     tasks = {}
@@ -1027,6 +1031,29 @@ def evaluate_all_process_metrics(
         )
         tasks["mcp_use"] = _adversarial_skip(
             "Adversarial task: tool usage not expected"
+        )
+        tasks["step_efficiency"] = _async_eval_step_efficiency(
+            task_description,
+            actual_output,
+            proxy_logs,
+            model,
+        )
+    elif is_optional_tool_mode:
+        # Track A: no expected tool list/order checks.
+        tasks["tool_correctness"] = _adversarial_skip(
+            "Track A optional-tools mode: no expected-tool list"
+        )
+        tasks["argument_correctness"] = _adversarial_skip(
+            "Track A optional-tools mode: no expected-tool arguments to match"
+        )
+        tasks["mcp_use"] = _async_eval_mcp_use(
+            task_description,
+            actual_output,
+            proxy_logs,
+            core_tools,
+            distractor_tools,
+            model,
+            tool_schemas=tool_schemas,
         )
         tasks["step_efficiency"] = _async_eval_step_efficiency(
             task_description,
@@ -1148,6 +1175,10 @@ def evaluate_all_process_metrics(
     if is_adversarial:
         print(
             "      (adversarial mode: tool_correctness/argument_correctness/mcp_use skipped)"
+        )
+    elif is_optional_tool_mode:
+        print(
+            "      (track-a optional mode: tool_correctness/argument_correctness skipped)"
         )
 
     return results

@@ -489,15 +489,36 @@ class BenchmarkOrchestrator:
             if eval_script.exists():
                 try:
                     import importlib.util
+                    import inspect
 
                     spec = importlib.util.spec_from_file_location(
                         "eval_module", str(eval_script)
                     )
                     module = importlib.util.module_from_spec(spec)
                     spec.loader.exec_module(module)
-                    eval_result = module.evaluate(
-                        workspace_path, proxy.to_dict(), conversation
+                    eval_context = {
+                        "persona_id": persona.persona_id,
+                        "persona_level": persona.knowledge_level,
+                        "task_id": task.task_id,
+                        "task_tags": list(task.tags or []),
+                        "category": task.category.value,
+                    }
+                    sig = inspect.signature(module.evaluate)
+                    params = sig.parameters
+                    supports_eval_context = "eval_context" in params or any(
+                        p.kind == inspect.Parameter.VAR_KEYWORD for p in params.values()
                     )
+                    if supports_eval_context:
+                        eval_result = module.evaluate(
+                            workspace_path,
+                            proxy.to_dict(),
+                            conversation,
+                            eval_context=eval_context,
+                        )
+                    else:
+                        eval_result = module.evaluate(
+                            workspace_path, proxy.to_dict(), conversation
+                        )
                     results["quant_result"] = eval_result.get("score", 0.0)
                 except Exception as e:
                     results["quant_result_error"] = str(e)
@@ -508,9 +529,11 @@ class BenchmarkOrchestrator:
         # 3a: Manual tool precision/recall (always available)
         from evaluation.deepeval_metrics.mcp_metrics import (
             check_required_capabilities,
+            compute_optional_tool_value,
             compute_tool_precision_recall,
         )
 
+        track_a_optional_tools = "track_a_optional_tools" in (task.tags or [])
         called_tool_names = proxy.get_tool_names_called()
         tool_metrics = compute_tool_precision_recall(
             called_tools=called_tool_names,
@@ -533,7 +556,33 @@ class BenchmarkOrchestrator:
         tool_metrics["capability_completion"] = cap_check["capability_completion"]
         tool_metrics["capabilities_met"] = cap_check["met"]
         tool_metrics["capabilities_total"] = cap_check["total"]
+
+        optional_tool_value = {}
+        if track_a_optional_tools:
+            optional_tool_value = compute_optional_tool_value(
+                proxy_logs=proxy.get_logs(),
+                core_tools=task.environment.core_mcp_tools,
+                distractor_tools=task.environment.distractor_mcp_tools_pool,
+            )
+            tool_metrics["optional_tool_mode"] = True
+            tool_metrics.update(
+                {
+                    "tool_bonus": optional_tool_value.get("bonus", 0.0),
+                    "tool_penalty": optional_tool_value.get("penalty", 0.0),
+                    "tool_value_score": optional_tool_value.get(
+                        "tool_value_score", 0.0
+                    ),
+                    "used_tools": optional_tool_value.get("used_tools", False),
+                }
+            )
+
         results["tool_metrics"] = tool_metrics
+
+        def _track_a_process_score(base_score: float) -> float:
+            bonus = float(optional_tool_value.get("bonus", 0.0))
+            penalty = float(optional_tool_value.get("penalty", 0.0))
+            qp = float(base_score) + bonus - penalty
+            return round(max(0.0, min(1.0, qp)), 4)
 
         # 3b: DeepEval process-level metrics
         if self.use_deepeval:
@@ -559,23 +608,33 @@ class BenchmarkOrchestrator:
                     enriched_test_case=conversational_test_case,
                     model=self.eval_model,
                     tool_schemas=proxy.get_available_tools(),
+                    optional_tool_bonus_mode=track_a_optional_tools,
                 )
                 results["process_metrics"] = process_results
 
-                # Combine: 50% tool F1 + 50% DeepEval aggregate
-                # F1 balances precision (avoid distractor calls) and recall
-                # (cover expected tools). Distractor tools are traps that
-                # always return errors — agents must learn to avoid them.
                 deepeval_process = process_results.get("aggregate_process_score", 0.5)
-                tool_score = tool_metrics["f1"]
-                results["quant_process"] = round(
-                    0.5 * tool_score + 0.5 * deepeval_process, 4
-                )
+                if track_a_optional_tools:
+                    results["quant_process"] = _track_a_process_score(deepeval_process)
+                else:
+                    # Combine: 50% tool F1 + 50% DeepEval aggregate
+                    # F1 balances precision (avoid distractor calls) and recall
+                    # (cover expected tools). Distractor tools are traps that
+                    # always return errors — agents must learn to avoid them.
+                    tool_score = tool_metrics["f1"]
+                    results["quant_process"] = round(
+                        0.5 * tool_score + 0.5 * deepeval_process, 4
+                    )
             except Exception as e:
                 results["process_eval_error"] = str(e)
-                results["quant_process"] = tool_metrics["f1"]
+                if track_a_optional_tools:
+                    results["quant_process"] = _track_a_process_score(0.5)
+                else:
+                    results["quant_process"] = tool_metrics["f1"]
         else:
-            results["quant_process"] = tool_metrics["f1"]
+            if track_a_optional_tools:
+                results["quant_process"] = _track_a_process_score(0.5)
+            else:
+                results["quant_process"] = tool_metrics["f1"]
 
         # ── Step 4: Tutor Quality Score (7D ConversationalGEval) ──
         print("  Evaluating Tutor Quality (7D rubric, 3x shuffled)...")
