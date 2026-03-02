@@ -79,6 +79,10 @@ No remaining gaps in the current Tier-1 Data Foundation catalog (`D01-D11`).
 
 ## 7. Known Runtime Constraint
 
-Default sandbox is network-restricted (`--network none`), so true live API execution requires either:
-- local fallback mode without Docker networking restrictions, or
-- a network-enabled sandbox profile for ingestion tasks.
+Default sandbox is network-restricted (`--network none`) unless explicitly enabled by task config.
+
+Current exception:
+- `D10_historical_data_fetch` and `D11_realtime_data_fetch` set `environment.network_enabled: true`
+- These two tasks run with network-enabled Docker sandbox and support MCP `search_web` as a core tool.
+
+All other Data Foundation tasks remain offline by default for reproducibility.

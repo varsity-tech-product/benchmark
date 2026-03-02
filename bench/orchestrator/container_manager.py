@@ -23,6 +23,8 @@ class ContainerInfo:
     container_id: str
     workspace_path: str
     task_id: str
+    network_enabled: bool = False
+    network_mode: str = "none"
 
 
 class ContainerManager:
@@ -86,6 +88,7 @@ class ContainerManager:
         docs_dir: str,
         student_code_dir: Optional[str] = None,
         sandbox_image: Optional[str] = None,
+        network_enabled: bool = False,
     ) -> ContainerInfo:
         """Create a sandboxed Docker container (or local workspace fallback).
 
@@ -110,9 +113,11 @@ class ContainerManager:
             if student_code_dir:
                 mounts.append(f"-v {student_code_dir}:/student_code:ro")
 
+            network_flag = "--network bridge" if network_enabled else "--network none"
+            network_mode = "bridge" if network_enabled else "none"
             cmd = (
                 f"docker run -d --name qtb_{task_id}_{int(time.time())} "
-                f"--network none --cpus 2 --memory 4g "
+                f"{network_flag} --cpus 2 --memory 4g "
                 f"{' '.join(mounts)} "
                 f"{image} sleep infinity"
             )
@@ -120,9 +125,16 @@ class ContainerManager:
             container_id = result.stdout.strip()[:12]
         else:
             container_id = f"local_{task_id}_{int(time.time())}"
+            # Local fallback cannot enforce isolation; use host networking semantics.
+            network_mode = "host"
+            network_enabled = True
 
         info = ContainerInfo(
-            container_id=container_id, workspace_path=workspace, task_id=task_id
+            container_id=container_id,
+            workspace_path=workspace,
+            task_id=task_id,
+            network_enabled=network_enabled,
+            network_mode=network_mode,
         )
         self._containers[container_id] = info
         self._workspaces[container_id] = workspace
@@ -132,10 +144,12 @@ class ContainerManager:
         self, container_id: str, command: str, timeout: int = 30
     ) -> ExecResult:
         if self.use_docker and not container_id.startswith("local_"):
-            cmd = f'docker exec {container_id} bash -c "{command}"'
             try:
                 result = subprocess.run(
-                    cmd, shell=True, capture_output=True, text=True, timeout=timeout
+                    ["docker", "exec", container_id, "bash", "-lc", command],
+                    capture_output=True,
+                    text=True,
+                    timeout=timeout,
                 )
                 return ExecResult(
                     stdout=result.stdout,

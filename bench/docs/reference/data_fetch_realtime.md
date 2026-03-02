@@ -10,6 +10,12 @@ Create:
 
 The CSV should contain timestamped updates captured during runtime (not static historical dumps).
 
+## Runtime Notes
+
+- This task runs in a network-enabled sandbox.
+- MCP `search_web` can be used to locate provider docs/status pages quickly.
+- `search_docs` remains available for this local reference file.
+
 ## Suggested Free/Free-Tier Realtime Sources
 
 | API | Realtime Mode | Official Docs | Auth |

@@ -66,6 +66,9 @@ class EnvironmentConfig(BaseModel):
     num_distractors: int = 5
     docs_available: list[str] = Field(default_factory=list)
     sandbox_image: str = "quant-tutor-env:v1.0"
+    # Whether this task requires outbound internet access inside the sandbox.
+    # Default is False for reproducibility/safety.
+    network_enabled: bool = False
 
 
 class QuantTutorTask(BaseModel):
@@ -161,6 +164,7 @@ class TaskResult(BaseModel):
     process_metrics: dict = Field(
         default_factory=dict
     )  # DeepEval process metric scores
+    sandbox_info: dict = Field(default_factory=dict)
     cost_usd: float = 0.0
     duration_seconds: float = 0.0
     error: Optional[str] = None

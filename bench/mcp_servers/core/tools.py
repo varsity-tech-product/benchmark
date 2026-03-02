@@ -472,6 +472,77 @@ def analyze_backtest_results(data_path: str, returns_column: str = "returns") ->
     )
 
 
+def search_web(query: str, max_results: int = 5) -> str:
+    """Search the public web using DuckDuckGo's instant answer endpoint."""
+    from urllib.parse import urlencode
+    from urllib.request import urlopen
+
+    if not query or not query.strip():
+        return "Error: query must be non-empty."
+
+    max_results = max(1, min(int(max_results or 5), 10))
+    params = urlencode(
+        {
+            "q": query,
+            "format": "json",
+            "no_html": "1",
+            "no_redirect": "1",
+            "skip_disambig": "1",
+        }
+    )
+    url = f"https://api.duckduckgo.com/?{params}"
+
+    try:
+        with urlopen(url, timeout=10) as response:
+            payload = json.loads(response.read().decode("utf-8", errors="ignore"))
+    except Exception as exc:
+        return f"Error: web search failed: {type(exc).__name__}: {exc}"
+
+    results = []
+    abstract = str(payload.get("AbstractText", "")).strip()
+    abstract_url = str(payload.get("AbstractURL", "")).strip()
+    if abstract:
+        results.append(
+            {
+                "title": payload.get("Heading") or query,
+                "url": abstract_url,
+                "snippet": abstract,
+                "source": "abstract",
+            }
+        )
+
+    def _collect_topics(items):
+        for item in items:
+            if len(results) >= max_results:
+                return
+            if isinstance(item, dict) and item.get("Topics"):
+                _collect_topics(item.get("Topics") or [])
+                continue
+            text = str(item.get("Text", "")).strip() if isinstance(item, dict) else ""
+            first_url = (
+                str(item.get("FirstURL", "")).strip() if isinstance(item, dict) else ""
+            )
+            if text:
+                results.append(
+                    {
+                        "title": text.split(" - ")[0][:120],
+                        "url": first_url,
+                        "snippet": text,
+                        "source": "related_topic",
+                    }
+                )
+
+    _collect_topics(payload.get("RelatedTopics") or [])
+
+    if not results:
+        return json.dumps(
+            {"query": query, "results": [], "note": "No web results returned."},
+            indent=2,
+        )
+
+    return json.dumps({"query": query, "results": results[:max_results]}, indent=2)
+
+
 def search_docs(query: str) -> str:
     """Full-text search across the /docs/ directory."""
     results = []
@@ -724,6 +795,22 @@ CORE_TOOLS = {
             "returns_column": {
                 "type": "string",
                 "description": "Name of the returns column. Auto-detects from common names (returns, daily_return, strategy_return, pnl) if omitted. If only 'Close' exists, daily returns are computed automatically.",
+                "required": False,
+            },
+        },
+    },
+    "search_web": {
+        "func": search_web,
+        "description": "Search the public web for official references and API documentation. Returns compact JSON results (title/url/snippet).",
+        "params": {
+            "query": {
+                "type": "string",
+                "description": "Search query string, e.g. 'FRED API observations endpoint'",
+                "required": True,
+            },
+            "max_results": {
+                "type": "integer",
+                "description": "Maximum result count (1-10). Default: 5.",
                 "required": False,
             },
         },

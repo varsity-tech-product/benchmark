@@ -11,6 +11,12 @@ Build a Python data pull that creates exactly:
 
 Do not use local frozen benchmark CSV files for this task.
 
+## Runtime Notes
+
+- This task runs in a network-enabled sandbox.
+- MCP `search_web` can be used to find official provider documentation quickly.
+- `search_docs` remains available for this local reference file.
+
 ## Suggested Free Data Sources
 
 Use any one market-price source and any one macro source.

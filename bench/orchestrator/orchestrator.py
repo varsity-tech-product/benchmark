@@ -134,6 +134,9 @@ class BenchmarkOrchestrator:
             )
 
             # 1b. Create sandbox container (Docker or local fallback)
+            requested_network = (
+                bool(task.environment.network_enabled) if task.environment else False
+            )
             container = self.container_manager.create_container(
                 task_id=f"{task.task_id}_{persona.persona_id}_{run_index}",
                 data_dir=staged_data_dir,
@@ -144,7 +147,29 @@ class BenchmarkOrchestrator:
                 sandbox_image=(
                     task.environment.sandbox_image if task.environment else None
                 ),
+                network_enabled=requested_network,
             )
+            result.sandbox_info = {
+                "requested_network_enabled": requested_network,
+                "effective_network_enabled": bool(container.network_enabled),
+                "network_mode": container.network_mode,
+                "use_docker": bool(self.container_manager.use_docker),
+            }
+            print(
+                f"  Sandbox network: requested={requested_network} "
+                f"effective={container.network_enabled} mode={container.network_mode}"
+            )
+            if requested_network:
+                probe = self._probe_container_network(container.container_id)
+                result.sandbox_info["network_probe"] = probe
+                print(
+                    "  Network probe:",
+                    (
+                        "ok"
+                        if probe.get("ok")
+                        else f"failed ({probe.get('error', 'unknown')})"
+                    ),
+                )
 
             # 1c. Set environment vars for tool implementations (lazy reads in tools.py)
             os.environ["QTB_DATA_DIR"] = staged_data_dir
@@ -685,6 +710,22 @@ class BenchmarkOrchestrator:
                 results["tutor_scores"][dim] = 0.5
 
         return results
+
+    def _probe_container_network(self, container_id: str) -> dict:
+        """Probe outbound network access for progress/result recording."""
+        probe_cmd = (
+            'python -c "import urllib.request; '
+            "urllib.request.urlopen('https://example.com', timeout=5).read(64); "
+            "print('ok')\""
+        )
+        exec_result = self.container_manager.exec_in_container(
+            container_id, probe_cmd, timeout=10
+        )
+        ok = exec_result.exit_code == 0 and "ok" in (exec_result.stdout or "").lower()
+        if ok:
+            return {"ok": True}
+        details = (exec_result.stderr or exec_result.stdout or "").strip()
+        return {"ok": False, "error": details[:300]}
 
     def _create_staged_dirs(
         self,

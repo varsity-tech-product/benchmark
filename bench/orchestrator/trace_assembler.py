@@ -239,6 +239,7 @@ def task_result_to_eval_payload(
             "tutor_scores": task_result.tutor_scores,
             "overall": task_result.overall_score,
         },
+        "sandbox_info": getattr(task_result, "sandbox_info", {}),
     }
 
     return payload
