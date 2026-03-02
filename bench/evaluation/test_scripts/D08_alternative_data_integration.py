@@ -1,4 +1,4 @@
-"""Evaluation script for D11: Realtime Data Fetch (Track A hybrid)."""
+"""Evaluation script for D08: Alternative Data Integration."""
 
 import json
 import sys
@@ -11,9 +11,9 @@ if str(BENCH_ROOT) not in sys.path:
 from evaluation.test_scripts._track_a_hybrid_eval import evaluate_track_a_hybrid
 
 PERSONA_RULES = {
-    "beginner": ["new to", "beginner", "simple terms"],
-    "intermediate": ["ingestion example", "implementation", "out-of-order"],
-    "advanced": ["execution-ready realtime capture script", "microstructure caveats"],
+    "beginner": ["new to", "beginner", "simple terms", "plain language"],
+    "intermediate": ["integrate", "join", "pipeline", "implementation"],
+    "advanced": ["ic", "information coefficient", "as-of", "methodology"],
 }
 
 ADAPTATION_MARKERS = {
@@ -24,42 +24,47 @@ ADAPTATION_MARKERS = {
         "let's break this down",
         "quick checklist",
     ],
-    "beginner_weak": ["simple", "for example"],
+    "beginner_weak": ["simple", "for example", "intuition"],
     "beginner_min_strong": 1,
     "beginner_min_total": 2,
     "intermediate_markers": [
-        "websocket",
-        "polling",
-        "implementation",
-        "validation checklist",
-        "timestamp",
-        "deduplicate",
+        "merge",
+        "join",
+        "lag",
+        "normalization",
+        "alignment",
+        "pipeline",
     ],
     "intermediate_min": 2,
     "advanced_markers": [
-        "microstructure",
-        "bid-ask",
-        "trade vs quote",
-        "latency",
-        "out-of-order",
-        "session boundary",
-        "timezone normalization",
+        "information coefficient",
+        "rank ic",
+        "as-of",
+        "publication lag",
+        "point-in-time",
+        "base rate",
     ],
     "advanced_min": 3,
     "fallback_markers": [
-        "step by step",
+        "lag",
+        "alignment",
+        "ic",
         "checklist",
-        "latency",
-        "bid-ask",
-        "timezone",
     ],
     "fallback_min": 2,
 }
 
 CONCEPT_BUCKETS = [
-    ["quote", "trade", "bid", "ask", "spread", "mid-price", "trade vs quote"],
-    ["latency", "out-of-order", "stale", "duplicate", "sequencing"],
-    ["timezone", "utc", "market hours", "premarket", "after-hours", "session"],
+    ["frequency mismatch", "join", "merge", "lag", "as-of", "alignment"],
+    ["normalize", "z-score", "winsor", "standardize", "missing sentiment"],
+    [
+        "information coefficient",
+        "ic",
+        "spearman",
+        "rank correlation",
+        "predictive power",
+        "base rate",
+    ],
 ]
 
 
@@ -69,7 +74,7 @@ def evaluate(
     conversation: list = None,
     eval_context: dict = None,
 ) -> dict:
-    """Evaluate tutoring quality plus runnable-code evidence for D11."""
+    """Evaluate tutoring quality plus executable-code evidence for D08."""
     return evaluate_track_a_hybrid(
         workspace_path=workspace_path,
         tool_logs=tool_logs,

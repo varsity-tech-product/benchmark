@@ -1,4 +1,4 @@
-"""Evaluation script for D11: Realtime Data Fetch (Track A hybrid)."""
+"""Evaluation script for D02: Missing Data Detection & Handling."""
 
 import json
 import sys
@@ -11,9 +11,9 @@ if str(BENCH_ROOT) not in sys.path:
 from evaluation.test_scripts._track_a_hybrid_eval import evaluate_track_a_hybrid
 
 PERSONA_RULES = {
-    "beginner": ["new to", "beginner", "simple terms"],
-    "intermediate": ["ingestion example", "implementation", "out-of-order"],
-    "advanced": ["execution-ready realtime capture script", "microstructure caveats"],
+    "beginner": ["new to", "beginner", "simple terms", "plain language"],
+    "intermediate": ["pandas", "pipeline", "dataframe", "implementation"],
+    "advanced": ["calendar-aware", "methodology", "production", "audit"],
 }
 
 ADAPTATION_MARKERS = {
@@ -24,42 +24,40 @@ ADAPTATION_MARKERS = {
         "let's break this down",
         "quick checklist",
     ],
-    "beginner_weak": ["simple", "for example"],
+    "beginner_weak": ["simple", "for example", "don't worry"],
     "beginner_min_strong": 1,
     "beginner_min_total": 2,
     "intermediate_markers": [
-        "websocket",
-        "polling",
-        "implementation",
+        "pandas",
+        "isna",
+        "notna",
         "validation checklist",
-        "timestamp",
-        "deduplicate",
+        "pipeline",
+        "data quality checks",
     ],
     "intermediate_min": 2,
     "advanced_markers": [
-        "microstructure",
-        "bid-ask",
-        "trade vs quote",
-        "latency",
-        "out-of-order",
-        "session boundary",
-        "timezone normalization",
+        "trading calendar",
+        "holiday",
+        "imputation bias",
+        "point-in-time",
+        "audit trail",
+        "corporate action",
     ],
     "advanced_min": 3,
     "fallback_markers": [
         "step by step",
         "checklist",
-        "latency",
-        "bid-ask",
-        "timezone",
+        "missing values",
+        "holiday",
     ],
     "fallback_min": 2,
 }
 
 CONCEPT_BUCKETS = [
-    ["quote", "trade", "bid", "ask", "spread", "mid-price", "trade vs quote"],
-    ["latency", "out-of-order", "stale", "duplicate", "sequencing"],
-    ["timezone", "utc", "market hours", "premarket", "after-hours", "session"],
+    ["missing", "isna", "null", "nan", "missingness"],
+    ["holiday", "weekend", "trading calendar", "business day", "date gap"],
+    ["dropna", "ffill", "bfill", "interpolate", "imputation", "fillna"],
 ]
 
 
@@ -69,7 +67,7 @@ def evaluate(
     conversation: list = None,
     eval_context: dict = None,
 ) -> dict:
-    """Evaluate tutoring quality plus runnable-code evidence for D11."""
+    """Evaluate tutoring quality plus executable-code evidence for D02."""
     return evaluate_track_a_hybrid(
         workspace_path=workspace_path,
         tool_logs=tool_logs,

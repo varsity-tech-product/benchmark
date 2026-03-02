@@ -1,4 +1,4 @@
-"""Evaluation script for D11: Realtime Data Fetch (Track A hybrid)."""
+"""Evaluation script for D04: OHLCV Summary Statistics."""
 
 import json
 import sys
@@ -11,9 +11,9 @@ if str(BENCH_ROOT) not in sys.path:
 from evaluation.test_scripts._track_a_hybrid_eval import evaluate_track_a_hybrid
 
 PERSONA_RULES = {
-    "beginner": ["new to", "beginner", "simple terms"],
-    "intermediate": ["ingestion example", "implementation", "out-of-order"],
-    "advanced": ["execution-ready realtime capture script", "microstructure caveats"],
+    "beginner": ["new to", "beginner", "simple terms", "plain language"],
+    "intermediate": ["pandas", "statistics", "implementation", "dataframe"],
+    "advanced": ["distribution", "robust", "methodology", "diagnostics"],
 }
 
 ADAPTATION_MARKERS = {
@@ -24,42 +24,54 @@ ADAPTATION_MARKERS = {
         "let's break this down",
         "quick checklist",
     ],
-    "beginner_weak": ["simple", "for example"],
+    "beginner_weak": ["simple", "for example", "intuition"],
     "beginner_min_strong": 1,
     "beginner_min_total": 2,
     "intermediate_markers": [
-        "websocket",
-        "polling",
-        "implementation",
-        "validation checklist",
-        "timestamp",
-        "deduplicate",
+        "describe",
+        "mean",
+        "std",
+        "quantile",
+        "groupby",
+        "pandas",
     ],
     "intermediate_min": 2,
     "advanced_markers": [
-        "microstructure",
-        "bid-ask",
-        "trade vs quote",
-        "latency",
-        "out-of-order",
-        "session boundary",
-        "timezone normalization",
+        "skew",
+        "kurtosis",
+        "outlier diagnostics",
+        "distributional",
+        "robust statistics",
+        "microstructure noise",
     ],
     "advanced_min": 3,
     "fallback_markers": [
-        "step by step",
-        "checklist",
-        "latency",
-        "bid-ask",
-        "timezone",
+        "summary statistics",
+        "mean",
+        "std",
+        "volume",
     ],
     "fallback_min": 2,
 }
 
 CONCEPT_BUCKETS = [
-    ["quote", "trade", "bid", "ask", "spread", "mid-price", "trade vs quote"],
-    ["latency", "out-of-order", "stale", "duplicate", "sequencing"],
-    ["timezone", "utc", "market hours", "premarket", "after-hours", "session"],
+    [
+        "describe()",
+        "descriptive statistics",
+        "central tendency",
+        "median",
+        "std deviation",
+        "quantiles",
+    ],
+    [
+        "daily range",
+        "high-low",
+        "price range",
+        "high-low spread",
+        "volume spike",
+        "volume distribution",
+    ],
+    ["outlier", "skew", "kurtosis", "histogram", "distribution"],
 ]
 
 
@@ -69,7 +81,7 @@ def evaluate(
     conversation: list = None,
     eval_context: dict = None,
 ) -> dict:
-    """Evaluate tutoring quality plus runnable-code evidence for D11."""
+    """Evaluate tutoring quality plus executable-code evidence for D04."""
     return evaluate_track_a_hybrid(
         workspace_path=workspace_path,
         tool_logs=tool_logs,

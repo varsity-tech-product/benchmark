@@ -11,6 +11,12 @@ data/
 *.jsonl
 *.zst
 
+# Keep benchmark frozen fixtures trackable (used by layer2 tasks)
+!bench/data/
+!bench/data/frozen/
+!bench/data/frozen/tick_data_sample.csv
+!bench/data/frozen/sentiment_data.csv
+
 # Python
 __pycache__/
 *.py[cod]
