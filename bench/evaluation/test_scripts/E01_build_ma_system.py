@@ -79,7 +79,7 @@ def evaluate(
     # --- Tool logs (tool-name agnostic) ---
     if tool_logs:
         for log in tool_logs:
-            output = str(log.get("result", ""))
+            output = str(log.result or "")
 
             # Metric values in output
             if re.search(r"[Ss]harpe.*?-?\d+\.?\d*", output):
@@ -97,8 +97,8 @@ def evaluate(
             if re.search(r"(signal|crossover|buy|sell)", output, re.IGNORECASE):
                 results["system_produces_signals"] = True
 
-            # Check input_args for code artifacts
-            for key, value in log.get("input_args", {}).items():
+            # Check args for code artifacts
+            for key, value in log.args.items():
                 text = str(value)
                 if any(re.search(p, text, re.IGNORECASE) for p in signal_patterns):
                     results["system_produces_signals"] = True
@@ -107,9 +107,9 @@ def evaluate(
                     results["system_produces_signals"] = True
 
             # Indicator computation counts as signal evidence
-            for key, value in log.get("input_args", {}).items():
+            for key, value in log.args.items():
                 if str(value).upper() in ("SMA", "EMA", "MACD"):
-                    if log.get("success", False):
+                    if log.success:
                         results["system_produces_signals"] = True
 
     score = sum(

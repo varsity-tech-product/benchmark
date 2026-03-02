@@ -10,7 +10,7 @@ Design doc §6.4: Benchmark-Level KPIs
     QAI  = Quant Agent Index (average quant scores)
     TEI  = Tutoring Effectiveness Index (average tutor rubric scores)
     AS   = Adaptiveness Score (tutor score variance across persona variants)
-    TMS  = Tool Mastery Score (average tool precision × recall)
+    PMS  = Process Mastery Score (average process quality score)
 
 Design doc §6.5: Statistical Reporting
     pass@k and pass^k for each difficulty level
@@ -47,7 +47,7 @@ def compute_task_score(
 
     Args:
         quant_result_score: Score from eval scripts (0-1).
-        quant_process_score: Score from DeepEval MCP metrics + tool precision/recall (0-1).
+        quant_process_score: Score from reformed process metrics (0-1).
         tutor_dimension_scores: Dict of dimension_name -> score (0-1).
         category: TaskCategory.value for per-category tutor dimension weighting.
 
@@ -84,7 +84,7 @@ def compute_benchmark_kpis(
 ) -> dict:
     """Compute benchmark-level KPIs from all task results.
 
-    Design doc §6.4: OAS, QAI, TEI, AS, TMS, Difficulty Curve.
+    Design doc §6.4: OAS, QAI, TEI, AS, PMS, Difficulty Curve.
 
     Args:
         task_results: List of task score dicts from compute_task_score.
@@ -124,11 +124,11 @@ def compute_benchmark_kpis(
         if as_score is not None:
             kpis["adaptiveness_score"] = as_score
 
-    # §6.4: Tool Mastery Score (TMS) — average tool precision × recall
+    # §6.4: Process Mastery Score (PMS) — average process quality score
     if task_result_objects:
-        tms = _compute_tool_mastery_score(task_result_objects)
-        if tms is not None:
-            kpis["tool_mastery_score"] = tms
+        pms = _compute_process_mastery_score(task_result_objects)
+        if pms is not None:
+            kpis["process_mastery_score"] = pms
 
     # §6.4: Difficulty Curve — performance by difficulty level
     if task_result_objects:
@@ -179,7 +179,7 @@ def compute_combined_benchmark_kpis(
     layers = layers_evaluated or []
     layer2_task_results = layer2_task_results or []
 
-    # Get Layer 2 base KPIs (AS, TMS, difficulty curve, pass@k)
+    # Get Layer 2 base KPIs (AS, PMS, difficulty curve, pass@k)
     if layer2_task_results:
         base_kpis = compute_benchmark_kpis(
             layer2_task_results,
@@ -278,23 +278,21 @@ def _compute_adaptiveness_score(task_result_objects: list) -> Optional[float]:
     return None
 
 
-def _compute_tool_mastery_score(task_result_objects: list) -> Optional[float]:
-    """Compute Tool Mastery Score: average tool precision × recall.
+def _compute_process_mastery_score(task_result_objects: list) -> Optional[float]:
+    """Compute Process Mastery Score: average process quality across tasks.
 
-    Design doc §6.4: TMS = Average tool precision × recall.
+    Design doc §6.4: PMS = Average quant_process_score (reformed process aggregate).
 
     Returns:
-        Average precision × recall across all tasks, or None.
+        Average quant_process_score across all tasks, or None.
     """
-    pr_products = []
+    scores = []
     for r in task_result_objects:
-        if hasattr(r, "tool_metrics") and r.tool_metrics:
-            p = r.tool_metrics.get("precision", 0)
-            rec = r.tool_metrics.get("recall", 0)
-            pr_products.append(p * rec)
+        if hasattr(r, "quant_process_score"):
+            scores.append(r.quant_process_score)
 
-    if pr_products:
-        return round(statistics.mean(pr_products), 4)
+    if scores:
+        return round(statistics.mean(scores), 4)
     return None
 
 

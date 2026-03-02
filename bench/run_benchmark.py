@@ -246,7 +246,7 @@ def cmd_run(args):
         report.results_by_task = l2_report.results_by_task
         report.total_tasks = l2_report.total_tasks
         report.adaptiveness_score = l2_report.adaptiveness_score
-        report.tool_mastery_score = l2_report.tool_mastery_score
+        report.process_mastery_score = l2_report.process_mastery_score
         report.results_by_difficulty = l2_report.results_by_difficulty
         report.results_by_category = l2_report.results_by_category
         layers_evaluated.append("layer2")
@@ -291,7 +291,7 @@ def cmd_run(args):
             )
     print(f"Tutoring Effectiveness (TEI):    {report.tutoring_effectiveness_index:.4f}")
     print(f"Adaptiveness Score (AS):         {report.adaptiveness_score:.4f}")
-    print(f"Tool Mastery Score (TMS):        {report.tool_mastery_score:.4f}")
+    print(f"Process Mastery Score (PMS):      {report.process_mastery_score:.4f}")
     if "layer1" in layers_evaluated and report.layer1_summary:
         print(
             f"Layer 1 items evaluated:         {report.layer1_summary['total_items']}"
@@ -341,21 +341,46 @@ def cmd_run_single(args):
     print(f"Max turns: {args.max_turns}")
     print()
 
+    # Prepare trace capture hook if --save-trace requested
+    save_trace = getattr(args, "save_trace", False)
+    trace_captured: dict = {}
+
+    if save_trace:
+        import shutil
+
+        model_short = agent.model.split("/")[-1] if "/" in agent.model else agent.model
+        trace_dir = (
+            BENCH_ROOT
+            / "results"
+            / "run-single"
+            / getattr(args, "agent", "generic")
+            / model_short
+            / task.task_id
+            / persona.persona_id
+        )
+        trace_dir.mkdir(parents=True, exist_ok=True)
+        agent_files_dir = trace_dir / "agent_files"
+
+        def _capture_for_trace(*, result, proxy, workspace_path):
+            trace_captured["proxy_logs"] = list(proxy.get_logs())
+            if workspace_path and os.path.isdir(workspace_path):
+                if agent_files_dir.exists():
+                    shutil.rmtree(agent_files_dir)
+                shutil.copytree(workspace_path, str(agent_files_dir))
+
     result = orchestrator.run_single_task(
         task=task,
         persona=persona,
         agent=agent,
         max_turns=args.max_turns or 5,
         tools_enabled=condition.tools_enabled,
+        pre_teardown_hook=_capture_for_trace if save_trace else None,
     )
 
     print(f"\n--- Conversation ({len(result.turns)} turns) ---")
     for turn in result.turns:
         prefix = "Student" if turn.role == "user" else "Tutor"
         print(f"\n[{prefix}]: {turn.content[:200]}...")
-        if turn.tool_calls:
-            for tc in turn.tool_calls:
-                print(f"  -> Tool: {tc.name}({json.dumps(tc.args)[:80]})")
 
     print("\n--- Scores ---")
     print(f"Quant Result:  {result.quant_result_score:.4f}")
@@ -363,22 +388,187 @@ def cmd_run_single(args):
     print(f"Overall:       {result.overall_score:.4f}")
 
     if result.tutor_scores:
-        print("\n--- Tutor Dimension Scores (7D) ---")
+        print("\n--- Tutor Dimension Scores (7D, averaged) ---")
         for dim, score in sorted(result.tutor_scores.items()):
             print(f"  {dim}: {score:.4f}")
 
-    if result.tool_metrics:
-        print("\n--- Tool Metrics ---")
-        for k, v in result.tool_metrics.items():
-            print(f"  {k}: {v:.4f}" if isinstance(v, float) else f"  {k}: {v}")
+    if result.tutor_scores_by_model:
+        print("\n--- Per-Model Tutor Scores ---")
+        for model_name, dim_scores in sorted(result.tutor_scores_by_model.items()):
+            avg = sum(dim_scores.values()) / len(dim_scores) if dim_scores else 0.0
+            print(f"  [{model_name}] avg={avg:.4f}")
+            for dim, score in sorted(dim_scores.items()):
+                print(f"    {dim}: {score:.4f}")
 
     if result.process_metrics:
-        print("\n--- Process Metrics (DeepEval) ---")
-        for k, v in result.process_metrics.items():
-            print(f"  {k}: {v:.4f}" if isinstance(v, float) else f"  {k}: {v}")
+        print("\n--- Process Metrics (QP 7 Dimensions) ---")
+        _QP_METRICS = [
+            "step_efficiency",
+            "process_reasonableness",
+            "process_alignment",
+            "code_process",
+            "role_adherence",
+            "knowledge_retention",
+            "topic_adherence",
+        ]
+        print(f"  {'Metric':<25} {'Score':>8}  {'Status':>6}")
+        print(f"  {'-'*25} {'-'*8}  {'-'*6}")
+        for mn in _QP_METRICS:
+            v = result.process_metrics.get(mn)
+            if v is None:
+                continue
+            if isinstance(v, dict):
+                sc = v.get("score")
+                skipped = v.get("skipped", False)
+                if skipped:
+                    print(f"  {mn:<25} {'N/A':>8}  {'SKIP':>6}")
+                elif sc is not None:
+                    st = "PASS" if v.get("passed") else "FAIL"
+                    print(f"  {mn:<25} {sc:>8.4f}  {st:>6}")
+                else:
+                    print(f"  {mn:<25} {'N/A':>8}  {'?':>6}")
+            elif isinstance(v, (int, float)):
+                print(f"  {mn:<25} {v:>8.4f}")
+        agg = result.process_metrics.get("aggregate_process_score")
+        if agg is not None:
+            print(f"  {'-'*25} {'-'*8}  {'-'*6}")
+            print(f"  {'AGGREGATE':<25} {agg:>8.4f}")
+
+        _pm = result.process_metrics.get("_per_model")
+        if _pm:
+            print("\n  Per-Model QP Breakdown:")
+            for mname in sorted(_pm.keys()):
+                mdata = _pm[mname]
+                short = mname.split("/")[-1] if "/" in mname else mname
+                agg_m = mdata.get("aggregate_process_score", "?")
+                print(f"    [{short}] aggregate={agg_m}")
+                for mn in _QP_METRICS:
+                    ms = mdata.get(mn)
+                    if ms is not None and isinstance(ms, (int, float)):
+                        print(f"      {mn:<25} {ms:>8.4f}")
+                    elif ms is not None:
+                        print(f"      {mn:<25} {ms}")
+
+    if result.code_eval:
+        print("\n--- Code Execution QR ---")
+        ce = result.code_eval
+        print(f"  Applicable: {ce.get('applicable', False)}")
+        if ce.get("applicable"):
+            print(f"  Combined score: {ce.get('score', 0):.4f}")
+            sa = ce.get("static_analysis", {})
+            if sa:
+                print(
+                    f"  Layer A (static):    {sa.get('score', 0):.4f}"
+                    f"  (syntax={'OK' if sa.get('syntax_valid') else 'FAIL'},"
+                    f" files={sa.get('files_analyzed', 0)},"
+                    f" funcs={sa.get('total_functions', 0)})"
+                )
+            ex = ce.get("execution", {})
+            if ex:
+                print(
+                    f"  Layer B (execution): {ex.get('score', 0):.4f}"
+                    f"  (calls={ex.get('exec_calls_found', 0)},"
+                    f" success_rate={ex.get('success_rate', 0):.2f},"
+                    f" untested={ex.get('untested_files', [])})"
+                )
+            ov = ce.get("output_verification")
+            if ov:
+                print(
+                    f"  Layer C (output):    {ov.get('score', 0):.4f}"
+                    f"  (accuracy={ov.get('numerical_accuracy', 0):.2f},"
+                    f" completeness={ov.get('output_completeness', 0):.2f},"
+                    f" metrics_compared={ov.get('metrics_compared', 0)})"
+                )
+            else:
+                print("  Layer C (output):    SKIPPED (no reference)")
+
+    if result.result_judge:
+        print("\n--- LLM Result Judge ---")
+        rj = result.result_judge
+        print(f"  Score: {rj.get('score', 0):.4f}")
+        sub = rj.get("sub_scores", {})
+        if sub:
+            print(
+                f"  Numerical accuracy:  {sub.get('numerical_accuracy', '?')}"
+                f"  Completeness: {sub.get('completeness', '?')}"
+                f"  Correctness: {sub.get('correctness', '?')}"
+            )
+        print(f"  Has reference: {rj.get('has_reference', False)}")
+        reason = rj.get("reason", "")
+        if reason:
+            print(f"  Reason: {reason[:200]}")
+
+    if result.code_process:
+        print("\n--- Code Process Quality ---")
+        cp = result.code_process
+        applicable = cp.get("applicable", False)
+        print(f"  Applicable: {applicable}")
+        if applicable:
+            print(f"  Combined score: {cp.get('score', 0):.4f}")
+            prog = cp.get("programmatic", {})
+            if prog and prog.get("applicable"):
+                psub = prog.get("sub_scores", {})
+                parts = []
+                for k in (
+                    "iterative_refinement",
+                    "test_before_deliver",
+                    "error_recovery",
+                    "code_evolution",
+                ):
+                    v = psub.get(k)
+                    parts.append(f"{k}={v}" if v is not None else f"{k}=N/A")
+                print(
+                    f"  Programmatic ({prog.get('score', 0):.4f}): {', '.join(parts)}"
+                )
+            llm = cp.get("llm_judged", {})
+            if llm and llm.get("applicable"):
+                lsub = llm.get("sub_scores", {})
+                parts = [
+                    f"{k}={lsub.get(k, '?')}"
+                    for k in (
+                        "debugging_competence",
+                        "incremental_development",
+                        "code_explanation_quality",
+                    )
+                ]
+                print(f"  LLM-judged  ({llm.get('score', 0):.4f}): {', '.join(parts)}")
+            reason = cp.get("llm_judged", {}).get("reason", "")
+            if reason:
+                print(f"  Reason: {reason[:200]}")
 
     if result.error:
         print(f"\nError: {result.error}")
+
+    # ── Save detailed score report (Markdown) ──
+    if getattr(args, "save_scores", False):
+        from evaluation.score_report import generate_score_report
+
+        scores_dir = BENCH_ROOT / "results" / "scores"
+        scores_dir.mkdir(parents=True, exist_ok=True)
+        ts = int(__import__("time").time())
+        filename = f"{result.task_id}_{result.persona_id}_{ts}.md"
+        report_path = scores_dir / filename
+        md_text = generate_score_report(result)
+        report_path.write_text(md_text, encoding="utf-8")
+        print(f"\nScore report saved: {report_path}")
+
+    # ── Save execution trace (conversation + tool calls + agent files) ──
+    if save_trace and "proxy_logs" in trace_captured:
+        from evaluation.trace_report import generate_trace_md
+
+        md_text = generate_trace_md(
+            result,
+            trace_captured["proxy_logs"],
+            agent_name=getattr(args, "agent", "generic"),
+            model=agent.model,
+            condition=condition.name,
+        )
+        (trace_dir / "trace.md").write_text(md_text, encoding="utf-8")
+        n_files = (
+            len(list(agent_files_dir.iterdir())) if agent_files_dir.exists() else 0
+        )
+        print(f"\nTrace saved: {trace_dir}")
+        print(f"  trace.md + agent_files/ ({n_files} files)")
 
 
 def cmd_list_tasks(args):
@@ -768,6 +958,16 @@ def main():
         "--model",
         default=None,
         help="Override agent model (OpenRouter format, e.g. 'openai/gpt-5.2')",
+    )
+    single_parser.add_argument(
+        "--save-scores",
+        action="store_true",
+        help="Save detailed score report (Markdown) to results/scores/",
+    )
+    single_parser.add_argument(
+        "--save-trace",
+        action="store_true",
+        help="Save full execution trace (conversation + tool calls + agent files)",
     )
 
     # run-layer1 command

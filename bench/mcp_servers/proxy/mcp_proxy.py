@@ -62,12 +62,26 @@ class MCPProxy:
     def register_distractor(
         self,
         name: str,
-        error_message: str,
+        error_message: str = "",
         description: str = "",
         params: Optional[dict] = None,
+        func: Optional[Callable] = None,
     ):
-        """Register a distractor tool (always returns error)."""
+        """Register a distractor tool.
+
+        Distractors come in two flavours:
+
+        - **Error-based** (legacy): always returns ``error_message``.
+        - **Functional**: has a real ``func`` that returns plausible
+          results so the agent cannot distinguish it from core tools
+          by simply calling it once.
+
+        In both cases the tool is tracked in ``_distractors`` so that
+        ``get_distractor_calls()`` can identify it for evaluation.
+        """
         self._distractors[name] = error_message
+        if func is not None:
+            self._tools[name] = func
         self._tool_schemas[name] = {
             "name": name,
             "description": description,
@@ -93,8 +107,15 @@ class MCPProxy:
 
         try:
             if name in self._distractors:
-                result = self._distractors[name]
-                log.success = False
+                if name in self._tools:
+                    # Functional distractor — runs real code, returns
+                    # plausible result.  Agent sees normal output.
+                    result = self._tools[name](**kwargs)
+                    log.success = True
+                else:
+                    # Error-based distractor (legacy) — returns error
+                    result = self._distractors[name]
+                    log.success = False
             elif name in self._tools:
                 result = self._tools[name](**kwargs)
                 log.success = True

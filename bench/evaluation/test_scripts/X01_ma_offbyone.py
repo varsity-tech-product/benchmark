@@ -42,18 +42,18 @@ def evaluate(
     # Scan ALL tool logs (tool-name agnostic)
     if tool_logs:
         for log in tool_logs:
-            output = str(log.get("result", ""))
+            output = str(log.result or "")
 
             # Check result for successful execution
-            if log.get("success", False) and "traceback" not in output.lower():
+            if log.success and "traceback" not in output.lower():
                 if any(
                     kw in output.lower()
                     for kw in ["sharpe", "return", "signal", "crossover", "sma"]
                 ):
                     results["code_runs_without_error"] = True
 
-            # Check all input_args for fix evidence
-            for key, value in log.get("input_args", {}).items():
+            # Check all args for fix evidence
+            for key, value in log.args.items():
                 text = str(value)
                 all_rolling = re.findall(r"rolling\((?:window\s*=\s*)?(\d+)\)", text)
                 has_20 = "20" in all_rolling

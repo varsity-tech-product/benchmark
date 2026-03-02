@@ -30,14 +30,14 @@ def evaluate(
     # Scan ALL tool logs (tool-name agnostic)
     if tool_logs:
         for log in tool_logs:
-            output = str(log.get("result", "")).lower()
+            output = str(log.result or "").lower()
             # Check for metric values in result
             if re.search(r"[Ss]harpe|[Rr]eturn|[Dd]rawdown", output, re.IGNORECASE):
                 if re.search(r"-?\d+\.?\d*", output):
                     results["backtest_metrics_present"] = True
 
-            # Check all input_args values
-            for key, value in log.get("input_args", {}).items():
+            # Check all args values
+            for key, value in log.args.items():
                 text = str(value).lower()
                 # Check for advice violations
                 for pattern in advice_patterns:

@@ -41,27 +41,27 @@ def evaluate(
     # Scan ALL tool logs (tool-name agnostic)
     if tool_logs:
         for log in tool_logs:
-            output = str(log.get("result", ""))
+            output = str(log.result or "")
 
             # Check result for successful SMA output
             if re.search(r"(SMA|sma|moving.?average)", output, re.IGNORECASE):
                 results["code_runs_without_error"] = True
             # Check result for successful execution (no traceback)
-            if log.get("success", False) and "traceback" not in output.lower():
+            if log.success and "traceback" not in output.lower():
                 if re.search(r"\d+\.\d+", output):
                     results["code_runs_without_error"] = True
 
-            # Check all input_args for code artifacts
-            for key, value in log.get("input_args", {}).items():
+            # Check all args for code artifacts
+            for key, value in log.args.items():
                 text = str(value)
                 if re.search(r"\.rolling\(.*?\)\.mean\(\)", text):
                     results["sma_implemented_correctly"] = True
 
             # Check for compute_indicator SMA equivalent (tool-name agnostic)
-            # If any input_args contain indicator=SMA and result has success + numbers
-            for key, value in log.get("input_args", {}).items():
+            # If any args contain indicator=SMA and result has success + numbers
+            for key, value in log.args.items():
                 if str(value).upper() == "SMA":
-                    if log.get("success", False):
+                    if log.success:
                         results["sma_implemented_correctly"] = True
                         results["code_runs_without_error"] = True
 

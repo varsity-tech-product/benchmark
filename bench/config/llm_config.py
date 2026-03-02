@@ -4,6 +4,7 @@ All model names use OpenRouter format (e.g. "openai/gpt-4o") unless noted.
 """
 
 import os
+import random
 
 # --- Generic / Baseline (via OpenRouter) ---
 # AGENT_DEFAULT_MODEL = "google/gemini-3-flash-preview"
@@ -19,9 +20,16 @@ OPENAI_AGENT_MODEL_OR = "openai/gpt-5.2"
 ANTHROPIC_AGENT_MODEL_OR = "anthropic/claude-sonnet-4.6"
 GOOGLE_AGENT_MODEL_OR = "google/gemini-2.5-flash-preview"
 
+# --- Reference Oracle (for generating scoring anchors) ---
+REFERENCE_DEFAULT_MODEL = "openai/gpt-5.2"
+
 # --- Evaluation / Simulation ---
 SIMULATOR_DEFAULT_MODEL = "openai/gpt-5.2"
-EVAL_DEFAULT_MODEL = "anthropic/claude-sonnet-4.6"
+EVAL_DEFAULT_MODELS: list[str] = [
+    "anthropic/claude-sonnet-4.6",
+    "openai/gpt-5.2",
+    "anthropic/claude-opus-4.6",
+]
 SYNTHESIS_DEFAULT_MODEL = "google/gemini-2.5-flash-preview"
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 
@@ -58,13 +66,21 @@ def resolve_deepeval_model(model=None):
     of OPENAI_API_KEY / OPENAI_BASE_URL env vars.  Native SDK adapters
     (OpenAI, Anthropic, Google) manage their own credentials separately.
 
+    Accepts a single model name string, a list of model names (randomly
+    picks one), or None (randomly picks from EVAL_DEFAULT_MODELS).
+
     Returns either a DeepEval GPTModel instance or a plain model name string.
     """
     # Already resolved to a DeepEval model object — return as-is (idempotent)
-    if model is not None and not isinstance(model, str):
+    if model is not None and not isinstance(model, (str, list)):
         return model
 
-    model = model or EVAL_DEFAULT_MODEL
+    # Handle list: randomly pick one model (fallback for callers that
+    # haven't been updated to iterate over models themselves).
+    if isinstance(model, list):
+        model = random.choice(model)
+    elif model is None:
+        model = random.choice(EVAL_DEFAULT_MODELS)
 
     # Prefer OpenRouter for all DeepEval traffic — avoids rate-limit
     # conflicts with native SDK adapters that share OPENAI_API_KEY.

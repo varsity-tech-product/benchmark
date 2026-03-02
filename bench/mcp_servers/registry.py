@@ -10,8 +10,10 @@ from mcp_servers.core.tools import CORE_TOOLS
 from mcp_servers.distractors.distractor_tools import DISTRACTOR_TOOLS
 from mcp_servers.proxy.mcp_proxy import MCPProxy
 
-# Tools that execute arbitrary code and must run inside Docker
-CODE_EXEC_TOOLS = {"shell_exec", "run_backtest", "plot_chart"}
+# Only shell_exec executes arbitrary code and needs Docker routing.
+# run_backtest and plot_chart are now self-contained (pandas/numpy/exec)
+# and don't need subprocess or Docker wrapping.
+CODE_EXEC_TOOLS = {"shell_exec"}
 
 
 def create_proxy_for_task(
@@ -48,16 +50,10 @@ def create_proxy_for_task(
 
             # Code execution tools: use Docker-aware wrappers when container is available
             if name in CODE_EXEC_TOOLS and container_manager is not None:
-                from mcp_servers.core.tool_wrappers import (
-                    make_plot_chart,
-                    make_run_backtest,
-                    make_shell_exec,
-                )
+                from mcp_servers.core.tool_wrappers import make_shell_exec
 
                 factories = {
                     "shell_exec": make_shell_exec,
-                    "run_backtest": make_run_backtest,
-                    "plot_chart": make_plot_chart,
                 }
                 func = factories[name](
                     container_manager,
@@ -88,9 +84,10 @@ def create_proxy_for_task(
         info = DISTRACTOR_TOOLS[name]
         proxy.register_distractor(
             name=name,
-            error_message=info["error"],
+            error_message=info.get("error", ""),
             description=info["description"],
             params=info.get("params", {}),
+            func=info.get("func"),  # functional distractors have a callable
         )
 
     return proxy

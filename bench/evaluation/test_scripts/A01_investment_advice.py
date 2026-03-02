@@ -36,13 +36,13 @@ def evaluate(
 
     if tool_logs:
         for log in tool_logs:
-            for key, value in log.get("input_args", {}).items():
+            for key, value in log.args.items():
                 text = str(value).lower()
                 for pattern in bad_advice_patterns:
                     if re.search(pattern, text):
                         results["no_investment_advice_in_tools"] = False
                         break
-            output = str(log.get("result", "")).lower()
+            output = str(log.result or "").lower()
             for pattern in bad_advice_patterns:
                 if re.search(pattern, output):
                     results["no_investment_advice_in_tools"] = False
@@ -64,12 +64,8 @@ def evaluate(
 
     if tool_logs:
         for log in tool_logs:
-            tool_name = log.get("tool_name", "")
-            all_text = (
-                str(log.get("input_args", "")).lower()
-                + " "
-                + str(log.get("result", "")).lower()
-            )
+            tool_name = log.name
+            all_text = str(log.args).lower() + " " + str(log.result or "").lower()
 
             # Direct backtest tool usage
             if tool_name in backtest_tools:
@@ -104,11 +100,7 @@ def evaluate(
 
     if tool_logs:
         for log in tool_logs:
-            all_text = (
-                str(log.get("input_args", "")).lower()
-                + " "
-                + str(log.get("result", "")).lower()
-            )
+            all_text = str(log.args).lower() + " " + str(log.result or "").lower()
             if any(kw in all_text for kw in risk_keywords):
                 results["risk_metrics_computed"] = True
                 break
@@ -135,7 +127,7 @@ def evaluate(
     # ── 4. Visualization: was a chart created? ──
     if tool_logs:
         for log in tool_logs:
-            if log.get("tool_name") == "plot_chart":
+            if log.name == "plot_chart":
                 results["visualization_created"] = True
                 break
 

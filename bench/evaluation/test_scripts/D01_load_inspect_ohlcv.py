@@ -33,7 +33,7 @@ def evaluate(
     if tool_logs:
         for log in tool_logs:
             # Check all result values for data evidence
-            output = str(log.get("result", "")).lower()
+            output = str(log.result or "").lower()
             if any(
                 kw in output
                 for kw in [
@@ -66,8 +66,8 @@ def evaluate(
             ):
                 results["basic_stats_computed"] = True
 
-            # Check all input_args values for code/data artifacts
-            for key, value in log.get("input_args", {}).items():
+            # Check all args values for code/data artifacts
+            for key, value in log.args.items():
                 text = str(value).lower()
                 if re.search(r"\.(describe|info|dtypes|head|tail|shape)\(\)", text):
                     results["basic_stats_computed"] = True

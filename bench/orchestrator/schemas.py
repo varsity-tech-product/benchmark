@@ -47,7 +47,6 @@ class RequiredCapability(BaseModel):
 
 class QuantValidation(BaseModel):
     eval_script: str
-    expected_metrics: dict
 
 
 class GroundTruth(BaseModel):
@@ -55,8 +54,6 @@ class GroundTruth(BaseModel):
     required_capabilities: list[RequiredCapability] = Field(default_factory=list)
     expected_mcp_tools: list[str] = Field(default_factory=list)
     quant_validation: Optional[QuantValidation] = None
-    bug_description: Optional[str] = None
-    expected_fix: Optional[str] = None
 
 
 class EnvironmentConfig(BaseModel):
@@ -66,6 +63,9 @@ class EnvironmentConfig(BaseModel):
     num_distractors: int = 5
     docs_available: list[str] = Field(default_factory=list)
     sandbox_image: str = "quant-tutor-env:v1.0"
+    # Whether this task requires outbound internet access inside the sandbox.
+    # Default is False for reproducibility/safety.
+    network_enabled: bool = False
 
 
 class QuantTutorTask(BaseModel):
@@ -122,24 +122,11 @@ class TutoringRubric(BaseModel):
     dimensions: dict[str, RubricDimension]
 
 
-class MCPToolCallRecord(BaseModel):
-    """Record of a single MCP tool call from the proxy layer."""
-
-    name: str
-    args: dict = Field(default_factory=dict)
-    result: Optional[str] = None
-    timestamp: Optional[str] = None
-    duration_ms: Optional[float] = None
-    success: bool = True
-    turn_index: Optional[int] = None
-
-
 class ConversationTurn(BaseModel):
     """A single turn in the conversation."""
 
     role: str  # "user" or "assistant"
     content: str
-    tool_calls: list[MCPToolCallRecord] = Field(default_factory=list)
 
 
 class TaskResult(BaseModel):
@@ -151,16 +138,28 @@ class TaskResult(BaseModel):
     difficulty: str = ""  # §6.4: needed for difficulty curve computation
     category: str = ""  # §6.4: needed for per-category aggregation
     turns: list[ConversationTurn] = Field(default_factory=list)
-    tool_call_log: list[MCPToolCallRecord] = Field(default_factory=list)
+    workspace_files: list[str] = Field(default_factory=list)
     quant_result_score: float = 0.0
     quant_process_score: float = 0.0
     tutor_scores: dict[str, float] = Field(default_factory=dict)
+    tutor_scores_by_model: dict[str, dict[str, float]] = Field(
+        default_factory=dict
+    )  # {model_name: {dim: score}} per-judge-model breakdown
     overall_score: float = 0.0
     # Extended metrics (design doc §6.1, §6.4)
-    tool_metrics: dict = Field(default_factory=dict)  # precision, recall, f1
     process_metrics: dict = Field(
         default_factory=dict
     )  # DeepEval process metric scores
+    code_eval: dict = Field(
+        default_factory=dict
+    )  # Code Execution QR (static + execution + output)
+    result_judge: dict = Field(
+        default_factory=dict
+    )  # LLM Result Judge (numerical accuracy + completeness + correctness)
+    code_process: dict = Field(
+        default_factory=dict
+    )  # Code Process Quality (iterative refinement + debugging + explanation)
+    sandbox_info: dict = Field(default_factory=dict)
     cost_usd: float = 0.0
     duration_seconds: float = 0.0
     error: Optional[str] = None
@@ -175,7 +174,7 @@ class BenchmarkReport(BaseModel):
     quant_agent_index: float = 0.0
     tutoring_effectiveness_index: float = 0.0
     adaptiveness_score: float = 0.0
-    tool_mastery_score: float = 0.0
+    process_mastery_score: float = 0.0
     results_by_task: dict[str, TaskResult] = Field(default_factory=dict)
     results_by_difficulty: dict[str, float] = Field(default_factory=dict)
     results_by_category: dict[str, float] = Field(default_factory=dict)

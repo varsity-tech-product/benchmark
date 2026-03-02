@@ -30,11 +30,11 @@
       "search_docs"
     ],
     "distractor_mcp_tools_pool": [
-      "train_ml_model",
-      "optimize_portfolio",
-      "fetch_live_price",
-      "submit_order",
-      "fetch_options_chain"
+      "compute_var",
+      "fit_garch_model",
+      "compute_beta",
+      "fetch_fundamentals",
+      "estimate_covariance"
     ],
     "num_distractors": 5,
     "docs_available": [
@@ -68,18 +68,10 @@
       }
     ],
     "expected_mcp_tools": [
-      "fetch_market_data",
-      "shell_exec",
-      "compute_indicator",
-      "file_write"
+      "fetch_market_data"
     ],
     "quant_validation": {
-      "eval_script": "evaluation/test_scripts/I01_implement_sma.py",
-      "expected_metrics": {
-        "sma_implemented_correctly": true,
-        "code_runs_without_error": true,
-        "handles_nan_values": true
-      }
+      "eval_script": "evaluation/test_scripts/I01_implement_sma.py"
     }
   },
   "requires_code": true,

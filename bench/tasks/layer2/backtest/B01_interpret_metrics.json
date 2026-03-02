@@ -13,8 +13,8 @@
   },
   "environment": {
     "data_files": ["AAPL_2018_2024.csv", "SPY_2018_2024.csv"],
-    "core_mcp_tools": ["shell_exec", "file_write", "file_read", "file_list", "fetch_market_data", "compute_indicator", "run_backtest", "plot_chart", "search_docs", "format_table", "analyze_backtest_results"],
-    "distractor_mcp_tools_pool": ["train_ml_model", "optimize_portfolio", "submit_order", "fetch_news_sentiment", "send_email"],
+    "core_mcp_tools": ["shell_exec", "file_write", "file_read", "file_list", "fetch_market_data", "compute_indicator", "run_backtest", "plot_chart", "search_docs", "analyze_backtest_results"],
+    "distractor_mcp_tools_pool": ["compute_var", "fit_garch_model", "optimize_portfolio", "compute_greeks", "estimate_covariance"],
     "num_distractors": 5,
     "docs_available": ["risk_metrics.md", "backtesting_101.md"],
     "sandbox_image": "quant-tutor-env:v1.0"
@@ -27,14 +27,9 @@
       {"description": "Explains max drawdown meaning", "evidence": "explains peak-to-trough decline"},
       {"description": "Provides context for interpreting values", "evidence": "compares to benchmarks or provides rules of thumb"}
     ],
-    "expected_mcp_tools": ["shell_exec", "run_backtest", "fetch_market_data", "analyze_backtest_results", "search_docs", "compute_indicator"],
+    "expected_mcp_tools": ["fetch_market_data"],
     "quant_validation": {
-      "eval_script": "evaluation/test_scripts/B01_interpret_metrics.py",
-      "expected_metrics": {
-        "metrics_explained_correctly": true,
-        "context_provided": true,
-        "no_investment_advice_given": true
-      }
+      "eval_script": "evaluation/test_scripts/B01_interpret_metrics.py"
     }
   },
   "requires_code": false,

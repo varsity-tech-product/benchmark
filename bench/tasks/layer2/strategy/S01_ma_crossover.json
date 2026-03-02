@@ -33,11 +33,12 @@
       "analyze_backtest_results"
     ],
     "distractor_mcp_tools_pool": [
-      "train_ml_model",
+      "compute_var",
+      "fit_garch_model",
       "optimize_portfolio",
-      "query_database",
-      "fetch_live_price",
-      "submit_order"
+      "run_monte_carlo",
+      "backtest_pairs_trade",
+      "compute_beta"
     ],
     "num_distractors": 5,
     "docs_available": [
@@ -71,24 +72,10 @@
       }
     ],
     "expected_mcp_tools": [
-      "fetch_market_data",
-      "shell_exec",
-      "file_write",
-      "plot_chart",
-      "compute_indicator",
-      "run_backtest",
-      "analyze_backtest_results"
+      "fetch_market_data"
     ],
     "quant_validation": {
-      "eval_script": "evaluation/test_scripts/S01_ma_crossover.py",
-      "expected_metrics": {
-        "sharpe_ratio_in_range": [
-          -0.5,
-          3.0
-        ],
-        "strategy_uses_two_ma_windows": true,
-        "backtest_produces_return": true
-      }
+      "eval_script": "evaluation/test_scripts/S01_ma_crossover.py"
     }
   },
   "requires_code": true,

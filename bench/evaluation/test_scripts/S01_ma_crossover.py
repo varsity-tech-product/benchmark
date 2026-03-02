@@ -75,11 +75,11 @@ def evaluate(
     if tool_logs:
         for log in tool_logs:
             # Check result values
-            output = str(log.get("result", ""))
+            output = str(log.result or "")
             _check_metrics_in_text(output, results)
 
-            # Check all input_args for code artifacts
-            for key, value in log.get("input_args", {}).items():
+            # Check all args for code artifacts
+            for key, value in log.args.items():
                 text = str(value)
                 rolling_calls = re.findall(r"rolling\((?:window\s*=\s*)?(\d+)\)", text)
                 if len(set(rolling_calls)) >= 2:

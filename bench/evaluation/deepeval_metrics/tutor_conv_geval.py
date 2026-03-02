@@ -35,6 +35,113 @@ except ImportError:
 
 
 # ──────────────────────────────────────────────────────────────
+# Monkey-patch: GPTModel logprobs fallback for reasoning models
+# ──────────────────────────────────────────────────────────────
+# DeepEval's ConversationalGEval hardcodes `logprobs=True, top_logprobs=20`
+# in generate_raw_response / a_generate_raw_response.  Reasoning models
+# (e.g. GPT-5.2) reject this with "logprobs are not supported".
+# This patch catches the error and retries without logprobs.
+
+_LOGPROBS_PATCHED = False
+
+
+def _patch_gptmodel_logprobs_fallback():
+    """Patch GPTModel to gracefully degrade when logprobs are unsupported."""
+    global _LOGPROBS_PATCHED
+    if _LOGPROBS_PATCHED:
+        return
+    try:
+        from deepeval.models.llms.openai_model import GPTModel
+    except ImportError:
+        return
+
+    _orig_a_generate = GPTModel.a_generate_raw_response
+    _orig_generate = GPTModel.generate_raw_response
+
+    def _resolve_api_key(model_self):
+        """Extract plain string from SecretStr or return as-is."""
+        key = model_self.api_key
+        if hasattr(key, "get_secret_value"):
+            return key.get_secret_value()
+        return key
+
+    def _is_logprobs_error(exc):
+        """Check if an error is caused by unsupported logprobs/include param.
+
+        DeepEval's @retry_openai decorator wraps APIStatusError in
+        tenacity.RetryError after exhausting retries.  str(RetryError)
+        does NOT include the original message, so we must unwrap it.
+        """
+        candidates = [exc]
+        # tenacity.RetryError → last_attempt.exception()
+        if hasattr(exc, "last_attempt"):
+            try:
+                inner = exc.last_attempt.exception()
+                if inner is not None:
+                    candidates.append(inner)
+            except Exception:
+                pass
+        # Walk __cause__ / __context__ chains
+        for attr in ("__cause__", "__context__"):
+            cur = exc
+            while getattr(cur, attr, None) is not None:
+                cur = getattr(cur, attr)
+                candidates.append(cur)
+        for candidate in candidates:
+            msg = str(candidate).lower()
+            if (
+                "logprobs" in msg
+                or "argument not supported: include" in msg
+                or ("unsupported" in msg and "include" in msg)
+            ):
+                return True
+        return False
+
+    async def _patched_a_generate(self, prompt, top_logprobs=5):
+        try:
+            return await _orig_a_generate(self, prompt, top_logprobs=top_logprobs)
+        except Exception as e:
+            if not _is_logprobs_error(e):
+                raise
+            # Retry without logprobs
+            from openai import AsyncOpenAI
+
+            client = AsyncOpenAI(api_key=_resolve_api_key(self), base_url=self.base_url)
+            completion = await client.chat.completions.create(
+                model=self.name,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=self.temperature,
+                **self.generation_kwargs,
+            )
+            return completion, 0.0
+
+    def _patched_generate(self, prompt, top_logprobs=5):
+        try:
+            return _orig_generate(self, prompt, top_logprobs=top_logprobs)
+        except Exception as e:
+            if not _is_logprobs_error(e):
+                raise
+            from openai import OpenAI
+
+            client = OpenAI(api_key=_resolve_api_key(self), base_url=self.base_url)
+            completion = client.chat.completions.create(
+                model=self.name,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=self.temperature,
+                **self.generation_kwargs,
+            )
+            return completion, 0.0
+
+    GPTModel.a_generate_raw_response = _patched_a_generate
+    GPTModel.generate_raw_response = _patched_generate
+    _LOGPROBS_PATCHED = True
+
+
+if DEEPEVAL_AVAILABLE:
+    _patch_gptmodel_logprobs_fallback()
+
+
+# ──────────────────────────────────────────────────────────────
 # 7 Dimensions of the tutoring rubric (design doc §6.2)
 # ──────────────────────────────────────────────────────────────
 
@@ -317,7 +424,7 @@ def evaluate_tutor_dimensions(
     scenario: Optional[str] = None,
     expected_outcome: Optional[str] = None,
     user_description: Optional[str] = None,
-    model: Optional[str] = None,
+    model=None,
     conversational_test_case=None,
     num_judge_runs: int = NUM_JUDGE_RUNS,
     category: Optional[str] = None,
@@ -326,6 +433,14 @@ def evaluate_tutor_dimensions(
 
     Design doc §6.2: Judge runs 3 times with shuffled dimension order,
     scores averaged for stability (§4.1: "3x shuffled prompts").
+
+    Multi-model support: when ``model`` is a list of N model names, EACH
+    model independently performs ``num_judge_runs`` shuffled runs across
+    all active dimensions.  This yields N × num_judge_runs × dims LLM
+    calls (e.g. 3 models × 3 runs × 7 dims = 63 calls), all executed in
+    parallel.  Per-model dimension scores (averaged over their own
+    shuffled runs) are returned under the ``_per_model`` key.  The final
+    dimension scores are the cross-model average.
 
     Dimensions with weight=0 for the given category are skipped entirely
     (no API calls). Weights are stored in CATEGORY_DIMENSION_WEIGHTS.
@@ -336,18 +451,39 @@ def evaluate_tutor_dimensions(
         scenario: Description of the tutoring scenario.
         expected_outcome: Expected learning outcome.
         user_description: Description of the student persona (from build_user_description).
-        model: LLM model for judge.
+        model: LLM model for judge — a single name string, a list of
+            model name strings (each runs ``num_judge_runs``), or None
+            (uses EVAL_DEFAULT_MODELS list).
         conversational_test_case: Pre-built ConversationalTestCase from ConversationSimulator.
             If provided, uses this directly instead of building from conversation_turns.
-        num_judge_runs: Number of shuffled judge runs (default: 3 per design doc).
+        num_judge_runs: Number of shuffled judge runs *per model* (default: 3).
         category: TaskCategory.value string for per-category dimension weighting.
 
     Returns:
         Dict mapping dimension name to averaged score (0-1).
         Skipped dimensions (weight=0) are not included in the dict.
+        When multi-model is used, an extra ``_per_model`` key maps each
+        model name to its own {dimension: score} dict (averaged over that
+        model's shuffled runs).
     """
     if not DEEPEVAL_AVAILABLE:
         raise ImportError("deepeval is required. Install with: pip install deepeval")
+
+    # ── Resolve model list ──
+    from config.llm_config import EVAL_DEFAULT_MODELS
+
+    multi_model = False
+    if isinstance(model, list) and len(model) > 0:
+        eval_models = model
+        multi_model = True
+    elif model is None:
+        eval_models = list(EVAL_DEFAULT_MODELS)
+        multi_model = len(eval_models) > 1
+    else:
+        # Single string override
+        eval_models = [model]
+
+    model_names = [m or "default" for m in eval_models]
 
     # Filter out dimensions with weight=0 for this category
     active_dims = [d for d in DIMENSIONS if get_dimension_weight(category, d) > 0.0]
@@ -358,75 +494,119 @@ def evaluate_tutor_dimensions(
             f"{', '.join(d.split('_')[0] for d in skipped_dims)}"
         )
 
-    # Build or reuse test case
+    total_calls = len(eval_models) * num_judge_runs * len(active_dims)
+    print(
+        f"    Evaluation plan: {len(eval_models)} model(s) × "
+        f"{num_judge_runs} shuffled runs × {len(active_dims)} dims "
+        f"= {total_calls} judge calls"
+    )
+
+    import copy
+    import time as _time
+
+    # Build base test case
     if conversational_test_case is not None:
-        test_case = conversational_test_case
+        base_test_case = conversational_test_case
     else:
         turns = [Turn(role=t["role"], content=t["content"]) for t in conversation_turns]
-        test_case = ConversationalTestCase(
+        base_test_case = ConversationalTestCase(
             turns=turns,
             scenario=scenario,
             expected_outcome=expected_outcome,
             user_description=user_description,
         )
 
-    # Build metric instances only for active dimensions
+    # ── Build ALL metric instances (models × runs × dims) ──
+    # Each metric gets its own deep-copied test case to avoid state
+    # conflicts when DeepEval's a_measure() mutates internal fields.
     all_metrics = []
-    task_keys = []  # (run_idx, dim_name) for each metric
+    all_test_cases = []
+    # task_keys: (model_name, run_idx, dim_name) for each metric
+    task_keys: list[tuple[str, int, str]] = []
 
-    for run_idx in range(num_judge_runs):
-        shuffled_dims = active_dims.copy()
-        random.shuffle(shuffled_dims)
+    for model_idx, current_model in enumerate(eval_models):
+        mname = model_names[model_idx]
+        for run_idx in range(num_judge_runs):
+            shuffled_dims = active_dims.copy()
+            random.shuffle(shuffled_dims)
 
-        print(
-            f"    Judge run {run_idx + 1}/{num_judge_runs} "
-            f"(order: {', '.join(d.split('_')[0] for d in shuffled_dims)})"
-        )
+            print(
+                f"    [{mname}] run {run_idx + 1}/{num_judge_runs} "
+                f"(order: {', '.join(d.split('_')[0] for d in shuffled_dims)})"
+            )
 
-        metrics = create_tutor_geval_metrics(
-            persona_level,
-            model=model,
-            dimension_order=shuffled_dims,
-        )
-        for metric in metrics:
-            all_metrics.append(metric)
-            task_keys.append((run_idx, metric.name))
+            metrics = create_tutor_geval_metrics(
+                persona_level,
+                model=current_model,
+                dimension_order=shuffled_dims,
+            )
+            for metric in metrics:
+                all_metrics.append(metric)
+                all_test_cases.append(copy.deepcopy(base_test_case))
+                task_keys.append((mname, run_idx, metric.name))
 
-    # Run all judge calls in parallel via asyncio.gather + a_measure
-    total_calls = len(all_metrics)
-    print(f"    Running {total_calls} judge calls in parallel...")
+    # ── Run ALL judge calls in parallel with concurrency limit ──
+    _CONCURRENCY = 20  # avoid OpenRouter rate-limit throttling
+    print(
+        f"    Running {len(all_metrics)} judge calls in parallel "
+        f"(concurrency={_CONCURRENCY})..."
+    )
+    t0 = _time.time()
 
     async def _run_all():
+        sem = asyncio.Semaphore(_CONCURRENCY)
+
+        async def _limited(metric, tc):
+            async with sem:
+                return await metric.a_measure(tc)
+
         return await asyncio.gather(
-            *[m.a_measure(test_case) for m in all_metrics],
+            *[_limited(m, tc) for m, tc in zip(all_metrics, all_test_cases)],
             return_exceptions=True,
         )
 
     results = _run_async(_run_all())
+    elapsed = _time.time() - t0
+    print(f"    Completed {len(all_metrics)} judge calls in {elapsed:.1f}s")
 
-    # Accumulate scores by dimension name
-    accumulated_scores: dict[str, list[float]] = {d: [] for d in active_dims}
-    for i, (run_idx, dim_name) in enumerate(task_keys):
+    # ── Accumulate scores by (model, dimension) ──
+    # model_accumulated[model_name][dim_name] = list of scores across runs
+    model_accumulated: dict[str, dict[str, list[float]]] = {
+        name: {d: [] for d in active_dims} for name in model_names
+    }
+
+    for i, (mname, run_idx, dim_name) in enumerate(task_keys):
         if isinstance(results[i], Exception):
-            accumulated_scores[dim_name].append(0.5)
-            print(f"    Warning: {dim_name} run {run_idx + 1} failed: {results[i]}")
+            score = 0.5
+            print(
+                f"    Warning: [{mname}] {dim_name} run {run_idx + 1} "
+                f"failed: {results[i]}"
+            )
         else:
             raw_score = all_metrics[i].score
             # §6.2: "Each dimension: 1-10 scale, normalized to 0-1."
-            # DeepEval may return scores in 0-1 or 0-10 range depending on version.
-            # Normalize: if score > 1.0, assume it's on a 1-10 scale.
             if raw_score > 1.0:
                 raw_score = raw_score / 10.0
-            accumulated_scores[dim_name].append(max(0.0, min(1.0, raw_score)))
+            score = max(0.0, min(1.0, raw_score))
 
-    # Average across runs
-    final_scores = {}
+        model_accumulated[mname][dim_name].append(score)
+
+    # ── Per-model dimension scores (average over shuffled runs) ──
+    per_model: dict[str, dict[str, float]] = {}
+    for mname in model_names:
+        per_model[mname] = {}
+        for dim_name in active_dims:
+            s = model_accumulated[mname][dim_name]
+            per_model[mname][dim_name] = round(sum(s) / len(s), 4) if s else 0.5
+
+    # ── Final dimension scores = average across models ──
+    final_scores: dict = {}
     for dim_name in active_dims:
-        scores = accumulated_scores[dim_name]
-        if scores:
-            final_scores[dim_name] = round(sum(scores) / len(scores), 4)
-        else:
-            final_scores[dim_name] = 0.5
+        model_avgs = [per_model[mname][dim_name] for mname in model_names]
+        final_scores[dim_name] = round(sum(model_avgs) / len(model_avgs), 4)
+
+    if multi_model:
+        final_scores["_per_model"] = per_model
 
     return final_scores
 

@@ -35,7 +35,6 @@ from orchestrator.container_manager import ContainerManager
 from orchestrator.schemas import (
     BenchmarkReport,
     ConversationTurn,
-    MCPToolCallRecord,
     QuantTutorTask,
     StudentPersona,
     TaskResult,
@@ -75,8 +74,9 @@ class BenchmarkOrchestrator:
         self.container_manager = ContainerManager(use_docker=use_docker)
         self.max_concurrent = max_concurrent
         self.use_deepeval = use_deepeval
-        # Resolve model names for DeepEval (strips "openai/" when using native OpenAI API)
-        self.eval_model = resolve_deepeval_model(eval_model)
+        # Keep eval_model as raw (string/list/None) so each downstream
+        # resolve_deepeval_model() call can randomly pick from the model list.
+        self.eval_model = eval_model
         self.simulator_model = resolve_deepeval_model(
             simulator_model or SIMULATOR_DEFAULT_MODEL
         )
@@ -100,6 +100,7 @@ class BenchmarkOrchestrator:
         run_index: int = 0,
         max_turns: Optional[int] = None,
         tools_enabled: bool = True,
+        pre_teardown_hook: Optional[callable] = None,
     ) -> TaskResult:
         """Run a single task with a specific persona and agent.
 
@@ -200,21 +201,10 @@ class BenchmarkOrchestrator:
                         )
                         # Extract turns from ConversationalTestCase into TaskResult
                         for t in conversational_test_case.turns:
-                            tool_calls = []
-                            if hasattr(t, "tools_called") and t.tools_called:
-                                tool_calls = [
-                                    MCPToolCallRecord(
-                                        name=tc.name,
-                                        args=tc.input_parameters or {},
-                                        result=tc.output or "",
-                                    )
-                                    for tc in t.tools_called
-                                ]
                             result.turns.append(
                                 ConversationTurn(
                                     role=t.role,
                                     content=t.content,
-                                    tool_calls=tool_calls,
                                 )
                             )
                         print(
@@ -252,18 +242,23 @@ class BenchmarkOrchestrator:
                 agent.system_prompt = original_system_prompt
 
             # === PHASE 3: CAPTURE ===
-            result.tool_call_log = [
-                MCPToolCallRecord(
-                    name=entry.name,
-                    args=entry.args,
-                    result=entry.result[:500],
-                    timestamp=str(entry.timestamp),
-                    duration_ms=entry.duration_ms,
-                    success=entry.success,
-                    turn_index=entry.turn_index,
+            # Capture workspace file list before teardown destroys the container.
+            if container.workspace_path and os.path.isdir(container.workspace_path):
+                result.workspace_files = sorted(
+                    f
+                    for f in os.listdir(container.workspace_path)
+                    if os.path.isfile(os.path.join(container.workspace_path, f))
                 )
-                for entry in proxy.get_logs()
-            ]
+
+            # === PHASE 3.5: PRE-TEARDOWN HOOK ===
+            # Allows callers (e.g. reference generator) to capture full proxy
+            # logs and workspace files before evaluation and teardown.
+            if pre_teardown_hook is not None:
+                pre_teardown_hook(
+                    result=result,
+                    proxy=proxy,
+                    workspace_path=container.workspace_path,
+                )
 
             # === PHASE 4: EVALUATE ===
             conversation = [
@@ -280,8 +275,13 @@ class BenchmarkOrchestrator:
             result.quant_result_score = eval_results.get("quant_result", 0.0)
             result.quant_process_score = eval_results.get("quant_process", 0.0)
             result.tutor_scores = eval_results.get("tutor_scores", {})
-            result.tool_metrics = eval_results.get("tool_metrics", {})
+            result.tutor_scores_by_model = eval_results.get("tutor_scores_by_model", {})
             result.process_metrics = eval_results.get("process_metrics", {})
+            result.code_eval = eval_results.get("code_eval", {})
+            result.result_judge = eval_results.get("result_judge", {})
+            result.code_process = eval_results.get("process_metrics", {}).get(
+                "code_process", {}
+            )
 
             score_breakdown = compute_task_score(
                 quant_result_score=result.quant_result_score,
@@ -389,7 +389,7 @@ class BenchmarkOrchestrator:
                 "tutoring_effectiveness_index", 0.0
             )
             report.adaptiveness_score = kpis.get("adaptiveness_score", 0.0)
-            report.tool_mastery_score = kpis.get("tool_mastery_score", 0.0)
+            report.process_mastery_score = kpis.get("process_mastery_score", 0.0)
 
             # Populate results_by_difficulty and results_by_category (§6.4)
             import statistics as _stats
@@ -439,46 +439,17 @@ class BenchmarkOrchestrator:
             conversation: List of {"role", "content"} dicts.
             conversational_test_case: Pre-built ConversationalTestCase from simulator.
         """
-        from orchestrator.trace_assembler import (
-            enrich_test_case_with_mcp,
-        )
-
         results = {
             "quant_result": 0.0,
             "quant_process": 0.0,
             "tutor_scores": {},
             "process_metrics": {},
-            "tool_metrics": {},
         }
 
-        # ── Step 1: Build/enrich ConversationalTestCase with MCP data ──
-        # If we got a test case from ConversationSimulator, enrich it with MCP data.
-        # Otherwise, build one from the task result.
-        # Keep a clean copy for process metrics (role_adherence, knowledge_retention,
-        # topic_adherence) that don't need synthetic tool execution turns.
-        if conversational_test_case is not None and DEEPEVAL_AVAILABLE:
-            import copy
-
-            clean_test_case = copy.deepcopy(conversational_test_case)
-            try:
-                enrich_test_case_with_mcp(
-                    test_case=conversational_test_case,
-                    proxy_logs=proxy.get_logs(),
-                    core_tools=task.environment.core_mcp_tools,
-                    distractor_tools=task.environment.distractor_mcp_tools_pool,
-                    tool_schemas=proxy.get_available_tools(),
-                )
-            except Exception as e:
-                print(f"  Warning: Failed to enrich test case with MCP data: {e}")
-            # Copy MCP metadata to clean test case (for multi_turn_mcp)
-            # but don't copy the synthetic turns
-            for attr in ("mcp_tools_called", "mcp_servers"):
-                if hasattr(conversational_test_case, attr):
-                    setattr(
-                        clean_test_case, attr, getattr(conversational_test_case, attr)
-                    )
-        else:
-            clean_test_case = conversational_test_case
+        # ── Step 1: Prepare ConversationalTestCase for metrics ──
+        # Phase 4: MCP enrichment removed (no longer needed without
+        # MultiTurnMCPUseMetric). Process metrics use the clean test case.
+        clean_test_case = conversational_test_case
 
         # ── Step 2: Quant Result Score (custom eval scripts) ──
         print("  Evaluating Quant Result...")
@@ -496,44 +467,74 @@ class BenchmarkOrchestrator:
                     module = importlib.util.module_from_spec(spec)
                     spec.loader.exec_module(module)
                     eval_result = module.evaluate(
-                        workspace_path, proxy.to_dict(), conversation
+                        workspace_path, proxy.get_logs(), conversation
                     )
                     results["quant_result"] = eval_result.get("score", 0.0)
                 except Exception as e:
                     results["quant_result_error"] = str(e)
 
-        # ── Step 3: Quant Process Score (DeepEval MCP metrics + precision/recall) ──
+        # ── Step 2b: Code Execution QR (Phase 1) ──
+        print("  Evaluating Code Execution QR...")
+        reference = None  # loaded here, also used by Step 2c + Step 3b
+        try:
+            from evaluation.code_eval import evaluate_code_combined
+            from reference.reference_store import ReferenceStore
+
+            ref_store = ReferenceStore()
+            reference = ref_store.load(task.task_id, persona.persona_id)
+
+            code_eval_result = evaluate_code_combined(
+                workspace_path=workspace_path,
+                tool_logs=proxy.get_logs(),
+                reference=reference,
+                task_requires_code=task.requires_code,
+            )
+            results["code_eval"] = code_eval_result
+        except Exception as e:
+            results["code_eval_error"] = str(e)
+
+        # ── Step 2c: LLM Result Judge (Phase 3) ──
+        print("  Evaluating Result Quality (LLM judge)...")
+        try:
+            from evaluation.deepeval_metrics.result_judge import (
+                evaluate_result_quality,
+            )
+
+            result_judge_result = evaluate_result_quality(
+                task_description=task.description,
+                category=task.category.value,
+                workspace_path=workspace_path,
+                tool_logs=proxy.get_logs(),
+                conversation=conversation,
+                model=self.eval_model,
+                reference=reference,
+            )
+            results["result_judge"] = result_judge_result
+        except Exception as e:
+            results["result_judge_error"] = str(e)
+
+        # ── Step 2d: Combine QR components (30/30/40 blend) ──
+        programmatic_score = results["quant_result"]
+        code_eval_score = results.get("code_eval", {}).get("score", 0.0)
+        code_eval_applicable = results.get("code_eval", {}).get("applicable", False)
+        llm_judge_score = results.get("result_judge", {}).get("score", 0.0)
+
+        if code_eval_applicable:
+            # Full 3-component blend: 30% programmatic + 30% code_eval + 40% LLM judge
+            results["quant_result"] = round(
+                0.30 * programmatic_score
+                + 0.30 * code_eval_score
+                + 0.40 * llm_judge_score,
+                4,
+            )
+        else:
+            # No code_eval: redistribute to 40% programmatic + 60% LLM judge
+            results["quant_result"] = round(
+                0.40 * programmatic_score + 0.60 * llm_judge_score, 4
+            )
+
+        # ── Step 3: Quant Process Score (Reformed Process Metrics) ──
         print("  Evaluating Quant Process...")
-
-        # 3a: Manual tool precision/recall (always available)
-        from evaluation.deepeval_metrics.mcp_metrics import (
-            check_required_capabilities,
-            compute_tool_precision_recall,
-        )
-
-        called_tool_names = proxy.get_tool_names_called()
-        tool_metrics = compute_tool_precision_recall(
-            called_tools=called_tool_names,
-            expected_tools=task.ground_truth.expected_mcp_tools,
-            distractor_tools=task.environment.distractor_mcp_tools_pool,
-        )
-
-        # 3a-2: Capability completion check (§6.1.2)
-        tool_call_outputs = {}
-        for log in proxy.get_logs():
-            tool_call_outputs.setdefault(log.name, "")
-            tool_call_outputs[log.name] += (log.result or "") + "\n"
-        cap_check = check_required_capabilities(
-            called_tools=called_tool_names,
-            tool_call_outputs=tool_call_outputs,
-            required_capabilities=[
-                cap.model_dump() for cap in task.ground_truth.required_capabilities
-            ],
-        )
-        tool_metrics["capability_completion"] = cap_check["capability_completion"]
-        tool_metrics["capabilities_met"] = cap_check["met"]
-        tool_metrics["capabilities_total"] = cap_check["total"]
-        results["tool_metrics"] = tool_metrics
 
         # 3b: DeepEval process-level metrics
         if self.use_deepeval:
@@ -552,45 +553,34 @@ class BenchmarkOrchestrator:
                     task_description=task.description,
                     actual_output=combined_output,
                     proxy_logs=proxy.get_logs(),
-                    expected_tool_names=task.ground_truth.expected_mcp_tools,
-                    core_tools=task.environment.core_mcp_tools,
-                    distractor_tools=task.environment.distractor_mcp_tools_pool,
+                    category=task.category.value,
                     conversational_test_case=clean_test_case,
-                    enriched_test_case=conversational_test_case,
                     model=self.eval_model,
-                    tool_schemas=proxy.get_available_tools(),
+                    reference_trace=reference,
+                    is_adversarial=(task.category.value == "adversarial"),
                 )
                 results["process_metrics"] = process_results
 
-                # Combine: 50% tool F1 + 50% DeepEval aggregate
-                # F1 balances precision (avoid distractor calls) and recall
-                # (cover expected tools). Distractor tools are traps that
-                # always return errors — agents must learn to avoid them.
-                deepeval_process = process_results.get("aggregate_process_score", 0.5)
-                tool_score = tool_metrics["f1"]
+                # QP = deepeval aggregate (reformed process metrics).
                 results["quant_process"] = round(
-                    0.5 * tool_score + 0.5 * deepeval_process, 4
+                    process_results.get("aggregate_process_score", 0.5), 4
                 )
             except Exception as e:
                 results["process_eval_error"] = str(e)
-                results["quant_process"] = tool_metrics["f1"]
+                results["quant_process"] = 0.5
         else:
-            results["quant_process"] = tool_metrics["f1"]
+            results["quant_process"] = 0.5
 
         # ── Step 4: Tutor Quality Score (7D ConversationalGEval) ──
-        print("  Evaluating Tutor Quality (7D rubric, 3x shuffled)...")
+        print("  Evaluating Tutor Quality (7D rubric, multi-model × 3x shuffled)...")
         if self.use_deepeval:
             try:
                 from evaluation.deepeval_metrics.tutor_conv_geval import (
                     evaluate_tutor_dimensions,
                 )
 
-                # NOTE: Do NOT pass the enriched conversational_test_case here.
-                # enrich_test_case_with_mcp() inserts synthetic
-                # "[Executed tools: ...]" turns that the 7D rubric judge
-                # interprets as empty teaching — tanking D3/D5/D6 scores.
-                # Instead, let evaluate_tutor_dimensions build a clean
-                # ConversationalTestCase from conversation_turns (text only).
+                # Use conversation_turns (text only) so the 7D rubric judge
+                # isn't distracted by tool execution metadata.
                 tutor_scores = evaluate_tutor_dimensions(
                     conversation_turns=conversation,
                     persona_level=persona.knowledge_level,
@@ -600,7 +590,21 @@ class BenchmarkOrchestrator:
                     model=self.eval_model,
                     category=task.category.value,
                 )
+                # Extract per-model breakdown before storing dimension scores
+                per_model = tutor_scores.pop("_per_model", None)
                 results["tutor_scores"] = tutor_scores
+                if per_model:
+                    results["tutor_scores_by_model"] = per_model
+                    print("  Per-model tutor scores:")
+                    for mname, dim_scores in per_model.items():
+                        avg = (
+                            sum(dim_scores.values()) / len(dim_scores)
+                            if dim_scores
+                            else 0.0
+                        )
+                        print(f"    {mname}: avg={avg:.4f}")
+                        for dim, sc in sorted(dim_scores.items()):
+                            print(f"      {dim}: {sc:.4f}")
             except Exception as e:
                 results["tutor_eval_error"] = str(e)
                 for dim in [
