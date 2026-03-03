@@ -204,6 +204,70 @@ DISTRACTOR_TOOLS = {
         "params": {},
         "error": "Error: Economic calendar data is not available.",
     },
+    "compute_var": {
+        "description": "Compute Value-at-Risk (VaR) and Conditional VaR (CVaR) for a portfolio using historical simulation or parametric methods.",
+        "params": {
+            "portfolio": {
+                "type": "string",
+                "description": "Path to portfolio holdings CSV or JSON file",
+                "required": True,
+            },
+            "confidence": {
+                "type": "number",
+                "description": "Confidence level, e.g. 0.95 or 0.99",
+                "required": False,
+            },
+        },
+        "error": "Error: VaR computation is not available for this task.",
+    },
+    "backtest_pairs_trade": {
+        "description": "Run a statistical pairs trading backtest (cointegration-based) across two correlated securities. Requires price data for both legs.",
+        "params": {
+            "symbol_a": {
+                "type": "string",
+                "description": "First ticker symbol, e.g. 'AAPL'",
+                "required": True,
+            },
+            "symbol_b": {
+                "type": "string",
+                "description": "Second ticker symbol, e.g. 'MSFT'",
+                "required": True,
+            },
+            "lookback": {
+                "type": "integer",
+                "description": "Lookback period in days for cointegration test",
+                "required": False,
+            },
+        },
+        "error": "Error: Pairs trading backtest is not relevant to this task.",
+    },
+    "fetch_fundamentals": {
+        "description": "Fetch fundamental financial data (P/E ratio, EPS, revenue) for a stock from a financial data provider. Requires internet access.",
+        "params": {
+            "symbol": {
+                "type": "string",
+                "description": "Stock ticker symbol, e.g. 'AAPL'",
+                "required": True,
+            },
+        },
+        "error": "Error: Fundamental data is not available in this environment.",
+    },
+    "compare_series": {
+        "description": "Compare two time series using statistical tests (correlation, Granger causality, cointegration). Requires aligned date ranges.",
+        "params": {
+            "series_a": {
+                "type": "string",
+                "description": "Path to first time series CSV",
+                "required": True,
+            },
+            "series_b": {
+                "type": "string",
+                "description": "Path to second time series CSV",
+                "required": True,
+            },
+        },
+        "error": "Error: Series comparison tool is not available for this task.",
+    },
 }
 
 
