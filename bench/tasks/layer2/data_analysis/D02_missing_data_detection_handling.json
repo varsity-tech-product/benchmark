@@ -29,6 +29,7 @@
       "file_list",
       "compute_statistics",
       "search_docs",
+      "send_message",
       "get_environment_info"
     ],
     "distractor_mcp_tools_pool": [
