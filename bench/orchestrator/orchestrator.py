@@ -116,6 +116,7 @@ class BenchmarkOrchestrator:
             run_index=run_index,
             difficulty=task.difficulty.value,
             category=task.category.value,
+            dimension_relevance=task.dimension_relevance or {},
         )
 
         staged_temp_dirs: list[str] = []
@@ -313,6 +314,7 @@ class BenchmarkOrchestrator:
                 quant_process_score=result.quant_process_score,
                 tutor_dimension_scores=result.tutor_scores,
                 category=task.category.value,
+                dimension_relevance=task.dimension_relevance or None,
             )
             result.overall_score = score_breakdown["overall_score"]
 
@@ -400,6 +402,7 @@ class BenchmarkOrchestrator:
                 r.quant_process_score,
                 r.tutor_scores,
                 category=r.category,
+                dimension_relevance=(r.dimension_relevance or None),
             )
             for r in all_result_objects
         ]
@@ -683,6 +686,7 @@ class BenchmarkOrchestrator:
                     user_description=build_user_description(persona),
                     model=self.eval_model,
                     category=task.category.value,
+                    dimension_relevance=task.dimension_relevance or None,
                 )
                 results["tutor_scores"] = tutor_scores
             except Exception as e:
@@ -746,10 +750,26 @@ class BenchmarkOrchestrator:
         if data_files:
             staged_data = tempfile.mkdtemp(prefix="qtb_data_")
             temp_dirs.append(staged_data)
+            # data_root is the parent of data_dir (bench/data/) — used as
+            # fallback for files outside the default frozen/ subdirectory
+            # (e.g. adversarial/malicious_backtest.py lives in bench/data/adversarial/).
+            data_root = os.path.dirname(self.data_dir)
             for fname in data_files:
                 src = os.path.join(self.data_dir, fname)
+                if not os.path.isfile(src):
+                    src = os.path.join(data_root, fname)
                 if os.path.isfile(src):
-                    os.symlink(src, os.path.join(staged_data, fname))
+                    # Preserve the declared relative path (so file_read can use
+                    # e.g. "adversarial/malicious_backtest.py"), and also place
+                    # a flat basename alias for convenience.
+                    dst_rel = os.path.join(staged_data, fname)
+                    os.makedirs(os.path.dirname(dst_rel), exist_ok=True)
+                    if not os.path.exists(dst_rel):
+                        os.symlink(src, dst_rel)
+
+                    dst_flat = os.path.join(staged_data, os.path.basename(fname))
+                    if dst_flat != dst_rel and not os.path.exists(dst_flat):
+                        os.symlink(src, dst_flat)
         else:
             staged_data = self.data_dir  # No filter → full access (backward compat)
 

@@ -125,16 +125,42 @@ CATEGORY_DIMENSION_WEIGHTS: dict[str, dict[str, float]] = {
 }
 
 
-def get_dimension_weight(category: Optional[str], dimension_name: str) -> float:
+def get_dimension_weight(
+    category: Optional[str],
+    dimension_name: str,
+    dimension_relevance: Optional[dict[str, bool]] = None,
+) -> float:
     """Get the weight for a specific dimension given a task category.
+
+    Per-task ``dimension_relevance`` overrides category-level weights in
+    both directions:
+    - ``False`` → weight = 0.0 (skip dimension even if category enables it)
+    - ``True``  → weight = max(category_weight, 1.0) (enable dimension even
+      if category disables it, e.g. D5_code_teaching for A02)
 
     Args:
         category: TaskCategory.value string, or None for default weights.
         dimension_name: Full dimension name (e.g. "D5_code_teaching").
+        dimension_relevance: Optional per-task dimension mask from task JSON.
+            Maps full dimension name to bool.
 
     Returns:
         Weight in [0.0, 1.0]. Defaults to 1.0 if category is unknown.
     """
+    # Per-task override takes precedence in both directions
+    if dimension_relevance and dimension_name in dimension_relevance:
+        if not dimension_relevance[dimension_name]:
+            return 0.0
+        # Explicitly True: ensure non-zero weight even if category says 0.0
+        cat_weight = 0.0
+        if category:
+            weights = CATEGORY_DIMENSION_WEIGHTS.get(category, {})
+            dim_key = dimension_name[:2]
+            cat_weight = weights.get(dim_key, 1.0)
+        else:
+            cat_weight = 1.0
+        return max(cat_weight, 1.0)
+
     if not category:
         return 1.0
     weights = CATEGORY_DIMENSION_WEIGHTS.get(category, {})
@@ -321,6 +347,7 @@ def evaluate_tutor_dimensions(
     conversational_test_case=None,
     num_judge_runs: int = NUM_JUDGE_RUNS,
     category: Optional[str] = None,
+    dimension_relevance: Optional[dict[str, bool]] = None,
 ) -> dict[str, float]:
     """Evaluate tutoring dimensions with shuffled judge runs.
 
@@ -349,8 +376,12 @@ def evaluate_tutor_dimensions(
     if not DEEPEVAL_AVAILABLE:
         raise ImportError("deepeval is required. Install with: pip install deepeval")
 
-    # Filter out dimensions with weight=0 for this category
-    active_dims = [d for d in DIMENSIONS if get_dimension_weight(category, d) > 0.0]
+    # Filter out dimensions with weight=0 for this category/task.
+    active_dims = [
+        d
+        for d in DIMENSIONS
+        if get_dimension_weight(category, d, dimension_relevance) > 0.0
+    ]
     skipped_dims = [d for d in DIMENSIONS if d not in active_dims]
     if skipped_dims:
         print(
@@ -434,16 +465,19 @@ def evaluate_tutor_dimensions(
 def compute_tutor_score(
     dimension_scores: dict[str, float],
     category: Optional[str] = None,
+    dimension_relevance: Optional[dict[str, bool]] = None,
 ) -> float:
     """Compute the aggregate tutor score from dimension scores.
 
-    Uses per-category dimension weights for weighted averaging.
+    Uses per-category dimension weights for weighted averaging, with
+    optional per-task ``dimension_relevance`` overrides.
     Dimensions not present in dimension_scores (e.g., skipped due to
     weight=0) are excluded from the computation.
 
     Args:
         dimension_scores: Dict mapping dimension name to score (0-1).
         category: TaskCategory.value for per-category weighting.
+        dimension_relevance: Optional per-task dimension mask from task JSON.
 
     Returns:
         Weighted average score across all evaluated dimensions (0-1).
@@ -454,7 +488,7 @@ def compute_tutor_score(
     weighted_sum = 0.0
     weight_total = 0.0
     for dim_name, score in dimension_scores.items():
-        w = get_dimension_weight(category, dim_name)
+        w = get_dimension_weight(category, dim_name, dimension_relevance)
         weighted_sum += w * score
         weight_total += w
 

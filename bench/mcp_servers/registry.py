@@ -10,13 +10,13 @@ from mcp_servers.core.tools import CORE_TOOLS
 from mcp_servers.distractors.distractor_tools import DISTRACTOR_TOOLS
 from mcp_servers.proxy.mcp_proxy import MCPProxy
 
-# Tools that execute arbitrary code and must run inside Docker
+# Tools that execute arbitrary code and must run inside Docker.
 CODE_EXEC_TOOLS = {"shell_exec", "run_backtest", "plot_chart"}
 
 
 def create_proxy_for_task(
     core_tool_names: list[str],
-    distractor_pool: list[str],
+    distractor_pool: list[str] | None = None,
     num_distractors: int = 5,
     seed: Optional[int] = None,
     container_manager=None,
@@ -28,7 +28,8 @@ def create_proxy_for_task(
 
     Args:
         core_tool_names: List of core tool names to make available.
-        distractor_pool: Pool of distractor tool names to sample from.
+        distractor_pool: Optional pool of distractor tool names to sample from.
+            If omitted/empty, uses the full global DISTRACTOR_TOOLS pool.
         num_distractors: Number of distractors to include.
         seed: Random seed for reproducible distractor selection.
         container_manager: ContainerManager instance for Docker execution.
@@ -76,7 +77,13 @@ def create_proxy_for_task(
             )
 
     # Sample and register distractors
-    available = [d for d in distractor_pool if d in DISTRACTOR_TOOLS]
+    if distractor_pool:
+        available = [
+            d for d in distractor_pool if d in DISTRACTOR_TOOLS and d not in core_tool_names
+        ]
+    else:
+        available = [d for d in DISTRACTOR_TOOLS if d not in core_tool_names]
+
     if seed is not None:
         rng = random.Random(seed)
     else:
@@ -88,7 +95,7 @@ def create_proxy_for_task(
         info = DISTRACTOR_TOOLS[name]
         proxy.register_distractor(
             name=name,
-            error_message=info["error"],
+            error_message=info.get("error", ""),
             description=info["description"],
             params=info.get("params", {}),
         )

@@ -35,6 +35,7 @@ def compute_task_score(
     quant_process_score: float,
     tutor_dimension_scores: dict[str, float],
     category: Optional[str] = None,
+    dimension_relevance: Optional[dict[str, bool]] = None,
 ) -> dict:
     """Compute the overall task score.
 
@@ -50,6 +51,8 @@ def compute_task_score(
         quant_process_score: Score from DeepEval MCP metrics + tool precision/recall (0-1).
         tutor_dimension_scores: Dict of dimension_name -> score (0-1).
         category: TaskCategory.value for per-category tutor dimension weighting.
+        dimension_relevance: Optional per-task dimension relevance mask that
+            overrides category defaults.
 
     Returns:
         Dict with all sub-scores and overall score.
@@ -62,7 +65,11 @@ def compute_task_score(
 
     tutor_score = 0.0
     if tutor_dimension_scores:
-        tutor_score = compute_tutor_score(tutor_dimension_scores, category=category)
+        tutor_score = compute_tutor_score(
+            tutor_dimension_scores,
+            category=category,
+            dimension_relevance=dimension_relevance,
+        )
 
     overall = QUANT_WEIGHT * quant_score + TUTOR_WEIGHT * tutor_score
 

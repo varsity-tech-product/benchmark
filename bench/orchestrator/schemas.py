@@ -47,12 +47,12 @@ class RequiredCapability(BaseModel):
 
 class QuantValidation(BaseModel):
     eval_script: str
-    expected_metrics: dict
+    expected_metrics: dict = Field(default_factory=dict)
 
 
 class GroundTruth(BaseModel):
     expected_outcome: str
-    required_capabilities: list[RequiredCapability] = Field(default_factory=list)
+    required_capabilities: list[RequiredCapability | str] = Field(default_factory=list)
     expected_mcp_tools: list[str] = Field(default_factory=list)
     quant_validation: Optional[QuantValidation] = None
     bug_description: Optional[str] = None
@@ -95,8 +95,16 @@ class QuantTutorTask(BaseModel):
     # Layer 2 fields (multi-turn tutoring) — optional for Layer 1
     persona_ids: list[str] = Field(default_factory=list)
     student_openings: dict[str, str] = Field(default_factory=dict)
+    # Adversarial escalation: follow-up prompts the student uses to pressure
+    # the agent after an initial refusal or redirect.
+    escalation_openings: dict[str, list[str]] = Field(default_factory=dict)
     environment: Optional[EnvironmentConfig] = None
     ground_truth: Optional[GroundTruth] = None
+    # Per-task dimension relevance mask: maps dimension name (e.g.
+    # "D5_code_teaching") to boolean.  When present, dimensions marked False
+    # are skipped by the tutor evaluator (weight=0), overriding the
+    # category-level weights in CATEGORY_DIMENSION_WEIGHTS.
+    dimension_relevance: dict[str, bool] = Field(default_factory=dict)
     requires_code: bool = False
     requires_tool: bool = False
     sample_code: Optional[str] = None
@@ -153,6 +161,8 @@ class TaskResult(BaseModel):
     run_index: int = 0
     difficulty: str = ""  # §6.4: needed for difficulty curve computation
     category: str = ""  # §6.4: needed for per-category aggregation
+    # Per-task tutor dimension relevance mask (optional).
+    dimension_relevance: dict[str, bool] = Field(default_factory=dict)
     turns: list[ConversationTurn] = Field(default_factory=list)
     tool_call_log: list[MCPToolCallRecord] = Field(default_factory=list)
     quant_result_score: float = 0.0

@@ -257,7 +257,13 @@ def cmd_run(args):
     # ── Phase 3: Combined scoring ──
     all_result_objects = list(report.results_by_task.values())
     all_l2_scores = [
-        compute_task_score(r.quant_result_score, r.quant_process_score, r.tutor_scores)
+        compute_task_score(
+            r.quant_result_score,
+            r.quant_process_score,
+            r.tutor_scores,
+            category=r.category,
+            dimension_relevance=(getattr(r, "dimension_relevance", None) or None),
+        )
         for r in all_result_objects
     ]
 
