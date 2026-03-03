@@ -73,6 +73,14 @@ def generate_score_report(
             _a(f"- {f}")
         _a("")
 
+    # ── Sandbox Info ──
+    si = getattr(result, "sandbox_info", {})
+    if si:
+        _a("## Sandbox Info\n")
+        for k, v in si.items():
+            _a(f"- **{k}**: {v}")
+        _a("")
+
     # ── Error ──
     if result.error:
         _a(f"## Error\n\n```\n{result.error}\n```\n")
@@ -200,6 +208,7 @@ def _section_qr(lines, result):
 # ──────────────────────────────────────────────────────────────
 
 _QP_METRICS = [
+    "tool_usage",
     "step_efficiency",
     "process_reasonableness",
     "process_alignment",

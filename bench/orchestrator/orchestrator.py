@@ -145,6 +145,9 @@ class BenchmarkOrchestrator:
                 sandbox_image=(
                     task.environment.sandbox_image if task.environment else None
                 ),
+                network_enabled=(
+                    task.environment.network_enabled if task.environment else False
+                ),
             )
 
             # 1c. Set environment vars for tool implementations (lazy reads in tools.py)
@@ -156,8 +159,9 @@ class BenchmarkOrchestrator:
             # 1d. Configure MCP proxy with task-specific tools + container info
             proxy = create_proxy_for_task(
                 core_tool_names=task.environment.core_mcp_tools,
-                distractor_pool=task.environment.distractor_mcp_tools_pool,
-                num_distractors=task.environment.num_distractors,
+                convenient_tool_names=(
+                    task.ground_truth.convenient_tools if task.ground_truth else []
+                ),
                 seed=hash(f"{task.task_id}_{run_index}"),
                 container_manager=self.container_manager,
                 container_id=container.container_id,
@@ -249,6 +253,17 @@ class BenchmarkOrchestrator:
                     for f in os.listdir(container.workspace_path)
                     if os.path.isfile(os.path.join(container.workspace_path, f))
                 )
+
+            # Capture sandbox execution metadata (diagnostic, not scored).
+            result.sandbox_info = {
+                "container_id": container.container_id,
+                "network_enabled": container.network_enabled,
+                "network_mode": container.network_mode,
+                "use_docker": self.container_manager.use_docker,
+                "sandbox_image": (
+                    task.environment.sandbox_image if task.environment else "N/A"
+                ),
+            }
 
             # === PHASE 3.5: PRE-TEARDOWN HOOK ===
             # Allows callers (e.g. reference generator) to capture full proxy
@@ -424,7 +439,7 @@ class BenchmarkOrchestrator:
 
         Design doc §4.3 Phase 4: EVALUATION (post-hoc, using DeepEval)
         - Quant Result: run eval/test_*.py against workspace files
-        - Quant Process: DeepEval MCP metrics + tool precision/recall
+        - Quant Process: Reformed process metrics (7 dimensions)
         - Tutor Quality: DeepEval ConversationalGEval with 7D persona-aware rubric
 
         Design doc §6.3:
@@ -536,6 +551,26 @@ class BenchmarkOrchestrator:
         # ── Step 3: Quant Process Score (Reformed Process Metrics) ──
         print("  Evaluating Quant Process...")
 
+        # 3a: Tool Usage (mathematical, no LLM)
+        tool_usage_result = None
+        try:
+            from evaluation.deepeval_metrics.tool_usage import evaluate_tool_usage
+
+            tool_usage_result = evaluate_tool_usage(
+                proxy_logs=proxy.get_logs(),
+                expected_tools=(
+                    task.ground_truth.expected_mcp_tools if task.ground_truth else []
+                ),
+                convenient_tools=(
+                    task.ground_truth.convenient_tools if task.ground_truth else []
+                ),
+                distractor_names=proxy.get_distractor_names(),
+                is_adversarial=(task.category.value == "adversarial"),
+            )
+            results["tool_usage"] = tool_usage_result
+        except Exception as e:
+            results["tool_usage_error"] = str(e)
+
         # 3b: DeepEval process-level metrics
         if self.use_deepeval:
             try:
@@ -558,10 +593,11 @@ class BenchmarkOrchestrator:
                     model=self.eval_model,
                     reference_trace=reference,
                     is_adversarial=(task.category.value == "adversarial"),
+                    tool_usage_result=tool_usage_result,
                 )
                 results["process_metrics"] = process_results
 
-                # QP = deepeval aggregate (reformed process metrics).
+                # QP = weighted aggregate (reformed process metrics).
                 results["quant_process"] = round(
                     process_results.get("aggregate_process_score", 0.5), 4
                 )

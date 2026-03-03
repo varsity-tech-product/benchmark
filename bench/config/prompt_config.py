@@ -303,7 +303,7 @@ def build_scenario(task: QuantTutorTask, persona_id: str) -> str:
     ]
 
     if task.ground_truth and task.ground_truth.required_capabilities:
-        goals = [cap.description for cap in task.ground_truth.required_capabilities]
+        goals = list(task.ground_truth.required_capabilities)
         parts.append("")
         parts.append("Learning goals the student wants to achieve by the end:")
         for i, goal in enumerate(goals, 1):

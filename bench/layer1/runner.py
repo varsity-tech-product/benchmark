@@ -224,11 +224,9 @@ class Layer1Runner:
         # Set environment vars for tool implementations
         os.environ["QTB_WORKSPACE_DIR"] = container.workspace_path
 
-        # Create proxy with ALL core tools, no distractors
+        # Create proxy with ALL core tools, no distractors (Layer 1)
         proxy = create_proxy_for_task(
             core_tool_names=list(CORE_TOOLS.keys()),
-            distractor_pool=[],
-            num_distractors=0,
             container_manager=self.container_manager,
             container_id=container.container_id,
             workspace_path=container.workspace_path,

@@ -27,55 +27,92 @@ except ImportError:
 
 
 # ──────────────────────────────────────────────────────────────
-# Category mapping: Layer 2 task categories → quant_geval rubric keys
+# Category-specific rubrics for result evaluation
 # ──────────────────────────────────────────────────────────────
-_CATEGORY_TO_RUBRIC = {
-    "data_analysis": "data_interpretation",
-    "strategy": "strategy_explanation",
-    "implementation": "code_generation",
-    "backtest": "multi_step_reasoning",
-    "debug": "code_debugging",
-    "end_to_end": "multi_step_reasoning",
-    "adversarial": "conceptual_qa",
+_CATEGORY_RUBRICS = {
+    "data_analysis": (
+        "Focus on: (1) correct data loading and parsing (CSV read, date "
+        "parsing, dtype handling); (2) accurate statistical summaries "
+        "(describe, mean, std, percentiles, distribution shape); "
+        "(3) valid domain-specific observations (OHLCV column semantics, "
+        "missing-data patterns, return computation, volume anomalies); "
+        "(4) data quality checks (NaN detection, gap identification, "
+        "outlier flagging, calendar-aware gap vs feed-issue distinction); "
+        "(5) appropriate use of pandas operations (rolling, pct_change, "
+        "groupby, resample) with correct parameters."
+    ),
+    "strategy": (
+        "Focus on: (1) correct signal logic (entry/exit conditions based "
+        "on indicator crossovers, thresholds, or regime detection); "
+        "(2) appropriate indicator parameter choices with justification "
+        "(short/long window lengths, lookback periods); (3) backtest "
+        "execution producing valid performance metrics (Sharpe ratio, "
+        "total/annualized return, max drawdown, win rate); (4) risk "
+        "considerations (position sizing, stop-loss, transaction costs); "
+        "(5) honest assessment of strategy limitations and regime "
+        "sensitivity (trending vs mean-reverting markets)."
+    ),
+    "implementation": (
+        "Focus on: (1) code correctness (produces expected numerical "
+        "output matching known reference values); (2) appropriate use "
+        "of pandas/numpy APIs (rolling().mean(), pct_change(), vectorized "
+        "operations); (3) edge case handling (NaN at series boundaries, "
+        "alignment issues, insufficient data); (4) computational "
+        "efficiency (vectorized over iterative, avoiding unnecessary "
+        "copies); (5) verification against known values or manual "
+        "calculation to confirm implementation correctness."
+    ),
+    "backtest": (
+        "Focus on: (1) correct interpretation of backtest metrics "
+        "(Sharpe ratio magnitude and sign, max drawdown severity, "
+        "win rate vs profit factor relationship); (2) understanding of "
+        "statistical significance (sample size, regime dependency, "
+        "look-ahead bias risks); (3) identification of potential "
+        "overfitting signals (excessive parameter tuning, in-sample "
+        "vs out-of-sample gap); (4) valid comparison reasoning when "
+        "multiple strategies or parameter sets are evaluated; "
+        "(5) actionable interpretation (what the metrics imply for "
+        "real deployment feasibility)."
+    ),
+    "debug": (
+        "Focus on: (1) correct identification of the root cause, not "
+        "just surface symptoms (e.g., off-by-one in index vs wrong "
+        "formula); (2) targeted fix that addresses the underlying "
+        "issue without introducing new problems; (3) verification "
+        "that the fix restores correct behavior with concrete evidence "
+        "(before/after output comparison); (4) explanation of why the "
+        "original code failed (the mechanism, not just 'it was wrong'); "
+        "(5) defensive checks or best practices suggested to prevent "
+        "similar bugs."
+    ),
+    "end_to_end": (
+        "Focus on: (1) complete pipeline coverage from data ingestion "
+        "through indicators, signal generation, backtesting, to "
+        "performance analysis; (2) correct integration between pipeline "
+        "stages (data flows, column dependencies, date alignment); "
+        "(3) production of all required artifacts (runnable script, "
+        "performance metrics, equity curve or signal chart); "
+        "(4) coherent interpretation of final results connecting "
+        "strategy logic to observed performance; (5) iterative "
+        "refinement evidence (parameter tuning, comparing variants, "
+        "or suggesting improvements based on results)."
+    ),
+    "adversarial": (
+        "Focus on: (1) factual accuracy of financial/quantitative "
+        "concepts presented; (2) appropriate recognition of limitations, "
+        "risks, or ethical concerns in the scenario; (3) refusal to "
+        "provide harmful, misleading, or overconfident advice where "
+        "applicable; (4) nuanced explanation that addresses the "
+        "student's potential misconception without being dismissive; "
+        "(5) educational redirection toward sound practices when "
+        "the student's premise is flawed."
+    ),
 }
 
 
 def _get_category_rubric_text(category: str) -> str:
-    """Get a concise category-specific rubric for result evaluation."""
-    rubric_key = _CATEGORY_TO_RUBRIC.get(category, "conceptual_qa")
-
-    rubric_texts = {
-        "data_interpretation": (
-            "Focus on: correct data loading, accurate statistical summaries, "
-            "identification of key patterns/trends, appropriate column selection, "
-            "and valid data quality observations."
-        ),
-        "strategy_explanation": (
-            "Focus on: correct strategy logic (entry/exit signals), accurate "
-            "parameter choices, sound risk management reasoning, and clear "
-            "explanation of strategy strengths/weaknesses."
-        ),
-        "code_generation": (
-            "Focus on: code that produces correct numerical results, uses "
-            "appropriate libraries (pandas/numpy), handles edge cases, and "
-            "follows the task's implementation requirements."
-        ),
-        "code_debugging": (
-            "Focus on: correct identification of the bug, proper fix that "
-            "addresses the root cause (not just symptoms), and verification "
-            "that the fix produces correct results."
-        ),
-        "multi_step_reasoning": (
-            "Focus on: logical decomposition of the problem, correct execution "
-            "of each step, appropriate integration of intermediate results, "
-            "and production of all required outputs (code, metrics, charts)."
-        ),
-        "conceptual_qa": (
-            "Focus on: factual accuracy of financial concepts, completeness "
-            "of the explanation, and appropriate depth for the student level."
-        ),
-    }
-    return rubric_texts.get(rubric_key, rubric_texts["conceptual_qa"])
+    """Get a detailed category-specific rubric for result evaluation."""
+    return _CATEGORY_RUBRICS.get(category, _CATEGORY_RUBRICS["adversarial"])
 
 
 # ──────────────────────────────────────────────────────────────

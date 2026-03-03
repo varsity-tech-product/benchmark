@@ -15,11 +15,42 @@ from mcp_servers.proxy.mcp_proxy import MCPProxy
 # and don't need subprocess or Docker wrapping.
 CODE_EXEC_TOOLS = {"shell_exec"}
 
+# Total tool slots available to the agent (core + convenient + distractors).
+_TOTAL_TOOL_SLOTS = 15
+
+
+def _register_core_tool(
+    proxy, name, container_manager, container_id, workspace_path, use_docker
+):
+    """Register a single core/convenient tool on the proxy."""
+    if name not in CORE_TOOLS:
+        return
+    tool_info = CORE_TOOLS[name]
+
+    if name in CODE_EXEC_TOOLS and container_manager is not None:
+        from mcp_servers.core.tool_wrappers import make_shell_exec
+
+        factories = {"shell_exec": make_shell_exec}
+        func = factories[name](
+            container_manager,
+            container_id,
+            workspace_path,
+            use_docker,
+        )
+    else:
+        func = tool_info["func"]
+
+    proxy.register_tool(
+        name=name,
+        func=func,
+        description=tool_info["description"],
+        params=tool_info.get("params", {}),
+    )
+
 
 def create_proxy_for_task(
     core_tool_names: list[str],
-    distractor_pool: list[str],
-    num_distractors: int = 5,
+    convenient_tool_names: list[str] | None = None,
     seed: Optional[int] = None,
     container_manager=None,
     container_id: Optional[str] = None,
@@ -30,8 +61,9 @@ def create_proxy_for_task(
 
     Args:
         core_tool_names: List of core tool names to make available.
-        distractor_pool: Pool of distractor tool names to sample from.
-        num_distractors: Number of distractors to include.
+        convenient_tool_names: Optional list of convenient tool names
+            (bonus-eligible shortcuts).  Registered as regular tools
+            but tracked separately for evaluation.
         seed: Random seed for reproducible distractor selection.
         container_manager: ContainerManager instance for Docker execution.
         container_id: Docker container ID for code execution tools.
@@ -41,44 +73,44 @@ def create_proxy_for_task(
     Returns:
         Configured MCPProxy instance.
     """
+    convenient_tool_names = convenient_tool_names or []
     proxy = MCPProxy()
 
     # Register core tools
     for name in core_tool_names:
-        if name in CORE_TOOLS:
-            tool_info = CORE_TOOLS[name]
+        _register_core_tool(
+            proxy,
+            name,
+            container_manager,
+            container_id,
+            workspace_path,
+            use_docker,
+        )
 
-            # Code execution tools: use Docker-aware wrappers when container is available
-            if name in CODE_EXEC_TOOLS and container_manager is not None:
-                from mcp_servers.core.tool_wrappers import make_shell_exec
+    # Register convenient tools (same mechanism as core — agent sees no difference)
+    for name in convenient_tool_names:
+        _register_core_tool(
+            proxy,
+            name,
+            container_manager,
+            container_id,
+            workspace_path,
+            use_docker,
+        )
 
-                factories = {
-                    "shell_exec": make_shell_exec,
-                }
-                func = factories[name](
-                    container_manager,
-                    container_id,
-                    workspace_path,
-                    use_docker,
-                )
-            else:
-                func = tool_info["func"]
+    # Sample distractors from global pool, excluding core and convenient.
+    excluded = set(core_tool_names) | set(convenient_tool_names)
+    available = [d for d in DISTRACTOR_TOOLS if d not in excluded]
 
-            proxy.register_tool(
-                name=name,
-                func=func,
-                description=tool_info["description"],
-                params=tool_info.get("params", {}),
-            )
+    n = _TOTAL_TOOL_SLOTS - len(core_tool_names) - len(convenient_tool_names)
+    n = max(0, min(n, len(available)))
 
-    # Sample and register distractors
-    available = [d for d in distractor_pool if d in DISTRACTOR_TOOLS]
     if seed is not None:
         rng = random.Random(seed)
     else:
         rng = random.Random()
 
-    selected = rng.sample(available, min(num_distractors, len(available)))
+    selected = rng.sample(available, n)
 
     for name in selected:
         info = DISTRACTOR_TOOLS[name]

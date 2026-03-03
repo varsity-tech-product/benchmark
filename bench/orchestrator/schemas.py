@@ -37,30 +37,21 @@ class TaskType(str, Enum):
     MULTI_TURN = "multi_turn"
 
 
-class RequiredCapability(BaseModel):
-    description: str
-    tool: Optional[str] = None
-    tool_any_of: Optional[list[str]] = None
-    output_contains: Optional[str] = None
-    evidence: Optional[str] = None
-
-
 class QuantValidation(BaseModel):
     eval_script: str
 
 
 class GroundTruth(BaseModel):
     expected_outcome: str
-    required_capabilities: list[RequiredCapability] = Field(default_factory=list)
+    required_capabilities: list[str] = Field(default_factory=list)
     expected_mcp_tools: list[str] = Field(default_factory=list)
+    convenient_tools: list[str] = Field(default_factory=list)
     quant_validation: Optional[QuantValidation] = None
 
 
 class EnvironmentConfig(BaseModel):
     data_files: list[str] = Field(default_factory=list)
     core_mcp_tools: list[str] = Field(default_factory=list)
-    distractor_mcp_tools_pool: list[str] = Field(default_factory=list)
-    num_distractors: int = 5
     docs_available: list[str] = Field(default_factory=list)
     sandbox_image: str = "quant-tutor-env:v1.0"
     # Whether this task requires outbound internet access inside the sandbox.
@@ -159,6 +150,9 @@ class TaskResult(BaseModel):
     code_process: dict = Field(
         default_factory=dict
     )  # Code Process Quality (iterative refinement + debugging + explanation)
+    tool_usage: dict = Field(
+        default_factory=dict
+    )  # Tool Usage scoring (expected/convenient/distractor)
     sandbox_info: dict = Field(default_factory=dict)
     cost_usd: float = 0.0
     duration_seconds: float = 0.0

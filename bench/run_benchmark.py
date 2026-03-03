@@ -403,6 +403,7 @@ def cmd_run_single(args):
     if result.process_metrics:
         print("\n--- Process Metrics (QP 7 Dimensions) ---")
         _QP_METRICS = [
+            "tool_usage",
             "step_efficiency",
             "process_reasonableness",
             "process_alignment",
@@ -535,6 +536,23 @@ def cmd_run_single(args):
             reason = cp.get("llm_judged", {}).get("reason", "")
             if reason:
                 print(f"  Reason: {reason[:200]}")
+
+    if result.tool_usage:
+        print("\n--- Tool Usage ---")
+        tu = result.tool_usage
+        print(f"  Score: {tu.get('score', 0):.4f}")
+        print(
+            f"  base={tu.get('base', '?')}  "
+            f"bonus={tu.get('bonus', '?')}  "
+            f"penalty_exp={tu.get('penalty_expected', '?')}  "
+            f"penalty_dist={tu.get('penalty_distractor', '?')}"
+        )
+        if tu.get("missing_expected"):
+            print(f"  Missing expected: {tu['missing_expected']}")
+        if tu.get("called_distractors"):
+            print(f"  Called distractors: {tu['called_distractors']}")
+        if tu.get("called_convenient"):
+            print(f"  Called convenient: {tu['called_convenient']}")
 
     if result.error:
         print(f"\nError: {result.error}")

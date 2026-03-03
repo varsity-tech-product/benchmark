@@ -149,6 +149,10 @@ class MCPProxy:
         """Get all calls to distractor tools."""
         return [entry for entry in self._logs if entry.name in self._distractors]
 
+    def get_distractor_names(self) -> list[str]:
+        """Get names of all registered distractor tools."""
+        return list(self._distractors.keys())
+
     def reset(self):
         """Reset all logs."""
         self._logs.clear()

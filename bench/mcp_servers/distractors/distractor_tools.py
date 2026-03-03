@@ -530,6 +530,390 @@ def _estimate_covariance(data_paths: list, method: str = "sample") -> str:
     return json.dumps(result, indent=2)
 
 
+def _fetch_live_price(symbol: str = "AAPL") -> str:
+    """Fetch the current live market price for a symbol."""
+    import time
+
+    # Hardcoded but realistic price data keyed by symbol
+    price_db = {
+        "AAPL": {"price": 178.72, "change": 1.34, "change_pct": 0.76},
+        "SPY": {"price": 452.18, "change": -0.92, "change_pct": -0.20},
+        "MSFT": {"price": 378.91, "change": 2.05, "change_pct": 0.54},
+        "GOOGL": {"price": 141.56, "change": -0.48, "change_pct": -0.34},
+        "TSLA": {"price": 248.42, "change": 3.71, "change_pct": 1.52},
+    }
+
+    sym = symbol.upper()
+    data = price_db.get(sym, {"price": 52.30, "change": 0.15, "change_pct": 0.29})
+
+    result = {
+        "symbol": sym,
+        "last_price": data["price"],
+        "change": data["change"],
+        "change_pct": data["change_pct"],
+        "bid": round(data["price"] - 0.02, 2),
+        "ask": round(data["price"] + 0.02, 2),
+        "volume": 48_392_105,
+        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "exchange": "NASDAQ",
+    }
+    return json.dumps(result, indent=2)
+
+
+def _query_database(query: str, database: str = "market_data") -> str:
+    """Execute a SQL query against the financial database."""
+    # Return plausible tabular data regardless of actual query
+    result = {
+        "database": database,
+        "query": query,
+        "columns": ["date", "symbol", "close", "volume"],
+        "rows": [
+            ["2024-01-02", "AAPL", 185.64, 45_231_098],
+            ["2024-01-03", "AAPL", 184.25, 42_672_301],
+            ["2024-01-04", "AAPL", 181.91, 49_118_457],
+            ["2024-01-05", "AAPL", 181.18, 40_289_012],
+            ["2024-01-08", "AAPL", 185.56, 46_017_823],
+        ],
+        "row_count": 5,
+        "execution_time_ms": 42,
+    }
+    return json.dumps(result, indent=2)
+
+
+def _fetch_news_sentiment(symbol: str = "AAPL", days: int = 7) -> str:
+    """Fetch aggregated news sentiment scores for a ticker."""
+    result = {
+        "symbol": symbol.upper(),
+        "period_days": days,
+        "overall_sentiment": 0.32,
+        "sentiment_label": "moderately_positive",
+        "articles_analyzed": 47,
+        "breakdown": {
+            "positive": 22,
+            "neutral": 18,
+            "negative": 7,
+        },
+        "top_topics": [
+            {"topic": "earnings", "sentiment": 0.61, "mentions": 15},
+            {"topic": "product_launch", "sentiment": 0.45, "mentions": 9},
+            {"topic": "regulation", "sentiment": -0.22, "mentions": 6},
+        ],
+        "source_distribution": {
+            "reuters": 12,
+            "bloomberg": 10,
+            "wsj": 8,
+            "other": 17,
+        },
+    }
+    return json.dumps(result, indent=2)
+
+
+def _submit_order(
+    symbol: str = "AAPL",
+    side: str = "buy",
+    quantity: int = 100,
+    order_type: str = "market",
+    limit_price: Optional[float] = None,
+) -> str:
+    """Submit a trading order to the execution system."""
+    import time
+
+    order_id = f"ORD-{abs(hash(symbol + side + str(quantity))) % 1_000_000:06d}"
+    fill_price = 178.72 if symbol.upper() == "AAPL" else 52.30
+
+    result = {
+        "order_id": order_id,
+        "status": "filled",
+        "symbol": symbol.upper(),
+        "side": side.lower(),
+        "quantity": quantity,
+        "order_type": order_type,
+        "limit_price": limit_price,
+        "fill_price": fill_price,
+        "fill_quantity": quantity,
+        "commission": round(quantity * 0.005, 2),
+        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+    }
+    return json.dumps(result, indent=2)
+
+
+def _fetch_options_chain(symbol: str = "AAPL", expiry: str = "2024-03-15") -> str:
+    """Fetch the options chain for a symbol and expiry date."""
+    base = 178.72 if symbol.upper() == "AAPL" else 52.30
+
+    calls = []
+    puts = []
+    for offset in [-10, -5, 0, 5, 10]:
+        strike = round(base + offset, 0)
+        itm_call = offset < 0
+        calls.append(
+            {
+                "strike": strike,
+                "bid": round(
+                    max(0.05, (base - strike) * (0.9 if itm_call else 0.3) + 2.5), 2
+                ),
+                "ask": round(
+                    max(0.10, (base - strike) * (0.9 if itm_call else 0.3) + 2.8), 2
+                ),
+                "volume": 1240 - abs(offset) * 80,
+                "open_interest": 5600 - abs(offset) * 300,
+                "iv": round(0.22 + abs(offset) * 0.005, 4),
+            }
+        )
+        itm_put = offset > 0
+        puts.append(
+            {
+                "strike": strike,
+                "bid": round(
+                    max(0.05, (strike - base) * (0.9 if itm_put else 0.3) + 2.0), 2
+                ),
+                "ask": round(
+                    max(0.10, (strike - base) * (0.9 if itm_put else 0.3) + 2.3), 2
+                ),
+                "volume": 980 - abs(offset) * 60,
+                "open_interest": 4200 - abs(offset) * 250,
+                "iv": round(0.23 + abs(offset) * 0.006, 4),
+            }
+        )
+
+    result = {
+        "symbol": symbol.upper(),
+        "expiry": expiry,
+        "underlying_price": base,
+        "calls": calls,
+        "puts": puts,
+    }
+    return json.dumps(result, indent=2)
+
+
+def _generate_image(
+    description: str = "stock price chart", width: int = 800, height: int = 600
+) -> str:
+    """Generate a chart or visualization image from a description."""
+    result = {
+        "status": "generated",
+        "description": description,
+        "dimensions": {"width": width, "height": height},
+        "format": "png",
+        "file_path": "/tmp/generated_chart.png",
+        "file_size_bytes": width * height * 3 // 4,
+        "renderer": "matplotlib",
+    }
+    return json.dumps(result, indent=2)
+
+
+def _get_current_time(timezone: str = "US/Eastern") -> str:
+    """Get the current time in a market timezone with session status."""
+    import time
+
+    now = time.time()
+    utc_str = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now))
+    hour_utc = int(time.strftime("%H", time.gmtime(now)))
+    weekday = int(time.strftime("%w", time.gmtime(now)))
+
+    # Approximate market session detection (Eastern Time = UTC-5)
+    et_hour = (hour_utc - 5) % 24
+    is_weekday = weekday not in (0, 6)
+    market_open = is_weekday and 9 <= et_hour < 16
+
+    result = {
+        "utc": utc_str,
+        "timezone": timezone,
+        "market_session": "regular" if market_open else "closed",
+        "pre_market": is_weekday and 4 <= et_hour < 9,
+        "after_hours": is_weekday and 16 <= et_hour < 20,
+        "next_open": "09:30 ET" if not market_open else None,
+        "exchange_calendar": "NYSE",
+    }
+    return json.dumps(result, indent=2)
+
+
+def _translate_text(text: str, source_lang: str = "en", target_lang: str = "zh") -> str:
+    """Translate financial text between languages."""
+    # Return a plausible translation response
+    translations = {
+        "zh": "（已翻译的金融文本）",
+        "ja": "（翻訳された金融テキスト）",
+        "de": "(Übersetzter Finanztext)",
+        "es": "(Texto financiero traducido)",
+        "fr": "(Texte financier traduit)",
+    }
+    translated = translations.get(target_lang, "(Translated financial text)")
+
+    result = {
+        "source_language": source_lang,
+        "target_language": target_lang,
+        "original_text": text[:200],
+        "translated_text": translated,
+        "confidence": 0.94,
+        "word_count": len(text.split()),
+        "detected_domain": "finance",
+    }
+    return json.dumps(result, indent=2)
+
+
+def _fetch_economic_calendar(days_ahead: int = 7, importance: str = "high") -> str:
+    """Fetch upcoming economic events from the calendar."""
+    events = [
+        {
+            "date": "2024-01-10",
+            "time": "08:30 ET",
+            "event": "CPI (YoY)",
+            "country": "US",
+            "importance": "high",
+            "forecast": "3.2%",
+            "previous": "3.1%",
+        },
+        {
+            "date": "2024-01-12",
+            "time": "10:00 ET",
+            "event": "Consumer Sentiment (Prelim)",
+            "country": "US",
+            "importance": "medium",
+            "forecast": "69.5",
+            "previous": "69.7",
+        },
+        {
+            "date": "2024-01-17",
+            "time": "08:30 ET",
+            "event": "Retail Sales (MoM)",
+            "country": "US",
+            "importance": "high",
+            "forecast": "0.4%",
+            "previous": "0.3%",
+        },
+        {
+            "date": "2024-01-18",
+            "time": "08:30 ET",
+            "event": "Initial Jobless Claims",
+            "country": "US",
+            "importance": "medium",
+            "forecast": "207K",
+            "previous": "202K",
+        },
+        {
+            "date": "2024-01-19",
+            "time": "10:00 ET",
+            "event": "Existing Home Sales",
+            "country": "US",
+            "importance": "medium",
+            "forecast": "3.82M",
+            "previous": "3.79M",
+        },
+    ]
+
+    filtered = [
+        e for e in events if importance == "all" or e["importance"] == importance
+    ]
+
+    result = {
+        "days_ahead": days_ahead,
+        "importance_filter": importance,
+        "events": filtered[:days_ahead],
+        "total_events": len(filtered),
+    }
+    return json.dumps(result, indent=2)
+
+
+def _fetch_crypto_data(
+    symbol: str = "BTC", interval: str = "1d", limit: int = 5
+) -> str:
+    """Fetch cryptocurrency OHLCV data."""
+    # Hardcoded plausible crypto data
+    base_prices = {
+        "BTC": 43250.0,
+        "ETH": 2280.0,
+        "SOL": 98.5,
+        "ADA": 0.58,
+    }
+    base = base_prices.get(symbol.upper(), 1.25)
+
+    import random
+
+    random.seed(42)
+    bars = []
+    for i in range(limit):
+        o = round(base * (1 + random.uniform(-0.03, 0.03)), 2)
+        c = round(base * (1 + random.uniform(-0.03, 0.03)), 2)
+        h = round(max(o, c) * (1 + random.uniform(0, 0.02)), 2)
+        lo = round(min(o, c) * (1 - random.uniform(0, 0.02)), 2)
+        bars.append(
+            {
+                "date": f"2024-01-{i + 2:02d}",
+                "open": o,
+                "high": h,
+                "low": lo,
+                "close": c,
+                "volume": round(random.uniform(1e9, 5e9), 0),
+            }
+        )
+
+    result = {
+        "symbol": symbol.upper(),
+        "interval": interval,
+        "exchange": "binance",
+        "bars": bars,
+        "currency": "USD",
+    }
+    return json.dumps(result, indent=2)
+
+
+def _compare_series(data_path_1: str, data_path_2: str, column: str = "Close") -> str:
+    """Compare two time series for correlation, cointegration, and divergence."""
+    import numpy as np
+    import pandas as pd
+
+    p1 = _resolve_data_path(data_path_1)
+    p2 = _resolve_data_path(data_path_2)
+    if not p1:
+        return f"Error: File not found: {data_path_1}"
+    if not p2:
+        return f"Error: File not found: {data_path_2}"
+
+    df1 = pd.read_csv(p1)
+    df2 = pd.read_csv(p2)
+
+    if column not in df1.columns or column not in df2.columns:
+        return f"Error: Both files must have a '{column}' column"
+
+    min_len = min(len(df1), len(df2))
+    s1 = df1[column].values[:min_len].astype(float)
+    s2 = df2[column].values[:min_len].astype(float)
+
+    # Remove NaN
+    mask = ~(np.isnan(s1) | np.isnan(s2))
+    s1, s2 = s1[mask], s2[mask]
+
+    corr = float(np.corrcoef(s1, s2)[0, 1])
+
+    r1 = np.diff(np.log(s1))
+    r2 = np.diff(np.log(s2))
+    ret_corr = float(np.corrcoef(r1, r2)[0, 1])
+
+    # Tracking error
+    tracking_err = float(np.std(r1 - r2) * np.sqrt(252))
+
+    # Simple ratio stats
+    ratio = s1 / s2
+    ratio_mean = float(np.mean(ratio))
+    ratio_std = float(np.std(ratio))
+
+    result = {
+        "series_1": os.path.basename(data_path_1),
+        "series_2": os.path.basename(data_path_2),
+        "column": column,
+        "observations": int(len(s1)),
+        "level_correlation": round(corr, 4),
+        "return_correlation": round(ret_corr, 4),
+        "annualized_tracking_error": round(tracking_err, 4),
+        "price_ratio": {
+            "mean": round(ratio_mean, 4),
+            "std": round(ratio_std, 4),
+        },
+    }
+    return json.dumps(result, indent=2)
+
+
 # ────────────────────────────────────────────────────────────────
 # Registry
 # ────────────────────────────────────────────────────────────────
@@ -771,6 +1155,239 @@ DISTRACTOR_TOOLS = {
             "method": {
                 "type": "string",
                 "description": "Estimation method: 'sample', 'shrinkage', or 'ewma'. Default: 'sample'",
+                "required": False,
+            },
+        },
+    },
+    "fetch_live_price": {
+        "description": (
+            "Fetch the current live market price, bid/ask, and volume "
+            "for a given stock symbol"
+        ),
+        "func": _fetch_live_price,
+        "params": {
+            "symbol": {
+                "type": "string",
+                "description": "Stock ticker symbol, e.g. 'AAPL', 'MSFT'",
+                "required": True,
+            },
+        },
+    },
+    "query_database": {
+        "description": (
+            "Execute a SQL query against the financial data warehouse "
+            "and return matching rows"
+        ),
+        "func": _query_database,
+        "params": {
+            "query": {
+                "type": "string",
+                "description": "SQL query string, e.g. 'SELECT * FROM prices WHERE symbol = \"AAPL\"'",
+                "required": True,
+            },
+            "database": {
+                "type": "string",
+                "description": "Target database name. Default: 'market_data'",
+                "required": False,
+            },
+        },
+    },
+    "fetch_news_sentiment": {
+        "description": (
+            "Fetch aggregated news sentiment analysis scores "
+            "for a stock ticker over a given period"
+        ),
+        "func": _fetch_news_sentiment,
+        "params": {
+            "symbol": {
+                "type": "string",
+                "description": "Stock ticker symbol, e.g. 'AAPL'",
+                "required": True,
+            },
+            "days": {
+                "type": "integer",
+                "description": "Number of past days to analyze. Default: 7",
+                "required": False,
+            },
+        },
+    },
+    "submit_order": {
+        "description": (
+            "Submit a trading order (market or limit) to the "
+            "brokerage execution system"
+        ),
+        "func": _submit_order,
+        "params": {
+            "symbol": {
+                "type": "string",
+                "description": "Stock ticker symbol to trade",
+                "required": True,
+            },
+            "side": {
+                "type": "string",
+                "description": "Order side: 'buy' or 'sell'. Default: 'buy'",
+                "required": False,
+            },
+            "quantity": {
+                "type": "integer",
+                "description": "Number of shares. Default: 100",
+                "required": False,
+            },
+            "order_type": {
+                "type": "string",
+                "description": "Order type: 'market' or 'limit'. Default: 'market'",
+                "required": False,
+            },
+            "limit_price": {
+                "type": "number",
+                "description": "Limit price (required for limit orders)",
+                "required": False,
+            },
+        },
+    },
+    "fetch_options_chain": {
+        "description": (
+            "Fetch the full options chain (calls and puts with strikes, "
+            "bids, asks, volume, IV) for a symbol and expiry"
+        ),
+        "func": _fetch_options_chain,
+        "params": {
+            "symbol": {
+                "type": "string",
+                "description": "Underlying stock ticker symbol",
+                "required": True,
+            },
+            "expiry": {
+                "type": "string",
+                "description": "Expiration date in YYYY-MM-DD format. Default: '2024-03-15'",
+                "required": False,
+            },
+        },
+    },
+    "generate_image": {
+        "description": (
+            "Generate a chart or data visualization image " "from a text description"
+        ),
+        "func": _generate_image,
+        "params": {
+            "description": {
+                "type": "string",
+                "description": "Description of the chart to generate",
+                "required": True,
+            },
+            "width": {
+                "type": "integer",
+                "description": "Image width in pixels. Default: 800",
+                "required": False,
+            },
+            "height": {
+                "type": "integer",
+                "description": "Image height in pixels. Default: 600",
+                "required": False,
+            },
+        },
+    },
+    "get_current_time": {
+        "description": (
+            "Get the current time in a market timezone along with "
+            "trading session status (pre-market, regular, after-hours)"
+        ),
+        "func": _get_current_time,
+        "params": {
+            "timezone": {
+                "type": "string",
+                "description": "Timezone identifier, e.g. 'US/Eastern', 'UTC'. Default: 'US/Eastern'",
+                "required": False,
+            },
+        },
+    },
+    "translate_text": {
+        "description": (
+            "Translate financial or technical text between languages "
+            "with domain-aware terminology"
+        ),
+        "func": _translate_text,
+        "params": {
+            "text": {
+                "type": "string",
+                "description": "Text to translate",
+                "required": True,
+            },
+            "source_lang": {
+                "type": "string",
+                "description": "Source language code (e.g. 'en'). Default: 'en'",
+                "required": False,
+            },
+            "target_lang": {
+                "type": "string",
+                "description": "Target language code (e.g. 'zh', 'ja', 'de'). Default: 'zh'",
+                "required": False,
+            },
+        },
+    },
+    "fetch_economic_calendar": {
+        "description": (
+            "Fetch upcoming macroeconomic events and data releases "
+            "with forecasts and prior values"
+        ),
+        "func": _fetch_economic_calendar,
+        "params": {
+            "days_ahead": {
+                "type": "integer",
+                "description": "Number of days ahead to fetch events. Default: 7",
+                "required": False,
+            },
+            "importance": {
+                "type": "string",
+                "description": "Filter by importance: 'high', 'medium', or 'all'. Default: 'high'",
+                "required": False,
+            },
+        },
+    },
+    "fetch_crypto_data": {
+        "description": (
+            "Fetch historical OHLCV bars for a cryptocurrency pair "
+            "from a major exchange"
+        ),
+        "func": _fetch_crypto_data,
+        "params": {
+            "symbol": {
+                "type": "string",
+                "description": "Cryptocurrency symbol, e.g. 'BTC', 'ETH', 'SOL'",
+                "required": True,
+            },
+            "interval": {
+                "type": "string",
+                "description": "Bar interval: '1m', '5m', '1h', '1d'. Default: '1d'",
+                "required": False,
+            },
+            "limit": {
+                "type": "integer",
+                "description": "Number of bars to return. Default: 5",
+                "required": False,
+            },
+        },
+    },
+    "compare_series": {
+        "description": (
+            "Compare two time series for correlation, return co-movement, "
+            "and tracking error analysis"
+        ),
+        "func": _compare_series,
+        "params": {
+            "data_path_1": {
+                "type": "string",
+                "description": "Path to CSV file for the first series",
+                "required": True,
+            },
+            "data_path_2": {
+                "type": "string",
+                "description": "Path to CSV file for the second series",
+                "required": True,
+            },
+            "column": {
+                "type": "string",
+                "description": "Column name to compare. Default: 'Close'",
                 "required": False,
             },
         },

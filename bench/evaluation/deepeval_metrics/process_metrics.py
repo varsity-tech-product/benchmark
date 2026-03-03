@@ -3,13 +3,24 @@
 Design doc §6.1 (Quant Process Scoring) and §9 (DeepEval Component Mapping).
 
 Metrics implemented:
+- Tool Usage: mathematical scoring of tool selection quality (tool_usage.py)
 - Step Efficiency: 3-sub-dimension evaluation via direct GPTModel call
   (Action Economy, Redundancy Avoidance, Logical Sequencing)
 - Process Reasonableness: tool-agnostic execution quality (process_reasonableness.py)
 - Process Alignment: reference-anchored process comparison (process_reasonableness.py)
+- Code Process: code development process quality (code_process.py)
 - RoleAdherenceMetric: stays in "tutor" role? (ConversationalTestCase)
 - KnowledgeRetentionMetric: remembers earlier context? (ConversationalTestCase)
 - TopicAdherenceMetric: stays on quant finance topics? (ConversationalTestCase)
+
+QP aggregate = weighted average of 7 dimensions (knowledge_retention excluded):
+    tool_usage              0.20
+    process_reasonableness  0.20
+    step_efficiency         0.15
+    code_process            0.15
+    process_alignment       0.10
+    role_adherence          0.10
+    topic_adherence         0.10
 
 Reference: https://github.com/confident-ai/deepeval
 """
@@ -78,6 +89,23 @@ QUANT_TUTOR_TOPICS = [
     "machine learning in finance",
     "order execution and transaction costs",
 ]
+
+
+# ──────────────────────────────────────────────────────────────
+# QP Dimension Weights (7 dimensions, knowledge_retention excluded)
+# ──────────────────────────────────────────────────────────────
+# Dimensions with score=None or skipped=True are excluded and
+# remaining weights are renormalized to sum to 1.0.
+
+_QP_DIMENSION_WEIGHTS = {
+    "tool_usage": 0.20,
+    "process_reasonableness": 0.20,
+    "step_efficiency": 0.15,
+    "code_process": 0.15,
+    "process_alignment": 0.10,
+    "role_adherence": 0.10,
+    "topic_adherence": 0.10,
+}
 
 
 # ──────────────────────────────────────────────────────────────
@@ -761,6 +789,7 @@ def evaluate_all_process_metrics(
     model=None,
     reference_trace: Optional[dict] = None,
     is_adversarial: bool = False,
+    tool_usage_result: Optional[dict] = None,
 ) -> dict:
     """Run all process-level metrics in parallel and return consolidated results.
 
@@ -778,6 +807,7 @@ def evaluate_all_process_metrics(
         reference_trace: Reference execution data (from ReferenceStore) for step
             efficiency and process alignment anchoring.
         is_adversarial: Whether this is an adversarial task (skips alignment).
+        tool_usage_result: Pre-computed tool usage score (from tool_usage.py).
 
     Returns:
         Dict with per-metric scores (cross-model average), an aggregate
@@ -916,37 +946,63 @@ def evaluate_all_process_metrics(
             per_model_str = f"  ({', '.join(parts)})"
         print(f"      {metric_name}: {score}{tag}{per_model_str}")
 
-    # ── Compute aggregate process score (cross-model averaged) ──
-    all_scores = [
-        v["score"]
-        for k, v in results.items()
-        if isinstance(v, dict)
-        and "score" in v
-        and v.get("score") is not None
-        and not v.get("skipped", False)
-        and k != "knowledge_retention"
-    ]
-    results["aggregate_process_score"] = round(
-        sum(all_scores) / len(all_scores) if all_scores else 0.5, 4
-    )
+    # ── Inject pre-computed tool_usage score ──
+    if tool_usage_result is not None:
+        results["tool_usage"] = tool_usage_result
+        tu_score = tool_usage_result.get("score", "?")
+        print(f"      tool_usage: {tu_score}")
+
+    # ── Compute weighted aggregate process score ──
+    available_dims: dict[str, float] = {}
+    for dim, weight in _QP_DIMENSION_WEIGHTS.items():
+        v = results.get(dim)
+        if (
+            isinstance(v, dict)
+            and v.get("score") is not None
+            and not v.get("skipped", False)
+        ):
+            available_dims[dim] = v["score"]
+
+    if available_dims:
+        total_weight = sum(_QP_DIMENSION_WEIGHTS[d] for d in available_dims)
+        aggregate = sum(
+            _QP_DIMENSION_WEIGHTS[d] * available_dims[d] / total_weight
+            for d in available_dims
+        )
+    else:
+        aggregate = 0.5
+
+    results["aggregate_process_score"] = round(aggregate, 4)
     print(f"      aggregate_process_score: {results['aggregate_process_score']}")
 
     # ── Per-model aggregate breakdown ──
     if multi_model:
         per_model_agg: dict[str, dict] = {}
         for mname in model_names:
-            m_scores = [
-                v.get("score", 0.5)
-                for k, v in model_results[mname].items()
-                if isinstance(v, dict)
-                and v.get("score") is not None
-                and not v.get("skipped", False)
-                and k != "knowledge_retention"
-            ]
+            m_avail: dict[str, float] = {}
+            for dim, weight in _QP_DIMENSION_WEIGHTS.items():
+                # tool_usage is model-independent — use the same score
+                if dim == "tool_usage" and tool_usage_result is not None:
+                    tu_s = tool_usage_result.get("score")
+                    if tu_s is not None:
+                        m_avail[dim] = tu_s
+                    continue
+                v = model_results[mname].get(dim, {})
+                if (
+                    isinstance(v, dict)
+                    and v.get("score") is not None
+                    and not v.get("skipped", False)
+                ):
+                    m_avail[dim] = v["score"]
+            if m_avail:
+                m_total_w = sum(_QP_DIMENSION_WEIGHTS[d] for d in m_avail)
+                m_agg = sum(
+                    _QP_DIMENSION_WEIGHTS[d] * m_avail[d] / m_total_w for d in m_avail
+                )
+            else:
+                m_agg = 0.5
             per_model_agg[mname] = {
-                "aggregate_process_score": round(
-                    sum(m_scores) / len(m_scores) if m_scores else 0.5, 4
-                ),
+                "aggregate_process_score": round(m_agg, 4),
                 **{
                     k: v.get("score")
                     for k, v in model_results[mname].items()
