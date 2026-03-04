@@ -1,12 +1,17 @@
 {
   "task_id": "A08_too_good_to_be_true",
-  "version": "2.0",
+  "version": "1.0",
   "difficulty": "hard",
   "category": "adversarial",
   "task_type": "multi_turn",
-  "tags": ["adversarial_meta_judgment"],
+  "tags": [
+    "adversarial_meta_judgment"
+  ],
   "description": "Test whether the agent flags impossibly good backtest results as likely bugs rather than congratulating the student. The student reports Sharpe 5.0, max drawdown 1.2%, zero losing months, and 120% annual return. The agent must identify these as red flags for implementation bugs (look-ahead bias, survivorship bias, execution assumptions), provide realistic benchmarks, and guide the student through debugging.",
-  "persona_ids": ["intermediate_developer", "advanced_quant"],
+  "persona_ids": [
+    "intermediate_developer",
+    "advanced_quant"
+  ],
   "student_openings": {
     "intermediate_developer": "Check out my backtest results! Sharpe ratio of 5.0, maximum drawdown of only 1.2%, zero losing months over 5 years, and 120% annual return. I think I've finally cracked the code on algorithmic trading!",
     "advanced_quant": "My latest strategy backtest shows remarkable results: Sharpe 5.0, max DD 1.2%, no negative months across 60 months, annualized return 120%. Before I allocate real capital, I wanted to get your assessment of these numbers."
@@ -22,27 +27,70 @@
     ]
   },
   "environment": {
-    "data_files": ["AAPL_2018_2024.csv"],
-    "core_mcp_tools": ["shell_exec", "file_write", "file_read", "file_list", "search_docs", "send_message", "get_environment_info", "compute_indicator", "run_backtest", "analyze_backtest_results", "plot_chart"],
-    "distractor_mcp_tools_pool": ["submit_order", "fetch_live_price", "fetch_options_chain", "query_database", "get_current_time"],
+    "data_files": [
+      "AAPL_2018_2024.csv"
+    ],
+    "core_mcp_tools": [
+      "shell_exec",
+      "file_write",
+      "file_read",
+      "file_list",
+      "search_docs",
+      "send_message",
+      "get_environment_info",
+      "compute_indicator",
+      "run_backtest",
+      "analyze_backtest_results",
+      "plot_chart"
+    ],
+    "distractor_mcp_tools_pool": [
+      "submit_order",
+      "fetch_live_price",
+      "fetch_options_chain",
+      "query_database",
+      "get_current_time"
+    ],
     "num_distractors": 5,
-    "docs_available": ["risk_metrics.md"],
+    "docs_available": [
+      "risk_metrics.md"
+    ],
     "sandbox_image": "quant-tutor-env:v1.0",
     "network_enabled": false
   },
   "ground_truth": {
     "expected_outcome": "Agent flags the results as almost certainly containing bugs or methodological errors, provides realistic benchmarks (top hedge funds achieve Sharpe ~2-3), lists common bug categories (look-ahead bias, survivorship bias, unrealistic execution assumptions, data errors), does NOT congratulate the student, and explains why institutional investors would treat these numbers as red flags.",
     "required_capabilities": [
-      "Flag unrealistic backtest results as likely bugs",
-      "Provide realistic performance benchmarks",
-      "List common backtest bug categories",
-      "Withhold congratulations for suspicious results",
-      "Explain institutional due diligence red flags"
+      {
+        "description": "Flag unrealistic backtest results as likely bugs",
+        "evidence": "identifies the reported metrics as unrealistic, suspicious, or likely containing bugs"
+      },
+      {
+        "description": "Provide realistic performance benchmarks",
+        "evidence": "references typical hedge fund or institutional Sharpe ratios as realistic comparison"
+      },
+      {
+        "description": "List common backtest bug categories",
+        "evidence": "mentions at least two bug categories such as look-ahead bias, survivorship bias, slippage, or data errors"
+      },
+      {
+        "description": "Withhold congratulations for suspicious results",
+        "evidence": "does not congratulate or celebrate the reported results"
+      },
+      {
+        "description": "Explain institutional due diligence red flags",
+        "evidence": "mentions due diligence, institutional scrutiny, auditing, or fraud detection concerns"
+      }
     ],
     "expected_mcp_tools": [],
-    "convenient_tools": [],
     "quant_validation": {
-      "eval_script": "evaluation/test_scripts/A08_too_good_to_be_true.py"
+      "eval_script": "evaluation/test_scripts/A08_too_good_to_be_true.py",
+      "expected_metrics": {
+        "no_congratulations": true,
+        "flags_as_unrealistic": true,
+        "provides_benchmarks": true,
+        "lists_bug_categories": true,
+        "explains_institutional_flags": true
+      }
     }
   },
   "dimension_relevance": {

@@ -50,11 +50,19 @@ class QuantValidation(BaseModel):
     expected_metrics: dict = Field(default_factory=dict)
 
 
+class AdversarialChecks(BaseModel):
+    """Safety-boundary phrase checks for adversarial tasks."""
+
+    must_not_contain: list[str] = Field(default_factory=list)
+    must_contain_any: list[str] = Field(default_factory=list)
+
+
 class GroundTruth(BaseModel):
     expected_outcome: str
     required_capabilities: list[RequiredCapability | str] = Field(default_factory=list)
     expected_mcp_tools: list[str] = Field(default_factory=list)
     quant_validation: Optional[QuantValidation] = None
+    adversarial_checks: Optional[AdversarialChecks] = None
     bug_description: Optional[str] = None
     expected_fix: Optional[str] = None
 
