@@ -29,9 +29,10 @@ Based on the design document: `design_2026_2_12_updated.md`
 │  │  - openai     │   │  /data     (RO)   │   │  - GEval       │  │
 │  │  - anthropic  │   │  /docs     (RO)   │   │  - MCP Metrics │  │
 │  │  - google     │   │  /student_code    │   │  - Conv.GEval  │  │
-│  └──────────────┘   │  --network none    │   └────────────────┘  │
-│                     │  CPU:2 / RAM:4GB   │                       │
-│                     └──────────────────┘                         │
+│  │  - mistral    │   │  --network none    │   └────────────────┘  │
+│  │  - strands    │   │  CPU:2 / RAM:4GB   │                       │
+│  │  - microsoft  │   └──────────────────┘                         │
+│  └──────────────┘                                                 │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -58,10 +59,14 @@ bench/
 │   ├── trace_assembler.py        #   Combines proxy logs + dialogue → TestCase
 │   └── agent_adapters/           #   SDK-specific agent wrappers
 │       ├── base_adapter.py       #     Abstract base class
+│       ├── registry.py           #     Pluggable adapter registry
 │       ├── generic_adapter.py    #     OpenAI-compatible API (OpenRouter)
 │       ├── openai_adapter.py     #     OpenAI Agents SDK (native)
 │       ├── anthropic_adapter.py  #     Claude Agent SDK (native)
-│       ├── google_adapter.py     #     Google ADK (native)
+│       ├── google_adapter.py     #     Google GenAI SDK (native)
+│       ├── mistral_adapter.py    #     Mistral AI SDK (native)
+│       ├── strands_adapter.py    #     AWS Strands Agents SDK (Bedrock/Anthropic/OpenAI)
+│       ├── microsoft_adapter.py  #     Microsoft Agent Framework (preview)
 │       └── prompts.py            #     Re-exports from config/prompt_config.py
 │
 ├── mcp_servers/                  # MCP tool infrastructure
@@ -244,14 +249,29 @@ Baseline      │  baseline           │  pure_llm_baseline   │
 
 ## Agent Adapters
 
-| Adapter    | SDK                  | Model (default)       | Tool Calling |
-|------------|----------------------|-----------------------|--------------|
-| `generic`  | OpenAI-compatible API | `google/gemini-3-flash-preview` (via OpenRouter) | OpenAI function calling |
-| `openai`   | OpenAI Agents SDK    | `gpt-4o`              | Native FunctionTool |
-| `anthropic`| Claude Agent SDK     | `claude-sonnet-4-6`   | SdkMcpTool + ClaudeSDKClient |
-| `google`   | Google ADK           | `gemini-2.5-flash`    | Native tools |
+All adapters implement `BaseAgentAdapter.generate_response(messages, available_tools, tool_callback)` and are registered in `registry.py` for plug-and-play use via `--agent <name>`.
 
-All adapters implement `BaseAgentAdapter.generate_response(messages, available_tools, tool_callback)`.
+| Adapter      | SDK                       | Model (default)                              | Tool Calling                  | Install                          |
+|--------------|---------------------------|----------------------------------------------|-------------------------------|----------------------------------|
+| `generic`    | OpenAI-compatible API     | `openai/gpt-5.2` (via OpenRouter)            | OpenAI function calling       | *(included with openai)*         |
+| `openai`     | OpenAI Agents SDK         | `gpt-5.2`                                    | Native FunctionTool + Runner  | `pip install openai-agents`      |
+| `anthropic`  | Claude Agent SDK          | `claude-sonnet-4-6`                          | SdkMcpTool + ClaudeSDKClient | `pip install claude-agent-sdk`   |
+| `google`     | Google GenAI SDK          | `gemini-2.5-flash`                           | Native function declarations  | `pip install google-genai`       |
+| `mistral`    | Mistral AI SDK            | `mistral-large-latest`                       | OpenAI-compatible fn calling  | `pip install mistralai`          |
+| `strands`    | AWS Strands Agents SDK    | `us.anthropic.claude-sonnet-4-20250514-v1:0` | SDK-managed autonomous loop   | `pip install strands-agents`     |
+| `microsoft`  | Microsoft Agent Framework | `gpt-4o`                                     | SDK-managed autonomous loop   | `pip install agent-framework`    |
+
+### Required API keys per adapter
+
+| Adapter      | Required Environment Variable(s)                                             |
+|--------------|------------------------------------------------------------------------------|
+| `generic`    | `OPENROUTER_API_KEY`                                                         |
+| `openai`     | `OPENROUTER_API_KEY` (routes via OpenRouter) or `OPENAI_API_KEY`             |
+| `anthropic`  | `ANTHROPIC_API_KEY`                                                          |
+| `google`     | `GOOGLE_API_KEY` or `GEMINI_API_KEY`                                         |
+| `mistral`    | `MISTRAL_API_KEY`                                                            |
+| `strands`    | `AWS_ACCESS_KEY_ID` + `AWS_SECRET_ACCESS_KEY` (Bedrock), or `ANTHROPIC_API_KEY`, or `OPENAI_API_KEY` |
+| `microsoft`  | `OPENAI_API_KEY`                                                             |
 
 ---
 
@@ -299,7 +319,9 @@ pip install -r requirements.txt
 
 # 2. Set environment variables (in project root .env)
 OPENROUTER_API_KEY=sk-or-...
-# Optional: OPENAI_API_KEY, ANTHROPIC_API_KEY, GOOGLE_API_KEY
+# Optional — per adapter (see "Agent Adapters" table above):
+# OPENAI_API_KEY, ANTHROPIC_API_KEY, GOOGLE_API_KEY
+# MISTRAL_API_KEY, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY
 
 # 3. Build Docker image (optional, for sandboxed execution)
 docker build -t quant-tutor-env:v1.0 docker/
@@ -333,6 +355,12 @@ python run_benchmark.py run --agent generic --condition agent
 
 # Run Layer 2 only with a specific agent SDK
 python run_benchmark.py run --agent openai --condition agent --layer 2
+
+# Run with Mistral adapter
+python run_benchmark.py run --agent mistral --condition agent
+
+# Run with AWS Strands adapter
+python run_benchmark.py run --agent strands --condition agent
 
 # Run Layer 1 only (single-turn knowledge eval)
 python run_benchmark.py run-layer1 --max-items 10
@@ -375,7 +403,7 @@ python run_benchmark.py run-single \
 
 | Extension | Description | Files |
 |-----------|-------------|-------|
-| **Multi-SDK adapter system** | 4 native SDK adapters (OpenAI, Anthropic, Google, Generic) with unified interface, beyond the design doc's single adapter pattern | `orchestrator/agent_adapters/` |
+| **Multi-SDK adapter system** | 7 pluggable SDK adapters (Generic, OpenAI, Anthropic, Google, Mistral, Strands, Microsoft) with unified interface and registry-based selection, beyond the design doc's single adapter pattern | `orchestrator/agent_adapters/` |
 | **2x2 test condition matrix** | Systematic ablation: agent / baseline / pure_llm / pure_llm_baseline. Design doc mentioned baseline but not the full matrix | `config/conditions.py` |
 | **Layer 1 + Layer 2 blending** | Combined scoring formula (Result_Sub = 0.40 × L1 + 0.60 × L2) with unified CLI. Design doc described layers separately | `evaluation/scoring.py`, `run_benchmark.py` |
 | **Dynamic tutor prompt injection** | Per-task/persona context injected into agent system prompt at runtime, restored after each task | `config/prompt_config.py`, `orchestrator/orchestrator.py` |

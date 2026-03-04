@@ -13,11 +13,22 @@ AGENT_DEFAULT_MODEL = "openai/gpt-5.2"
 OPENAI_AGENT_MODEL = "gpt-5.2"
 ANTHROPIC_AGENT_MODEL = "claude-sonnet-4-6"
 GOOGLE_AGENT_MODEL = "gemini-2.5-flash"
+MISTRAL_AGENT_MODEL = "mistral-large-latest"
+MICROSOFT_AGENT_MODEL = "gpt-4o"
+
+# Strands supports multiple backends; each needs its own model ID format.
+STRANDS_BEDROCK_MODEL = "us.anthropic.claude-sonnet-4-20250514-v1:0"
+STRANDS_ANTHROPIC_MODEL = "claude-sonnet-4-6"
+STRANDS_OPENAI_MODEL = "gpt-4o"
+STRANDS_AGENT_MODEL = STRANDS_BEDROCK_MODEL  # default (Bedrock)
 
 # --- Corresponding OpenRouter names (for baseline controlled comparison) ---
 OPENAI_AGENT_MODEL_OR = "openai/gpt-5.2"
 ANTHROPIC_AGENT_MODEL_OR = "anthropic/claude-sonnet-4.6"
 GOOGLE_AGENT_MODEL_OR = "google/gemini-2.5-flash-preview"
+MISTRAL_AGENT_MODEL_OR = "mistralai/mistral-large-latest"
+STRANDS_AGENT_MODEL_OR = "anthropic/claude-sonnet-4"
+MICROSOFT_AGENT_MODEL_OR = "openai/gpt-4o"
 
 # --- Evaluation / Simulation ---
 SIMULATOR_DEFAULT_MODEL = "openai/gpt-5.2"
@@ -32,6 +43,9 @@ AGENT_MODEL_MAP: dict[str, tuple[str, str]] = {
     "anthropic": (ANTHROPIC_AGENT_MODEL, ANTHROPIC_AGENT_MODEL_OR),
     "google": (GOOGLE_AGENT_MODEL, GOOGLE_AGENT_MODEL_OR),
     "generic": (AGENT_DEFAULT_MODEL, AGENT_DEFAULT_MODEL),
+    "mistral": (MISTRAL_AGENT_MODEL, MISTRAL_AGENT_MODEL_OR),
+    "strands": (STRANDS_AGENT_MODEL, STRANDS_AGENT_MODEL_OR),
+    "microsoft": (MICROSOFT_AGENT_MODEL, MICROSOFT_AGENT_MODEL_OR),
 }
 
 

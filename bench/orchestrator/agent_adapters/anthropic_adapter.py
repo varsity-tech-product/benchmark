@@ -12,6 +12,8 @@ Reference: https://platform.claude.com/docs/en/agent-sdk/overview
            https://github.com/anthropics/claude-agent-sdk-python
 """
 
+from __future__ import annotations
+
 import asyncio
 import os
 from pathlib import Path

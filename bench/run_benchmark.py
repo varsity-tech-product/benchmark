@@ -2,7 +2,7 @@
 """QuantTutorBench CLI - Benchmark runner for quantitative finance tutoring agents.
 
 Three CLI dimensions control the evaluation:
-  --agent      SDK / model family: generic, openai, anthropic, google
+  --agent      SDK / model family: generic, openai, anthropic, google, mistral, strands, microsoft
   --condition  Test condition (2x2 matrix): agent, baseline, pure_llm, pure_llm_baseline
   --layer      Which layer(s) to run: all (default), 1 (single-turn), 2 (multi-turn)
 
@@ -47,6 +47,7 @@ from config.llm_config import (
     OPENROUTER_BASE_URL,
     get_model_for_agent,
 )
+from orchestrator.agent_adapters.registry import get_available_agents
 
 if os.environ.get("OPENROUTER_API_KEY") and not os.environ.get("OPENAI_API_KEY"):
     os.environ["OPENAI_API_KEY"] = os.environ["OPENROUTER_API_KEY"]
@@ -62,10 +63,11 @@ def _create_agent(args):
       --condition pure_llm         → GenericLLM + OpenRouter model + TUTOR prompt
       --condition pure_llm_baseline → GenericLLM + OpenRouter model + BASELINE prompt
 
-    OpenAI Agent SDK always routes through OpenRouter for higher rate limits.
-    Anthropic and Google SDKs use their native APIs.
+    Adapter selection is driven by the registry in
+    orchestrator.agent_adapters.registry — no per-SDK if/elif needed here.
     """
     from config.prompt_config import BASELINE_SYSTEM_PROMPT, TUTOR_SYSTEM_PROMPT
+    from orchestrator.agent_adapters.registry import create_adapter
 
     agent_type = getattr(args, "agent", "generic")
     condition = CONDITIONS[getattr(args, "condition", "agent")]
@@ -93,39 +95,13 @@ def _create_agent(args):
             model=model, system_prompt=system_prompt, agent_name=agent_name
         )
 
-    # Tools-enabled conditions: use the native SDK adapter
-    if agent_type == "anthropic":
-        from orchestrator.agent_adapters.anthropic_adapter import ClaudeAgentAdapter
-
-        model = model_override or get_model_for_agent("anthropic")
-        return ClaudeAgentAdapter(
-            model=model, system_prompt=system_prompt, agent_name=agent_name
-        )
-    elif agent_type == "google":
-        from orchestrator.agent_adapters.google_adapter import GoogleAdapter
-
-        model = model_override or get_model_for_agent("google")
-        return GoogleAdapter(
-            model=model, system_prompt=system_prompt, agent_name=agent_name
-        )
-    elif agent_type == "openai":
-        from orchestrator.agent_adapters.openai_adapter import OpenAIAgentAdapter
-
-        # Always route through OpenRouter for higher rate limits / parallelism
-        model = model_override or get_model_for_agent("openai", use_openrouter=True)
-        return OpenAIAgentAdapter(
-            model=model,
-            base_url=OPENROUTER_BASE_URL,
-            system_prompt=system_prompt,
-            agent_name=agent_name,
-        )
-    else:  # generic
-        from orchestrator.agent_adapters.generic_adapter import GenericLLMAdapter
-
-        model = model_override or get_model_for_agent("generic")
-        return GenericLLMAdapter(
-            model=model, system_prompt=system_prompt, agent_name=agent_name
-        )
+    # Tools-enabled conditions: delegate to the registry
+    return create_adapter(
+        agent_type,
+        model=model_override,
+        system_prompt=system_prompt,
+        agent_name=agent_name,
+    )
 
 
 def _make_layer1_callback(agent):
@@ -683,7 +659,7 @@ def main():
     run_parser.add_argument(
         "--agent",
         default="generic",
-        choices=["generic", "openai", "anthropic", "google"],
+        choices=get_available_agents(),
         help="Agent SDK / model family",
     )
     run_parser.add_argument(
@@ -747,7 +723,7 @@ def main():
     single_parser.add_argument(
         "--agent",
         default="generic",
-        choices=["generic", "openai", "anthropic", "google"],
+        choices=get_available_agents(),
         help="Agent SDK / model family",
     )
     single_parser.add_argument(

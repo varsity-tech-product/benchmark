@@ -981,9 +981,14 @@ quant-tutor-bench/
 rator/
 │   ├── orchestrator.py           # Main benchmark runner
 │   ├── agent_adapters/           # model_callback wrappers per Agent SDK
-│   │   ├── openai_adapter.py     # OpenAI Agent SDK adapter
-│   │   ├── claude_adapter.py     # Claude Agent SDK adapter
-│   │   └── generic_adapter.py    # Generic LLM API adapter
+│   │   ├── registry.py           # Pluggable adapter registry (7 adapters)
+│   │   ├── generic_adapter.py    # Generic LLM API adapter (OpenRouter)
+│   │   ├── openai_adapter.py     # OpenAI Agents SDK adapter
+│   │   ├── anthropic_adapter.py  # Claude Agent SDK adapter
+│   │   ├── google_adapter.py     # Google GenAI SDK adapter
+│   │   ├── mistral_adapter.py    # Mistral AI SDK adapter
+│   │   ├── strands_adapter.py    # AWS Strands Agents SDK adapter
+│   │   └── microsoft_adapter.py  # Microsoft Agent Framework adapter
 │   ├── simulator_config.py       # ConversationSimulator configuration
 │   └── trace_assembler.py        # Combines proxy logs + dialogue into TestCases
 ├── tasks/

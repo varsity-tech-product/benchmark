@@ -41,6 +41,15 @@ Edit `.env` and fill in your keys:
 ```
 OPENROUTER_API_KEY=your_key_here
 HF_TOKEN=your_huggingface_token_here
+
+# Optional — only needed for specific agent adapters:
+# MISTRAL_API_KEY=your_mistral_key_here          # --agent mistral
+# AWS_ACCESS_KEY_ID=your_aws_access_key_here      # --agent strands (Bedrock)
+# AWS_SECRET_ACCESS_KEY=your_aws_secret_key_here   # --agent strands (Bedrock)
+# AWS_DEFAULT_REGION=us-east-1                     # --agent strands (Bedrock)
+# OPENAI_API_KEY=your_openai_key_here              # --agent openai / microsoft
+# ANTHROPIC_API_KEY=your_anthropic_key_here        # --agent anthropic / strands
+# GOOGLE_API_KEY=your_google_key_here              # --agent google
 ```
 
 **Verify:**
@@ -231,7 +240,7 @@ See `design_2026_2_12_updated.md` for the full design specification.
 The evaluation system uses a three-LLM architecture:
 
 1. **Student Simulator** -- DeepEval `ConversationSimulator` generates realistic multi-turn student interactions using persona profiles
-2. **Agent Under Test (AUT)** -- The LLM agent being evaluated, accessed via adapter (generic OpenAI-compatible or OpenAI Agents SDK)
+2. **Agent Under Test (AUT)** -- The LLM agent being evaluated, accessed via pluggable adapter (7 supported: generic, openai, anthropic, google, mistral, strands, microsoft)
 3. **Judge LLM** -- DeepEval `ConversationalGEval` scores the agent's tutoring quality across 7 dimensions
 
 The evaluation follows a 5-phase per-task lifecycle: RESET → INTERACT → CAPTURE → EVALUATE → TEARDOWN.
@@ -277,7 +286,7 @@ python run_benchmark.py validate-tasks
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--model` | `deepseek/deepseek-chat-v3-0324` | LLM model for agent under test (OpenRouter format) |
-| `--agent` | `generic` | Agent adapter: `generic` (OpenAI-compatible) or `openai` (Agents SDK) |
+| `--agent` | `generic` | Agent adapter: `generic`, `openai`, `anthropic`, `google`, `mistral`, `strands`, `microsoft` |
 | `--eval-model` | *(DeepEval default)* | LLM model for GEval judge |
 | `--simulator-model` | *(default)* | LLM model for student simulator |
 | `--tasks` | *(all)* | Comma-separated task IDs to run |
@@ -293,7 +302,7 @@ python run_benchmark.py validate-tasks
 | `--task` | *(required)* | Task ID to run |
 | `--persona` | `beginner_no_finance` | Persona ID |
 | `--model` | `deepseek/deepseek-chat-v3-0324` | LLM model for agent under test |
-| `--agent` | `generic` | Agent adapter type |
+| `--agent` | `generic` | Agent adapter: `generic`, `openai`, `anthropic`, `google`, `mistral`, `strands`, `microsoft` |
 | `--eval-model` | *(DeepEval default)* | Judge model |
 | `--simulator-model` | *(default)* | Simulator model |
 | `--max-turns` | `5` | Max turns |
@@ -383,9 +392,15 @@ benchmark/
 │   │   ├── trace_assembler.py # Assembles DeepEval test cases from traces
 │   │   ├── container_manager.py # Docker sandbox management
 │   │   └── agent_adapters/    # Agent adapter plugins
-│   │       ├── base_adapter.py    # Abstract base adapter
-│   │       ├── generic_adapter.py # OpenAI-compatible API adapter
-│   │       └── openai_adapter.py  # OpenAI Agents SDK adapter
+│   │       ├── base_adapter.py       # Abstract base adapter
+│   │       ├── registry.py          # Pluggable adapter registry
+│   │       ├── generic_adapter.py   # OpenAI-compatible API adapter
+│   │       ├── openai_adapter.py    # OpenAI Agents SDK adapter
+│   │       ├── anthropic_adapter.py # Claude Agent SDK adapter
+│   │       ├── google_adapter.py    # Google GenAI SDK adapter
+│   │       ├── mistral_adapter.py   # Mistral AI SDK adapter
+│   │       ├── strands_adapter.py   # AWS Strands Agents adapter
+│   │       └── microsoft_adapter.py # Microsoft Agent Framework adapter
 │   ├── evaluation/            # Evaluation metrics and scoring
 │   │   ├── scoring.py         # Task scoring, benchmark KPIs (OAS/QAI/TEI/AS/TMS)
 │   │   ├── test_scripts/      # Per-task evaluation scripts
