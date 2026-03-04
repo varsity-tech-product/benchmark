@@ -22,7 +22,7 @@ import os
 import re
 from typing import Optional
 
-from config.llm_config import resolve_deepeval_model
+from config.model_resolver import resolve_deepeval_model
 
 try:
     from deepeval.models.llms.openai_model import GPTModel
@@ -36,7 +36,7 @@ except ImportError:
 # Python execution detection
 # ──────────────────────────────────────────────────────────────
 
-_PYTHON_CMD_RE = re.compile(r"python3?\s+" r"(?:-c\s+|" r"[\w./\\-]+\.py)")
+_PYTHON_CMD_RE = re.compile(r"python3?\s+" r"(?:-c\s+|" r"-\s*<<|" r"[\w./\\-]+\.py)")
 
 
 def _is_python_exec(log) -> bool:
@@ -155,16 +155,11 @@ def _metric_iterative_refinement(logs: list) -> Optional[float]:
 def _metric_test_before_deliver(logs: list) -> Optional[float]:
     """Did the agent verify its code works before the final response?
 
-    Finds the last Python execution before the final send_message.
+    Finds the last Python execution before the final tool call.
     Score 1.0 if it succeeded, 0.0 if it failed.
     Returns None if no Python execution occurred.
     """
-    # Find last send_message index
     boundary = len(logs)
-    for i in range(len(logs) - 1, -1, -1):
-        if logs[i].name == "send_message":
-            boundary = i
-            break
 
     # Find last Python exec before boundary
     for i in range(boundary - 1, -1, -1):
@@ -437,13 +432,14 @@ async def evaluate_code_process_llm(
         model_obj = resolve_deepeval_model(model)
         if isinstance(model_obj, str):
             model_obj = GPTModel(model=model_obj)
-        response_text, _ = await model_obj.a_generate(prompt)
+        response_text, call_cost = await model_obj.a_generate(prompt)
         result = _extract_json_from_response(response_text)
     except Exception as e:
         return {
             "score": 0.5,
             "reason": f"CodeProcess LLM error: {e}",
             "applicable": True,
+            "_eval_cost": 0.0,
         }
 
     sub_scores = {k: _clamp_ordinal(result.get(k, 0.5)) for k in _LLM_SUB_KEYS}
@@ -454,6 +450,7 @@ async def evaluate_code_process_llm(
         "score": round(overall, 4),
         "reason": result.get("reason", ""),
         "sub_scores": sub_scores,
+        "_eval_cost": float(call_cost) if call_cost else 0.0,
     }
 
 
@@ -509,6 +506,7 @@ async def async_eval_code_process(
     return {
         "applicable": True,
         "score": round(combined, 4),
+        "passed": combined >= 0.5,
         "programmatic": programmatic,
         "llm_judged": llm_result,
     }

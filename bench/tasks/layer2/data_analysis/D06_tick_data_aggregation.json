@@ -31,7 +31,7 @@
       "data_fetch_realtime.md",
       "pandas_timeseries.md"
     ],
-    "sandbox_image": "quant-tutor-env:v1.0",
+    "sandbox_image": "quant-tutor-env:v2.0",
     "network_enabled": false
   },
   "ground_truth": {
@@ -41,7 +41,9 @@
       "Handle timestamp quality issues (ordering, duplicates)",
       "Understand session/timezone and microstructure caveats"
     ],
-    "expected_mcp_tools": [],
+    "expected_mcp_tools": [
+      "shell_exec"
+    ],
     "convenient_tools": [
       "compute_statistics",
       "plot_chart"
@@ -53,5 +55,6 @@
   "requires_code": true,
   "sample_code": null,
   "max_turns": 25,
+  "agent_max_steps": 10,
   "timeout_minutes": 15
 }

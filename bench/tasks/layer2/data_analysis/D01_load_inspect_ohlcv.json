@@ -13,7 +13,7 @@
   "student_openings": {
     "beginner_no_finance": "I have some stock data files but I don't really understand what's in them. Can you help me figure out what all these numbers mean?",
     "intermediate_developer": "I need to load and inspect some OHLCV data. What's the most efficient way to do initial data exploration with pandas?",
-    "advanced_quant": "I'm onboarding to a new dataset. I want to do a quick quality check on the OHLCV data — completeness, date gaps, corporate actions. What's your standard approach?"
+    "advanced_quant": "I'm onboarding to a new dataset. I want to do a quick quality check on the OHLCV data \u2014 completeness, date gaps, corporate actions. What's your standard approach?"
   },
   "environment": {
     "data_files": [
@@ -25,14 +25,14 @@
       "file_write",
       "file_read",
       "file_list",
-      "fetch_market_data",
       "search_docs",
       "get_environment_info"
     ],
     "docs_available": [
+      "pandas_data_loading.md",
       "pandas_timeseries.md"
     ],
-    "sandbox_image": "quant-tutor-env:v1.0",
+    "sandbox_image": "quant-tutor-env:v2.0",
     "network_enabled": false
   },
   "ground_truth": {
@@ -43,10 +43,11 @@
       "Understand what Open, High, Low, Close, and Volume columns represent"
     ],
     "expected_mcp_tools": [
-      "fetch_market_data"
+      "shell_exec",
+      "file_read"
     ],
     "convenient_tools": [
-      "compute_indicator",
+      "fetch_market_data",
       "compute_statistics",
       "plot_chart"
     ],
@@ -57,5 +58,6 @@
   "requires_code": false,
   "sample_code": null,
   "max_turns": 20,
+  "agent_max_steps": 8,
   "timeout_minutes": 10
 }

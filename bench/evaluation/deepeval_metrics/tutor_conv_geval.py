@@ -22,8 +22,7 @@ import random
 from pathlib import Path
 from typing import Optional
 
-import nest_asyncio
-from config.llm_config import resolve_deepeval_model
+from config.model_resolver import resolve_deepeval_model
 
 try:
     from deepeval.metrics import ConversationalGEval
@@ -405,17 +404,7 @@ def create_tutor_geval_metrics(
     return metrics
 
 
-def _run_async(coro):
-    """Run an async coroutine from synchronous code, handling existing event loops."""
-    try:
-        loop = asyncio.get_running_loop()
-    except RuntimeError:
-        loop = None
-    if loop and loop.is_running():
-        nest_asyncio.apply()
-        return loop.run_until_complete(coro)
-    else:
-        return asyncio.run(coro)
+from evaluation.deepeval_metrics.async_utils import run_async as _run_async
 
 
 def evaluate_tutor_dimensions(
@@ -569,27 +558,30 @@ def evaluate_tutor_dimensions(
     elapsed = _time.time() - t0
     print(f"    Completed {len(all_metrics)} judge calls in {elapsed:.1f}s")
 
-    # ── Accumulate scores by (model, dimension) ──
-    # model_accumulated[model_name][dim_name] = list of scores across runs
+    # ── Accumulate scores and costs by (model, dimension) ──
     model_accumulated: dict[str, dict[str, list[float]]] = {
         name: {d: [] for d in active_dims} for name in model_names
     }
+    model_costs: dict[str, list[float]] = {name: [] for name in model_names}
 
     for i, (mname, run_idx, dim_name) in enumerate(task_keys):
         if isinstance(results[i], Exception):
             score = 0.5
+            cost = 0.0
             print(
                 f"    Warning: [{mname}] {dim_name} run {run_idx + 1} "
                 f"failed: {results[i]}"
             )
         else:
             raw_score = all_metrics[i].score
+            cost = all_metrics[i].evaluation_cost or 0.0
             # §6.2: "Each dimension: 1-10 scale, normalized to 0-1."
             if raw_score > 1.0:
                 raw_score = raw_score / 10.0
             score = max(0.0, min(1.0, raw_score))
 
         model_accumulated[mname][dim_name].append(score)
+        model_costs[mname].append(cost)
 
     # ── Per-model dimension scores (average over shuffled runs) ──
     per_model: dict[str, dict[str, float]] = {}
@@ -604,6 +596,13 @@ def evaluate_tutor_dimensions(
     for dim_name in active_dims:
         model_avgs = [per_model[mname][dim_name] for mname in model_names]
         final_scores[dim_name] = round(sum(model_avgs) / len(model_avgs), 4)
+
+    # ── Cost tracking ──
+    total_cost = sum(c for costs in model_costs.values() for c in costs)
+    final_scores["_eval_cost"] = round(total_cost, 6)
+    final_scores["_eval_cost_by_model"] = {
+        m: round(sum(costs), 6) for m, costs in model_costs.items()
+    }
 
     if multi_model:
         final_scores["_per_model"] = per_model
@@ -634,6 +633,8 @@ def compute_tutor_score(
     weighted_sum = 0.0
     weight_total = 0.0
     for dim_name, score in dimension_scores.items():
+        if dim_name.startswith("_") or not isinstance(score, (int, float)):
+            continue
         w = get_dimension_weight(category, dim_name)
         weighted_sum += w * score
         weight_total += w

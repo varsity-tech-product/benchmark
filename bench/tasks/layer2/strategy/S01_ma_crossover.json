@@ -25,19 +25,14 @@
       "file_write",
       "file_read",
       "file_list",
-      "fetch_market_data",
-      "compute_indicator",
-      "plot_chart",
-      "search_docs",
-      "run_backtest",
-      "analyze_backtest_results"
+      "search_docs"
     ],
     "docs_available": [
       "moving_averages.md",
       "backtesting_101.md",
       "risk_metrics.md"
     ],
-    "sandbox_image": "quant-tutor-env:v1.0",
+    "sandbox_image": "quant-tutor-env:v2.0",
     "network_enabled": false
   },
   "ground_truth": {
@@ -49,9 +44,15 @@
       "Visualize the strategy results"
     ],
     "expected_mcp_tools": [
-      "fetch_market_data"
+      "shell_exec"
     ],
-    "convenient_tools": [],
+    "convenient_tools": [
+      "fetch_market_data",
+      "compute_indicator",
+      "run_backtest",
+      "analyze_backtest_results",
+      "plot_chart"
+    ],
     "quant_validation": {
       "eval_script": "evaluation/test_scripts/S01_ma_crossover.py"
     }
@@ -59,5 +60,6 @@
   "requires_code": true,
   "sample_code": null,
   "max_turns": 30,
+  "agent_max_steps": 8,
   "timeout_minutes": 15
 }

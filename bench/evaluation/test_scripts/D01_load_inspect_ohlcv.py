@@ -3,10 +3,18 @@
 import json
 import os
 import re
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _data_source_check import verify_data_source
 
 
 def evaluate(
-    workspace_path: str, tool_logs: list = None, conversation: list = None
+    workspace_path: str,
+    tool_logs: list = None,
+    conversation: list = None,
+    *,
+    data_files: list[str] = None,
 ) -> dict:
     """Evaluate whether the agent successfully helped load and inspect data.
 
@@ -32,6 +40,7 @@ def evaluate(
     # Scan ALL tool logs for evidence (tool-name agnostic)
     if tool_logs:
         for log in tool_logs:
+            tool_name = log.name.lower() if log.name else ""
             # Check all result values for data evidence
             output = str(log.result or "").lower()
             if any(
@@ -49,20 +58,25 @@ def evaluate(
                 ]
             ):
                 results["data_loaded_successfully"] = True
-            if any(
-                kw in output
-                for kw in [
-                    "describe",
-                    "mean",
-                    "std",
-                    "count",
-                    "dtype",
-                    "min",
-                    "max",
-                    "25%",
-                    "50%",
-                    "75%",
-                ]
+            if (
+                any(
+                    kw in output
+                    for kw in [
+                        "describe",
+                        "mean",
+                        "std",
+                        "count",
+                        "dtype",
+                        "min",
+                        "max",
+                        "25%",
+                        "50%",
+                        "75%",
+                        "kurtosis",
+                        "missing_count",
+                    ]
+                )
+                or tool_name == "compute_statistics"
             ):
                 results["basic_stats_computed"] = True
 
@@ -86,12 +100,29 @@ def evaluate(
             except (IOError, UnicodeDecodeError):
                 pass
 
-    score = sum(
-        [
-            0.50 if results["data_loaded_successfully"] else 0,
-            0.50 if results["basic_stats_computed"] else 0,
-        ]
-    )
+    _checklist = [
+        {
+            "item": "data_loaded_successfully",
+            "weight": 0.50,
+            "passed": results["data_loaded_successfully"],
+        },
+        {
+            "item": "basic_stats_computed",
+            "weight": 0.50,
+            "passed": results["basic_stats_computed"],
+        },
+    ]
+    score = sum(c["weight"] for c in _checklist if c["passed"])
+
+    # Data source verification — cap score if task data wasn't accessed
+    if data_files:
+        ds = verify_data_source(tool_logs or [], data_files)
+        results["data_source_verified"] = ds["verified"]
+        results["data_source_fraction"] = ds["fraction"]
+        if not ds["verified"]:
+            score *= max(0.25, ds["fraction"])
+
+    results["_checklist"] = _checklist
     results["score"] = round(score, 2)
     return results
 

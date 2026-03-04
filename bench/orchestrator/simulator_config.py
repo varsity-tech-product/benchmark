@@ -25,7 +25,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from config.llm_config import SIMULATOR_DEFAULT_MODEL, resolve_deepeval_model
+from config.llm_config import SIMULATOR_DEFAULT_MODEL
+from config.model_resolver import resolve_deepeval_model
 from config.prompt_config import build_scenario, build_user_description
 
 from orchestrator.schemas import QuantTutorTask, StudentPersona
@@ -121,7 +122,7 @@ def run_conversation_simulation(
     simulator_model: str = SIMULATOR_DEFAULT_MODEL,
     max_turns: Optional[int] = None,
     tools_enabled: bool = True,
-) -> "ConversationalTestCase":
+) -> tuple["ConversationalTestCase", Optional[float]]:
     """Run a full conversation simulation using DeepEval ConversationSimulator.
 
     Args:
@@ -134,7 +135,9 @@ def run_conversation_simulation(
         tools_enabled: If False, no tools are passed to the agent.
 
     Returns:
-        ConversationalTestCase with the full dialogue.
+        Tuple of (ConversationalTestCase, simulator_cost).
+        simulator_cost is the accumulated USD cost of student message generation,
+        or None if cost tracking is unavailable.
     """
     if not DEEPEVAL_AVAILABLE:
         raise ImportError("deepeval is required. Install with: pip install deepeval")
@@ -163,11 +166,14 @@ def run_conversation_simulation(
         max_user_simulations=max_turns,
     )
 
+    # Extract simulator cost (accumulated by DeepEval when using_native_model=True)
+    simulator_cost = getattr(simulator, "simulation_cost", None)
+
     if test_cases:
-        return test_cases[0]
+        return test_cases[0], simulator_cost
 
     # Fallback: return empty test case
-    return ConversationalTestCase(turns=[])
+    return ConversationalTestCase(turns=[]), simulator_cost
 
 
 def run_conversation_manual(

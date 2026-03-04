@@ -137,9 +137,9 @@ def build_tutor_context(
     """
     parts = [
         "=== SESSION CONTEXT ===",
-        f"Topic: {task.description}",
+        # Topic and difficulty omitted to avoid leaking task-specific answers.
+        # The tutor should infer what to teach from the student's questions.
         f"Category: {task.category.value}",
-        f"Difficulty: {task.difficulty.value}",
     ]
 
     parts.append("")
@@ -164,10 +164,26 @@ def build_tutor_context(
         parts.append("=== STUDENT CODE ===")
         parts.append(f"The student's code is located at: {task.sample_code}")
 
-    if task.ground_truth and task.ground_truth.expected_outcome:
+    # LEARNING OBJECTIVE omitted to avoid leaking expected answers.
+    # if task.ground_truth and task.ground_truth.expected_outcome:
+    #     parts.append("")
+    #     parts.append("=== LEARNING OBJECTIVE ===")
+    #     parts.append(task.ground_truth.expected_outcome)
+
+    # When reference docs are available, nudge the agent to consult them
+    # before answering. We do NOT reveal doc filenames (that would leak
+    # the topic); the agent discovers them via get_environment_info.
+    has_docs = task.environment and getattr(task.environment, "docs_available", None)
+    if has_docs:
         parts.append("")
-        parts.append("=== LEARNING OBJECTIVE ===")
-        parts.append(task.ground_truth.expected_outcome)
+        parts.append("=== AVAILABLE DOCUMENTATION ===")
+        parts.append(
+            "Reference documentation is available for this session. "
+            "Before answering the student's first question, use "
+            "get_environment_info to discover available docs, then "
+            "read relevant documentation to ensure your teaching "
+            "covers all important concepts and caveats."
+        )
 
     # Only inject TOOL USAGE DIRECTIVE when the task expects tool usage.
     # Adversarial tasks (expected_mcp_tools=[]) should NOT push the agent
@@ -280,8 +296,18 @@ def build_user_description(persona: StudentPersona) -> str:
             "describing it in text"
         )
 
-    parts.append("\nIMPORTANT: Stay in character. Do not reveal you are an AI.")
-    parts.append("Ask questions naturally and respond as a real student would.")
+    parts.append(
+        "\nINTERACTION RULES (follow these strictly):\n"
+        "- If the tutor asks you a question, you MUST answer it FIRST "
+        "before asking your next question. For example, if the tutor asks "
+        "'What do you see in the output?', describe what you see before "
+        "asking anything new.\n"
+        "- Respond naturally like a real student — acknowledge what you "
+        "learned, express confusion if something is unclear, react to "
+        "what the tutor just said.\n"
+        "- Do NOT ignore the tutor's questions or jump to an unrelated topic.\n"
+        "- Stay in character. Do not reveal you are an AI."
+    )
 
     return "\n".join(parts)
 
@@ -312,6 +338,14 @@ def build_scenario(task: QuantTutorTask, persona_id: str) -> str:
         parts.append(
             "The student should actively push the tutor to demonstrate these "
             "goals with real data and code execution, not just explanations."
+        )
+        parts.append("")
+        parts.append(
+            "PACING: Do NOT ask about all goals at once. Start with the "
+            "opening message only. After the tutor addresses one topic, "
+            "naturally transition to the next learning goal in a subsequent "
+            "turn. Space goals across the conversation so the tutor has room "
+            "to teach each one properly."
         )
 
     return "\n".join(parts)

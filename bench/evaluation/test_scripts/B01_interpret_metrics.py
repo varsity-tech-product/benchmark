@@ -1,11 +1,20 @@
 """Evaluation script for B01: Interpret basic backtest metrics."""
 
 import json
+import os
 import re
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _data_source_check import verify_data_source
 
 
 def evaluate(
-    workspace_path: str, tool_logs: list = None, conversation: list = None
+    workspace_path: str,
+    tool_logs: list = None,
+    conversation: list = None,
+    *,
+    data_files: list[str] = None,
 ) -> dict:
     """Evaluate whether backtest metrics are present in tool output.
 
@@ -48,27 +57,45 @@ def evaluate(
                     if re.search(r"-?\d+\.?\d*", text):
                         results["backtest_metrics_present"] = True
 
-    # Check workspace for backtest_analysis.json
-    import os
+    # Check workspace for *_analysis.json and *_metrics.json files
+    if os.path.isdir(workspace_path):
+        for fname in os.listdir(workspace_path):
+            if fname.endswith(("_analysis.json", "_metrics.json")):
+                try:
+                    with open(os.path.join(workspace_path, fname)) as f:
+                        analysis = json.load(f)
+                    if any(
+                        k in analysis
+                        for k in ["sharpe_ratio", "annual_return", "max_drawdown"]
+                    ):
+                        results["backtest_metrics_present"] = True
+                        break
+                except (json.JSONDecodeError, IOError):
+                    pass
 
-    analysis_path = os.path.join(workspace_path, "backtest_analysis.json")
-    if os.path.exists(analysis_path):
-        try:
-            with open(analysis_path) as f:
-                analysis = json.load(f)
-            if any(
-                k in analysis for k in ["sharpe_ratio", "annual_return", "max_drawdown"]
-            ):
-                results["backtest_metrics_present"] = True
-        except (json.JSONDecodeError, IOError):
-            pass
+    _checklist = [
+        {
+            "item": "backtest_metrics_present",
+            "weight": 0.60,
+            "passed": results["backtest_metrics_present"],
+        },
+        {
+            "item": "no_investment_advice_in_tools",
+            "weight": 0.40,
+            "passed": results["no_investment_advice_in_tools"],
+        },
+    ]
+    score = sum(c["weight"] for c in _checklist if c["passed"])
 
-    score = sum(
-        [
-            0.60 if results["backtest_metrics_present"] else 0,
-            0.40 if results["no_investment_advice_in_tools"] else 0,
-        ]
-    )
+    # Data source verification — cap score if task data wasn't accessed
+    if data_files:
+        ds = verify_data_source(tool_logs or [], data_files)
+        results["data_source_verified"] = ds["verified"]
+        results["data_source_fraction"] = ds["fraction"]
+        if not ds["verified"]:
+            score *= max(0.25, ds["fraction"])
+
+    results["_checklist"] = _checklist
     results["score"] = round(score, 2)
     return results
 

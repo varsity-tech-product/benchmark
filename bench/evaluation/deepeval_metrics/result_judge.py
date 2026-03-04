@@ -7,7 +7,7 @@ category-specific rubrics.
 Three sub-dimensions:
     Numerical Accuracy (0.35): Are quantitative results close to reference?
     Completeness      (0.35): Did agent produce all expected outputs?
-    Correctness       (0.30): Is the methodology sound, even if numbers differ?
+    Correctness       (0.30): Are outputs usable, runnable, and in expected format?
 
 Uses 5-point ordinal scale: {0.0, 0.25, 0.5, 0.75, 1.0}.
 """
@@ -16,7 +16,7 @@ import json as _json
 import os
 import re
 
-from config.llm_config import resolve_deepeval_model
+from config.model_resolver import resolve_deepeval_model
 
 try:
     from deepeval.models.llms.openai_model import GPTModel
@@ -127,7 +127,16 @@ def _extract_agent_key_outputs(tool_logs: list) -> str:
     backtest metrics, computed indicators, etc.).
     """
     key_outputs = []
-    _SKIP_TOOLS = {"send_message", "get_environment_info"}
+    # Skip tools whose results are reference/input material, not agent output.
+    # Including these would let doc content (e.g. required file names) leak
+    # into the judge prompt and bias completeness scoring.
+    _SKIP_TOOLS = {
+        "get_environment_info",
+        "file_read",
+        "file_list",
+        "search_docs",
+        "search_web",
+    }
 
     for log in tool_logs:
         if log.name in _SKIP_TOOLS:
@@ -254,12 +263,12 @@ EVALUATE these THREE dimensions:
    - 0.0:  No meaningful outputs produced
 
 3. CORRECTNESS (0.0-1.0):
-   Even if numbers differ from reference, is the methodology sound?
-   - 1.0:  Methodology is correct and well-implemented
-   - 0.75: Methodology mostly correct, minor issues in approach
-   - 0.5:  Basic approach is right but implementation has flaws
-   - 0.25: Significant methodological problems
-   - 0.0:  Fundamentally wrong approach
+   Are the outputs usable and in the expected format?
+   - 1.0:  All outputs are runnable/usable, formats match expectations, results are actionable
+   - 0.75: Outputs mostly usable, minor format issues (e.g. missing column headers, unlabeled values)
+   - 0.5:  Core outputs present but some are unusable or in wrong format
+   - 0.25: Most outputs are broken, unrunnable, or in unexpected format
+   - 0.0:  Outputs are entirely unusable or missing
 
 Return ONLY a JSON object (no markdown, no extra text):
 {"numerical_accuracy": <float>, "completeness": <float>, "correctness": <float>, "reason": "<brief explanation>"}"""
@@ -285,12 +294,12 @@ EVALUATE these THREE dimensions (no reference baseline available):
    - 0.0:  Task barely attempted
 
 3. CORRECTNESS (0.0-1.0):
-   Is the methodology appropriate for the task?
-   - 1.0:  Sound methodology, correct use of financial concepts
-   - 0.75: Mostly correct approach, minor conceptual issues
-   - 0.5:  Basic approach works but has notable flaws
-   - 0.25: Significant methodological problems
-   - 0.0:  Fundamentally wrong approach
+   Are the outputs usable and in the expected format?
+   - 1.0:  All outputs are runnable/usable, formats match expectations, results are actionable
+   - 0.75: Outputs mostly usable, minor format issues (e.g. missing column headers, unlabeled values)
+   - 0.5:  Core outputs present but some are unusable or in wrong format
+   - 0.25: Most outputs are broken, unrunnable, or in unexpected format
+   - 0.0:  Outputs are entirely unusable or missing
 
 Return ONLY a JSON object (no markdown, no extra text):
 {"numerical_accuracy": <float>, "completeness": <float>, "correctness": <float>, "reason": "<brief explanation>"}"""
@@ -411,17 +420,24 @@ async def async_evaluate_result_quality(
             model_obj = resolve_deepeval_model(m)
             if isinstance(model_obj, str):
                 model_obj = GPTModel(model=model_obj)
-            response_text, _ = await model_obj.a_generate(prompt)
-            return _extract_json_from_response(response_text)
+            response_text, call_cost = await model_obj.a_generate(prompt)
+            parsed = _extract_json_from_response(response_text)
+            parsed["_eval_cost"] = float(call_cost) if call_cost else 0.0
+            return parsed
         except Exception as e:
-            return {"_error": str(e)}
+            return {"_error": str(e), "_eval_cost": 0.0}
 
     raw_results = await asyncio.gather(*[_call_single_model(m) for m in eval_models])
 
     # ── Parse per-model results ──
     per_model: dict[str, dict] = {}
+    total_eval_cost = 0.0
+    cost_by_model: dict[str, float] = {}
     for i, m in enumerate(eval_models):
         raw = raw_results[i]
+        m_cost = raw.get("_eval_cost", 0.0)
+        cost_by_model[m] = round(m_cost, 6)
+        total_eval_cost += m_cost
         if "_error" in raw:
             sub = {k: 0.5 for k in _SUB_WEIGHTS}
             reason = f"ResultJudge error: {raw['_error']}"
@@ -455,6 +471,8 @@ async def async_evaluate_result_quality(
         "reason": per_model[eval_models[0]].get("reason", ""),
         "sub_scores": avg_sub,
         "has_reference": reference is not None,
+        "_eval_cost": total_eval_cost,
+        "_eval_cost_by_model": cost_by_model,
     }
     if multi_model:
         result["_per_model"] = per_model

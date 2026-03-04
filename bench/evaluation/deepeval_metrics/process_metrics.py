@@ -29,8 +29,7 @@ import asyncio
 import json as _json
 from typing import Optional
 
-import nest_asyncio
-from config.llm_config import resolve_deepeval_model
+from config.model_resolver import resolve_deepeval_model
 
 try:
     from deepeval.metrics import (
@@ -39,7 +38,6 @@ try:
         TopicAdherenceMetric,
     )
     from deepeval.models.llms.openai_model import GPTModel
-    from deepeval.test_case import ConversationalTestCase
 
     DEEPEVAL_AVAILABLE = True
 except ImportError:
@@ -113,163 +111,10 @@ _QP_DIMENSION_WEIGHTS = {
 # ──────────────────────────────────────────────────────────────
 
 
-def evaluate_step_efficiency(
-    input_text: str,
-    actual_output: str,
-    proxy_logs: list,
-    model: Optional[str] = None,
-    threshold: float = 0.5,
-    reference_trace: Optional[dict] = None,
-) -> dict:
-    """Evaluate step efficiency of tool usage (synchronous wrapper).
-
-    Delegates to the async 3-sub-dimension implementation.
-    """
-    return _run_async(
-        _async_eval_step_efficiency(
-            input_text,
-            actual_output,
-            proxy_logs,
-            model,
-            reference_trace=reference_trace,
-            threshold=threshold,
-        )
-    )
-
-
 # ──────────────────────────────────────────────────────────────
-# Multi-turn metrics (ConversationalTestCase based)
+# (Sync wrappers removed — runtime uses async versions exclusively
+#  via _build_process_tasks_for_model.)
 # ──────────────────────────────────────────────────────────────
-
-
-def evaluate_role_adherence(
-    conversational_test_case: "ConversationalTestCase",
-    chatbot_role: str = "quantitative finance tutor",
-    model: Optional[str] = None,
-    threshold: float = 0.5,
-) -> dict:
-    """Evaluate whether the agent stays in its designated role.
-
-    Design doc §9: Does agent stay in "tutor" role?
-
-    Args:
-        conversational_test_case: The ConversationalTestCase.
-        chatbot_role: The role the agent should adhere to.
-        model: LLM judge model.
-        threshold: Minimum passing score.
-
-    Returns:
-        Dict with score, reason, passed.
-    """
-    if not DEEPEVAL_AVAILABLE:
-        return {"score": 0.5, "reason": "deepeval not available", "passed": True}
-
-    # Ensure chatbot_role is set
-    if conversational_test_case.chatbot_role is None:
-        conversational_test_case.chatbot_role = chatbot_role
-
-    kwargs = {"threshold": threshold}
-    kwargs["model"] = resolve_deepeval_model(model)
-
-    metric = RoleAdherenceMetric(**kwargs)
-
-    try:
-        metric.measure(conversational_test_case)
-        return {
-            "score": metric.score,
-            "reason": getattr(metric, "reason", ""),
-            "passed": metric.score >= threshold,
-        }
-    except Exception as e:
-        return {
-            "score": 0.5,
-            "reason": f"RoleAdherenceMetric error: {e}",
-            "passed": True,
-        }
-
-
-def evaluate_knowledge_retention(
-    conversational_test_case: "ConversationalTestCase",
-    model: Optional[str] = None,
-    threshold: float = 0.5,
-) -> dict:
-    """Evaluate whether the agent remembers earlier context.
-
-    Design doc §9: Does agent remember earlier context?
-
-    Args:
-        conversational_test_case: The ConversationalTestCase.
-        model: LLM judge model.
-        threshold: Minimum passing score.
-
-    Returns:
-        Dict with score, reason, passed.
-    """
-    if not DEEPEVAL_AVAILABLE:
-        return {"score": 0.5, "reason": "deepeval not available", "passed": True}
-
-    kwargs = {"threshold": threshold}
-    kwargs["model"] = resolve_deepeval_model(model)
-
-    metric = KnowledgeRetentionMetric(**kwargs)
-
-    try:
-        metric.measure(conversational_test_case)
-        return {
-            "score": metric.score,
-            "reason": getattr(metric, "reason", ""),
-            "passed": metric.score >= threshold,
-        }
-    except Exception as e:
-        return {
-            "score": 0.5,
-            "reason": f"KnowledgeRetentionMetric error: {e}",
-            "passed": True,
-        }
-
-
-def evaluate_topic_adherence(
-    conversational_test_case: "ConversationalTestCase",
-    relevant_topics: Optional[list[str]] = None,
-    model: Optional[str] = None,
-    threshold: float = 0.5,
-) -> dict:
-    """Evaluate whether the agent stays on quant finance topics.
-
-    Design doc §9: Does agent stay on quant finance topics?
-
-    Args:
-        conversational_test_case: The ConversationalTestCase.
-        relevant_topics: List of relevant topic strings (defaults to QUANT_TUTOR_TOPICS).
-        model: LLM judge model.
-        threshold: Minimum passing score.
-
-    Returns:
-        Dict with score, reason, passed.
-    """
-    if not DEEPEVAL_AVAILABLE:
-        return {"score": 0.5, "reason": "deepeval not available", "passed": True}
-
-    topics = relevant_topics or QUANT_TUTOR_TOPICS
-
-    kwargs = {"relevant_topics": topics, "threshold": threshold}
-    kwargs["model"] = resolve_deepeval_model(model)
-
-    metric = TopicAdherenceMetric(**kwargs)
-
-    try:
-        metric.measure(conversational_test_case)
-        return {
-            "score": metric.score,
-            "reason": getattr(metric, "reason", ""),
-            "passed": metric.score >= threshold,
-        }
-    except Exception as e:
-        return {
-            "score": 0.5,
-            "reason": f"TopicAdherenceMetric error: {e}",
-            "passed": True,
-        }
 
 
 # ──────────────────────────────────────────────────────────────
@@ -277,35 +122,30 @@ def evaluate_topic_adherence(
 # ──────────────────────────────────────────────────────────────
 
 
-def _run_async(coro):
-    """Run an async coroutine from synchronous code, handling existing event loops."""
-    try:
-        loop = asyncio.get_running_loop()
-    except RuntimeError:
-        loop = None
-    if loop and loop.is_running():
-        nest_asyncio.apply()
-        return loop.run_until_complete(coro)
-    else:
-        return asyncio.run(coro)
+async def _return_hard_zero(metric_name: str, reason: str) -> dict:
+    """Return a hard-zero result for a metric that requires missing data."""
+    return {
+        "score": 0.0,
+        "reason": f"{metric_name}: {reason} (hard zero)",
+        "passed": False,
+    }
 
+
+from evaluation.deepeval_metrics.async_utils import run_async as _run_async
 
 # ──────────────────────────────────────────────────────────────
 # Step Efficiency: 3-sub-dimension evaluation
 # ──────────────────────────────────────────────────────────────
 #
 # Sub-dimensions (Phase 2):
-#   Action Economy    (0.4) — step count ratio vs reference (programmatic)
+#   Action Economy    (0.4) — step count ratio vs reference (programmatic);
+#                            hard zero (0.0) when no reference available
 #   Redundancy Avoid. (0.3) — detect wasted/repeated calls (LLM-judged)
 #   Logical Sequencing(0.3) — evaluate action order (LLM-judged)
-#
-# When reference is available, Action Economy is computed programmatically
-# from agent_steps / reference_steps ratio.  When unavailable, all three
-# dimensions are judged by the LLM.
 
 # Tools excluded from substantive step count — benign metadata reads
 # and text responses that don't represent analytical work.
-_NON_SUBSTANTIVE_TOOLS = frozenset({"send_message", "get_environment_info"})
+_NON_SUBSTANTIVE_TOOLS = frozenset({"get_environment_info"})
 
 
 def _count_substantive_steps(proxy_logs: list) -> int:
@@ -547,11 +387,12 @@ async def _async_eval_step_efficiency(
         else:
             ref_trace_summary = str(summary_lines)
 
-    # Compute Action Economy programmatically when reference available
+    # Compute Action Economy programmatically when reference available.
+    # Hard zero: without reference, Action Economy = 0.0 (not LLM-judged).
     if has_reference and ref_step_count > 0:
         action_economy = _compute_action_economy(agent_steps, ref_step_count)
     else:
-        action_economy = None  # LLM will judge
+        action_economy = 0.0
 
     # Build prompt
     agent_trace = _build_trace_summary_for_prompt(proxy_logs)
@@ -570,13 +411,14 @@ async def _async_eval_step_efficiency(
         model_obj = resolve_deepeval_model(model)
         if isinstance(model_obj, str):
             model_obj = GPTModel(model=model_obj)
-        response_text, _ = await model_obj.a_generate(prompt)
+        response_text, call_cost = await model_obj.a_generate(prompt)
         result = _extract_json_from_response(response_text)
     except Exception as e:
         return {
             "score": 0.5,
             "reason": f"StepEfficiency LLM error: {e}",
             "passed": True,
+            "_eval_cost": 0.0,
         }
 
     # Parse sub-scores (clamp to 5-point ordinal)
@@ -592,14 +434,9 @@ async def _async_eval_step_efficiency(
     redundancy = _clamp_ordinal(result.get("redundancy_avoidance", 0.5))
     sequencing = _clamp_ordinal(result.get("logical_sequencing", 0.5))
 
-    if action_economy is not None:
-        # Programmatic Action Economy + LLM-judged Redundancy/Sequencing
-        overall = 0.4 * action_economy + 0.3 * redundancy + 0.3 * sequencing
-    else:
-        # All LLM-judged (no reference)
-        ae_from_llm = _clamp_ordinal(result.get("action_economy", 0.5))
-        overall = 0.4 * ae_from_llm + 0.3 * redundancy + 0.3 * sequencing
-        action_economy = ae_from_llm
+    # Action Economy is always pre-computed: programmatic from reference,
+    # or hard zero (0.0) when no reference is available.
+    overall = 0.4 * action_economy + 0.3 * redundancy + 0.3 * sequencing
 
     return {
         "score": round(overall, 4),
@@ -612,6 +449,7 @@ async def _async_eval_step_efficiency(
         },
         "agent_substantive_steps": agent_steps,
         "reference_step_count": ref_step_count if has_reference else None,
+        "_eval_cost": float(call_cost) if call_cost else 0.0,
     }
 
 
@@ -735,22 +573,32 @@ def _build_process_tasks_for_model(
     )
 
     # Process reasonableness (Phase 4) — always evaluated (tool-agnostic)
+    # For code tasks, Error Handling is narrowed to non-code errors
+    # (code-specific debugging evaluated separately by Code Process).
+    _code_categories = ("implementation", "debug", "end_to_end", "data_analysis")
     tasks["process_reasonableness"] = async_eval_process_reasonableness(
         task_description=task_description,
         category=category,
         proxy_logs=proxy_logs,
         model=single_model,
+        is_code_task=(category in _code_categories),
     )
 
-    # Process alignment (Phase 4) — requires reference, skip for adversarial
-    if not is_adversarial and reference_trace is not None:
-        tasks["process_alignment"] = async_eval_process_alignment(
-            task_description=task_description,
-            category=category,
-            proxy_logs=proxy_logs,
-            reference_trace=reference_trace,
-            model=single_model,
-        )
+    # Process alignment (Phase 4) — skip for adversarial.
+    # Hard zero: score 0.0 when no reference (not skipped from aggregate).
+    if not is_adversarial:
+        if reference_trace is not None:
+            tasks["process_alignment"] = async_eval_process_alignment(
+                task_description=task_description,
+                category=category,
+                proxy_logs=proxy_logs,
+                reference_trace=reference_trace,
+                model=single_model,
+            )
+        else:
+            tasks["process_alignment"] = _return_hard_zero(
+                "process_alignment", "no reference trace available"
+            )
 
     # Code process (Phase 5) — auto-detects applicability from logs;
     # returns score=None when no code activity, excluded from QP aggregate.
@@ -923,6 +771,21 @@ def evaluate_all_process_metrics(
         # Use the first model's result as base, override score with average
         base = dict(model_results[model_names[0]].get(metric_name, {}))
         base["score"] = avg_score
+        # Average sub_scores across models (if present)
+        first_sub = base.get("sub_scores")
+        if isinstance(first_sub, dict) and multi_model:
+            avg_sub: dict[str, float | None] = {}
+            for sub_key in first_sub:
+                sub_vals = []
+                for mname in model_names:
+                    ms = model_results[mname].get(metric_name, {})
+                    sv = (ms.get("sub_scores") or {}).get(sub_key)
+                    if sv is not None:
+                        sub_vals.append(sv)
+                avg_sub[sub_key] = (
+                    round(sum(sub_vals) / len(sub_vals), 4) if sub_vals else None
+                )
+            base["sub_scores"] = avg_sub
         results[metric_name] = base
 
     # ── Log per-metric scores ──
@@ -1006,7 +869,12 @@ def evaluate_all_process_metrics(
                 **{
                     k: v.get("score")
                     for k, v in model_results[mname].items()
-                    if isinstance(v, dict)
+                    if isinstance(v, dict) and not k.startswith("_")
+                },
+                "_sub_scores": {
+                    k: v.get("sub_scores")
+                    for k, v in model_results[mname].items()
+                    if isinstance(v, dict) and isinstance(v.get("sub_scores"), dict)
                 },
             }
         results["_per_model"] = per_model_agg
@@ -1017,5 +885,18 @@ def evaluate_all_process_metrics(
 
     if is_adversarial:
         print("      (adversarial mode: process_alignment skipped)")
+
+    # ── Aggregate eval cost from all metric results ──
+    total_eval_cost = 0.0
+    cost_by_model: dict[str, float] = {}
+    for mname in model_names:
+        m_cost = 0.0
+        for metric_name, r in model_results[mname].items():
+            if isinstance(r, dict):
+                m_cost += r.get("_eval_cost", 0.0)
+        cost_by_model[mname] = round(m_cost, 6)
+        total_eval_cost += m_cost
+    results["_eval_cost"] = total_eval_cost
+    results["_eval_cost_by_model"] = cost_by_model
 
     return results

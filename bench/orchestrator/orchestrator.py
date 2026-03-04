@@ -21,7 +21,8 @@ from typing import Optional
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from config.llm_config import SIMULATOR_DEFAULT_MODEL, resolve_deepeval_model
+from config.llm_config import SIMULATOR_DEFAULT_MODEL
+from config.model_resolver import resolve_deepeval_model
 from config.prompt_config import (
     build_scenario,
     build_tutor_context,
@@ -150,7 +151,14 @@ class BenchmarkOrchestrator:
                 ),
             )
 
+            # 1b.5. Start tool executor daemon inside the container (Docker only).
+            # All core tools will be routed through this persistent process.
+            if self.container_manager.use_docker:
+                self.container_manager.start_executor(container.container_id)
+
             # 1c. Set environment vars for tool implementations (lazy reads in tools.py)
+            # In Docker mode these are unused (container uses default /data etc.);
+            # kept for local-mode backward compatibility.
             os.environ["QTB_DATA_DIR"] = staged_data_dir
             os.environ["QTB_DOCS_DIR"] = staged_docs_dir
             os.environ["QTB_WORKSPACE_DIR"] = container.workspace_path
@@ -181,6 +189,9 @@ class BenchmarkOrchestrator:
             else:
                 agent.system_prompt = f"{original_system_prompt}\n\n{dynamic_context}"
 
+            # Apply per-task agent step limit (controls SDK internal loop depth)
+            agent.set_agent_max_steps(task.agent_max_steps)
+
             # === PHASE 2: INTERACT (via DeepEval ConversationSimulator or manual fallback) ===
             # Design doc §4.3: ConversationSimulator manages the interaction loop.
             # ConversationalGolden is built from Task + Persona (§4.7).
@@ -188,20 +199,24 @@ class BenchmarkOrchestrator:
             try:
                 conversational_test_case = None
 
+                simulator_cost = None
+
                 if self.use_deepeval and DEEPEVAL_AVAILABLE:
                     try:
                         print(
                             f"  Using DeepEval ConversationSimulator (model={self.simulator_model or 'default'})..."
                         )
-                        conversational_test_case = run_conversation_simulation(
-                            task=task,
-                            persona=persona,
-                            agent_adapter=agent,
-                            proxy=proxy,
-                            simulator_model=self.simulator_model
-                            or SIMULATOR_DEFAULT_MODEL,
-                            max_turns=max_turns,
-                            tools_enabled=tools_enabled,
+                        conversational_test_case, simulator_cost = (
+                            run_conversation_simulation(
+                                task=task,
+                                persona=persona,
+                                agent_adapter=agent,
+                                proxy=proxy,
+                                simulator_model=self.simulator_model
+                                or SIMULATOR_DEFAULT_MODEL,
+                                max_turns=max_turns,
+                                tools_enabled=tools_enabled,
+                            )
                         )
                         # Extract turns from ConversationalTestCase into TaskResult
                         for t in conversational_test_case.turns:
@@ -292,6 +307,7 @@ class BenchmarkOrchestrator:
             result.tutor_scores = eval_results.get("tutor_scores", {})
             result.tutor_scores_by_model = eval_results.get("tutor_scores_by_model", {})
             result.process_metrics = eval_results.get("process_metrics", {})
+            result.eval_script_detail = eval_results.get("eval_script_detail", {})
             result.code_eval = eval_results.get("code_eval", {})
             result.result_judge = eval_results.get("result_judge", {})
             result.code_process = eval_results.get("process_metrics", {}).get(
@@ -322,13 +338,65 @@ class BenchmarkOrchestrator:
 
         result.duration_seconds = time.time() - start_time
 
-        # §6.5: Estimate cost per task (rough: ~4 chars per token, $0.001 per 1K tokens)
-        total_chars = sum(len(t.content) for t in result.turns)
-        estimated_tokens = total_chars / 4.0
-        # Rough cost estimate: input+output + judge runs (3x7 judge calls)
-        agent_cost = estimated_tokens * 0.001 / 1000
-        judge_cost = estimated_tokens * 0.003 / 1000 * 21  # 3 runs × 7 dims
-        result.cost_usd = round(agent_cost + judge_cost, 4)
+        # §6.5: Aggregate cost from actual token tracking
+        agent_records = agent.get_token_records()
+        agent_input = sum(r.input_tokens for r in agent_records)
+        agent_output = sum(r.output_tokens for r in agent_records)
+        agent_cost = sum(r.cost_usd for r in agent_records)
+
+        # Evaluator cost from _eval_cost fields injected by judge functions.
+        # Note: process_metrics._eval_cost already includes code_process cost
+        # (code_process is one of the tasks inside evaluate_all_process_metrics),
+        # so we must NOT add code_process._eval_cost separately.
+        eval_cost = 0.0
+        eval_cost += result.process_metrics.get("_eval_cost", 0.0)
+        eval_cost += result.result_judge.get("_eval_cost", 0.0)
+        eval_cost += result.tutor_scores.get("_eval_cost", 0.0)
+
+        # Merge per-model cost from all evaluation stages.
+        # Code Process is part of Process Metrics (not a separate stage).
+        eval_cost_by_model: dict[str, float] = {}
+        eval_cost_by_stage_model: dict[str, dict[str, float]] = {}
+        _eval_stages = [
+            ("Tutor 7D", result.tutor_scores),
+            ("Process Metrics", result.process_metrics),
+            ("Result Judge", result.result_judge),
+        ]
+        for stage_name, src in _eval_stages:
+            by_model = src.get("_eval_cost_by_model", {})
+            if by_model:
+                eval_cost_by_stage_model[stage_name] = {
+                    m: round(c, 6) for m, c in by_model.items()
+                }
+            for m, c in by_model.items():
+                eval_cost_by_model[m] = round(eval_cost_by_model.get(m, 0.0) + c, 6)
+
+        agent_model = getattr(agent, "model", "unknown")
+        sim_model_obj = self.simulator_model or SIMULATOR_DEFAULT_MODEL
+        sim_model = getattr(sim_model_obj, "name", str(sim_model_obj))
+        sim_cost = simulator_cost or 0.0
+        result.token_usage = {
+            "agent": {
+                "input_tokens": agent_input,
+                "output_tokens": agent_output,
+                "cost_usd": round(agent_cost, 6),
+                "api_calls": len(agent_records),
+                "model": agent_model,
+            },
+            "simulator": {
+                "cost_usd": round(sim_cost, 6),
+                "model": sim_model,
+            },
+            "eval": {
+                "cost_usd": round(eval_cost, 6),
+                "by_model": eval_cost_by_model,
+                "by_stage_model": eval_cost_by_stage_model,
+            },
+            "total": {
+                "cost_usd": round(agent_cost + sim_cost + eval_cost, 6),
+            },
+        }
+        result.cost_usd = round(agent_cost + sim_cost + eval_cost, 4)
 
         return result
 
@@ -475,16 +543,27 @@ class BenchmarkOrchestrator:
             if eval_script.exists():
                 try:
                     import importlib.util
+                    import inspect
 
                     spec = importlib.util.spec_from_file_location(
                         "eval_module", str(eval_script)
                     )
                     module = importlib.util.module_from_spec(spec)
                     spec.loader.exec_module(module)
+
+                    # Detect eval script signature — pass data_files if accepted
+                    sig = inspect.signature(module.evaluate)
+                    eval_kwargs: dict = {}
+                    if "data_files" in sig.parameters:
+                        eval_kwargs["data_files"] = task.environment.data_files or []
                     eval_result = module.evaluate(
-                        workspace_path, proxy.get_logs(), conversation
+                        workspace_path,
+                        proxy.get_logs(),
+                        conversation,
+                        **eval_kwargs,
                     )
                     results["quant_result"] = eval_result.get("score", 0.0)
+                    results["eval_script_detail"] = eval_result
                 except Exception as e:
                     results["quant_result_error"] = str(e)
 
@@ -508,50 +587,7 @@ class BenchmarkOrchestrator:
         except Exception as e:
             results["code_eval_error"] = str(e)
 
-        # ── Step 2c: LLM Result Judge (Phase 3) ──
-        print("  Evaluating Result Quality (LLM judge)...")
-        try:
-            from evaluation.deepeval_metrics.result_judge import (
-                evaluate_result_quality,
-            )
-
-            result_judge_result = evaluate_result_quality(
-                task_description=task.description,
-                category=task.category.value,
-                workspace_path=workspace_path,
-                tool_logs=proxy.get_logs(),
-                conversation=conversation,
-                model=self.eval_model,
-                reference=reference,
-            )
-            results["result_judge"] = result_judge_result
-        except Exception as e:
-            results["result_judge_error"] = str(e)
-
-        # ── Step 2d: Combine QR components (30/30/40 blend) ──
-        programmatic_score = results["quant_result"]
-        code_eval_score = results.get("code_eval", {}).get("score", 0.0)
-        code_eval_applicable = results.get("code_eval", {}).get("applicable", False)
-        llm_judge_score = results.get("result_judge", {}).get("score", 0.0)
-
-        if code_eval_applicable:
-            # Full 3-component blend: 30% programmatic + 30% code_eval + 40% LLM judge
-            results["quant_result"] = round(
-                0.30 * programmatic_score
-                + 0.30 * code_eval_score
-                + 0.40 * llm_judge_score,
-                4,
-            )
-        else:
-            # No code_eval: redistribute to 40% programmatic + 60% LLM judge
-            results["quant_result"] = round(
-                0.40 * programmatic_score + 0.60 * llm_judge_score, 4
-            )
-
-        # ── Step 3: Quant Process Score (Reformed Process Metrics) ──
-        print("  Evaluating Quant Process...")
-
-        # 3a: Tool Usage (mathematical, no LLM)
+        # ── Step 2c (pre): Tool Usage (mathematical, no LLM — needed by QP) ──
         tool_usage_result = None
         try:
             from evaluation.deepeval_metrics.tool_usage import evaluate_tool_usage
@@ -571,14 +607,60 @@ class BenchmarkOrchestrator:
         except Exception as e:
             results["tool_usage_error"] = str(e)
 
-        # 3b: DeepEval process-level metrics
-        if self.use_deepeval:
+        # ── Steps 2c/3/4: Parallel LLM evaluation (RJ + QP + Tutor) ──
+        # These three evaluators have no cross-dependencies. Each maintains
+        # its own async event loop internally. Peak concurrency ~43 requests
+        # (RJ=3 + QP≤20 + Tutor≤20), well within OpenRouter limits.
+        import concurrent.futures
+
+        _logs = proxy.get_logs()  # snapshot once for all threads
+        _is_adversarial = task.category.value == "adversarial"
+        _tutor_default = {
+            dim: 0.5
+            for dim in [
+                "D1_level_detection",
+                "D2_language_adaptation",
+                "D3_scaffolding_calibration",
+                "D4_domain_accuracy",
+                "D5_code_teaching",
+                "D6_empathetic_response",
+                "D7_safety_boundaries",
+            ]
+        }
+
+        def _run_result_judge() -> dict:
+            """Thread 1: LLM Result Judge (Step 2c)."""
+            print("  [RJ] Evaluating Result Quality (LLM judge)...")
+            try:
+                from evaluation.deepeval_metrics.result_judge import (
+                    evaluate_result_quality,
+                )
+
+                rj_result = evaluate_result_quality(
+                    task_description=task.description,
+                    category=task.category.value,
+                    workspace_path=workspace_path,
+                    tool_logs=_logs,
+                    conversation=conversation,
+                    model=self.eval_model,
+                    reference=reference,
+                )
+                print("  [RJ] Done.")
+                return {"result_judge": rj_result}
+            except Exception as e:
+                print(f"  [RJ] Error: {e}")
+                return {"result_judge_error": str(e)}
+
+        def _run_process_metrics() -> dict:
+            """Thread 2: DeepEval process-level metrics (Step 3)."""
+            print("  [QP] Evaluating Quant Process...")
+            if not self.use_deepeval:
+                return {"quant_process": 0.5}
             try:
                 from evaluation.deepeval_metrics.process_metrics import (
                     evaluate_all_process_metrics,
                 )
 
-                # Build combined agent output for single-turn metrics
                 agent_outputs = [
                     t["content"] for t in conversation if t["role"] == "assistant"
                 ]
@@ -587,36 +669,38 @@ class BenchmarkOrchestrator:
                 process_results = evaluate_all_process_metrics(
                     task_description=task.description,
                     actual_output=combined_output,
-                    proxy_logs=proxy.get_logs(),
+                    proxy_logs=_logs,
                     category=task.category.value,
                     conversational_test_case=clean_test_case,
                     model=self.eval_model,
                     reference_trace=reference,
-                    is_adversarial=(task.category.value == "adversarial"),
+                    is_adversarial=_is_adversarial,
                     tool_usage_result=tool_usage_result,
                 )
-                results["process_metrics"] = process_results
-
-                # QP = weighted aggregate (reformed process metrics).
-                results["quant_process"] = round(
-                    process_results.get("aggregate_process_score", 0.5), 4
-                )
+                print("  [QP] Done.")
+                return {
+                    "process_metrics": process_results,
+                    "quant_process": round(
+                        process_results.get("aggregate_process_score", 0.5), 4
+                    ),
+                }
             except Exception as e:
-                results["process_eval_error"] = str(e)
-                results["quant_process"] = 0.5
-        else:
-            results["quant_process"] = 0.5
+                print(f"  [QP] Error: {e}")
+                return {"process_eval_error": str(e), "quant_process": 0.5}
 
-        # ── Step 4: Tutor Quality Score (7D ConversationalGEval) ──
-        print("  Evaluating Tutor Quality (7D rubric, multi-model × 3x shuffled)...")
-        if self.use_deepeval:
+        def _run_tutor_eval() -> dict:
+            """Thread 3: Tutor Quality Score — 7D ConversationalGEval (Step 4)."""
+            print(
+                "  [Tutor] Evaluating Tutor Quality "
+                "(7D rubric, multi-model × 3x shuffled)..."
+            )
+            if not self.use_deepeval:
+                return {"tutor_scores": dict(_tutor_default)}
             try:
                 from evaluation.deepeval_metrics.tutor_conv_geval import (
                     evaluate_tutor_dimensions,
                 )
 
-                # Use conversation_turns (text only) so the 7D rubric judge
-                # isn't distracted by tool execution metadata.
                 tutor_scores = evaluate_tutor_dimensions(
                     conversation_turns=conversation,
                     persona_level=persona.knowledge_level,
@@ -626,44 +710,96 @@ class BenchmarkOrchestrator:
                     model=self.eval_model,
                     category=task.category.value,
                 )
-                # Extract per-model breakdown before storing dimension scores
                 per_model = tutor_scores.pop("_per_model", None)
-                results["tutor_scores"] = tutor_scores
+                out: dict = {"tutor_scores": tutor_scores}
                 if per_model:
-                    results["tutor_scores_by_model"] = per_model
-                    print("  Per-model tutor scores:")
+                    out["tutor_scores_by_model"] = per_model
+                    print("  [Tutor] Per-model tutor scores:")
                     for mname, dim_scores in per_model.items():
-                        avg = (
-                            sum(dim_scores.values()) / len(dim_scores)
-                            if dim_scores
-                            else 0.0
-                        )
+                        clean = {
+                            k: v
+                            for k, v in dim_scores.items()
+                            if not k.startswith("_") and isinstance(v, (int, float))
+                        }
+                        avg = sum(clean.values()) / len(clean) if clean else 0.0
                         print(f"    {mname}: avg={avg:.4f}")
-                        for dim, sc in sorted(dim_scores.items()):
+                        for dim, sc in sorted(clean.items()):
                             print(f"      {dim}: {sc:.4f}")
+                print("  [Tutor] Done.")
+                return out
             except Exception as e:
-                results["tutor_eval_error"] = str(e)
-                for dim in [
-                    "D1_level_detection",
-                    "D2_language_adaptation",
-                    "D3_scaffolding_calibration",
-                    "D4_domain_accuracy",
-                    "D5_code_teaching",
-                    "D6_empathetic_response",
-                    "D7_safety_boundaries",
-                ]:
-                    results["tutor_scores"][dim] = 0.5
+                print(f"  [Tutor] Error: {e}")
+                return {
+                    "tutor_eval_error": str(e),
+                    "tutor_scores": dict(_tutor_default),
+                }
+
+        print("  Running RJ / QP / Tutor in parallel...")
+        _t_parallel = time.time()
+        with concurrent.futures.ThreadPoolExecutor(max_workers=3) as pool:
+            fut_rj = pool.submit(_run_result_judge)
+            fut_qp = pool.submit(_run_process_metrics)
+            fut_tutor = pool.submit(_run_tutor_eval)
+
+            for fut in concurrent.futures.as_completed([fut_rj, fut_qp, fut_tutor]):
+                results.update(fut.result())
+        print(
+            f"  Parallel eval done in {time.time() - _t_parallel:.1f}s "
+            f"(RJ + QP + Tutor)"
+        )
+
+        # ── Step 2d: Combine QR components (30/30/40 blend) ──
+        # Must run after RJ completes (needs result_judge score).
+        programmatic_score = results["quant_result"]
+        code_eval_score = results.get("code_eval", {}).get("score", 0.0)
+        code_eval_applicable = results.get("code_eval", {}).get("applicable", False)
+        llm_judge_score = results.get("result_judge", {}).get("score", 0.0)
+
+        # Divergence dampening: when programmatic and LLM judge scores
+        # diverge significantly (>0.40), the programmatic eval script likely
+        # has a false positive (e.g. keyword match on synthetic data).
+        # Reduce programmatic weight and shift to LLM judge.
+        _DIVERGENCE_THRESHOLD = 0.40
+        divergence = abs(programmatic_score - llm_judge_score)
+        dampened = divergence > _DIVERGENCE_THRESHOLD
+
+        if dampened:
+            if code_eval_applicable:
+                # Dampened: 15% programmatic + 30% code_eval + 55% LLM judge
+                results["quant_result"] = round(
+                    0.15 * programmatic_score
+                    + 0.30 * code_eval_score
+                    + 0.55 * llm_judge_score,
+                    4,
+                )
+            else:
+                # Dampened: 20% programmatic + 80% LLM judge
+                results["quant_result"] = round(
+                    0.20 * programmatic_score + 0.80 * llm_judge_score, 4
+                )
+            print(
+                f"    QR divergence dampened: programmatic={programmatic_score:.2f} "
+                f"vs judge={llm_judge_score:.2f} (Δ={divergence:.2f})"
+            )
+        elif code_eval_applicable:
+            # Full 3-component blend: 30% programmatic + 30% code_eval + 40% LLM judge
+            results["quant_result"] = round(
+                0.30 * programmatic_score
+                + 0.30 * code_eval_score
+                + 0.40 * llm_judge_score,
+                4,
+            )
         else:
-            for dim in [
-                "D1_level_detection",
-                "D2_language_adaptation",
-                "D3_scaffolding_calibration",
-                "D4_domain_accuracy",
-                "D5_code_teaching",
-                "D6_empathetic_response",
-                "D7_safety_boundaries",
-            ]:
-                results["tutor_scores"][dim] = 0.5
+            # No code_eval: redistribute to 40% programmatic + 60% LLM judge
+            results["quant_result"] = round(
+                0.40 * programmatic_score + 0.60 * llm_judge_score, 4
+            )
+
+        # Store QR blending diagnostics in result_judge dict for score_report
+        rj = results.get("result_judge")
+        if isinstance(rj, dict):
+            rj["_eval_script_score"] = programmatic_score
+            rj["_qr_dampened"] = dampened
 
         return results
 
@@ -689,7 +825,11 @@ class BenchmarkOrchestrator:
             for fname in data_files:
                 src = os.path.join(self.data_dir, fname)
                 if os.path.isfile(src):
-                    os.symlink(src, os.path.join(staged_data, fname))
+                    dst = os.path.join(staged_data, fname)
+                    try:
+                        os.link(src, dst)  # hardlink (zero-copy, same filesystem)
+                    except OSError:
+                        shutil.copy2(src, dst)  # cross-filesystem fallback
         else:
             staged_data = self.data_dir  # No filter → full access (backward compat)
 
@@ -699,7 +839,11 @@ class BenchmarkOrchestrator:
             for fname in docs_available:
                 src = os.path.join(self.docs_dir, fname)
                 if os.path.isfile(src):
-                    os.symlink(src, os.path.join(staged_docs, fname))
+                    dst = os.path.join(staged_docs, fname)
+                    try:
+                        os.link(src, dst)
+                    except OSError:
+                        shutil.copy2(src, dst)
         else:
             staged_docs = self.docs_dir
 

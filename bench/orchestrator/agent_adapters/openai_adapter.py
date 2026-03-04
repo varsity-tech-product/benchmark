@@ -20,7 +20,7 @@ from typing import Optional
 
 from dotenv import load_dotenv
 
-from .base_adapter import BaseAgentAdapter
+from .base_adapter import BaseAgentAdapter, TokenRecord
 from .prompts import TUTOR_SYSTEM_PROMPT
 
 _PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
@@ -110,6 +110,10 @@ class OpenAIAgentAdapter(BaseAgentAdapter):
         self._agent = None
         self._input_history = []
         self._tool_callback = None
+
+    def set_agent_max_steps(self, n: int):
+        """Limit SDK internal loop turns per conversation turn."""
+        self.max_turns = n
 
     def _dynamic_instructions(self, ctx, agent):
         """Dynamic instructions callable for the Agent.
@@ -207,6 +211,7 @@ class OpenAIAgentAdapter(BaseAgentAdapter):
             # tool results, assistant messages) into a continuation-ready list.
             self._input_history = result.to_input_list()
 
+            self._record_usage_from_run_result(result)
             return result.final_output or ""
 
         except MaxTurnsExceeded:
@@ -297,6 +302,24 @@ class OpenAIAgentAdapter(BaseAgentAdapter):
             )
 
         return agent_tools
+
+    def _record_usage_from_run_result(self, result):
+        """Extract token usage from OpenAI Agents SDK RunResult."""
+        from config.pricing import estimate_cost
+
+        for raw_resp in getattr(result, "raw_responses", []):
+            usage = getattr(raw_resp, "usage", None)
+            if usage:
+                inp = getattr(usage, "input_tokens", 0) or 0
+                out = getattr(usage, "output_tokens", 0) or 0
+                self._token_records.append(
+                    TokenRecord(
+                        model=self.model,
+                        input_tokens=inp,
+                        output_tokens=out,
+                        cost_usd=estimate_cost(self.model, inp, out),
+                    )
+                )
 
     def _fallback_completions(
         self,

@@ -53,7 +53,7 @@ class EnvironmentConfig(BaseModel):
     data_files: list[str] = Field(default_factory=list)
     core_mcp_tools: list[str] = Field(default_factory=list)
     docs_available: list[str] = Field(default_factory=list)
-    sandbox_image: str = "quant-tutor-env:v1.0"
+    sandbox_image: str = "quant-tutor-env:v2.0"
     # Whether this task requires outbound internet access inside the sandbox.
     # Default is False for reproducibility/safety.
     network_enabled: bool = False
@@ -89,6 +89,7 @@ class QuantTutorTask(BaseModel):
     requires_tool: bool = False
     sample_code: Optional[str] = None
     max_turns: int = 30
+    agent_max_steps: int = 10
     timeout_minutes: int = 15
 
 
@@ -100,17 +101,6 @@ class StudentPersona(BaseModel):
     unknown_concepts: list[str] = Field(default_factory=list)
     emotional_profile: str = ""
     behavioral_rules: list[str] = Field(default_factory=list)
-
-
-class RubricDimension(BaseModel):
-    weight: float = 1.0
-    criteria: str
-    scoring_guidance: dict[str, str] = Field(default_factory=dict)
-
-
-class TutoringRubric(BaseModel):
-    persona_level: str
-    dimensions: dict[str, RubricDimension]
 
 
 class ConversationTurn(BaseModel):
@@ -141,6 +131,9 @@ class TaskResult(BaseModel):
     process_metrics: dict = Field(
         default_factory=dict
     )  # DeepEval process metric scores
+    eval_script_detail: dict = Field(
+        default_factory=dict
+    )  # Full eval script result (checklist items + diagnostics)
     code_eval: dict = Field(
         default_factory=dict
     )  # Code Execution QR (static + execution + output)
@@ -154,6 +147,9 @@ class TaskResult(BaseModel):
         default_factory=dict
     )  # Tool Usage scoring (expected/convenient/distractor)
     sandbox_info: dict = Field(default_factory=dict)
+    token_usage: dict = Field(
+        default_factory=dict
+    )  # Token/cost breakdown {agent: {...}, eval: {...}, total: {...}}
     cost_usd: float = 0.0
     duration_seconds: float = 0.0
     error: Optional[str] = None

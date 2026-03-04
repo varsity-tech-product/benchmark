@@ -10,11 +10,6 @@ from mcp_servers.core.tools import CORE_TOOLS
 from mcp_servers.distractors.distractor_tools import DISTRACTOR_TOOLS
 from mcp_servers.proxy.mcp_proxy import MCPProxy
 
-# Only shell_exec executes arbitrary code and needs Docker routing.
-# run_backtest and plot_chart are now self-contained (pandas/numpy/exec)
-# and don't need subprocess or Docker wrapping.
-CODE_EXEC_TOOLS = {"shell_exec"}
-
 # Total tool slots available to the agent (core + convenient + distractors).
 _TOTAL_TOOL_SLOTS = 15
 
@@ -22,20 +17,37 @@ _TOTAL_TOOL_SLOTS = 15
 def _register_core_tool(
     proxy, name, container_manager, container_id, workspace_path, use_docker
 ):
-    """Register a single core/convenient tool on the proxy."""
+    """Register a single core/convenient tool on the proxy.
+
+    In Docker mode, ALL core tools are routed through the container
+    executor daemon via ``make_container_tool()``.  In local mode,
+    ``shell_exec`` gets a subprocess wrapper (cwd=workspace) and the
+    remaining tools use their original implementations.
+    """
     if name not in CORE_TOOLS:
         return
     tool_info = CORE_TOOLS[name]
 
-    if name in CODE_EXEC_TOOLS and container_manager is not None:
+    if use_docker and container_manager is not None:
+        # Docker mode: every tool goes through the in-container executor.
+        from mcp_servers.core.tool_wrappers import make_container_tool
+
+        func = make_container_tool(
+            tool_name=name,
+            local_func=tool_info["func"],
+            container_manager=container_manager,
+            container_id=container_id,
+            use_docker=use_docker,
+        )
+    elif name == "shell_exec" and container_manager is not None:
+        # Local mode: shell_exec needs explicit cwd=workspace_path.
         from mcp_servers.core.tool_wrappers import make_shell_exec
 
-        factories = {"shell_exec": make_shell_exec}
-        func = factories[name](
+        func = make_shell_exec(
             container_manager,
             container_id,
             workspace_path,
-            use_docker,
+            use_docker=False,
         )
     else:
         func = tool_info["func"]
@@ -123,23 +135,3 @@ def create_proxy_for_task(
         )
 
     return proxy
-
-
-def get_all_tool_schemas() -> dict:
-    """Get schemas for all tools (core + distractor)."""
-    schemas = {}
-    for name, info in CORE_TOOLS.items():
-        schemas[name] = {
-            "name": name,
-            "description": info["description"],
-            "parameters": info.get("params", {}),
-            "type": "core",
-        }
-    for name, info in DISTRACTOR_TOOLS.items():
-        schemas[name] = {
-            "name": name,
-            "description": info["description"],
-            "parameters": info.get("params", {}),
-            "type": "distractor",
-        }
-    return schemas

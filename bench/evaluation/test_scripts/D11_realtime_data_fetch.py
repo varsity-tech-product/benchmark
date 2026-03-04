@@ -1,87 +1,157 @@
-"""Evaluation script for D11: Realtime Data Fetch (Track A hybrid)."""
+"""Evaluation script for D11: Realtime Data Fetch.
+
+QR Programmatic: checks tool outputs and workspace for evidence that
+realtime architecture was demonstrated, quote/trade handling is present,
+data quality handling was addressed, and captured data was saved.
+(network-enabled sandbox)
+"""
 
 import json
-import sys
-from pathlib import Path
-
-BENCH_ROOT = Path(__file__).resolve().parents[2]
-if str(BENCH_ROOT) not in sys.path:
-    sys.path.insert(0, str(BENCH_ROOT))
-
-from evaluation.test_scripts._track_a_hybrid_eval import evaluate_track_a_hybrid
-
-PERSONA_RULES = {
-    "beginner": ["new to", "beginner", "simple terms"],
-    "intermediate": ["ingestion example", "implementation", "out-of-order"],
-    "advanced": ["execution-ready realtime capture script", "microstructure caveats"],
-}
-
-ADAPTATION_MARKERS = {
-    "beginner_strong": [
-        "in plain language",
-        "step by step",
-        "what this means",
-        "let's break this down",
-        "quick checklist",
-    ],
-    "beginner_weak": ["simple", "for example"],
-    "beginner_min_strong": 1,
-    "beginner_min_total": 2,
-    "intermediate_markers": [
-        "websocket",
-        "polling",
-        "implementation",
-        "validation checklist",
-        "timestamp",
-        "deduplicate",
-    ],
-    "intermediate_min": 2,
-    "advanced_markers": [
-        "microstructure",
-        "bid-ask",
-        "trade vs quote",
-        "latency",
-        "out-of-order",
-        "session boundary",
-        "timezone normalization",
-    ],
-    "advanced_min": 3,
-    "fallback_markers": [
-        "step by step",
-        "checklist",
-        "latency",
-        "bid-ask",
-        "timezone",
-    ],
-    "fallback_min": 2,
-}
-
-CONCEPT_BUCKETS = [
-    ["quote", "trade", "bid", "ask", "spread", "mid-price", "trade vs quote"],
-    ["latency", "out-of-order", "stale", "duplicate", "sequencing"],
-    ["timezone", "utc", "market hours", "premarket", "after-hours", "session"],
-]
+import os
 
 
 def evaluate(
-    workspace_path: str,
-    tool_logs: list = None,
-    conversation: list = None,
-    eval_context: dict = None,
+    workspace_path: str, tool_logs: list = None, conversation: list = None
 ) -> dict:
-    """Evaluate tutoring quality plus runnable-code evidence for D11."""
-    return evaluate_track_a_hybrid(
-        workspace_path=workspace_path,
-        tool_logs=tool_logs,
-        conversation=conversation,
-        eval_context=eval_context,
-        persona_rules=PERSONA_RULES,
-        adaptation_markers=ADAPTATION_MARKERS,
-        concept_buckets=CONCEPT_BUCKETS,
-        concept_min_covered=2,
+    results = {
+        "realtime_architecture_demonstrated": False,
+        "quote_trade_handling": False,
+        "data_quality_handling": False,
+        "data_captured_to_workspace": False,
+        "score": 0.0,
+    }
+
+    combined = _collect_evidence(workspace_path, tool_logs)
+    workspace_files = (
+        os.listdir(workspace_path) if os.path.isdir(workspace_path) else []
     )
+
+    # 1. Realtime architecture demonstrated (0.25)
+    rt_kws = [
+        "websocket",
+        "socket",
+        "asyncio",
+        "polling",
+        "stream",
+        "subscribe",
+        "callback",
+        "event loop",
+        "sse",
+        "server-sent",
+        "long_poll",
+    ]
+    has_rt_code = any(f.endswith(".py") for f in workspace_files) and _has_keywords(
+        combined, rt_kws
+    )
+    if has_rt_code or _has_keywords(combined, rt_kws):
+        results["realtime_architecture_demonstrated"] = True
+
+    # 2. Quote/trade handling (0.30)
+    qt_kws = [
+        "bid",
+        "ask",
+        "trade",
+        "quote",
+        "spread",
+        "mid-price",
+        "mid_price",
+        "order book",
+        "order_book",
+        "tick",
+    ]
+    if _has_keywords(combined, qt_kws):
+        results["quote_trade_handling"] = True
+
+    # 3. Data quality handling (0.25)
+    dq_kws = [
+        "latency",
+        "out-of-order",
+        "out_of_order",
+        "stale",
+        "duplicate",
+        "sequence",
+        "dedup",
+        "sort",
+        "timestamp",
+        "timezone",
+        "session",
+        "market_hours",
+        "market hours",
+    ]
+    if _has_keywords(combined, dq_kws):
+        results["data_quality_handling"] = True
+
+    # 4. Data captured to workspace (0.20)
+    csv_files = [f for f in workspace_files if f.endswith(".csv")]
+    for csv_f in csv_files:
+        try:
+            fpath = os.path.join(workspace_path, csv_f)
+            with open(fpath) as fh:
+                header = fh.readline().lower()
+                lines = fh.readlines()
+            has_ts = any(
+                kw in header for kw in ["timestamp", "time", "date", "datetime"]
+            )
+            if has_ts and len(lines) >= 3:
+                results["data_captured_to_workspace"] = True
+                break
+            if len(lines) >= 5:
+                results["data_captured_to_workspace"] = True
+                break
+        except (IOError, UnicodeDecodeError):
+            pass
+
+    _checklist = [
+        {
+            "item": "realtime_architecture_demonstrated",
+            "weight": 0.25,
+            "passed": results["realtime_architecture_demonstrated"],
+        },
+        {
+            "item": "quote_trade_handling",
+            "weight": 0.30,
+            "passed": results["quote_trade_handling"],
+        },
+        {
+            "item": "data_quality_handling",
+            "weight": 0.25,
+            "passed": results["data_quality_handling"],
+        },
+        {
+            "item": "data_captured_to_workspace",
+            "weight": 0.20,
+            "passed": results["data_captured_to_workspace"],
+        },
+    ]
+    score = sum(c["weight"] for c in _checklist if c["passed"])
+    results["_checklist"] = _checklist
+    results["score"] = round(score, 2)
+    return results
+
+
+def _collect_evidence(workspace_path: str, tool_logs: list) -> str:
+    parts = []
+    for log in tool_logs or []:
+        parts.append(log.name)
+        parts.append(str(log.args))
+        parts.append(str(log.result or ""))
+    if workspace_path and os.path.isdir(workspace_path):
+        for fname in os.listdir(workspace_path):
+            if fname.endswith((".txt", ".json", ".md", ".csv", ".log")):
+                try:
+                    with open(os.path.join(workspace_path, fname)) as f:
+                        parts.append(f.read()[:2000])
+                except (IOError, UnicodeDecodeError):
+                    pass
+    return " ".join(parts).lower()
+
+
+def _has_keywords(text: str, keywords: list[str]) -> bool:
+    return any(kw in text for kw in keywords)
 
 
 if __name__ == "__main__":
+    import sys
+
     workspace = sys.argv[1] if len(sys.argv) > 1 else "/workspace"
     print(json.dumps(evaluate(workspace), indent=2))

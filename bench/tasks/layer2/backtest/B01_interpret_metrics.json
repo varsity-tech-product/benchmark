@@ -11,9 +11,9 @@
     "advanced_quant"
   ],
   "student_openings": {
-    "beginner_no_finance": "I ran a backtest and got a bunch of numbers back — Sharpe ratio, max drawdown, total return. I have no idea what any of these mean. Can you help me understand if my strategy is any good?",
+    "beginner_no_finance": "I ran a backtest and got a bunch of numbers back \u2014 Sharpe ratio, max drawdown, total return. I have no idea what any of these mean. Can you help me understand if my strategy is any good?",
     "intermediate_developer": "I have backtest results with Sharpe 1.8, annual return 22%, and max drawdown -15%. How should I interpret these in context? What benchmarks should I compare against?",
-    "advanced_quant": "I'm reviewing backtest metrics across multiple parameter sets. I want to discuss the interplay between Sharpe, Sortino, Calmar, and max drawdown — specifically how to detect overfitting from the metric surface. What's your framework?"
+    "advanced_quant": "I'm reviewing backtest metrics across multiple parameter sets. I want to discuss the interplay between Sharpe, Sortino, Calmar, and max drawdown \u2014 specifically how to detect overfitting from the metric surface. What's your framework?"
   },
   "environment": {
     "data_files": [
@@ -25,18 +25,13 @@
       "file_write",
       "file_read",
       "file_list",
-      "fetch_market_data",
-      "compute_indicator",
-      "run_backtest",
-      "plot_chart",
-      "search_docs",
-      "analyze_backtest_results"
+      "search_docs"
     ],
     "docs_available": [
       "risk_metrics.md",
       "backtesting_101.md"
     ],
-    "sandbox_image": "quant-tutor-env:v1.0",
+    "sandbox_image": "quant-tutor-env:v2.0",
     "network_enabled": false
   },
   "ground_truth": {
@@ -48,9 +43,15 @@
       "Contextualize metric values against benchmarks or rules of thumb"
     ],
     "expected_mcp_tools": [
-      "fetch_market_data"
+      "shell_exec"
     ],
-    "convenient_tools": [],
+    "convenient_tools": [
+      "fetch_market_data",
+      "compute_indicator",
+      "run_backtest",
+      "analyze_backtest_results",
+      "plot_chart"
+    ],
     "quant_validation": {
       "eval_script": "evaluation/test_scripts/B01_interpret_metrics.py"
     }
@@ -58,5 +59,6 @@
   "requires_code": false,
   "sample_code": null,
   "max_turns": 20,
+  "agent_max_steps": 8,
   "timeout_minutes": 10
 }

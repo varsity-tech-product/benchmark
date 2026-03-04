@@ -221,6 +221,10 @@ class Layer1Runner:
             docs_dir=docs_dir,
         )
 
+        # Start tool executor daemon inside the container (Docker only).
+        if self.use_docker and self.container_manager.use_docker:
+            self.container_manager.start_executor(container.container_id)
+
         # Set environment vars for tool implementations
         os.environ["QTB_WORKSPACE_DIR"] = container.workspace_path
 

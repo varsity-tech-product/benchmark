@@ -33,7 +33,7 @@
       "pandas_timeseries.md",
       "statistical_tests.md"
     ],
-    "sandbox_image": "quant-tutor-env:v1.0",
+    "sandbox_image": "quant-tutor-env:v2.0",
     "network_enabled": false
   },
   "ground_truth": {
@@ -43,7 +43,9 @@
       "Prevent look-ahead leakage in feature construction",
       "Diagnose feature redundancy using correlation or VIF"
     ],
-    "expected_mcp_tools": [],
+    "expected_mcp_tools": [
+      "shell_exec"
+    ],
     "convenient_tools": [
       "compute_indicator",
       "compute_statistics",
@@ -56,5 +58,6 @@
   "requires_code": true,
   "sample_code": null,
   "max_turns": 25,
+  "agent_max_steps": 10,
   "timeout_minutes": 15
 }

@@ -49,7 +49,11 @@ def generate_score_report(
     _a(f"| Overall Agent Score (OAS) | {_f(result.overall_score)} |")
     _a(f"| Quant Result (QR) | {_f(result.quant_result_score)} |")
     _a(f"| Quant Process (QP) | {_f(result.quant_process_score)} |")
-    tutor_avg = _safe_mean(result.tutor_scores.values()) if result.tutor_scores else 0.0
+    tutor_avg = (
+        _safe_mean(v for k, v in result.tutor_scores.items() if not k.startswith("_"))
+        if result.tutor_scores
+        else 0.0
+    )
     _a(f"| Tutor Score (avg 7D) | {_f(tutor_avg)} |")
     _a("")
 
@@ -104,7 +108,7 @@ def _f(v, fmt=".4f") -> str:
 
 
 def _safe_mean(vals) -> float:
-    vals = [v for v in vals if v is not None]
+    vals = [v for v in vals if isinstance(v, (int, float))]
     return sum(vals) / len(vals) if vals else 0.0
 
 
@@ -120,54 +124,115 @@ def _short_model(name: str) -> str:
 def _section_qr(lines, result):
     _a = lines.append
 
-    # Code eval
+    # ── Code Eval ──
     ce = result.code_eval or {}
     ce_applicable = ce.get("applicable", False)
-    _a("### Code Execution Eval\n")
-    _a(f"- **Applicable**: {ce_applicable}")
-    if ce_applicable:
-        _a(f"- **Combined score**: {_f(ce.get('score'))}")
+    ce_score = ce.get("score")
+
+    summary_label = _f(ce_score) if ce_applicable else "N/A"
+    _a(
+        f"<details>\n<summary><b>Code Execution Eval</b> — Combined: {summary_label}</summary>\n"
+    )
+
+    if not ce_applicable:
+        _a("Not applicable for this task.\n")
+    else:
         sa = ce.get("static_analysis", {})
-        if sa:
-            _a(
-                f"- Layer A (static): {_f(sa.get('score'))} — "
-                f"syntax={'OK' if sa.get('syntax_valid') else 'FAIL'}, "
-                f"files={sa.get('files_analyzed', 0)}, funcs={sa.get('total_functions', 0)}"
-            )
         ex = ce.get("execution", {})
+        ov = ce.get("output_verification")
+
+        _a("| Layer | Weight | Score | Diagnostics |")
+        _a("|-------|--------|-------|-------------|")
+
+        # Layer A
+        if sa:
+            diag_a = (
+                f"syntax={'OK' if sa.get('syntax_valid') else 'FAIL'}, "
+                f"files={sa.get('files_analyzed', 0)}, "
+                f"funcs={sa.get('total_functions', 0)}"
+            )
+            _a(f"| A — Static Analysis | 20% | {_f(sa.get('score'))} | {diag_a} |")
+
+        # Layer B
         if ex:
-            _a(
-                f"- Layer B (execution): {_f(ex.get('score'))} — "
+            diag_b = (
                 f"calls={ex.get('exec_calls_found', 0)}, "
                 f"success_rate={_f(ex.get('success_rate'), '.2f')}, "
                 f"untested={ex.get('untested_files', [])}"
             )
-        ov = ce.get("output_verification")
+            _a(f"| B — Execution | 40% | {_f(ex.get('score'))} | {diag_b} |")
+
+        # Layer C
         if ov:
-            _a(
-                f"- Layer C (output): {_f(ov.get('score'))} — "
+            diag_c = (
                 f"accuracy={_f(ov.get('numerical_accuracy'), '.2f')}, "
                 f"completeness={_f(ov.get('output_completeness'), '.2f')}, "
                 f"metrics_compared={ov.get('metrics_compared', 0)}"
             )
+            _a(f"| C — Output Verification | 40% | {_f(ov.get('score'))} | {diag_c} |")
         else:
-            _a("- Layer C (output): SKIPPED (no reference)")
-    _a("")
+            _a("| C — Output Verification | 40% | SKIP | no reference |")
 
-    # Result judge
+    _a("\n</details>\n")
+
+    # ── Programmatic Eval Checklist ──
+    esd = result.eval_script_detail or {}
+    checklist = esd.get("_checklist", [])
+    prog_score = esd.get("score")
+    ds_verified = esd.get("data_source_verified")
+
+    _a(
+        f"<details>\n<summary><b>Programmatic Eval (Eval Script)</b> — Score: {_f(prog_score)}</summary>\n"
+    )
+
+    if checklist:
+        _a("| Check Item | Weight | Result | Weighted |")
+        _a("|------------|--------|--------|----------|")
+        for c in checklist:
+            passed = c.get("passed", False)
+            weight = c.get("weight", 0.0)
+            result_str = "Pass" if passed else "Fail"
+            weighted = weight if passed else 0.0
+            _a(
+                f"| {c.get('item', '')} | {weight:.2f} | {result_str} | {_f(weighted)} |"
+            )
+        raw_sum = sum(c.get("weight", 0.0) for c in checklist if c.get("passed"))
+        _a(f"| **Sum (pre-cap)** | | | **{_f(raw_sum)}** |")
+
+        if ds_verified is not None:
+            ds_frac = esd.get("data_source_fraction", 1.0)
+            ds_label = "Pass" if ds_verified else f"Fail (fraction={ds_frac:.2f})"
+            _a(f"\n> Data source verification: {ds_label}")
+            if not ds_verified:
+                _a(
+                    f"> Score capped: {_f(raw_sum)} x max(0.25, {ds_frac:.2f}) = {_f(prog_score)}"
+                )
+    else:
+        _a("No checklist available.\n")
+
+    _a("\n</details>\n")
+
+    # ── Result Judge ──
     rj = result.result_judge or {}
-    _a("### LLM Result Judge\n")
-    _a(f"- **Score (avg)**: {_f(rj.get('score'))}")
-    _a(f"- **Has reference**: {rj.get('has_reference', False)}")
+    rj_score = rj.get("score")
 
+    _a(
+        f"<details>\n<summary><b>LLM Result Judge</b> — Score: {_f(rj_score)}</summary>\n"
+    )
+    _a(f"**Has reference**: {rj.get('has_reference', False)}\n")
+
+    _DIM_WEIGHTS = {
+        "numerical_accuracy": "0.35",
+        "completeness": "0.35",
+        "correctness": "0.30",
+    }
     sub = rj.get("sub_scores", {})
     per_model = rj.get("_per_model", {})
     model_names = sorted(per_model.keys()) if per_model else []
 
     if sub:
-        # Build table header
-        header = "| Sub-dimension | Avg |"
-        sep = "|---------------|-----|"
+        header = "| Sub-dimension | Weight | Avg |"
+        sep = "|---------------|--------|-----|"
         for m in model_names:
             header += f" {_short_model(m)} |"
             sep += "------|"
@@ -175,32 +240,75 @@ def _section_qr(lines, result):
         _a(sep)
 
         for dim in ("numerical_accuracy", "completeness", "correctness"):
-            row = f"| {dim} | {_f(sub.get(dim))} |"
+            row = f"| {dim} | {_DIM_WEIGHTS[dim]} | {_f(sub.get(dim))} |"
             for m in model_names:
                 ms = per_model[m].get("sub_scores", {}).get(dim)
                 row += f" {_f(ms)} |"
             _a(row)
 
-        # Overall row
-        row = f"| **Overall** | {_f(rj.get('score'))} |"
+        row = f"| **Overall** | | **{_f(rj_score)}** |"
         for m in model_names:
-            row += f" {_f(per_model[m].get('score'))} |"
+            row += f" **{_f(per_model[m].get('score'))}** |"
         _a(row)
-    _a("")
 
     reason = rj.get("reason", "")
     if reason:
-        _a(f"> {reason[:300]}\n")
+        _a(f"\n> {reason}\n")
 
-    # Blending
-    _a("### QR Blending\n")
-    programmatic = result.quant_result_score  # final blended
-    _a(f"- **Final QR**: {_f(programmatic)}")
-    if ce_applicable:
-        _a("- Formula: 30% programmatic + 30% code_eval + 40% LLM judge")
+    _a("\n</details>\n")
+
+    # ── QR Blending ──
+    final_qr = result.quant_result_score
+    qr_dampened = rj.get("_qr_dampened", False)
+    dampened_label = " (dampened)" if qr_dampened else ""
+
+    _a(
+        f"<details>\n<summary><b>QR Blending</b> — Final: {_f(final_qr)}{dampened_label}</summary>\n"
+    )
+
+    eval_script_score = rj.get("_eval_script_score")
+    code_eval_score = ce.get("score") if ce_applicable else None
+
+    # Determine weights
+    if qr_dampened:
+        if ce_applicable:
+            w_prog, w_ce, w_judge = 0.15, 0.30, 0.55
+        else:
+            w_prog, w_ce, w_judge = 0.20, None, 0.80
+    elif ce_applicable:
+        w_prog, w_ce, w_judge = 0.30, 0.30, 0.40
     else:
-        _a("- Formula: 40% programmatic + 60% LLM judge")
-    _a("")
+        w_prog, w_ce, w_judge = 0.40, None, 0.60
+
+    _a("| Component | Raw Score | Weight | Weighted |")
+    _a("|-----------|-----------|--------|----------|")
+
+    prog_raw = eval_script_score if eval_script_score is not None else 0.0
+    _a(
+        f"| Programmatic (eval script) | {_f(prog_raw)} "
+        f"| {w_prog:.0%} | {_f(prog_raw * w_prog)} |"
+    )
+    if w_ce is not None and code_eval_score is not None:
+        _a(
+            f"| Code Eval | {_f(code_eval_score)} "
+            f"| {w_ce:.0%} | {_f(code_eval_score * w_ce)} |"
+        )
+    judge_raw = rj_score if rj_score is not None else 0.0
+    _a(
+        f"| LLM Result Judge | {_f(judge_raw)} "
+        f"| {w_judge:.0%} | {_f(judge_raw * w_judge)} |"
+    )
+    _a(f"| **Final QR** | | | **{_f(final_qr)}** |")
+
+    if qr_dampened:
+        divergence = abs(prog_raw - judge_raw)
+        _a(
+            f"\n> Divergence dampened: programmatic={_f(prog_raw)} vs "
+            f"judge={_f(judge_raw)} "
+            f"({chr(916)}={_f(divergence)} > 0.40 threshold)"
+        )
+
+    _a("\n</details>\n")
 
 
 # ──────────────────────────────────────────────────────────────
@@ -218,6 +326,36 @@ _QP_METRICS = [
     "topic_adherence",
 ]
 
+# Weights used in QP aggregate (must match process_metrics._QP_DIMENSION_WEIGHTS)
+_QP_WEIGHTS = {
+    "tool_usage": 0.20,
+    "process_reasonableness": 0.20,
+    "step_efficiency": 0.15,
+    "code_process": 0.15,
+    "process_alignment": 0.10,
+    "role_adherence": 0.10,
+    "topic_adherence": 0.10,
+}
+
+# Sub-dimension definitions for metrics that have them
+_SUB_DIM_DEFS = {
+    "step_efficiency": [
+        ("action_economy", "0.40"),
+        ("redundancy_avoidance", "0.30"),
+        ("logical_sequencing", "0.30"),
+    ],
+    "process_reasonableness": [
+        ("problem_decomposition", "0.30"),
+        ("execution_soundness", "0.40"),
+        ("error_handling", "0.30"),
+    ],
+    "process_alignment": [
+        ("coverage", "0.40"),
+        ("depth", "0.35"),
+        ("soundness_delta", "0.25"),
+    ],
+}
+
 
 def _section_qp(lines, result):
     _a = lines.append
@@ -225,9 +363,10 @@ def _section_qp(lines, result):
     per_model = pm.get("_per_model", {})
     model_names = sorted(per_model.keys()) if per_model else []
 
-    # Table header
-    header = "| Metric | Avg |"
-    sep = "|--------|-----|"
+    # ── Summary table ──
+    _a("### Summary\n")
+    header = "| Metric | Weight | Avg |"
+    sep = "|--------|--------|-----|"
     for m in model_names:
         header += f" {_short_model(m)} |"
         sep += "------|"
@@ -238,6 +377,15 @@ def _section_qp(lines, result):
         v = pm.get(mn)
         if v is None:
             continue
+
+        weight_str = _QP_WEIGHTS.get(mn)
+        if weight_str is not None:
+            weight_str = f"{weight_str:.2f}"
+        elif mn == "knowledge_retention":
+            weight_str = "*(diag)*"
+        else:
+            weight_str = "—"
+
         if isinstance(v, dict):
             sc = v.get("score")
             skipped = v.get("skipped", False)
@@ -252,7 +400,7 @@ def _section_qp(lines, result):
         else:
             avg_str = str(v)
 
-        row = f"| {mn} | {avg_str} |"
+        row = f"| {mn} | {weight_str} | {avg_str} |"
         for m in model_names:
             ms = per_model[m].get(mn)
             if ms is not None and isinstance(ms, (int, float)):
@@ -263,46 +411,150 @@ def _section_qp(lines, result):
                 row += " — |"
         _a(row)
 
-    # Aggregate
+    # Aggregate row
     agg = pm.get("aggregate_process_score")
-    row = f"| **Aggregate** | {_f(agg)} |"
+    row = f"| **Aggregate QP** | | **{_f(agg)}** |"
     for m in model_names:
         ma = per_model[m].get("aggregate_process_score")
-        row += f" {_f(ma)} |"
+        row += f" **{_f(ma)}** |"
     _a(row)
     _a("")
 
-    # Code process detail (if applicable)
+    # ── Sub-dimension detail sections (collapsible) ──
+
+    # Tool Usage detail
+    tu = pm.get("tool_usage") or result.tool_usage or {}
+    if isinstance(tu, dict) and tu.get("score") is not None:
+        tu_score = tu.get("score")
+        _a(
+            f"<details>\n<summary><b>Tool Usage Detail</b> — Score: {_f(tu_score)}</summary>\n"
+        )
+        _a("| Component | Weight | Score |")
+        _a("|-----------|--------|-------|")
+        _a(f"| Selection Score | 60% | {_f(tu.get('selection_score'))} |")
+        _a(f"| Effectiveness | 40% | {_f(tu.get('effectiveness'))} |")
+        _a("")
+        _a("| Diagnostic | Value |")
+        _a("|------------|-------|")
+        base = tu.get("base")
+        base_note = " (has convenient)" if base is not None and base < 1.0 else ""
+        _a(f"| Base | {_f(base, '.2f')}{base_note} |")
+        _a(f"| Bonus | +{_f(tu.get('bonus'))} |")
+        _a(f"| Penalty (missing expected) | {_f(tu.get('penalty_expected'))} |")
+        _a(f"| Penalty (distractor) | {_f(tu.get('penalty_distractor'))} |")
+        _a(f"| Called convenient | {_fmt_list(tu.get('called_convenient'))} |")
+        _a(f"| Missing expected | {_fmt_list(tu.get('missing_expected'))} |")
+        _a(f"| Called distractors | {_fmt_list(tu.get('called_distractors'))} |")
+        _a(f"| Ineffective expected | {_fmt_list(tu.get('ineffective_expected'))} |")
+        _a("\n</details>\n")
+
+    # Step Efficiency / Process Reasonableness / Process Alignment detail
+    for metric_key, sub_dims in _SUB_DIM_DEFS.items():
+        v = pm.get(metric_key)
+        if not isinstance(v, dict) or v.get("score") is None:
+            continue
+        sub = v.get("sub_scores", {})
+        if not sub:
+            continue
+
+        display_name = metric_key.replace("_", " ").title()
+        metric_score = v.get("score")
+        _a(
+            f"<details>\n<summary><b>{display_name} Detail</b> — Score: {_f(metric_score)}</summary>\n"
+        )
+
+        header = "| Sub-dimension | Weight | Avg |"
+        sep = "|---------------|--------|-----|"
+        for m in model_names:
+            header += f" {_short_model(m)} |"
+            sep += "------|"
+        _a(header)
+        _a(sep)
+
+        for dim_key, dim_weight in sub_dims:
+            avg_val = sub.get(dim_key)
+            row = f"| {dim_key} | {dim_weight} | {_f(avg_val)} |"
+            for m in model_names:
+                pm_sub = (per_model[m].get("_sub_scores") or {}).get(metric_key, {})
+                mv = (pm_sub or {}).get(dim_key)
+                row += f" {_f(mv)} |"
+            _a(row)
+
+        # Extra context for step_efficiency
+        if metric_key == "step_efficiency":
+            agent_steps = v.get("agent_substantive_steps")
+            ref_steps = v.get("reference_step_count")
+            if agent_steps is not None:
+                note = f"\n> Agent steps: {agent_steps}"
+                if ref_steps is not None:
+                    note += f" | Reference steps: {ref_steps}"
+                _a(note)
+
+        # Extra context for process_alignment
+        if metric_key == "process_alignment":
+            pt = v.get("path_tolerance")
+            if pt is not None:
+                _a(f"\n> Path tolerance: {pt:.2f}")
+
+        _a("\n</details>\n")
+
+    # Code Process detail
     cp = result.code_process or {}
     if cp.get("applicable"):
-        _a("### Code Process Detail\n")
-        _a(f"- **Combined score**: {_f(cp.get('score'))}")
+        cp_score = cp.get("score")
+        _a(
+            f"<details>\n<summary><b>Code Process Detail</b> — Score: {_f(cp_score)}</summary>\n"
+        )
+
+        _a("| Component | Weight | Score |")
+        _a("|-----------|--------|-------|")
         prog = cp.get("programmatic", {})
         if prog and prog.get("applicable"):
-            psub = prog.get("sub_scores", {})
-            parts = ", ".join(
-                f"{k}={_f(psub.get(k))}"
-                for k in (
-                    "iterative_refinement",
-                    "test_before_deliver",
-                    "error_recovery",
-                    "code_evolution",
-                )
-            )
-            _a(f"- Programmatic ({_f(prog.get('score'))}): {parts}")
+            _a(f"| Programmatic | 50% | {_f(prog.get('score'))} |")
         llm = cp.get("llm_judged", {})
-        if llm and llm.get("applicable"):
+        if llm and llm.get("applicable", True) and llm.get("score") is not None:
+            _a(f"| LLM-judged | 50% | {_f(llm.get('score'))} |")
+        _a(f"| **Combined** | | **{_f(cp_score)}** |")
+        _a("")
+
+        # Programmatic sub-scores
+        if prog and prog.get("applicable"):
+            psub = prog.get("sub_scores", {})
+            _a("**Programmatic sub-scores:**\n")
+            _a("| Metric | Score |")
+            _a("|--------|-------|")
+            for k in (
+                "iterative_refinement",
+                "test_before_deliver",
+                "error_recovery",
+                "code_evolution",
+            ):
+                _a(f"| {k.replace('_', ' ').title()} | {_f(psub.get(k))} |")
+            _a("")
+
+        # LLM-judged sub-scores
+        if llm and llm.get("applicable", True) and llm.get("score") is not None:
             lsub = llm.get("sub_scores", {})
-            parts = ", ".join(
-                f"{k}={_f(lsub.get(k))}"
+            if lsub:
+                _a("**LLM-judged sub-scores:**\n")
+                _a("| Metric | Score |")
+                _a("|--------|-------|")
                 for k in (
                     "debugging_competence",
                     "incremental_development",
                     "code_explanation_quality",
-                )
-            )
-            _a(f"- LLM-judged ({_f(llm.get('score'))}): {parts}")
-        _a("")
+                ):
+                    _a(f"| {k.replace('_', ' ').title()} | {_f(lsub.get(k))} |")
+                _a("")
+
+        _a("</details>\n")
+
+
+def _fmt_list(items) -> str:
+    """Format a list of items as inline code or '—' if empty."""
+    if not items:
+        return "—"
+    return ", ".join(f"`{x}`" for x in items)
 
 
 # ──────────────────────────────────────────────────────────────
@@ -344,11 +596,17 @@ def _section_tutor(lines, result):
         _a(row)
 
     # Average row
-    tutor_avg = _safe_mean(ts.values()) if ts else 0.0
+    tutor_avg = (
+        _safe_mean(v for k, v in ts.items() if not k.startswith("_")) if ts else 0.0
+    )
     row = f"| **Average** | {_f(tutor_avg)} |"
     for m in model_names:
         m_scores = by_model[m]
-        m_avg = _safe_mean(m_scores.values()) if m_scores else 0.0
+        m_avg = (
+            _safe_mean(v for k, v in m_scores.items() if not k.startswith("_"))
+            if m_scores
+            else 0.0
+        )
         row += f" {_f(m_avg)} |"
     _a(row)
     _a("")

@@ -3,10 +3,18 @@
 import json
 import os
 import re
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _data_source_check import verify_data_source
 
 
 def evaluate(
-    workspace_path: str, tool_logs: list = None, conversation: list = None
+    workspace_path: str,
+    tool_logs: list = None,
+    conversation: list = None,
+    *,
+    data_files: list[str] = None,
 ) -> dict:
     """Evaluate whether a complete MA crossover system was built.
 
@@ -63,18 +71,20 @@ def evaluate(
             results["visualization_produced"] = True
             break
 
-    # backtest_analysis.json
-    analysis_path = os.path.join(workspace_path, "backtest_analysis.json")
-    if os.path.exists(analysis_path):
-        try:
-            with open(analysis_path) as f:
-                analysis = json.load(f)
-            if any(
-                k in analysis for k in ["sharpe_ratio", "annual_return", "max_drawdown"]
-            ):
-                results["backtest_produces_metrics"] = True
-        except (json.JSONDecodeError, IOError):
-            pass
+    # Check *_analysis.json and *_metrics.json workspace files
+    for fname in workspace_files:
+        if fname.endswith(("_analysis.json", "_metrics.json")):
+            try:
+                with open(os.path.join(workspace_path, fname)) as f:
+                    analysis = json.load(f)
+                if any(
+                    k in analysis
+                    for k in ["sharpe_ratio", "annual_return", "max_drawdown"]
+                ):
+                    results["backtest_produces_metrics"] = True
+                    break
+            except (json.JSONDecodeError, IOError):
+                pass
 
     # --- Tool logs (tool-name agnostic) ---
     if tool_logs:
@@ -112,14 +122,39 @@ def evaluate(
                     if log.success:
                         results["system_produces_signals"] = True
 
-    score = sum(
-        [
-            0.25 if results["system_produces_signals"] else 0,
-            0.30 if results["backtest_produces_metrics"] else 0,
-            0.25 if results["code_is_modular"] else 0,
-            0.20 if results["visualization_produced"] else 0,
-        ]
-    )
+    _checklist = [
+        {
+            "item": "system_produces_signals",
+            "weight": 0.25,
+            "passed": results["system_produces_signals"],
+        },
+        {
+            "item": "backtest_produces_metrics",
+            "weight": 0.30,
+            "passed": results["backtest_produces_metrics"],
+        },
+        {
+            "item": "code_is_modular",
+            "weight": 0.25,
+            "passed": results["code_is_modular"],
+        },
+        {
+            "item": "visualization_produced",
+            "weight": 0.20,
+            "passed": results["visualization_produced"],
+        },
+    ]
+    score = sum(c["weight"] for c in _checklist if c["passed"])
+
+    # Data source verification — cap score if task data wasn't accessed
+    if data_files:
+        ds = verify_data_source(tool_logs or [], data_files)
+        results["data_source_verified"] = ds["verified"]
+        results["data_source_fraction"] = ds["fraction"]
+        if not ds["verified"]:
+            score *= max(0.25, ds["fraction"])
+
+    results["_checklist"] = _checklist
     results["score"] = round(score, 2)
     return results
 

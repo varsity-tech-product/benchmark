@@ -32,7 +32,7 @@
       "pandas_timeseries.md",
       "statistical_tests.md"
     ],
-    "sandbox_image": "quant-tutor-env:v1.0",
+    "sandbox_image": "quant-tutor-env:v2.0",
     "network_enabled": false
   },
   "ground_truth": {
@@ -42,7 +42,9 @@
       "Normalize and handle missing values in alternative datasets",
       "Test information content using IC or rank-correlation methods"
     ],
-    "expected_mcp_tools": [],
+    "expected_mcp_tools": [
+      "shell_exec"
+    ],
     "convenient_tools": [
       "compute_indicator",
       "compute_statistics",
@@ -55,5 +57,6 @@
   "requires_code": true,
   "sample_code": null,
   "max_turns": 30,
+  "agent_max_steps": 15,
   "timeout_minutes": 20
 }

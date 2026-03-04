@@ -1,85 +1,118 @@
-"""Evaluation script for D02: Missing Data Detection & Handling."""
+"""Evaluation script for D02: Missing Data Detection & Handling.
+
+QR Programmatic: checks tool outputs and workspace for evidence that
+missing values were profiled, gaps were analyzed, and handling was applied.
+"""
 
 import json
+import os
+import re
 import sys
-from pathlib import Path
 
-BENCH_ROOT = Path(__file__).resolve().parents[2]
-if str(BENCH_ROOT) not in sys.path:
-    sys.path.insert(0, str(BENCH_ROOT))
-
-from evaluation.test_scripts._track_a_hybrid_eval import evaluate_track_a_hybrid
-
-PERSONA_RULES = {
-    "beginner": ["new to", "beginner", "simple terms", "plain language"],
-    "intermediate": ["pandas", "pipeline", "dataframe", "implementation"],
-    "advanced": ["calendar-aware", "methodology", "production", "audit"],
-}
-
-ADAPTATION_MARKERS = {
-    "beginner_strong": [
-        "in plain language",
-        "step by step",
-        "what this means",
-        "let's break this down",
-        "quick checklist",
-    ],
-    "beginner_weak": ["simple", "for example", "don't worry"],
-    "beginner_min_strong": 1,
-    "beginner_min_total": 2,
-    "intermediate_markers": [
-        "pandas",
-        "isna",
-        "notna",
-        "validation checklist",
-        "pipeline",
-        "data quality checks",
-    ],
-    "intermediate_min": 2,
-    "advanced_markers": [
-        "trading calendar",
-        "holiday",
-        "imputation bias",
-        "point-in-time",
-        "audit trail",
-        "corporate action",
-    ],
-    "advanced_min": 3,
-    "fallback_markers": [
-        "step by step",
-        "checklist",
-        "missing values",
-        "holiday",
-    ],
-    "fallback_min": 2,
-}
-
-CONCEPT_BUCKETS = [
-    ["missing", "isna", "null", "nan", "missingness"],
-    ["holiday", "weekend", "trading calendar", "business day", "date gap"],
-    ["dropna", "ffill", "bfill", "interpolate", "imputation", "fillna"],
-]
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _data_source_check import verify_data_source
 
 
 def evaluate(
     workspace_path: str,
     tool_logs: list = None,
     conversation: list = None,
-    eval_context: dict = None,
+    *,
+    data_files: list[str] = None,
 ) -> dict:
-    """Evaluate tutoring quality plus executable-code evidence for D02."""
-    return evaluate_track_a_hybrid(
-        workspace_path=workspace_path,
-        tool_logs=tool_logs,
-        conversation=conversation,
-        eval_context=eval_context,
-        persona_rules=PERSONA_RULES,
-        adaptation_markers=ADAPTATION_MARKERS,
-        concept_buckets=CONCEPT_BUCKETS,
-        concept_min_covered=2,
-    )
+    results = {
+        "missing_values_profiled": False,
+        "gap_analysis_performed": False,
+        "handling_applied": False,
+        "score": 0.0,
+    }
+
+    combined = _collect_evidence(workspace_path, tool_logs)
+
+    # 1. Missing values profiled (0.35)
+    profile_ops = [
+        "isna",
+        "isnull",
+        "info()",
+        "count()",
+        "notnull",
+        "notna",
+        "compute_statistics",
+        "missing_count",
+        "missing_pct",
+    ]
+    if _has_keywords(combined, profile_ops) and _has_number(combined):
+        results["missing_values_profiled"] = True
+
+    # 2. Gap analysis performed (0.35)
+    gap_ops = ["diff()", "timedelta", "asfreq", "date_range", "freq=", "bday"]
+    if _has_keywords(combined, gap_ops):
+        results["gap_analysis_performed"] = True
+
+    # 3. Handling applied (0.30)
+    handle_ops = ["fillna", "dropna", "interpolate", "ffill", "bfill", "pad"]
+    if _has_keywords(combined, handle_ops):
+        results["handling_applied"] = True
+
+    _checklist = [
+        {
+            "item": "missing_values_profiled",
+            "weight": 0.35,
+            "passed": results["missing_values_profiled"],
+        },
+        {
+            "item": "gap_analysis_performed",
+            "weight": 0.35,
+            "passed": results["gap_analysis_performed"],
+        },
+        {
+            "item": "handling_applied",
+            "weight": 0.30,
+            "passed": results["handling_applied"],
+        },
+    ]
+    score = sum(c["weight"] for c in _checklist if c["passed"])
+
+    # Data source verification — cap score if task data wasn't accessed
+    if data_files:
+        ds = verify_data_source(tool_logs or [], data_files)
+        results["data_source_verified"] = ds["verified"]
+        results["data_source_fraction"] = ds["fraction"]
+        if not ds["verified"]:
+            score *= max(0.25, ds["fraction"])
+
+    results["_checklist"] = _checklist
+    results["score"] = round(score, 2)
+    return results
+
+
+def _collect_evidence(workspace_path: str, tool_logs: list) -> str:
+    parts = []
+    for log in tool_logs or []:
+        parts.append(log.name)
+        parts.append(str(log.args))
+        parts.append(str(log.result or ""))
+    if workspace_path and os.path.isdir(workspace_path):
+        for fname in os.listdir(workspace_path):
+            if fname.endswith((".txt", ".json", ".md", ".csv", ".log")):
+                try:
+                    with open(os.path.join(workspace_path, fname)) as f:
+                        parts.append(f.read()[:2000])
+                except (IOError, UnicodeDecodeError):
+                    pass
+    return " ".join(parts).lower()
+
+
+def _has_keywords(text: str, keywords: list[str]) -> bool:
+    return any(kw in text for kw in keywords)
+
+
+def _has_number(text: str) -> bool:
+    return bool(re.search(r"-?\d+\.?\d*", text))
 
 
 if __name__ == "__main__":
+    import sys
+
     workspace = sys.argv[1] if len(sys.argv) > 1 else "/workspace"
     print(json.dumps(evaluate(workspace), indent=2))

@@ -44,8 +44,8 @@ load_dotenv(BENCH_ROOT.parent / ".env")
 from config.llm_config import (
     OPENROUTER_BASE_URL,
     REFERENCE_DEFAULT_MODEL,
-    get_model_for_agent,
 )
+from config.model_resolver import get_model_for_agent
 
 if os.environ.get("OPENROUTER_API_KEY") and not os.environ.get("OPENAI_API_KEY"):
     os.environ["OPENAI_API_KEY"] = os.environ["OPENROUTER_API_KEY"]
@@ -152,8 +152,6 @@ def _describe_action(tool_name: str, args: dict) -> str:
     if tool_name == "search_docs":
         query = args.get("query", "?")
         return f'search docs for "{query}"'
-    if tool_name == "send_message":
-        return "send message to student"
     if tool_name == "get_environment_info":
         return "inspect environment"
     return f"call {tool_name}"
@@ -317,8 +315,7 @@ def generate_reference_for_task(
     )
 
     full_logs = captured.get("full_logs", [])
-    # Filter out send_message from trace (not a "tool step")
-    tool_logs = [lg for lg in full_logs if lg["name"] != "send_message"]
+    tool_logs = full_logs
 
     reference = {
         "task_id": task.task_id,

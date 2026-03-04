@@ -60,9 +60,16 @@ def compute_task_score(
         RESULT_WEIGHT * quant_result_score + PROCESS_WEIGHT * quant_process_score
     )
 
+    # Filter out internal metadata keys (_eval_cost, _eval_cost_by_model)
+    clean_tutor = {
+        k: v
+        for k, v in tutor_dimension_scores.items()
+        if not k.startswith("_") and isinstance(v, (int, float))
+    }
+
     tutor_score = 0.0
-    if tutor_dimension_scores:
-        tutor_score = compute_tutor_score(tutor_dimension_scores, category=category)
+    if clean_tutor:
+        tutor_score = compute_tutor_score(clean_tutor, category=category)
 
     overall = QUANT_WEIGHT * quant_score + TUTOR_WEIGHT * tutor_score
 
@@ -71,9 +78,7 @@ def compute_task_score(
         "quant_process_score": round(quant_process_score, 4),
         "quant_agent_score": round(quant_score, 4),
         "tutor_score": round(tutor_score, 4),
-        "tutor_dimension_scores": {
-            k: round(v, 4) for k, v in tutor_dimension_scores.items()
-        },
+        "tutor_dimension_scores": {k: round(v, 4) for k, v in clean_tutor.items()},
         "overall_score": round(overall, 4),
     }
 
@@ -264,7 +269,14 @@ def _compute_adaptiveness_score(task_result_objects: list) -> Optional[float]:
     by_task = defaultdict(list)
     for r in task_result_objects:
         if hasattr(r, "tutor_scores") and r.tutor_scores:
-            tutor_score = statistics.mean(r.tutor_scores.values())
+            clean_vals = [
+                v
+                for k, v in r.tutor_scores.items()
+                if not k.startswith("_") and isinstance(v, (int, float))
+            ]
+            if not clean_vals:
+                continue
+            tutor_score = statistics.mean(clean_vals)
             by_task[r.task_id].append(tutor_score)
 
     # Compute per-task variance

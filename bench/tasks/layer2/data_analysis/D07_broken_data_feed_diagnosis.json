@@ -31,7 +31,7 @@
       "pandas_timeseries.md",
       "data_fetch_realtime.md"
     ],
-    "sandbox_image": "quant-tutor-env:v1.0",
+    "sandbox_image": "quant-tutor-env:v2.0",
     "network_enabled": false
   },
   "ground_truth": {
@@ -41,7 +41,9 @@
       "Map symptoms to plausible root causes (splits, timezone, feed errors)",
       "Build a remediation and validation checklist"
     ],
-    "expected_mcp_tools": [],
+    "expected_mcp_tools": [
+      "shell_exec"
+    ],
     "convenient_tools": [
       "compute_statistics",
       "plot_chart"
@@ -53,5 +55,6 @@
   "requires_code": true,
   "sample_code": null,
   "max_turns": 30,
+  "agent_max_steps": 15,
   "timeout_minutes": 20
 }

@@ -4,11 +4,11 @@ Replaces the 4 tool-bound DeepEval metrics (tool_correctness,
 argument_correctness, mcp_use, multi_turn_mcp) with 2 tool-agnostic
 metrics that evaluate execution logic, not tool selection.
 
-Process Reasonableness (4 sub-dimensions):
-    Problem Decomposition   (0.25)
-    Execution Soundness     (0.30)
-    Error Handling          (0.25)
-    Pedagogical Integration (0.20)
+Process Reasonableness (3 sub-dimensions):
+    Problem Decomposition   (0.30)
+    Execution Soundness     (0.40)
+    Error Handling          (0.30)
+    For code tasks, Error Handling is scoped to non-code errors only.
 
 Process Alignment (3 sub-dimensions, reference-anchored):
     Coverage       (0.40)
@@ -21,7 +21,7 @@ Uses 5-point ordinal scale: {0.0, 0.25, 0.5, 0.75, 1.0}.
 import json as _json
 import re
 
-from config.llm_config import resolve_deepeval_model
+from config.model_resolver import resolve_deepeval_model
 
 try:
     from deepeval.models.llms.openai_model import GPTModel
@@ -104,7 +104,7 @@ CATEGORY_PROCESS_CRITERIA = {
 # Shared helpers
 # ──────────────────────────────────────────────────────────────
 
-_NON_SUBSTANTIVE_TOOLS = frozenset({"send_message", "get_environment_info"})
+_NON_SUBSTANTIVE_TOOLS = frozenset({"get_environment_info"})
 
 
 def _build_agent_trace_for_prompt(proxy_logs: list) -> str:
@@ -162,8 +162,10 @@ async def _call_llm(model, prompt: str) -> dict:
     model_obj = resolve_deepeval_model(model)
     if isinstance(model_obj, str):
         model_obj = GPTModel(model=model_obj)
-    response_text, _ = await model_obj.a_generate(prompt)
-    return _extract_json_from_response(response_text)
+    response_text, call_cost = await model_obj.a_generate(prompt)
+    result = _extract_json_from_response(response_text)
+    result["_eval_cost"] = float(call_cost) if call_cost else 0.0
+    return result
 
 
 # ──────────────────────────────────────────────────────────────
@@ -171,10 +173,9 @@ async def _call_llm(model, prompt: str) -> dict:
 # ──────────────────────────────────────────────────────────────
 
 _REASONABLENESS_WEIGHTS = {
-    "problem_decomposition": 0.25,
-    "execution_soundness": 0.30,
-    "error_handling": 0.25,
-    "pedagogical_integration": 0.20,
+    "problem_decomposition": 0.30,
+    "execution_soundness": 0.40,
+    "error_handling": 0.30,
 }
 
 
@@ -182,11 +183,37 @@ def _build_process_reasonableness_prompt(
     task: str,
     category: str,
     agent_trace: str,
+    *,
+    is_code_task: bool = False,
 ) -> str:
     """Build the process reasonableness evaluation prompt."""
     category_criteria = CATEGORY_PROCESS_CRITERIA.get(
         category, CATEGORY_PROCESS_CRITERIA["conceptual_qa"]
     )
+
+    # For code tasks, narrow Error Handling to non-code errors only
+    # (code-specific debugging is evaluated separately by Code Process).
+    if is_code_task:
+        error_handling_desc = """3. ERROR HANDLING (0.0-1.0):
+   Focus on NON-CODE error handling: wrong data paths, missing files,
+   tool call failures, invalid parameters, data format issues.
+   Code-specific debugging (Python tracebacks, syntax errors, logic bugs)
+   is evaluated separately — do NOT consider those here.
+   - 1.0:  Excellent handling of non-code errors (or no such errors occurred)
+   - 0.75: Good recovery from most non-code issues
+   - 0.5:  Recovered from some non-code errors but missed others
+   - 0.25: Poor handling of non-code failures
+   - 0.0:  No error handling or made non-code errors worse"""
+    else:
+        error_handling_desc = """3. ERROR HANDLING (0.0-1.0):
+   When errors occurred, did the agent correctly diagnose the root cause?
+   Did it fix the actual problem rather than suppressing symptoms?
+   Did it avoid repeating the same failing action?
+   - 1.0:  Excellent error diagnosis and recovery (or no errors occurred)
+   - 0.75: Good recovery, minor diagnostic gaps
+   - 0.5:  Recovered from some errors but missed others
+   - 0.25: Poor error handling, repeated failing actions
+   - 0.0:  No error handling or made errors worse"""
 
     return f"""You are evaluating the PROCESS QUALITY of an AI tutoring agent's execution.
 
@@ -216,7 +243,7 @@ NEUTRALITY RULES (MUST follow):
 
 CATEGORY-SPECIFIC CRITERIA: {category_criteria}
 
-EVALUATE on 4 dimensions:
+EVALUATE on 3 dimensions:
 
 1. PROBLEM DECOMPOSITION (0.0-1.0):
    Did the agent break the task into logical sub-steps?
@@ -237,27 +264,10 @@ EVALUATE on 4 dimensions:
    - 0.25: Several logically flawed actions
    - 0.0:  Fundamentally wrong approach
 
-3. ERROR HANDLING (0.0-1.0):
-   When errors occurred, did the agent correctly diagnose the root cause?
-   Did it fix the actual problem rather than suppressing symptoms?
-   Did it avoid repeating the same failing action?
-   - 1.0:  Excellent error diagnosis and recovery (or no errors occurred)
-   - 0.75: Good recovery, minor diagnostic gaps
-   - 0.5:  Recovered from some errors but missed others
-   - 0.25: Poor error handling, repeated failing actions
-   - 0.0:  No error handling or made errors worse
-
-4. PEDAGOGICAL INTEGRATION (0.0-1.0):
-   Did the agent explain its process to the student while executing?
-   Were intermediate results shared and interpreted for learning purposes?
-   - 1.0:  Excellent integration of teaching with execution
-   - 0.75: Good explanations for most steps
-   - 0.5:  Some explanation but gaps in teaching moments
-   - 0.25: Minimal teaching, mostly just executing
-   - 0.0:  No pedagogical content, pure execution
+{error_handling_desc}
 
 Return ONLY a JSON object (no markdown, no extra text):
-{{"problem_decomposition": <float>, "execution_soundness": <float>, "error_handling": <float>, "pedagogical_integration": <float>, "reason": "<brief explanation>"}}"""
+{{"problem_decomposition": <float>, "execution_soundness": <float>, "error_handling": <float>, "reason": "<brief explanation>"}}"""
 
 
 async def async_eval_process_reasonableness(
@@ -265,6 +275,7 @@ async def async_eval_process_reasonableness(
     category: str,
     proxy_logs: list,
     model=None,
+    is_code_task: bool = False,
 ) -> dict:
     """Evaluate process reasonableness (tool-agnostic).
 
@@ -273,6 +284,7 @@ async def async_eval_process_reasonableness(
         category: Task category (e.g. "implementation", "data_analysis").
         proxy_logs: Tool call logs (ToolCallLog objects from MCPProxy).
         model: LLM judge model.
+        is_code_task: Whether this task involves code (narrows error handling scope).
 
     Returns:
         Dict with score, sub_scores, and reason.
@@ -285,6 +297,7 @@ async def async_eval_process_reasonableness(
         task=task_description,
         category=category,
         agent_trace=agent_trace,
+        is_code_task=is_code_task,
     )
 
     try:
@@ -294,6 +307,7 @@ async def async_eval_process_reasonableness(
             "score": 0.5,
             "reason": f"ProcessReasonableness error: {e}",
             "passed": True,
+            "_eval_cost": 0.0,
         }
 
     sub_scores = {
@@ -308,6 +322,7 @@ async def async_eval_process_reasonableness(
         "reason": result.get("reason", ""),
         "passed": overall >= 0.5,
         "sub_scores": sub_scores,
+        "_eval_cost": result.get("_eval_cost", 0.0),
     }
 
 
@@ -447,6 +462,7 @@ async def async_eval_process_alignment(
             "score": 0.5,
             "reason": f"ProcessAlignment error: {e}",
             "passed": True,
+            "_eval_cost": 0.0,
         }
 
     sub_scores = {k: _clamp_ordinal(result.get(k, 0.5)) for k in _ALIGNMENT_WEIGHTS}
@@ -458,4 +474,5 @@ async def async_eval_process_alignment(
         "passed": overall >= 0.5,
         "sub_scores": sub_scores,
         "path_tolerance": path_tolerance,
+        "_eval_cost": result.get("_eval_cost", 0.0),
     }

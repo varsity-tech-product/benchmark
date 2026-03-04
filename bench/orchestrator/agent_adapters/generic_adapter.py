@@ -11,7 +11,7 @@ from typing import Optional
 
 from dotenv import load_dotenv
 
-from .base_adapter import BaseAgentAdapter
+from .base_adapter import BaseAgentAdapter, TokenRecord
 from .prompts import TUTOR_SYSTEM_PROMPT
 
 # Load .env from project root (two levels up from this file)
@@ -72,6 +72,7 @@ class GenericLLMAdapter(BaseAgentAdapter):
                 tools=tools,
                 max_tokens=4096,
             )
+            self._record_usage(response)
 
             message = response.choices[0].message
 
@@ -103,6 +104,7 @@ class GenericLLMAdapter(BaseAgentAdapter):
                     messages=api_messages,
                     max_tokens=4096,
                 )
+                self._record_usage(final_response)
                 return final_response.choices[0].message.content or ""
 
             return message.content or ""
@@ -152,6 +154,23 @@ class GenericLLMAdapter(BaseAgentAdapter):
                 }
             )
         return formatted
+
+    def _record_usage(self, response):
+        """Extract token usage from OpenAI-compatible API response."""
+        usage = getattr(response, "usage", None)
+        if usage:
+            from config.pricing import estimate_cost
+
+            inp = getattr(usage, "prompt_tokens", 0) or 0
+            out = getattr(usage, "completion_tokens", 0) or 0
+            self._token_records.append(
+                TokenRecord(
+                    model=self.model,
+                    input_tokens=inp,
+                    output_tokens=out,
+                    cost_usd=estimate_cost(self.model, inp, out),
+                )
+            )
 
     def _fallback_response(self, messages: list[dict]) -> str:
         """Fallback when OpenAI SDK is not available."""

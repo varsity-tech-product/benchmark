@@ -4,9 +4,13 @@ Intercepts all tool calls from the Agent Under Test, logs them,
 forwards to real implementations, logs results, and returns to agent.
 """
 
+import re
 import time
 from dataclasses import dataclass
 from typing import Callable, Optional
+
+# Pattern to detect non-zero exit codes appended by shell_exec wrappers
+_EXIT_CODE_RE = re.compile(r"\[exit code\]:\s*(-?\d+)")
 
 
 @dataclass
@@ -77,7 +81,7 @@ class MCPProxy:
           by simply calling it once.
 
         In both cases the tool is tracked in ``_distractors`` so that
-        ``get_distractor_calls()`` can identify it for evaluation.
+        ``get_distractor_names()`` can identify it for evaluation.
         """
         self._distractors[name] = error_message
         if func is not None:
@@ -124,6 +128,14 @@ class MCPProxy:
                 log.success = False
 
             log.result = str(result)
+
+            # Detect non-zero exit codes from shell_exec (the wrapper appends
+            # "[exit code]: N" when returncode != 0).  Mark as failed so trace
+            # reports and tool_usage effectiveness scoring see the truth.
+            if log.success and log.name == "shell_exec":
+                m = _EXIT_CODE_RE.search(log.result)
+                if m and int(m.group(1)) != 0:
+                    log.success = False
         except Exception as e:
             log.result = f"Error: {type(e).__name__}: {str(e)}"
             log.success = False
@@ -137,38 +149,6 @@ class MCPProxy:
         """Get all recorded tool call logs."""
         return list(self._logs)
 
-    def get_logs_for_turn(self, turn_index: int) -> list[ToolCallLog]:
-        """Get logs for a specific conversation turn."""
-        return [entry for entry in self._logs if entry.turn_index == turn_index]
-
-    def get_tool_names_called(self) -> list[str]:
-        """Get unique tool names that were called."""
-        return list(set(entry.name for entry in self._logs))
-
-    def get_distractor_calls(self) -> list[ToolCallLog]:
-        """Get all calls to distractor tools."""
-        return [entry for entry in self._logs if entry.name in self._distractors]
-
     def get_distractor_names(self) -> list[str]:
         """Get names of all registered distractor tools."""
         return list(self._distractors.keys())
-
-    def reset(self):
-        """Reset all logs."""
-        self._logs.clear()
-        self._current_turn = 0
-
-    def to_dict(self) -> list[dict]:
-        """Export logs as list of dicts."""
-        return [
-            {
-                "name": entry.name,
-                "input_args": entry.args,
-                "result": entry.result[:500],  # Truncate for storage
-                "timestamp": entry.timestamp,
-                "duration_ms": round(entry.duration_ms, 2),
-                "success": entry.success,
-                "turn_index": entry.turn_index,
-            }
-            for entry in self._logs
-        ]

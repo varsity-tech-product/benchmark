@@ -45,8 +45,8 @@ from config.conditions import CONDITION_NAMES, CONDITIONS
 from config.llm_config import (
     AGENT_DEFAULT_MODEL,
     OPENROUTER_BASE_URL,
-    get_model_for_agent,
 )
+from config.model_resolver import get_model_for_agent
 
 if os.environ.get("OPENROUTER_API_KEY") and not os.environ.get("OPENAI_API_KEY"):
     os.environ["OPENAI_API_KEY"] = os.environ["OPENROUTER_API_KEY"]
@@ -341,15 +341,16 @@ def cmd_run_single(args):
     print(f"Max turns: {args.max_turns}")
     print()
 
-    # Prepare trace capture hook if --save-trace requested
-    save_trace = getattr(args, "save_trace", False)
+    # Prepare result capture hook if --save-result requested
+    save_result = getattr(args, "save_result", False)
     trace_captured: dict = {}
+    result_dir = None
 
-    if save_trace:
+    if save_result:
         import shutil
 
         model_short = agent.model.split("/")[-1] if "/" in agent.model else agent.model
-        trace_dir = (
+        result_dir = (
             BENCH_ROOT
             / "results"
             / "run-single"
@@ -358,8 +359,8 @@ def cmd_run_single(args):
             / task.task_id
             / persona.persona_id
         )
-        trace_dir.mkdir(parents=True, exist_ok=True)
-        agent_files_dir = trace_dir / "agent_files"
+        result_dir.mkdir(parents=True, exist_ok=True)
+        agent_files_dir = result_dir / "agent_files"
 
         def _capture_for_trace(*, result, proxy, workspace_path):
             trace_captured["proxy_logs"] = list(proxy.get_logs())
@@ -374,7 +375,7 @@ def cmd_run_single(args):
         agent=agent,
         max_turns=args.max_turns or 5,
         tools_enabled=condition.tools_enabled,
-        pre_teardown_hook=_capture_for_trace if save_trace else None,
+        pre_teardown_hook=_capture_for_trace if save_result else None,
     )
 
     print(f"\n--- Conversation ({len(result.turns)} turns) ---")
@@ -390,14 +391,24 @@ def cmd_run_single(args):
     if result.tutor_scores:
         print("\n--- Tutor Dimension Scores (7D, averaged) ---")
         for dim, score in sorted(result.tutor_scores.items()):
-            print(f"  {dim}: {score:.4f}")
+            if dim.startswith("_"):
+                continue
+            if isinstance(score, (int, float)):
+                print(f"  {dim}: {score:.4f}")
+            else:
+                print(f"  {dim}: {score}")
 
     if result.tutor_scores_by_model:
         print("\n--- Per-Model Tutor Scores ---")
         for model_name, dim_scores in sorted(result.tutor_scores_by_model.items()):
-            avg = sum(dim_scores.values()) / len(dim_scores) if dim_scores else 0.0
+            clean = {
+                k: v
+                for k, v in dim_scores.items()
+                if not k.startswith("_") and isinstance(v, (int, float))
+            }
+            avg = sum(clean.values()) / len(clean) if clean else 0.0
             print(f"  [{model_name}] avg={avg:.4f}")
-            for dim, score in sorted(dim_scores.items()):
+            for dim, score in sorted(clean.items()):
                 print(f"    {dim}: {score:.4f}")
 
     if result.process_metrics:
@@ -557,36 +568,35 @@ def cmd_run_single(args):
     if result.error:
         print(f"\nError: {result.error}")
 
-    # ── Save detailed score report (Markdown) ──
-    if getattr(args, "save_scores", False):
+    # ── Save results (scores.md + trace.md + cost.md + agent_files/) ──
+    if save_result and result_dir is not None:
         from evaluation.score_report import generate_score_report
 
-        scores_dir = BENCH_ROOT / "results" / "scores"
-        scores_dir.mkdir(parents=True, exist_ok=True)
-        ts = int(__import__("time").time())
-        filename = f"{result.task_id}_{result.persona_id}_{ts}.md"
-        report_path = scores_dir / filename
-        md_text = generate_score_report(result)
-        report_path.write_text(md_text, encoding="utf-8")
-        print(f"\nScore report saved: {report_path}")
+        scores_md = generate_score_report(result)
+        (result_dir / "scores.md").write_text(scores_md, encoding="utf-8")
 
-    # ── Save execution trace (conversation + tool calls + agent files) ──
-    if save_trace and "proxy_logs" in trace_captured:
-        from evaluation.trace_report import generate_trace_md
+        if "proxy_logs" in trace_captured:
+            from evaluation.trace_report import generate_trace_md
 
-        md_text = generate_trace_md(
-            result,
-            trace_captured["proxy_logs"],
-            agent_name=getattr(args, "agent", "generic"),
-            model=agent.model,
-            condition=condition.name,
-        )
-        (trace_dir / "trace.md").write_text(md_text, encoding="utf-8")
+            trace_md = generate_trace_md(
+                result,
+                trace_captured["proxy_logs"],
+                agent_name=getattr(args, "agent", "generic"),
+                model=agent.model,
+                condition=condition.name,
+            )
+            (result_dir / "trace.md").write_text(trace_md, encoding="utf-8")
+
+        from evaluation.cost_report import generate_cost_report
+
+        cost_md = generate_cost_report(result)
+        (result_dir / "cost.md").write_text(cost_md, encoding="utf-8")
+
         n_files = (
             len(list(agent_files_dir.iterdir())) if agent_files_dir.exists() else 0
         )
-        print(f"\nTrace saved: {trace_dir}")
-        print(f"  trace.md + agent_files/ ({n_files} files)")
+        print(f"\nResults saved: {result_dir}")
+        print(f"  scores.md + trace.md + cost.md + agent_files/ ({n_files} files)")
 
 
 def cmd_list_tasks(args):
@@ -978,14 +988,9 @@ def main():
         help="Override agent model (OpenRouter format, e.g. 'openai/gpt-5.2')",
     )
     single_parser.add_argument(
-        "--save-scores",
+        "--save-result",
         action="store_true",
-        help="Save detailed score report (Markdown) to results/scores/",
-    )
-    single_parser.add_argument(
-        "--save-trace",
-        action="store_true",
-        help="Save full execution trace (conversation + tool calls + agent files)",
+        help="Save scores.md, trace.md, and agent_files/ to results/run-single/…",
     )
 
     # run-layer1 command

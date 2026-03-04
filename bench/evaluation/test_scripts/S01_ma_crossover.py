@@ -3,10 +3,18 @@
 import json
 import os
 import re
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _data_source_check import verify_data_source
 
 
 def evaluate(
-    workspace_path: str, tool_logs: list = None, conversation: list = None
+    workspace_path: str,
+    tool_logs: list = None,
+    conversation: list = None,
+    *,
+    data_files: list[str] = None,
 ) -> dict:
     """Evaluate whether the agent helped build a valid MA crossover strategy.
 
@@ -40,30 +48,32 @@ def evaluate(
             except (IOError, UnicodeDecodeError):
                 pass
 
-    # Check backtest_analysis.json (produced by analyze_backtest_results tool)
-    analysis_path = os.path.join(workspace_path, "backtest_analysis.json")
-    if os.path.exists(analysis_path):
-        try:
-            with open(analysis_path) as f:
-                analysis = json.load(f)
-            sharpe = analysis.get("sharpe_ratio")
-            if sharpe is not None and -0.5 <= float(sharpe) <= 3.0:
-                results["sharpe_ratio_in_range"] = True
-            if (
-                analysis.get("annual_return") is not None
-                or analysis.get("total_return") is not None
-            ):
-                results["backtest_produces_return"] = True
-        except (json.JSONDecodeError, IOError, ValueError):
-            pass
-
-    # Check other workspace files for metric values
+    # Check *_analysis.json and *_metrics.json workspace files
+    # (produced by analyze_backtest_results / run_backtest tools)
+    _METRIC_SUFFIXES = ("_analysis.json", "_metrics.json")
     for fname in workspace_files:
+        if any(fname.endswith(s) for s in _METRIC_SUFFIXES):
+            fpath = os.path.join(workspace_path, fname)
+            try:
+                with open(fpath) as f:
+                    analysis = json.load(f)
+                sharpe = analysis.get("sharpe_ratio")
+                if sharpe is not None and -0.5 <= float(sharpe) <= 3.0:
+                    results["sharpe_ratio_in_range"] = True
+                if (
+                    analysis.get("annual_return") is not None
+                    or analysis.get("total_return") is not None
+                ):
+                    results["backtest_produces_return"] = True
+            except (json.JSONDecodeError, IOError, ValueError):
+                pass
+
+    # Check other workspace files for metric values (text-based fallback)
+    for fname in workspace_files:
+        if any(fname.endswith(s) for s in _METRIC_SUFFIXES):
+            continue
         fpath = os.path.join(workspace_path, fname)
-        if (
-            fname.endswith((".json", ".txt", ".csv", ".log"))
-            and fname != "backtest_analysis.json"
-        ):
+        if fname.endswith((".json", ".txt", ".csv", ".log")):
             try:
                 with open(fpath) as f:
                     content = f.read()
@@ -86,13 +96,34 @@ def evaluate(
                     results["strategy_uses_two_ma_windows"] = True
                 _check_metrics_in_text(text, results)
 
-    score = sum(
-        [
-            0.30 if results["strategy_uses_two_ma_windows"] else 0,
-            0.40 if results["sharpe_ratio_in_range"] else 0,
-            0.30 if results["backtest_produces_return"] else 0,
-        ]
-    )
+    _checklist = [
+        {
+            "item": "strategy_uses_two_ma_windows",
+            "weight": 0.30,
+            "passed": results["strategy_uses_two_ma_windows"],
+        },
+        {
+            "item": "sharpe_ratio_in_range",
+            "weight": 0.40,
+            "passed": results["sharpe_ratio_in_range"],
+        },
+        {
+            "item": "backtest_produces_return",
+            "weight": 0.30,
+            "passed": results["backtest_produces_return"],
+        },
+    ]
+    score = sum(c["weight"] for c in _checklist if c["passed"])
+
+    # Data source verification — cap score if task data wasn't accessed
+    if data_files:
+        ds = verify_data_source(tool_logs or [], data_files)
+        results["data_source_verified"] = ds["verified"]
+        results["data_source_fraction"] = ds["fraction"]
+        if not ds["verified"]:
+            score *= max(0.25, ds["fraction"])
+
+    results["_checklist"] = _checklist
     results["score"] = round(score, 2)
     return results
 

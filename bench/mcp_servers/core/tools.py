@@ -161,16 +161,52 @@ def _resolve_path(path: str) -> Optional[str]:
     return None
 
 
-def file_read(path: str) -> str:
-    """Read a file from workspace, data, docs, or student_code."""
+def file_read(path: str, offset: int = 0, max_lines: int = 0) -> str:
+    """Read a file from workspace, data, docs, or student_code.
+
+    For large CSV files (>50 rows), returns a smart preview (header +
+    first 5 + last 5 rows) by default.  Use ``offset`` and ``max_lines``
+    to read specific sections.
+
+    Args:
+        path: File path (resolved across workspace/data/docs/student_code).
+        offset: Start reading from this line number (0-based). Default 0.
+        max_lines: Maximum lines to return. 0 means auto (preview for
+                   large CSV, full content for everything else).
+    """
     resolved = _resolve_path(path)
-    if resolved and os.path.isfile(resolved):
-        with open(resolved, "r") as f:
-            content = f.read()
-        if len(content) > 50000:
-            return content[:50000] + f"\n... (truncated, {len(content)} total bytes)"
-        return content
-    return f"Error: File not found: {path}"
+    if not resolved or not os.path.isfile(resolved):
+        return f"Error: File not found: {path}"
+
+    with open(resolved, "r") as f:
+        lines = f.readlines()
+
+    total = len(lines)
+
+    # Explicit pagination: offset and/or max_lines specified
+    if offset > 0 or max_lines > 0:
+        start = max(0, offset)
+        subset = lines[start:]
+        if max_lines > 0:
+            subset = subset[:max_lines]
+        end_line = start + len(subset)
+        return f"[{path} | lines {start + 1}-{end_line} of {total}]\n" + "".join(subset)
+
+    # Smart preview for large CSV files
+    if path.endswith(".csv") and total > 50:
+        header = lines[0]
+        head = lines[1:6]
+        tail = lines[-5:]
+        return (
+            f"[{path} | {total} rows | showing header + first 5 + last 5]\n"
+            f"{header}{''.join(head)}\n"
+            f"... ({total - 11} rows omitted) ...\n\n"
+            f"{''.join(tail)}\n"
+            f"Use offset and max_lines parameters to read specific sections."
+        )
+
+    # Small files / non-CSV: return full content
+    return "".join(lines)
 
 
 def file_list(directory: str = ".") -> str:
@@ -217,12 +253,12 @@ def fetch_market_data(symbol: str, start: str = "", end: str = "") -> str:
 
 
 def compute_indicator(
-    data_path: str, indicator: str, params: Optional[dict] = None
+    data_path: str, indicator: str, indicator_params: Optional[dict] = None
 ) -> str:
     """Compute a technical indicator on a dataset."""
     import pandas as pd
 
-    params = params or {}
+    indicator_params = indicator_params or {}
     full_path = _resolve_path(data_path)
     if not full_path:
         return f"Error: File not found: {data_path}"
@@ -233,30 +269,30 @@ def compute_indicator(
 
     indicator = indicator.upper()
     if indicator == "SMA":
-        window = params.get("window", 20)
+        window = indicator_params.get("window", 20)
         df[f"SMA_{window}"] = df["Close"].rolling(window).mean()
     elif indicator == "EMA":
-        span = params.get("span", 20)
+        span = indicator_params.get("span", 20)
         df[f"EMA_{span}"] = df["Close"].ewm(span=span).mean()
     elif indicator == "RSI":
-        window = params.get("window", 14)
+        window = indicator_params.get("window", 14)
         delta = df["Close"].diff()
         gain = delta.where(delta > 0, 0).rolling(window).mean()
         loss = (-delta.where(delta < 0, 0)).rolling(window).mean()
         rs = gain / loss
         df["RSI"] = 100 - (100 / (1 + rs))
     elif indicator == "BOLLINGER":
-        window = params.get("window", 20)
-        std_dev = params.get("std_dev", 2)
+        window = indicator_params.get("window", 20)
+        std_dev = indicator_params.get("std_dev", 2)
         sma = df["Close"].rolling(window).mean()
         std = df["Close"].rolling(window).std()
         df["BB_Upper"] = sma + std_dev * std
         df["BB_Middle"] = sma
         df["BB_Lower"] = sma - std_dev * std
     elif indicator == "MACD":
-        fast = params.get("fast", 12)
-        slow = params.get("slow", 26)
-        signal = params.get("signal", 9)
+        fast = indicator_params.get("fast", 12)
+        slow = indicator_params.get("slow", 26)
+        signal = indicator_params.get("signal", 9)
         ema_fast = df["Close"].ewm(span=fast).mean()
         ema_slow = df["Close"].ewm(span=slow).mean()
         df["MACD"] = ema_fast - ema_slow
@@ -280,7 +316,7 @@ def compute_indicator(
 def run_backtest(
     data_path: str,
     strategy: str,
-    params: Optional[dict] = None,
+    strategy_params: Optional[dict] = None,
     start: str = "",
     end: str = "",
 ) -> str:
@@ -304,7 +340,7 @@ def run_backtest(
     """
     import pandas as pd
 
-    params = params or {}
+    strategy_params = strategy_params or {}
     full_path = _resolve_path(data_path)
     if not full_path:
         return f"Error: File not found: {data_path}"
@@ -338,8 +374,8 @@ def run_backtest(
 
     # ── Strategy: MA Crossover ──────────────────────────────────
     if strategy_name == "ma_crossover":
-        fast_window = params.get("fast_window", 20)
-        slow_window = params.get("slow_window", 50)
+        fast_window = strategy_params.get("fast_window", 20)
+        slow_window = strategy_params.get("slow_window", 50)
         if fast_window >= slow_window:
             return (
                 f"Error: fast_window ({fast_window}) must be less "
@@ -353,9 +389,9 @@ def run_backtest(
 
     # ── Strategy: RSI Threshold ─────────────────────────────────
     elif strategy_name == "rsi_threshold":
-        window = params.get("window", 14)
-        overbought = params.get("overbought", 70)
-        oversold = params.get("oversold", 30)
+        window = strategy_params.get("window", 14)
+        overbought = strategy_params.get("overbought", 70)
+        oversold = strategy_params.get("oversold", 30)
 
         delta = df["Close"].diff()
         gain = delta.where(delta > 0, 0).rolling(window).mean()
@@ -385,9 +421,9 @@ def run_backtest(
 
     # ── Strategy: Bollinger Breakout / Mean Reversion ───────────
     elif strategy_name == "bollinger_breakout":
-        window = params.get("window", 20)
-        std_dev = params.get("std_dev", 2)
-        mode = params.get("mode", "breakout")
+        window = strategy_params.get("window", 20)
+        std_dev = strategy_params.get("std_dev", 2)
+        mode = strategy_params.get("mode", "breakout")
 
         sma = df["Close"].rolling(window).mean()
         std = df["Close"].rolling(window).std()
@@ -448,10 +484,12 @@ def run_backtest(
         cols = ["Date"] + cols
     results_df = valid[cols].copy()
     results_df["equity"] = (1 + valid["strategy_return"]).cumprod()
-    results_path = os.path.join(workspace, "backtest_results.csv")
+    results_name = f"backtest_{strategy_name}_results.csv"
+    metrics_name = f"backtest_{strategy_name}_metrics.json"
+    results_path = os.path.join(workspace, results_name)
     results_df.to_csv(results_path, index=False)
 
-    metrics_path = os.path.join(workspace, "backtest_metrics.json")
+    metrics_path = os.path.join(workspace, metrics_name)
     with open(metrics_path, "w") as f:
         json.dump(metrics, f, indent=2)
 
@@ -472,19 +510,19 @@ def run_backtest(
         f"  Entries:        {metrics['entries']}\n"
         f"  Exits:          {metrics['exits']}\n\n"
         f"Files saved:\n"
-        f"  backtest_results.csv (equity curve with signals)\n"
-        f"  backtest_metrics.json (all metrics)"
+        f"  {results_name} (equity curve with signals)\n"
+        f"  {metrics_name} (all metrics)"
     )
 
 
 def compute_statistics(
-    data_path: str, method: str, params: Optional[dict] = None
+    data_path: str, method: str, method_params: Optional[dict] = None
 ) -> str:
-    """Run statistical tests on data."""
+    """Run statistical tests or descriptive analysis on data."""
     import numpy as np
     import pandas as pd
 
-    params = params or {}
+    method_params = method_params or {}
     full_path = _resolve_path(data_path)
     if not full_path:
         return f"Error: File not found: {data_path}"
@@ -494,7 +532,7 @@ def compute_statistics(
     if method == "ADF":
         from statsmodels.tsa.stattools import adfuller
 
-        col = params.get("column", "Close")
+        col = method_params.get("column", "Close")
         result = adfuller(df[col].dropna())
         return json.dumps(
             {
@@ -506,7 +544,7 @@ def compute_statistics(
             indent=2,
         )
     elif method == "CORRELATION":
-        cols = params.get(
+        cols = method_params.get(
             "columns", [c for c in df.select_dtypes(include=[np.number]).columns]
         )
         corr = df[cols].corr()
@@ -514,8 +552,8 @@ def compute_statistics(
     elif method == "COINTEGRATION":
         from statsmodels.tsa.stattools import coint
 
-        col1 = params.get("column1", df.columns[1])
-        col2 = params.get("column2", df.columns[2])
+        col1 = method_params.get("column1", df.columns[1])
+        col2 = method_params.get("column2", df.columns[2])
         score, pvalue, _ = coint(df[col1].dropna(), df[col2].dropna())
         return json.dumps(
             {
@@ -525,8 +563,40 @@ def compute_statistics(
             },
             indent=2,
         )
+    elif method == "DESCRIPTIVE":
+        col = method_params.get("column", None)
+        if col:
+            series = df[col].dropna()
+            result = {
+                "count": int(series.count()),
+                "mean": round(float(series.mean()), 6),
+                "std": round(float(series.std()), 6),
+                "min": round(float(series.min()), 6),
+                "25%": round(float(series.quantile(0.25)), 6),
+                "50%": round(float(series.quantile(0.50)), 6),
+                "75%": round(float(series.quantile(0.75)), 6),
+                "max": round(float(series.max()), 6),
+                "skew": round(float(series.skew()), 6),
+                "kurtosis": round(float(series.kurtosis()), 6),
+            }
+        else:
+            result = json.loads(df.describe(include="all").to_json())
+        return json.dumps(result, indent=2)
+    elif method == "MISSING":
+        total = len(df)
+        missing = {}
+        for c in df.columns:
+            n_miss = int(df[c].isna().sum())
+            missing[c] = {
+                "missing_count": n_miss,
+                "missing_pct": round(n_miss / total * 100, 2) if total > 0 else 0.0,
+            }
+        return json.dumps({"total_rows": total, "columns": missing}, indent=2)
     else:
-        return f"Error: Unknown method '{method}'. Supported: ADF, CORRELATION, COINTEGRATION"
+        return (
+            f"Error: Unknown method '{method}'. "
+            f"Supported: ADF, CORRELATION, COINTEGRATION, DESCRIPTIVE, MISSING"
+        )
 
 
 def plot_chart(python_code: str) -> str:
@@ -614,12 +684,14 @@ def analyze_backtest_results(data_path: str, returns_column: str = "returns") ->
     metrics["data_path"] = data_path
 
     # Save to workspace as structured JSON
-    out_path = os.path.join(_workspace_dir(), "backtest_analysis.json")
+    base = os.path.splitext(os.path.basename(data_path))[0]
+    out_name = f"{base}_analysis.json"
+    out_path = os.path.join(_workspace_dir(), out_name)
     with open(out_path, "w") as f:
         json.dump(metrics, f, indent=2)
 
     return (
-        f"Backtest Analysis (saved to backtest_analysis.json):\n"
+        f"Backtest Analysis (saved to {out_name}):\n"
         f"  Sharpe Ratio:   {metrics['sharpe_ratio']}\n"
         f"  Annual Return:  {metrics['annual_return']:.2%}\n"
         f"  Total Return:   {metrics['total_return']:.2%}\n"
@@ -703,9 +775,17 @@ def search_web(query: str, max_results: int = 5) -> str:
 
 
 def search_docs(query: str) -> str:
-    """Full-text search across the /docs/ directory."""
+    """Keyword search across the /docs/ directory.
+
+    Splits the query into keywords and scores each line by the number of
+    keywords it contains (case-insensitive).  Returns the top matches
+    ranked by relevance.
+    """
+    keywords = [kw for kw in query.lower().split() if len(kw) >= 2]
+    if not keywords:
+        return f"No results found for '{query}'"
+
     results = []
-    query_lower = query.lower()
     docs_dir = _docs_dir()
     for root, _, files in os.walk(docs_dir):
         for fname in files:
@@ -713,34 +793,60 @@ def search_docs(query: str) -> str:
                 continue
             fpath = os.path.join(root, fname)
             with open(fpath) as f:
-                content = f.read()
-            lines = content.split("\n")
-            matches = [
-                (i + 1, line.strip())
-                for i, line in enumerate(lines)
-                if query_lower in line.lower()
-            ]
-            if matches:
-                results.append({"file": fname, "matches": matches[:5]})
+                lines = f.read().split("\n")
+
+            scored_lines: list[tuple[int, int, str]] = []  # (score, lineno, text)
+            for i, line in enumerate(lines):
+                line_lower = line.lower()
+                hits = sum(1 for kw in keywords if kw in line_lower)
+                if hits > 0:
+                    scored_lines.append((hits, i + 1, line.strip()))
+
+            if scored_lines:
+                scored_lines.sort(key=lambda x: -x[0])
+                matches = [
+                    {"line": lineno, "score": score, "text": text}
+                    for score, lineno, text in scored_lines[:10]
+                ]
+                results.append({"file": fname, "matches": matches})
+
     if not results:
         return f"No results found for '{query}'"
+    results.sort(key=lambda r: -r["matches"][0]["score"])
     return json.dumps(results, indent=2)
 
 
-def send_message(text: str) -> str:
-    """Send a message to the student. Primary tutoring action."""
-    return (
-        f"Message sent: {text[:100]}..." if len(text) > 100 else f"Message sent: {text}"
-    )
-
-
 def get_environment_info() -> str:
-    """Return available data files, installed packages, and workspace contents."""
-    info = {"data_files": [], "docs": [], "workspace": [], "installed_packages": []}
+    """Return directory paths, available files, and installed packages.
+
+    Provides explicit absolute paths so the agent knows where to find
+    files when using shell_exec (e.g. ``pd.read_csv('/data/AAPL.csv')``).
+    """
+    data_dir = _data_dir()
+    docs_dir = _docs_dir()
+    workspace = _workspace_dir()
+
+    info = {
+        "directories": {
+            "data": data_dir,
+            "docs": docs_dir,
+            "workspace": workspace,
+        },
+        "data_files": [],
+        "docs": [],
+        "workspace": [],
+        "installed_packages": [],
+        "note": (
+            f"Data files are in {data_dir}. "
+            f"Use absolute paths in Python code, "
+            f"e.g. pd.read_csv('{data_dir}/FILENAME.csv'). "
+            f"Workspace for saving outputs: {workspace}."
+        ),
+    }
     for d, key in [
-        (_data_dir(), "data_files"),
-        (_docs_dir(), "docs"),
-        (_workspace_dir(), "workspace"),
+        (data_dir, "data_files"),
+        (docs_dir, "docs"),
+        (workspace, "workspace"),
     ]:
         if os.path.isdir(d):
             info[key] = sorted(os.listdir(d))
@@ -756,10 +862,6 @@ def get_environment_info() -> str:
     except Exception:
         info["installed_packages"] = ["(unable to list)"]
     return json.dumps(info, indent=2)
-
-
-# _resolve_path is defined near the top of this module (used by file_read,
-# file_list, and callers below).
 
 
 # Tool registry for the proxy layer
@@ -798,12 +900,22 @@ CORE_TOOLS = {
     },
     "file_read": {
         "func": file_read,
-        "description": "Read a file from workspace, data, docs, or student_code directories",
+        "description": "Read a file from workspace, data, docs, or student_code directories. Large CSV files (>50 rows) return a smart preview (header + first 5 + last 5 rows) by default. Use offset/max_lines for specific sections.",
         "params": {
             "path": {
                 "type": "string",
                 "description": "File path to read. Searches workspace/, data/, docs/, student_code/ directories.",
                 "required": True,
+            },
+            "offset": {
+                "type": "integer",
+                "description": "Start reading from this line number (0-based). Default: 0.",
+                "required": False,
+            },
+            "max_lines": {
+                "type": "integer",
+                "description": "Maximum number of lines to return. Default: 0 (auto — smart preview for large CSV, full content otherwise).",
+                "required": False,
             },
         },
     },
@@ -820,7 +932,7 @@ CORE_TOOLS = {
     },
     "fetch_market_data": {
         "func": fetch_market_data,
-        "description": "Return OHLCV data from frozen CSV for a given symbol and date range",
+        "description": "Fetch OHLCV data for a given symbol and date range, save to workspace as CSV, and return a summary with first/last rows",
         "params": {
             "symbol": {
                 "type": "string",
@@ -853,7 +965,7 @@ CORE_TOOLS = {
                 "description": "Indicator name: SMA, EMA, RSI, BOLLINGER, or MACD",
                 "required": True,
             },
-            "params": {
+            "indicator_params": {
                 "type": "object",
                 "description": 'Indicator parameters as JSON object, e.g. {"window": 20} for SMA, {"fast": 12, "slow": 26, "signal": 9} for MACD',
                 "required": False,
@@ -881,7 +993,7 @@ CORE_TOOLS = {
                 "description": "Strategy name: 'ma_crossover', 'rsi_threshold', or 'bollinger_breakout'",
                 "required": True,
             },
-            "params": {
+            "strategy_params": {
                 "type": "object",
                 "description": (
                     "Strategy parameters as JSON object. "
@@ -906,7 +1018,7 @@ CORE_TOOLS = {
     },
     "compute_statistics": {
         "func": compute_statistics,
-        "description": "Run statistical tests on data (stationarity, correlation, cointegration)",
+        "description": "Run statistical tests or descriptive analysis on data (stationarity, correlation, cointegration, descriptive stats, missing values)",
         "params": {
             "data_path": {
                 "type": "string",
@@ -915,12 +1027,12 @@ CORE_TOOLS = {
             },
             "method": {
                 "type": "string",
-                "description": "Statistical method: ADF (stationarity test), CORRELATION (correlation matrix), or COINTEGRATION",
+                "description": "Statistical method: ADF (stationarity test), CORRELATION (correlation matrix), COINTEGRATION, DESCRIPTIVE (summary stats: mean/std/quartiles/skew/kurtosis), or MISSING (per-column missing value counts)",
                 "required": True,
             },
-            "params": {
+            "method_params": {
                 "type": "object",
-                "description": 'Method parameters as JSON object, e.g. {"column": "Close"} for ADF, {"column1": "AAPL", "column2": "SPY"} for COINTEGRATION',
+                "description": 'Method parameters as JSON object, e.g. {"column": "Close"} for ADF or DESCRIPTIVE, {"column1": "AAPL", "column2": "SPY"} for COINTEGRATION. Omit for MISSING.',
                 "required": False,
             },
         },
@@ -938,7 +1050,7 @@ CORE_TOOLS = {
     },
     "analyze_backtest_results": {
         "func": analyze_backtest_results,
-        "description": "Compute standard performance metrics (Sharpe Ratio, Annual Return, Total Return, Max Drawdown, Win Rate, Volatility, Sortino, Calmar) from a CSV of portfolio/strategy returns. Auto-detects the returns column from common names. Saves structured results to backtest_analysis.json in workspace.",
+        "description": "Compute standard performance metrics (Sharpe Ratio, Annual Return, Total Return, Max Drawdown, Win Rate, Volatility, Sortino, Calmar) from a CSV of portfolio/strategy returns. Auto-detects the returns column from common names. Saves structured results as {input_name}_analysis.json in workspace.",
         "params": {
             "data_path": {
                 "type": "string",
@@ -970,58 +1082,18 @@ CORE_TOOLS = {
     },
     "search_docs": {
         "func": search_docs,
-        "description": "Full-text search across reference documentation in /docs/",
+        "description": "Keyword search across reference documentation in /docs/. Splits the query into keywords and returns lines ranked by relevance (number of keyword matches).",
         "params": {
             "query": {
                 "type": "string",
-                "description": "Search query string, e.g. 'moving average', 'Sharpe ratio', 'backtest'",
-                "required": True,
-            },
-        },
-    },
-    "send_message": {
-        "func": send_message,
-        "description": "Send a message to the student (primary tutoring action)",
-        "params": {
-            "text": {
-                "type": "string",
-                "description": "Message text to send to the student",
+                "description": "Search keywords, e.g. 'moving average', 'read_csv parse_dates', 'Sharpe ratio'",
                 "required": True,
             },
         },
     },
     "get_environment_info": {
         "func": get_environment_info,
-        "description": "Return available data files, installed packages, and workspace contents",
+        "description": "Return directory paths (data, docs, workspace), available files, and installed packages. Use this first to discover file locations and absolute paths for shell_exec.",
         "params": {},
     },
-}
-
-# ── Tool Tier Classification ───────────────────────────────────
-# Used by the evaluation system (tool_usage scoring) to distinguish
-# data-gate tools (Essential) from optional shortcuts (Convenience).
-#
-# Essential tools: No alternative exists within the MCP tool set.
-#   These are data gates, I/O channels, and code execution channels.
-#
-# Convenience tools: Self-contained shortcuts that each use Python
-#   libraries directly. None of them call shell_exec, file_write,
-#   or any other Essential tool internally.
-
-ESSENTIAL_TOOLS = {
-    "fetch_market_data",  # sole data gate (frozen CSVs)
-    "file_read",  # sole file reading channel
-    "file_write",  # sole file writing channel
-    "shell_exec",  # sole code execution channel (DIY path)
-    "file_list",  # sole directory listing
-    "search_docs",  # sole documentation access
-    "get_environment_info",  # sole environment introspection
-}
-
-CONVENIENCE_TOOLS = {
-    "compute_indicator",  # pandas rolling/ewm — replaces ~10 lines
-    "run_backtest",  # built-in strategies — replaces ~40 lines
-    "analyze_backtest_results",  # numpy metrics — replaces ~30 lines
-    "compute_statistics",  # statsmodels tests — replaces ~15 lines
-    "plot_chart",  # matplotlib exec — replaces ~5 lines
 }

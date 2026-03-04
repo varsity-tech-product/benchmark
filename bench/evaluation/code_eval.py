@@ -12,7 +12,7 @@ Layer B: Execution Result Analysis (40%)
 
 Layer C: Output Verification (40%)
     Compare numerical outputs to reference["key_results"].
-    Skipped when no reference is available; weights renormalized.
+    Scores 0.0 when no reference is available (hard zero, no renormalization).
 """
 
 import ast
@@ -78,6 +78,20 @@ def evaluate_code_static(workspace_path: str, tool_logs: list) -> dict:
         match = re.search(r"""python3?\s+-c\s+['"](.*?)['"]""", cmd, re.DOTALL)
         if match and len(match.group(1)) > 20:
             code_sources.append(("inline_exec", match.group(1)))
+
+    # Source 4: heredoc Python from shell_exec  (python - <<'DELIM' ... DELIM)
+    _heredoc_re = re.compile(
+        r"python3?\s+-\s*<<\s*['\"]?(\w+)['\"]?\n(.*?)\n\1",
+        re.DOTALL,
+    )
+    for log in tool_logs or []:
+        if log.name != "shell_exec":
+            continue
+        cmd = log.args.get("command", "")
+        for match in _heredoc_re.finditer(cmd):
+            code_body = match.group(2)
+            if len(code_body.strip()) > 20:
+                code_sources.append(("heredoc_exec", code_body))
 
     if not code_sources:
         return {
@@ -160,6 +174,7 @@ def evaluate_code_static(workspace_path: str, tool_logs: list) -> dict:
 _PYTHON_CMD_RE = re.compile(
     r"python3?\s+"  # python or python3
     r"(?:-c\s+|"  # -c flag
+    r"-\s*<<|"  # heredoc  (python - <<'PY' ... PY)
     r"[\w./\\-]+\.py)"  # or filename.py
 )
 
@@ -431,9 +446,7 @@ def evaluate_code_combined(
     Runs all three layers and produces a weighted score:
     - Layer A: Static Analysis — 20%
     - Layer B: Execution Result Analysis — 40%
-    - Layer C: Output Verification — 40% (skipped if no reference)
-
-    When Layer C is skipped, weights renormalize to A=33%, B=67%.
+    - Layer C: Output Verification — 40% (scores 0.0 if no reference)
 
     Args:
         workspace_path: Path to the agent's workspace directory.
@@ -463,15 +476,9 @@ def evaluate_code_combined(
     # Layer C: Output Verification (requires reference)
     layer_c = evaluate_code_output(workspace_path, reference, tool_logs)
 
-    # Combine scores
-    if layer_c.get("applicable", False):
-        # Full 3-layer: A=20%, B=40%, C=40%
-        score = (
-            0.20 * layer_a["score"] + 0.40 * layer_b["score"] + 0.40 * layer_c["score"]
-        )
-    else:
-        # No reference: renormalize A=33%, B=67%
-        score = (1 / 3) * layer_a["score"] + (2 / 3) * layer_b["score"]
+    # Combine scores — always use fixed weights A=20%, B=40%, C=40%.
+    # When no reference, Layer C scores 0.0 (hard zero) — no renormalization.
+    score = 0.20 * layer_a["score"] + 0.40 * layer_b["score"] + 0.40 * layer_c["score"]
 
     return {
         "applicable": True,

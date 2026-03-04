@@ -28,9 +28,10 @@
       "get_environment_info"
     ],
     "docs_available": [
+      "pandas_data_loading.md",
       "pandas_timeseries.md"
     ],
-    "sandbox_image": "quant-tutor-env:v1.0",
+    "sandbox_image": "quant-tutor-env:v2.0",
     "network_enabled": false
   },
   "ground_truth": {
@@ -40,7 +41,9 @@
       "Coerce OHLCV columns to proper numeric types",
       "Validate data schema integrity after conversion"
     ],
-    "expected_mcp_tools": [],
+    "expected_mcp_tools": [
+      "shell_exec"
+    ],
     "convenient_tools": [
       "compute_statistics"
     ],
@@ -51,5 +54,6 @@
   "requires_code": true,
   "sample_code": null,
   "max_turns": 22,
+  "agent_max_steps": 8,
   "timeout_minutes": 12
 }

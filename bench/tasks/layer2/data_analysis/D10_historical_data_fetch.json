@@ -11,7 +11,7 @@
     "advanced_quant"
   ],
   "student_openings": {
-    "beginner_no_finance": "I want to practice real quant data work. Can you help me write Python code to download historical market prices and macro data from free APIs, save them to CSV, and explain what data pitfalls I should watch out for?",
+    "beginner_no_finance": "Hi! I want to learn how to download historical stock price data from the internet using Python. Where should I start?",
     "intermediate_developer": "I need a clean ingestion script for historical asset prices plus macro indicators using only docs. Also teach me the quant validity checks: adjusted vs raw prices, release lag, revisions, and point-in-time risk.",
     "advanced_quant": "Let's build a reproducible historical ingestion pipeline from official APIs with schema normalization and CSV persistence, then audit for corporate-action handling and macro point-in-time/revision leakage."
   },
@@ -29,7 +29,7 @@
     "docs_available": [
       "data_fetch_historical.md"
     ],
-    "sandbox_image": "quant-tutor-env:v1.0",
+    "sandbox_image": "quant-tutor-env:v2.0",
     "network_enabled": true
   },
   "ground_truth": {
@@ -40,8 +40,12 @@
       "Understand macro data release lag, revisions, and point-in-time risk",
       "Apply practical validation checks to fetched data"
     ],
-    "expected_mcp_tools": [],
+    "expected_mcp_tools": [
+      "shell_exec",
+      "file_read"
+    ],
     "convenient_tools": [
+      "search_web",
       "compute_statistics",
       "plot_chart"
     ],
@@ -52,5 +56,6 @@
   "requires_code": true,
   "sample_code": null,
   "max_turns": 25,
+  "agent_max_steps": 8,
   "timeout_minutes": 15
 }
