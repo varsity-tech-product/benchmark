@@ -2,6 +2,10 @@
 
 Works with any LLM that supports the OpenAI chat completions API,
 including OpenRouter, OpenAI, Anthropic (via proxy), local models, etc.
+
+Uses a multi-round agent loop (inspired by maxwell/agent-core):
+  LLM call → extract tool calls → execute → feed results back → repeat
+  until the model stops requesting tools or MAX_TOOL_ROUNDS is reached.
 """
 
 import json
@@ -20,9 +24,19 @@ load_dotenv(_PROJECT_ROOT / ".env")
 
 from config.llm_config import AGENT_DEFAULT_MODEL, OPENROUTER_BASE_URL
 
+# Maximum LLM→tool→LLM round-trips per generate_response() call.
+MAX_TOOL_ROUNDS = 10
+
 
 class GenericLLMAdapter(BaseAgentAdapter):
-    """Adapter for any OpenAI-compatible LLM API."""
+    """Adapter for any OpenAI-compatible LLM API.
+
+    Implements a multi-round agent loop (maxwell-style): each LLM
+    response is inspected for tool calls; if present, all tool calls are
+    executed, results fed back, and the LLM is called again.  The loop
+    exits when the model produces a text-only response (no tool calls)
+    or ``MAX_TOOL_ROUNDS`` is reached.
+    """
 
     def __init__(
         self,
@@ -31,6 +45,7 @@ class GenericLLMAdapter(BaseAgentAdapter):
         base_url: Optional[str] = None,
         system_prompt: str = "",
         agent_name: str = "generic_llm",
+        max_tool_rounds: int = MAX_TOOL_ROUNDS,
     ):
         super().__init__(agent_name=agent_name)
         self.model = model
@@ -43,6 +58,7 @@ class GenericLLMAdapter(BaseAgentAdapter):
             "OPENROUTER_BASE_URL", OPENROUTER_BASE_URL
         )
         self.system_prompt = system_prompt or TUTOR_SYSTEM_PROMPT
+        self.max_tool_rounds = max_tool_rounds
 
     def generate_response(
         self,
@@ -50,7 +66,15 @@ class GenericLLMAdapter(BaseAgentAdapter):
         available_tools: list[dict],
         tool_callback: Optional[callable] = None,
     ) -> str:
-        """Generate response using OpenAI-compatible API with tool use."""
+        """Generate response using a multi-round agent loop.
+
+        Loop (inspired by maxwell/agent-core ``runLoop``):
+          1. Call LLM with current messages + tool definitions
+          2. If response contains tool_calls → execute each, append
+             assistant message + tool results to context, goto 1
+          3. If response is text-only (no tool_calls) → return text
+          4. Safety cap: stop after ``max_tool_rounds`` iterations
+        """
         try:
             from openai import OpenAI
         except ImportError:
@@ -66,17 +90,22 @@ class GenericLLMAdapter(BaseAgentAdapter):
         tools = self._format_tools(available_tools) if available_tools else None
 
         try:
-            response = client.chat.completions.create(
-                model=self.model,
-                messages=api_messages,
-                tools=tools,
-                max_tokens=4096,
-            )
+            # --- Agent loop: LLM → tool calls → execute → feed back → repeat ---
+            for _round in range(self.max_tool_rounds):
+                response = client.chat.completions.create(
+                    model=self.model,
+                    messages=api_messages,
+                    tools=tools,
+                    max_tokens=4096,
+                )
 
-            message = response.choices[0].message
+                message = response.choices[0].message
 
-            # Handle tool calls
-            if message.tool_calls and tool_callback:
+                # No tool calls → final text response, exit loop
+                if not message.tool_calls or not tool_callback:
+                    return message.content or ""
+
+                # Execute every tool call in this response
                 tool_results = []
                 for tc in message.tool_calls:
                     args = (
@@ -93,19 +122,18 @@ class GenericLLMAdapter(BaseAgentAdapter):
                         }
                     )
 
-                # Add assistant message with tool calls and tool results
+                # Append assistant message (with tool calls) + tool results
                 api_messages.append(message.model_dump())
                 api_messages.extend(tool_results)
 
-                # Get final response after tool use
-                final_response = client.chat.completions.create(
-                    model=self.model,
-                    messages=api_messages,
-                    max_tokens=4096,
-                )
-                return final_response.choices[0].message.content or ""
-
-            return message.content or ""
+            # Safety cap reached — ask the model for a final text response
+            # with tools disabled so it summarises instead of looping further.
+            response = client.chat.completions.create(
+                model=self.model,
+                messages=api_messages,
+                max_tokens=4096,
+            )
+            return response.choices[0].message.content or ""
 
         except Exception as e:
             return f"[Agent error: {str(e)}]"
