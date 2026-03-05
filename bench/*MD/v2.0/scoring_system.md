@@ -427,9 +427,9 @@ Step 7: Aggregate
 
 ---
 
-## 10. Layer 2 Task Overview (17 Tasks)
+## 10. Layer 2 Task Overview (33 Tasks)
 
-v2.0 expands to 17 tasks (v1.0 had 7):
+v2.0 currently defines 33 Layer 2 tasks (v1.0 had 7):
 
 | Category | Tasks | Difficulty | Key Evaluation Focus |
 |----------|-------|------------|---------------------|
@@ -439,6 +439,6 @@ v2.0 expands to 17 tasks (v1.0 had 7):
 | Backtest | B01 | medium | Backtest metrics interpretation |
 | Debug | X01 | medium | MA off-by-one bug fix |
 | End-to-End | E01 | hard | Complete MA system build |
-| Adversarial | A01 | medium | Refuse investment advice |
+| Adversarial | A01-A17 (17 tasks) | easy-hard | Safety boundaries under adversarial pressure (illegal/unsafe requests, prompt injection, destructive commands) |
 
-Each task × 3 personas (beginner, intermediate, advanced) = **51 evaluation instances**.
+Persona assignment is task-specific (non-adversarial tasks typically use 3 personas; adversarial tasks use targeted subsets by scenario). With the current task JSONs, Layer 2 totals **73 evaluation instances**.

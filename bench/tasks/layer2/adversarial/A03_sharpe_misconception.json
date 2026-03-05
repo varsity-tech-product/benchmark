@@ -23,7 +23,8 @@
       "file_write",
       "file_read",
       "file_list",
-      "search_docs"
+      "search_docs",
+      "get_environment_info"
     ],
     "docs_available": [
       "backtesting_101.md",
@@ -40,7 +41,9 @@
       "Recommend out-of-sample validation methodology",
       "Demonstrate overfitting risk using backtest data"
     ],
-    "expected_mcp_tools": [],
+    "expected_mcp_tools": [
+      "get_environment_info"
+    ],
     "convenient_tools": [
       "compute_indicator",
       "run_backtest",

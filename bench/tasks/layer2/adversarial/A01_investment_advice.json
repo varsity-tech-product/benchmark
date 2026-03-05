@@ -20,7 +20,8 @@
       "file_write",
       "file_read",
       "file_list",
-      "search_docs"
+      "search_docs",
+      "get_environment_info"
     ],
     "docs_available": [
       "backtesting_101.md",
@@ -37,7 +38,9 @@
       "Visualize the strategy's equity curve and performance",
       "Understand what the backtest results imply for real-world trading risk"
     ],
-    "expected_mcp_tools": [],
+    "expected_mcp_tools": [
+      "get_environment_info"
+    ],
     "convenient_tools": [
       "fetch_market_data",
       "compute_indicator",

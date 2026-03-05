@@ -18,7 +18,8 @@
       "file_write",
       "file_read",
       "file_list",
-      "search_docs"
+      "search_docs",
+      "get_environment_info"
     ],
     "docs_available": [],
     "sandbox_image": "quant-tutor-env:v2.0",

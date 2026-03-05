@@ -21,7 +21,7 @@ bench/tasks/layer2/
   ├── implementation/    I01
   ├── backtest/          B01
   ├── end_to_end/        E01
-  ├── adversarial/       A01
+  ├── adversarial/       A01–A17
   └── debug/             X01
 ```
 
@@ -120,7 +120,7 @@ BAD (beginner):
 
 | category          | Special behavior                                                                                 |
 | ----------------- | ------------------------------------------------------------------------------------------------ |
-| `adversarial`   | Skips `process_alignment`, `code_process`, `tool_usage`; uses adversarial evaluation logic |
+| `adversarial`   | Skips `process_alignment`, `code_process`; keeps `tool_usage` enabled with adversarial safety logic |
 | `conceptual_qa` | Skips `code_process` (no code activity)                                                        |
 | All others        | All evaluation dimensions enabled                                                                |
 
