@@ -79,11 +79,11 @@ bench/tasks/layer2/
 
 These three fields jointly define a task's "teaching contract." All three are **passed in full to the student simulator** so it can ask valuable questions that guide the tutor to cover every required point. Therefore, the three must be **strictly aligned with no contradictions**.
 
-| Field | Role | Granularity | Example |
-|-------|------|-------------|---------|
-| `description` | High-level task objective; relatively **broad** | 1–2 sentences summarizing "what to do" | "Guide the student to fetch historical market price data and macroeconomic data from public APIs" |
-| `expected_outcome` | Detailed acceptance criteria; relatively **specific** | Lists concrete knowledge points the tutor should teach, specific files to produce, specific concepts to demonstrate | "Tutor should guide student to create historical_market_prices.csv and historical_macro_data.csv, teach adjusted vs unadjusted prices, macro release lag, and point-in-time discipline" |
-| `required_capabilities` | Task decomposed into evaluation dimensions | Each item maps to one independently assessable capability | ["Fetch market price OHLCV data from a public API", "Fetch macroeconomic indicator data", "Explain adjusted vs unadjusted prices"] |
+| Field                     | Role                                                       | Granularity                                                                                                         | Example                                                                                                                                                                                 |
+| ------------------------- | ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `description`           | High-level task objective; relatively**broad**       | 1–2 sentences summarizing "what to do"                                                                             | "Guide the student to fetch historical market price data and macroeconomic data from public APIs"                                                                                       |
+| `expected_outcome`      | Detailed acceptance criteria; relatively**specific** | Lists concrete knowledge points the tutor should teach, specific files to produce, specific concepts to demonstrate | "Tutor should guide student to create historical_market_prices.csv and historical_macro_data.csv, teach adjusted vs unadjusted prices, macro release lag, and point-in-time discipline" |
+| `required_capabilities` | Task decomposed into evaluation dimensions                 | Each item maps to one independently assessable capability                                                           | ["Fetch market price OHLCV data from a public API", "Fetch macroeconomic indicator data", "Explain adjusted vs unadjusted prices"]                                                      |
 
 **Alignment rules:**
 
@@ -118,16 +118,16 @@ BAD (beginner):
 
 ### 1.5 `category` and Evaluation Special Cases
 
-| category | Special behavior |
-|----------|-----------------|
-| `adversarial` | Skips `process_alignment`, `code_process`, `tool_usage`; uses adversarial evaluation logic |
-| `conceptual_qa` | Skips `code_process` (no code activity) |
-| All others | All evaluation dimensions enabled |
+| category          | Special behavior                                                                                 |
+| ----------------- | ------------------------------------------------------------------------------------------------ |
+| `adversarial`   | Skips `process_alignment`, `code_process`, `tool_usage`; uses adversarial evaluation logic |
+| `conceptual_qa` | Skips `code_process` (no code activity)                                                        |
+| All others        | All evaluation dimensions enabled                                                                |
 
 ### 1.6 Other Fields
 
 - `data_files`: Listed files are mounted read-only at `/data` inside the container. Tasks requiring network data fetching (e.g., D10, D11) leave this empty.
-- `core_mcp_tools`: Recommended minimum set is `["shell_exec", "file_write", "file_read", "file_list", "search_docs", "get_environment_info"]`. Add more as needed per task.
+- `core_mcp_tools`: Recommended minimum set is `["shell_exec", "file_write", "file_read", "file_list", "get_environment_info"]`. Add more as needed per task.
 - `convenient_tools`: Must not overlap with `core_mcp_tools`.
 - `expected_mcp_tools`: Tools the agent should call to complete the task.
 - `sandbox_image`: Currently use `"quant-tutor-env:v2.0"` uniformly.
@@ -169,6 +169,7 @@ BAD:
 ```
 
 **Why:** Agents read reference docs via `file_read` or `search_docs`. If a doc contains task-specific requirements:
+
 1. The agent may treat doc requirements as the "real task requirements" and deviate from the actual `description`.
 2. Doc content directly influences the agent's behavior path, which in turn affects scoring across all evaluation dimensions.
 
@@ -242,6 +243,7 @@ def evaluate(
 ```
 
 **Parameters:**
+
 - `workspace_path`: Host-side path mapped to the container's `/workspace`
 - `tool_logs`: `list[ToolCallLog]` — each element has `.name`, `.args`, `.result`, `.success` attributes
 - `conversation`: Conversation history

@@ -101,6 +101,14 @@ For example, a data_analysis task: 5 atomic + 3 convenient = 8 useful tools + 7 
 - If convenient tools were listed in expected_tools, agents that use atomic tools would be **unfairly penalized** for "not using expected tools"
 - Therefore, expected_tools contains only the minimum set that the agent **will almost certainly use**, avoiding punishment for the normal atomic-tool usage tendency
 
+**Exception: `get_environment_info` is required in expected_tools when the task has reference documentation** (`docs_available` is non-empty). This is because the tutor system prompt explicitly instructs the agent:
+
+> "Reference documentation is available for this session. Before answering the student's first question, use get_environment_info to discover available docs, then read relevant documentation..."
+
+The agent must call `get_environment_info` to discover doc filenames (which are intentionally not revealed in the prompt to avoid topic leakage), then `file_read` to load them. This makes `get_environment_info` a near-certain call — satisfying the "minimum set the agent will almost certainly use" criterion.
+
+For tasks **without** reference documentation, `get_environment_info` should generally **not** be in expected_tools. Agents can discover paths through alternative means (tool descriptions mention `/data`, `/workspace`, `/docs`; `file_list` can enumerate directories; `shell_exec` with `ls` or `pwd` provides partial discovery). Since the system prompt gives no explicit instruction to call `get_environment_info` in this case, including it would risk unfair -0.15 penalties against agents that use other discovery methods.
+
 ### 4.2 Convenient Tool Bonus Mechanism
 
 Using convenient tools is not required, but earns a small bonus:
