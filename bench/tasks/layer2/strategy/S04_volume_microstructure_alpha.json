@@ -38,7 +38,7 @@
     "network_enabled": false
   },
   "ground_truth": {
-    "expected_outcome": "Student produces a research output containing: (1) exploration of non-price features in the data such as volume profiles, taker imbalance patterns, or trade-count anomalies, (2) feature engineering that creates derived signals from raw microstructure data, (3) at least one formalized microstructure-based signal, (4) signal evaluation with IC and quantile analysis, (5) cross-timeframe analysis showing whether lower-timeframe features predict higher-timeframe returns, and (6) an assessment of signal decay and practical tradability.",
+    "expected_outcome": "Student produces a research output containing: (1) exploration of non-price features in the data such as volume profiles, taker imbalance patterns, or trade-count anomalies, (2) feature engineering that creates derived signals from raw microstructure data, (3) at least one formalized microstructure-based signal, (4) signal evaluation with IC and quantile analysis, (5) cross-timeframe analysis showing whether lower-timeframe features predict higher-timeframe returns, and (6) an assessment of signal decay and practical tradability. Because this is a hard task, the run should leave concrete artifacts showing the engineered signal and a structured evaluation output backed by multi-timeframe analysis.",
     "required_capabilities": [
       "Understand and explore non-price data fields in Binance kline data",
       "Engineer features from microstructure data such as volume ratios or flow imbalance",

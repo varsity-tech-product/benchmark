@@ -692,11 +692,13 @@ S-series eval is fundamentally different from D-series (data correctness) or B-s
 
 | Check Type | Method | What It Catches |
 |------------|--------|-----------------|
-| **Exploratory analysis** | Check tool logs for descriptive stats, plots, distribution analysis before signal construction | Agents that skip exploration and jump to a canned strategy |
-| **Signal exists** | Check workspace for a file/code that produces a signal column | Agents that discuss ideas but never formalize them |
-| **Signal evaluated** | Check for `evaluate_signal` usage or IC/correlation computation in tool logs | Agents that build signals without evaluating quality |
-| **Rough PnL computed** | Check workspace/tool output for return or Sharpe estimate | Missing the practical "does this work?" check |
+| **Exploratory analysis** | Check artifact-bearing tool logs / workspace outputs for descriptive stats, plots, or analysis code before signal construction | Agents that skip exploration and jump to a canned strategy |
+| **Signal exists** | Check workspace for a file/code artifact that produces a signal column | Agents that discuss ideas but never formalize them |
+| **Signal evaluated** | Prefer structured outputs such as `*_signal_evaluation.json`; fall back to artifact-bound IC/correlation metrics | Agents that build signals without evaluating quality |
+| **Rough PnL computed** | Check workspace/tool output for structured return/Sharpe diagnostics | Missing the practical "does this work?" check |
 | **Robustness addressed** | Primarily LLM-judged: does the conversation address when the signal fails? | Agents that only show the sunny-day case |
+
+Important: the eval script should not give major credit for conversation-only mentions of terms like "IC", "cointegration", or "robustness". Programmatic checks should be artifact-bound.
 
 ### 8.2 Result Judge Category Rubric
 
@@ -721,6 +723,10 @@ strategy: "explore data → form hypothesis → construct signal → evaluate si
 ```
 
 The expected process is **exploration-first** (understand the data before building a signal). An agent that jumps directly to "here's an RSI strategy" without exploring the data first should score lower on process reasonableness.
+
+For the hard tasks (S04-S06), add explicit score caps when core artifacts are missing:
+- No formalized signal artifact or no structured signal-evaluation artifact → hard cap near failing
+- No task-specific hard-mode evidence (cross-timeframe linkage, dollar-neutral evaluation, or composite-vs-individual comparison) → cap below top-tier performance
 
 ### 8.4 LLM Judge Weight (S-Series Specific)
 

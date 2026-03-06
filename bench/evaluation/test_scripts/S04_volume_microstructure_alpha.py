@@ -7,11 +7,17 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _data_source_check import verify_data_source
 from _strategy_research_check import (
-    collect_evidence_text,
+    collect_artifact_text,
+    collect_signal_evaluation_records,
     conversation_text,
+    count_keyword_groups,
     has_any,
-    has_metric_evidence,
+    has_metric_numbers,
+    has_regex,
     has_signal_definition,
+    signal_eval_has_quality_metrics,
+    tool_called_with_method,
+    workspace_has_csv_columns,
 )
 
 
@@ -29,11 +35,23 @@ def evaluate(
         "signal_formalized": False,
         "signal_evaluated": False,
         "decay_or_tradability_discussed": False,
+        "signal_artifact_present": False,
+        "structured_signal_eval_present": False,
         "score": 0.0,
     }
 
-    combined = collect_evidence_text(workspace_path, tool_logs, conversation)
+    artifact_text = collect_artifact_text(workspace_path, tool_logs)
     assistant_text = conversation_text(conversation, role="assistant")
+    signal_eval_records = collect_signal_evaluation_records(workspace_path, tool_logs)
+
+    results["signal_artifact_present"] = (
+        workspace_has_csv_columns(workspace_path, ["signal", "close"])
+        or has_signal_definition(artifact_text)
+        or bool(signal_eval_records)
+    )
+    results["structured_signal_eval_present"] = any(
+        signal_eval_has_quality_metrics(record) for record in signal_eval_records
+    )
 
     non_price_terms = [
         "quote_volume",
@@ -44,8 +62,14 @@ def evaluate(
         "volume ratio",
         "volume z-score",
     ]
-    if has_any(combined, non_price_terms) and has_any(
-        combined, ["feature", "signal", "ratio", "z-score", "normalized"]
+    feature_assignment_patterns = [
+        r"df\[[\"'][^\"']+(?:ratio|zscore|z_score|imbalance|normalized|spike)[^\"']*[\"']\]\s*=",
+        r"df\[[\"'][^\"']+[\"']\]\s*=.*(?:quote_volume|trade_count|taker_buy)",
+        r"\b(?:imbalance|volume_ratio|volume_zscore|normalized_trade_count|volume_spike)\s*=",
+    ]
+    if has_any(artifact_text, non_price_terms) and (
+        has_regex(artifact_text, feature_assignment_patterns)
+        or has_any(artifact_text, ["feature", "signal", "ratio", "z-score", "normalized"])
     ):
         results["non_price_features_used"] = True
 
@@ -58,7 +82,9 @@ def evaluate(
         "normalized trade count",
         "volume spike",
     ]
-    if has_any(combined, feature_terms):
+    if has_regex(artifact_text, feature_assignment_patterns) or has_any(
+        artifact_text, feature_terms
+    ):
         results["feature_engineering_present"] = True
 
     timeframe_groups = [
@@ -66,25 +92,29 @@ def evaluate(
         ["1h", "hourly"],
         ["daily", "1d"],
     ]
-    cross_tf_link_terms = [
-        "cross-timeframe",
-        "higher timeframe",
-        "lower timeframe",
-        "predict",
-        "predicts",
-        "lead",
-        "propagate",
-        "from 5m to 1h",
-        "to daily return",
+    cross_tf_link_groups = [
+        ["cross-timeframe", "higher timeframe", "lower timeframe"],
+        ["predict", "predicts", "lead", "propagate"],
+        ["resample", "merge", "merge_asof", "groupby", "align", "shift"],
     ]
-    timeframe_group_hits = sum(1 for group in timeframe_groups if has_any(combined, group))
-    if timeframe_group_hits >= 2 and has_any(combined, cross_tf_link_terms):
+    timeframe_group_hits = sum(1 for group in timeframe_groups if has_any(artifact_text, group))
+    if (
+        timeframe_group_hits >= 2
+        and count_keyword_groups(artifact_text, cross_tf_link_groups) >= 2
+    ) or tool_called_with_method(tool_logs, "compute_statistics", ["CORRELATION"]):
         results["cross_timeframe_analysis_present"] = True
 
-    if has_signal_definition(combined) and has_any(combined, non_price_terms):
+    if results["signal_artifact_present"] and results["non_price_features_used"]:
         results["signal_formalized"] = True
 
-    if has_metric_evidence(combined):
+    if results["structured_signal_eval_present"] or has_metric_numbers(
+        artifact_text,
+        [
+            ["ic_mean", "information coefficient", "spearman"],
+            ["quantile", "long_short_spread", "quantile_mean_returns"],
+            ["turnover", "hit_rate", "signal_autocorrelation"],
+        ],
+    ):
         results["signal_evaluated"] = True
 
     practical_terms = [
@@ -121,6 +151,11 @@ def evaluate(
         },
     ]
     score = sum(c["weight"] for c in _checklist if c["passed"])
+
+    if not results["signal_formalized"] or not results["signal_evaluated"]:
+        score = min(score, 0.25)
+    elif not results["cross_timeframe_analysis_present"]:
+        score = min(score, 0.50)
 
     if data_files:
         ds = verify_data_source(tool_logs or [], data_files)

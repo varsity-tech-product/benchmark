@@ -7,11 +7,17 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _data_source_check import verify_data_source
 from _strategy_research_check import (
-    collect_evidence_text,
+    collect_artifact_text,
+    collect_performance_metric_records,
+    collect_signal_evaluation_records,
     conversation_text,
     has_any,
-    has_metric_evidence,
+    has_metric_numbers,
+    has_regex,
     has_signal_definition,
+    signal_eval_has_quality_metrics,
+    tool_called_with_method,
+    workspace_has_csv_columns,
 )
 
 
@@ -29,34 +35,76 @@ def evaluate(
         "dollar_neutral_evaluation_present": False,
         "signal_evaluated": False,
         "relationship_risk_addressed": False,
+        "signal_artifact_present": False,
+        "structured_signal_eval_present": False,
         "score": 0.0,
     }
 
-    combined = collect_evidence_text(workspace_path, tool_logs, conversation)
+    artifact_text = collect_artifact_text(workspace_path, tool_logs)
     assistant_text = conversation_text(conversation, role="assistant")
+    signal_eval_records = collect_signal_evaluation_records(workspace_path, tool_logs)
+    performance_records = collect_performance_metric_records(workspace_path, tool_logs)
 
-    has_btc = has_any(combined, ["btcusdt", "btc"])
-    has_eth = has_any(combined, ["ethusdt", "eth"])
-    if has_btc and has_eth and has_any(
-        combined, ["spread", "ratio", "lead-lag", "correlation", "cointegration", "relative value"]
+    results["signal_artifact_present"] = (
+        workspace_has_csv_columns(workspace_path, ["signal", "close"])
+        or has_signal_definition(artifact_text)
+        or bool(signal_eval_records)
+    )
+    results["structured_signal_eval_present"] = any(
+        signal_eval_has_quality_metrics(record) for record in signal_eval_records
+    )
+
+    relationship_patterns = [
+        r"\bcoint\(",
+        r"\.corr\(",
+        r"\bhedge[_ ]ratio\b",
+        r"\blead[\-_ ]lag\b",
+        r"\brolling\([^)]*\)\.corr\(",
+    ]
+    if tool_called_with_method(tool_logs, "compute_statistics", ["CORRELATION", "COINTEGRATION"]) or has_regex(
+        artifact_text, relationship_patterns
     ):
-        results["cross_asset_analysis_present"] = True
-
-    if has_any(combined, ["correlation", "cointegration", "lead-lag", "hedge ratio"]):
         results["relationship_tested"] = True
 
-    if has_signal_definition(combined) and has_any(
-        combined, ["spread", "ratio", "lead-lag", "relative momentum"]
+    has_btc = has_any(artifact_text, ["btcusdt", "btc"])
+    has_eth = has_any(artifact_text, ["ethusdt", "eth"])
+    if has_btc and has_eth and results["relationship_tested"]:
+        results["cross_asset_analysis_present"] = True
+
+    if results["signal_artifact_present"] and has_any(
+        artifact_text, ["spread", "ratio", "lead-lag", "relative momentum", "hedge ratio"]
     ):
         results["signal_formalized"] = True
 
-    if has_any(
-        combined,
-        ["dollar-neutral", "dollar neutral", "long-short", "long short", "hedge ratio"],
+    dollar_neutral_terms = [
+        "dollar-neutral",
+        "dollar neutral",
+        "long-short",
+        "long short",
+        "hedge ratio",
+    ]
+    if has_any(artifact_text, dollar_neutral_terms) and (
+        results["structured_signal_eval_present"]
+        or performance_records
+        or has_metric_numbers(
+            artifact_text,
+            [
+                ["sharpe", "annualized_sharpe"],
+                ["total_return", "annualized return", "annualized_return"],
+                ["max_drawdown", "drawdown"],
+            ],
+        )
     ):
         results["dollar_neutral_evaluation_present"] = True
 
-    if has_metric_evidence(combined):
+    if results["structured_signal_eval_present"] or performance_records or has_metric_numbers(
+        artifact_text,
+        [
+            ["ic_mean", "information coefficient", "spearman"],
+            ["quantile", "long_short_spread", "quantile_mean_returns"],
+            ["sharpe", "annualized_sharpe"],
+        ],
+    ):
         results["signal_evaluated"] = True
 
     risk_terms = [
@@ -91,6 +139,11 @@ def evaluate(
         },
     ]
     score = sum(c["weight"] for c in _checklist if c["passed"])
+
+    if not results["relationship_tested"] or not results["signal_evaluated"]:
+        score = min(score, 0.25)
+    elif not results["dollar_neutral_evaluation_present"]:
+        score = min(score, 0.45)
 
     if data_files:
         ds = verify_data_source(tool_logs or [], data_files)
