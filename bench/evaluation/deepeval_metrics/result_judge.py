@@ -42,15 +42,14 @@ _CATEGORY_RUBRICS = {
         "groupby, resample) with correct parameters."
     ),
     "strategy": (
-        "Focus on: (1) correct signal logic (entry/exit conditions based "
-        "on indicator crossovers, thresholds, or regime detection); "
-        "(2) appropriate indicator parameter choices with justification "
-        "(short/long window lengths, lookback periods); (3) backtest "
-        "execution producing valid performance metrics (Sharpe ratio, "
-        "total/annualized return, max drawdown, win rate); (4) risk "
-        "considerations (position sizing, stop-loss, transaction costs); "
-        "(5) honest assessment of strategy limitations and regime "
-        "sensitivity (trending vs mean-reverting markets)."
+        "Focus on: (1) whether the agent guided a real research process "
+        "instead of jumping straight to a canned strategy; (2) whether a "
+        "clear hypothesis and rationale for the alpha were stated; (3) "
+        "whether the signal was formalized precisely enough to compute; "
+        "(4) whether signal quality was evaluated with appropriate research "
+        "metrics such as IC, decay, quantile spread, turnover, and a rough "
+        "PnL check; (5) whether failure modes, robustness, and limitations "
+        "were discussed honestly."
     ),
     "implementation": (
         "Focus on: (1) code correctness (produces expected numerical "

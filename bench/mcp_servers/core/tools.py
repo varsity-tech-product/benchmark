@@ -1,6 +1,6 @@
 """Core MCP tool implementations for QuantTutorBench.
 
-These functions implement the 14 core tools available to the Agent Under Test.
+These functions implement the core tools available to the Agent Under Test.
 They are designed to run inside the Docker sandbox (or locally for development).
 
 Directory paths are read lazily from environment variables so that the
@@ -94,6 +94,60 @@ def _compute_performance_metrics(returns, annual_factor=252):
         "calmar_ratio": round(float(calmar), 4),
         "total_trading_days": int(len(returns)),
     }
+
+
+def _resolve_column_name(df, candidates: list[str]) -> Optional[str]:
+    """Resolve the first matching column name, case-insensitively."""
+    lookup = {str(col).lower(): col for col in df.columns}
+    for candidate in candidates:
+        match = lookup.get(candidate.lower())
+        if match is not None:
+            return match
+    return None
+
+
+def _safe_round(value, digits: int = 4) -> Optional[float]:
+    """Round numeric values while preserving None for invalid inputs."""
+    try:
+        import pandas as pd
+
+        if pd.isna(value):
+            return None
+    except Exception:
+        pass
+    try:
+        return round(float(value), digits)
+    except (TypeError, ValueError):
+        return None
+
+
+def _infer_annual_factor(df) -> int:
+    """Infer a rough annualization factor from timestamp-like columns."""
+    import pandas as pd
+
+    time_col = _resolve_column_name(df, ["timestamp", "date", "datetime", "time"])
+    if time_col is None:
+        return 252
+
+    raw = df[time_col]
+    if pd.api.types.is_numeric_dtype(raw):
+        median_abs = raw.dropna().abs().median()
+        unit = "ms" if median_abs and median_abs > 10_000_000_000 else "s"
+        parsed = pd.to_datetime(raw, errors="coerce", utc=True, unit=unit)
+    else:
+        parsed = pd.to_datetime(raw, errors="coerce", utc=True)
+    deltas = parsed.sort_values().diff().dropna()
+    if deltas.empty:
+        return 252
+
+    median_seconds = deltas.median().total_seconds()
+    if median_seconds <= 10 * 60:
+        return 365 * 24 * 12
+    if median_seconds <= 90 * 60:
+        return 365 * 24
+    if median_seconds <= 36 * 3600:
+        return 365
+    return 252
 
 
 def shell_exec(command: str, timeout: int = 30) -> str:
@@ -703,6 +757,239 @@ def analyze_backtest_results(data_path: str, returns_column: str = "returns") ->
     )
 
 
+def evaluate_signal(
+    file_path: str,
+    forward_periods: int = 1,
+    quantiles: int = 5,
+    decay_lags: int = 5,
+) -> str:
+    """Evaluate a trading signal against forward returns.
+
+    Input CSV must contain at least a ``signal`` column and a close-price
+    column (``close`` or ``Close``). If no returns column is present, period
+    returns are derived from close prices.
+    """
+    import numpy as np
+    import pandas as pd
+    from scipy.stats import spearmanr, t as student_t
+
+    full_path = _resolve_path(file_path)
+    if not full_path:
+        return f"Error: File not found: {file_path}"
+
+    forward_periods = max(1, int(forward_periods or 1))
+    quantiles = max(2, int(quantiles or 5))
+    decay_lags = max(1, int(decay_lags or 5))
+
+    df = pd.read_csv(full_path)
+
+    signal_col = _resolve_column_name(df, ["signal"])
+    close_col = _resolve_column_name(
+        df, ["close", "Close", "adj_close", "Adj Close", "price"]
+    )
+    returns_col = _resolve_column_name(
+        df,
+        [
+            "returns",
+            "return",
+            "daily_return",
+            "strategy_return",
+            "pct_return",
+        ],
+    )
+
+    if signal_col is None:
+        return "Error: CSV must contain a 'signal' column."
+    if close_col is None:
+        return "Error: CSV must contain a 'close' or 'Close' column."
+
+    signal = pd.to_numeric(df[signal_col], errors="coerce")
+    close = pd.to_numeric(df[close_col], errors="coerce")
+    returns = (
+        pd.to_numeric(df[returns_col], errors="coerce")
+        if returns_col is not None
+        else close.pct_change()
+    )
+    forward_return = close.shift(-forward_periods) / close - 1
+
+    aligned = pd.DataFrame(
+        {
+            "signal": signal,
+            "returns": returns,
+            "forward_return": forward_return,
+        }
+    ).dropna(subset=["signal", "forward_return"])
+
+    if len(aligned) < max(10, quantiles * 2):
+        return (
+            "Error: Not enough aligned observations to evaluate the signal. "
+            f"Only found {len(aligned)} usable rows."
+        )
+
+    def _spearman_corr(x, y) -> float:
+        if len(x) < 3:
+            return np.nan
+        if pd.Series(x).nunique(dropna=True) < 2 or pd.Series(y).nunique(dropna=True) < 2:
+            return np.nan
+        corr = spearmanr(x, y).correlation
+        return float(corr) if corr is not None and np.isfinite(corr) else np.nan
+
+    ic_decay: list[float] = []
+    for lag in range(1, decay_lags + 1):
+        lag_forward = close.shift(-lag) / close - 1
+        lag_aligned = pd.DataFrame({"signal": signal, "forward_return": lag_forward}).dropna()
+        lag_ic = _spearman_corr(
+            lag_aligned["signal"],
+            lag_aligned["forward_return"],
+        )
+        ic_decay.append(_safe_round(0.0 if np.isnan(lag_ic) else lag_ic, 4) or 0.0)
+
+    window = min(60, max(20, len(aligned) // 5))
+    rolling_ic: list[float] = []
+    if len(aligned) >= window:
+        for end in range(window, len(aligned) + 1):
+            segment = aligned.iloc[end - window : end]
+            corr = _spearman_corr(segment["signal"], segment["forward_return"])
+            if not np.isnan(corr):
+                rolling_ic.append(float(corr))
+
+    if len(rolling_ic) >= 2:
+        ic_mean = float(np.mean(rolling_ic))
+        ic_std = float(np.std(rolling_ic, ddof=1))
+        ic_ir = ic_mean / ic_std if ic_std > 0 else 0.0
+        ic_tstat = (
+            ic_mean / (ic_std / np.sqrt(len(rolling_ic))) if ic_std > 0 else 0.0
+        )
+        ic_pvalue = (
+            2 * float(student_t.sf(abs(ic_tstat), df=len(rolling_ic) - 1))
+            if ic_std > 0
+            else 1.0
+        )
+    else:
+        single_ic = _spearman_corr(aligned["signal"], aligned["forward_return"])
+        ic_mean = 0.0 if np.isnan(single_ic) else float(single_ic)
+        ic_std = 0.0
+        ic_ir = 0.0
+        ic_tstat = 0.0
+        ic_pvalue = 1.0
+
+    non_zero = aligned["signal"] != 0
+    if non_zero.any():
+        hit_rate = float(
+            (
+                np.sign(aligned.loc[non_zero, "signal"])
+                == np.sign(aligned.loc[non_zero, "forward_return"])
+            ).mean()
+        )
+    else:
+        hit_rate = 0.0
+
+    turnover = float(signal.diff().abs().dropna().mean()) if signal.notna().sum() > 1 else 0.0
+    signal_autocorrelation = (
+        float(signal.dropna().autocorr(lag=1)) if signal.dropna().shape[0] > 2 else 0.0
+    )
+
+    ranked = aligned.copy()
+    ranked["bucket"] = pd.qcut(
+        ranked["signal"].rank(method="first"),
+        q=min(quantiles, ranked["signal"].nunique()),
+        labels=False,
+        duplicates="drop",
+    )
+    quantile_returns = (
+        ranked.groupby("bucket", observed=False)["forward_return"].mean().tolist()
+    )
+    if quantile_returns:
+        long_short_spread = float(quantile_returns[-1] - quantile_returns[0])
+        if len(quantile_returns) > 1:
+            monotonicity = _spearman_corr(
+                pd.Series(range(len(quantile_returns))),
+                pd.Series(quantile_returns),
+            )
+            monotonicity_score = max(0.0, 0.0 if np.isnan(monotonicity) else monotonicity)
+        else:
+            monotonicity_score = 0.0
+    else:
+        long_short_spread = 0.0
+        monotonicity_score = 0.0
+
+    strategy_return = (signal.shift(1) * returns).dropna()
+    annual_factor = _infer_annual_factor(df)
+    if len(strategy_return) >= 2:
+        equity = (1 + strategy_return.fillna(0)).cumprod()
+        total_return = float(equity.iloc[-1] - 1)
+        annualized_return = (
+            float((equity.iloc[-1]) ** (annual_factor / len(strategy_return)) - 1)
+            if equity.iloc[-1] > 0
+            else -1.0
+        )
+        sharpe = (
+            float(strategy_return.mean() / strategy_return.std() * np.sqrt(annual_factor))
+            if float(strategy_return.std()) > 0
+            else 0.0
+        )
+        running_max = equity.cummax()
+        max_drawdown = float(((equity / running_max) - 1).min())
+    else:
+        total_return = 0.0
+        annualized_return = 0.0
+        sharpe = 0.0
+        max_drawdown = 0.0
+
+    corr_abs_return = _spearman_corr(aligned["signal"], aligned["forward_return"].abs())
+
+    result = {
+        "signal_metrics": {
+            "ic_mean": _safe_round(ic_mean, 4),
+            "ic_std": _safe_round(ic_std, 4),
+            "ic_ir": _safe_round(ic_ir, 4),
+            "ic_tstat": _safe_round(ic_tstat, 4),
+            "ic_pvalue": _safe_round(ic_pvalue, 4),
+            "ic_decay": [
+                _safe_round(value, 4) if value is not None else 0.0
+                for value in ic_decay
+            ],
+            "hit_rate": _safe_round(hit_rate, 4),
+            "turnover": _safe_round(turnover, 4),
+            "signal_autocorrelation": _safe_round(signal_autocorrelation, 4),
+        },
+        "quantile_analysis": {
+            "quantile_mean_returns": [
+                _safe_round(value, 6) if value is not None else 0.0
+                for value in quantile_returns
+            ],
+            "long_short_spread": _safe_round(long_short_spread, 6),
+            "monotonicity_score": _safe_round(monotonicity_score, 4),
+        },
+        "rough_pnl": {
+            "total_return": _safe_round(total_return, 4),
+            "annualized_return": _safe_round(annualized_return, 4),
+            "annualized_sharpe": _safe_round(sharpe, 4),
+            "max_drawdown": _safe_round(max_drawdown, 4),
+            "num_observations": int(len(strategy_return)),
+        },
+        "diagnostics": {
+            "signal_coverage": _safe_round(float(signal.notna().mean()), 4),
+            "signal_mean": _safe_round(float(signal.mean()), 4),
+            "signal_std": _safe_round(float(signal.std()), 4),
+            "forward_return_mean": _safe_round(float(aligned["forward_return"].mean()), 6),
+            "correlation_signal_abs_return": _safe_round(
+                0.0 if np.isnan(corr_abs_return) else corr_abs_return,
+                4,
+            ),
+        },
+    }
+
+    base = os.path.splitext(os.path.basename(file_path))[0]
+    out_name = f"{base}_signal_evaluation.json"
+    out_path = os.path.join(_workspace_dir(), out_name)
+    with open(out_path, "w") as f:
+        json.dump(result, f, indent=2)
+
+    result["saved_to"] = out_name
+    return json.dumps(result, indent=2)
+
+
 def search_web(query: str, max_results: int = 5) -> str:
     """Search the public web using DuckDuckGo's instant answer endpoint."""
     from urllib.parse import urlencode
@@ -1060,6 +1347,32 @@ CORE_TOOLS = {
             "returns_column": {
                 "type": "string",
                 "description": "Name of the returns column. Auto-detects from common names (returns, daily_return, strategy_return, pnl) if omitted. If only 'Close' exists, daily returns are computed automatically.",
+                "required": False,
+            },
+        },
+    },
+    "evaluate_signal": {
+        "func": evaluate_signal,
+        "description": "Evaluate the quality of a trading signal against forward returns. Computes Information Coefficient, IC decay, quantile returns, turnover, hit rate, and rough PnL metrics from a CSV with at least 'signal' and 'close' columns. Saves structured results as {input_name}_signal_evaluation.json in workspace.",
+        "params": {
+            "file_path": {
+                "type": "string",
+                "description": "Path to a CSV containing at least a 'signal' column and a close-price column.",
+                "required": True,
+            },
+            "forward_periods": {
+                "type": "integer",
+                "description": "Number of periods ahead for forward returns. Default: 1.",
+                "required": False,
+            },
+            "quantiles": {
+                "type": "integer",
+                "description": "Number of quantile buckets for quantile analysis. Default: 5.",
+                "required": False,
+            },
+            "decay_lags": {
+                "type": "integer",
+                "description": "Number of lags for IC decay analysis. Default: 5.",
                 "required": False,
             },
         },

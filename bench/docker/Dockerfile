@@ -2,7 +2,8 @@ FROM python:3.11-slim
 
 # Install all packages needed inside the sandbox.
 # - pandas/numpy/scipy/statsmodels: data analysis & statistical tests
-# - matplotlib: chart generation via plot_chart tool
+# - matplotlib/seaborn: chart generation and statistical visualization
+# - scikit-learn/arch/pandas-ta: broader research workflow support for S-series
 # - tabulate: required by pandas .to_markdown() used in format_table
 # - requests: HTTP API calls (agent-written scripts fetch data from public APIs)
 # - websocket-client: WebSocket connections (e.g. Finnhub streaming in D11)
@@ -10,8 +11,12 @@ RUN pip install --no-cache-dir \
     pandas>=2.0.0 \
     numpy>=1.24.0 \
     matplotlib>=3.7.0 \
+    seaborn>=0.12.0 \
     scipy>=1.10.0 \
     statsmodels>=0.14.0 \
+    scikit-learn>=1.3.0 \
+    arch>=6.0.0 \
+    pandas-ta>=0.4.0b0 \
     tabulate>=0.9.0 \
     requests>=2.28.0 \
     websocket-client>=1.0.0

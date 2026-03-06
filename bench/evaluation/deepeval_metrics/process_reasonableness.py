@@ -65,9 +65,10 @@ CATEGORY_PROCESS_CRITERIA = {
         "explain column meanings before jumping to analysis."
     ),
     "strategy": (
-        "Expected flow: explain strategy logic → define entry/exit signals → "
-        "demonstrate with data → evaluate performance. Agent should ground "
-        "strategy explanations in real data when tools are available."
+        "Expected flow: explore data → form hypothesis → construct signal → "
+        "evaluate signal quality → rough PnL check → assess robustness. "
+        "Agent should explore the data before jumping to a canned strategy "
+        "and should discuss why the signal might work or fail."
     ),
     "implementation": (
         "Expected flow: design approach → write code → test execution → "

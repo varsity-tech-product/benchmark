@@ -134,6 +134,8 @@ def _describe_action(tool_name: str, args: dict) -> str:
     if tool_name == "compute_statistics":
         test = args.get("test", "?")
         return f"compute {test} statistic"
+    if tool_name == "evaluate_signal":
+        return "evaluate signal quality metrics"
     if tool_name == "plot_chart":
         return "create chart visualization"
     if tool_name == "shell_exec":
@@ -209,6 +211,17 @@ def _extract_key_results(workspace_path: str, full_logs: list[dict]) -> dict:
     """
     results: dict = {}
 
+    def _collect_numeric_scalars(obj, prefix: str = ""):
+        if isinstance(obj, dict):
+            for key, value in obj.items():
+                next_prefix = f"{prefix}.{key}" if prefix else str(key)
+                _collect_numeric_scalars(value, next_prefix)
+        elif isinstance(obj, list):
+            for idx, value in enumerate(obj):
+                _collect_numeric_scalars(value, f"{prefix}[{idx}]")
+        elif isinstance(obj, (int, float)):
+            results[prefix] = round(obj, 6) if isinstance(obj, float) else obj
+
     # --- Source 1: workspace JSON files ---
     if workspace_path and os.path.isdir(workspace_path):
         for fname in os.listdir(workspace_path):
@@ -218,27 +231,26 @@ def _extract_key_results(workspace_path: str, full_logs: list[dict]) -> dict:
             try:
                 with open(fpath) as f:
                     data = json.load(f)
-                if isinstance(data, dict):
-                    for k, v in data.items():
-                        if isinstance(v, (int, float)):
-                            results[k] = round(v, 6) if isinstance(v, float) else v
+                _collect_numeric_scalars(data)
             except Exception:
                 pass
 
     # --- Source 2: tool output JSON ---
-    _metric_tools = {"run_backtest", "analyze_backtest_results", "compute_statistics"}
+    _metric_tools = {
+        "run_backtest",
+        "analyze_backtest_results",
+        "compute_statistics",
+        "evaluate_signal",
+    }
     for log in full_logs:
         if log["name"] not in _metric_tools:
             continue
         try:
             data = json.loads(log.get("result", ""))
             if isinstance(data, dict):
-                # run_backtest nests metrics under "metrics" key
                 metrics = data.get("metrics", data)
                 if isinstance(metrics, dict):
-                    for k, v in metrics.items():
-                        if isinstance(v, (int, float)) and k not in results:
-                            results[k] = round(v, 6) if isinstance(v, float) else v
+                    _collect_numeric_scalars(metrics)
         except (json.JSONDecodeError, TypeError):
             pass
 
