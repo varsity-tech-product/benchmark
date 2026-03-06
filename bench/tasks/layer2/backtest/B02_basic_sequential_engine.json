@@ -1,0 +1,61 @@
+{
+  "task_id": "B02_basic_sequential_engine",
+  "version": "2.0",
+  "difficulty": "medium",
+  "category": "backtest",
+  "task_type": "multi_turn",
+  "description": "Guide a student to build a basic backtest system with proper architecture: a data replay module that feeds BTCUSDT daily bars sequentially, a backtest engine that handles position tracking and PnL accounting, and a strategy module that implements a dual moving average crossover as cleanly separated components.",
+  "persona_ids": [
+    "beginner_no_finance",
+    "intermediate_developer",
+    "advanced_quant"
+  ],
+  "student_openings": {
+    "beginner_no_finance": "I have some Bitcoin price data and I want to test a moving average strategy on it. I've never built a backtester before. Where do I start?",
+    "intermediate_developer": "I need to build a backtest engine for crypto futures. I know Python well, but I want to make sure the architecture is right. How should I structure the components?",
+    "advanced_quant": "I'm building a backtest framework for USDT-M futures. I want a clean data replay layer that guarantees no look-ahead, an engine with proper position accounting, and a pluggable strategy interface. What's a good architecture?"
+  },
+  "environment": {
+    "data_files": [
+      "BTCUSDT_1d_2021_2024.csv"
+    ],
+    "core_mcp_tools": [
+      "shell_exec",
+      "file_write",
+      "file_read",
+      "file_list",
+      "get_environment_info"
+    ],
+    "docs_available": [
+      "backtesting_101.md"
+    ],
+    "sandbox_image": "quant-tutor-env:v2.0",
+    "network_enabled": false
+  },
+  "ground_truth": {
+    "expected_outcome": "Student produces a working backtest system with at least three distinct components: (1) a data handler that loads BTCUSDT daily klines and replays bars one at a time without exposing future data, (2) an engine/runner that iterates through bars, manages positions, tracks PnL, and computes basic performance metrics, and (3) a strategy that implements the MA crossover logic and only has access to current and past bars. The system runs end-to-end and produces a performance summary such as total return and number of trades, leaving concrete code artifacts rather than only architectural discussion.",
+    "required_capabilities": [
+      "Design a data handler that loads CSV data and provides a sequential bar replay interface",
+      "Build a backtest engine with position tracking and PnL computation",
+      "Implement a strategy class or function that is decoupled from the engine",
+      "Run the complete system end-to-end and produce a performance summary",
+      "Explain why the three-layer separation matters for data integrity and look-ahead prevention"
+    ],
+    "expected_mcp_tools": [
+      "shell_exec",
+      "get_environment_info"
+    ],
+    "convenient_tools": [
+      "fetch_market_data",
+      "plot_chart"
+    ],
+    "quant_validation": {
+      "eval_script": "evaluation/test_scripts/B02_basic_sequential_engine.py"
+    }
+  },
+  "requires_code": true,
+  "sample_code": null,
+  "max_turns": 30,
+  "agent_max_steps": 10,
+  "timeout_minutes": 20
+}

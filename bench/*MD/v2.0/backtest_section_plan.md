@@ -336,7 +336,7 @@ The `close_time` and `ignore` columns from Binance raw data are dropped during p
     "BTCUSDT_funding_2021_2024.csv"
   ],
   "core_mcp_tools": ["shell_exec", "file_write", "file_read", "file_list", "get_environment_info"],
-  "docs_available": ["backtesting_101.md", "risk_metrics.md"],
+  "docs_available": ["backtesting_101.md", "risk_metrics.md", "crypto_futures_basics.md"],
   "network_enabled": false
 }
 ```
@@ -445,6 +445,8 @@ Unlike D-series (which checks data output correctness) or A-series (which checks
 | **Futures mechanics** | Parse trade logs for slippage, fees, funding entries (B05-specific) | Missing cost modeling |
 | **Walk-forward structure** | Check for multiple train/test period outputs (B06-specific) | Single-split or full-sample-only backtests |
 
+Important: programmatic B-series checks should be artifact-bound. Conversation-only mentions of "look-ahead", "slippage", or "walk-forward" should not earn major credit without code or output artifacts that implement those ideas.
+
 ### 5.2 Structural Separation Heuristics
 
 The most important and novel eval dimension for B-series. Heuristics for programmatic checking:
@@ -494,6 +496,11 @@ backtest: "design architecture → implement data layer → implement engine →
 ```
 
 The expected process is architecture-first (discuss the design before coding), then bottom-up implementation (data layer → engine → strategy → integration).
+
+For the hard tasks (B04-B06), add explicit score caps when the core engineering artifact is missing:
+- No synchronized multi-asset replay or per-asset accounting artifact → cap near failing on B04
+- No slippage/fee/funding implementation artifact or no gross-vs-net breakdown artifact → cap near failing on B05
+- No rolling-window walk-forward artifact or no IS/OOS separation artifact → cap near failing on B06
 
 ---
 
