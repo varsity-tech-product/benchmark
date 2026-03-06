@@ -1,6 +1,6 @@
 {
   "task_id": "B01_interpret_metrics",
-  "version": "2.0",
+  "version": "2.2",
   "difficulty": "easy",
   "category": "backtest",
   "task_type": "multi_turn",
@@ -31,7 +31,7 @@
       "risk_metrics.md",
       "backtesting_101.md"
     ],
-    "sandbox_image": "quant-tutor-env:v2.0",
+    "sandbox_image": "quant-tutor-env:v2.2",
     "network_enabled": false
   },
   "ground_truth": {

@@ -18,6 +18,7 @@ from pathlib import Path
 
 import pandas as pd
 import requests
+from tqdm import tqdm
 
 DATA_VISION_BASE = "https://data.binance.vision/data/futures/um/daily/klines"
 FUNDING_RATE_URL = "https://fapi.binance.com/fapi/v1/fundingRate"
@@ -210,15 +211,18 @@ def download_kline_dataset(
     output_dir: Path,
 ) -> Path:
     frames = []
-    for day in daterange(dataset.start_date, dataset.end_date):
-        print(
-            f"[kline] {dataset.output_name}: downloading {day.isoformat()}",
-            file=sys.stderr,
+    days = list(daterange(dataset.start_date, dataset.end_date))
+    for day in tqdm(days, desc=f"[kline] {dataset.output_name}", unit="day"):
+        frames.append(
+            fetch_daily_kline_archive(session, dataset.symbol, dataset.interval, day)
         )
-        frames.append(fetch_daily_kline_archive(session, dataset.symbol, dataset.interval, day))
 
     merged = pd.concat(frames, ignore_index=True)
-    merged = merged.sort_values("timestamp").drop_duplicates("timestamp").reset_index(drop=True)
+    merged = (
+        merged.sort_values("timestamp")
+        .drop_duplicates("timestamp")
+        .reset_index(drop=True)
+    )
     validate_kline_frame(merged, dataset.interval)
 
     out_path = output_dir / dataset.output_name
@@ -232,16 +236,26 @@ def download_funding_dataset(
     output_dir: Path,
 ) -> Path:
     start_ms = int(
-        datetime.combine(dataset.start_date, datetime.min.time(), tzinfo=timezone.utc).timestamp()
+        datetime.combine(
+            dataset.start_date, datetime.min.time(), tzinfo=timezone.utc
+        ).timestamp()
         * 1000
     )
-    end_ms = int(
-        datetime.combine(dataset.end_date + timedelta(days=1), datetime.min.time(), tzinfo=timezone.utc).timestamp()
-        * 1000
-    ) - 1
+    end_ms = (
+        int(
+            datetime.combine(
+                dataset.end_date + timedelta(days=1),
+                datetime.min.time(),
+                tzinfo=timezone.utc,
+            ).timestamp()
+            * 1000
+        )
+        - 1
+    )
 
     rows = []
     cursor = start_ms
+    pbar = tqdm(desc=f"[funding] {dataset.output_name}", unit="row")
     while cursor <= end_ms:
         params = {
             "symbol": dataset.symbol,
@@ -256,12 +270,10 @@ def download_funding_dataset(
             break
         rows.extend(batch)
         cursor = int(batch[-1]["fundingTime"]) + 1
-        print(
-            f"[funding] {dataset.output_name}: fetched {len(rows)} rows so far",
-            file=sys.stderr,
-        )
+        pbar.update(len(batch))
         if len(batch) < 1000:
             break
+    pbar.close()
 
     if not rows:
         raise ValueError(f"No funding-rate rows returned for {dataset.symbol}.")
@@ -290,8 +302,7 @@ def parse_args() -> argparse.Namespace:
         action="append",
         default=[],
         help=(
-            "Dataset name to download. Use multiple times for subsets. "
-            "Default: all."
+            "Dataset name to download. Use multiple times for subsets. " "Default: all."
         ),
     )
     parser.add_argument(
@@ -302,7 +313,9 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def resolve_requested_datasets(dataset_args: list[str]) -> tuple[list[KlineDataset], list[FundingDataset]]:
+def resolve_requested_datasets(
+    dataset_args: list[str],
+) -> tuple[list[KlineDataset], list[FundingDataset]]:
     if "all" in dataset_args:
         return list(KLINE_DATASETS.values()), list(FUNDING_DATASETS.values())
 
@@ -333,13 +346,16 @@ def main() -> int:
     with requests.Session() as session:
         session.headers.update({"User-Agent": "QuantTutorBench/binance-data-freezer"})
 
-        for dataset in kline_datasets:
+        total = len(kline_datasets) + len(funding_datasets)
+        for i, dataset in enumerate(kline_datasets, 1):
+            print(f"\n[{i}/{total}] {dataset.output_name}")
             out_path = download_kline_dataset(session, dataset, output_dir)
-            print(f"Wrote {out_path}")
+            print(f"  -> Wrote {out_path}")
 
-        for dataset in funding_datasets:
+        for j, dataset in enumerate(funding_datasets, len(kline_datasets) + 1):
+            print(f"\n[{j}/{total}] {dataset.output_name}")
             out_path = download_funding_dataset(session, dataset, output_dir)
-            print(f"Wrote {out_path}")
+            print(f"  -> Wrote {out_path}")
 
     return 0
 

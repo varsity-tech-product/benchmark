@@ -61,18 +61,19 @@ def evaluate(
         r"\blead[\-_ ]lag\b",
         r"\brolling\([^)]*\)\.corr\(",
     ]
-    if tool_called_with_method(tool_logs, "compute_statistics", ["CORRELATION", "COINTEGRATION"]) or has_regex(
-        artifact_text, relationship_patterns
-    ):
+    if tool_called_with_method(
+        tool_logs, "compute_statistics", ["CORRELATION", "COINTEGRATION"]
+    ) or has_regex(artifact_text, relationship_patterns):
         results["relationship_tested"] = True
 
     has_btc = has_any(artifact_text, ["btcusdt", "btc"])
-    has_eth = has_any(artifact_text, ["ethusdt", "eth"])
+    has_eth = has_any(artifact_text, ["ethusdt", "eth/", "eth_"])
     if has_btc and has_eth and results["relationship_tested"]:
         results["cross_asset_analysis_present"] = True
 
     if results["signal_artifact_present"] and has_any(
-        artifact_text, ["spread", "ratio", "lead-lag", "relative momentum", "hedge ratio"]
+        artifact_text,
+        ["spread", "ratio", "lead-lag", "relative momentum", "hedge ratio"],
     ):
         results["signal_formalized"] = True
 
@@ -97,13 +98,17 @@ def evaluate(
     ):
         results["dollar_neutral_evaluation_present"] = True
 
-    if results["structured_signal_eval_present"] or performance_records or has_metric_numbers(
-        artifact_text,
-        [
-            ["ic_mean", "information coefficient", "spearman"],
-            ["quantile", "long_short_spread", "quantile_mean_returns"],
-            ["sharpe", "annualized_sharpe"],
-        ],
+    if (
+        results["structured_signal_eval_present"]
+        or performance_records
+        or has_metric_numbers(
+            artifact_text,
+            [
+                ["ic_mean", "information coefficient", "spearman"],
+                ["quantile", "long_short_spread", "quantile_mean_returns"],
+                ["sharpe", "annualized_sharpe"],
+            ],
+        )
     ):
         results["signal_evaluated"] = True
 
@@ -124,14 +129,26 @@ def evaluate(
             "weight": 0.15,
             "passed": results["cross_asset_analysis_present"],
         },
-        {"item": "relationship_tested", "weight": 0.20, "passed": results["relationship_tested"]},
-        {"item": "signal_formalized", "weight": 0.15, "passed": results["signal_formalized"]},
+        {
+            "item": "relationship_tested",
+            "weight": 0.20,
+            "passed": results["relationship_tested"],
+        },
+        {
+            "item": "signal_formalized",
+            "weight": 0.15,
+            "passed": results["signal_formalized"],
+        },
         {
             "item": "dollar_neutral_evaluation_present",
             "weight": 0.15,
             "passed": results["dollar_neutral_evaluation_present"],
         },
-        {"item": "signal_evaluated", "weight": 0.20, "passed": results["signal_evaluated"]},
+        {
+            "item": "signal_evaluated",
+            "weight": 0.20,
+            "passed": results["signal_evaluated"],
+        },
         {
             "item": "relationship_risk_addressed",
             "weight": 0.15,

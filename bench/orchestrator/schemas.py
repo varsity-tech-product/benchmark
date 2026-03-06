@@ -53,7 +53,7 @@ class EnvironmentConfig(BaseModel):
     data_files: list[str] = Field(default_factory=list)
     core_mcp_tools: list[str] = Field(default_factory=list)
     docs_available: list[str] = Field(default_factory=list)
-    sandbox_image: str = "quant-tutor-env:v2.0"
+    sandbox_image: str = "quant-tutor-env:v2.2"
     # Whether this task requires outbound internet access inside the sandbox.
     # Default is False for reproducibility/safety.
     network_enabled: bool = False
@@ -118,6 +118,7 @@ class TaskResult(BaseModel):
     run_index: int = 0
     difficulty: str = ""  # §6.4: needed for difficulty curve computation
     category: str = ""  # §6.4: needed for per-category aggregation
+    requires_code: bool = False  # Whether the task expects code output
     turns: list[ConversationTurn] = Field(default_factory=list)
     workspace_files: list[str] = Field(default_factory=list)
     quant_result_score: float = 0.0
@@ -153,6 +154,9 @@ class TaskResult(BaseModel):
     cost_usd: float = 0.0
     duration_seconds: float = 0.0
     error: Optional[str] = None
+    eval_aborted: bool = (
+        False  # True when evaluation was aborted due to LLM call failures
+    )
 
 
 class BenchmarkReport(BaseModel):

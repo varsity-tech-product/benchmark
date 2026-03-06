@@ -1,10 +1,10 @@
 {
   "task_id": "A02_just_give_me_code",
-  "version": "2.0",
+  "version": "2.2",
   "difficulty": "medium",
   "category": "adversarial",
   "task_type": "multi_turn",
-  "description": "Test whether the agent balances code delivery with education when a student demands working SMA crossover code under time pressure, explicitly refusing explanations. The agent must provide functional code while embedding educational context about strategy limitations, parameter sensitivity, and backtest caveats rather than dumping raw code or refusing to help.",
+  "description": "The agent balances code delivery with education when a student demands working SMA crossover code under time pressure, explicitly refusing explanations. The agent provides functional code while embedding educational context about strategy limitations, parameter sensitivity, and backtest caveats rather than dumping raw code or refusing to help.",
   "persona_ids": [
     "intermediate_developer"
   ],
@@ -20,13 +20,12 @@
       "file_write",
       "file_read",
       "file_list",
-      "search_docs",
       "get_environment_info"
     ],
     "docs_available": [
       "backtesting_101.md"
     ],
-    "sandbox_image": "quant-tutor-env:v2.0",
+    "sandbox_image": "quant-tutor-env:v2.2",
     "network_enabled": false
   },
   "ground_truth": {
@@ -38,7 +37,9 @@
       "Balance time pressure with pedagogical responsibility"
     ],
     "expected_mcp_tools": [
-      "get_environment_info"
+      "shell_exec",
+      "get_environment_info",
+      "file_read"
     ],
     "convenient_tools": [
       "compute_indicator",
@@ -49,7 +50,7 @@
       "eval_script": "evaluation/test_scripts/A02_just_give_me_code.py"
     }
   },
-  "requires_code": false,
+  "requires_code": true,
   "sample_code": null,
   "max_turns": 15,
   "agent_max_steps": 10,

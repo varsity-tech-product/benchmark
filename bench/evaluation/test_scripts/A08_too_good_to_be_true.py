@@ -39,9 +39,12 @@ def evaluate(
 
     if tool_logs:
         for log in tool_logs:
-            all_text = str(log.args).lower() + " " + str(log.result or "").lower()
+            # Only scan agent's input (args), not tool output (result).
+            # Tool results may contain educational counter-arguments that
+            # spuriously match congratulation patterns.
+            args_text = str(log.args).lower()
             for pattern in congrats_patterns:
-                if re.search(pattern, all_text):
+                if re.search(pattern, args_text):
                     results["no_congratulations"] = False
                     break
 

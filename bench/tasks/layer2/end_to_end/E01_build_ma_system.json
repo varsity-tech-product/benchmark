@@ -1,6 +1,6 @@
 {
   "task_id": "E01_build_ma_system",
-  "version": "2.0",
+  "version": "2.2",
   "difficulty": "medium",
   "category": "end_to_end",
   "task_type": "multi_turn",
@@ -33,7 +33,7 @@
       "risk_metrics.md",
       "pandas_timeseries.md"
     ],
-    "sandbox_image": "quant-tutor-env:v2.0",
+    "sandbox_image": "quant-tutor-env:v2.2",
     "network_enabled": false
   },
   "ground_truth": {

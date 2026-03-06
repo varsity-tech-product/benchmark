@@ -232,8 +232,50 @@ def file_read(path: str, offset: int = 0, max_lines: int = 0) -> str:
     if not resolved or not os.path.isfile(resolved):
         return f"Error: File not found: {path}"
 
-    with open(resolved, "r") as f:
-        lines = f.readlines()
+    # Binary file detection
+    _BINARY_EXTENSIONS = frozenset(
+        {
+            ".png",
+            ".jpg",
+            ".jpeg",
+            ".gif",
+            ".bmp",
+            ".ico",
+            ".svg",
+            ".pdf",
+            ".zip",
+            ".gz",
+            ".tar",
+            ".7z",
+            ".pkl",
+            ".pickle",
+            ".npy",
+            ".npz",
+            ".pyc",
+            ".so",
+            ".dylib",
+            ".dll",
+            ".exe",
+        }
+    )
+    _, ext = os.path.splitext(resolved)
+    if ext.lower() in _BINARY_EXTENSIONS:
+        size = os.path.getsize(resolved)
+        return (
+            f"[{path}] Binary file ({ext}, {size:,} bytes). "
+            f"Cannot display contents. Use shell_exec to process "
+            f"this file with appropriate tools."
+        )
+
+    try:
+        with open(resolved, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+    except UnicodeDecodeError:
+        size = os.path.getsize(resolved)
+        return (
+            f"[{path}] Unable to read as text ({size:,} bytes). "
+            f"The file may be binary or use a non-UTF-8 encoding."
+        )
 
     total = len(lines)
 
@@ -601,7 +643,13 @@ def compute_statistics(
         cols = method_params.get(
             "columns", [c for c in df.select_dtypes(include=[np.number]).columns]
         )
-        corr = df[cols].corr()
+        corr_method = method_params.get("method", "pearson")
+        if corr_method not in ("pearson", "spearman", "kendall"):
+            return (
+                f"Error: Unknown correlation method '{corr_method}'. "
+                f"Supported: pearson, spearman, kendall"
+            )
+        corr = df[cols].corr(method=corr_method)
         return corr.to_csv()
     elif method == "COINTEGRATION":
         from statsmodels.tsa.stattools import coint
@@ -771,7 +819,8 @@ def evaluate_signal(
     """
     import numpy as np
     import pandas as pd
-    from scipy.stats import spearmanr, t as student_t
+    from scipy.stats import spearmanr
+    from scipy.stats import t as student_t
 
     full_path = _resolve_path(file_path)
     if not full_path:
@@ -829,7 +878,10 @@ def evaluate_signal(
     def _spearman_corr(x, y) -> float:
         if len(x) < 3:
             return np.nan
-        if pd.Series(x).nunique(dropna=True) < 2 or pd.Series(y).nunique(dropna=True) < 2:
+        if (
+            pd.Series(x).nunique(dropna=True) < 2
+            or pd.Series(y).nunique(dropna=True) < 2
+        ):
             return np.nan
         corr = spearmanr(x, y).correlation
         return float(corr) if corr is not None and np.isfinite(corr) else np.nan
@@ -837,7 +889,9 @@ def evaluate_signal(
     ic_decay: list[float] = []
     for lag in range(1, decay_lags + 1):
         lag_forward = close.shift(-lag) / close - 1
-        lag_aligned = pd.DataFrame({"signal": signal, "forward_return": lag_forward}).dropna()
+        lag_aligned = pd.DataFrame(
+            {"signal": signal, "forward_return": lag_forward}
+        ).dropna()
         lag_ic = _spearman_corr(
             lag_aligned["signal"],
             lag_aligned["forward_return"],
@@ -857,9 +911,7 @@ def evaluate_signal(
         ic_mean = float(np.mean(rolling_ic))
         ic_std = float(np.std(rolling_ic, ddof=1))
         ic_ir = ic_mean / ic_std if ic_std > 0 else 0.0
-        ic_tstat = (
-            ic_mean / (ic_std / np.sqrt(len(rolling_ic))) if ic_std > 0 else 0.0
-        )
+        ic_tstat = ic_mean / (ic_std / np.sqrt(len(rolling_ic))) if ic_std > 0 else 0.0
         ic_pvalue = (
             2 * float(student_t.sf(abs(ic_tstat), df=len(rolling_ic) - 1))
             if ic_std > 0
@@ -884,7 +936,9 @@ def evaluate_signal(
     else:
         hit_rate = 0.0
 
-    turnover = float(signal.diff().abs().dropna().mean()) if signal.notna().sum() > 1 else 0.0
+    turnover = (
+        float(signal.diff().abs().dropna().mean()) if signal.notna().sum() > 1 else 0.0
+    )
     signal_autocorrelation = (
         float(signal.dropna().autocorr(lag=1)) if signal.dropna().shape[0] > 2 else 0.0
     )
@@ -906,7 +960,9 @@ def evaluate_signal(
                 pd.Series(range(len(quantile_returns))),
                 pd.Series(quantile_returns),
             )
-            monotonicity_score = max(0.0, 0.0 if np.isnan(monotonicity) else monotonicity)
+            monotonicity_score = max(
+                0.0, 0.0 if np.isnan(monotonicity) else monotonicity
+            )
         else:
             monotonicity_score = 0.0
     else:
@@ -924,7 +980,9 @@ def evaluate_signal(
             else -1.0
         )
         sharpe = (
-            float(strategy_return.mean() / strategy_return.std() * np.sqrt(annual_factor))
+            float(
+                strategy_return.mean() / strategy_return.std() * np.sqrt(annual_factor)
+            )
             if float(strategy_return.std()) > 0
             else 0.0
         )
@@ -972,7 +1030,9 @@ def evaluate_signal(
             "signal_coverage": _safe_round(float(signal.notna().mean()), 4),
             "signal_mean": _safe_round(float(signal.mean()), 4),
             "signal_std": _safe_round(float(signal.std()), 4),
-            "forward_return_mean": _safe_round(float(aligned["forward_return"].mean()), 6),
+            "forward_return_mean": _safe_round(
+                float(aligned["forward_return"].mean()), 6
+            ),
             "correlation_signal_abs_return": _safe_round(
                 0.0 if np.isnan(corr_abs_return) else corr_abs_return,
                 4,
@@ -991,74 +1051,40 @@ def evaluate_signal(
 
 
 def search_web(query: str, max_results: int = 5) -> str:
-    """Search the public web using DuckDuckGo's instant answer endpoint."""
-    from urllib.parse import urlencode
-    from urllib.request import urlopen
-
+    """Search the public web using DuckDuckGo and return result links with snippets."""
     if not query or not query.strip():
         return "Error: query must be non-empty."
 
     max_results = max(1, min(int(max_results or 5), 10))
-    params = urlencode(
-        {
-            "q": query,
-            "format": "json",
-            "no_html": "1",
-            "no_redirect": "1",
-            "skip_disambig": "1",
-        }
-    )
-    url = f"https://api.duckduckgo.com/?{params}"
 
     try:
-        with urlopen(url, timeout=10) as response:
-            payload = json.loads(response.read().decode("utf-8", errors="ignore"))
+        from ddgs import DDGS
+    except ImportError:
+        try:
+            from duckduckgo_search import DDGS
+        except ImportError:
+            return "Error: web search unavailable (ddgs package not installed)"
+
+    try:
+        raw = DDGS().text(query, max_results=max_results)
     except Exception as exc:
         return f"Error: web search failed: {type(exc).__name__}: {exc}"
 
-    results = []
-    abstract = str(payload.get("AbstractText", "")).strip()
-    abstract_url = str(payload.get("AbstractURL", "")).strip()
-    if abstract:
-        results.append(
-            {
-                "title": payload.get("Heading") or query,
-                "url": abstract_url,
-                "snippet": abstract,
-                "source": "abstract",
-            }
-        )
-
-    def _collect_topics(items):
-        for item in items:
-            if len(results) >= max_results:
-                return
-            if isinstance(item, dict) and item.get("Topics"):
-                _collect_topics(item.get("Topics") or [])
-                continue
-            text = str(item.get("Text", "")).strip() if isinstance(item, dict) else ""
-            first_url = (
-                str(item.get("FirstURL", "")).strip() if isinstance(item, dict) else ""
-            )
-            if text:
-                results.append(
-                    {
-                        "title": text.split(" - ")[0][:120],
-                        "url": first_url,
-                        "snippet": text,
-                        "source": "related_topic",
-                    }
-                )
-
-    _collect_topics(payload.get("RelatedTopics") or [])
-
-    if not results:
+    if not raw:
         return json.dumps(
             {"query": query, "results": [], "note": "No web results returned."},
             indent=2,
         )
 
-    return json.dumps({"query": query, "results": results[:max_results]}, indent=2)
+    results = [
+        {
+            "title": r.get("title", ""),
+            "url": r.get("href", ""),
+            "snippet": r.get("body", ""),
+        }
+        for r in raw
+    ]
+    return json.dumps({"query": query, "results": results}, indent=2)
 
 
 def search_docs(query: str) -> str:
@@ -1314,12 +1340,12 @@ CORE_TOOLS = {
             },
             "method": {
                 "type": "string",
-                "description": "Statistical method: ADF (stationarity test), CORRELATION (correlation matrix), COINTEGRATION, DESCRIPTIVE (summary stats: mean/std/quartiles/skew/kurtosis), or MISSING (per-column missing value counts)",
+                "description": "Statistical method: ADF (stationarity test), CORRELATION (correlation matrix; supports pearson/spearman/kendall via method_params), COINTEGRATION, DESCRIPTIVE (summary stats: mean/std/quartiles/skew/kurtosis), or MISSING (per-column missing value counts)",
                 "required": True,
             },
             "method_params": {
                 "type": "object",
-                "description": 'Method parameters as JSON object, e.g. {"column": "Close"} for ADF or DESCRIPTIVE, {"column1": "AAPL", "column2": "SPY"} for COINTEGRATION. Omit for MISSING.',
+                "description": 'Method parameters as JSON object, e.g. {"column": "Close"} for ADF or DESCRIPTIVE, {"column1": "AAPL", "column2": "SPY"} for COINTEGRATION, {"method": "spearman"} for CORRELATION. Omit for MISSING.',
                 "required": False,
             },
         },
@@ -1379,7 +1405,7 @@ CORE_TOOLS = {
     },
     "search_web": {
         "func": search_web,
-        "description": "Search the public web for official references and API documentation. Returns compact JSON results (title/url/snippet).",
+        "description": "Search the public web using DuckDuckGo. Returns real search result links with titles and snippets. Use for finding API documentation, library references, or technical guides.",
         "params": {
             "query": {
                 "type": "string",

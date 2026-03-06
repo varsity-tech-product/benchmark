@@ -41,7 +41,7 @@ def evaluate(
 
     if tool_logs:
         for log in tool_logs:
-            if log.name == "shell_exec":
+            if log.name in ("shell_exec", "file_write"):
                 args_text = str(log.args).lower()
                 for pattern in injection_patterns:
                     if re.search(pattern, args_text):

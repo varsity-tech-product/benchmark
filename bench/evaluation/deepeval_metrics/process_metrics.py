@@ -9,11 +9,10 @@ Metrics implemented:
 - Process Reasonableness: tool-agnostic execution quality (process_reasonableness.py)
 - Process Alignment: reference-anchored process comparison (process_reasonableness.py)
 - Code Process: code development process quality (code_process.py)
-- RoleAdherenceMetric: stays in "tutor" role? (ConversationalTestCase)
-- KnowledgeRetentionMetric: remembers earlier context? (ConversationalTestCase)
-- TopicAdherenceMetric: stays on quant finance topics? (ConversationalTestCase)
+- Role Adherence: custom GPTModel direct-call (custom_conv_metrics.py)
+- Topic Adherence: custom GPTModel direct-call (custom_conv_metrics.py)
 
-QP aggregate = weighted average of 7 dimensions (knowledge_retention excluded):
+QP aggregate = weighted average of 7 dimensions:
     tool_usage              0.20
     process_reasonableness  0.20
     step_efficiency         0.15
@@ -27,38 +26,32 @@ Reference: https://github.com/confident-ai/deepeval
 
 import asyncio
 import json as _json
+import threading
 from typing import Optional
 
 from config.model_resolver import resolve_deepeval_model
 
+# ──────────────────────────────────────────────────────────────
+# Concurrency control — adjustable for parallel runner
+# ──────────────────────────────────────────────────────────────
+_CONCURRENCY = 20  # per-worker asyncio concurrency limit
+
+
+def set_eval_concurrency(n: int) -> None:
+    """Set per-worker concurrency limit (called by parallel runner)."""
+    global _CONCURRENCY
+    _CONCURRENCY = max(3, n)
+
+
+# Sentinel for aborted coroutines
+_ABORT_SENTINEL = object()
+
 try:
-    from deepeval.metrics import (
-        KnowledgeRetentionMetric,
-        RoleAdherenceMetric,
-        TopicAdherenceMetric,
-    )
     from deepeval.models.llms.openai_model import GPTModel
 
     DEEPEVAL_AVAILABLE = True
 except ImportError:
     DEEPEVAL_AVAILABLE = False
-
-# Patch Knowledge schema: DeepEval's Knowledge model uses extra="forbid" but the
-# LLM template asks for flat key-value JSON (e.g. {"name": "Bob"}) rather than
-# {"data": {"name": "Bob"}}.  Structured-output models hit a Pydantic validation
-# error before the extract_json fallback can wrap the dict.  Relaxing to "allow"
-# lets the flat form pass through so the fallback works correctly.
-if DEEPEVAL_AVAILABLE:
-    try:
-        from deepeval.metrics.knowledge_retention.schema import (
-            Knowledge as _KnowledgeSchema,
-        )
-        from pydantic import ConfigDict as _ConfigDict
-
-        _KnowledgeSchema.model_config = _ConfigDict(extra="allow")
-        _KnowledgeSchema.model_rebuild(force=True)
-    except Exception:
-        pass  # non-critical: metric will fall back to 0.5
 
 
 # Default relevant topics for TopicAdherenceMetric
@@ -90,7 +83,7 @@ QUANT_TUTOR_TOPICS = [
 
 
 # ──────────────────────────────────────────────────────────────
-# QP Dimension Weights (7 dimensions, knowledge_retention excluded)
+# QP Dimension Weights (7 dimensions)
 # ──────────────────────────────────────────────────────────────
 # Dimensions with score=None or skipped=True are excluded and
 # remaining weights are renormalized to sum to 1.0.
@@ -413,13 +406,8 @@ async def _async_eval_step_efficiency(
             model_obj = GPTModel(model=model_obj)
         response_text, call_cost = await model_obj.a_generate(prompt)
         result = _extract_json_from_response(response_text)
-    except Exception as e:
-        return {
-            "score": 0.5,
-            "reason": f"StepEfficiency LLM error: {e}",
-            "passed": True,
-            "_eval_cost": 0.0,
-        }
+    except Exception:
+        raise  # propagate to abort handler
 
     # Parse sub-scores (clamp to 5-point ordinal)
     def _clamp_ordinal(val, default=0.5):
@@ -456,81 +444,43 @@ async def _async_eval_step_efficiency(
 async def _async_eval_role_adherence(
     conversational_test_case,
     model,
-    chatbot_role="quantitative finance tutor",
     threshold=0.5,
 ):
-    """Async wrapper for RoleAdherence evaluation."""
-    if not DEEPEVAL_AVAILABLE:
-        return {"score": 0.5, "reason": "deepeval not available", "passed": True}
-    if conversational_test_case.chatbot_role is None:
-        conversational_test_case.chatbot_role = chatbot_role
-    metric = RoleAdherenceMetric(
-        threshold=threshold, model=resolve_deepeval_model(model)
-    )
-    try:
-        await metric.a_measure(conversational_test_case)
-        return {
-            "score": metric.score,
-            "reason": getattr(metric, "reason", ""),
-            "passed": metric.score >= threshold,
-        }
-    except Exception as e:
-        return {
-            "score": 0.5,
-            "reason": f"RoleAdherenceMetric error: {e}",
-            "passed": True,
-        }
+    """Evaluate role adherence via custom GPTModel direct call.
 
+    Replaces DeepEval's RoleAdherenceMetric whose wizard-persona prompt
+    caused gpt-5.2 to give 0.0 on 6/11 D-tasks.
+    """
+    from evaluation.deepeval_metrics.custom_conv_metrics import eval_role_adherence
 
-async def _async_eval_knowledge_retention(
-    conversational_test_case, model, threshold=0.5
-):
-    """Async wrapper for KnowledgeRetention evaluation."""
-    if not DEEPEVAL_AVAILABLE:
-        return {"score": 0.5, "reason": "deepeval not available", "passed": True}
-    metric = KnowledgeRetentionMetric(
-        threshold=threshold, model=resolve_deepeval_model(model)
-    )
-    try:
-        await metric.a_measure(conversational_test_case)
-        return {
-            "score": metric.score,
-            "reason": getattr(metric, "reason", ""),
-            "passed": metric.score >= threshold,
-        }
-    except Exception as e:
-        return {
-            "score": 0.5,
-            "reason": f"KnowledgeRetentionMetric error: {e}",
-            "passed": True,
-        }
+    turns = [
+        {"role": t.role, "content": t.content} for t in conversational_test_case.turns
+    ]
+    return await eval_role_adherence(turns, model, threshold=threshold)
 
 
 async def _async_eval_topic_adherence(
-    conversational_test_case, model, relevant_topics=None, threshold=0.5
+    conversational_test_case,
+    model,
+    task_description="",
+    threshold=0.5,
 ):
-    """Async wrapper for TopicAdherence evaluation."""
-    if not DEEPEVAL_AVAILABLE:
-        return {"score": 0.5, "reason": "deepeval not available", "passed": True}
-    topics = relevant_topics or QUANT_TUTOR_TOPICS
-    metric = TopicAdherenceMetric(
-        relevant_topics=topics,
+    """Evaluate topic adherence via custom GPTModel direct call.
+
+    Replaces DeepEval's TopicAdherenceMetric whose QA-pair extraction
+    mechanism failed on tool-use conversations (sonnet fixed at 0.5).
+    """
+    from evaluation.deepeval_metrics.custom_conv_metrics import eval_topic_adherence
+
+    turns = [
+        {"role": t.role, "content": t.content} for t in conversational_test_case.turns
+    ]
+    return await eval_topic_adherence(
+        turns,
+        model,
+        task_description=task_description,
         threshold=threshold,
-        model=resolve_deepeval_model(model),
     )
-    try:
-        await metric.a_measure(conversational_test_case)
-        return {
-            "score": metric.score,
-            "reason": getattr(metric, "reason", ""),
-            "passed": metric.score >= threshold,
-        }
-    except Exception as e:
-        return {
-            "score": 0.5,
-            "reason": f"TopicAdherenceMetric error: {e}",
-            "passed": True,
-        }
 
 
 # ──────────────────────────────────────────────────────────────
@@ -547,6 +497,7 @@ def _build_process_tasks_for_model(
     conversational_test_case,
     is_adversarial: bool,
     reference_trace: Optional[dict] = None,
+    task_requires_code: bool = False,
 ) -> dict[str, object]:
     """Build async metric coroutines for a single model.
 
@@ -584,9 +535,10 @@ def _build_process_tasks_for_model(
         is_code_task=(category in _code_categories),
     )
 
-    # Process alignment (Phase 4) — skip for adversarial.
+    # Process alignment (Phase 4) — skip for pure-refusal adversarial only.
+    # Educational adversarial (requires_code=true) may have reference traces.
     # Hard zero: score 0.0 when no reference (not skipped from aggregate).
-    if not is_adversarial:
+    if not (is_adversarial and not task_requires_code):
         if reference_trace is not None:
             tasks["process_alignment"] = async_eval_process_alignment(
                 task_description=task_description,
@@ -602,7 +554,11 @@ def _build_process_tasks_for_model(
 
     # Code process (Phase 5) — auto-detects applicability from logs;
     # returns score=None when no code activity, excluded from QP aggregate.
-    if not is_adversarial and category not in ("conceptual_qa",):
+    # Skip for conceptual_qa and pure-refusal adversarial (requires_code=false).
+    # Educational adversarial (requires_code=true) is allowed through.
+    if category not in ("conceptual_qa",) and not (
+        is_adversarial and not task_requires_code
+    ):
         tasks["code_process"] = async_eval_code_process(
             task_description=task_description,
             proxy_logs=proxy_logs,
@@ -610,19 +566,16 @@ def _build_process_tasks_for_model(
             model=single_model,
         )
 
-    # Conversational metrics — unchanged
+    # Conversational metrics — custom GPTModel direct-call (Phase 7)
     if conversational_test_case is not None:
         tasks["role_adherence"] = _async_eval_role_adherence(
-            conversational_test_case,
-            single_model,
-        )
-        tasks["knowledge_retention"] = _async_eval_knowledge_retention(
             conversational_test_case,
             single_model,
         )
         tasks["topic_adherence"] = _async_eval_topic_adherence(
             conversational_test_case,
             single_model,
+            task_description=task_description,
         )
 
     return tasks
@@ -638,6 +591,8 @@ def evaluate_all_process_metrics(
     reference_trace: Optional[dict] = None,
     is_adversarial: bool = False,
     tool_usage_result: Optional[dict] = None,
+    task_requires_code: bool = False,
+    abort_event: Optional[threading.Event] = None,
 ) -> dict:
     """Run all process-level metrics in parallel and return consolidated results.
 
@@ -650,12 +605,14 @@ def evaluate_all_process_metrics(
         proxy_logs: Tool call logs from MCPProxy (list of ToolCallLog objects).
         category: Task category (e.g. "implementation", "data_analysis").
         conversational_test_case: Clean ConversationalTestCase (for role_adherence,
-            knowledge_retention, topic_adherence).
+            topic_adherence).
         model: LLM judge model — single string, list of strings, or None.
         reference_trace: Reference execution data (from ReferenceStore) for step
             efficiency and process alignment anchoring.
         is_adversarial: Whether this is an adversarial task (skips alignment).
         tool_usage_result: Pre-computed tool usage score (from tool_usage.py).
+        task_requires_code: Whether the task expects code output (allows
+            code_process evaluation for educational adversarial tasks).
 
     Returns:
         Dict with per-metric scores (cross-model average), an aggregate
@@ -678,11 +635,6 @@ def evaluate_all_process_metrics(
         eval_models = [model]
 
     model_names = [m or "default" for m in eval_models]
-
-    # Pre-populate chatbot_role on conversational test case before copying
-    if conversational_test_case is not None:
-        if conversational_test_case.chatbot_role is None:
-            conversational_test_case.chatbot_role = "quantitative finance tutor"
 
     # ── Build tasks for ALL models ──
     # Each model gets its own deep-copied test cases to avoid state
@@ -707,12 +659,12 @@ def evaluate_all_process_metrics(
             conversational_test_case=model_conv_tc,
             is_adversarial=is_adversarial,
             reference_trace=reference_trace,
+            task_requires_code=task_requires_code,
         )
         for metric_name, coro in tasks_for_model.items():
             flat_tasks.append((mname, metric_name, coro))
 
     total_calls = len(flat_tasks)
-    _CONCURRENCY = 20  # avoid OpenRouter rate-limit throttling
     print(
         f"    Running {total_calls} process metric calls "
         f"({len(eval_models)} model(s) × metrics) in parallel "
@@ -722,20 +674,48 @@ def evaluate_all_process_metrics(
 
     coros = [coro for _, _, coro in flat_tasks]
 
+    # abort_event is a threading.Event shared with the orchestrator.
+    # When set (by this evaluator or another parallel thread), queued
+    # coroutines are skipped to stop wasting tokens.
+    _abort = abort_event if abort_event is not None else threading.Event()
+    _first_error: list[Exception] = []  # mutable container for nonlocal capture
+
     async def _run_all():
         sem = asyncio.Semaphore(_CONCURRENCY)
 
-        async def _limited(c):
+        async def _guarded(c):
+            if _abort.is_set():
+                return _ABORT_SENTINEL
             async with sem:
-                return await c
+                if _abort.is_set():
+                    return _ABORT_SENTINEL
+                try:
+                    return await c
+                except Exception as e:
+                    _abort.set()
+                    if not _first_error:
+                        _first_error.append(e)
+                    return _ABORT_SENTINEL
 
         return await asyncio.gather(
-            *[_limited(c) for c in coros], return_exceptions=True
+            *[_guarded(c) for c in coros], return_exceptions=True
         )
 
     raw_results = _run_async(_run_all())
     elapsed = _time.time() - t0
-    print(f"    Completed {total_calls} process metric calls in {elapsed:.1f}s")
+
+    aborted = sum(1 for r in raw_results if r is _ABORT_SENTINEL)
+    if aborted:
+        print(
+            f"    Process metrics: {total_calls - aborted}/{total_calls} completed, "
+            f"{aborted} aborted in {elapsed:.1f}s"
+        )
+    else:
+        print(f"    Completed {total_calls} process metric calls in {elapsed:.1f}s")
+
+    # If any coroutine failed, propagate the error to the thread level
+    if _first_error:
+        raise _first_error[0]
 
     # ── Collect per-model results ──
     # model_results[model_name][metric_name] = {score, reason, ...}
@@ -743,12 +723,9 @@ def evaluate_all_process_metrics(
 
     for i, (mname, metric_name, _) in enumerate(flat_tasks):
         raw = raw_results[i]
-        if isinstance(raw, Exception):
-            model_results[mname][metric_name] = {
-                "score": 0.5,
-                "reason": f"{metric_name} error: {raw}",
-                "passed": True,
-            }
+        if raw is _ABORT_SENTINEL or isinstance(raw, Exception):
+            # Should not reach here — errors are propagated above
+            raise RuntimeError(f"Unexpected abort/error in {metric_name}")
         else:
             model_results[mname][metric_name] = raw
 
@@ -883,8 +860,10 @@ def evaluate_all_process_metrics(
             agg = per_model_agg[mname]["aggregate_process_score"]
             print(f"        {mname}: {agg}")
 
-    if is_adversarial:
-        print("      (adversarial mode: process_alignment skipped)")
+    if is_adversarial and not task_requires_code:
+        print(
+            "      (pure-refusal adversarial: process_alignment + code_process skipped)"
+        )
 
     # ── Aggregate eval cost from all metric results ──
     total_eval_cost = 0.0

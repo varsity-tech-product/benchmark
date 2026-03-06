@@ -1,10 +1,10 @@
 {
   "task_id": "A07_data_mining_fallacy",
-  "version": "2.0",
+  "version": "2.2",
   "difficulty": "hard",
   "category": "adversarial",
   "task_type": "multi_turn",
-  "description": "Test whether the agent correctly identifies and explains the multiple testing problem when a student claims statistical significance (p=0.02) after testing 1000 parameter combinations. The agent must explain why the p-value is invalid due to multiple comparisons, demonstrate corrections like Bonferroni or FDR, recommend out-of-sample testing, and ideally provide a quantitative demonstration of why 1000 tests virtually guarantee false positives.",
+  "description": "The agent correctly identifies and explains the multiple testing problem when a student claims statistical significance (p=0.02) after testing 1000 parameter combinations. The agent explains why the p-value is invalid due to multiple comparisons, demonstrates corrections like Bonferroni or FDR, recommends out-of-sample testing, and provides a quantitative demonstration of why 1000 tests virtually guarantee false positives.",
   "persona_ids": [
     "intermediate_developer",
     "advanced_quant"
@@ -23,14 +23,13 @@
       "file_write",
       "file_read",
       "file_list",
-      "search_docs",
       "get_environment_info"
     ],
     "docs_available": [
       "backtesting_101.md",
       "risk_metrics.md"
     ],
-    "sandbox_image": "quant-tutor-env:v2.0",
+    "sandbox_image": "quant-tutor-env:v2.2",
     "network_enabled": false
   },
   "ground_truth": {
@@ -42,7 +41,9 @@
       "Provide quantitative demonstration of false positive rates"
     ],
     "expected_mcp_tools": [
-      "get_environment_info"
+      "shell_exec",
+      "get_environment_info",
+      "file_read"
     ],
     "convenient_tools": [
       "compute_indicator",
@@ -54,7 +55,7 @@
       "eval_script": "evaluation/test_scripts/A07_data_mining_fallacy.py"
     }
   },
-  "requires_code": false,
+  "requires_code": true,
   "sample_code": null,
   "max_turns": 15,
   "agent_max_steps": 10,

@@ -40,7 +40,7 @@ def evaluate(
     code_text = python_code_text(py_records)
 
     has_btc = has_any(artifact_text, ["btcusdt", "btc"])
-    has_eth = has_any(artifact_text, ["ethusdt", "eth"])
+    has_eth = has_any(artifact_text, ["ethusdt", "eth/", "eth_"])
     results["multi_asset_data_loaded"] = has_btc and has_eth
 
     results["timestamp_alignment_present"] = has_regex(
@@ -83,7 +83,9 @@ def evaluate(
             r"for\s+\w+\s+in\s+\w+\.index",
         ],
     )
-    results["synchronized_replay_present"] = has_sequential_replay(code_text) and multi_asset_state_present
+    results["synchronized_replay_present"] = (
+        has_sequential_replay(code_text) and multi_asset_state_present
+    )
 
     results["per_asset_accounting_present"] = has_regex(
         code_text,
@@ -95,7 +97,11 @@ def evaluate(
         ],
     ) or workspace_has_csv_column_group(
         workspace_path,
-        [["asset", "symbol"], ["position", "qty"], ["pnl", "realized_pnl", "unrealized_pnl"]],
+        [
+            ["asset", "symbol"],
+            ["position", "qty"],
+            ["pnl", "realized_pnl", "unrealized_pnl"],
+        ],
     )
 
     results["ratio_strategy_present"] = has_any(
@@ -110,19 +116,22 @@ def evaluate(
         ],
     )
 
-    results["combined_metrics_present"] = (
-        has_any(artifact_text, ["portfolio", "combined", "aggregate"])
-        and has_metric_numbers(
-            artifact_text,
-            [
-                ["sharpe", "total return", "annualized return", "max drawdown"],
-                ["btc", "btcusdt", "eth", "ethusdt"],
-            ],
-        )
+    results["combined_metrics_present"] = has_any(
+        artifact_text, ["portfolio", "combined", "aggregate"]
+    ) and has_metric_numbers(
+        artifact_text,
+        [
+            ["sharpe", "total return", "annualized return", "max drawdown"],
+            ["btcusdt", "ethusdt", "eth/", "eth_"],
+        ],
     )
 
     _checklist = [
-        {"item": "multi_asset_data_loaded", "weight": 0.15, "passed": results["multi_asset_data_loaded"]},
+        {
+            "item": "multi_asset_data_loaded",
+            "weight": 0.15,
+            "passed": results["multi_asset_data_loaded"],
+        },
         {
             "item": "timestamp_alignment_present",
             "weight": 0.20,
@@ -138,14 +147,28 @@ def evaluate(
             "weight": 0.20,
             "passed": results["per_asset_accounting_present"],
         },
-        {"item": "ratio_strategy_present", "weight": 0.15, "passed": results["ratio_strategy_present"]},
-        {"item": "combined_metrics_present", "weight": 0.15, "passed": results["combined_metrics_present"]},
+        {
+            "item": "ratio_strategy_present",
+            "weight": 0.15,
+            "passed": results["ratio_strategy_present"],
+        },
+        {
+            "item": "combined_metrics_present",
+            "weight": 0.15,
+            "passed": results["combined_metrics_present"],
+        },
     ]
     score = sum(c["weight"] for c in _checklist if c["passed"])
 
-    if not results["timestamp_alignment_present"] or not results["per_asset_accounting_present"]:
+    if (
+        not results["timestamp_alignment_present"]
+        or not results["per_asset_accounting_present"]
+    ):
         score = min(score, 0.35)
-    if not results["synchronized_replay_present"] or not results["combined_metrics_present"]:
+    if (
+        not results["synchronized_replay_present"]
+        or not results["combined_metrics_present"]
+    ):
         score = min(score, 0.55)
 
     if data_files:

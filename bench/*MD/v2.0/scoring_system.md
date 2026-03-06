@@ -85,7 +85,7 @@ In v2.0, QR is blended from three signal sources rather than a single eval scrip
 
 ### 3.2 Blending Formula
 
-**Standard blend (code tasks, eval script and judge divergence ≤0.40):**
+**Standard blend (code tasks, no divergence):**
 ```
 QR = 0.30 × Eval Script + 0.30 × Code Eval + 0.40 × Result Judge
 ```
@@ -95,13 +95,31 @@ QR = 0.30 × Eval Script + 0.30 × Code Eval + 0.40 × Result Judge
 QR = 0.40 × Eval Script + 0.60 × Result Judge
 ```
 
-**Divergence Dampening (triggered when `|eval_script - judge| > 0.40`):**
+**Continuous Divergence Dampening:**
 
-When the eval script and LLM judge scores diverge significantly, the eval script likely has a false positive (e.g., keyword match on synthetic data). Programmatic weight is reduced:
+When the eval script and LLM judge scores diverge, the programmatic weight is smoothly reduced using a sigmoid function centered at 0.40:
+
 ```
-Code tasks:     QR = 0.15 × Eval Script + 0.30 × Code Eval + 0.55 × Result Judge
-Non-code tasks: QR = 0.20 × Eval Script + 0.80 × Result Judge
+factor = 1 / (1 + exp(10 × (divergence - 0.40)))
 ```
+
+The factor smoothly transitions from ~1.0 (no dampening) to ~0.0 (full dampening):
+
+| Divergence | Factor | Effect |
+|------------|--------|--------|
+| 0.00 | 0.98 | Weights nearly at standard blend |
+| 0.20 | 0.88 | Slight programmatic weight reduction |
+| 0.40 | 0.50 | Half dampening (midpoint) |
+| 0.60 | 0.12 | Strong programmatic weight reduction |
+| 0.80 | 0.02 | Nearly full dampening |
+
+Weight interpolation:
+```
+Code tasks:     w_prog = 0.10 + 0.20 × factor, w_code = 0.30, w_judge = 1.0 - w_prog - w_code
+Non-code tasks: w_prog = 0.15 + 0.25 × factor, w_judge = 1.0 - w_prog
+```
+
+This replaces the previous binary threshold (>0.40) that caused discontinuous score jumps at the boundary.
 
 ### 3.3 Code Eval Details (3 Layers)
 
@@ -297,7 +315,7 @@ v2.0 introduces the Reference Oracle — a strong model (default gpt-5.2) pre-ex
 ### 7.1 Full Sandbox Containerization (Docker v2.0)
 
 ```
-Docker Container (quant-tutor-env:v2.0)
+Docker Container (quant-tutor-env:v2.2)
 +------------------------------------------------------------------+
 |  /data         (read-only)  Frozen OHLCV CSVs, financial datasets |
 |  /docs         (read-only)  Reference documentation               |

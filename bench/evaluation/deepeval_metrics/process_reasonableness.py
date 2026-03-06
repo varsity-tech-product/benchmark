@@ -301,15 +301,7 @@ async def async_eval_process_reasonableness(
         is_code_task=is_code_task,
     )
 
-    try:
-        result = await _call_llm(model, prompt)
-    except Exception as e:
-        return {
-            "score": 0.5,
-            "reason": f"ProcessReasonableness error: {e}",
-            "passed": True,
-            "_eval_cost": 0.0,
-        }
+    result = await _call_llm(model, prompt)
 
     sub_scores = {
         k: _clamp_ordinal(result.get(k, 0.5)) for k in _REASONABLENESS_WEIGHTS
@@ -456,15 +448,7 @@ async def async_eval_process_alignment(
         path_tolerance=path_tolerance,
     )
 
-    try:
-        result = await _call_llm(model, prompt)
-    except Exception as e:
-        return {
-            "score": 0.5,
-            "reason": f"ProcessAlignment error: {e}",
-            "passed": True,
-            "_eval_cost": 0.0,
-        }
+    result = await _call_llm(model, prompt)
 
     sub_scores = {k: _clamp_ordinal(result.get(k, 0.5)) for k in _ALIGNMENT_WEIGHTS}
     overall = sum(_ALIGNMENT_WEIGHTS[k] * sub_scores[k] for k in _ALIGNMENT_WEIGHTS)

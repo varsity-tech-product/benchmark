@@ -428,19 +428,11 @@ async def evaluate_code_process_llm(
         actual_output=actual_output,
     )
 
-    try:
-        model_obj = resolve_deepeval_model(model)
-        if isinstance(model_obj, str):
-            model_obj = GPTModel(model=model_obj)
-        response_text, call_cost = await model_obj.a_generate(prompt)
-        result = _extract_json_from_response(response_text)
-    except Exception as e:
-        return {
-            "score": 0.5,
-            "reason": f"CodeProcess LLM error: {e}",
-            "applicable": True,
-            "_eval_cost": 0.0,
-        }
+    model_obj = resolve_deepeval_model(model)
+    if isinstance(model_obj, str):
+        model_obj = GPTModel(model=model_obj)
+    response_text, call_cost = await model_obj.a_generate(prompt)
+    result = _extract_json_from_response(response_text)
 
     sub_scores = {k: _clamp_ordinal(result.get(k, 0.5)) for k in _LLM_SUB_KEYS}
     overall = sum(sub_scores.values()) / len(sub_scores)

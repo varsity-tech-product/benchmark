@@ -52,6 +52,9 @@ Thumbs.db
 *.log
 logs/
 
+# Benchmark results (traces, scores, agent files)
+bench/results/
+
 # Checkpoints
 checkpoints/
 *.checkpoint.json

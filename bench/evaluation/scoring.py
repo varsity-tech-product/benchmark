@@ -35,6 +35,7 @@ def compute_task_score(
     quant_process_score: float,
     tutor_dimension_scores: dict[str, float],
     category: Optional[str] = None,
+    requires_code: bool = False,
 ) -> dict:
     """Compute the overall task score.
 
@@ -50,6 +51,8 @@ def compute_task_score(
         quant_process_score: Score from reformed process metrics (0-1).
         tutor_dimension_scores: Dict of dimension_name -> score (0-1).
         category: TaskCategory.value for per-category tutor dimension weighting.
+        requires_code: Whether the task expects code output (passed
+            through to compute_tutor_score for D5 weight override).
 
     Returns:
         Dict with all sub-scores and overall score.
@@ -69,7 +72,9 @@ def compute_task_score(
 
     tutor_score = 0.0
     if clean_tutor:
-        tutor_score = compute_tutor_score(clean_tutor, category=category)
+        tutor_score = compute_tutor_score(
+            clean_tutor, category=category, requires_code=requires_code
+        )
 
     overall = QUANT_WEIGHT * quant_score + TUTOR_WEIGHT * tutor_score
 

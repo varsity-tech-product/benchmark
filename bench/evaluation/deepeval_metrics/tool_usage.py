@@ -18,8 +18,6 @@ Formula:
     score           = 0.60 * selection_score + 0.40 * effectiveness
 """
 
-_NON_SUBSTANTIVE_TOOLS = frozenset({"get_environment_info"})
-
 
 def _tool_call_effective(log) -> bool:
     """Check if a tool call produced valid (non-error) results.
@@ -59,7 +57,7 @@ def evaluate_tool_usage(
     Returns:
         Dict with score, breakdown, and diagnostic lists.
     """
-    called = {log.name for log in proxy_logs if log.name not in _NON_SUBSTANTIVE_TOOLS}
+    called = {log.name for log in proxy_logs}
 
     n_convenient = len(convenient_tools)
 

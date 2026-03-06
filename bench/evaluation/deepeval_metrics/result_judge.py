@@ -15,6 +15,7 @@ Uses 5-point ordinal scale: {0.0, 0.25, 0.5, 0.75, 1.0}.
 import json as _json
 import os
 import re
+import threading
 
 from config.model_resolver import resolve_deepeval_model
 
@@ -193,6 +194,7 @@ def _build_result_judge_prompt(
     agent_workspace_files: list[str],
     agent_summary: str,
     reference: dict | None,
+    expected_outcome: str | None = None,
 ) -> str:
     """Build the result quality evaluation prompt."""
     category_rubric = _get_category_rubric_text(category)
@@ -206,6 +208,16 @@ When in doubt between two levels, select the LOWER score."""
 TASK: {task_description}
 CATEGORY: {category}
 CATEGORY-SPECIFIC FOCUS: {category_rubric}"""
+
+    if expected_outcome:
+        task_section += f"""
+
+EXPECTED OUTCOME (acceptance criteria):
+{expected_outcome}
+
+Use the EXPECTED OUTCOME to evaluate completeness: the agent should have
+addressed all items listed above. Items not mentioned in EXPECTED OUTCOME
+should not be penalized if missing."""
 
     # Reference section
     ref_section = ""
@@ -351,6 +363,9 @@ _SUB_WEIGHTS = {
 }
 
 
+_ABORT_SENTINEL = object()
+
+
 async def async_evaluate_result_quality(
     task_description: str,
     category: str,
@@ -359,6 +374,8 @@ async def async_evaluate_result_quality(
     conversation: list,
     model=None,
     reference: dict | None = None,
+    expected_outcome: str | None = None,
+    abort_event: threading.Event | None = None,
 ) -> dict:
     """Evaluate result quality using LLM-as-Judge (multi-model).
 
@@ -373,6 +390,8 @@ async def async_evaluate_result_quality(
         model: LLM judge model — single string, list of strings, or None.
             None → use all EVAL_DEFAULT_MODELS in parallel.
         reference: Reference execution data from ReferenceStore, or None.
+        expected_outcome: Task's expected outcome (acceptance criteria), or None.
+        abort_event: Shared threading.Event for cross-thread abort signaling.
 
     Returns:
         Dict with score, sub_scores, reason, has_reference, and _per_model breakdown.
@@ -411,22 +430,38 @@ async def async_evaluate_result_quality(
         agent_workspace_files=agent_workspace_files,
         agent_summary=agent_summary,
         reference=reference,
+        expected_outcome=expected_outcome,
     )
 
-    # ── Call all models in parallel ──
-    async def _call_single_model(m):
-        try:
-            model_obj = resolve_deepeval_model(m)
-            if isinstance(model_obj, str):
-                model_obj = GPTModel(model=model_obj)
-            response_text, call_cost = await model_obj.a_generate(prompt)
-            parsed = _extract_json_from_response(response_text)
-            parsed["_eval_cost"] = float(call_cost) if call_cost else 0.0
-            return parsed
-        except Exception as e:
-            return {"_error": str(e), "_eval_cost": 0.0}
+    # ── Call all models in parallel with abort protection ──
+    _abort = abort_event if abort_event is not None else threading.Event()
+    _first_error: list[Exception] = []
 
-    raw_results = await asyncio.gather(*[_call_single_model(m) for m in eval_models])
+    async def _call_single_model(m):
+        model_obj = resolve_deepeval_model(m)
+        if isinstance(model_obj, str):
+            model_obj = GPTModel(model=model_obj)
+        response_text, call_cost = await model_obj.a_generate(prompt)
+        parsed = _extract_json_from_response(response_text)
+        parsed["_eval_cost"] = float(call_cost) if call_cost else 0.0
+        return parsed
+
+    async def _guarded(m):
+        if _abort.is_set():
+            return _ABORT_SENTINEL
+        try:
+            return await _call_single_model(m)
+        except Exception as e:
+            _abort.set()
+            if not _first_error:
+                _first_error.append(e)
+            return _ABORT_SENTINEL
+
+    raw_results = await asyncio.gather(*[_guarded(m) for m in eval_models])
+
+    # Propagate first error
+    if _first_error:
+        raise _first_error[0]
 
     # ── Parse per-model results ──
     per_model: dict[str, dict] = {}
@@ -434,15 +469,13 @@ async def async_evaluate_result_quality(
     cost_by_model: dict[str, float] = {}
     for i, m in enumerate(eval_models):
         raw = raw_results[i]
+        if raw is _ABORT_SENTINEL:
+            raise RuntimeError(f"ResultJudge: unexpected abort for model {m}")
         m_cost = raw.get("_eval_cost", 0.0)
         cost_by_model[m] = round(m_cost, 6)
         total_eval_cost += m_cost
-        if "_error" in raw:
-            sub = {k: 0.5 for k in _SUB_WEIGHTS}
-            reason = f"ResultJudge error: {raw['_error']}"
-        else:
-            sub = {k: _clamp_ordinal(raw.get(k, 0.5)) for k in _SUB_WEIGHTS}
-            reason = raw.get("reason", "")
+        sub = {k: _clamp_ordinal(raw.get(k, 0.5)) for k in _SUB_WEIGHTS}
+        reason = raw.get("reason", "")
         m_overall = sum(_SUB_WEIGHTS[k] * sub[k] for k in _SUB_WEIGHTS)
         per_model[m] = {
             "score": round(m_overall, 4),
@@ -487,6 +520,8 @@ def evaluate_result_quality(
     conversation: list,
     model=None,
     reference: dict | None = None,
+    expected_outcome: str | None = None,
+    abort_event: threading.Event | None = None,
 ) -> dict:
     """Synchronous wrapper for result quality evaluation."""
     import asyncio
@@ -504,5 +539,7 @@ def evaluate_result_quality(
             conversation,
             model,
             reference,
+            expected_outcome,
+            abort_event,
         )
     )

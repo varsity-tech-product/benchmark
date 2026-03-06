@@ -12,7 +12,7 @@ understanding OHLCV columns, and performing initial data quality checks.
 ```python
 import pandas as pd
 
-df = pd.read_csv('/data/AAPL_2018_2024.csv')
+df = pd.read_csv('stock_data.csv')
 ```
 
 ### Common Parameters
@@ -129,7 +129,22 @@ for col in ['Open', 'High', 'Low', 'Close', 'Volume']:
 
 ---
 
-## 5. Common Patterns
+## 5. Caveats
+
+- **Encoding**: Some CSV files from non-US providers use non-UTF-8 encoding
+  (e.g., `latin-1`). Use `pd.read_csv(..., encoding='latin-1')` if UTF-8 fails.
+- **Thousands separator**: Volume columns may contain commas (e.g., "52,340,000").
+  Use `pd.read_csv(..., thousands=',')` to parse correctly.
+- **Mixed types**: If a numeric column contains occasional strings (e.g., "N/A"),
+  pandas infers `object` dtype. Use `pd.to_numeric(col, errors='coerce')` to convert.
+- **Date parsing performance**: `parse_dates` is slow on large files. For files with
+  millions of rows, parse dates after loading with `pd.to_datetime()`.
+- **Header case sensitivity**: Column names like `Close` vs `close` can cause silent
+  KeyError. Normalize with `df.columns = df.columns.str.lower()` after loading.
+
+---
+
+## 6. Common Patterns
 
 ### Setting Date as index
 
@@ -149,7 +164,7 @@ df['daily_return'] = df['Close'].pct_change()
 ```python
 import glob
 
-files = glob.glob('/data/*.csv')
+files = glob.glob('data_folder/*.csv')
 for f in files:
     df = pd.read_csv(f, parse_dates=['Date'])
     print(f"{f}: {df.shape}")

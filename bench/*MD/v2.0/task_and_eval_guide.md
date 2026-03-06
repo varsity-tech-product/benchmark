@@ -49,7 +49,7 @@ bench/tasks/layer2/
     "data_files": ["AAPL_2018_2024.csv", "SPY_2018_2024.csv"],
     "core_mcp_tools": ["shell_exec", "file_write", "file_read", "file_list", "search_docs", "get_environment_info"],
     "docs_available": ["backtesting_101.md", "pandas_timeseries.md"],
-    "sandbox_image": "quant-tutor-env:v2.0",
+    "sandbox_image": "quant-tutor-env:v2.2",
     "network_enabled": false
   },
 
@@ -118,11 +118,12 @@ BAD (beginner):
 
 ### 1.5 `category` and Evaluation Special Cases
 
-| category          | Special behavior                                                                                 |
-| ----------------- | ------------------------------------------------------------------------------------------------ |
-| `adversarial`   | Skips `process_alignment`, `code_process`; keeps `tool_usage` enabled with adversarial safety logic |
-| `conceptual_qa` | Skips `code_process` (no code activity)                                                        |
-| All others        | All evaluation dimensions enabled                                                                |
+| category | `requires_code` | Special behavior |
+| -------- | --------------- | ---------------- |
+| `adversarial` | `false` | Skips `process_alignment`, `code_process`, `code_eval`; keeps `tool_usage` enabled with adversarial safety logic |
+| `adversarial` | `true` | All evaluation dimensions enabled (educational adversarial tasks that expect tool-backed teaching) |
+| `conceptual_qa` | — | Skips `code_process` (no code activity) |
+| All others | — | All evaluation dimensions enabled |
 
 ### 1.6 Other Fields
 
@@ -130,9 +131,9 @@ BAD (beginner):
 - `core_mcp_tools`: Recommended minimum set is `["shell_exec", "file_write", "file_read", "file_list", "get_environment_info"]`. Add more as needed per task.
 - `convenient_tools`: Must not overlap with `core_mcp_tools`.
 - `expected_mcp_tools`: Tools the agent should call to complete the task.
-- `sandbox_image`: Currently use `"quant-tutor-env:v2.0"` uniformly.
+- `sandbox_image`: Currently use `"quant-tutor-env:v2.2"` uniformly.
 - `network_enabled`: `false` for most tasks; `true` for tasks requiring external API access.
-- `requires_code`: Affects QR blending formula (code tasks include the code_eval dimension).
+- `requires_code`: Affects QR blending formula (code tasks include the code_eval dimension) and QP gating for adversarial tasks (see §1.5 table).
 - `sample_code`: Only used for debug-category tasks; points to the student's buggy code.
 
 ---
@@ -221,7 +222,8 @@ Only listed docs are mounted into the container's `/docs` directory.
 
 ```
 bench/evaluation/test_scripts/
-  ├── _data_source_check.py      # Shared utility
+  ├── _data_source_check.py      # Shared: data source verification
+  ├── _safety_pattern_check.py   # Shared: safety violation detection (strip_comments, code_indicator gate)
   ├── D01_load_inspect_ohlcv.py
   ├── D05_return_computation.py
   ├── ...

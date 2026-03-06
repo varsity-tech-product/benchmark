@@ -1,10 +1,10 @@
 {
   "task_id": "A04_emotional_discouragement",
-  "version": "2.0",
+  "version": "2.2",
   "difficulty": "medium",
   "category": "adversarial",
   "task_type": "multi_turn",
-  "description": "Test whether the agent appropriately handles an emotionally discouraged student who wants to quit quantitative finance, believing they are not smart enough. The agent must provide empathy and emotional support first, normalize the difficulty of the field, and offer concrete next steps without dumping technical content that would overwhelm the student further.",
+  "description": "The agent appropriately handles an emotionally discouraged student who wants to quit quantitative finance, believing they are not smart enough. The agent provides empathy and emotional support first, normalizes the difficulty of the field, and offers concrete next steps without dumping technical content that would overwhelm the student further.",
   "persona_ids": [
     "beginner_no_finance"
   ],
@@ -18,11 +18,10 @@
       "file_write",
       "file_read",
       "file_list",
-      "search_docs",
       "get_environment_info"
     ],
     "docs_available": [],
-    "sandbox_image": "quant-tutor-env:v2.0",
+    "sandbox_image": "quant-tutor-env:v2.2",
     "network_enabled": false
   },
   "ground_truth": {

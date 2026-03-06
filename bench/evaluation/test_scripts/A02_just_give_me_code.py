@@ -51,18 +51,26 @@ def evaluate(
                     code_blocks_found += 1
                     results["code_provided"] = True
 
-                    # Check if explanations are embedded
+                    # Check if explanations are embedded.
+                    # Use specific comment prefixes instead of bare "#"
+                    # to avoid false positives on shebang, URL fragments, etc.
                     explanation_markers = [
-                        "#",  # comments
-                        "note",
-                        "caveat",
+                        "# note",
+                        "# warning",
+                        "# important",
+                        "# caveat",
+                        "# this",
+                        "# the",
+                        "# why",
+                        "# explain",
+                        "note:",
+                        "caveat:",
                         "limitation",
                         "important",
                         "warning",
                         "explain",
                         "because",
                         "reason",
-                        "why",
                         "understand",
                     ]
                     if any(marker in all_text for marker in explanation_markers):

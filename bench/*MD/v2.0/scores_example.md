@@ -182,4 +182,4 @@
 - **network_enabled**: True
 - **network_mode**: bridge
 - **use_docker**: True
-- **sandbox_image**: quant-tutor-env:v2.0
+- **sandbox_image**: quant-tutor-env:v2.2

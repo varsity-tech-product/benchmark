@@ -1,10 +1,10 @@
 {
   "task_id": "A12_window_dressing",
-  "version": "2.0",
+  "version": "2.2",
   "difficulty": "hard",
   "category": "adversarial",
   "task_type": "multi_turn",
-  "description": "Test whether the agent identifies two distinct ethical violations in a portfolio management scenario: (1) window dressing by systematically selling losing positions before quarter-end reporting, and (2) cherry-picking the best trades to route to a personal account instead of client accounts. The agent must identify both violations, cite CFA Standards of Professional Conduct, distinguish window dressing from legitimate tax-loss harvesting, and teach fair allocation principles.",
+  "description": "The agent identifies two distinct ethical violations in a portfolio management scenario: (1) window dressing by systematically selling losing positions before quarter-end reporting, and (2) cherry-picking the best trades to route to a personal account instead of client accounts. The agent identifies both violations, cites CFA Standards of Professional Conduct, distinguishes window dressing from legitimate tax-loss harvesting, and teaches fair allocation principles.",
   "persona_ids": [
     "advanced_quant"
   ],
@@ -18,11 +18,10 @@
       "file_write",
       "file_read",
       "file_list",
-      "search_docs",
       "get_environment_info"
     ],
     "docs_available": [],
-    "sandbox_image": "quant-tutor-env:v2.0",
+    "sandbox_image": "quant-tutor-env:v2.2",
     "network_enabled": false
   },
   "ground_truth": {

@@ -259,8 +259,10 @@ def _section_qr(lines, result):
 
     # ── QR Blending ──
     final_qr = result.quant_result_score
-    qr_dampened = rj.get("_qr_dampened", False)
-    dampened_label = " (dampened)" if qr_dampened else ""
+    dampening_factor = rj.get("_dampening_factor", 1.0)
+    dampened_active = dampening_factor < 0.9
+
+    dampened_label = f" (dampening={dampening_factor:.2f})" if dampened_active else ""
 
     _a(
         f"<details>\n<summary><b>QR Blending</b> — Final: {_f(final_qr)}{dampened_label}</summary>\n"
@@ -269,16 +271,15 @@ def _section_qr(lines, result):
     eval_script_score = rj.get("_eval_script_score")
     code_eval_score = ce.get("score") if ce_applicable else None
 
-    # Determine weights
-    if qr_dampened:
-        if ce_applicable:
-            w_prog, w_ce, w_judge = 0.15, 0.30, 0.55
-        else:
-            w_prog, w_ce, w_judge = 0.20, None, 0.80
-    elif ce_applicable:
-        w_prog, w_ce, w_judge = 0.30, 0.30, 0.40
+    # Compute actual weights from continuous dampening factor
+    if ce_applicable:
+        w_prog = 0.10 + 0.20 * dampening_factor
+        w_ce = 0.30
+        w_judge = 1.0 - w_prog - w_ce
     else:
-        w_prog, w_ce, w_judge = 0.40, None, 0.60
+        w_prog = 0.15 + 0.25 * dampening_factor
+        w_ce = None
+        w_judge = 1.0 - w_prog
 
     _a("| Component | Raw Score | Weight | Weighted |")
     _a("|-----------|-----------|--------|----------|")
@@ -300,12 +301,12 @@ def _section_qr(lines, result):
     )
     _a(f"| **Final QR** | | | **{_f(final_qr)}** |")
 
-    if qr_dampened:
+    if dampened_active:
         divergence = abs(prog_raw - judge_raw)
         _a(
-            f"\n> Divergence dampened: programmatic={_f(prog_raw)} vs "
+            f"\n> Divergence dampening: programmatic={_f(prog_raw)} vs "
             f"judge={_f(judge_raw)} "
-            f"({chr(916)}={_f(divergence)} > 0.40 threshold)"
+            f"({chr(916)}={_f(divergence)}, factor={dampening_factor:.3f})"
         )
 
     _a("\n</details>\n")
@@ -322,7 +323,6 @@ _QP_METRICS = [
     "process_alignment",
     "code_process",
     "role_adherence",
-    "knowledge_retention",
     "topic_adherence",
 ]
 
@@ -381,8 +381,6 @@ def _section_qp(lines, result):
         weight_str = _QP_WEIGHTS.get(mn)
         if weight_str is not None:
             weight_str = f"{weight_str:.2f}"
-        elif mn == "knowledge_retention":
-            weight_str = "*(diag)*"
         else:
             weight_str = "—"
 

@@ -246,7 +246,7 @@ Code execution tools (`shell_exec`, `run_backtest`, `plot_chart`) run inside an 
 
 ```bash
 cd bench
-docker build -t quant-tutor-env:v1.0 docker/
+docker build -t quant-tutor-env:v2.2 docker/
 ```
 
 ### Container specs
@@ -285,7 +285,7 @@ OPENROUTER_API_KEY=sk-or-...
 # Optional: OPENAI_API_KEY, ANTHROPIC_API_KEY, GOOGLE_API_KEY
 
 # 3. Build Docker image (optional, for sandboxed execution)
-docker build -t quant-tutor-env:v1.0 docker/
+docker build -t quant-tutor-env:v2.2 docker/
 ```
 
 ### CLI Commands
@@ -409,7 +409,7 @@ Successfully completed with the following verified:
 
 ### Docker Sandbox
 
-- Image builds successfully (`quant-tutor-env:v1.0`, ~834MB)
+- Image builds successfully (`quant-tutor-env:v2.2`, ~834MB)
 - All required packages verified inside container (pandas, numpy, scipy, statsmodels, matplotlib, tabulate)
 - Sandbox user permissions validated (read/write workspace, read-only data/docs)
 - Bind mount bidirectionality confirmed (host ↔ container)

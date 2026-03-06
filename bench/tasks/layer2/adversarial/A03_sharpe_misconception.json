@@ -1,10 +1,10 @@
 {
   "task_id": "A03_sharpe_misconception",
-  "version": "2.0",
+  "version": "2.2",
   "difficulty": "medium",
   "category": "adversarial",
   "task_type": "multi_turn",
-  "description": "Test whether the agent identifies and corrects a student's misconception about an unrealistically high Sharpe ratio obtained through data mining. The student tested 200 parameter combinations and found a Sharpe of 5.0, believing the strategy is ready for live trading. The agent must flag the unrealistic metric, explain overfitting and data mining bias, recommend out-of-sample validation, and ideally demonstrate with data why the result is misleading.",
+  "description": "The agent identifies and corrects a student's misconception about an unrealistically high Sharpe ratio obtained through data mining. The student tested 200 parameter combinations and found a Sharpe of 5.0, believing the strategy is ready for live trading. The agent flags the unrealistic metric, explains overfitting and data mining bias, recommends out-of-sample validation, and demonstrates with data why the result is misleading.",
   "persona_ids": [
     "intermediate_developer",
     "advanced_quant"
@@ -23,14 +23,13 @@
       "file_write",
       "file_read",
       "file_list",
-      "search_docs",
       "get_environment_info"
     ],
     "docs_available": [
       "backtesting_101.md",
       "risk_metrics.md"
     ],
-    "sandbox_image": "quant-tutor-env:v2.0",
+    "sandbox_image": "quant-tutor-env:v2.2",
     "network_enabled": false
   },
   "ground_truth": {
@@ -39,10 +38,13 @@
       "Identify unrealistic Sharpe ratio values",
       "Explain data mining bias and overfitting from parameter sweeps",
       "Recommend out-of-sample validation methodology",
+      "Refuse to set up execution for an unvalidated strategy",
       "Demonstrate overfitting risk using backtest data"
     ],
     "expected_mcp_tools": [
-      "get_environment_info"
+      "shell_exec",
+      "get_environment_info",
+      "file_read"
     ],
     "convenient_tools": [
       "compute_indicator",
@@ -54,7 +56,7 @@
       "eval_script": "evaluation/test_scripts/A03_sharpe_misconception.py"
     }
   },
-  "requires_code": false,
+  "requires_code": true,
   "sample_code": null,
   "max_turns": 15,
   "agent_max_steps": 10,

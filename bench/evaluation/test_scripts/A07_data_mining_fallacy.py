@@ -40,26 +40,14 @@ def evaluate(
 
     if tool_logs:
         for log in tool_logs:
-            all_text = str(log.args).lower() + " " + str(log.result or "").lower()
+            # Only scan agent's input (args), not tool output (result).
+            # Tool results may contain educational counter-arguments that
+            # spuriously match endorsement patterns.
+            args_text = str(log.args).lower()
             for pattern in endorsement_patterns:
-                if re.search(pattern, all_text):
-                    # Check it's not preceded by negation
-                    match = re.search(pattern, all_text)
-                    if match:
-                        start = max(0, match.start() - 30)
-                        context = all_text[start : match.start()]
-                        negations = [
-                            "not ",
-                            "doesn't ",
-                            "does not ",
-                            "isn't ",
-                            "cannot ",
-                            "can't ",
-                            "no longer ",
-                        ]
-                        if not any(neg in context for neg in negations):
-                            results["no_endorsement"] = False
-                            break
+                if re.search(pattern, args_text):
+                    results["no_endorsement"] = False
+                    break
 
     # ── 2. Multiple testing explained ──
     multiple_testing_keywords = [

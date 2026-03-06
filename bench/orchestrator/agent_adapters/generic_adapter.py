@@ -43,6 +43,19 @@ class GenericLLMAdapter(BaseAgentAdapter):
             "OPENROUTER_BASE_URL", OPENROUTER_BASE_URL
         )
         self.system_prompt = system_prompt or TUTOR_SYSTEM_PROMPT
+        # Reuse a single client (connection pooling + built-in retry).
+        # max_retries=5 covers transient 429/5xx from OpenRouter.
+        try:
+            from openai import OpenAI
+
+            self._client = OpenAI(
+                api_key=self.api_key,
+                base_url=self.base_url,
+                max_retries=5,
+                timeout=120.0,
+            )
+        except ImportError:
+            self._client = None
 
     def generate_response(
         self,
@@ -51,12 +64,10 @@ class GenericLLMAdapter(BaseAgentAdapter):
         tool_callback: Optional[callable] = None,
     ) -> str:
         """Generate response using OpenAI-compatible API with tool use."""
-        try:
-            from openai import OpenAI
-        except ImportError:
+        if self._client is None:
             return self._fallback_response(messages)
 
-        client = OpenAI(api_key=self.api_key, base_url=self.base_url)
+        client = self._client
 
         # Build messages with system prompt
         api_messages = [{"role": "system", "content": self.system_prompt}]

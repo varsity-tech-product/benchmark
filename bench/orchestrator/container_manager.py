@@ -51,7 +51,7 @@ class ContainerManager:
     """
 
     def __init__(
-        self, docker_image: str = "quant-tutor-env:v2.0", use_docker: bool = True
+        self, docker_image: str = "quant-tutor-env:v2.2", use_docker: bool = True
     ):
         self.docker_image = docker_image
         self.use_docker = use_docker and self._docker_available()

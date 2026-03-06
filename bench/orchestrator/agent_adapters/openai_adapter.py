@@ -321,6 +321,23 @@ class OpenAIAgentAdapter(BaseAgentAdapter):
                     )
                 )
 
+    @staticmethod
+    def _ensure_str(content) -> str:
+        """Flatten OpenAI content to a plain string.
+
+        gpt-5.2 occasionally returns ``message.content`` as a list of
+        content-block dicts instead of a string.
+        """
+        if content is None:
+            return ""
+        if isinstance(content, str):
+            return content
+        if isinstance(content, list):
+            return "\n".join(
+                b.get("text", "") if isinstance(b, dict) else str(b) for b in content
+            ).strip()
+        return str(content)
+
     def _fallback_completions(
         self,
         messages: list[dict],
@@ -380,9 +397,9 @@ class OpenAIAgentAdapter(BaseAgentAdapter):
                     messages=api_messages,
                     max_tokens=4096,
                 )
-                return final_response.choices[0].message.content or ""
+                return self._ensure_str(final_response.choices[0].message.content)
 
-            return message.content or ""
+            return self._ensure_str(message.content)
 
         except Exception as e:
             return f"[OpenAI API error: {str(e)}]"

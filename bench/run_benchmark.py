@@ -257,7 +257,13 @@ def cmd_run(args):
     # ── Phase 3: Combined scoring ──
     all_result_objects = list(report.results_by_task.values())
     all_l2_scores = [
-        compute_task_score(r.quant_result_score, r.quant_process_score, r.tutor_scores)
+        compute_task_score(
+            r.quant_result_score,
+            r.quant_process_score,
+            r.tutor_scores,
+            category=r.category,
+            requires_code=r.requires_code,
+        )
         for r in all_result_objects
     ]
 
@@ -420,7 +426,6 @@ def cmd_run_single(args):
             "process_alignment",
             "code_process",
             "role_adherence",
-            "knowledge_retention",
             "topic_adherence",
         ]
         print(f"  {'Metric':<25} {'Score':>8}  {'Status':>6}")
@@ -570,11 +575,24 @@ def cmd_run_single(args):
 
     # ── Save results (scores.md + trace.md + cost.md + agent_files/) ──
     if save_result and result_dir is not None:
-        from evaluation.score_report import generate_score_report
+        saved_parts = []
 
-        scores_md = generate_score_report(result)
-        (result_dir / "scores.md").write_text(scores_md, encoding="utf-8")
+        # scores.md: skip when evaluation was aborted (incomplete/misleading)
+        if not result.eval_aborted:
+            from evaluation.score_report import generate_score_report
 
+            scores_md = generate_score_report(result)
+            (result_dir / "scores.md").write_text(scores_md, encoding="utf-8")
+            saved_parts.append("scores.md")
+        else:
+            # Write a marker file so the user knows this run was aborted
+            (result_dir / "ABORTED.md").write_text(
+                f"# Evaluation Aborted\n\n{result.error}\n",
+                encoding="utf-8",
+            )
+            saved_parts.append("ABORTED.md")
+
+        # trace.md: always save (valuable for debugging aborted runs)
         if "proxy_logs" in trace_captured:
             from evaluation.trace_report import generate_trace_md
 
@@ -586,17 +604,21 @@ def cmd_run_single(args):
                 condition=condition.name,
             )
             (result_dir / "trace.md").write_text(trace_md, encoding="utf-8")
+            saved_parts.append("trace.md")
 
+        # cost.md: always save (shows partial spend even for aborted runs)
         from evaluation.cost_report import generate_cost_report
 
         cost_md = generate_cost_report(result)
         (result_dir / "cost.md").write_text(cost_md, encoding="utf-8")
+        saved_parts.append("cost.md")
 
         n_files = (
             len(list(agent_files_dir.iterdir())) if agent_files_dir.exists() else 0
         )
+        saved_parts.append(f"agent_files/ ({n_files} files)")
         print(f"\nResults saved: {result_dir}")
-        print(f"  scores.md + trace.md + cost.md + agent_files/ ({n_files} files)")
+        print(f"  {' + '.join(saved_parts)}")
 
 
 def cmd_list_tasks(args):
@@ -887,6 +909,15 @@ def cmd_validate_tasks(args):
 
 
 def main():
+    # ── DeepEval retry policy — strengthen defaults for parallel execution ──
+    # DeepEval's @retry_openai uses Tenacity. Defaults (max=2, cap=5s) are
+    # too aggressive for 10-worker parallel runs hitting OpenRouter rate limits.
+    # setdefault() allows users to override via env vars if needed.
+    os.environ.setdefault("DEEPEVAL_RETRY_MAX_ATTEMPTS", "6")
+    os.environ.setdefault("DEEPEVAL_RETRY_INITIAL_SECONDS", "3")
+    os.environ.setdefault("DEEPEVAL_RETRY_CAP_SECONDS", "60")
+    os.environ.setdefault("DEEPEVAL_RETRY_JITTER", "5")
+
     parser = argparse.ArgumentParser(description="QuantTutorBench CLI")
     subparsers = parser.add_subparsers(dest="command")
 

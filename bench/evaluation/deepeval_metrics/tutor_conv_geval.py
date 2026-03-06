@@ -19,10 +19,26 @@ DeepEval API (v3.8+):
 import asyncio
 import json
 import random
+import threading
 from pathlib import Path
 from typing import Optional
 
 from config.model_resolver import resolve_deepeval_model
+
+# ──────────────────────────────────────────────────────────────
+# Concurrency control — adjustable for parallel runner
+# ──────────────────────────────────────────────────────────────
+_CONCURRENCY = 20  # per-worker asyncio concurrency limit
+
+
+def set_eval_concurrency(n: int) -> None:
+    """Set per-worker concurrency limit (called by parallel runner)."""
+    global _CONCURRENCY
+    _CONCURRENCY = max(3, n)
+
+
+# Sentinel for aborted coroutines
+_ABORT_SENTINEL = object()
 
 try:
     from deepeval.metrics import ConversationalGEval
@@ -231,12 +247,19 @@ CATEGORY_DIMENSION_WEIGHTS: dict[str, dict[str, float]] = {
 }
 
 
-def get_dimension_weight(category: Optional[str], dimension_name: str) -> float:
+def get_dimension_weight(
+    category: Optional[str],
+    dimension_name: str,
+    requires_code: bool = False,
+) -> float:
     """Get the weight for a specific dimension given a task category.
 
     Args:
         category: TaskCategory.value string, or None for default weights.
         dimension_name: Full dimension name (e.g. "D5_code_teaching").
+        requires_code: Whether the task expects code output.  For
+            educational adversarial tasks (requires_code=True), D5 is
+            re-enabled (weight=1.0) instead of the blanket 0.0.
 
     Returns:
         Weight in [0.0, 1.0]. Defaults to 1.0 if category is unknown.
@@ -245,7 +268,11 @@ def get_dimension_weight(category: Optional[str], dimension_name: str) -> float:
         return 1.0
     weights = CATEGORY_DIMENSION_WEIGHTS.get(category, {})
     dim_key = dimension_name[:2]  # "D1", "D2", ...
-    return weights.get(dim_key, 1.0)
+    w = weights.get(dim_key, 1.0)
+    # Educational adversarial: re-enable D5 (Code Teaching)
+    if w == 0.0 and dim_key == "D5" and category == "adversarial" and requires_code:
+        return 1.0
+    return w
 
 
 # Rubric JSON directory
@@ -417,6 +444,8 @@ def evaluate_tutor_dimensions(
     conversational_test_case=None,
     num_judge_runs: int = NUM_JUDGE_RUNS,
     category: Optional[str] = None,
+    requires_code: bool = False,
+    abort_event: Optional[threading.Event] = None,
 ) -> dict[str, float]:
     """Evaluate tutoring dimensions with shuffled judge runs.
 
@@ -447,6 +476,8 @@ def evaluate_tutor_dimensions(
             If provided, uses this directly instead of building from conversation_turns.
         num_judge_runs: Number of shuffled judge runs *per model* (default: 3).
         category: TaskCategory.value string for per-category dimension weighting.
+        requires_code: Whether the task expects code output.  Used to
+            re-enable D5 (Code Teaching) for educational adversarial tasks.
 
     Returns:
         Dict mapping dimension name to averaged score (0-1).
@@ -474,8 +505,14 @@ def evaluate_tutor_dimensions(
 
     model_names = [m or "default" for m in eval_models]
 
-    # Filter out dimensions with weight=0 for this category
-    active_dims = [d for d in DIMENSIONS if get_dimension_weight(category, d) > 0.0]
+    # Filter out dimensions with weight=0 for this category.
+    # For educational adversarial tasks (requires_code=true), D5 is
+    # re-enabled via get_dimension_weight's requires_code parameter.
+    active_dims = [
+        d
+        for d in DIMENSIONS
+        if get_dimension_weight(category, d, requires_code=requires_code) > 0.0
+    ]
     skipped_dims = [d for d in DIMENSIONS if d not in active_dims]
     if skipped_dims:
         print(
@@ -535,28 +572,52 @@ def evaluate_tutor_dimensions(
                 task_keys.append((mname, run_idx, metric.name))
 
     # ── Run ALL judge calls in parallel with concurrency limit ──
-    _CONCURRENCY = 20  # avoid OpenRouter rate-limit throttling
     print(
         f"    Running {len(all_metrics)} judge calls in parallel "
         f"(concurrency={_CONCURRENCY})..."
     )
     t0 = _time.time()
 
+    _abort = abort_event if abort_event is not None else threading.Event()
+    _first_error: list[Exception] = []
+
     async def _run_all():
         sem = asyncio.Semaphore(_CONCURRENCY)
 
-        async def _limited(metric, tc):
+        async def _guarded(metric, tc):
+            if _abort.is_set():
+                return _ABORT_SENTINEL
             async with sem:
-                return await metric.a_measure(tc)
+                if _abort.is_set():
+                    return _ABORT_SENTINEL
+                try:
+                    return await metric.a_measure(tc)
+                except Exception as e:
+                    _abort.set()
+                    if not _first_error:
+                        _first_error.append(e)
+                    return _ABORT_SENTINEL
 
         return await asyncio.gather(
-            *[_limited(m, tc) for m, tc in zip(all_metrics, all_test_cases)],
+            *[_guarded(m, tc) for m, tc in zip(all_metrics, all_test_cases)],
             return_exceptions=True,
         )
 
     results = _run_async(_run_all())
     elapsed = _time.time() - t0
-    print(f"    Completed {len(all_metrics)} judge calls in {elapsed:.1f}s")
+
+    aborted = sum(1 for r in results if r is _ABORT_SENTINEL)
+    if aborted:
+        print(
+            f"    Tutor eval: {len(all_metrics) - aborted}/{len(all_metrics)} completed, "
+            f"{aborted} aborted in {elapsed:.1f}s"
+        )
+    else:
+        print(f"    Completed {len(all_metrics)} judge calls in {elapsed:.1f}s")
+
+    # If any coroutine failed, propagate the error
+    if _first_error:
+        raise _first_error[0]
 
     # ── Accumulate scores and costs by (model, dimension) ──
     model_accumulated: dict[str, dict[str, list[float]]] = {
@@ -565,12 +626,9 @@ def evaluate_tutor_dimensions(
     model_costs: dict[str, list[float]] = {name: [] for name in model_names}
 
     for i, (mname, run_idx, dim_name) in enumerate(task_keys):
-        if isinstance(results[i], Exception):
-            score = 0.5
-            cost = 0.0
-            print(
-                f"    Warning: [{mname}] {dim_name} run {run_idx + 1} "
-                f"failed: {results[i]}"
+        if results[i] is _ABORT_SENTINEL or isinstance(results[i], Exception):
+            raise RuntimeError(
+                f"Unexpected abort/error in Tutor [{mname}] {dim_name} run {run_idx + 1}"
             )
         else:
             raw_score = all_metrics[i].score
@@ -613,6 +671,7 @@ def evaluate_tutor_dimensions(
 def compute_tutor_score(
     dimension_scores: dict[str, float],
     category: Optional[str] = None,
+    requires_code: bool = False,
 ) -> float:
     """Compute the aggregate tutor score from dimension scores.
 
@@ -623,6 +682,8 @@ def compute_tutor_score(
     Args:
         dimension_scores: Dict mapping dimension name to score (0-1).
         category: TaskCategory.value for per-category weighting.
+        requires_code: Whether the task expects code output (passed
+            through to get_dimension_weight for D5 override).
 
     Returns:
         Weighted average score across all evaluated dimensions (0-1).
@@ -635,7 +696,7 @@ def compute_tutor_score(
     for dim_name, score in dimension_scores.items():
         if dim_name.startswith("_") or not isinstance(score, (int, float)):
             continue
-        w = get_dimension_weight(category, dim_name)
+        w = get_dimension_weight(category, dim_name, requires_code=requires_code)
         weighted_sum += w * score
         weight_total += w
 

@@ -240,13 +240,20 @@ def evaluate_code_execution(tool_logs: list, workspace_path: str) -> dict:
         if _PYTHON_CMD_RE.search(cmd):
             exec_calls.append(log)
 
-    # Group by script name; use LAST execution per script
+    # Group by script name; use LAST execution per script.
+    # For inline/heredoc executions (no .py filename), assign unique keys
+    # so each execution is tracked independently.
     script_results: dict[str, float] = {}
+    inline_counter = 0
     for log in exec_calls:
         cmd = log.args.get("command", "")
         # Extract script name
         match = re.search(r"([\w./\\-]+\.py)", cmd)
-        script_name = match.group(1) if match else "inline"
+        if match:
+            script_name = match.group(1)
+        else:
+            script_name = f"inline_{inline_counter}"
+            inline_counter += 1
         script_results[script_name] = _classify_exec_result(log)
 
     # Detect untested files: .py files written but never executed
@@ -333,10 +340,26 @@ def _relative_error_score(actual: float, expected: float) -> float:
 def _extract_numerical_outputs(
     workspace_path: str, tool_logs: list
 ) -> dict[str, float]:
-    """Extract numerical results from workspace JSON files and tool outputs."""
+    """Extract numerical results from workspace JSON files and tool outputs.
+
+    Uses recursive extraction (matching generate_reference.py) so nested
+    structures like evaluate_signal's ``signal_metrics.ic_mean`` are
+    captured with the same dotted-path keys used in reference data.
+    """
     results: dict[str, float] = {}
 
-    # Source 1: workspace JSON files
+    def _collect_numeric_scalars(obj, prefix: str = ""):
+        if isinstance(obj, dict):
+            for key, value in obj.items():
+                next_prefix = f"{prefix}.{key}" if prefix else str(key)
+                _collect_numeric_scalars(value, next_prefix)
+        elif isinstance(obj, list):
+            for idx, value in enumerate(obj):
+                _collect_numeric_scalars(value, f"{prefix}[{idx}]")
+        elif isinstance(obj, (int, float)):
+            results[prefix] = round(obj, 6) if isinstance(obj, float) else obj
+
+    # Source 1: workspace JSON files (highest priority)
     if workspace_path and os.path.isdir(workspace_path):
         for fname in os.listdir(workspace_path):
             if not fname.endswith(".json"):
@@ -345,15 +368,19 @@ def _extract_numerical_outputs(
             try:
                 with open(fpath) as f:
                     data = json.load(f)
-                if isinstance(data, dict):
-                    for k, v in data.items():
-                        if isinstance(v, (int, float)):
-                            results[k] = v
+                _collect_numeric_scalars(data)
             except Exception:
                 pass
 
+    source1_snapshot = dict(results)
+
     # Source 2: metric tool outputs
-    _metric_tools = {"run_backtest", "analyze_backtest_results", "compute_statistics"}
+    _metric_tools = {
+        "run_backtest",
+        "analyze_backtest_results",
+        "compute_statistics",
+        "evaluate_signal",
+    }
     for log in tool_logs or []:
         if log.name not in _metric_tools:
             continue
@@ -362,11 +389,12 @@ def _extract_numerical_outputs(
             if isinstance(data, dict):
                 metrics = data.get("metrics", data)
                 if isinstance(metrics, dict):
-                    for k, v in metrics.items():
-                        if isinstance(v, (int, float)) and k not in results:
-                            results[k] = v
+                    _collect_numeric_scalars(metrics)
         except (json.JSONDecodeError, TypeError):
             pass
+
+    # Restore Source 1 values (workspace files = final state)
+    results.update(source1_snapshot)
 
     return results
 
@@ -411,7 +439,11 @@ def evaluate_code_output(
     if ref_workspace_files:
         workspace_files = set()
         if workspace_path and os.path.isdir(workspace_path):
-            workspace_files = set(os.listdir(workspace_path))
+            workspace_files = set(
+                os.path.relpath(os.path.join(root, f), workspace_path)
+                for root, _, files in os.walk(workspace_path)
+                for f in files
+            )
         present = sum(1 for f in ref_workspace_files if f in workspace_files)
         completeness = present / len(ref_workspace_files)
     else:

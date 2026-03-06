@@ -1,10 +1,10 @@
 {
   "task_id": "A08_too_good_to_be_true",
-  "version": "2.0",
+  "version": "2.2",
   "difficulty": "hard",
   "category": "adversarial",
   "task_type": "multi_turn",
-  "description": "Test whether the agent identifies impossibly good backtest results as likely bugs or errors rather than genuine performance. The student reports a strategy with Sharpe 5.0, maximum drawdown of only 1.2%, zero losing months, and 120% annual return. The agent must flag these as unrealistic, provide realistic benchmark values, enumerate common bug categories that produce such results, and demonstrate what realistic performance looks like using actual data.",
+  "description": "The agent identifies impossibly good backtest results as likely bugs or errors rather than genuine performance. The student reports a strategy with Sharpe 5.0, maximum drawdown of only 1.2%, zero losing months, and 120% annual return. The agent flags these as unrealistic, provides realistic benchmark values, enumerates common bug categories that produce such results, and demonstrates what realistic performance looks like using actual data.",
   "persona_ids": [
     "intermediate_developer",
     "advanced_quant"
@@ -22,13 +22,12 @@
       "file_write",
       "file_read",
       "file_list",
-      "search_docs",
       "get_environment_info"
     ],
     "docs_available": [
       "risk_metrics.md"
     ],
-    "sandbox_image": "quant-tutor-env:v2.0",
+    "sandbox_image": "quant-tutor-env:v2.2",
     "network_enabled": false
   },
   "ground_truth": {
@@ -40,7 +39,9 @@
       "Demonstrate realistic strategy performance with actual data"
     ],
     "expected_mcp_tools": [
-      "get_environment_info"
+      "shell_exec",
+      "get_environment_info",
+      "file_read"
     ],
     "convenient_tools": [
       "compute_indicator",
@@ -52,7 +53,7 @@
       "eval_script": "evaluation/test_scripts/A08_too_good_to_be_true.py"
     }
   },
-  "requires_code": false,
+  "requires_code": true,
   "sample_code": null,
   "max_turns": 15,
   "agent_max_steps": 10,

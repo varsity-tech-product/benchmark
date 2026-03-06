@@ -105,7 +105,9 @@ def has_any(text: str, keywords: list[str]) -> bool:
 
 def has_regex(text: str, patterns: list[str]) -> bool:
     """Return True when any regex pattern matches."""
-    return any(re.search(pattern, text, re.IGNORECASE) for pattern in patterns)
+    return any(
+        re.search(pattern, text, re.IGNORECASE | re.MULTILINE) for pattern in patterns
+    )
 
 
 def count_keyword_groups(text: str, keyword_groups: list[list[str]]) -> int:
