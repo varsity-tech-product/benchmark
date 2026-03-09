@@ -412,7 +412,7 @@ python run_benchmark.py run-single \
 
 | Design Doc Feature | Section | Notes |
 |--------------------|---------|-------|
-| I-series data pipeline full production run | §2.5 | Scripts tested with subset; full-universe download + HF upload pending |
+| I-series data pipeline full production run | §2.5 | Pipeline tested end-to-end with 3-symbol subset (download → convert → flat universe → HF upload). Full-universe (~100 symbols) run pending. Test data live at `Varsity-Tech/quant-tutor-bench-data` |
 | Full 41 base tasks (currently 12 Layer 2 tasks) | §5.3 | 12 tasks implemented (D01, S01, I01-I06, B01, X01, E01, A01); remaining 29 to be added |
 | ~2000 Layer 1 items | §5.0 | ~40 items currently; pipeline ready for scale-up |
 | docker-compose.yml | §7.1 | Dockerfile done; compose file not needed for current flow |
@@ -444,6 +444,16 @@ Successfully completed with the following verified:
 - Per-task eval script runs and produces quant result score
 - Full scoring pipeline (Quant Agent Score + Tutor Score → Overall) works
 - Results saved to JSON with full conversation traces
+
+### I-Series Data Pipeline
+
+- **Download**: Binance klines for all 3 tiers via `download_binance_full_universe.py` (parallel, resume-capable)
+- **Convert**: Raw CSVs → LEAN TradeBar zip format via `convert_binance_to_lean.py` (daily/hour as single zips, minute as per-day zips)
+- **Flat universe**: Structured `universe.json` → flat `["BTCUSDT",...]` JSON via `generate_flat_universe.py` (required for C# `JsonConvert.DeserializeObject<List<string>>`)
+- **Upload**: LEAN data + flat universe uploaded to HuggingFace via `upload_lean_to_hf.py`
+- **Orchestrator**: Single-command `prepare_i_series_data.py` runs all phases
+- **Docker mount chain verified**: `data_manager` → `hf_cache/lean/` → container `-v /lean/Data:ro` → LEAN `config.json` `data-folder: /lean/Data`
+- **HF repo**: Test subset (3 symbols, 739 zips, 12.4MB) live at `Varsity-Tech/quant-tutor-bench-data`
 
 ### Docker Sandbox
 

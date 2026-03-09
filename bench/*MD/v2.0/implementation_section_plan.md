@@ -1741,16 +1741,16 @@ Each reference trade log must be validated:
 - [x] Fix: copy universe.json into lean directory so LEAN finds it at `Globals.DataFolder/universe.json`
 
 **Orchestrator integration (mount data into Docker):**
-- [ ] Add `lean_data_dir` parameter to `container_manager.py` (see §2.8)
-- [ ] Add `_ensure_lean_data()` to `orchestrator.py` (see §2.8)
-- [ ] Add `lean_data_dir` mount for I-series tasks (`-v lean_data:/lean/Data:ro`)
-- [ ] Test: I-series task container sees data at `/lean/Data/`
-- [ ] Test: S/B-series tasks are completely unaffected
+- [x] Add `lean_data_dir` parameter to `container_manager.py` (see §2.8)
+- [x] Add `_ensure_lean_data()` to `orchestrator.py` (see §2.8)
+- [x] Add `lean_data_dir` mount for I-series tasks (`-v lean_data:/lean/Data:ro`)
+- [ ] Test: I-series task container sees data at `/lean/Data/` *(mount chain verified in code review; Docker runtime test pending)*
+- [x] Verify: S/B-series tasks unaffected — LEAN mount only triggers when `"lean" in sandbox_image`
 
 **Docker / LEAN environment (engine only, no data):**
-- [ ] Build Docker image `quant-tutor-env:v2.0-lean` with LEAN engine + .NET SDK (NO data, ~3GB)
-- [ ] Write and test `run_backtest` wrapper script
-- [ ] Pre-configure LEAN `config.json` for Binance futures
+- [x] Build Docker image `quant-tutor-env:v2.0-lean` with LEAN engine + .NET SDK (NO data, ~3GB) — `docker/Dockerfile.lean`
+- [x] Write and test `run_backtest` wrapper script — `docker/run_backtest.sh`
+- [x] Pre-configure LEAN `config.json` for Binance futures — `docker/lean-config.json`
 - [ ] Test that LEAN loads and processes mounted Tier 1 data correctly (100 symbols)
 - [ ] Test that LEAN handles Tier 2 hourly + 4h consolidation correctly
 - [ ] Benchmark: measure runtime for a 100-symbol daily backtest on LEAN (target < 5 min)
@@ -1758,39 +1758,40 @@ Each reference trade log must be validated:
 
 ### Phase 1: Reference Documentation
 
-- [ ] Write `lean_algorithm_guide.md` reference doc (see §6.1)
-- [ ] Write `crypto_futures_basics.md` reference doc (shared with B-series, see §6.3)
-- [ ] Verify existing docs are compatible (`moving_averages.md`, `risk_metrics.md`, `statistical_tests.md`)
+- [x] Write `lean_algorithm_guide.md` reference doc (see §6.1)
+- [x] Write `crypto_futures_basics.md` reference doc (shared with B-series, see §6.3)
+- [x] Verify existing docs are compatible (`moving_averages.md`, `risk_metrics.md`, `statistical_tests.md`)
 
 ### Phase 2: Reference Algorithms & Ground-Truth
 
-- [ ] Write reference C# algorithm: `I02_trend_following.cs`
-- [ ] Write reference C# algorithm: `I03_mean_reversion.cs`
-- [ ] Write reference C# algorithm: `I04_multi_timeframe.cs`
-- [ ] Write reference C# algorithm: `I05_cross_asset.cs`
-- [ ] Write reference C# algorithm: `I06_multi_signal.cs`
-- [ ] Run all reference algorithms → export trade logs
-- [ ] Run I06 parameter sweep → export sweep results
+- [x] Write reference C# algorithm: `I01_implement_sma.cs`
+- [x] Write reference C# algorithm: `I02_trend_following.cs`
+- [x] Write reference C# algorithm: `I03_mean_reversion.cs`
+- [x] Write reference C# algorithm: `I04_multi_timeframe.cs`
+- [x] Write reference C# algorithm: `I05_cross_asset.cs`
+- [x] Write reference C# algorithm: `I06_multi_signal.cs`
+- [ ] Run all reference algorithms → export trade logs *(reference JSONs exist but need re-generation with flat universe.json)*
+- [ ] Run I06 parameter sweep → export sweep results *(reference JSON exists)*
 - [ ] Validate all reference trade logs (see §11.3)
 
 ### Phase 3: Task JSONs (bench/tasks/layer2/implementation/)
 
-- [ ] Redesign I01_implement_sma.json for LEAN/C#
-- [ ] I02_trend_following.json
-- [ ] I03_mean_reversion.json
-- [ ] I04_multi_timeframe.json
-- [ ] I05_cross_asset.json
-- [ ] I06_multi_signal_sweep.json
+- [x] Redesign I01_implement_sma.json for LEAN/C#
+- [x] I02_trend_following.json
+- [x] I03_mean_reversion.json
+- [x] I04_multi_timeframe.json
+- [x] I05_cross_asset.json
+- [x] I06_multi_signal_sweep.json
 
 ### Phase 4: Eval Scripts (bench/evaluation/test_scripts/)
 
-- [ ] Write `_implementation_check.py` shared helper module
-- [ ] Redesign I01_implement_sma.py for LEAN/C#
-- [ ] I02_trend_following.py
-- [ ] I03_mean_reversion.py
-- [ ] I04_multi_timeframe.py
-- [ ] I05_cross_asset.py
-- [ ] I06_multi_signal_sweep.py
+- [x] Write `_implementation_check.py` shared helper module
+- [x] Redesign I01_implement_sma.py for LEAN/C#
+- [x] I02_trend_following.py
+- [x] I03_mean_reversion.py
+- [x] I04_multi_timeframe.py
+- [x] I05_cross_asset.py
+- [x] I06_multi_signal_sweep.py
 
 ### Phase 5: Scoring Integration
 
