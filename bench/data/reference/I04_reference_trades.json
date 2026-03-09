@@ -1,0 +1,22 @@
+{
+  "task_id": "I04",
+  "algorithm": "I04MultiTimeframe",
+  "algorithm_file": "I04_multi_timeframe.cs",
+  "start_date": "2023-01-01",
+  "end_date": "2023-12-31",
+  "lean_image": "quantconnect/lean:latest",
+  "generated_at": null,
+  "status": "placeholder",
+  "note": "This file contains placeholder data. Run generate_lean_reference.py --task I04 to populate with actual trade logs when LEAN infrastructure is live.",
+  "metrics": {
+    "total_trades": 0,
+    "sharpe_ratio": null,
+    "total_return": null,
+    "max_drawdown": null,
+    "win_rate": null,
+    "profit_loss_ratio": null,
+    "annual_return": null
+  },
+  "trades": [],
+  "trade_count": 0
+}

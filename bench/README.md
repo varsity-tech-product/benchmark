@@ -87,8 +87,10 @@ bench/
 │   │   ├── process_metrics.py    #     DeepEval process-level metrics
 │   │   └── quant_geval.py        #     Layer 1 GEval scoring
 │   └── test_scripts/             #   Per-task eval scripts (quant result scoring)
+│       ├── _implementation_check.py   #   Shared: LEAN trade-log matching + C# pattern checks
 │       ├── D01_load_inspect_ohlcv.py
 │       ├── S01_ma_crossover.py
+│       ├── I02_trend_following.py
 │       └── ...
 │
 ├── tasks/                        # Task definitions (JSON)
@@ -122,17 +124,23 @@ bench/
 │   └── overfit_single.py         #   Over-parameterized strategy (12 params)
 │
 ├── data/                         # Frozen market data
-│   └── frozen/                   #   Static CSV files (AAPL, SPY, etc.)
+│   ├── frozen/                   #   Static CSV files (AAPL, SPY, etc.)
+│   ├── universe.json             #   Binance futures symbol universe (3 tiers + funding)
+│   └── reference/                #   Ground-truth trade logs for I-series eval
 │
 ├── docs/reference/               # Agent's reference library
 │   ├── moving_averages.md
 │   ├── backtesting_101.md
 │   ├── risk_metrics.md
 │   ├── pandas_timeseries.md
-│   └── statistical_tests.md
+│   ├── statistical_tests.md
+│   └── lean_algorithm_guide.md   #   LEAN C# algorithm guide (12 sections)
 │
 ├── docker/                       # Sandbox environment
-│   └── Dockerfile                #   Python 3.11 + pandas/numpy/scipy/etc.
+│   ├── Dockerfile                #   Python 3.11 + pandas/numpy/scipy/etc.
+│   ├── Dockerfile.lean           #   LEAN engine image (.NET 8.0 + QuantConnect)
+│   ├── lean-config.json          #   LEAN pre-configured for Binance futures
+│   └── run_backtest.sh           #   Wrapper: compile + run LEAN backtest
 │
 ├── layer1/                       # Layer 1 runner infrastructure
 │   ├── data_loader.py            #   Load synthesized single-turn items
@@ -140,7 +148,14 @@ bench/
 │
 ├── scripts/                      # Utility scripts
 │   ├── synthesize_tasks.py       #   Generate Layer 1 items from datasets
-│   └── download_frozen_data.py   #   Download static market data
+│   ├── download_frozen_data.py   #   Download static market data
+│   ├── data_manager.py           #   HuggingFace dataset download + caching
+│   ├── download_binance_full_universe.py  # Full-universe Binance kline downloader
+│   └── convert_binance_to_lean.py #  Convert Binance CSVs → LEAN TradeBar format
+│
+├── reference/                    # Reference algorithms
+│   ├── lean_algorithms/          #   C# reference implementations (I02-I06)
+│   └── generate_lean_reference.py #  Generate ground-truth trade logs from ref algos
 │
 └── results/                      # Output directory (auto-created)
     └── traces/                   #   Per-task conversation traces
@@ -163,7 +178,7 @@ Tests foundational quant knowledge via single-turn Q&A. Items sourced from FiQA,
 | Data Interpretation  | TAT-QA                                | DeepEval GEval      |
 | Multi-step Reasoning | FinQA, ConvFinQA                       | DeepEval GEval      |
 
-### Layer 2: Tutoring Skills (multi-turn, 7 tasks × 3 personas = 21 instances)
+### Layer 2: Tutoring Skills (multi-turn, 12 tasks × 3 personas = 36 instances)
 
 Tests interactive tutoring via multi-turn dialogue with tool use in a sandboxed environment.
 
@@ -172,6 +187,11 @@ Tests interactive tutoring via multi-turn dialogue with tool use in a sandboxed 
 | Data Analysis  | D01    | Load/inspect OHLCV, explain data columns   |
 | Strategy       | S01    | Design MA crossover strategy               |
 | Implementation | I01    | Implement SMA in pandas                    |
+| Implementation | I02    | Trend-following strategy (LEAN C#, ~100 symbols) |
+| Implementation | I03    | Mean-reversion strategy (LEAN C#, RSI + stop-loss) |
+| Implementation | I04    | Multi-timeframe strategy (LEAN C#, consolidators) |
+| Implementation | I05    | Cross-asset pairs trading (LEAN C#, correlation) |
+| Implementation | I06    | Multi-signal parameter sweep (LEAN C#, 21 combos) |
 | Backtest       | B01    | Interpret backtest metrics                 |
 | Debug          | X01    | Fix off-by-one bug in MA calculation       |
 | End-to-End     | E01    | Build complete MA system from scratch      |
@@ -249,14 +269,28 @@ cd bench
 docker build -t quant-tutor-env:v2.2 docker/
 ```
 
+### LEAN engine image (I02-I06)
+
+```bash
+docker build -t quant-tutor-env:v2.0-lean -f docker/Dockerfile.lean .
+```
+
+LEAN-based tasks (I02-I06) use a separate Docker image with .NET 8.0 and the QuantConnect LEAN engine. Market data is mounted read-only from a HuggingFace dataset cache via `/lean/Data`.
+
 ### Container specs
 
+**Standard image (`quant-tutor-env:v2.2`)**:
 - **Base**: Python 3.11-slim
 - **Packages**: pandas, numpy, matplotlib, scipy, statsmodels, tabulate
 - **User**: Non-root `sandbox` user
 - **Network**: `--network none` (no internet)
 - **Resources**: CPU 2 / RAM 4GB
 - **Mounts**: `/workspace` (RW), `/data` (RO), `/docs` (RO), `/student_code` (RO)
+
+**LEAN image (`quant-tutor-env:v2.0-lean`)**:
+- **Base**: quant-tutor-env:v2.2 + .NET SDK 8.0 + LEAN engine
+- **Mounts**: All standard mounts + `/lean/Data` (RO, Binance futures OHLCV)
+- **Usage**: C# algorithm compilation + LEAN backtesting (I02-I06)
 
 ### Information access control
 
@@ -375,7 +409,7 @@ python run_benchmark.py run-single \
 
 | Design Doc Feature | Section | Notes |
 |--------------------|---------|-------|
-| Full 41 base tasks (currently 7 Layer 2 tasks) | §5.3 | 7 representative tasks implemented; remaining 34 to be added |
+| Full 41 base tasks (currently 12 Layer 2 tasks) | §5.3 | 12 tasks implemented (D01, S01, I01-I06, B01, X01, E01, A01); remaining 29 to be added |
 | ~2000 Layer 1 items | §5.0 | ~40 items currently; pipeline ready for scale-up |
 | docker-compose.yml | §7.1 | Dockerfile done; compose file not needed for current flow |
 | Human annotation validation | §8 | ≥50 tasks with 3 human raters for rubric calibration |
@@ -435,7 +469,7 @@ Successfully completed with the following verified:
 1. **GenericLLMAdapter**: Only supports 1 round of tool calls per `generate_response()` invocation. Multi-step tool chains require multiple conversation turns. This makes it a pseudo-agent baseline rather than a true agent.
 2. **Max turns**: The `--max-turns` default is 5 for single task runs. Tests show multi-step tasks (S01, I01, X01) benefit significantly from `--max-turns 10` when using the OpenAI SDK adapter.
 3. **Layer 1 scale**: Currently ~40 items. The pipeline supports scaling to ~2000 items as described in the design doc.
-4. **Layer 2 tasks**: 7 of 41 planned base tasks are implemented. Each has full eval scripts, rubrics, and persona support.
+4. **Layer 2 tasks**: 12 of 41 planned base tasks are implemented. Each has full eval scripts, rubrics, and persona support. I02-I06 require the LEAN Docker image and populated reference trade logs.
 5. **Tool path mismatch**: Agents may solve tasks through different tool paths than `expected_mcp_tools` defines (e.g., using `fetch_market_data` + `compute_indicator` instead of `file_read` + `shell_exec`), resulting in Tool F1 = 0 even when the agent produces correct outputs.
 6. **Tutor dimension weakness**: D6 (Empathetic Response) and D7 (Safety Boundaries) score systematically low (~0.3) across all adapters, suggesting the system prompt needs stronger guidance for these dimensions.
 

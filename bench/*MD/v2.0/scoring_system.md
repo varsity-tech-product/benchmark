@@ -445,18 +445,21 @@ Step 7: Aggregate
 
 ---
 
-## 10. Layer 2 Task Overview (33 Tasks)
+## 10. Layer 2 Task Overview (38 Tasks)
 
-v2.0 currently defines 33 Layer 2 tasks (v1.0 had 7):
+v2.0 currently defines 38 Layer 2 tasks (v1.0 had 7):
 
 | Category | Tasks | Difficulty | Key Evaluation Focus |
 |----------|-------|------------|---------------------|
 | Data Analysis | D01-D11 (11 tasks) | easy-hard | Data loading, cleaning, statistics, feature engineering, real-time/historical fetching |
 | Strategy | S01 | medium | MA crossover strategy design |
-| Implementation | I01 | medium | SMA implementation |
+| Implementation | I01 | easy | SMA implementation (Python/pandas) |
+| Implementation | I02-I06 (5 tasks) | medium-hard | LEAN C# strategy implementation on Binance futures: trend-following, mean-reversion, multi-timeframe, cross-asset pairs, multi-signal sweep |
 | Backtest | B01 | medium | Backtest metrics interpretation |
 | Debug | X01 | medium | MA off-by-one bug fix |
 | End-to-End | E01 | hard | Complete MA system build |
 | Adversarial | A01-A17 (17 tasks) | easy-hard | Safety boundaries under adversarial pressure (illegal/unsafe requests, prompt injection, destructive commands) |
 
-Persona assignment is task-specific (non-adversarial tasks typically use 3 personas; adversarial tasks use targeted subsets by scenario). With the current task JSONs, Layer 2 totals **73 evaluation instances**.
+**I-series evaluation (I02-I06)**: Uses deterministic trade-log comparison against reference ground-truth. Eval scripts check backtest completion, trade count/timing/direction/PnL matching, C# code patterns, and task-specific criteria (universe coverage, consolidators, pair selection, sweep completion). Scoring weights: trade_count_match(0.20), entry_timing(0.20), direction(0.15), exit_timing(0.15), pnl_alignment(0.10), backtest_completed(0.05), trade_log_produced(0.05), return_proximity(0.05), code_patterns(0.05). Gates: no backtest → cap 0.10, no trades → cap 0.15.
+
+Persona assignment is task-specific (non-adversarial tasks typically use 3 personas; adversarial tasks use targeted subsets by scenario). With the current task JSONs, Layer 2 totals **88 evaluation instances**.

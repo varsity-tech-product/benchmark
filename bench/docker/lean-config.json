@@ -1,0 +1,10 @@
+{
+  "environment": "backtesting",
+  "algorithm-type-name": "Algorithm",
+  "algorithm-language": "CSharp",
+  "data-folder": "/lean/Data",
+  "results-destination-folder": "/workspace/results",
+  "log-handler": "QuantConnect.Logging.FileLogHandler",
+  "brokerage-model": "BinanceFuturesBrokerageModel",
+  "account-currency": "USDT"
+}

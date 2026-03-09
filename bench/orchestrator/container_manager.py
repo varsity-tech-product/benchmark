@@ -74,6 +74,7 @@ class ContainerManager:
         student_code_dir: Optional[str] = None,
         sandbox_image: Optional[str] = None,
         network_enabled: bool = False,
+        lean_data_dir: Optional[str] = None,
     ) -> ContainerInfo:
         """Create a sandboxed Docker container (or local workspace fallback).
 
@@ -97,6 +98,8 @@ class ContainerManager:
             ]
             if student_code_dir:
                 mounts.append(f"-v {student_code_dir}:/student_code:ro")
+            if lean_data_dir:
+                mounts.append(f"-v {lean_data_dir}:/lean/Data:ro")
 
             network_flag = "--network bridge" if network_enabled else "--network none"
             network_mode = "bridge" if network_enabled else "none"

@@ -18,12 +18,14 @@
 bench/tasks/layer2/
   ├── data_analysis/     D01–D11
   ├── strategy/          S01
-  ├── implementation/    I01
+  ├── implementation/    I01–I06
   ├── backtest/          B01
   ├── end_to_end/        E01
   ├── adversarial/       A01–A17
   └── debug/             X01
 ```
+
+> **I-series note**: I01 is a Python/pandas task. I02-I06 are LEAN engine C# tasks using `sandbox_image: "quant-tutor-env:v2.0-lean"` and require Binance futures data mounted at `/lean/Data`.
 
 ### 1.2 Complete Field Reference
 
@@ -131,7 +133,7 @@ BAD (beginner):
 - `core_mcp_tools`: Recommended minimum set is `["shell_exec", "file_write", "file_read", "file_list", "get_environment_info"]`. Add more as needed per task.
 - `convenient_tools`: Must not overlap with `core_mcp_tools`.
 - `expected_mcp_tools`: Tools the agent should call to complete the task.
-- `sandbox_image`: Currently use `"quant-tutor-env:v2.2"` uniformly.
+- `sandbox_image`: Use `"quant-tutor-env:v2.2"` for Python tasks. Use `"quant-tutor-env:v2.0-lean"` for LEAN C# tasks (I02-I06).
 - `network_enabled`: `false` for most tasks; `true` for tasks requiring external API access.
 - `requires_code`: Affects QR blending formula (code tasks include the code_eval dimension) and QP gating for adversarial tasks (see §1.5 table).
 - `sample_code`: Only used for debug-category tasks; points to the student's buggy code.
@@ -224,11 +226,15 @@ Only listed docs are mounted into the container's `/docs` directory.
 bench/evaluation/test_scripts/
   ├── _data_source_check.py      # Shared: data source verification
   ├── _safety_pattern_check.py   # Shared: safety violation detection (strip_comments, code_indicator gate)
+  ├── _implementation_check.py   # Shared: LEAN trade-log matching, C# pattern scanning
   ├── D01_load_inspect_ohlcv.py
   ├── D05_return_computation.py
+  ├── I02_trend_following.py     # I-series eval: trade matching + universe coverage
   ├── ...
   └── X01_debug_backtest.py
 ```
+
+> **`_implementation_check.py`**: Shared helper for I02-I06 eval scripts. Provides `load_reference_trades()`, `load_agent_trades()`, `match_trades()` (trade-log comparison with time/direction/PnL tolerances), `check_csharp_patterns()`, `collect_lean_results()`, and `compute_trade_log_score()`.
 
 Naming convention: `{task_id}.py`
 

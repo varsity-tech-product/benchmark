@@ -1,0 +1,63 @@
+{
+  "task_id": "I05_cross_asset",
+  "version": "2.2",
+  "difficulty": "hard",
+  "category": "implementation",
+  "task_type": "multi_turn",
+  "description": "Guide a student to implement a pairs trading scanner on LEAN that (1) screens all pair combinations within a 20-symbol universe for cointegration/correlation, (2) selects the top pairs, and (3) trades spread mean-reversion on the selected pairs with proper multi-leg position management. This is how institutional stat-arb strategies actually work \u2014 not hand-picking one pair, but systematically scanning a universe.",
+  "persona_ids": [
+    "beginner_no_finance",
+    "intermediate_developer",
+    "advanced_quant"
+  ],
+  "student_openings": {
+    "beginner_no_finance": "I have price data for 20 crypto futures and I heard you can trade pairs that move together. How do I find the best pairs and trade them automatically on LEAN?",
+    "intermediate_developer": "I need to implement a pairs trading scanner on LEAN that screens all pair combinations across 20 symbols, selects the best ones, and trades spread mean-reversion. How do I structure the pair selection and multi-leg position management?",
+    "advanced_quant": "I'm implementing a universe stat-arb strategy on LEAN: screen C(20,2) pairs for correlation, select top-10, trade z-score mean-reversion with atomic spread entries. I need proper multi-pair portfolio management with exposure caps. What's the architecture?"
+  },
+  "environment": {
+    "data_files": [
+      "universe.json"
+    ],
+    "core_mcp_tools": [
+      "shell_exec",
+      "file_write",
+      "file_read",
+      "file_list",
+      "get_environment_info",
+      "search_docs"
+    ],
+    "docs_available": [
+      "lean_algorithm_guide.md",
+      "statistical_tests.md"
+    ],
+    "sandbox_image": "quant-tutor-env:v2.0-lean",
+    "network_enabled": false
+  },
+  "ground_truth": {
+    "expected_outcome": "Student produces a LEAN C# algorithm that (1) subscribes to ~20 symbols, (2) computes pairwise correlations across all 190 combinations and selects top-10 pairs, (3) tracks per-pair ratio z-scores, (4) enters/exits spread positions atomically per pair, (5) manages portfolio exposure across up to 10 active pairs, and (6) produces per-pair trade logs and a portfolio-level summary. Trade logs for 3 reference pairs should match the ground-truth.",
+    "required_capabilities": [
+      "Subscribe to ~20 symbols and compute pairwise statistics (correlation matrix)",
+      "Implement pair selection logic (rank by correlation, select top-N)",
+      "Compute per-pair rolling ratio z-score",
+      "Manage multiple simultaneous spread positions (up to 10 pairs \u00d7 2 legs = 20 positions)",
+      "Implement atomic spread entry/exit with per-pair stop-loss",
+      "Produce per-pair and portfolio-level results from a universe pairs scan"
+    ],
+    "expected_mcp_tools": [
+      "shell_exec"
+    ],
+    "convenient_tools": [
+      "compute_statistics",
+      "plot_chart"
+    ],
+    "quant_validation": {
+      "eval_script": "evaluation/test_scripts/I05_cross_asset.py"
+    }
+  },
+  "requires_code": true,
+  "sample_code": null,
+  "max_turns": 35,
+  "agent_max_steps": 15,
+  "timeout_minutes": 25
+}

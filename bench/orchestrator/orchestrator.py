@@ -82,6 +82,7 @@ class BenchmarkOrchestrator:
         self.personas_dir = self.bench_root / "personas"
         self.results_dir = self.bench_root / "results"
         self.container_manager = ContainerManager(use_docker=use_docker)
+        self._lean_data_paths = None  # Lazy-loaded for I-series
         self.max_concurrent = max_concurrent
         # Keep eval_model as raw (string/list/None) so each downstream
         # resolve_deepeval_model() call can randomly pick from the model list.
@@ -100,6 +101,13 @@ class BenchmarkOrchestrator:
         persona_path = self.personas_dir / f"{persona_id}.json"
         with open(persona_path) as f:
             return StudentPersona(**json.load(f))
+
+    def _ensure_lean_data(self):
+        """Download LEAN data from HF if not cached. Called once, cached."""
+        if self._lean_data_paths is None:
+            from scripts.data_manager import ensure_data
+            self._lean_data_paths = ensure_data(series="i")
+        return self._lean_data_paths
 
     def run_single_task(
         self,
@@ -144,6 +152,17 @@ class BenchmarkOrchestrator:
                 )
             )
 
+            # Detect I-series LEAN tasks and ensure data is available
+            lean_data_dir = None
+            sandbox_img = task.environment.sandbox_image if task.environment else ""
+            if sandbox_img and "lean" in sandbox_img:
+                paths = self._ensure_lean_data()
+                lean_data_dir = paths.lean_data
+                # Stage universe.json from HF cache into data_dir for I-series
+                if paths.universe and os.path.exists(paths.universe):
+                    import shutil as _shutil
+                    _shutil.copy2(paths.universe, os.path.join(staged_data_dir, "universe.json"))
+
             # 1b. Create sandbox container (Docker or local fallback)
             container = self.container_manager.create_container(
                 task_id=f"{task.task_id}_{persona.persona_id}_{run_index}",
@@ -158,6 +177,7 @@ class BenchmarkOrchestrator:
                 network_enabled=(
                     task.environment.network_enabled if task.environment else False
                 ),
+                lean_data_dir=lean_data_dir,
             )
 
             # 1b.5. Start tool executor daemon inside the container (Docker only).

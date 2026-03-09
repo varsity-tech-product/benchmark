@@ -53,14 +53,13 @@ _CATEGORY_RUBRICS = {
         "were discussed honestly."
     ),
     "implementation": (
-        "Focus on: (1) code correctness (produces expected numerical "
-        "output matching known reference values); (2) appropriate use "
-        "of pandas/numpy APIs (rolling().mean(), pct_change(), vectorized "
-        "operations); (3) edge case handling (NaN at series boundaries, "
-        "alignment issues, insufficient data); (4) computational "
-        "efficiency (vectorized over iterative, avoiding unnecessary "
-        "copies); (5) verification against known values or manual "
-        "calculation to confirm implementation correctness."
+        "Focus on: (1) code correctness (produces expected output matching reference — "
+        "for LEAN C# tasks, trades match ground-truth in timing and direction; for Python "
+        "tasks, numerical values match known references); (2) completeness (all specified "
+        "rules implemented: entry, exit, stop-loss, position sizing); (3) API usage "
+        "(correct use of LEAN C# API or pandas/numpy as appropriate); (4) execution "
+        "(backtest or script runs to completion and produces valid output); (5) "
+        "interpretation (agent explains results meaningfully)."
     ),
     "backtest": (
         "Focus on: (1) correct interpretation of backtest metrics "

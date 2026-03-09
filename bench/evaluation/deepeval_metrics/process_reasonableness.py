@@ -71,8 +71,11 @@ CATEGORY_PROCESS_CRITERIA = {
         "and should discuss why the signal might work or fail."
     ),
     "implementation": (
-        "Expected flow: design approach → write code → test execution → "
-        "iterate on errors. Agent should test code before declaring it complete."
+        "Expected flow: understand strategy spec → set up LEAN algorithm structure → "
+        "implement indicators → implement entry/exit logic → handle edge cases (warm-up, "
+        "position state) → run backtest → inspect trade log → verify against spec → "
+        "iterate if trades don't match. For non-LEAN tasks: design approach → write code "
+        "→ test execution → iterate on errors."
     ),
     "backtest": (
         "Expected flow: obtain data → define strategy → run backtest → "

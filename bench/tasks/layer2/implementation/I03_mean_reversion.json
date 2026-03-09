@@ -1,0 +1,63 @@
+{
+  "task_id": "I03_mean_reversion",
+  "version": "2.2",
+  "difficulty": "medium",
+  "category": "implementation",
+  "task_type": "multi_turn",
+  "description": "Guide a student to implement an RSI mean-reversion strategy with asymmetric entry/exit thresholds and stop-loss across the full Binance futures universe on LEAN. Unlike I02's simple crossover, this task requires per-symbol entry price tracking, long/short state machines, stop-loss logic, and risk-based position sizing that limits exposure per symbol. At universe scale, the student must manage ~100 independent position state machines concurrently.",
+  "persona_ids": [
+    "beginner_no_finance",
+    "intermediate_developer",
+    "advanced_quant"
+  ],
+  "student_openings": {
+    "beginner_no_finance": "I want to test a buy-low-sell-high strategy with stop-losses on all the crypto futures in my dataset \u2014 about 100 of them. How do I manage all those positions at once on LEAN?",
+    "intermediate_developer": "I'm implementing a universe-wide RSI mean-reversion strategy on LEAN. Each symbol needs its own state machine for long/short/flat with stop-loss tracking. How do I structure this for ~100 symbols?",
+    "advanced_quant": "I need a universe-wide RSI mean-reversion implementation on LEAN with per-symbol asymmetric thresholds, 5% stop-loss, 2% risk budget per position, and tagged exit reasons across ~100 crypto futures. What's the cleanest architecture?"
+  },
+  "environment": {
+    "data_files": [
+      "universe.json"
+    ],
+    "core_mcp_tools": [
+      "shell_exec",
+      "file_write",
+      "file_read",
+      "file_list",
+      "get_environment_info",
+      "search_docs"
+    ],
+    "docs_available": [
+      "lean_algorithm_guide.md",
+      "moving_averages.md"
+    ],
+    "sandbox_image": "quant-tutor-env:v2.0-lean",
+    "network_enabled": false
+  },
+  "ground_truth": {
+    "expected_outcome": "Student produces a LEAN C# algorithm that (1) subscribes to ~100 symbols and creates per-symbol RSI indicators, (2) implements RSI entry/exit and stop-loss logic independently per symbol, (3) manages per-symbol position state (flat/long/short) with entry price tracking, (4) implements risk-based position sizing (2% per position, capped total), (5) tags exit reasons (RSI signal vs stop-loss) in the trade log, and (6) produces universe-level aggregated statistics. Per-symbol trades for 10 reference symbols should match the ground-truth.",
+    "required_capabilities": [
+      "Manage per-symbol RSI indicators and position state at scale (~100 symbols)",
+      "Implement asymmetric entry/exit logic with per-symbol state machine",
+      "Track entry prices per symbol and compute stop-loss conditions",
+      "Handle long/short positions without overlap, independently per symbol",
+      "Implement risk-based position sizing (per-symbol cap + total exposure cap)",
+      "Tag exit reasons and produce universe-level aggregated statistics"
+    ],
+    "expected_mcp_tools": [
+      "shell_exec"
+    ],
+    "convenient_tools": [
+      "compute_indicator",
+      "plot_chart"
+    ],
+    "quant_validation": {
+      "eval_script": "evaluation/test_scripts/I03_mean_reversion.py"
+    }
+  },
+  "requires_code": true,
+  "sample_code": null,
+  "max_turns": 30,
+  "agent_max_steps": 12,
+  "timeout_minutes": 20
+}
