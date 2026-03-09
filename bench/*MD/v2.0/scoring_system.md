@@ -453,8 +453,7 @@ v2.0 currently defines 38 Layer 2 tasks (v1.0 had 7):
 |----------|-------|------------|---------------------|
 | Data Analysis | D01-D11 (11 tasks) | easy-hard | Data loading, cleaning, statistics, feature engineering, real-time/historical fetching |
 | Strategy | S01 | medium | MA crossover strategy design |
-| Implementation | I01 | easy | SMA implementation (Python/pandas) |
-| Implementation | I02-I06 (5 tasks) | medium-hard | LEAN C# strategy implementation on Binance futures: trend-following, mean-reversion, multi-timeframe, cross-asset pairs, multi-signal sweep |
+| Implementation | I01-I06 (6 tasks) | easy-hard | LEAN C# strategy implementation on Binance futures: SMA trend filter, trend-following, mean-reversion, multi-timeframe, cross-asset pairs, multi-signal sweep |
 | Backtest | B01 | medium | Backtest metrics interpretation |
 | Debug | X01 | medium | MA off-by-one bug fix |
 | End-to-End | E01 | hard | Complete MA system build |

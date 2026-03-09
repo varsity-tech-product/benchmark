@@ -186,7 +186,7 @@ Tests interactive tutoring via multi-turn dialogue with tool use in a sandboxed 
 |----------------|--------|--------------------------------------------|
 | Data Analysis  | D01    | Load/inspect OHLCV, explain data columns   |
 | Strategy       | S01    | Design MA crossover strategy               |
-| Implementation | I01    | Implement SMA in pandas                    |
+| Implementation | I01    | Implement SMA trend filter (LEAN C#, single symbol) |
 | Implementation | I02    | Trend-following strategy (LEAN C#, ~100 symbols) |
 | Implementation | I03    | Mean-reversion strategy (LEAN C#, RSI + stop-loss) |
 | Implementation | I04    | Multi-timeframe strategy (LEAN C#, consolidators) |

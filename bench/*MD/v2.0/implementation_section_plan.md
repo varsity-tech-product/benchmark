@@ -755,11 +755,11 @@ The `run_backtest` wrapper script (pre-installed in the sandbox) handles:
 
 ### 4.0 Existing Task: I01 — Implement SMA
 
-**Status**: Exists but needs **redesign**. Current I01 is a simple Python `rolling().mean()` exercise with no backtest engine. Under the new I-series philosophy, I01 should be redesigned as the simplest LEAN C# algorithm — implementing SMA crossover on LEAN as the entry-level task.
+**Status**: **Redesigned** to LEAN C#. I01 is now the simplest LEAN strategy — a single-symbol (BTCUSDT) SMA(20) trend filter on daily bars. Price > SMA → long 100%; Price < SMA → flatten. This serves as the "hello world" for LEAN C# development, naturally leading into I02's multi-symbol scaling.
 
-**Redesigned I01 scope**: Given AAPL daily data (stock, not crypto — to keep it simple) and a clear SMA crossover spec, write a LEAN C# algorithm that trades the crossover and produces a trade log. This serves as the "hello world" for LEAN C# development.
+**Scope**: Subscribe to BTCUSDT daily futures via `AddCryptoFuture`, create `SMA(20)` indicator, implement price-vs-SMA entry/exit in `OnData`, handle warm-up with `SetWarmUp`, and produce a trade log. Evaluation uses the same trade-log matching infrastructure as I02-I06.
 
-> Note: I01 redesign details are deferred. The task JSON and eval script need updating to match the LEAN/C# paradigm. The existing I01 can be kept as a legacy reference until the redesign is complete.
+**Files**: `I01_implement_sma.json` (task), `I01_implement_sma.py` (eval), `I01_implement_sma.cs` (reference algorithm), `I01_reference_trades.json` (placeholder).
 
 ---
 
@@ -1642,7 +1642,7 @@ BAD (beginner, I02):
 
 | Task | Title | Difficulty | Data Tier | Symbols | Timeframes | Strategy | Key Challenge | Pairs With |
 |------|-------|-----------|-----------|---------|------------|----------|---------------|------------|
-| I01 | SMA on LEAN | easy | Stock | 1 (AAPL) | 1d | SMA crossover | LEAN hello-world | — |
+| I01 | SMA Trend Filter | easy | Tier 1 | 1 (BTCUSDT) | 1d | Price vs SMA(20) | LEAN hello-world (single symbol) | — |
 | I02 | Universe Trend | medium | Tier 1 | ~100 | 1d | Dual MA crossover | Universe-scale per-symbol indicators | S02 |
 | I03 | Universe Reversion | medium | Tier 1 | ~100 | 1d | RSI + stop-loss | Per-symbol state machines at scale | S03 |
 | I04 | Multi-TF Multi-Asset | hard | Tier 2 | ~20 | 1h → 4h | 4h trend + 1h entry | Per-symbol consolidators | S04 |

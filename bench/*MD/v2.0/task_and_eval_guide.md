@@ -25,7 +25,7 @@ bench/tasks/layer2/
   └── debug/             X01
 ```
 
-> **I-series note**: I01 is a Python/pandas task. I02-I06 are LEAN engine C# tasks using `sandbox_image: "quant-tutor-env:v2.0-lean"` and require Binance futures data mounted at `/lean/Data`.
+> **I-series note**: All I-series tasks (I01-I06) are LEAN engine C# tasks using `sandbox_image: "quant-tutor-env:v2.0-lean"` and require Binance futures data mounted at `/lean/Data`. I01 is a single-symbol entry-level task; I02-I06 scale to multi-symbol universe strategies.
 
 ### 1.2 Complete Field Reference
 
