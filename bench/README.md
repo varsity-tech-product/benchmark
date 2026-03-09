@@ -151,10 +151,13 @@ bench/
 │   ├── download_frozen_data.py   #   Download static market data
 │   ├── data_manager.py           #   HuggingFace dataset download + caching
 │   ├── download_binance_full_universe.py  # Full-universe Binance kline downloader
-│   └── convert_binance_to_lean.py #  Convert Binance CSVs → LEAN TradeBar format
+│   ├── convert_binance_to_lean.py #  Convert Binance CSVs → LEAN TradeBar format
+│   ├── generate_flat_universe.py #   Structured universe.json → flat JSON for C# algos
+│   ├── upload_lean_to_hf.py      #   Upload LEAN data + universe to HuggingFace
+│   └── prepare_i_series_data.py  #   End-to-end pipeline orchestrator (download→convert→upload)
 │
 ├── reference/                    # Reference algorithms
-│   ├── lean_algorithms/          #   C# reference implementations (I02-I06)
+│   ├── lean_algorithms/          #   C# reference implementations (I01-I06)
 │   └── generate_lean_reference.py #  Generate ground-truth trade logs from ref algos
 │
 └── results/                      # Output directory (auto-created)
@@ -269,13 +272,13 @@ cd bench
 docker build -t quant-tutor-env:v2.2 docker/
 ```
 
-### LEAN engine image (I02-I06)
+### LEAN engine image (I01-I06)
 
 ```bash
 docker build -t quant-tutor-env:v2.0-lean -f docker/Dockerfile.lean .
 ```
 
-LEAN-based tasks (I02-I06) use a separate Docker image with .NET 8.0 and the QuantConnect LEAN engine. Market data is mounted read-only from a HuggingFace dataset cache via `/lean/Data`.
+LEAN-based tasks (I01-I06) use a separate Docker image with .NET 8.0 and the QuantConnect LEAN engine. Market data is mounted read-only from a HuggingFace dataset cache via `/lean/Data`.
 
 ### Container specs
 
@@ -409,6 +412,7 @@ python run_benchmark.py run-single \
 
 | Design Doc Feature | Section | Notes |
 |--------------------|---------|-------|
+| I-series data pipeline full production run | §2.5 | Scripts tested with subset; full-universe download + HF upload pending |
 | Full 41 base tasks (currently 12 Layer 2 tasks) | §5.3 | 12 tasks implemented (D01, S01, I01-I06, B01, X01, E01, A01); remaining 29 to be added |
 | ~2000 Layer 1 items | §5.0 | ~40 items currently; pipeline ready for scale-up |
 | docker-compose.yml | §7.1 | Dockerfile done; compose file not needed for current flow |
@@ -469,7 +473,7 @@ Successfully completed with the following verified:
 1. **GenericLLMAdapter**: Only supports 1 round of tool calls per `generate_response()` invocation. Multi-step tool chains require multiple conversation turns. This makes it a pseudo-agent baseline rather than a true agent.
 2. **Max turns**: The `--max-turns` default is 5 for single task runs. Tests show multi-step tasks (S01, I01, X01) benefit significantly from `--max-turns 10` when using the OpenAI SDK adapter.
 3. **Layer 1 scale**: Currently ~40 items. The pipeline supports scaling to ~2000 items as described in the design doc.
-4. **Layer 2 tasks**: 12 of 41 planned base tasks are implemented. Each has full eval scripts, rubrics, and persona support. I02-I06 require the LEAN Docker image and populated reference trade logs.
+4. **Layer 2 tasks**: 12 of 41 planned base tasks are implemented. Each has full eval scripts, rubrics, and persona support. I01-I06 require the LEAN Docker image, populated reference trade logs, and LEAN-format market data (via `prepare_i_series_data.py` pipeline).
 5. **Tool path mismatch**: Agents may solve tasks through different tool paths than `expected_mcp_tools` defines (e.g., using `fetch_market_data` + `compute_indicator` instead of `file_read` + `shell_exec`), resulting in Tool F1 = 0 even when the agent produces correct outputs.
 6. **Tutor dimension weakness**: D6 (Empathetic Response) and D7 (Safety Boundaries) score systematically low (~0.3) across all adapters, suggesting the system prompt needs stronger guidance for these dimensions.
 

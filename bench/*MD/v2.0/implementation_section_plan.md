@@ -1,6 +1,6 @@
 # Implementation Section (I-Series) Design Plan
 
-> Version: v2.0 | Status: Draft | Section: Strategy Implementation on LEAN Engine
+> Version: v2.1 | Status: In Progress — data pipeline tested, full-universe run pending | Section: Strategy Implementation on LEAN Engine
 
 ---
 
@@ -1711,14 +1711,16 @@ Each reference trade log must be validated:
 ### Phase 0: Infrastructure (Prerequisites)
 
 **Data pipeline (run once by maintainers):**
-- [ ] Finalize `universe.json` — rank all USDT-M perpetuals by 2024 avg daily volume, select top 100 for Tier 1, top 20 for Tier 2, top 5 for Tier 3
-- [ ] Write `bench/scripts/download_binance_full_universe.py` — bulk download with parallelism, resume, checksum verification
-- [ ] Download Tier 1: ~100 symbols × 1d (from listing date → 2024-12-31)
-- [ ] Download Tier 2: ~20 symbols × 1h + 4h (2022-01-01 → 2024-12-31)
-- [ ] Download Tier 3: ~5 symbols × 5m + 1m (2024-01-01 → 2024-12-31)
-- [ ] Download funding rates: ~20 symbols (from listing date → 2024-12-31)
-- [ ] Write `bench/scripts/convert_binance_to_lean.py` — Binance CSV → LEAN format converter for all tiers/timeframes
-- [ ] Convert all tiers to LEAN format and validate
+- [x] Finalize `universe.json` — rank all USDT-M perpetuals by 2024 avg daily volume, select top 100 for Tier 1, top 20 for Tier 2, top 5 for Tier 3
+- [x] Write `bench/scripts/download_binance_full_universe.py` — bulk download with parallelism, resume, checksum verification
+- [ ] Download Tier 1: ~100 symbols × 1d (from listing date → 2024-12-31) *(tested with 3-symbol subset)*
+- [ ] Download Tier 2: ~20 symbols × 1h + 4h (2022-01-01 → 2024-12-31) *(tested with 2-symbol subset)*
+- [ ] Download Tier 3: ~5 symbols × 5m + 1m (2024-01-01 → 2024-12-31) *(tested with 1-symbol subset)*
+- [ ] Download funding rates: ~20 symbols (from listing date → 2024-12-31) *(tested with 2-symbol subset)*
+- [x] Write `bench/scripts/convert_binance_to_lean.py` — Binance CSV → LEAN format converter for all tiers/timeframes
+- [ ] Convert all tiers to LEAN format and validate *(tested with subset; full run pending)*
+- [x] Write `bench/scripts/generate_flat_universe.py` — structured universe.json → flat JSON array for C# algorithms
+- [x] Write `bench/scripts/prepare_i_series_data.py` — single-command orchestrator for full pipeline (download → convert → flat universe → upload → verify)
 
 **HuggingFace dataset (decoupled storage):**
 - [ ] Create HF dataset repo `{org}/quant-tutor-bench-data`
@@ -1728,13 +1730,15 @@ Each reference trade log must be validated:
 - [ ] Upload LEAN-format data to `lean/`
 - [ ] Upload `universe.json` to `raw/i-series/`
 - [ ] Tag initial dataset version (commit hash for reproducibility)
+- [x] Write `bench/scripts/upload_lean_to_hf.py` — upload LEAN data + flat universe.json via `upload_folder()`
 
 **Data manager (runtime download + cache):**
-- [ ] Write `bench/scripts/data_manager.py` (see §2.7)
+- [x] Write `bench/scripts/data_manager.py` (see §2.7)
 - [ ] Add `huggingface_hub` to `bench/requirements.txt`
-- [ ] Add `bench/data/hf_cache/` to `.gitignore`
+- [x] Add `bench/data/hf_cache/` to `.gitignore`
 - [ ] Test: first run downloads data; second run uses cache
 - [ ] Test: `revision` parameter pins to specific HF commit
+- [x] Fix: copy universe.json into lean directory so LEAN finds it at `Globals.DataFolder/universe.json`
 
 **Orchestrator integration (mount data into Docker):**
 - [ ] Add `lean_data_dir` parameter to `container_manager.py` (see §2.8)
@@ -1868,7 +1872,7 @@ Each reference trade log must be validated:
 
 1. **LEAN version pinning**: Which LEAN version to freeze? Latest stable release at build time?
 2. **Funding rate data in LEAN**: LEAN may not natively support custom funding rate data. I06 may need a custom data reader or a pre-computed funding column merged into kline data. Need to prototype.
-3. **I01 redesign timeline**: Should I01 be redesigned before or after I02–I06 are built?
+3. ~~**I01 redesign timeline**: Should I01 be redesigned before or after I02–I06 are built?~~ **Resolved**: I01 redesigned to LEAN C# single-symbol SMA; added to `TASK_ALGO_MAP` and `class_name_map` in `generate_lean_reference.py`.
 4. **HuggingFace access**: Public or private dataset repo? If private, how to distribute access tokens for CI/CD and collaborators?
 5. **Trade log tolerance tuning**: The ±1 bar tolerance and percentage thresholds in §7.1.2 need calibration after running reference algorithms — universe-scale strategies may have more variance.
 6. **Symbol selection criteria**: Exact methodology for ranking symbols by volume — use 2024 average, or 2021-2024 average? How to handle symbols that were delisted/relisted?
