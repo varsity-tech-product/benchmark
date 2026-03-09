@@ -37,7 +37,7 @@ The agent under test is **not** building the engine (that's B-series) or discove
 └─────────────────────────────────────────────────────┘
 ```
 
-**The core evaluation question**: Does the agent correctly translate a strategy specification into working LEAN C# code that produces trades matching the expected ground-truth trade log? A weak agent writes code that compiles but produces wrong signals, misses edge cases, or misuses the LEAN API. A strong agent produces an algorithm whose trade log closely matches the reference implementation.
+**The core evaluation question**: Does the agent correctly translate a strategy specification into working LEAN C# code that is **behaviorally equivalent** to the reference implementation? Evaluation measures this through signal agreement, position overlap, portfolio metrics, and relaxed trade similarity — not exact trade identity. A weak agent writes code that compiles but produces wrong signals, misses edge cases, or misuses the LEAN API. A strong agent produces an algorithm whose positions and performance closely match the strategy specification.
 
 ### 1.2 Why C# on LEAN
 
@@ -1976,15 +1976,16 @@ Trade similarity       0.10   (relaxed trade matcher, 2-bar tolerance)
 
 #### 7.1.1 Reference Data Files (per task)
 
-Each task has three reference data files beyond the existing trade log:
+Each task has two reference data files beyond the existing trade log:
 
 ```
 bench/data/reference/
 ├── I0X_reference_trades.json      # Existing: LEAN round-trip trades
 ├── I0X_reference_signals.json     # NEW: deterministic Python signals
-├── I0X_reference_positions.json   # NEW: daily positions from LEAN orders
 └── I0X_reference_summary.json     # NEW: standardized performance metrics
 ```
+
+Reference positions are **not stored as files** — they are reconstructed from `reference_trades.json` at evaluation time via `reconstruct_positions()`. This avoids reference drift and version mismatches between trades and positions.
 
 **Signal file schema** (`I0X_reference_signals.json`):
 ```json
@@ -2053,13 +2054,15 @@ All layer scores are **continuous [0.0, 1.0]**, not binary pass/fail:
 **Signal agreement** (`score_signal_agreement`):
 Per (date, symbol): compare reference signal direction vs `sign(agent_position)`.
 - `+1.0` if directions match
-- `+0.5` if one is zero (flat)
+- `+0.3` if one is zero (missed signal or unnecessary flat — penalizes more than a half-credit)
 - `+0.0` if directions oppose
 Returns weighted mean across all dates/symbols.
 
 **Position overlap** (`score_position_overlap`):
-Per (date, symbol): `overlap = 1 - |ref - agent| / max(|ref|, |agent|, ε)`.
-Notional-weighted average across all dates/symbols. Clamped to [0, 1].
+Split into two components to avoid false positives from tiny positions:
+- **Direction agreement (0.70)**: `sign(ref) == sign(agent)` — fraction of days where direction matches.
+- **Size similarity (0.30)**: `min(|ref|, |agent|) / max(|ref|, |agent|)` — only computed when both are non-zero.
+Final score: `0.70 * direction_score + 0.30 * size_score`. Range [0.0, 1.0].
 
 **Performance** (`score_performance`):
 Compare Sharpe, return, drawdown, trade count. Each sub-metric: `proximity = 1 - |ref - agent| / max(|ref|, |agent|, ε)`. Equal-weighted average.
@@ -2082,12 +2085,12 @@ This ensures the composite stays in [0.0, 1.0] regardless of how many layers are
 
 | Test Case | Signal | Position | Performance | Trade | Composite |
 |-----------|--------|----------|-------------|-------|-----------|
-| Self-test (reference as agent) | 0.742 | 1.000 | 1.000 | 1.000 | **0.897** |
-| Shifted by 10 days | 0.597 | 0.522 | 0.855 | 0.729 | **0.639** |
-| Inverted direction | 0.258 | 0.000 | 1.000 | 0.350 | **0.338** |
+| Self-test (reference as agent) | 0.658 | 1.000 | 1.000 | 1.000 | **0.863** |
+| Shifted by 30 days | 0.445 | 0.543 | ~0.85 | ~0.60 | **0.603** |
+| Inverted direction | 0.174 | 0.300 | 1.000 | ~0.35 | **~0.38** |
 | Empty workspace | — | — | — | — | **0.000** |
 
-The self-test signal score (0.742) is intentionally below 1.0: the I01 strategy is long-only (goes flat when signal=-1, not short), so agent position=0 when signal=-1 yields 0.5 credit. This correctly penalizes the theoretical signal vs practical implementation gap.
+The self-test signal score (0.658) is intentionally below 1.0: the I01 strategy is long-only (goes flat when signal=-1, not short), so agent position=0 when signal=-1 yields only 0.3 credit. The position overlap's direction+size split means inverted gives 0.30 (size matches but direction doesn't).
 
 ### 7.2 Shared Eval Helper: `_implementation_check.py`
 
@@ -2110,6 +2113,7 @@ Shared eval helper module for I-series. Contains both the original trade-matchin
 # ── New reference loaders ──
 - load_reference_signals(task_id) → dict
 - load_reference_positions(task_id) → dict
+    Reconstructs from reference trades at runtime (no separate positions file).
 - load_reference_summary(task_id) → dict
 
 # ── New agent data extraction ──

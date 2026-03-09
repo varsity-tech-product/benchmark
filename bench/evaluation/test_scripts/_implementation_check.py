@@ -394,15 +394,29 @@ def load_reference_signals(task_id: str) -> dict:
 
 
 def load_reference_positions(task_id: str) -> dict:
-    """Load reference positions from bench/data/reference/I0X_reference_positions.json."""
-    path = _REFERENCE_DIR / f"{task_id}_reference_positions.json"
-    if not path.exists():
-        return {}
-    try:
-        with open(path) as f:
-            return json.load(f)
-    except (json.JSONDecodeError, IOError):
-        return {}
+    """Reconstruct reference positions from reference trades at runtime.
+
+    No separate positions file needed — avoids reference drift.
+    """
+    ref_trades = load_reference_trades(task_id)
+    if not ref_trades:
+        return {"task_id": task_id, "positions": {}}
+
+    # Determine date range from the trades file's parent JSON
+    ref_path = _REFERENCE_DIR / f"{task_id}_reference_trades.json"
+    start_date = "2024-02-01"
+    end_date = "2024-12-31"
+    if ref_path.exists():
+        try:
+            with open(ref_path) as f:
+                meta = json.load(f)
+            start_date = meta.get("start_date", start_date)
+            end_date = meta.get("end_date", end_date)
+        except (json.JSONDecodeError, IOError):
+            pass
+
+    positions = reconstruct_positions(ref_trades, start_date, end_date)
+    return {"task_id": task_id, "positions": positions}
 
 
 def load_reference_summary(task_id: str) -> dict:
@@ -632,7 +646,8 @@ def score_signal_agreement(
 ) -> float:
     """Compare reference signal direction vs sign(agent_position).
 
-    Per (date, symbol): +1.0 if match, +0.5 if one is 0, +0.0 if oppose.
+    Per (date, symbol): +1.0 if match, +0.3 if one is 0 (missed signal
+    or flat when should be active), +0.0 if oppose.
     Returns weighted mean. Range [0.0, 1.0].
     """
     signals_by_sym = ref_signals.get("signals", {})
@@ -657,7 +672,7 @@ def score_signal_agreement(
             if ref_sig == agent_sig:
                 total_score += 1.0
             elif ref_sig == 0 or agent_sig == 0:
-                total_score += 0.5
+                total_score += 0.3  # missed signal or unnecessary flat
             else:
                 total_score += 0.0  # opposing directions
 
@@ -670,20 +685,24 @@ def score_position_overlap(
     ref_positions: dict,
     agent_positions: dict[str, list[dict]],
 ) -> float:
-    """Compare position magnitudes per symbol per day.
+    """Compare positions per symbol per day via direction + size.
 
-    overlap = 1 - |ref-agent|/max(|ref|,|agent|,eps).
-    Notional-weighted average. Range [0.0, 1.0].
+    Split into two components:
+      direction_agreement (0.70): sign(ref) == sign(agent)
+      size_similarity     (0.30): min(|ref|,|agent|) / max(|ref|,|agent|)
+    This avoids false positives from tiny positions matching direction.
+    Range [0.0, 1.0].
     """
     ref_pos = ref_positions.get("positions", {})
     if not ref_pos and not agent_positions:
         return 0.0
 
     eps = 1e-9
-    total_overlap = 0.0
-    total_weight = 0.0
+    dir_matches = 0
+    dir_total = 0
+    size_total = 0.0
+    size_count = 0
 
-    # Merge all symbols
     all_syms = set(ref_pos.keys()) | set(agent_positions.keys())
 
     for sym in all_syms:
@@ -698,13 +717,24 @@ def score_position_overlap(
         for d in all_dates:
             r = ref_map.get(d, 0.0)
             a = agent_map.get(d, 0.0)
-            denom = max(abs(r), abs(a), eps)
-            overlap = max(0.0, 1.0 - abs(r - a) / denom)
-            weight = denom  # notional-weight
-            total_overlap += overlap * weight
-            total_weight += weight
 
-    return total_overlap / total_weight if total_weight > 0 else 0.0
+            # Direction agreement
+            r_sign = (1 if r > 0 else (-1 if r < 0 else 0))
+            a_sign = (1 if a > 0 else (-1 if a < 0 else 0))
+            dir_total += 1
+            if r_sign == a_sign:
+                dir_matches += 1
+
+            # Size similarity (only when both are non-zero)
+            if abs(r) > eps and abs(a) > eps:
+                size_sim = min(abs(r), abs(a)) / max(abs(r), abs(a))
+                size_total += size_sim
+                size_count += 1
+
+    dir_score = dir_matches / dir_total if dir_total > 0 else 0.0
+    size_score = size_total / size_count if size_count > 0 else 0.0
+
+    return 0.70 * dir_score + 0.30 * size_score
 
 
 def score_performance(ref_summary: dict, agent_summary: dict) -> float:
@@ -849,7 +879,7 @@ def compute_behavioral_score(
         available_weights["signal"] = result.signal_weight
         result.layers_available.append("signal")
 
-    # Position overlap
+    # Position overlap (ref positions reconstructed from trades at runtime)
     has_ref_pos = bool(ref_positions.get("positions", {}))
     if has_ref_pos and has_agent_pos:
         result.position_score = score_position_overlap(ref_positions, agent_positions)

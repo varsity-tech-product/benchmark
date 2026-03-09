@@ -428,65 +428,6 @@ def _empty_signal_result(task_id: str, resolution: str, start: str, end: str, wa
 
 
 # ────────────────────────────────────────────────────────────────────
-# Position reconstruction from LEAN reference orders
-# ────────────────────────────────────────────────────────────────────
-
-def _reconstruct_positions_from_trades(task_id: str, start: str, end: str) -> dict:
-    """Build daily position series from LEAN reference trades.
-
-    For each trade, the position is the quantity in the entry direction
-    from entry_time to exit_time, forward-filled daily.
-    """
-    ref_path = REFERENCE_DIR / f"{task_id}_reference_trades.json"
-    if not ref_path.exists():
-        return {"task_id": task_id, "positions": {}}
-
-    with open(ref_path) as f:
-        data = json.load(f)
-
-    trades = data.get("trades", [])
-    if not trades:
-        return {"task_id": task_id, "positions": {}}
-
-    start_d = pd.Timestamp(start).date()
-    end_d = pd.Timestamp(end).date()
-    all_dates = pd.date_range(start_d, end_d, freq="D")
-
-    from collections import defaultdict
-    positions_by_sym: dict[str, pd.Series] = defaultdict(lambda: pd.Series(0.0, index=all_dates))
-
-    for trade in trades:
-        sym = trade["symbol"]
-        direction = trade.get("direction", "Buy")
-        qty = float(trade.get("quantity", 0))
-        signed_qty = qty if direction == "Buy" else -qty
-
-        entry_str = trade.get("entry_time", "")
-        exit_str = trade.get("exit_time", "")
-        if not entry_str or not exit_str:
-            continue
-
-        entry_d = pd.Timestamp(entry_str).date()
-        exit_d = pd.Timestamp(exit_str).date()
-
-        for d in all_dates:
-            dd = d.date()
-            if entry_d <= dd < exit_d:
-                positions_by_sym[sym][d] += signed_qty
-
-    result_positions: dict[str, list] = {}
-    for sym, pos_series in positions_by_sym.items():
-        entries = []
-        for d, qty in pos_series.items():
-            if qty != 0.0:
-                entries.append({"date": str(d.date()), "quantity": round(qty, 6)})
-        if entries:
-            result_positions[sym] = entries
-
-    return {"task_id": task_id, "positions": result_positions}
-
-
-# ────────────────────────────────────────────────────────────────────
 # Summary extraction from existing reference trades
 # ────────────────────────────────────────────────────────────────────
 
@@ -559,15 +500,7 @@ def generate(task_id: str, start: str = DEFAULT_START, end: str = DEFAULT_END) -
     total_sigs = sum(len(v) for v in signals.get("signals", {}).values())
     print(f"  {task_id}: saved {total_sigs} signals to {sig_path.name}")
 
-    # 2. Positions (from existing LEAN reference trades)
-    positions = _reconstruct_positions_from_trades(task_id, start, end)
-    pos_path = REFERENCE_DIR / f"{task_id}_reference_positions.json"
-    with open(pos_path, "w") as f:
-        json.dump(positions, f, indent=2)
-    total_pos = sum(len(v) for v in positions.get("positions", {}).values())
-    print(f"  {task_id}: saved {total_pos} position entries to {pos_path.name}")
-
-    # 3. Summary
+    # 2. Summary (positions are reconstructed from trades at eval time)
     summary = _build_summary(task_id)
     sum_path = REFERENCE_DIR / f"{task_id}_reference_summary.json"
     with open(sum_path, "w") as f:
