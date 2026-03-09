@@ -66,6 +66,9 @@ def read_raw_csv(csv_path: Path) -> pd.DataFrame:
     if missing:
         raise ValueError(f"Missing columns in {csv_path}: {missing}")
 
+    # Drop rows with NaN in required columns (e.g. trailing empty rows)
+    df = df.dropna(subset=required).reset_index(drop=True)
+
     return df
 
 

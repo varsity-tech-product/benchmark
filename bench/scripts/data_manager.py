@@ -69,6 +69,13 @@ def ensure_data(
             if src.exists() and not universe_path.exists():
                 src.rename(universe_path)
 
+        # Also copy universe.json into the lean directory so LEAN finds it
+        # at Globals.DataFolder/universe.json
+        lean_universe = lean_dir / "universe.json"
+        if universe_path.exists() and not lean_universe.exists():
+            import shutil
+            shutil.copy2(str(universe_path), str(lean_universe))
+
         return DataPaths(
             lean_data=str(lean_dir),
             universe=str(universe_path),

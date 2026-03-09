@@ -34,7 +34,7 @@ from download_binance_klines import (
 )
 
 DEFAULT_OUTPUT_DIR = Path(__file__).resolve().parent.parent / "data" / "raw" / "i-series"
-DEFAULT_UNIVERSE = Path(__file__).resolve().parent.parent / "data" / "hf_cache" / "universe.json"
+DEFAULT_UNIVERSE = Path(__file__).resolve().parent.parent / "data" / "universe.json"
 
 # Tier-to-interval mapping (matches implementation_section_plan.md section 2.4)
 TIER_CONFIG = {

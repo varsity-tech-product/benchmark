@@ -38,6 +38,7 @@ REFERENCE_OUTPUT_DIR = BENCH_ROOT / "data" / "reference"
 
 # Task → algorithm file mapping
 TASK_ALGO_MAP = {
+    "I01": "I01_implement_sma.cs",
     "I02": "I02_trend_following.cs",
     "I03": "I03_mean_reversion.cs",
     "I04": "I04_multi_timeframe.cs",
@@ -68,7 +69,7 @@ def _ensure_lean_data():
     """Ensure LEAN market data is available. Returns data directory path."""
     # Try to use data_manager if available
     try:
-        sys.path.insert(0, str(BENCH_ROOT.parent))
+        sys.path.insert(0, str(BENCH_ROOT))
         from scripts.data_manager import ensure_data
         paths = ensure_data(series="i")
         return paths.lean_data
@@ -213,6 +214,7 @@ def run_lean_backtest(
     algo_name = algo_file.stem  # e.g., "I02_trend_following"
     # LEAN expects the class name, which uses PascalCase
     class_name_map = {
+        "I01_implement_sma": "I01ImplementSma",
         "I02_trend_following": "I02TrendFollowing",
         "I03_mean_reversion": "I03MeanReversion",
         "I04_multi_timeframe": "I04MultiTimeframe",
@@ -243,9 +245,15 @@ def run_lean_backtest(
         shutil.copy2(str(algo_file), os.path.join(algo_mount_dir, algo_file.name))
 
         # Copy universe.json if available
-        universe_src = BENCH_ROOT / "data" / "frozen" / "universe.json"
+        # Place flat universe.json in the LEAN data directory so algorithms
+        # can find it at Globals.DataFolder/universe.json
+        universe_src = BENCH_ROOT / "data" / "universe.json"
         if universe_src.exists():
             shutil.copy2(str(universe_src), os.path.join(algo_mount_dir, "universe.json"))
+            # Also place in the lean data dir (C# algorithms read from /Lean/Data/universe.json)
+            lean_universe_dst = os.path.join(lean_data_dir, "universe.json")
+            if not os.path.exists(lean_universe_dst):
+                shutil.copy2(str(universe_src), lean_universe_dst)
 
         # Write LEAN config
         config = _build_lean_config(class_name, start_date, end_date)
