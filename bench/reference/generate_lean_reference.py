@@ -244,16 +244,25 @@ def run_lean_backtest(
         # Copy algorithm file
         shutil.copy2(str(algo_file), os.path.join(algo_mount_dir, algo_file.name))
 
-        # Copy universe.json if available
-        # Place flat universe.json in the LEAN data directory so algorithms
-        # can find it at Globals.DataFolder/universe.json
-        universe_src = BENCH_ROOT / "data" / "universe.json"
-        if universe_src.exists():
-            shutil.copy2(str(universe_src), os.path.join(algo_mount_dir, "universe.json"))
+        # Copy flat universe.json so C# algorithms can deserialize it as List<string>.
+        # Prefer the pre-generated flat file; fall back to generating it on the fly
+        # from the structured universe.json.
+        flat_universe = BENCH_ROOT / "data" / "lean_universe.json"
+        structured_universe = BENCH_ROOT / "data" / "universe.json"
+        if not flat_universe.exists() and structured_universe.exists():
+            # Generate flat universe on the fly
+            symbols = [
+                sym["symbol"]
+                for sym in json.loads(structured_universe.read_text())["tiers"]["tier1"]["symbols"]
+            ]
+            flat_universe.write_text(json.dumps(symbols, indent=2))
+
+        if flat_universe.exists():
+            shutil.copy2(str(flat_universe), os.path.join(algo_mount_dir, "universe.json"))
             # Also place in the lean data dir (C# algorithms read from /Lean/Data/universe.json)
             lean_universe_dst = os.path.join(lean_data_dir, "universe.json")
             if not os.path.exists(lean_universe_dst):
-                shutil.copy2(str(universe_src), lean_universe_dst)
+                shutil.copy2(str(flat_universe), lean_universe_dst)
 
         # Write LEAN config
         config = _build_lean_config(class_name, start_date, end_date)
