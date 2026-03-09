@@ -121,10 +121,6 @@ def _normalize_trade(trade: dict) -> dict:
     Handles LEAN PascalCase (EntryTime, Direction, ProfitLoss) and
     already-normalized snake_case (entry_time, direction, net_pnl).
     """
-    # If already has the key fields in snake_case, return as-is
-    if "entry_time" in trade and "direction" in trade and "net_pnl" in trade:
-        return trade
-
     # Direction: LEAN uses 0=Long/1=Short or string values
     raw_dir = _ci_get_trade(trade, "Direction", "direction", default="")
     if isinstance(raw_dir, int):
