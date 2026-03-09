@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -9,6 +10,7 @@ from _implementation_check import (
     collect_artifact_text,
     check_csharp_patterns,
     collect_lean_results,
+    compute_behavioral_score,
     compute_trade_log_score,
     has_any,
     has_regex,
@@ -28,18 +30,16 @@ def evaluate(
 ) -> dict:
     """Evaluate I02 trend-following implementation.
 
-    Checks: backtest completion, trade log matching against reference,
+    Checks: backtest completion, trade log produced, behavioral equivalence,
     universe coverage (>=80 symbols), code patterns, and universe summary.
     """
     results = {
         "backtest_completed": False,
         "trade_log_produced": False,
+        "signal_agreement": False,
+        "position_overlap": False,
+        "performance_match": False,
         "trade_count_match": False,
-        "entry_timing_match": False,
-        "direction_match": False,
-        "exit_timing_match": False,
-        "pnl_alignment": False,
-        "return_proximity": False,
         "code_patterns": False,
         "universe_coverage": False,
         "universe_summary_produced": False,
@@ -60,16 +60,12 @@ def evaluate(
     if agent_trades:
         results["trade_log_produced"] = True
 
-    # ── Trade matching against reference ──
-    ref_trades = load_reference_trades("I02")
-    if ref_trades and agent_trades:
-        match_result = match_trades(ref_trades, agent_trades, time_tolerance_bars=1, resolution="daily")
-        results["trade_count_match"] = match_result.count_within_tolerance(0.10)
-        results["entry_timing_match"] = match_result.entry_match_rate >= 0.80
-        results["direction_match"] = match_result.direction_match_rate >= 0.95
-        results["exit_timing_match"] = match_result.exit_match_rate >= 0.70
-        results["pnl_alignment"] = match_result.pnl_correlation > 0.85
-        results["return_proximity"] = match_result.return_within_tolerance(0.20)
+    # ── Behavioral scoring ──
+    behavioral = compute_behavioral_score("I02", workspace_path, resolution="daily")
+    results["signal_agreement"] = behavioral.signal_score >= 0.60
+    results["position_overlap"] = behavioral.position_score >= 0.60
+    results["performance_match"] = behavioral.performance_score >= 0.50
+    results["trade_count_match"] = behavioral.trade_score >= 0.40
 
     # ── Code patterns ──
     expected_patterns = ["AddCryptoFuture", "SMA(", "SetWarmUp", "Dictionary"]
@@ -79,15 +75,11 @@ def evaluate(
     # ── Universe coverage (>=80 symbols subscribed) ──
     symbol_count = 0
     if has_regex(artifact_text, [r"addcryptofuture"]):
-        # Count distinct AddCryptoFuture calls in artifact text
-        import re
         calls = re.findall(r"addcryptofuture\s*\(\s*[\"']?(\w+)", artifact_text)
         symbol_count = len(set(calls))
     if symbol_count >= 80:
         results["universe_coverage"] = True
     elif has_regex(artifact_text, [r"(?:subscribed|added|universe)\D{0,30}\d{2,}"]):
-        # Fallback: check for log messages indicating >=80 symbols
-        import re
         nums = re.findall(r"(?:subscribed|added|universe)\D{0,30}(\d+)", artifact_text)
         if any(int(n) >= 80 for n in nums):
             results["universe_coverage"] = True
@@ -101,19 +93,17 @@ def evaluate(
 
     # ── Scoring ──
     _checklist = [
-        {"item": "backtest_completed", "weight": 0.05, "passed": results["backtest_completed"]},
-        {"item": "trade_log_produced", "weight": 0.05, "passed": results["trade_log_produced"]},
-        {"item": "trade_count_match", "weight": 0.15, "passed": results["trade_count_match"]},
-        {"item": "entry_timing_match", "weight": 0.15, "passed": results["entry_timing_match"]},
-        {"item": "direction_match", "weight": 0.10, "passed": results["direction_match"]},
-        {"item": "exit_timing_match", "weight": 0.10, "passed": results["exit_timing_match"]},
-        {"item": "pnl_alignment", "weight": 0.10, "passed": results["pnl_alignment"]},
-        {"item": "return_proximity", "weight": 0.05, "passed": results["return_proximity"]},
-        {"item": "code_patterns", "weight": 0.05, "passed": results["code_patterns"]},
-        {"item": "universe_coverage", "weight": 0.15, "passed": results["universe_coverage"]},
+        {"item": "backtest_completed",      "weight": 0.05, "passed": results["backtest_completed"]},
+        {"item": "trade_log_produced",      "weight": 0.05, "passed": results["trade_log_produced"]},
+        {"item": "behavioral_score",        "weight": 0.55, "score": behavioral.composite_score},
+        {"item": "code_patterns",           "weight": 0.05, "passed": results["code_patterns"]},
+        {"item": "universe_coverage",       "weight": 0.15, "passed": results["universe_coverage"]},
         {"item": "universe_summary_produced", "weight": 0.05, "passed": results["universe_summary_produced"]},
     ]
-    score = sum(c["weight"] for c in _checklist if c["passed"])
+    score = sum(
+        c["weight"] * c.get("score", 1.0 if c.get("passed") else 0.0)
+        for c in _checklist
+    )
 
     # ── Gates ──
     if not results["backtest_completed"]:
@@ -130,6 +120,8 @@ def evaluate(
             score *= max(0.25, ds["fraction"])
 
     results["_checklist"] = _checklist
+    results["behavioral_composite"] = round(behavioral.composite_score, 4)
+    results["behavioral_layers"] = behavioral.layers_available
     results["score"] = round(score, 2)
     return results
 

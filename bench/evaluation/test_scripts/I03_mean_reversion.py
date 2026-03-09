@@ -9,6 +9,7 @@ from _implementation_check import (
     collect_artifact_text,
     check_csharp_patterns,
     collect_lean_results,
+    compute_behavioral_score,
     compute_trade_log_score,
     has_any,
     has_regex,
@@ -28,18 +29,16 @@ def evaluate(
 ) -> dict:
     """Evaluate I03 mean-reversion implementation.
 
-    Checks: backtest completion, trade log matching against reference,
+    Checks: backtest completion, trade log produced, behavioral equivalence,
     stop-loss logic, exit reason tagging, long+short presence, code patterns.
     """
     results = {
         "backtest_completed": False,
         "trade_log_produced": False,
+        "signal_agreement": False,
+        "position_overlap": False,
+        "performance_match": False,
         "trade_count_match": False,
-        "entry_timing_match": False,
-        "direction_match": False,
-        "exit_timing_match": False,
-        "pnl_alignment": False,
-        "return_proximity": False,
         "code_patterns": False,
         "stop_loss_present": False,
         "exit_reason_tagged": False,
@@ -61,16 +60,12 @@ def evaluate(
     if agent_trades:
         results["trade_log_produced"] = True
 
-    # ── Trade matching against reference ──
-    ref_trades = load_reference_trades("I03")
-    if ref_trades and agent_trades:
-        match_result = match_trades(ref_trades, agent_trades, time_tolerance_bars=1, resolution="daily")
-        results["trade_count_match"] = match_result.count_within_tolerance(0.10)
-        results["entry_timing_match"] = match_result.entry_match_rate >= 0.80
-        results["direction_match"] = match_result.direction_match_rate >= 0.95
-        results["exit_timing_match"] = match_result.exit_match_rate >= 0.70
-        results["pnl_alignment"] = match_result.pnl_correlation > 0.85
-        results["return_proximity"] = match_result.return_within_tolerance(0.20)
+    # ── Behavioral scoring ──
+    behavioral = compute_behavioral_score("I03", workspace_path, resolution="daily")
+    results["signal_agreement"] = behavioral.signal_score >= 0.60
+    results["position_overlap"] = behavioral.position_score >= 0.60
+    results["performance_match"] = behavioral.performance_score >= 0.50
+    results["trade_count_match"] = behavioral.trade_score >= 0.40
 
     # ── Code patterns ──
     expected_patterns = ["RSI(", "UnrealizedProfit", "stop"]
@@ -102,20 +97,18 @@ def evaluate(
 
     # ── Scoring ──
     _checklist = [
-        {"item": "backtest_completed", "weight": 0.05, "passed": results["backtest_completed"]},
-        {"item": "trade_log_produced", "weight": 0.05, "passed": results["trade_log_produced"]},
-        {"item": "trade_count_match", "weight": 0.15, "passed": results["trade_count_match"]},
-        {"item": "entry_timing_match", "weight": 0.15, "passed": results["entry_timing_match"]},
-        {"item": "direction_match", "weight": 0.10, "passed": results["direction_match"]},
-        {"item": "exit_timing_match", "weight": 0.10, "passed": results["exit_timing_match"]},
-        {"item": "pnl_alignment", "weight": 0.10, "passed": results["pnl_alignment"]},
-        {"item": "return_proximity", "weight": 0.05, "passed": results["return_proximity"]},
-        {"item": "code_patterns", "weight": 0.05, "passed": results["code_patterns"]},
-        {"item": "stop_loss_present", "weight": 0.08, "passed": results["stop_loss_present"]},
-        {"item": "long_short_both", "weight": 0.07, "passed": results["long_short_both"]},
-        {"item": "exit_reason_tagged", "weight": 0.05, "passed": results["exit_reason_tagged"]},
+        {"item": "backtest_completed",  "weight": 0.05, "passed": results["backtest_completed"]},
+        {"item": "trade_log_produced",  "weight": 0.05, "passed": results["trade_log_produced"]},
+        {"item": "behavioral_score",    "weight": 0.50, "score": behavioral.composite_score},
+        {"item": "code_patterns",       "weight": 0.05, "passed": results["code_patterns"]},
+        {"item": "stop_loss_present",   "weight": 0.08, "passed": results["stop_loss_present"]},
+        {"item": "long_short_both",     "weight": 0.07, "passed": results["long_short_both"]},
+        {"item": "exit_reason_tagged",  "weight": 0.05, "passed": results["exit_reason_tagged"]},
     ]
-    score = sum(c["weight"] for c in _checklist if c["passed"])
+    score = sum(
+        c["weight"] * c.get("score", 1.0 if c.get("passed") else 0.0)
+        for c in _checklist
+    )
 
     # ── Gates ──
     if not results["backtest_completed"]:
@@ -132,6 +125,8 @@ def evaluate(
             score *= max(0.25, ds["fraction"])
 
     results["_checklist"] = _checklist
+    results["behavioral_composite"] = round(behavioral.composite_score, 4)
+    results["behavioral_layers"] = behavioral.layers_available
     results["score"] = round(score, 2)
     return results
 

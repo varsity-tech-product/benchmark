@@ -458,6 +458,14 @@ def run_lean_backtest(
             json.dump(output, f, indent=2)
 
         print(f"  Saved {len(trades)} trades to {output_path}")
+
+        # Also generate reference positions and summary for behavioral eval
+        try:
+            from generate_reference_signals import generate as gen_signals
+            gen_signals(task_id, start_date, end_date)
+        except Exception as e:
+            print(f"  WARNING: Could not generate reference signals: {e}")
+
         return output
     finally:
         # Docker creates files as root — need elevated cleanup

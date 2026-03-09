@@ -1,6 +1,6 @@
 # Implementation Section (I-Series) Design Plan
 
-> Version: v2.2 | Status: In Progress — I01–I06 classic approach built, I07–I10 Algorithm Framework tasks designed | Section: Strategy Implementation on LEAN Engine
+> Version: v2.3 | Status: In Progress — I01–I06 classic approach built, multi-layer behavioral eval implemented, I07–I10 Algorithm Framework tasks designed | Section: Strategy Implementation on LEAN Engine
 
 ---
 
@@ -1961,169 +1961,242 @@ Already planned in B-series (see B-series plan §6.3). I-series reuses this doc 
 
 ## 7. Evaluation Architecture
 
-### 7.1 Trade Log Comparison (Primary Eval Mechanism)
+### 7.1 Multi-Layer Behavioral Evaluation
 
-The defining feature of I-series evaluation. Unlike S-series (qualitative signal assessment) or B-series (architectural quality), I-series has a **deterministic ground truth**: the reference trade log.
+The I-series uses **behavioral equivalence** rather than strict trade identity matching. LEAN's fill model, warmup handling, and indicator state can shift trades by 1-2 bars even in pure backtesting, creating false negatives with strict matching. Instead, evaluation compares four layers of behavioral similarity:
 
-#### 7.1.1 Reference Trade Log Format
+```
+Signal agreement       0.40   (deterministic Python signals vs agent positions)
+Position overlap       0.30   (reference LEAN positions vs agent positions)
+Performance metrics    0.20   (Sharpe, return, drawdown proximity)
+Trade similarity       0.10   (relaxed trade matcher, 2-bar tolerance)
+```
 
-Each reference trade log (`I0X_reference_trades.json`) contains:
+**Key insight**: Reference signals are **deterministic** — they depend only on data + formula, not the LEAN engine. By computing signals in Python from raw market data (`bench/reference/generate_reference_signals.py`), we get a ground truth free from simulator quirks. Evaluation then compares the agent's LEAN-produced positions against these deterministic signals.
 
+#### 7.1.1 Reference Data Files (per task)
+
+Each task has three reference data files beyond the existing trade log:
+
+```
+bench/data/reference/
+├── I0X_reference_trades.json      # Existing: LEAN round-trip trades
+├── I0X_reference_signals.json     # NEW: deterministic Python signals
+├── I0X_reference_positions.json   # NEW: daily positions from LEAN orders
+└── I0X_reference_summary.json     # NEW: standardized performance metrics
+```
+
+**Signal file schema** (`I0X_reference_signals.json`):
 ```json
 {
-  "task_id": "I02_trend_following",
-  "algorithm_version": "1.0",
-  "data_hash": "sha256:abc123...",
-  "trades": [
-    {
-      "trade_id": 1,
-      "symbol": "BTCUSDT",
-      "direction": "Long",
-      "entry_time": "2021-02-15 00:00:00",
-      "entry_price": 48200.50,
-      "exit_time": "2021-03-22 00:00:00",
-      "exit_price": 54100.30,
-      "quantity": 2.07,
-      "gross_pnl": 12216.76,
-      "net_pnl": 12100.12
-    },
-    ...
-  ],
-  "summary": {
-    "total_trades": 42,
-    "long_trades": 42,
-    "short_trades": 0,
-    "total_return_pct": 18.5,
-    "sharpe_ratio": 0.72,
-    "max_drawdown_pct": -25.3
+  "task_id": "I01",
+  "resolution": "daily",
+  "start_date": "2024-02-01",
+  "end_date": "2024-12-31",
+  "warmup_periods": 20,
+  "signals": {
+    "BTCUSDT": [
+      {"date": "2024-02-21", "signal": 1},
+      {"date": "2024-02-22", "signal": 1},
+      {"date": "2024-03-17", "signal": -1}
+    ]
   }
 }
 ```
 
-#### 7.1.2 Comparison Metrics
-
-| Metric | Method | Tolerance | Weight |
-|--------|--------|-----------|--------|
-| **Trade count** | `abs(agent_count - ref_count) / ref_count` | ≤ 10% → pass | 0.25 |
-| **Entry timing** | For each reference trade, find matching agent trade within ±1 bar by entry_time | ≥ 80% matched → pass | 0.25 |
-| **Direction** | All matched trades have same direction (Long/Short) | 100% match → pass | 0.15 |
-| **Exit timing** | For matched trades, exit_time within ±1 bar | ≥ 70% matched → pass | 0.15 |
-| **PnL alignment** | Correlation between reference and agent trade-level PnL | r > 0.85 → pass | 0.10 |
-| **Final return** | `abs(agent_return - ref_return) / abs(ref_return)` | ≤ 20% → pass | 0.10 |
-
-#### 7.1.3 Trade Matching Algorithm
-
+**Position file schema** (`I0X_reference_positions.json`):
+```json
+{
+  "task_id": "I01",
+  "positions": {
+    "BTCUSDT": [
+      {"date": "2024-02-02", "quantity": 2.315},
+      {"date": "2024-02-03", "quantity": 2.315}
+    ]
+  }
+}
 ```
-For each reference trade T_ref:
-  1. Find agent trades within ±1 bar of T_ref.entry_time
-  2. Among candidates, pick the one with same direction
-  3. If found, mark as matched. Compare exit_time and PnL.
-  4. If not found, mark as unmatched (reference trade missed by agent)
 
-Unmatched agent trades (extra trades not in reference) are penalized
-proportionally: extra_trade_penalty = extra_count / ref_count * 0.1
+**Summary file schema** (`I0X_reference_summary.json`):
+```json
+{
+  "task_id": "I01",
+  "metrics": {
+    "total_return_pct": 78.104,
+    "sharpe_ratio": 1.727,
+    "max_drawdown_pct": 31.9,
+    "total_trades": 15,
+    "win_rate": 0.40
+  }
+}
 ```
+
+#### 7.1.2 Signal Generation (per task)
+
+Signals are computed in pure Python/pandas by `bench/reference/generate_reference_signals.py`:
+
+| Task | Strategy Formula | Signal Definition |
+|------|-----------------|-------------------|
+| I01 | SMA(20) on daily close | `+1 if close > SMA else -1` |
+| I02 | Per-symbol dual SMA(10)/SMA(30) | `+1 if fast > slow else -1` |
+| I03 | RSI(14) | `+1 if RSI<30, -1 if RSI>70, 0 otherwise` |
+| I04 | EMA(20) on 4h + RSI(14) on 1h | Composite: trend dominates on disagreement |
+| I05 | Pair log-spread z-score (20-day) | `+1/-1 if |z|>2, 0 if |z|<0.5` |
+| I06 | 0.4×trend + 0.3×reversion + 0.3×carry | Composite with ±0.1 threshold |
+
+Raw data source: `bench/data/raw/i-series/` — minute data is aggregated to daily to fill gaps in the daily CSVs (same logic as `convert_binance_to_lean.py --fill-daily-from-minute`).
+
+#### 7.1.3 Layer Scoring Functions
+
+All layer scores are **continuous [0.0, 1.0]**, not binary pass/fail:
+
+**Signal agreement** (`score_signal_agreement`):
+Per (date, symbol): compare reference signal direction vs `sign(agent_position)`.
+- `+1.0` if directions match
+- `+0.5` if one is zero (flat)
+- `+0.0` if directions oppose
+Returns weighted mean across all dates/symbols.
+
+**Position overlap** (`score_position_overlap`):
+Per (date, symbol): `overlap = 1 - |ref - agent| / max(|ref|, |agent|, ε)`.
+Notional-weighted average across all dates/symbols. Clamped to [0, 1].
+
+**Performance** (`score_performance`):
+Compare Sharpe, return, drawdown, trade count. Each sub-metric: `proximity = 1 - |ref - agent| / max(|ref|, |agent|, ε)`. Equal-weighted average.
+
+**Trade similarity** (`score_trade_similarity`):
+Continuous version of existing `match_trades()` with **2-bar tolerance** (relaxed from 1-bar). Combines count similarity (0.25), entry rate (0.25), direction rate (0.15), exit rate (0.15), PnL correlation (0.20).
+
+#### 7.1.4 Weight Redistribution
+
+When layers are unavailable (e.g., no agent orders, no reference signals), weights are redistributed proportionally among available layers:
+
+```python
+scale = 1.0 / sum(available_weights)
+composite = sum(score_i * weight_i * scale for i in available_layers)
+```
+
+This ensures the composite stays in [0.0, 1.0] regardless of how many layers are active.
+
+#### 7.1.5 Discrimination Validation (I01 baseline)
+
+| Test Case | Signal | Position | Performance | Trade | Composite |
+|-----------|--------|----------|-------------|-------|-----------|
+| Self-test (reference as agent) | 0.742 | 1.000 | 1.000 | 1.000 | **0.897** |
+| Shifted by 10 days | 0.597 | 0.522 | 0.855 | 0.729 | **0.639** |
+| Inverted direction | 0.258 | 0.000 | 1.000 | 0.350 | **0.338** |
+| Empty workspace | — | — | — | — | **0.000** |
+
+The self-test signal score (0.742) is intentionally below 1.0: the I01 strategy is long-only (goes flat when signal=-1, not short), so agent position=0 when signal=-1 yields 0.5 credit. This correctly penalizes the theoretical signal vs practical implementation gap.
 
 ### 7.2 Shared Eval Helper: `_implementation_check.py`
 
-New eval helper module for I-series:
+Shared eval helper module for I-series. Contains both the original trade-matching functions (preserved for backward compatibility) and the new behavioral scoring layer:
 
 ```python
 # bench/evaluation/test_scripts/_implementation_check.py
 
-Key functions:
+# ── Original functions (preserved) ──
 - load_reference_trades(task_id) → list[dict]
-    Load reference trade log from bench/data/reference/I0X_reference_trades.json
-
 - load_agent_trades(workspace_path) → list[dict]
-    Parse agent's trade log from /workspace/results/trades.json
-
-- match_trades(ref_trades, agent_trades, time_tolerance_bars=1) → MatchResult
-    Run the trade matching algorithm (§7.1.3)
-
+- match_trades(ref_trades, agent_trades, time_tolerance_bars, resolution) → MatchResult
 - compute_trade_log_score(match_result) → float
-    Apply the weighted metrics from §7.1.2
+- check_csharp_patterns(workspace_path, patterns) → dict[str, bool]
+- collect_lean_results(workspace_path) → dict | None
+- collect_artifact_text(workspace_path, tool_logs) → str
+- has_any(text, keywords) → bool
+- has_regex(text, patterns) → bool
 
-- check_csharp_patterns(workspace_path, patterns: list[str]) → dict[str, bool]
-    Scan .cs files for expected code patterns (e.g., "AddCryptoFuture", "SMA(")
+# ── New reference loaders ──
+- load_reference_signals(task_id) → dict
+- load_reference_positions(task_id) → dict
+- load_reference_summary(task_id) → dict
 
-- collect_lean_results(workspace_path) → dict
-    Parse LEAN output from /workspace/results/summary.json
+# ── New agent data extraction ──
+- load_agent_orders(workspace_path) → list[dict]
+    Parse orders.json, normalize PascalCase, filter to filled orders.
+- reconstruct_positions(orders_or_trades, start_date, end_date) → dict[str, list[dict]]
+    Build daily position series. From orders: cumulative fill tracking.
+    From trades: entry_time→exit_time spans. Forward-filled daily.
+- load_agent_summary(workspace_path) → dict
+    Parse summary.json into standardized metrics dict.
+
+# ── New layer scoring (continuous 0.0–1.0) ──
+- score_signal_agreement(ref_signals, agent_positions) → float
+- score_position_overlap(ref_positions, agent_positions) → float
+- score_performance(ref_summary, agent_summary) → float
+- score_trade_similarity(match_result) → float
+
+# ── New composite scoring ──
+@dataclass
+class BehavioralResult:
+    signal_score, position_score, performance_score, trade_score: float
+    signal_weight=0.40, position_weight=0.30, performance_weight=0.20, trade_weight=0.10
+    composite_score: float
+    layers_available: list[str]
+
+- compute_behavioral_score(task_id, workspace_path, resolution) → BehavioralResult
+    Main entry: loads all data, scores each layer, redistributes weights, returns composite.
 ```
 
 ### 7.3 Per-Task Eval Script Structure
 
-Each I-series eval script follows this pattern:
+Each I-series eval script uses the behavioral scoring system with task-specific checks:
 
 ```python
 def evaluate(workspace_path, tool_logs=None, conversation=None, *, data_files=None):
     results = {
         "backtest_completed": False,
         "trade_log_produced": False,
-        "trade_count_match": False,
-        "entry_timing_match": False,
-        "direction_match": False,
-        "exit_timing_match": False,
-        "pnl_alignment": False,
-        "return_proximity": False,
-        "code_patterns_present": False,
+        "signal_agreement": False,        # behavioral.signal_score >= 0.60
+        "position_overlap": False,        # behavioral.position_score >= 0.60
+        "performance_match": False,       # behavioral.performance_score >= 0.50
+        "trade_count_match": False,       # behavioral.trade_score >= 0.40
+        "code_patterns": False,
+        # ... task-specific items ...
         "score": 0.0,
     }
 
-    # 1. Check that backtest ran to completion
-    lean_results = collect_lean_results(workspace_path)
-    results["backtest_completed"] = lean_results is not None
+    # 1. Backtest completion + trade log checks (same as before)
+    # 2. Behavioral scoring
+    behavioral = compute_behavioral_score("I0X", workspace_path, resolution="daily")
+    results["signal_agreement"] = behavioral.signal_score >= 0.60
+    # ... etc ...
 
-    # 2. Load and compare trade logs
-    ref_trades = load_reference_trades("I0X_task_name")
-    agent_trades = load_agent_trades(workspace_path)
-    results["trade_log_produced"] = len(agent_trades) > 0
-
-    match = match_trades(ref_trades, agent_trades, time_tolerance_bars=1)
-    results["trade_count_match"] = match.count_within_tolerance(0.10)
-    results["entry_timing_match"] = match.entry_match_rate >= 0.80
-    results["direction_match"] = match.direction_match_rate == 1.0
-    results["exit_timing_match"] = match.exit_match_rate >= 0.70
-    results["pnl_alignment"] = match.pnl_correlation > 0.85
-    results["return_proximity"] = match.return_within_tolerance(0.20)
-
-    # 3. Check C# code patterns (task-specific)
-    patterns = check_csharp_patterns(workspace_path, [
-        "AddCryptoFuture", "SetAccountCurrency", "SMA(", "SetWarmUp"
-    ])
-    results["code_patterns_present"] = sum(patterns.values()) >= 3
-
-    # 4. Compute score
+    # 3. Task-specific checks (code patterns, indicators, etc.)
+    # 4. Scoring with continuous behavioral weight
     _checklist = [
-        {"item": "backtest_completed",    "weight": 0.05, "passed": results["backtest_completed"]},
-        {"item": "trade_log_produced",    "weight": 0.05, "passed": results["trade_log_produced"]},
-        {"item": "trade_count_match",     "weight": 0.20, "passed": results["trade_count_match"]},
-        {"item": "entry_timing_match",    "weight": 0.20, "passed": results["entry_timing_match"]},
-        {"item": "direction_match",       "weight": 0.15, "passed": results["direction_match"]},
-        {"item": "exit_timing_match",     "weight": 0.15, "passed": results["exit_timing_match"]},
-        {"item": "pnl_alignment",         "weight": 0.10, "passed": results["pnl_alignment"]},
-        {"item": "return_proximity",      "weight": 0.05, "passed": results["return_proximity"]},
-        {"item": "code_patterns_present", "weight": 0.05, "passed": results["code_patterns_present"]},
+        {"item": "backtest_completed",  "weight": 0.05, "passed": results["backtest_completed"]},
+        {"item": "trade_log_produced",  "weight": 0.05, "passed": results["trade_log_produced"]},
+        {"item": "behavioral_score",    "weight": W,    "score": behavioral.composite_score},
+        # ... task-specific items ...
     ]
-    score = sum(c["weight"] for c in _checklist if c["passed"])
+    # Items with "score" key use score directly; items with "passed" use 1.0/0.0
+    score = sum(
+        c["weight"] * c.get("score", 1.0 if c.get("passed") else 0.0)
+        for c in _checklist
+    )
 
-    # 5. Gates
-    if not results["backtest_completed"]:
-        score = min(score, 0.10)  # Can't score well if backtest didn't run
-    if not results["trade_log_produced"]:
-        score = min(score, 0.15)
-
-    # 6. Data source verification
-    if data_files:
-        ds = verify_data_source(tool_logs or [], data_files)
-        results["data_source_verified"] = ds["verified"]
-        if not ds["verified"]:
-            score *= max(0.25, ds["fraction"])
-
+    # 5. Gates + data source verification (same as before)
+    results["behavioral_composite"] = round(behavioral.composite_score, 4)
+    results["behavioral_layers"] = behavioral.layers_available
     results["_checklist"] = _checklist
     results["score"] = round(score, 2)
     return results
 ```
+
+#### Per-Task Weight Allocation
+
+| Task | behavioral_score | Task-specific items | Gate items |
+|------|-----------------|---------------------|------------|
+| I01 | 0.60 | code_patterns 0.10, sma_indicator_used 0.10 | backtest 0.05, trades 0.05 |
+| I02 | 0.55 | code_patterns 0.05, universe_coverage 0.15, universe_summary 0.05 | backtest 0.05, trades 0.05 |
+| I03 | 0.50 | code_patterns 0.05, stop_loss 0.08, long_short_both 0.07, exit_tagged 0.05 | backtest 0.05, trades 0.05 |
+| I04 | 0.55 | code_patterns 0.05, consolidator 0.10, dual_resolution 0.10 | backtest 0.05, trades 0.05 |
+| I05 | 0.50 | code_patterns 0.05, pair_selection 0.08, multi_leg 0.07, exposure_cap 0.05 | backtest 0.05, trades 0.05 |
+| I06 | 0.45 | code_patterns 0.05, sweep 0.10, top_configs 0.05, funding 0.05 | backtest 0.05, trades 0.05 |
+
+Tasks with more task-specific checks (I03, I05, I06) allocate less to behavioral score, since the task-specific items capture implementation quality that behavioral scoring cannot.
 
 ### 7.4 Result Judge Category Rubric
 
@@ -2131,8 +2204,9 @@ Add an `implementation` entry to `CATEGORY_RESULT_RUBRICS`:
 
 ```
 Implementation tasks — evaluation focus:
-1. Correctness: Does the LEAN algorithm implement the strategy specification accurately?
-   Trades should match the expected ground-truth in timing and direction.
+1. Behavioral Equivalence: Does the agent's algorithm produce positions that align with
+   the strategy's deterministic signals? (scored continuously via 4-layer behavioral eval:
+   signal agreement, position overlap, performance proximity, trade similarity)
 2. Completeness: Does the algorithm handle all specified rules (entry, exit, stop-loss,
    position sizing)?
 3. API Usage: Does the code use LEAN C# API correctly (indicators, orders, portfolio state)?
@@ -2320,8 +2394,7 @@ Run each reference algorithm on the frozen data and export trade logs:
 # Generate reference trade logs — classic approach
 python bench/reference/generate_lean_reference.py --task I01
 python bench/reference/generate_lean_reference.py --task I02
-python bench/reference/generate_lean_reference.py --task I03
-# ...
+# ... (also auto-generates signals, positions, summary via generate_reference_signals.py)
 
 # Generate reference trade logs — framework approach
 python bench/reference/generate_lean_reference.py --task I07
@@ -2329,15 +2402,31 @@ python bench/reference/generate_lean_reference.py --task I08
 # ...
 ```
 
+### 11.2b Reference Signal & Position Generation
+
+Deterministic reference signals, positions, and summaries for behavioral evaluation:
+
+```bash
+# Generate all signal/position/summary files (no Docker needed — pure Python)
+python bench/reference/generate_reference_signals.py --task all
+# Also called automatically by generate_lean_reference.py after each LEAN backtest
+```
+
 Output:
 ```
 bench/data/reference/
-├── I01_reference_trades.json
+├── I01_reference_trades.json              # LEAN round-trip trades
+├── I01_reference_signals.json             # Deterministic Python signals (316 signals)
+├── I01_reference_positions.json           # Daily positions from LEAN orders (201 entries)
+├── I01_reference_summary.json             # Standardized metrics (Sharpe 1.727, 78.1% return)
 ├── I02_reference_trades.json
-├── I03_reference_trades.json
-├── I04_reference_trades.json
-├── I05_reference_trades.json
-├── I06_reference_trades.json
+├── I02_reference_signals.json             # 676 signals (3 symbols × SMA(10)/SMA(30))
+├── I02_reference_positions.json
+├── I02_reference_summary.json
+├── I03_reference_signals.json             # 321 signals (RSI(14))
+├── I04_reference_signals.json             # 335 signals (EMA(20) 4h + RSI(14) 1h)
+├── I05_reference_signals.json             # 390 signals (pair z-score, 2 symbols)
+├── I06_reference_signals.json             # 316 signals (composite 3-signal)
 ├── I06_reference_sweep_results.json       # Parameter sweep results for I06
 ├── I07_reference_trades.json              # Framework approach
 ├── I07_reference_insights.json            # Insight emission log
@@ -2360,6 +2449,11 @@ Each reference trade log must be validated:
 - PnL per trade is consistent with price movement
 - Total return is plausible for the strategy type
 - No trades occur during warm-up period
+
+Each reference signal file must be validated:
+- Signal count matches expected date range minus warmup
+- Signals are in {-1, 0, +1} only
+- Self-test: `compute_behavioral_score()` with reference workspace scores > 0.85
 
 ---
 
@@ -2431,6 +2525,12 @@ Each reference trade log must be validated:
 - [ ] Run all reference algorithms → export trade logs *(reference JSONs exist but need re-generation with flat universe.json)*
 - [ ] Run I06 parameter sweep → export sweep results *(reference JSON exists)*
 - [ ] Validate all reference trade logs (see §11.3)
+- [x] Write `bench/reference/generate_reference_signals.py` — deterministic signal computation from raw data (I01–I06)
+- [x] Generate reference signals for I01 (316 signals, SMA(20) on daily BTC)
+- [x] Generate reference signals for I02–I06 (all tasks, all formulas)
+- [x] Generate reference positions for I01 (201 daily position entries from LEAN trades)
+- [x] Generate reference summaries for I01–I06 (standardized metrics)
+- [x] Validate I01 self-test: behavioral composite = 0.897 (> 0.85 threshold)
 
 ### Phase 2b: Reference Algorithms & Ground-Truth (Framework: I07–I10)
 
@@ -2466,6 +2566,13 @@ Each reference trade log must be validated:
 - [x] I04_multi_timeframe.py
 - [x] I05_cross_asset.py
 - [x] I06_multi_signal_sweep.py
+- [x] Add multi-layer behavioral scoring to `_implementation_check.py`:
+  - [x] Reference loaders: `load_reference_signals`, `load_reference_positions`, `load_reference_summary`
+  - [x] Agent extractors: `load_agent_orders`, `reconstruct_positions`, `load_agent_summary`
+  - [x] Layer scorers: `score_signal_agreement`, `score_position_overlap`, `score_performance`, `score_trade_similarity`
+  - [x] `BehavioralResult` dataclass + `compute_behavioral_score()` entry point with weight redistribution
+- [x] Migrate I01–I06 eval scripts to use `compute_behavioral_score()` with per-task weight allocation
+- [x] Validate: self-test, shifted-data, inverted-direction, empty-workspace tests all pass
 - [ ] I07_alpha_model.py — framework architecture checks + insight log validation
 - [ ] I08_multi_alpha.py — multi-alpha registration + portfolio model comparison checks
 - [ ] I09_risk_management.py — risk model registration + 3-way comparison checks
@@ -2586,7 +2693,7 @@ I06 Manual param sweep         ──►   I10 Parameter Optimization (hard)
 2. **Funding rate data in LEAN**: LEAN may not natively support custom funding rate data. I06 may need a custom data reader or a pre-computed funding column merged into kline data. Need to prototype.
 3. ~~**I01 redesign timeline**: Should I01 be redesigned before or after I02–I06 are built?~~ **Resolved**: I01 redesigned to LEAN C# single-symbol SMA; added to `TASK_ALGO_MAP` and `class_name_map` in `generate_lean_reference.py`.
 4. **HuggingFace access**: Public or private dataset repo? If private, how to distribute access tokens for CI/CD and collaborators?
-5. **Trade log tolerance tuning**: The ±1 bar tolerance and percentage thresholds in §7.1.2 need calibration after running reference algorithms — universe-scale strategies may have more variance.
+5. ~~**Trade log tolerance tuning**: The ±1 bar tolerance and percentage thresholds in §7.1.2 need calibration after running reference algorithms — universe-scale strategies may have more variance.~~ **Resolved**: Replaced binary trade-log matching (strict ±1 bar) with multi-layer behavioral evaluation (§7.1). Trade similarity now uses relaxed 2-bar tolerance and contributes only 0.10 weight. Primary evaluation uses deterministic Python signals (0.40 weight) and position overlap (0.30 weight), which are robust to LEAN engine quirks. I01 self-test validates composite = 0.897.
 6. **Symbol selection criteria**: Exact methodology for ranking symbols by volume — use 2024 average, or 2021-2024 average? How to handle symbols that were delisted/relisted?
 7. **LEAN 4h resolution**: LEAN may not have native 4h resolution support. May need to subscribe at 1h and consolidate to 4h via `TradeBarConsolidator`. This affects Tier 2 data format — store as 1h and let LEAN consolidate, or pre-aggregate to 4h?
 8. **Runtime performance**: A 100-symbol × 21-sweep I06 backtest = 2,100 LEAN runs. Need to estimate total runtime and consider whether the sweep should be parallelized (multiple LEAN instances) or sequential.

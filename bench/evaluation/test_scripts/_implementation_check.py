@@ -6,6 +6,7 @@ import json
 import os
 import re
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 
 
@@ -371,3 +372,522 @@ def collect_lean_results(workspace_path: str) -> dict | None:
             return json.load(f)
     except (json.JSONDecodeError, IOError):
         return None
+
+
+# ════════════════════════════════════════════════════════════════════
+# Multi-Layer Behavioral Evaluation
+# ════════════════════════════════════════════════════════════════════
+
+
+# ── Reference data loaders ──
+
+def load_reference_signals(task_id: str) -> dict:
+    """Load reference signals from bench/data/reference/I0X_reference_signals.json."""
+    path = _REFERENCE_DIR / f"{task_id}_reference_signals.json"
+    if not path.exists():
+        return {}
+    try:
+        with open(path) as f:
+            return json.load(f)
+    except (json.JSONDecodeError, IOError):
+        return {}
+
+
+def load_reference_positions(task_id: str) -> dict:
+    """Load reference positions from bench/data/reference/I0X_reference_positions.json."""
+    path = _REFERENCE_DIR / f"{task_id}_reference_positions.json"
+    if not path.exists():
+        return {}
+    try:
+        with open(path) as f:
+            return json.load(f)
+    except (json.JSONDecodeError, IOError):
+        return {}
+
+
+def load_reference_summary(task_id: str) -> dict:
+    """Load reference summary from bench/data/reference/I0X_reference_summary.json."""
+    path = _REFERENCE_DIR / f"{task_id}_reference_summary.json"
+    if not path.exists():
+        return {}
+    try:
+        with open(path) as f:
+            return json.load(f)
+    except (json.JSONDecodeError, IOError):
+        return {}
+
+
+# ── Agent data extraction ──
+
+def load_agent_orders(workspace_path: str) -> list[dict]:
+    """Parse orders.json from agent workspace, normalize PascalCase."""
+    orders_path = os.path.join(workspace_path, "results", "orders.json")
+    if not os.path.exists(orders_path):
+        return []
+    try:
+        with open(orders_path) as f:
+            data = json.load(f)
+    except (json.JSONDecodeError, IOError):
+        return []
+
+    # LEAN orders can be a dict keyed by order_id or a list
+    if isinstance(data, dict):
+        # Could be nested under "Orders" key or be the orders dict itself
+        if "Orders" in data or "orders" in data:
+            data = data.get("Orders", data.get("orders", {}))
+        if isinstance(data, dict):
+            raw_orders = list(data.values())
+        else:
+            raw_orders = data
+    else:
+        raw_orders = data
+
+    orders = []
+    for o in raw_orders:
+        # Normalize each order to consistent keys
+        status = _ci_get_trade(o, "Status", "status", default=0)
+        # Filter to filled orders (status 3 in LEAN)
+        if isinstance(status, int) and status != 3:
+            continue
+        if isinstance(status, str) and status.lower() not in ("filled", "3"):
+            continue
+
+        sym = _ci_get_trade(o, "Symbol", "symbol", default="")
+        if isinstance(sym, dict):
+            sym = sym.get("Value", sym.get("value", str(sym)))
+
+        raw_dir = _ci_get_trade(o, "Direction", "direction", default=0)
+        if isinstance(raw_dir, int):
+            direction = "Buy" if raw_dir == 0 else "Sell"
+        else:
+            d = str(raw_dir).lower()
+            direction = "Buy" if d in ("long", "buy", "0") else "Sell"
+
+        orders.append({
+            "symbol": str(sym),
+            "direction": direction,
+            "quantity": abs(float(_ci_get_trade(o, "Quantity", "quantity", default=0))),
+            "fill_price": float(_ci_get_trade(o, "Price", "fill_price", "price", default=0)),
+            "time": str(_ci_get_trade(o, "Time", "time", default="")),
+        })
+
+    return orders
+
+
+def reconstruct_positions(
+    orders_or_trades: list[dict],
+    start_date: str,
+    end_date: str,
+) -> dict[str, list[dict]]:
+    """Build daily position series {symbol: [{date, quantity}]}.
+
+    From orders: cumulative fill tracking, forward-filled daily.
+    From trades: approximate from entry_time→exit_time spans.
+    """
+    from collections import defaultdict
+
+    start_d = _parse_date(start_date)
+    end_d = _parse_date(end_date)
+    if start_d is None or end_d is None:
+        return {}
+
+    # Detect if these are orders (have 'time' + 'fill_price') or trades (have 'entry_time')
+    sample = orders_or_trades[0] if orders_or_trades else {}
+    is_trades = "entry_time" in sample
+
+    # Generate all dates in range
+    from datetime import timedelta
+    all_dates = []
+    d = start_d
+    while d <= end_d:
+        all_dates.append(d)
+        d += timedelta(days=1)
+
+    positions_by_sym: dict[str, dict] = defaultdict(lambda: {d: 0.0 for d in all_dates})
+
+    if is_trades:
+        # From trades: position = signed quantity from entry to exit
+        for trade in orders_or_trades:
+            sym = trade.get("symbol", "")
+            direction = trade.get("direction", "Buy")
+            qty = float(trade.get("quantity", 0))
+            signed_qty = qty if direction.lower() in ("buy", "long") else -qty
+
+            entry_d = _parse_date(trade.get("entry_time", ""))
+            exit_d = _parse_date(trade.get("exit_time", ""))
+            if entry_d is None or exit_d is None:
+                continue
+
+            for d in all_dates:
+                if entry_d <= d < exit_d:
+                    positions_by_sym[sym][d] += signed_qty
+    else:
+        # From orders: cumulative position tracking per symbol
+        sym_net: dict[str, float] = defaultdict(float)
+        # Sort orders by time
+        sorted_orders = sorted(orders_or_trades, key=lambda o: o.get("time", ""))
+
+        # Build event list: (date, symbol, qty_change)
+        events: list[tuple] = []
+        for o in sorted_orders:
+            sym = o.get("symbol", "")
+            direction = o.get("direction", "Buy")
+            qty = float(o.get("quantity", 0))
+            signed_delta = qty if direction.lower() in ("buy", "long") else -qty
+            order_d = _parse_date(o.get("time", ""))
+            if order_d is not None:
+                events.append((order_d, sym, signed_delta))
+
+        events.sort(key=lambda e: e[0])
+
+        # Walk through dates, applying events
+        event_idx = 0
+        for d in all_dates:
+            while event_idx < len(events) and events[event_idx][0] <= d:
+                _, sym, delta = events[event_idx]
+                sym_net[sym] += delta
+                event_idx += 1
+            for sym, net_qty in sym_net.items():
+                positions_by_sym[sym][d] = net_qty
+
+    # Convert to output format
+    result: dict[str, list[dict]] = {}
+    for sym, date_map in positions_by_sym.items():
+        entries = []
+        for d in all_dates:
+            qty = date_map.get(d, 0.0)
+            if qty != 0.0:
+                entries.append({"date": str(d), "quantity": round(qty, 6)})
+        if entries:
+            result[sym] = entries
+
+    return result
+
+
+def _parse_date(s) -> "date | None":
+    """Parse a date string or timestamp to a date object."""
+    from datetime import date, timedelta
+    if s is None or s == "":
+        return None
+    if isinstance(s, (int, float)):
+        ts = s / 1000.0 if s > 1e12 else float(s)
+        return datetime.fromtimestamp(ts, tz=timezone.utc).date()
+    clean = str(s).strip()
+    if clean.endswith("Z"):
+        clean = clean[:-1]
+    if clean.endswith("+00:00"):
+        clean = clean[:-6]
+    for fmt in ("%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d"):
+        try:
+            return datetime.strptime(clean, fmt).date()
+        except (ValueError, TypeError):
+            continue
+    return None
+
+
+def load_agent_summary(workspace_path: str) -> dict:
+    """Parse summary.json into standardized metrics dict."""
+    lean = collect_lean_results(workspace_path)
+    if lean is None:
+        return {}
+
+    def _pct(s):
+        if isinstance(s, (int, float)):
+            return float(s)
+        return float(str(s).replace("%", "").strip() or "0")
+
+    # LEAN summary can have various key formats
+    stats = lean if isinstance(lean, dict) else {}
+    # Try nested Statistics key
+    if "Statistics" in stats:
+        stats = stats["Statistics"]
+    elif "statistics" in stats:
+        stats = stats["statistics"]
+
+    sharpe = stats.get("Sharpe Ratio", stats.get("sharpe_ratio", "0"))
+    total_return = stats.get("Net Profit", stats.get("total_return", "0%"))
+    drawdown = stats.get("Drawdown", stats.get("max_drawdown", "0%"))
+    win_rate = stats.get("Win Rate", stats.get("win_rate", "0%"))
+    total_trades_str = stats.get("Total Trades", stats.get("Total Orders", stats.get("total_trades", "0")))
+
+    try:
+        total_trades = int(total_trades_str)
+    except (ValueError, TypeError):
+        total_trades = 0
+
+    return {
+        "total_return_pct": _pct(total_return),
+        "sharpe_ratio": float(sharpe or "0"),
+        "max_drawdown_pct": _pct(drawdown),
+        "total_trades": total_trades,
+        "win_rate": _pct(win_rate) / 100.0 if _pct(win_rate) > 1 else _pct(win_rate),
+    }
+
+
+# ── Layer scoring (continuous 0.0–1.0) ──
+
+def score_signal_agreement(
+    ref_signals: dict,
+    agent_positions: dict[str, list[dict]],
+) -> float:
+    """Compare reference signal direction vs sign(agent_position).
+
+    Per (date, symbol): +1.0 if match, +0.5 if one is 0, +0.0 if oppose.
+    Returns weighted mean. Range [0.0, 1.0].
+    """
+    signals_by_sym = ref_signals.get("signals", {})
+    if not signals_by_sym:
+        return 0.0
+
+    total_score = 0.0
+    total_count = 0
+
+    for sym, sig_list in signals_by_sym.items():
+        # Build agent position lookup for this symbol
+        agent_pos_map: dict[str, float] = {}
+        for entry in agent_positions.get(sym, []):
+            agent_pos_map[entry["date"]] = entry["quantity"]
+
+        for sig_entry in sig_list:
+            date_str = sig_entry["date"]
+            ref_sig = sig_entry["signal"]  # +1, -1, or 0
+            agent_qty = agent_pos_map.get(date_str, 0.0)
+            agent_sig = 1 if agent_qty > 0 else (-1 if agent_qty < 0 else 0)
+
+            if ref_sig == agent_sig:
+                total_score += 1.0
+            elif ref_sig == 0 or agent_sig == 0:
+                total_score += 0.5
+            else:
+                total_score += 0.0  # opposing directions
+
+            total_count += 1
+
+    return total_score / total_count if total_count > 0 else 0.0
+
+
+def score_position_overlap(
+    ref_positions: dict,
+    agent_positions: dict[str, list[dict]],
+) -> float:
+    """Compare position magnitudes per symbol per day.
+
+    overlap = 1 - |ref-agent|/max(|ref|,|agent|,eps).
+    Notional-weighted average. Range [0.0, 1.0].
+    """
+    ref_pos = ref_positions.get("positions", {})
+    if not ref_pos and not agent_positions:
+        return 0.0
+
+    eps = 1e-9
+    total_overlap = 0.0
+    total_weight = 0.0
+
+    # Merge all symbols
+    all_syms = set(ref_pos.keys()) | set(agent_positions.keys())
+
+    for sym in all_syms:
+        ref_map: dict[str, float] = {
+            e["date"]: e["quantity"] for e in ref_pos.get(sym, [])
+        }
+        agent_map: dict[str, float] = {
+            e["date"]: e["quantity"] for e in agent_positions.get(sym, [])
+        }
+        all_dates = set(ref_map.keys()) | set(agent_map.keys())
+
+        for d in all_dates:
+            r = ref_map.get(d, 0.0)
+            a = agent_map.get(d, 0.0)
+            denom = max(abs(r), abs(a), eps)
+            overlap = max(0.0, 1.0 - abs(r - a) / denom)
+            weight = denom  # notional-weight
+            total_overlap += overlap * weight
+            total_weight += weight
+
+    return total_overlap / total_weight if total_weight > 0 else 0.0
+
+
+def score_performance(ref_summary: dict, agent_summary: dict) -> float:
+    """Compare Sharpe, return, drawdown within tolerances.
+
+    Each sub-metric: proximity = 1 - |ref-agent|/max(|ref|,|agent|,eps).
+    Equal-weighted average. Range [0.0, 1.0].
+    """
+    ref_m = ref_summary.get("metrics", ref_summary)
+    if not ref_m or not agent_summary:
+        return 0.0
+
+    eps = 1e-9
+    scores = []
+
+    pairs = [
+        ("sharpe_ratio", "sharpe_ratio"),
+        ("total_return_pct", "total_return_pct"),
+        ("max_drawdown_pct", "max_drawdown_pct"),
+    ]
+
+    for ref_key, agent_key in pairs:
+        r = float(ref_m.get(ref_key, 0))
+        a = float(agent_summary.get(agent_key, 0))
+        denom = max(abs(r), abs(a), eps)
+        proximity = max(0.0, 1.0 - abs(r - a) / denom)
+        scores.append(proximity)
+
+    # Trade count proximity (more lenient)
+    ref_tc = int(ref_m.get("total_trades", 0))
+    agent_tc = int(agent_summary.get("total_trades", 0))
+    if ref_tc > 0:
+        tc_prox = max(0.0, 1.0 - abs(ref_tc - agent_tc) / max(ref_tc, agent_tc))
+    else:
+        tc_prox = 1.0 if agent_tc == 0 else 0.0
+    scores.append(tc_prox)
+
+    return sum(scores) / len(scores) if scores else 0.0
+
+
+def score_trade_similarity(match_result: MatchResult) -> float:
+    """Continuous version of existing trade matching.
+
+    Combines count similarity, entry/exit rates, PnL correlation.
+    Uses match_trades() with tolerance=2 bars (relaxed). Range [0.0, 1.0].
+    """
+    if match_result.total_ref_trades == 0 and match_result.total_agent_trades == 0:
+        return 1.0
+    if match_result.total_ref_trades == 0 or match_result.total_agent_trades == 0:
+        return 0.0
+
+    # Count similarity: 1 - |ref-agent|/max(ref,agent)
+    count_sim = max(0.0, 1.0 - abs(
+        match_result.total_ref_trades - match_result.total_agent_trades
+    ) / max(match_result.total_ref_trades, match_result.total_agent_trades))
+
+    # Entry match rate (already 0-1)
+    entry_rate = match_result.entry_match_rate
+
+    # Direction match rate (already 0-1)
+    dir_rate = match_result.direction_match_rate
+
+    # Exit match rate (already 0-1)
+    exit_rate = match_result.exit_match_rate
+
+    # PnL correlation (map from [-1,1] to [0,1])
+    pnl_corr = (match_result.pnl_correlation + 1.0) / 2.0
+
+    # Weighted combination
+    score = (
+        0.25 * count_sim
+        + 0.25 * entry_rate
+        + 0.15 * dir_rate
+        + 0.15 * exit_rate
+        + 0.20 * pnl_corr
+    )
+    return max(0.0, min(1.0, score))
+
+
+# ── Composite scoring ──
+
+@dataclass
+class BehavioralResult:
+    """Result of multi-layer behavioral evaluation."""
+    signal_score: float = 0.0
+    position_score: float = 0.0
+    performance_score: float = 0.0
+    trade_score: float = 0.0
+    signal_weight: float = 0.40
+    position_weight: float = 0.30
+    performance_weight: float = 0.20
+    trade_weight: float = 0.10
+    composite_score: float = 0.0
+
+    # Diagnostic info for debugging
+    layers_available: list = field(default_factory=list)
+
+
+def compute_behavioral_score(
+    task_id: str,
+    workspace_path: str,
+    resolution: str = "daily",
+) -> BehavioralResult:
+    """Main entry: load all data, score each layer, return composite.
+
+    Redistributes weights when layers are unavailable.
+    """
+    result = BehavioralResult()
+
+    # ── Load reference data ──
+    ref_signals = load_reference_signals(task_id)
+    ref_positions = load_reference_positions(task_id)
+    ref_summary = load_reference_summary(task_id)
+    ref_trades = load_reference_trades(task_id)
+
+    # ── Load agent data ──
+    agent_trades = load_agent_trades(workspace_path)
+    agent_orders = load_agent_orders(workspace_path)
+
+    # Build agent positions (prefer orders, fall back to trades)
+    ref_meta = ref_signals or ref_positions or {}
+    start_date = ref_meta.get("start_date", "2024-02-01")
+    end_date = ref_meta.get("end_date", "2024-12-31")
+
+    if agent_orders:
+        agent_positions = reconstruct_positions(agent_orders, start_date, end_date)
+    elif agent_trades:
+        agent_positions = reconstruct_positions(agent_trades, start_date, end_date)
+    else:
+        agent_positions = {}
+
+    agent_summary = load_agent_summary(workspace_path)
+
+    # ── Score each layer ──
+    available_weights = {}
+
+    # Signal agreement
+    has_signals = bool(ref_signals.get("signals"))
+    has_agent_pos = bool(agent_positions)
+    if has_signals and has_agent_pos:
+        result.signal_score = score_signal_agreement(ref_signals, agent_positions)
+        available_weights["signal"] = result.signal_weight
+        result.layers_available.append("signal")
+
+    # Position overlap
+    has_ref_pos = bool(ref_positions.get("positions", {}))
+    if has_ref_pos and has_agent_pos:
+        result.position_score = score_position_overlap(ref_positions, agent_positions)
+        available_weights["position"] = result.position_weight
+        result.layers_available.append("position")
+
+    # Performance
+    has_ref_summary = bool(ref_summary.get("metrics", {}))
+    has_agent_summary = bool(agent_summary)
+    if has_ref_summary and has_agent_summary:
+        result.performance_score = score_performance(ref_summary, agent_summary)
+        available_weights["performance"] = result.performance_weight
+        result.layers_available.append("performance")
+
+    # Trade similarity (relaxed: 2 bar tolerance)
+    if ref_trades and agent_trades:
+        match_result = match_trades(ref_trades, agent_trades, time_tolerance_bars=2, resolution=resolution)
+        result.trade_score = score_trade_similarity(match_result)
+        available_weights["trade"] = result.trade_weight
+        result.layers_available.append("trade")
+
+    # ── Weight redistribution ──
+    if not available_weights:
+        result.composite_score = 0.0
+        return result
+
+    total_available = sum(available_weights.values())
+    scale = 1.0 / total_available if total_available > 0 else 0.0
+
+    composite = 0.0
+    if "signal" in available_weights:
+        composite += result.signal_score * result.signal_weight * scale
+    if "position" in available_weights:
+        composite += result.position_score * result.position_weight * scale
+    if "performance" in available_weights:
+        composite += result.performance_score * result.performance_weight * scale
+    if "trade" in available_weights:
+        composite += result.trade_score * result.trade_weight * scale
+
+    result.composite_score = max(0.0, min(1.0, composite))
+    return result
