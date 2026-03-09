@@ -230,13 +230,19 @@ def _parse_performance_metrics(results_dir: str) -> dict:
 
         stats = _ci_get(data, "Statistics", {})
         if stats:
+            # LEAN uses "Total Orders" (string), not "Total Trades" (int)
+            total_orders_str = stats.get("Total Orders", stats.get("Total Trades", "0"))
+            try:
+                total_orders = int(total_orders_str)
+            except (ValueError, TypeError):
+                total_orders = 0
             metrics = {
-                "total_trades": stats.get("Total Trades", 0),
-                "sharpe_ratio": stats.get("Sharpe Ratio", 0.0),
+                "total_orders": total_orders,
+                "sharpe_ratio": stats.get("Sharpe Ratio", "0"),
                 "total_return": stats.get("Net Profit", "0%"),
                 "max_drawdown": stats.get("Drawdown", "0%"),
                 "win_rate": stats.get("Win Rate", "0%"),
-                "profit_loss_ratio": stats.get("Profit-Loss Ratio", 0.0),
+                "profit_loss_ratio": stats.get("Profit-Loss Ratio", "0"),
                 "annual_return": stats.get("Compounding Annual Return", "0%"),
             }
             break
@@ -428,6 +434,8 @@ def run_lean_backtest(
         # Parse results
         trades = _parse_trade_logs(results_dir)
         metrics = _parse_performance_metrics(results_dir)
+        # Set total_trades from actual paired trade count (not LEAN's "Total Orders")
+        metrics["total_trades"] = len(trades)
 
         output = {
             "task_id": task_id,

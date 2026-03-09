@@ -103,8 +103,70 @@ def load_reference_trades(task_id: str) -> list[dict]:
     return data.get("trades", [])
 
 
+def _ci_get_trade(d: dict, *keys, default=None):
+    """Case-insensitive dict lookup across multiple candidate keys."""
+    for key in keys:
+        if key in d:
+            return d[key]
+        lower = key.lower()
+        for k in d:
+            if k.lower() == lower:
+                return d[k]
+    return default
+
+
+def _normalize_trade(trade: dict) -> dict:
+    """Normalize a trade dict to the snake_case schema expected by match_trades().
+
+    Handles LEAN PascalCase (EntryTime, Direction, ProfitLoss) and
+    already-normalized snake_case (entry_time, direction, net_pnl).
+    """
+    # If already has the key fields in snake_case, return as-is
+    if "entry_time" in trade and "direction" in trade and "net_pnl" in trade:
+        return trade
+
+    # Direction: LEAN uses 0=Long/1=Short or string values
+    raw_dir = _ci_get_trade(trade, "Direction", "direction", default="")
+    if isinstance(raw_dir, int):
+        direction = "Buy" if raw_dir == 0 else "Sell"
+    else:
+        d = str(raw_dir).lower()
+        if d in ("long", "buy", "0"):
+            direction = "Buy"
+        elif d in ("short", "sell", "1"):
+            direction = "Sell"
+        else:
+            direction = str(raw_dir)
+
+    # Symbol: might be a string or an object with Value
+    raw_sym = _ci_get_trade(trade, "Symbol", "symbol", default="")
+    if isinstance(raw_sym, dict):
+        symbol = raw_sym.get("Value", raw_sym.get("value", str(raw_sym)))
+    else:
+        symbol = str(raw_sym)
+
+    profit_loss = float(_ci_get_trade(trade, "ProfitLoss", "gross_pnl", "net_pnl", default=0))
+    total_fees = float(_ci_get_trade(trade, "TotalFees", default=0))
+
+    return {
+        "symbol": symbol,
+        "direction": direction,
+        "quantity": abs(float(_ci_get_trade(trade, "Quantity", "quantity", default=0))),
+        "entry_time": str(_ci_get_trade(trade, "EntryTime", "entry_time", default="")),
+        "entry_price": float(_ci_get_trade(trade, "EntryPrice", "entry_price", default=0)),
+        "exit_time": str(_ci_get_trade(trade, "ExitTime", "exit_time", default="")),
+        "exit_price": float(_ci_get_trade(trade, "ExitPrice", "exit_price", default=0)),
+        "gross_pnl": profit_loss,
+        "net_pnl": profit_loss - total_fees,
+    }
+
+
 def load_agent_trades(workspace_path: str) -> list[dict]:
-    """Parse agent's trade log from workspace results."""
+    """Parse agent's trade log from workspace results.
+
+    Normalizes LEAN PascalCase fields to the snake_case schema
+    expected by match_trades().
+    """
     trades_path = os.path.join(workspace_path, "results", "trades.json")
     if not os.path.exists(trades_path):
         return []
@@ -112,8 +174,10 @@ def load_agent_trades(workspace_path: str) -> list[dict]:
         with open(trades_path) as f:
             data = json.load(f)
         if isinstance(data, list):
-            return data
-        return data.get("trades", data.get("ClosedTrades", []))
+            raw_trades = data
+        else:
+            raw_trades = data.get("trades", data.get("ClosedTrades", []))
+        return [_normalize_trade(t) for t in raw_trades]
     except (json.JSONDecodeError, IOError):
         return []
 
@@ -124,10 +188,17 @@ def _parse_time(t: str | int | float) -> float:
         # Assume millisecond epoch if large
         return t / 1000.0 if t > 1e12 else float(t)
     # Try ISO format parsing
-    from datetime import datetime
-    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d"):
+    from datetime import datetime, timezone
+    # Strip UTC indicators so strptime works with timezone-naive formats
+    clean = str(t).strip()
+    if clean.endswith("Z"):
+        clean = clean[:-1]
+    if clean.endswith("+00:00"):
+        clean = clean[:-6]
+    for fmt in ("%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d"):
         try:
-            return datetime.strptime(t, fmt).timestamp()
+            dt = datetime.strptime(clean, fmt).replace(tzinfo=timezone.utc)
+            return dt.timestamp()
         except (ValueError, TypeError):
             continue
     return 0.0

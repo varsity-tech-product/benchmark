@@ -5,16 +5,17 @@
   "start_date": "2024-02-01",
   "end_date": "2024-12-31",
   "lean_image": "quantconnect/lean:latest",
-  "generated_at": "2026-03-09T11:54:48.072154+00:00",
+  "generated_at": "2026-03-09T12:07:18.864028+00:00",
   "status": "success",
   "metrics": {
-    "total_trades": 0,
+    "total_orders": 30,
     "sharpe_ratio": "1.727",
     "total_return": "78.104%",
     "max_drawdown": "31.900%",
     "win_rate": "40%",
     "profit_loss_ratio": "5.08",
-    "annual_return": "87.274%"
+    "annual_return": "87.274%",
+    "total_trades": 15
   },
   "trades": [
     {
