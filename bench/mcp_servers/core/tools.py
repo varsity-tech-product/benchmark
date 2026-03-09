@@ -191,15 +191,29 @@ def _resolve_path(path: str) -> Optional[str]:
     Handles the common case where the caller includes a known directory
     prefix (e.g. ``student_code/foo.py``) — we strip the prefix so that
     the search against the matching base directory doesn't double up.
+
+    Security: absolute paths and path traversal (../) are restricted to
+    the allowed base directories to prevent access to reference answers
+    or other host files in local (non-Docker) mode.
     """
     bases = [_workspace_dir(), _data_dir(), _docs_dir(), _student_code_dir()]
     # Known directory name prefixes that callers might include
     _KNOWN_PREFIXES = ("workspace/", "data/", "docs/", "student_code/")
 
+    def _is_within_bases(resolved: str) -> bool:
+        """Check that resolved path is under one of the allowed base dirs."""
+        real = os.path.realpath(resolved)
+        return any(real.startswith(os.path.realpath(b) + os.sep) or
+                    real == os.path.realpath(b)
+                    for b in bases)
+
     # 1. Direct search
     for base in bases:
-        full = os.path.join(base, path) if not path.startswith("/") else path
-        if os.path.isfile(full) or os.path.isdir(full):
+        if path.startswith("/"):
+            full = path
+        else:
+            full = os.path.join(base, path)
+        if (os.path.isfile(full) or os.path.isdir(full)) and _is_within_bases(full):
             return full
 
     # 2. Strip known directory prefix and retry
@@ -208,7 +222,7 @@ def _resolve_path(path: str) -> Optional[str]:
             stripped = path[len(prefix) :]
             for base in bases:
                 full = os.path.join(base, stripped)
-                if os.path.isfile(full) or os.path.isdir(full):
+                if (os.path.isfile(full) or os.path.isdir(full)) and _is_within_bases(full):
                     return full
             break  # Only one prefix can match
 
