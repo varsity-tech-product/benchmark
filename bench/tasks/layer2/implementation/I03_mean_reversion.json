@@ -13,7 +13,7 @@
   "student_openings": {
     "beginner_no_finance": "I want to test a buy-low-sell-high strategy with stop-losses on all the crypto futures in my dataset \u2014 about 100 of them. How do I manage all those positions at once on LEAN?",
     "intermediate_developer": "I'm implementing a universe-wide RSI mean-reversion strategy on LEAN. Each symbol needs its own state machine for long/short/flat with stop-loss tracking. How do I structure this for ~100 symbols?",
-    "advanced_quant": "I need a universe-wide RSI mean-reversion implementation on LEAN with per-symbol asymmetric thresholds, 5% stop-loss, 2% risk budget per position, and tagged exit reasons across ~100 crypto futures. What's the cleanest architecture?"
+    "advanced_quant": "I need a production-grade mean-reversion strategy on LEAN across ~100 crypto futures with proper risk management. What's the cleanest architecture?"
   },
   "environment": {
     "data_files": [
@@ -24,8 +24,7 @@
       "file_write",
       "file_read",
       "file_list",
-      "get_environment_info",
-      "search_docs"
+      "get_environment_info"
     ],
     "docs_available": [
       "lean_algorithm_guide.md",
@@ -45,9 +44,11 @@
       "Tag exit reasons and produce universe-level aggregated statistics"
     ],
     "expected_mcp_tools": [
-      "shell_exec"
+      "shell_exec",
+      "get_environment_info"
     ],
     "convenient_tools": [
+      "search_docs",
       "compute_indicator",
       "plot_chart"
     ],

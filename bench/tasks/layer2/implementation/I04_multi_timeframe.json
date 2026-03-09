@@ -13,7 +13,7 @@
   "student_openings": {
     "beginner_no_finance": "I heard professional traders use multiple timeframes. I have hourly data for 20 crypto futures and I want to use a 4-hour trend to guide my hourly entries. How do I set this up on LEAN?",
     "intermediate_developer": "I need to implement a multi-timeframe strategy on LEAN across ~20 symbols: 4h EMA for trend, 1h RSI for entries. How do I set up consolidators for multiple symbols simultaneously?",
-    "advanced_quant": "I'm implementing a multi-timeframe multi-asset alpha on LEAN: 4h EMA slope as regime filter, 1h RSI for entries, across 20 futures. I need per-symbol consolidators and dual-resolution indicator state. What's the right architecture?"
+    "advanced_quant": "I'm implementing a multi-timeframe strategy on LEAN across 20 futures that combines signals from different bar resolutions. What's the right architecture?"
   },
   "environment": {
     "data_files": [
@@ -24,8 +24,7 @@
       "file_write",
       "file_read",
       "file_list",
-      "get_environment_info",
-      "search_docs"
+      "get_environment_info"
     ],
     "docs_available": [
       "lean_algorithm_guide.md",
@@ -45,9 +44,11 @@
       "Produce per-symbol and universe-level results from a multi-timeframe multi-asset backtest"
     ],
     "expected_mcp_tools": [
-      "shell_exec"
+      "shell_exec",
+      "get_environment_info"
     ],
     "convenient_tools": [
+      "search_docs",
       "compute_indicator",
       "plot_chart"
     ],

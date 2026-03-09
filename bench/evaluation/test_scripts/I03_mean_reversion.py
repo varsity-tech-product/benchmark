@@ -104,13 +104,16 @@ def evaluate(
     _checklist = [
         {"item": "backtest_completed", "weight": 0.05, "passed": results["backtest_completed"]},
         {"item": "trade_log_produced", "weight": 0.05, "passed": results["trade_log_produced"]},
-        {"item": "trade_count_match", "weight": 0.20, "passed": results["trade_count_match"]},
-        {"item": "entry_timing_match", "weight": 0.20, "passed": results["entry_timing_match"]},
-        {"item": "direction_match", "weight": 0.15, "passed": results["direction_match"]},
-        {"item": "exit_timing_match", "weight": 0.15, "passed": results["exit_timing_match"]},
+        {"item": "trade_count_match", "weight": 0.15, "passed": results["trade_count_match"]},
+        {"item": "entry_timing_match", "weight": 0.15, "passed": results["entry_timing_match"]},
+        {"item": "direction_match", "weight": 0.10, "passed": results["direction_match"]},
+        {"item": "exit_timing_match", "weight": 0.10, "passed": results["exit_timing_match"]},
         {"item": "pnl_alignment", "weight": 0.10, "passed": results["pnl_alignment"]},
         {"item": "return_proximity", "weight": 0.05, "passed": results["return_proximity"]},
         {"item": "code_patterns", "weight": 0.05, "passed": results["code_patterns"]},
+        {"item": "stop_loss_present", "weight": 0.08, "passed": results["stop_loss_present"]},
+        {"item": "long_short_both", "weight": 0.07, "passed": results["long_short_both"]},
+        {"item": "exit_reason_tagged", "weight": 0.05, "passed": results["exit_reason_tagged"]},
     ]
     score = sum(c["weight"] for c in _checklist if c["passed"])
 

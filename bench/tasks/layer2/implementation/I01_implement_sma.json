@@ -24,7 +24,7 @@
       "file_write",
       "file_read",
       "file_list",
-      "search_docs"
+      "get_environment_info"
     ],
     "docs_available": [
       "moving_averages.md",
@@ -42,9 +42,11 @@
       "Understand the rolling window concept"
     ],
     "expected_mcp_tools": [
-      "shell_exec"
+      "shell_exec",
+      "get_environment_info"
     ],
     "convenient_tools": [
+      "search_docs",
       "fetch_market_data",
       "compute_indicator",
       "plot_chart"
