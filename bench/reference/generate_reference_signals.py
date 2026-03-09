@@ -29,8 +29,11 @@ BENCH_ROOT = SCRIPT_DIR.parent
 RAW_DATA_DIR = BENCH_ROOT / "data" / "raw" / "i-series"
 REFERENCE_DIR = BENCH_ROOT / "data" / "reference"
 
-DEFAULT_START = "2024-02-01"
-DEFAULT_END = "2024-12-31"
+# Import canonical date window
+sys.path.insert(0, str(BENCH_ROOT))
+from config.benchmark_dates import BENCH_START, BENCH_END  # noqa: E402
+DEFAULT_START = BENCH_START
+DEFAULT_END = BENCH_END
 
 
 # ────────────────────────────────────────────────────────────────────
@@ -135,6 +138,7 @@ def _signals_i01(start: str = DEFAULT_START, end: str = DEFAULT_END) -> dict:
 
     return {
         "task_id": "I01",
+        "seed": None,
         "resolution": "daily",
         "start_date": start,
         "end_date": end,
@@ -169,6 +173,7 @@ def _signals_i02(start: str = DEFAULT_START, end: str = DEFAULT_END) -> dict:
 
     return {
         "task_id": "I02",
+        "seed": None,
         "resolution": "daily",
         "start_date": start,
         "end_date": end,
@@ -209,6 +214,7 @@ def _signals_i03(start: str = DEFAULT_START, end: str = DEFAULT_END) -> dict:
 
     return {
         "task_id": "I03",
+        "seed": None,
         "resolution": "daily",
         "start_date": start,
         "end_date": end,
@@ -288,6 +294,7 @@ def _signals_i04(start: str = DEFAULT_START, end: str = DEFAULT_END) -> dict:
 
     return {
         "task_id": "I04",
+        "seed": None,
         "resolution": "hour",
         "start_date": start,
         "end_date": end,
@@ -348,6 +355,7 @@ def _signals_i05(start: str = DEFAULT_START, end: str = DEFAULT_END) -> dict:
 
     return {
         "task_id": "I05",
+        "seed": None,
         "resolution": "daily",
         "start_date": start,
         "end_date": end,
@@ -408,6 +416,7 @@ def _signals_i06(start: str = DEFAULT_START, end: str = DEFAULT_END) -> dict:
 
     return {
         "task_id": "I06",
+        "seed": None,
         "resolution": "daily",
         "start_date": start,
         "end_date": end,
@@ -416,9 +425,74 @@ def _signals_i06(start: str = DEFAULT_START, end: str = DEFAULT_END) -> dict:
     }
 
 
+def _compute_candidate_pairs(start: str = DEFAULT_START, end: str = DEFAULT_END) -> dict:
+    """Pre-compute pairwise correlations for all Tier 2 symbols.
+
+    Returns a JSON-serializable dict with the top-10 pairs ranked by
+    average 60-day rolling correlation of log returns.
+    """
+    # Load universe to get Tier 2 symbols
+    universe_path = BENCH_ROOT / "data" / "universe.json"
+    with open(universe_path) as f:
+        universe = json.load(f)
+    symbols = universe["tiers"]["tier2"]["symbols"]
+
+    # Load daily close prices for each symbol
+    closes: dict[str, pd.Series] = {}
+    for sym in symbols:
+        df = _load_daily_csv(sym)
+        df = _filter_dates(df, start, end)
+        if df.empty or len(df) < 60:
+            continue
+        closes[sym] = df.set_index("date")["close"]
+
+    available = sorted(closes.keys())
+    if len(available) < 2:
+        return {"task_id": "I05", "universe": "tier2", "candidate_pairs": []}
+
+    # Compute log returns
+    log_rets = {sym: np.log(closes[sym]).diff().dropna() for sym in available}
+
+    # Align all series on common dates
+    all_dates = None
+    for sym in available:
+        idx = set(log_rets[sym].index)
+        all_dates = idx if all_dates is None else all_dates & idx
+    all_dates = sorted(all_dates)
+
+    aligned = {sym: log_rets[sym].reindex(all_dates) for sym in available}
+
+    # Compute pairwise 60-day rolling correlation, then average
+    from itertools import combinations
+
+    pair_scores: list[tuple[str, str, float]] = []
+    for sym_a, sym_b in combinations(available, 2):
+        rolling_corr = aligned[sym_a].rolling(60).corr(aligned[sym_b])
+        avg_corr = rolling_corr.dropna().mean()
+        if not np.isnan(avg_corr):
+            pair_scores.append((sym_a, sym_b, float(avg_corr)))
+
+    # Rank by absolute correlation (descending), filter > 0.7
+    pair_scores.sort(key=lambda x: abs(x[2]), reverse=True)
+    top_pairs = [
+        {"pair": [a, b], "avg_correlation": round(c, 4), "rank": i + 1}
+        for i, (a, b, c) in enumerate(pair_scores)
+        if abs(c) > 0.7
+    ][:10]
+
+    return {
+        "task_id": "I05",
+        "universe": "tier2",
+        "selection_method": "60-day rolling correlation of log returns, ranked",
+        "period": f"{start} to {end}",
+        "candidate_pairs": top_pairs,
+    }
+
+
 def _empty_signal_result(task_id: str, resolution: str, start: str, end: str, warmup: int) -> dict:
     return {
         "task_id": task_id,
+        "seed": None,
         "resolution": resolution,
         "start_date": start,
         "end_date": end,
@@ -500,7 +574,15 @@ def generate(task_id: str, start: str = DEFAULT_START, end: str = DEFAULT_END) -
     total_sigs = sum(len(v) for v in signals.get("signals", {}).values())
     print(f"  {task_id}: saved {total_sigs} signals to {sig_path.name}")
 
-    # 2. Summary (positions are reconstructed from trades at eval time)
+    # 2. Candidate pairs file (I05 only)
+    if task_id == "I05":
+        pairs = _compute_candidate_pairs(start, end)
+        pairs_path = REFERENCE_DIR / "I05_candidate_pairs.json"
+        with open(pairs_path, "w") as f:
+            json.dump(pairs, f, indent=2)
+        print(f"  {task_id}: saved {len(pairs['candidate_pairs'])} candidate pairs to {pairs_path.name}")
+
+    # 3. Summary (positions are reconstructed from trades at eval time)
     summary = _build_summary(task_id)
     sum_path = REFERENCE_DIR / f"{task_id}_reference_summary.json"
     with open(sum_path, "w") as f:

@@ -91,6 +91,7 @@ class QuantTutorTask(BaseModel):
     max_turns: int = 30
     agent_max_steps: int = 10
     timeout_minutes: int = 15
+    seed: Optional[int] = None  # Reproducibility seed; overrides hash(task_id_run_index)
 
 
 class StudentPersona(BaseModel):

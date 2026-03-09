@@ -4,7 +4,7 @@
   "difficulty": "hard",
   "category": "implementation",
   "task_type": "multi_turn",
-  "description": "Guide a student to implement a pairs trading scanner on LEAN that (1) screens all pair combinations within a 20-symbol universe for cointegration/correlation, (2) selects the top pairs, and (3) trades spread mean-reversion on the selected pairs with proper multi-leg position management. This is how institutional stat-arb strategies actually work \u2014 not hand-picking one pair, but systematically scanning a universe.",
+  "description": "Guide a student to implement a pairs trading strategy on LEAN that (1) uses a pre-computed candidate pairs file (I05_candidate_pairs.json) listing top-10 correlated pairs from the 20-symbol universe, (2) implements spread mean-reversion trading on the selected pairs with z-score entry/exit rules, and (3) manages multi-leg positions with proper exposure caps. The student should understand pair selection concepts but does not need to compute pairwise statistics from scratch. This is how institutional stat-arb strategies work \u2014 the pair discovery phase is provided so the task focuses on implementation of spread trading and multi-pair portfolio management.",
   "persona_ids": [
     "beginner_no_finance",
     "intermediate_developer",
@@ -17,7 +17,8 @@
   },
   "environment": {
     "data_files": [
-      "universe.json"
+      "universe.json",
+      "I05_candidate_pairs.json"
     ],
     "core_mcp_tools": [
       "shell_exec",
@@ -34,14 +35,14 @@
     "network_enabled": false
   },
   "ground_truth": {
-    "expected_outcome": "Student produces a LEAN C# algorithm that (1) subscribes to ~20 symbols, (2) computes pairwise correlations across all 190 combinations and selects top-10 pairs, (3) tracks per-pair ratio z-scores, (4) enters/exits spread positions atomically per pair, (5) manages portfolio exposure across up to 10 active pairs, and (6) produces per-pair trade logs and a portfolio-level summary. Trade logs for 3 reference pairs should match the ground-truth.",
+    "expected_outcome": "Student produces a LEAN C# algorithm that (1) loads candidate pairs from I05_candidate_pairs.json, (2) subscribes to the relevant symbols, (3) tracks per-pair ratio z-scores, (4) enters/exits spread positions atomically per pair, (5) manages portfolio exposure across up to 10 active pairs, and (6) produces per-pair trade logs and a portfolio-level summary. Trade logs for 3 reference pairs should match the ground-truth.",
     "required_capabilities": [
-      "Subscribe to ~20 symbols and compute pairwise statistics (correlation matrix)",
-      "Implement pair selection logic (rank by correlation, select top-N)",
+      "Load and parse pre-computed candidate pairs from I05_candidate_pairs.json",
+      "Subscribe to symbols from the candidate pairs and understand pair selection concepts",
       "Compute per-pair rolling ratio z-score",
       "Manage multiple simultaneous spread positions (up to 10 pairs \u00d7 2 legs = 20 positions)",
       "Implement atomic spread entry/exit with per-pair stop-loss",
-      "Produce per-pair and portfolio-level results from a universe pairs scan"
+      "Produce per-pair and portfolio-level results"
     ],
     "expected_mcp_tools": [
       "shell_exec",

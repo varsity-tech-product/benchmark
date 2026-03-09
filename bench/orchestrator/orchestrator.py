@@ -199,7 +199,7 @@ class BenchmarkOrchestrator:
                 convenient_tool_names=(
                     task.ground_truth.convenient_tools if task.ground_truth else []
                 ),
-                seed=hash(f"{task.task_id}_{run_index}"),
+                seed=task.seed if task.seed is not None else hash(f"{task.task_id}_{run_index}"),
                 container_manager=self.container_manager,
                 container_id=container.container_id,
                 workspace_path=container.workspace_path,

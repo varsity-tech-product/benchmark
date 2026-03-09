@@ -30,6 +30,10 @@ LEAN_CONFIG="${LEAN_LAUNCHER}/config.json"
 RESULTS_DIR="/workspace/results"
 LEAN_OUTPUT_DIR="${LEAN_LAUNCHER}/bin/Debug"
 
+# Per-backtest timeout in seconds (default 5 min, overridable via env var).
+# Exit code 124 = timeout killed.
+LEAN_RUN_TIMEOUT="${LEAN_RUN_TIMEOUT:-300}"
+
 # ── Usage check ────────────────────────────────────────────────────────
 if [ $# -lt 1 ]; then
     echo "Usage: run_backtest <Algorithm.cs path>"
@@ -78,9 +82,17 @@ mkdir -p "$RESULTS_DIR"
 
 cd "$LEAN_LAUNCHER"
 
-if ! dotnet run --no-build -c Debug 2>&1 | tee "$RESULTS_DIR/log.txt"; then
+RUN_EXIT=0
+timeout "$LEAN_RUN_TIMEOUT" dotnet run --no-build -c Debug 2>&1 | tee "$RESULTS_DIR/log.txt" || RUN_EXIT=${PIPESTATUS[0]}
+
+if [ "$RUN_EXIT" -eq 124 ]; then
     echo ""
-    echo "ERROR: LEAN engine failed at runtime."
+    echo "ERROR: LEAN engine timed out after ${LEAN_RUN_TIMEOUT}s."
+    echo "Increase LEAN_RUN_TIMEOUT env var if the algorithm needs more time."
+    exit 124
+elif [ "$RUN_EXIT" -ne 0 ]; then
+    echo ""
+    echo "ERROR: LEAN engine failed at runtime (exit code $RUN_EXIT)."
     echo "Check $RESULTS_DIR/log.txt for details."
     echo "Common issues:"
     echo "  - Data not found for requested symbols/dates"

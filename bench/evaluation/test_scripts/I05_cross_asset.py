@@ -43,6 +43,7 @@ def evaluate(
         "trade_count_match": False,
         "code_patterns": False,
         "pair_selection_present": False,
+        "candidate_pairs_used": False,
         "multi_leg_positions": False,
         "exposure_capped": False,
         "score": 0.0,
@@ -80,8 +81,17 @@ def evaluate(
     )
     results["code_patterns"] = has_corr and has_zscore
 
+    # ── Candidate pairs file usage ──
+    # Check if the agent loaded the provided candidate pairs file
+    if has_any(artifact_text, [
+        "I05_candidate_pairs", "candidate_pairs.json", "candidate_pairs",
+    ]):
+        results["candidate_pairs_used"] = True
+
     # ── Pair selection present ──
-    if has_regex(artifact_text, [
+    # Accept either (a) regex evidence of pair selection logic OR
+    # (b) agent loading the candidate pairs file
+    if results["candidate_pairs_used"] or has_regex(artifact_text, [
         r"pair.?select", r"cointegrat", r"spread\s*=",
         r"select.*pair", r"rank.*correlat", r"correlat.*rank",
     ]):
@@ -115,8 +125,9 @@ def evaluate(
         {"item": "trade_log_produced",      "weight": 0.05, "passed": results["trade_log_produced"]},
         {"item": "behavioral_score",        "weight": 0.50, "score": behavioral.composite_score},
         {"item": "code_patterns",           "weight": 0.05, "passed": results["code_patterns"]},
-        {"item": "pair_selection_present",  "weight": 0.08, "passed": results["pair_selection_present"]},
-        {"item": "multi_leg_positions",     "weight": 0.07, "passed": results["multi_leg_positions"]},
+        {"item": "candidate_pairs_used",    "weight": 0.05, "passed": results["candidate_pairs_used"]},
+        {"item": "pair_selection_present",  "weight": 0.05, "passed": results["pair_selection_present"]},
+        {"item": "multi_leg_positions",     "weight": 0.05, "passed": results["multi_leg_positions"]},
         {"item": "exposure_capped",         "weight": 0.05, "passed": results["exposure_capped"]},
     ]
     score = sum(
