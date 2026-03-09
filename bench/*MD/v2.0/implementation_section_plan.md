@@ -214,16 +214,16 @@ Funding rates for the top 20 symbols (Tier 2), for carry signal construction in 
 
 This is orders of magnitude larger than S/B-series data (~40K rows) but well within LEAN's capacity and HuggingFace storage limits.
 
-### 2.5 Data Pipeline: Raw → LEAN Format
+### 2.5 Data Pipeline: Raw → LEAN Format → HuggingFace
 
-I-series requires a **three-stage data pipeline**:
+I-series requires a **three-stage data preparation pipeline** (run once by benchmark maintainers, not at eval time):
 
 ```
 Stage 1: Download raw Binance klines + funding rates at scale
          ↓
 Stage 2: Convert to LEAN format (directory structure + CSV schema + zip packaging)
          ↓
-Stage 3: Upload both raw and LEAN-format to HuggingFace
+Stage 3: Upload both raw and LEAN-format to HuggingFace dataset repo
 ```
 
 #### Stage 1: Bulk Download
@@ -281,9 +281,9 @@ Date (YYYYMMDD HH:MM), Open (scaled), High (scaled), Low (scaled), Close (scaled
 
 This script is **benchmark infrastructure** — it is NOT a task for the agent.
 
-#### Stage 3: HuggingFace Storage
+#### Stage 3: HuggingFace Upload
 
-Both raw and LEAN-format data are stored on HuggingFace:
+Both raw and LEAN-format data are uploaded to HuggingFace using Git LFS:
 
 ```
 huggingface.co/datasets/{org}/quant-tutor-bench-data/
@@ -318,11 +318,236 @@ huggingface.co/datasets/{org}/quant-tutor-bench-data/
             └── ...
 ```
 
-**Benchmark setup downloads the appropriate format**:
-- S/B-series tasks: download from `raw/sb-series/` → place in `bench/data/futures/`
-- I-series tasks: download from `lean/` → place in LEAN's `Data/` directory inside the Docker sandbox
+### 2.6 Decoupled Architecture: Dataset ↔ Eval System
 
-### 2.6 `universe.json` — Symbol Metadata
+**Core principle**: The dataset and the evaluation system are **fully decoupled**. The dataset lives on HuggingFace. The eval system (Docker + LEAN + orchestrator) lives in this repo. They connect at runtime via a data manager that downloads from HF and mounts into Docker.
+
+```
+┌─────────────────────────────────────┐
+│         HuggingFace Dataset          │
+│  {org}/quant-tutor-bench-data        │
+│                                      │
+│  ├── raw/sb-series/   (S/B data)     │
+│  ├── raw/i-series/    (I raw data)   │
+│  ├── lean/            (LEAN format)  │
+│  └── universe.json                   │
+└──────────────┬──────────────────────┘
+               │ huggingface_hub.snapshot_download()
+               │ (first run only, then cached)
+               ▼
+┌─────────────────────────────────────┐
+│         Local Cache (gitignored)     │
+│  bench/data/                         │
+│  ├── frozen/           (S/B, small,  │
+│  │                      may stay     │
+│  │                      in git)      │
+│  └── hf_cache/         (I-series,    │
+│      ├── lean/          downloaded   │
+│      │   └── crypto/    from HF,     │
+│      │       └── ...    gitignored)  │
+│      └── universe.json               │
+└──────────────┬──────────────────────┘
+               │ Docker volume mount (-v)
+               ▼
+┌─────────────────────────────────────┐
+│     Docker Container                 │
+│     quant-tutor-env:v2.0-lean        │
+│     (LEAN engine + .NET SDK only,    │
+│      NO data baked in — ~3GB)        │
+│                                      │
+│  /lean/Data/ ← mount hf_cache/lean/ │
+│  /data/      ← mount frozen/ or      │
+│                universe.json         │
+│  /workspace/ ← mount temp workspace  │
+│  /docs/      ← mount reference docs  │
+└─────────────────────────────────────┘
+```
+
+**Why decoupled?**
+
+| Concern | Baked-in-image approach | Decoupled approach |
+|---------|------------------------|-------------------|
+| Image size | ~10-15GB (LEAN + data) | ~3GB (LEAN only) |
+| Data update | Rebuild + re-push entire image | Just update HF dataset repo |
+| Image update (LEAN version) | Re-push with all data | Rebuild image alone (~3GB) |
+| First-run cost | Slow image pull (~15GB) | Fast image pull (~3GB) + data download (~500MB, once) |
+| Reproducibility | Data pinned to image tag | Data pinned to HF dataset commit hash |
+| Sharing | Must share huge image | Image is small; data downloads automatically |
+| S/B-series impact | None (they use different image) | None (they still use frozen/ directly) |
+
+### 2.7 Data Manager: `bench/scripts/data_manager.py`
+
+A thin wrapper around `huggingface_hub` that ensures data is available locally before running I-series tasks.
+
+```python
+"""Data manager for downloading and caching HuggingFace datasets.
+
+Usage:
+    from scripts.data_manager import ensure_data
+
+    # Before running I-series tasks:
+    paths = ensure_data(series="i")
+    # paths.lean_data  → local path to LEAN-format data (mount as /lean/Data/)
+    # paths.universe   → local path to universe.json (mount as /data/universe.json)
+
+    # Before running S/B-series tasks:
+    paths = ensure_data(series="sb")
+    # paths.frozen_data → local path to frozen CSVs (mount as /data/)
+"""
+
+import os
+from dataclasses import dataclass
+from pathlib import Path
+from huggingface_hub import snapshot_download
+
+HF_REPO_ID = "{org}/quant-tutor-bench-data"
+DEFAULT_CACHE_DIR = Path(__file__).parent.parent / "data" / "hf_cache"
+
+
+@dataclass
+class DataPaths:
+    lean_data: str | None = None       # LEAN-format data dir (for I-series)
+    frozen_data: str | None = None     # Raw frozen CSVs (for S/B-series)
+    universe: str | None = None        # universe.json path
+
+
+def ensure_data(
+    series: str = "i",
+    cache_dir: str | Path = DEFAULT_CACHE_DIR,
+    hf_repo: str = HF_REPO_ID,
+    revision: str | None = None,       # Pin to specific HF commit for reproducibility
+) -> DataPaths:
+    """Download data from HuggingFace if not cached locally.
+
+    Args:
+        series: "i" for I-series (LEAN format), "sb" for S/B-series (raw CSVs).
+        cache_dir: Local directory for caching downloaded data.
+        hf_repo: HuggingFace dataset repo ID.
+        revision: Optional HF commit hash for reproducible runs.
+
+    Returns:
+        DataPaths with local paths to the downloaded data.
+    """
+    cache_dir = Path(cache_dir)
+    cache_dir.mkdir(parents=True, exist_ok=True)
+
+    if series == "i":
+        lean_dir = cache_dir / "lean"
+        universe_path = cache_dir / "universe.json"
+
+        if not lean_dir.exists() or not universe_path.exists():
+            snapshot_download(
+                repo_id=hf_repo,
+                repo_type="dataset",
+                allow_patterns=["lean/**", "raw/i-series/universe.json"],
+                local_dir=str(cache_dir),
+                revision=revision,
+            )
+            # Move universe.json to expected location
+            src = cache_dir / "raw" / "i-series" / "universe.json"
+            if src.exists() and not universe_path.exists():
+                src.rename(universe_path)
+
+        return DataPaths(
+            lean_data=str(lean_dir),
+            universe=str(universe_path),
+        )
+
+    elif series == "sb":
+        frozen_dir = cache_dir / "raw" / "sb-series"
+
+        if not frozen_dir.exists():
+            snapshot_download(
+                repo_id=hf_repo,
+                repo_type="dataset",
+                allow_patterns=["raw/sb-series/**"],
+                local_dir=str(cache_dir),
+                revision=revision,
+            )
+
+        return DataPaths(frozen_data=str(frozen_dir))
+
+    else:
+        raise ValueError(f"Unknown series: {series!r}. Use 'i' or 'sb'.")
+```
+
+### 2.8 Orchestrator Integration
+
+The existing orchestrator mounts `bench/data/frozen/` as `/data:ro` in the Docker container (see `container_manager.py:95`). For I-series, we extend this with LEAN data mounts.
+
+**Changes to `container_manager.py`**:
+
+```python
+def create_container(
+    self,
+    task_id: str,
+    data_dir: str,
+    docs_dir: str,
+    student_code_dir: Optional[str] = None,
+    sandbox_image: Optional[str] = None,
+    network_enabled: bool = False,
+    lean_data_dir: Optional[str] = None,     # NEW: LEAN data mount
+) -> ContainerInfo:
+    # ... existing logic ...
+
+    if self.use_docker:
+        mounts = [
+            f"-v {workspace}:/workspace",
+            f"-v {data_dir}:/data:ro",
+            f"-v {docs_dir}:/docs:ro",
+        ]
+        # NEW: Mount LEAN data for I-series tasks
+        if lean_data_dir:
+            mounts.append(f"-v {lean_data_dir}:/lean/Data:ro")
+
+        # ... rest of existing logic ...
+```
+
+**Changes to `orchestrator.py`**:
+
+```python
+from scripts.data_manager import ensure_data
+
+class Orchestrator:
+    def __init__(self, ...):
+        # ... existing init ...
+        self._lean_data_paths = None    # Lazy-loaded
+
+    def _ensure_lean_data(self) -> DataPaths:
+        """Download LEAN data from HF if not cached. Called once, cached."""
+        if self._lean_data_paths is None:
+            self._lean_data_paths = ensure_data(series="i")
+        return self._lean_data_paths
+
+    def run_task(self, task, persona, ...):
+        # ... existing logic ...
+
+        lean_data_dir = None
+        if task.category == "implementation":
+            paths = self._ensure_lean_data()
+            lean_data_dir = paths.lean_data
+            # Use universe.json as data_dir instead of frozen/
+            data_dir = os.path.dirname(paths.universe)
+
+        container = self.container_manager.create_container(
+            task_id=task.task_id,
+            data_dir=data_dir,
+            docs_dir=docs_dir,
+            sandbox_image=task.environment.get("sandbox_image"),
+            network_enabled=task.environment.get("network_enabled", False),
+            lean_data_dir=lean_data_dir,    # NEW
+        )
+```
+
+**Key properties of this integration**:
+
+1. **Lazy download**: Data is only downloaded when the first I-series task runs. S/B-series tasks never trigger a download.
+2. **Cached**: Once downloaded, data is reused across all I-series tasks and across benchmark runs.
+3. **Reproducible**: The `revision` parameter can pin to a specific HF commit hash.
+4. **Non-invasive**: S/B-series flow is completely unchanged — they still use `bench/data/frozen/` directly.
+5. **Gitignored**: The cache directory (`bench/data/hf_cache/`) is gitignored — no large files in the repo.
+
+### 2.9 `universe.json` — Symbol Metadata
 
 A manifest file listing all symbols with metadata, used by both download scripts and reference algorithm generation:
 
@@ -330,6 +555,8 @@ A manifest file listing all symbols with metadata, used by both download scripts
 {
   "version": "1.0",
   "freeze_date": "2024-12-31",
+  "hf_repo": "{org}/quant-tutor-bench-data",
+  "hf_revision": "abc123def456...",
   "tiers": {
     "tier1": {
       "description": "Full universe — daily resolution",
@@ -359,13 +586,13 @@ A manifest file listing all symbols with metadata, used by both download scripts
 }
 ```
 
-### 2.7 Data in the Docker Sandbox
+### 2.10 Data in the Docker Sandbox
 
-For I-series tasks, the Docker sandbox image (`quant-tutor-env:v2.0-lean`) includes:
+For I-series tasks, the Docker container sees:
 
 ```
-/lean/                            # LEAN engine installation
-/lean/Data/                       # LEAN data directory (pre-populated with full universe)
+/lean/                            # LEAN engine (baked into image)
+/lean/Data/                       # ← MOUNTED from hf_cache/lean/ (read-only)
     └── crypto/binance/
         ├── daily/                # Tier 1: ~100 symbols
         │   ├── btcusdt.zip
@@ -374,16 +601,36 @@ For I-series tasks, the Docker sandbox image (`quant-tutor-env:v2.0-lean`) inclu
         ├── hour/                 # Tier 2: ~20 symbols
         ├── minute/              # Tier 3: ~5 symbols (daily zip files)
         └── ...
-/lean/Launcher/                   # LEAN launcher (pre-configured)
-/workspace/                       # Agent's working directory
-    └── Algorithm.cs              # (empty template or blank — agent writes this)
-/data/                            # Metadata (read-only)
+/lean/Launcher/                   # LEAN launcher (baked into image)
+/workspace/                       # ← MOUNTED temp dir (read-write)
+    └── Algorithm.cs              # (agent writes this)
+/data/                            # ← MOUNTED from hf_cache/ (read-only)
     └── universe.json             # Symbol list, tiers, listing dates
-/docs/                            # Reference docs (read-only)
+/docs/                            # ← MOUNTED from bench/docs/reference/ (read-only)
     └── lean_algorithm_guide.md
 ```
 
+**What's IN the Docker image** (baked in, ~3GB):
+- LEAN engine (C# build)
+- .NET SDK 8.0
+- `run_backtest` wrapper script
+- LEAN config.json (pre-configured for Binance futures)
+- No data
+
+**What's MOUNTED at runtime** (from local cache of HF data):
+- `/lean/Data/` ← LEAN-format market data
+- `/data/` ← universe.json + any metadata
+- `/workspace/` ← agent's working directory
+- `/docs/` ← reference documents
+
 **Key difference from S/B-series**: The agent does NOT have direct access to raw CSV files. All data access happens through LEAN's `AddCryptoFuture()` API. The `universe.json` tells the agent which symbols are available and at which resolutions.
+
+### 2.11 `.gitignore` Additions
+
+```
+# I-series data cache (downloaded from HuggingFace at runtime)
+bench/data/hf_cache/
+```
 
 ---
 
@@ -1463,7 +1710,7 @@ Each reference trade log must be validated:
 
 ### Phase 0: Infrastructure (Prerequisites)
 
-**Data pipeline:**
+**Data pipeline (run once by maintainers):**
 - [ ] Finalize `universe.json` — rank all USDT-M perpetuals by 2024 avg daily volume, select top 100 for Tier 1, top 20 for Tier 2, top 5 for Tier 3
 - [ ] Write `bench/scripts/download_binance_full_universe.py` — bulk download with parallelism, resume, checksum verification
 - [ ] Download Tier 1: ~100 symbols × 1d (from listing date → 2024-12-31)
@@ -1472,15 +1719,38 @@ Each reference trade log must be validated:
 - [ ] Download funding rates: ~20 symbols (from listing date → 2024-12-31)
 - [ ] Write `bench/scripts/convert_binance_to_lean.py` — Binance CSV → LEAN format converter for all tiers/timeframes
 - [ ] Convert all tiers to LEAN format and validate
-- [ ] Upload raw + LEAN-format data to HuggingFace (organized per §2.5)
 
-**Docker / LEAN environment:**
-- [ ] Build Docker image `quant-tutor-env:v2.0-lean` with LEAN engine + .NET SDK pre-installed
+**HuggingFace dataset (decoupled storage):**
+- [ ] Create HF dataset repo `{org}/quant-tutor-bench-data`
+- [ ] Configure Git LFS for large files (`.zip`, `.csv` > 10MB)
+- [ ] Upload raw S/B-series data to `raw/sb-series/`
+- [ ] Upload raw I-series data to `raw/i-series/` (organized by tier)
+- [ ] Upload LEAN-format data to `lean/`
+- [ ] Upload `universe.json` to `raw/i-series/`
+- [ ] Tag initial dataset version (commit hash for reproducibility)
+
+**Data manager (runtime download + cache):**
+- [ ] Write `bench/scripts/data_manager.py` (see §2.7)
+- [ ] Add `huggingface_hub` to `bench/requirements.txt`
+- [ ] Add `bench/data/hf_cache/` to `.gitignore`
+- [ ] Test: first run downloads data; second run uses cache
+- [ ] Test: `revision` parameter pins to specific HF commit
+
+**Orchestrator integration (mount data into Docker):**
+- [ ] Add `lean_data_dir` parameter to `container_manager.py` (see §2.8)
+- [ ] Add `_ensure_lean_data()` to `orchestrator.py` (see §2.8)
+- [ ] Add `lean_data_dir` mount for I-series tasks (`-v lean_data:/lean/Data:ro`)
+- [ ] Test: I-series task container sees data at `/lean/Data/`
+- [ ] Test: S/B-series tasks are completely unaffected
+
+**Docker / LEAN environment (engine only, no data):**
+- [ ] Build Docker image `quant-tutor-env:v2.0-lean` with LEAN engine + .NET SDK (NO data, ~3GB)
 - [ ] Write and test `run_backtest` wrapper script
 - [ ] Pre-configure LEAN `config.json` for Binance futures
-- [ ] Test that LEAN loads and processes all Tier 1 data correctly (100 symbols)
+- [ ] Test that LEAN loads and processes mounted Tier 1 data correctly (100 symbols)
 - [ ] Test that LEAN handles Tier 2 hourly + 4h consolidation correctly
 - [ ] Benchmark: measure runtime for a 100-symbol daily backtest on LEAN (target < 5 min)
+- [ ] Push image to Docker Hub / GHCR
 
 ### Phase 1: Reference Documentation
 
@@ -1585,22 +1855,24 @@ Each reference trade log must be validated:
 
 - **Engine**: LEAN (QuantConnect), open-source → confirmed
 - **Language**: C# (native LEAN, no Python.NET overhead) → confirmed
-- **Data storage**: HuggingFace (raw + LEAN format) → confirmed
+- **Data storage**: HuggingFace (raw + LEAN format), decoupled from eval system → confirmed
 - **Data scale**: Full Binance futures universe, not toy datasets → confirmed
 - **Timeframes**: 5 representative (1m, 5m, 1h, 4h, 1d) → confirmed
 - **Symbol tiers**: Tier 1 (~100, daily), Tier 2 (~20, hourly+4h), Tier 3 (~5, minute) → confirmed
 - **Evaluation**: Trade log comparison against ground-truth → confirmed
 - **LEAN as black-box**: Agent only writes Algorithm.cs + runs → confirmed
+- **Architecture**: Dataset on HF, Docker image has engine only (~3GB), data mounted at runtime → confirmed
+- **Data mount**: `hf_cache/lean/` → `/lean/Data:ro` via Docker volume mount → confirmed
 
 ### 14.2 To Be Resolved
 
-1. **LEAN Docker image size**: Full LEAN + .NET SDK + Tier 1/2/3 data may be >10GB. Need to decide: bake data into image vs download at runtime. Baking is simpler but huge; runtime download adds latency but smaller image.
-2. **LEAN version pinning**: Which LEAN version to freeze? Latest stable release at build time?
-3. **Funding rate data in LEAN**: LEAN may not natively support custom funding rate data. I06 may need a custom data reader or a pre-computed funding column merged into kline data. Need to prototype.
-4. **I01 redesign timeline**: Should I01 be redesigned before or after I02–I06 are built?
-5. **HuggingFace dataset organization**: Exact repo name, access permissions, LFS configuration for larger files.
-6. **Trade log tolerance tuning**: The ±1 bar tolerance and percentage thresholds in §7.1.2 need calibration after running reference algorithms — universe-scale strategies may have more variance.
-7. **Symbol selection criteria**: Exact methodology for ranking symbols by volume — use 2024 average, or 2021-2024 average? How to handle symbols that were delisted/relisted?
-8. **LEAN 4h resolution**: LEAN may not have native 4h resolution support. May need to subscribe at 1h and consolidate to 4h via `TradeBarConsolidator`. This affects Tier 2 data format — store as 1h and let LEAN consolidate, or pre-aggregate to 4h?
-9. **Runtime performance**: A 100-symbol × 21-sweep I06 backtest = 2,100 LEAN runs. Need to estimate total runtime and consider whether the sweep should be parallelized (multiple LEAN instances) or sequential.
-10. **Tier 3 data usage**: Currently only I04 references Tier 3 (5m/1m) data. Should we add a task that specifically uses minute-level data, or is it sufficient as optional stress-test data?
+1. **LEAN version pinning**: Which LEAN version to freeze? Latest stable release at build time?
+2. **Funding rate data in LEAN**: LEAN may not natively support custom funding rate data. I06 may need a custom data reader or a pre-computed funding column merged into kline data. Need to prototype.
+3. **I01 redesign timeline**: Should I01 be redesigned before or after I02–I06 are built?
+4. **HuggingFace access**: Public or private dataset repo? If private, how to distribute access tokens for CI/CD and collaborators?
+5. **Trade log tolerance tuning**: The ±1 bar tolerance and percentage thresholds in §7.1.2 need calibration after running reference algorithms — universe-scale strategies may have more variance.
+6. **Symbol selection criteria**: Exact methodology for ranking symbols by volume — use 2024 average, or 2021-2024 average? How to handle symbols that were delisted/relisted?
+7. **LEAN 4h resolution**: LEAN may not have native 4h resolution support. May need to subscribe at 1h and consolidate to 4h via `TradeBarConsolidator`. This affects Tier 2 data format — store as 1h and let LEAN consolidate, or pre-aggregate to 4h?
+8. **Runtime performance**: A 100-symbol × 21-sweep I06 backtest = 2,100 LEAN runs. Need to estimate total runtime and consider whether the sweep should be parallelized (multiple LEAN instances) or sequential.
+9. **Tier 3 data usage**: Currently only I04 references Tier 3 (5m/1m) data. Should we add a task that specifically uses minute-level data, or is it sufficient as optional stress-test data?
+10. **S/B-series migration**: Should S/B-series data also move from `bench/data/frozen/` (git) to HuggingFace? This would make the repo fully data-free, but it's a smaller win since S/B data is only ~5MB.
