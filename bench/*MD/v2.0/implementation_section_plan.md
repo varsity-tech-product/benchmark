@@ -1,6 +1,6 @@
 # Implementation Section (I-Series) Design Plan
 
-> Version: v2.1 | Status: In Progress — data pipeline tested, full-universe run pending | Section: Strategy Implementation on LEAN Engine
+> Version: v2.2 | Status: In Progress — I01–I06 classic approach built, I07–I10 Algorithm Framework tasks designed | Section: Strategy Implementation on LEAN Engine
 
 ---
 
@@ -73,14 +73,21 @@ D (Data)  →  S (Strategy Research)  →  B (Backtest Engine)  →  I (Implemen
 Each I-task receives a strategy specification that is conceptually the **output of S-series research**. The pairing is:
 
 ```
+Classic approach (I01–I06): S-series strategy → I-series LEAN implementation
 S02 (trend signal on BTC daily)          →  I02 (implement trend-following on LEAN)
 S03 (mean-reversion signal on BTC daily) →  I03 (implement mean-reversion on LEAN)
 S04 (volume/microstructure, multi-TF)    →  I04 (implement multi-timeframe strategy on LEAN)
 S05 (cross-asset BTC/ETH signal)         →  I05 (implement cross-asset strategy on LEAN)
 S06 (composite multi-signal)             →  I06 (implement multi-signal + parameter sweep on LEAN)
+
+Framework approach (I07–I10): Classic I-task → Framework re-implementation
+I02 (classic trend-following)            →  I07 (refactor to AlphaModel + framework pipeline)
+I05/I06 (multi-signal manual)            →  I08 (multi-alpha + portfolio construction models)
+I03 (manual stop-loss/risk)              →  I09 (framework risk management models)
+I06 (manual parameter sweep)             →  I10 (LEAN optimizer engine + optional Bayesian)
 ```
 
-This pairing is **conceptual, not enforced** — each I-task is independently executable. The strategy spec is embedded in the task description; the agent does not need to have completed the corresponding S-task.
+This pairing is **conceptual, not enforced** — each I-task is independently executable. The strategy spec is embedded in the task description; the agent does not need to have completed the corresponding S-task. I07–I10 pair with classic I-tasks rather than S-tasks, since they test the same strategy concepts with a different architectural approach.
 
 ### 1.4 LEAN as a Black-Box
 
@@ -727,7 +734,104 @@ The agent must learn and use these LEAN API elements:
 | `Log()` / `Debug()` | Logging for trade log | All |
 | `OnOrderEvent()` | Order fill callback | All |
 
-### 3.3 Running a Backtest
+### 3.3 LEAN Algorithm Framework API (I07–I10)
+
+I01–I06 use the **classic approach** where all logic lives in `Initialize()` + `OnData()`. LEAN also provides a higher-level **Algorithm Framework** that decomposes strategies into pluggable modules. I07–I10 test the agent's ability to use this framework.
+
+#### 3.3.1 Framework Architecture
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                    QCAlgorithm                           │
+│                                                         │
+│  Initialize() {                                         │
+│      SetAlpha(myAlphaModel);                            │
+│      SetPortfolioConstruction(myPortfolioModel);        │
+│      SetRiskManagement(myRiskModel);                    │
+│      SetExecution(myExecutionModel);                    │
+│  }                                                      │
+│                                                         │
+│  Data → Alpha → Insights → Portfolio → Targets          │
+│                              → Risk → Adjusted Targets  │
+│                                 → Execution → Orders    │
+└─────────────────────────────────────────────────────────┘
+```
+
+Unlike the classic approach (where everything is manually wired in `OnData()`), the framework handles the pipeline automatically. The agent writes modular components, and LEAN orchestrates them.
+
+#### 3.3.2 Key Framework API Elements
+
+| API Element | Purpose | Tasks |
+|-------------|---------|-------|
+| **Alpha Models** | | |
+| `SetAlpha(IAlphaModel)` | Register signal generator | I07, I08, I09 |
+| `AddAlpha(IAlphaModel)` | Register additional alpha (multi-alpha) | I08 |
+| `class MyAlpha : AlphaModel` | Custom alpha model base class | I07, I08, I09 |
+| `Insight.Up(symbol, duration, ...)` | Emit bullish signal | I07, I08, I09 |
+| `Insight.Down(symbol, duration, ...)` | Emit bearish signal | I07, I08, I09 |
+| `Insight.Flat(symbol)` | Emit neutral signal | I07, I08, I09 |
+| `InsightDirection`, `InsightType` | Signal metadata enums | I07, I08, I09 |
+| `Insight.Magnitude`, `.Confidence` | Expected return, signal strength | I08 |
+| **Portfolio Construction Models** | | |
+| `SetPortfolioConstruction(IPortfolioConstructionModel)` | Register portfolio model | I07, I08, I09 |
+| `EqualWeightingPortfolioConstructionModel` | Equal allocation across active insights | I07, I09 |
+| `InsightWeightingPortfolioConstructionModel` | Weight by insight confidence/magnitude | I08 |
+| `MeanVarianceOptimizationPortfolioConstructionModel` | Mean-variance optimization | I08 |
+| `BlackLittermanOptimizationPortfolioConstructionModel` | Black-Litterman model | I08 |
+| `PortfolioTarget` | Position target (symbol + quantity) | I08, I09 |
+| **Risk Management Models** | | |
+| `SetRiskManagement(IRiskManagementModel)` | Register risk model | I09 |
+| `AddRiskManagement(IRiskManagementModel)` | Register additional risk model | I09 |
+| `MaximumDrawdownPerSecurity(maxDrawdown)` | Cap per-symbol drawdown | I09 |
+| `TrailingStopRiskManagementModel(maxTrailingStop)` | Trailing stop on positions | I09 |
+| `MaximumSectorExposureRiskManagementModel` | Limit sector/group exposure | I09 |
+| `class MyRisk : RiskManagementModel` | Custom risk model base class | I09 |
+| **Execution Models** | | |
+| `SetExecution(IExecutionModel)` | Register execution model | I07, I08, I09 |
+| `ImmediateExecutionModel` | Execute targets immediately at market | I07, I08, I09 |
+| `VolumeWeightedAveragePriceExecutionModel` | VWAP execution | — (optional) |
+| **Optimization** | | |
+| `SetParameter(name, value)` | Declare tunable parameter | I10 |
+| `GetParameter(name)` | Read parameter value at runtime | I10 |
+| LEAN Optimizer CLI / API | Run parameter optimization sweeps | I10 |
+
+#### 3.3.3 Classic vs. Framework: Same Strategy, Different Architecture
+
+The same strategy can be implemented in both styles. For example, an EMA crossover:
+
+**Classic (I02 style):**
+```csharp
+public override void OnData(Slice data) {
+    if (_fastEma > _slowEma && !Portfolio[_btc].IsLong)
+        SetHoldings(_btc, 1.0);
+    else if (_fastEma < _slowEma && Portfolio[_btc].IsLong)
+        Liquidate(_btc);
+}
+```
+
+**Framework (I07 style):**
+```csharp
+// Alpha model — only emits signals
+public class EmaCrossoverAlpha : AlphaModel {
+    public override IEnumerable<Insight> Update(QCAlgorithm algo, Slice data) {
+        if (_fastEma > _slowEma)
+            yield return Insight.Up(symbol, TimeSpan.FromDays(1));
+        else if (_fastEma < _slowEma)
+            yield return Insight.Down(symbol, TimeSpan.FromDays(1));
+    }
+}
+
+// Algorithm — wires modules together
+public override void Initialize() {
+    SetAlpha(new EmaCrossoverAlpha());
+    SetPortfolioConstruction(new EqualWeightingPortfolioConstructionModel());
+    SetExecution(new ImmediateExecutionModel());
+}
+```
+
+The framework approach separates signal generation from position sizing and execution — each module is independently testable, replaceable, and composable. I07–I10 test whether the agent can work at this architectural level.
+
+### 3.4 Running a Backtest
 
 The agent runs backtests via a simple wrapper command:
 
@@ -1201,7 +1305,411 @@ Output required:
 
 ---
 
+### 4.6 I07 — Alpha Model Architecture on LEAN
+
+**Difficulty**: medium
+**Category**: implementation
+
+**Core idea**: Given the same trend-following strategy concept from I02, re-implement it using LEAN's **Algorithm Framework** instead of the classic `OnData()` approach. The agent must write a custom `AlphaModel` that emits `Insight` objects, wire it to a built-in `PortfolioConstructionModel` and `ExecutionModel`, and understand how the Insight→Target→Order pipeline works. This tests a fundamentally different skill: framework comprehension and modular composition vs. writing everything from scratch.
+
+**Strategy specification**:
+```
+Strategy: EMA Crossover via Algorithm Framework — Multi-Asset
+Assets:   All symbols in universe.json Tier 2 (~20 core liquid futures)
+Resolution: Daily
+Period:   2022-01-01 to 2024-12-31
+
+Architecture: LEAN Algorithm Framework (NOT classic OnData approach)
+
+Alpha Model — EmaCrossoverAlphaModel (custom):
+  Per symbol:
+  - Compute 10-day EMA (fast) and 30-day EMA (slow)
+  - When fast EMA crosses above slow → emit Insight.Up(symbol, TimeSpan.FromDays(5),
+      magnitude: (fastEma - slowEma) / slowEma,
+      confidence: 1.0)
+  - When fast EMA crosses below slow → emit Insight.Down(symbol, TimeSpan.FromDays(5),
+      magnitude: abs(fastEma - slowEma) / slowEma,
+      confidence: 1.0)
+  - Insights expire after 5 days (re-emitted if signal persists)
+
+Portfolio Construction: EqualWeightingPortfolioConstructionModel (built-in)
+  - Allocates equally across all active insights
+
+Execution: ImmediateExecutionModel (built-in)
+  - Executes portfolio targets immediately at market price
+
+Risk Management: None (deferred to I09)
+
+Output required:
+- Per-symbol trade log (same format as I02)
+- Insight emission log (timestamp, symbol, direction, magnitude, confidence, duration)
+- Universe-level summary (same metrics as I02)
+- Trade log should be broadly comparable to I02 reference
+  (not identical — framework execution timing differs slightly)
+```
+
+**Materials provided**:
+- Data: Tier 2 universe (~20 symbols, daily) pre-loaded in LEAN format
+- `universe.json` with symbol list
+- Strategy spec: embedded in task description
+- Reference doc: `lean_algorithm_guide.md`, `algorithm_framework_guide.md`
+
+**Description**: Guide a student to re-implement a trend-following strategy using LEAN's Algorithm Framework instead of the classic `OnData()` approach. The student must write a custom `AlphaModel` class that emits `Insight` objects with direction, magnitude, confidence, and duration, then wire it to LEAN's built-in `EqualWeightingPortfolioConstructionModel` and `ImmediateExecutionModel`. This tests whether the agent understands LEAN's modular architecture — separating signal generation from position sizing from order execution — rather than implementing everything monolithically.
+
+**Expected outcome**: Student produces a LEAN C# algorithm that (1) inherits `QCAlgorithm` and uses `SetAlpha()`, `SetPortfolioConstruction()`, `SetExecution()` in `Initialize()`, (2) implements a custom `EmaCrossoverAlphaModel` class inheriting `AlphaModel` that emits `Insight` objects per symbol, (3) uses built-in `EqualWeightingPortfolioConstructionModel` and `ImmediateExecutionModel`, (4) correctly manages per-symbol EMA indicator state within the alpha model, and (5) produces trade logs and an insight emission log.
+
+**Required capabilities**:
+1. Understand LEAN's Algorithm Framework architecture (Alpha → Portfolio → Risk → Execution pipeline)
+2. Write a custom `AlphaModel` class with `Update()` method that returns `IEnumerable<Insight>`
+3. Construct `Insight` objects with correct parameters (direction, duration, magnitude, confidence)
+4. Wire framework modules together in `Initialize()` using `SetAlpha()`, `SetPortfolioConstruction()`, `SetExecution()`
+5. Manage per-symbol indicator state within the alpha model (not in the main algorithm class)
+6. Understand insight expiration and re-emission logic
+
+**Student openings**:
+- **beginner_no_finance**: "I heard LEAN has a modular framework where you separate your trading signals from position sizing. I already have a simple moving average strategy working — how do I refactor it into this framework? I've never used 'Alpha Models' or 'Insights' before."
+- **intermediate_developer**: "I want to restructure my LEAN strategy using the Algorithm Framework — AlphaModel emitting Insights, built-in portfolio construction, etc. How do I write a custom AlphaModel and wire it into the framework?"
+- **advanced_quant**: "I'm migrating from classic `OnData()` to the Algorithm Framework for composability. I need a custom `AlphaModel` with proper insight duration and magnitude, wired to `EqualWeightingPortfolioConstructionModel`. What's the cleanest architecture?"
+
+**Environment**:
+```json
+{
+  "data_files": ["universe.json"],
+  "core_mcp_tools": ["shell_exec", "file_write", "file_read", "file_list", "get_environment_info"],
+  "docs_available": ["lean_algorithm_guide.md", "algorithm_framework_guide.md", "moving_averages.md"],
+  "sandbox_image": "quant-tutor-env:v2.0-lean",
+  "network_enabled": false
+}
+```
+
+**Convenient tools**: `search_docs`, `plot_chart`
+
+**Eval strategy**:
+- **Framework architecture check**: Code must contain `SetAlpha(`, `SetPortfolioConstruction(`, `SetExecution(`. Must NOT have strategy logic in `OnData()`.
+- **Alpha model class**: A class inheriting `AlphaModel` with `Update()` method that yields `Insight` objects.
+- **Insight quality**: Insights have valid direction, non-zero magnitude, duration ≥ 1 day.
+- **Trade log comparison**: For 5 reference symbols, trade timing and direction should broadly match I07 reference (±2 bars tolerance, since framework execution timing differs from classic).
+- **Insight log**: Insight emission log exists and contains structured records.
+
+**Ground-truth preparation**: Run reference algorithm → export `I07_reference_trades.json` (5 reference symbol trade logs) + `I07_reference_insights.json` (insight emission log).
+
+---
+
+### 4.7 I08 — Multi-Alpha Portfolio Construction on LEAN
+
+**Difficulty**: hard
+**Category**: implementation
+
+**Core idea**: Run **multiple alpha models simultaneously** within LEAN's Algorithm Framework and use a **portfolio construction model** to combine their competing signals into optimal portfolio weights. This tests the agent's ability to work with LEAN's built-in portfolio optimization models and understand how multiple insight streams are aggregated into portfolio targets.
+
+**Strategy specification**:
+```
+Strategy: Multi-Alpha with Portfolio Optimization — Universe-Wide
+Assets:   All symbols in universe.json Tier 1 (~100 USDT-M perpetual futures)
+Resolution: Daily
+Period:   Each symbol from its listing date → 2024-12-31
+
+Architecture: LEAN Algorithm Framework with multiple alpha models
+
+Alpha Model 1 — TrendAlpha (custom):
+  Per symbol:
+  - Compute 20-day SMA and 50-day SMA
+  - SMA_20 > SMA_50 → Insight.Up(symbol, 3 days, magnitude=0.5, confidence=0.6)
+  - SMA_20 < SMA_50 → Insight.Down(symbol, 3 days, magnitude=0.5, confidence=0.6)
+
+Alpha Model 2 — MeanReversionAlpha (custom):
+  Per symbol:
+  - Compute 14-day RSI
+  - RSI < 30 → Insight.Up(symbol, 2 days, magnitude=0.8, confidence=0.7)
+  - RSI > 70 → Insight.Down(symbol, 2 days, magnitude=0.8, confidence=0.7)
+  - 30 ≤ RSI ≤ 70 → no insight (neutral)
+
+Alpha Model 3 — MomentumAlpha (custom):
+  Per symbol:
+  - Compute 20-day Rate of Change (ROC = (close - close_20) / close_20)
+  - ROC > 0.05 → Insight.Up(symbol, 5 days, magnitude=abs(ROC), confidence=0.5)
+  - ROC < -0.05 → Insight.Down(symbol, 5 days, magnitude=abs(ROC), confidence=0.5)
+
+Portfolio Construction: Compare two models
+  Run 1: InsightWeightingPortfolioConstructionModel
+    - Weights positions by insight confidence × magnitude
+  Run 2: EqualWeightingPortfolioConstructionModel
+    - Equal allocation across active insights
+
+Execution: ImmediateExecutionModel (built-in)
+
+Risk Management: None (keep focus on multi-alpha + portfolio construction)
+
+Position constraints:
+  - Max 5% per symbol
+  - Total gross exposure capped at 2.0x
+
+Output required:
+- Per-alpha insight count and hit rate
+- Per-symbol trade log (for both portfolio construction runs)
+- Comparison: InsightWeighting vs EqualWeighting performance
+  (Sharpe, return, max drawdown, turnover)
+- Universe-level summary for each run
+```
+
+**Materials provided**:
+- Data: Tier 1 universe (~100 symbols, daily) pre-loaded in LEAN format
+- `universe.json` with symbol list
+- Strategy spec: embedded in task description
+- Reference doc: `lean_algorithm_guide.md`, `algorithm_framework_guide.md`
+
+**Description**: Guide a student to build a multi-alpha strategy on LEAN that runs three independent alpha models simultaneously (trend, mean-reversion, momentum), each emitting insights with different magnitudes, confidences, and durations. The student must then compare two portfolio construction models — `InsightWeightingPortfolioConstructionModel` (weights by confidence × magnitude) and `EqualWeightingPortfolioConstructionModel` — to see how signal aggregation affects portfolio performance. This tests the most powerful feature of LEAN's framework: composable, independent signal generators feeding into interchangeable portfolio optimizers.
+
+**Expected outcome**: Student produces (1) three custom alpha model classes, each inheriting `AlphaModel`, (2) a main algorithm that registers all three via `AddAlpha()`, (3) two separate runs using different `PortfolioConstructionModel` implementations, (4) per-alpha insight statistics, (5) per-symbol trade logs for both runs, and (6) a comparison of the two portfolio construction approaches.
+
+**Required capabilities**:
+1. Write three independent `AlphaModel` classes with different indicator logic and insight parameters
+2. Register multiple alphas via `AddAlpha()` (not `SetAlpha()` which replaces)
+3. Understand how LEAN aggregates insights from multiple alpha models (insight collection, conflict resolution)
+4. Configure and use `InsightWeightingPortfolioConstructionModel` (understands confidence × magnitude weighting)
+5. Run two separate backtests with different portfolio construction models and compare results
+6. Track per-alpha contribution metrics (insight counts, directional accuracy)
+
+**Student openings**:
+- **beginner_no_finance**: "I have three different trading strategies — one based on trends, one on buying oversold assets, and one on momentum. I want to run all three at the same time and have LEAN figure out the best way to combine them. How do I set this up?"
+- **intermediate_developer**: "I need to implement three alpha models in LEAN's framework — trend, mean-reversion, and momentum — and compare `InsightWeightingPortfolioConstructionModel` vs `EqualWeightingPortfolioConstructionModel` for combining them. How do I structure the multi-alpha setup?"
+- **advanced_quant**: "I'm building a multi-alpha framework on LEAN with three signal sources across ~100 futures. I want to compare insight-weighted vs equal-weighted portfolio construction. What's the architecture for composable alpha models with interchangeable portfolio optimizers?"
+
+**Environment**:
+```json
+{
+  "data_files": ["universe.json"],
+  "core_mcp_tools": ["shell_exec", "file_write", "file_read", "file_list", "get_environment_info"],
+  "docs_available": ["lean_algorithm_guide.md", "algorithm_framework_guide.md", "moving_averages.md", "risk_metrics.md"],
+  "sandbox_image": "quant-tutor-env:v2.0-lean",
+  "network_enabled": false
+}
+```
+
+**Convenient tools**: `search_docs`, `compute_indicator`, `analyze_backtest_results`, `plot_chart`
+
+**Eval strategy**:
+- **Multi-alpha architecture**: Code contains ≥ 3 classes inheriting `AlphaModel`, registered via `AddAlpha()`.
+- **Insight emission**: Each alpha emits insights with distinct magnitude/confidence values matching the spec.
+- **Portfolio model comparison**: Two separate backtest runs exist with different portfolio construction models.
+- **Trade log comparison**: For 10 reference symbols under `InsightWeighting`, trades broadly match reference (±2 bars, since framework timing differs).
+- **Comparison output**: A structured comparison of Sharpe/return/drawdown/turnover between the two runs.
+- **Universe coverage**: Algorithm subscribed to ≥ 80 symbols.
+
+**Ground-truth preparation**: Run reference algorithm with both portfolio models → export `I08_reference_trades_iw.json` (InsightWeighting, 10 reference symbols) + `I08_reference_trades_ew.json` (EqualWeighting, 10 reference symbols) + `I08_reference_comparison.json` (side-by-side metrics).
+
+---
+
+### 4.8 I09 — Risk Management Models on LEAN
+
+**Difficulty**: hard
+**Category**: implementation
+
+**Core idea**: Add LEAN's dedicated **risk management layer** to a framework-based strategy. Risk models sit between portfolio construction and execution — they can modify, scale down, or veto portfolio targets before orders are placed. The agent must use built-in risk models and write a custom one, then compare strategy performance with and without the risk layer. This tests understanding of a critical production concept: risk management as a separate, composable module.
+
+**Strategy specification**:
+```
+Strategy: Framework Strategy with Risk Management — Multi-Asset
+Assets:   All symbols in universe.json Tier 2 (~20 core liquid futures)
+Resolution: Hourly (1h) — more granular data for intraday risk events
+Period:   2023-01-01 to 2024-12-31
+
+Architecture: LEAN Algorithm Framework with risk management models
+
+Alpha Model — TrendFollowingAlpha (custom, reuse from I07 adapted to hourly):
+  Per symbol:
+  - Compute 24-period EMA (fast) and 72-period EMA (slow) on hourly bars
+  - Fast > Slow → Insight.Up(symbol, TimeSpan.FromHours(24))
+  - Fast < Slow → Insight.Down(symbol, TimeSpan.FromHours(24))
+
+Portfolio Construction: EqualWeightingPortfolioConstructionModel (built-in)
+
+Execution: ImmediateExecutionModel (built-in)
+
+Risk Management — Three configurations to compare:
+
+  Run 1 (No Risk): No risk management model
+    - Baseline performance
+
+  Run 2 (Built-in Risk Models):
+    - MaximumDrawdownPerSecurity(0.05m)
+      → Liquidate any position that draws down > 5% from peak
+    - TrailingStopRiskManagementModel(0.03m)
+      → 3% trailing stop on all positions
+
+  Run 3 (Custom Risk Model):
+    - Write a custom MaxGroupExposureRiskManagementModel:
+      → Group symbols by market cap tier (large/mid/small from universe.json)
+      → Cap each group's gross exposure at 40% of portfolio
+      → If a group exceeds 40%, scale down all positions in that group proportionally
+    - Combined with TrailingStopRiskManagementModel(0.03m) via AddRiskManagement()
+
+Output required:
+- Per-symbol trade log for all 3 runs
+- Per-run performance summary (Sharpe, max drawdown, return, trade count)
+- Comparison table: No Risk vs Built-in Risk vs Custom Risk
+  (focus on: max drawdown improvement, Sharpe change, number of risk-triggered exits)
+- Risk event log: timestamp, symbol, risk model that triggered, action taken
+```
+
+**Materials provided**:
+- Data: Tier 2 universe (~20 symbols, hourly) pre-loaded in LEAN format
+- `universe.json` with symbol list and market cap tier assignments
+- Strategy spec: embedded in task description
+- Reference doc: `lean_algorithm_guide.md`, `algorithm_framework_guide.md`
+
+**Description**: Guide a student to add LEAN's risk management layer to a framework-based strategy. The student must understand that risk models intercept portfolio targets *after* portfolio construction but *before* execution — they can modify position sizes, liquidate positions, or block new entries based on risk limits. The student runs three configurations: no risk management, built-in risk models (`MaximumDrawdownPerSecurity` + `TrailingStopRiskManagementModel`), and a custom risk model (group exposure limits). Comparing the three reveals how risk management trades return for drawdown reduction.
+
+**Expected outcome**: Student produces (1) a framework algorithm with `SetAlpha()`, `SetPortfolioConstruction()`, `SetExecution()`, and `SetRiskManagement()` / `AddRiskManagement()`, (2) three separate backtest runs with different risk configurations, (3) a custom `MaxGroupExposureRiskManagementModel` class inheriting `RiskManagementModel`, (4) a comparison table showing how risk models affect drawdown, Sharpe, and return, and (5) a risk event log showing when and why each risk model triggered.
+
+**Required capabilities**:
+1. Use `SetRiskManagement()` and `AddRiskManagement()` to register risk models in the framework
+2. Configure built-in risk models: `MaximumDrawdownPerSecurity`, `TrailingStopRiskManagementModel`
+3. Write a custom `RiskManagementModel` class with `ManageRisk()` method that returns adjusted `PortfolioTarget` list
+4. Understand that risk models receive the portfolio construction targets and can modify them before execution
+5. Stack multiple risk models via `AddRiskManagement()` (they apply sequentially)
+6. Run three backtest configurations and produce a structured comparison
+7. Log risk-triggered events (which model fired, on which symbol, what action was taken)
+
+**Student openings**:
+- **beginner_no_finance**: "My trading strategy makes money but sometimes has scary drops. I heard LEAN has built-in risk management that can automatically cut losses. How do I add stop-losses and drawdown limits without changing my strategy logic?"
+- **intermediate_developer**: "I want to add risk management to my LEAN framework strategy — trailing stops, max drawdown per symbol, and a custom exposure limit model. How do I write and register risk management models in the framework?"
+- **advanced_quant**: "I'm adding a risk management layer to my framework strategy on LEAN. I need to compare no-risk vs `MaximumDrawdownPerSecurity` + `TrailingStopRiskManagementModel` vs a custom group-exposure model. How do I structure the comparison?"
+
+**Environment**:
+```json
+{
+  "data_files": ["universe.json"],
+  "core_mcp_tools": ["shell_exec", "file_write", "file_read", "file_list", "get_environment_info"],
+  "docs_available": ["lean_algorithm_guide.md", "algorithm_framework_guide.md", "risk_metrics.md"],
+  "sandbox_image": "quant-tutor-env:v2.0-lean",
+  "network_enabled": false
+}
+```
+
+**Convenient tools**: `search_docs`, `compute_indicator`, `analyze_backtest_results`, `plot_chart`
+
+**Eval strategy**:
+- **Risk model registration**: Code contains `SetRiskManagement(` or `AddRiskManagement(` with valid risk model classes.
+- **Built-in models used**: `MaximumDrawdownPerSecurity` and `TrailingStopRiskManagementModel` appear in code.
+- **Custom risk model**: A class inheriting `RiskManagementModel` with `ManageRisk()` method implementing group exposure logic.
+- **Three-run comparison**: Three separate backtest runs with different risk configurations exist.
+- **Drawdown improvement**: Run 2 and Run 3 should show lower max drawdown than Run 1.
+- **Trade log comparison**: For 5 reference symbols under Run 2, trades match reference (±2 bars).
+- **Risk event log**: Structured log of risk-triggered events exists.
+
+**Ground-truth preparation**: Run reference algorithm in all 3 configurations → export `I09_reference_trades_norisk.json`, `I09_reference_trades_builtin.json`, `I09_reference_trades_custom.json` (5 reference symbols each) + `I09_reference_comparison.json`.
+
+---
+
+### 4.9 I10 — Parameter Optimization on LEAN
+
+**Difficulty**: hard
+**Category**: implementation
+
+**Core idea**: Use LEAN's **built-in parameter optimization infrastructure** to systematically tune strategy parameters, replacing the manual shell-loop approach from I06. The agent must declare parameters via `SetParameter()` / `GetParameter()`, configure LEAN's optimization runner, and optionally integrate an external optimizer (e.g., Optuna) for Bayesian optimization. This tests the agent's ability to use LEAN's optimization tooling rather than reinventing parameter sweeps.
+
+**Strategy specification**:
+```
+Strategy: Parameterized Trend Strategy with Optimization — Multi-Asset
+Assets:   All symbols in universe.json Tier 2 (~20 core liquid futures)
+Resolution: Daily
+Period:   2022-01-01 to 2024-12-31
+
+Architecture: LEAN Algorithm Framework with parameterized alpha model
+
+Alpha Model — ParameterizedTrendAlpha (custom):
+  Tunable parameters:
+  - fast_period: EMA fast period (range: 5–30, step: 5)
+  - slow_period: EMA slow period (range: 20–100, step: 10)
+  - signal_threshold: minimum EMA spread to emit insight (range: 0.0–0.02, step: 0.005)
+  Constraints:
+  - fast_period < slow_period (invalid combinations skipped)
+
+  Per symbol:
+  - Compute EMA(fast_period) and EMA(slow_period)
+  - spread = (fast_ema - slow_ema) / slow_ema
+  - If spread > signal_threshold → Insight.Up(symbol, 5 days)
+  - If spread < -signal_threshold → Insight.Down(symbol, 5 days)
+
+Portfolio Construction: EqualWeightingPortfolioConstructionModel (built-in)
+Execution: ImmediateExecutionModel (built-in)
+Risk Management: TrailingStopRiskManagementModel(0.03m) (built-in)
+
+Optimization:
+
+  Phase 1 — Grid Search (LEAN Optimizer):
+  - Use LEAN's optimization engine to sweep all valid parameter combinations
+  - Parameter grid: fast_period × slow_period × signal_threshold
+    (6 × 9 × 5 = 270 raw combinations, ~180 valid after constraint filtering)
+  - Optimization target: maximize Sharpe ratio
+  - Report: parameter combination + Sharpe + return + max drawdown for each run
+
+  Phase 2 — Bayesian Optimization (Optional, Bonus):
+  - Integrate Optuna (or similar) to run Bayesian optimization over the same parameter space
+  - Budget: 50 trials (vs 180 for grid search)
+  - Compare: does Bayesian find a comparable optimum with fewer evaluations?
+
+Output required:
+- Grid search results table (180 rows × metrics)
+- Top-5 parameter combinations by Sharpe
+- Detailed trade log for the best parameter combination
+- (Optional) Bayesian optimization results with convergence curve
+- Comparison: grid search best vs Bayesian best vs equal-weight baseline
+```
+
+**Materials provided**:
+- Data: Tier 2 universe (~20 symbols, daily) pre-loaded in LEAN format
+- `universe.json` with symbol list
+- Strategy spec: embedded in task description
+- Reference doc: `lean_algorithm_guide.md`, `algorithm_framework_guide.md`
+
+**Description**: Guide a student to use LEAN's parameter optimization infrastructure to tune a trend-following strategy. Unlike I06's manual shell-loop approach, the student declares parameters using `SetParameter()` / `GetParameter()` and uses LEAN's optimization engine to sweep the parameter grid. Optionally, the student integrates Optuna for Bayesian optimization to find good parameters with fewer evaluations. This tests the agent's knowledge of LEAN's optimization tooling and the conceptual understanding of grid search vs. Bayesian optimization.
+
+**Expected outcome**: Student produces (1) a parameterized LEAN algorithm using `GetParameter()` to read strategy parameters at runtime, (2) a LEAN optimization configuration that defines the parameter grid and optimization target, (3) grid search results for ~180 valid parameter combinations, (4) identification of the top-5 configurations by Sharpe, (5) detailed trade log for the best configuration, and optionally (6) a Bayesian optimization run using Optuna with a convergence comparison.
+
+**Required capabilities**:
+1. Use `GetParameter()` in the algorithm to read parameter values at runtime (not hardcoded)
+2. Configure LEAN's optimization engine (parameter ranges, steps, constraints, optimization target)
+3. Run a grid search over ~180 valid parameter combinations using LEAN's optimizer
+4. Parse optimization results and identify optimal configurations
+5. (Optional) Integrate Optuna or similar external optimizer — write a Python wrapper that calls LEAN per trial
+6. Understand grid search vs. Bayesian optimization trade-offs (exhaustive vs. sample-efficient)
+
+**Student openings**:
+- **beginner_no_finance**: "I have a moving average strategy and I want to find the best settings — like how many days for the fast and slow averages. I heard LEAN can automatically test many combinations. How do I set that up?"
+- **intermediate_developer**: "I need to run parameter optimization on my LEAN strategy — I want to sweep EMA periods and signal thresholds. How do I use `SetParameter()`/`GetParameter()` and LEAN's optimization engine instead of a manual loop?"
+- **advanced_quant**: "I'm setting up parameter optimization for a trend strategy on LEAN. I want to compare LEAN's grid search against Bayesian optimization via Optuna. How do I structure the parameterized algorithm and the optimization workflow?"
+
+**Environment**:
+```json
+{
+  "data_files": ["universe.json"],
+  "core_mcp_tools": ["shell_exec", "file_write", "file_read", "file_list", "get_environment_info"],
+  "docs_available": ["lean_algorithm_guide.md", "algorithm_framework_guide.md", "risk_metrics.md"],
+  "sandbox_image": "quant-tutor-env:v2.0-lean",
+  "network_enabled": false
+}
+```
+
+**Convenient tools**: `search_docs`, `compute_indicator`, `analyze_backtest_results`, `plot_chart`
+
+**Eval strategy**:
+- **Parameter API usage**: Code uses `GetParameter()` (not hardcoded values) for tunable parameters.
+- **Optimization configuration**: A valid optimization config exists (parameter ranges, target metric).
+- **Grid search completeness**: ≥ 150 valid parameter combinations tested (out of ~180).
+- **Results structure**: Output includes parameter values + Sharpe + return + drawdown per combination.
+- **Top-5 identification**: Agent identifies the best 5 configurations (Sharpe within 10% of reference top-5).
+- **Best-config trade log**: For the best parameter combination, trade log for 5 reference symbols matches reference (±2 bars).
+- **(Bonus) Bayesian optimization**: If Optuna is used, convergence curve shows improvement over random sampling.
+
+**Ground-truth preparation**: Run reference grid search → export `I10_reference_grid_results.json` (all ~180 combinations). Run best config → export `I10_reference_trades.json` (5 reference symbols). Optionally run Optuna → export `I10_reference_bayesian.json`.
+
+---
+
 ## 5. Difficulty & Capability Progression
+
+### 5.1 Classic Approach (I01–I06)
 
 ```
 I01  Implement SMA on LEAN            easy      Hello-world LEAN C# algorithm
@@ -1228,7 +1736,42 @@ I06  Universe Multi-Signal + Sweep    hard      3 signals × ~100 symbols × 21 
                                                   systematic parameter optimization)
 ```
 
-**Concept progression**:
+### 5.2 Algorithm Framework Approach (I07–I10)
+
+```
+I07  Alpha Model Architecture         medium    Refactor trend strategy to Algorithm Framework
+ │                                               (custom AlphaModel, Insight emission,
+ │                                                built-in PortfolioConstructionModel)
+ ▼
+I08  Multi-Alpha Portfolio Construct.  hard      3 alpha models × ~100 symbols
+ │                                               (composable alpha models, insight aggregation,
+ │                                                InsightWeighting vs EqualWeighting comparison)
+ ▼
+I09  Risk Management Models           hard      Framework strategy + risk layer × ~20 symbols
+ │                                               (built-in risk models, custom RiskManagementModel,
+ │                                                3-way comparison: no risk vs built-in vs custom)
+ ▼
+I10  Parameter Optimization Engine    hard      Parameterized alpha × ~180 grid combinations
+                                                 (LEAN optimizer, GetParameter(), optional Optuna
+                                                  Bayesian optimization comparison)
+```
+
+### 5.3 Full Progression Map
+
+```
+CLASSIC APPROACH (I01–I06)                  FRAMEWORK APPROACH (I07–I10)
+──────────────────────────                  ────────────────────────────
+"Write trading logic from scratch"          "Use LEAN's modular architecture"
+
+I01  SMA hello-world (easy)
+I02  Universe trend (medium)           ──►  I07  Same strategy, framework arch (medium)
+I03  Mean-reversion + risk (medium)    ──►  I09  Framework + risk models (hard)
+I04  Multi-TF consolidators (hard)
+I05  Pairs scanner (hard)             ──►  I08  Multi-alpha + portfolio opt (hard)
+I06  Multi-signal + sweep (hard)       ──►  I10  LEAN optimizer engine (hard)
+```
+
+**Concept progression (I01–I06)**:
 - I01: Hello-world — single symbol, single indicator on LEAN
 - I02: Scale to universe — per-symbol indicators and portfolio allocation across ~100 symbols
 - I03: Complex per-symbol logic at scale — state machines, stop-loss, risk budgets × 100 symbols
@@ -1236,11 +1779,20 @@ I06  Universe Multi-Signal + Sweep    hard      3 signals × ~100 symbols × 21 
 - I05: Cross-asset combinatorial analysis — pairwise screening, multi-leg hedged positions
 - I06: Everything combined — multi-signal, universe-wide, data asymmetry, parameter optimization
 
-**Two progression dimensions**:
+**Concept progression (I07–I10)**:
+- I07: Framework introduction — refactor classic strategy into Alpha→Portfolio→Execution pipeline
+- I08: Multi-alpha composition — run multiple signal generators, compare portfolio construction models
+- I09: Risk management layer — built-in + custom risk models that intercept before execution
+- I10: Optimization infrastructure — LEAN's optimizer replaces manual sweep; optional Bayesian comparison
+
+**Three progression dimensions** (updated):
 1. **Strategy complexity**: simple crossover → asymmetric rules + stop-loss → multi-TF → cross-asset → composite signals
 2. **Data scale**: 1 symbol → 100 symbols (daily) → 20 symbols (hourly) → 190 pairs → 100 symbols × 21 sweeps
+3. **Architecture maturity**: manual `OnData()` → modular Alpha/Portfolio/Risk/Execution framework → optimizer integration
 
-Each task is independently executable but builds on concepts from earlier tasks.
+The classic series (I01–I06) tests **implementation skill** — can the agent translate a spec into working code. The framework series (I07–I10) tests **architectural comprehension** — can the agent use LEAN's production architecture to compose, manage risk, and optimize strategies.
+
+Each task is independently executable but builds on concepts from earlier tasks. I07–I10 are designed to be attempted after I01–I06, but this is a recommendation, not a hard dependency.
 
 ---
 
@@ -1323,13 +1875,85 @@ Suggested structure:
 - Using Resolution.Daily with hourly data → missing bars
 ```
 
-### 6.2 Existing Docs (Reusable)
+### 6.2 New Doc Required: `algorithm_framework_guide.md`
 
-- `moving_averages.md` — MA/EMA concepts. Used by I02, I04, I06.
-- `risk_metrics.md` — Performance metrics (Sharpe, drawdown). Used by I06.
+Reference doc for I07–I10 covering LEAN's Algorithm Framework. Complements `lean_algorithm_guide.md` (which covers the classic approach).
+
+Suggested structure:
+```markdown
+# LEAN Algorithm Framework Guide
+
+## 1. Classic vs Framework Approach
+- When to use classic OnData() vs Algorithm Framework
+- Framework benefits: modularity, composability, testability
+- Framework pipeline: Alpha → Portfolio → Risk → Execution
+
+## 2. Alpha Models
+- AlphaModel base class and Update() method
+- Insight objects: direction, magnitude, confidence, duration
+- Insight.Up(), Insight.Down(), Insight.Flat()
+- Multiple alpha models: AddAlpha() vs SetAlpha()
+- Per-symbol indicator management within alpha models
+- Insight expiration and re-emission
+
+## 3. Portfolio Construction Models
+- IPortfolioConstructionModel interface
+- Built-in models:
+  - EqualWeightingPortfolioConstructionModel
+  - InsightWeightingPortfolioConstructionModel
+  - MeanVarianceOptimizationPortfolioConstructionModel
+  - BlackLittermanOptimizationPortfolioConstructionModel
+- PortfolioTarget: symbol + quantity
+- How insights are converted to portfolio targets
+- Custom portfolio construction models
+
+## 4. Risk Management Models
+- IRiskManagementModel interface
+- Built-in models:
+  - MaximumDrawdownPerSecurity
+  - TrailingStopRiskManagementModel
+  - MaximumSectorExposureRiskManagementModel
+- Risk models intercept targets AFTER portfolio construction, BEFORE execution
+- Stacking multiple risk models via AddRiskManagement()
+- Writing custom risk models: ManageRisk() method
+
+## 5. Execution Models
+- IExecutionModel interface
+- ImmediateExecutionModel (most common)
+- VolumeWeightedAveragePriceExecutionModel
+- Custom execution models
+
+## 6. Parameter Optimization
+- GetParameter(name): reading parameters at runtime
+- LEAN Optimizer: grid search configuration
+- Optimization targets: Sharpe, return, drawdown
+- Parameter constraints and filtering
+- External optimizer integration (Optuna, Hyperopt)
+
+## 7. Wiring It Together
+- Complete Initialize() example with all four modules
+- Data flow: how insights flow through the pipeline
+- Debugging: logging at each pipeline stage
+- Common pitfalls:
+  - SetAlpha() replaces; AddAlpha() adds
+  - Insight duration must be positive
+  - Risk models can silently liquidate positions
+  - Portfolio construction runs on insight changes, not every bar
+
+## 8. Framework vs Classic: Migration Patterns
+- Refactoring OnData() logic into AlphaModel.Update()
+- Moving position sizing from code to PortfolioConstructionModel
+- Moving stop-loss from OnData() to RiskManagementModel
+- When to stick with classic (complex state machines, exotic logic)
+```
+
+### 6.3 Existing Docs (Reusable)
+
+- `moving_averages.md` — MA/EMA concepts. Used by I02, I04, I06, I07, I08, I10.
+- `risk_metrics.md` — Performance metrics (Sharpe, drawdown). Used by I06, I08, I09, I10.
 - `statistical_tests.md` — Cointegration, z-score. Used by I05.
 
-### 6.3 New Doc: `crypto_futures_basics.md` (Shared with B-Series)
+### 6.4 New Doc: `crypto_futures_basics.md` (Shared with B-Series)
 
 Already planned in B-series (see B-series plan §6.3). I-series reuses this doc for I05, I06 context on funding rates and futures mechanics.
 
@@ -1640,6 +2264,8 @@ BAD (beginner, I02):
 
 ## 10. Task Summary Table
 
+### Classic Approach (I01–I06)
+
 | Task | Title | Difficulty | Data Tier | Symbols | Timeframes | Strategy | Key Challenge | Pairs With |
 |------|-------|-----------|-----------|---------|------------|----------|---------------|------------|
 | I01 | SMA Trend Filter | easy | Tier 1 | 1 (BTCUSDT) | 1d | Price vs SMA(20) | LEAN hello-world (single symbol) | — |
@@ -1649,8 +2275,16 @@ BAD (beginner, I02):
 | I05 | Universe Pairs Scan | hard | Tier 2 | ~20 (190 pairs) | 1d | Pair z-score | Combinatorial pair selection + multi-leg | S05 |
 | I06 | Universe Multi-Signal Sweep | hard | Tier 1 + Funding | ~100 + 20 funding | 1d + 8h | Composite 3-signal | Cross-sectional sizing + 21 param configs | S06 |
 
-**Total new instances**: 5 tasks × 3 personas = **15 new evaluation instances**
-**I-series total**: 6 tasks × 3 personas = **18 evaluation instances**
+### Algorithm Framework Approach (I07–I10)
+
+| Task | Title | Difficulty | Data Tier | Symbols | Timeframes | Strategy | Key Challenge | Pairs With |
+|------|-------|-----------|-----------|---------|------------|----------|---------------|------------|
+| I07 | Alpha Model Architecture | medium | Tier 2 | ~20 | 1d | EMA crossover via AlphaModel | Framework pipeline: Insight→Target→Order | I02 (framework refactor) |
+| I08 | Multi-Alpha Portfolio Construction | hard | Tier 1 | ~100 | 1d | 3 alphas (trend+RSI+momentum) | Multi-alpha composition + portfolio model comparison | S06 |
+| I09 | Risk Management Models | hard | Tier 2 | ~20 | 1h | Trend + risk layer | Built-in + custom risk models, 3-way comparison | I03 (framework risk) |
+| I10 | Parameter Optimization Engine | hard | Tier 2 | ~20 | 1d | Parameterized trend | LEAN optimizer + optional Bayesian (Optuna) | I06 (framework optimization) |
+
+**I-series total**: 10 tasks × 3 personas = **30 evaluation instances**
 
 ---
 
@@ -1666,11 +2300,16 @@ For each I-task, write a **canonical C# algorithm** that:
 These reference algorithms live in:
 ```
 bench/reference/lean_algorithms/
+├── I01_implement_sma.cs          # Classic approach
 ├── I02_trend_following.cs
 ├── I03_mean_reversion.cs
 ├── I04_multi_timeframe.cs
 ├── I05_cross_asset.cs
-└── I06_multi_signal.cs
+├── I06_multi_signal.cs
+├── I07_alpha_model.cs            # Algorithm Framework approach
+├── I08_multi_alpha.cs
+├── I09_risk_management.cs
+└── I10_parameter_optimization.cs
 ```
 
 ### 11.2 Reference Trade Log Generation
@@ -1678,21 +2317,39 @@ bench/reference/lean_algorithms/
 Run each reference algorithm on the frozen data and export trade logs:
 
 ```bash
-# Generate reference trade logs
+# Generate reference trade logs — classic approach
+python bench/reference/generate_lean_reference.py --task I01
 python bench/reference/generate_lean_reference.py --task I02
 python bench/reference/generate_lean_reference.py --task I03
+# ...
+
+# Generate reference trade logs — framework approach
+python bench/reference/generate_lean_reference.py --task I07
+python bench/reference/generate_lean_reference.py --task I08
 # ...
 ```
 
 Output:
 ```
 bench/data/reference/
+├── I01_reference_trades.json
 ├── I02_reference_trades.json
 ├── I03_reference_trades.json
 ├── I04_reference_trades.json
 ├── I05_reference_trades.json
 ├── I06_reference_trades.json
-└── I06_reference_sweep_results.json   # Parameter sweep results for I06
+├── I06_reference_sweep_results.json       # Parameter sweep results for I06
+├── I07_reference_trades.json              # Framework approach
+├── I07_reference_insights.json            # Insight emission log
+├── I08_reference_trades_iw.json           # InsightWeighting run
+├── I08_reference_trades_ew.json           # EqualWeighting run
+├── I08_reference_comparison.json          # Side-by-side metrics
+├── I09_reference_trades_norisk.json       # No risk management
+├── I09_reference_trades_builtin.json      # Built-in risk models
+├── I09_reference_trades_custom.json       # Custom risk model
+├── I09_reference_comparison.json          # 3-way comparison
+├── I10_reference_trades.json              # Best config trade log
+└── I10_reference_grid_results.json        # ~180 grid search results
 ```
 
 ### 11.3 Reference Validation
@@ -1759,10 +2416,11 @@ Each reference trade log must be validated:
 ### Phase 1: Reference Documentation
 
 - [x] Write `lean_algorithm_guide.md` reference doc (see §6.1)
-- [x] Write `crypto_futures_basics.md` reference doc (shared with B-series, see §6.3)
+- [ ] Write `algorithm_framework_guide.md` reference doc (see §6.2) — covers Alpha/Portfolio/Risk/Execution models
+- [x] Write `crypto_futures_basics.md` reference doc (shared with B-series, see §6.4)
 - [x] Verify existing docs are compatible (`moving_averages.md`, `risk_metrics.md`, `statistical_tests.md`)
 
-### Phase 2: Reference Algorithms & Ground-Truth
+### Phase 2: Reference Algorithms & Ground-Truth (Classic: I01–I06)
 
 - [x] Write reference C# algorithm: `I01_implement_sma.cs`
 - [x] Write reference C# algorithm: `I02_trend_following.cs`
@@ -1774,6 +2432,18 @@ Each reference trade log must be validated:
 - [ ] Run I06 parameter sweep → export sweep results *(reference JSON exists)*
 - [ ] Validate all reference trade logs (see §11.3)
 
+### Phase 2b: Reference Algorithms & Ground-Truth (Framework: I07–I10)
+
+- [ ] Write reference C# algorithm: `I07_alpha_model.cs` — EMA crossover via AlphaModel + EqualWeighting
+- [ ] Write reference C# algorithm: `I08_multi_alpha.cs` — 3 alpha models + InsightWeighting/EqualWeighting comparison
+- [ ] Write reference C# algorithm: `I09_risk_management.cs` — Framework strategy + 3 risk configurations
+- [ ] Write reference C# algorithm: `I10_parameter_optimization.cs` — Parameterized alpha + LEAN optimizer
+- [ ] Run I07 → export `I07_reference_trades.json` + `I07_reference_insights.json`
+- [ ] Run I08 (both portfolio models) → export `I08_reference_trades_iw.json`, `I08_reference_trades_ew.json`, `I08_reference_comparison.json`
+- [ ] Run I09 (3 risk configs) → export `I09_reference_trades_norisk.json`, `I09_reference_trades_builtin.json`, `I09_reference_trades_custom.json`, `I09_reference_comparison.json`
+- [ ] Run I10 grid search → export `I10_reference_grid_results.json` + `I10_reference_trades.json`
+- [ ] Validate all framework reference trade logs
+
 ### Phase 3: Task JSONs (bench/tasks/layer2/implementation/)
 
 - [x] Redesign I01_implement_sma.json for LEAN/C#
@@ -1782,6 +2452,10 @@ Each reference trade log must be validated:
 - [x] I04_multi_timeframe.json
 - [x] I05_cross_asset.json
 - [x] I06_multi_signal_sweep.json
+- [ ] I07_alpha_model.json
+- [ ] I08_multi_alpha.json
+- [ ] I09_risk_management.json
+- [ ] I10_parameter_optimization.json
 
 ### Phase 4: Eval Scripts (bench/evaluation/test_scripts/)
 
@@ -1792,6 +2466,11 @@ Each reference trade log must be validated:
 - [x] I04_multi_timeframe.py
 - [x] I05_cross_asset.py
 - [x] I06_multi_signal_sweep.py
+- [ ] I07_alpha_model.py — framework architecture checks + insight log validation
+- [ ] I08_multi_alpha.py — multi-alpha registration + portfolio model comparison checks
+- [ ] I09_risk_management.py — risk model registration + 3-way comparison checks
+- [ ] I10_parameter_optimization.py — GetParameter() usage + grid completeness checks
+- [ ] Extend `_implementation_check.py` with framework-specific helpers (insight log parsing, multi-run comparison)
 
 ### Phase 5: Scoring Integration
 
@@ -1802,7 +2481,7 @@ Each reference trade log must be validated:
 
 ### Phase 6: Reference Oracle
 
-- [ ] Generate reference executions for all 15 instances (5 tasks × 3 personas)
+- [ ] Generate reference executions for all 30 instances (10 tasks × 3 personas)
 - [ ] Validate reference `key_results` and `step_count` baselines
 - [ ] End-to-end integration test: run full benchmark on I-series tasks
 
@@ -1811,7 +2490,7 @@ Each reference trade log must be validated:
 ## 13. Cross-Reference: Full Pipeline View (D + S + B + I)
 
 ```
-                  D-SERIES          S-SERIES             B-SERIES             I-SERIES
+                  D-SERIES          S-SERIES             B-SERIES             I-SERIES (CLASSIC)
                   (Data)            (Research)           (Engine)             (Implementation)
                   Python            Python               Python               C# on LEAN
                   ──────            ──────               ──────               ──────
@@ -1852,6 +2531,38 @@ Each reference trade log must be validated:
                                                          execution sim        at universe scale
 ```
 
+### 13.1 Algorithm Framework Extension (I07–I10)
+
+I07–I10 extend the I-series with LEAN's Algorithm Framework, adding a new dimension:
+
+```
+I-SERIES (CLASSIC)                    I-SERIES (FRAMEWORK)
+Manual OnData() approach              Modular Alpha/Portfolio/Risk/Execution
+──────────────────────                ──────────────────────────────────────
+
+I02 Trend (medium)              ──►   I07 Alpha Model Architecture (medium)
+  MA crossover in OnData()              Same strategy refactored to AlphaModel
+                                        + EqualWeightingPortfolioConstruction
+
+I05 Pairs + I06 Multi-Sig      ──►   I08 Multi-Alpha Portfolio (hard)
+  Manual multi-signal code              3 composable AlphaModels +
+                                        InsightWeighting vs EqualWeighting
+
+I03 Reversion + stop-loss      ──►   I09 Risk Management Models (hard)
+  Manual stop-loss in OnData()          MaxDrawdown + TrailingStop + custom
+                                        risk model (group exposure limits)
+
+I06 Manual param sweep         ──►   I10 Parameter Optimization (hard)
+  External shell loop                   LEAN optimizer + optional Optuna
+                                        Bayesian optimization comparison
+```
+
+**What the framework series adds**:
+- I07–I10 do NOT test new strategies — they test **architectural comprehension** of LEAN's production framework
+- Same underlying concepts (trend, risk, optimization) but implemented via LEAN's modular pipeline
+- Tests whether the agent knows which built-in model to use, how modules connect, how to compose and configure
+- Complements I01–I06's focus on raw implementation skill
+
 ---
 
 ## 14. Open Questions & Decisions
@@ -1881,3 +2592,9 @@ Each reference trade log must be validated:
 8. **Runtime performance**: A 100-symbol × 21-sweep I06 backtest = 2,100 LEAN runs. Need to estimate total runtime and consider whether the sweep should be parallelized (multiple LEAN instances) or sequential.
 9. **Tier 3 data usage**: Currently only I04 references Tier 3 (5m/1m) data. Should we add a task that specifically uses minute-level data, or is it sufficient as optional stress-test data?
 10. **S/B-series migration**: Should S/B-series data also move from `bench/data/frozen/` (git) to HuggingFace? This would make the repo fully data-free, but it's a smaller win since S/B data is only ~5MB.
+11. **Algorithm Framework API stability**: LEAN's Algorithm Framework API (AlphaModel, PortfolioConstructionModel, etc.) may have breaking changes between LEAN versions. Need to verify I07–I10 reference implementations against the pinned LEAN version.
+12. **Framework execution timing**: The Algorithm Framework processes insights and generates orders through a pipeline, which may produce slightly different trade timing compared to classic `OnData()` direct execution. Need to calibrate trade-log comparison tolerance for I07–I10 (currently set to ±2 bars vs ±1 bar for classic).
+13. **LEAN optimizer availability in Docker**: LEAN's optimization engine may require additional configuration or a separate entry point beyond `run_backtest`. Need to verify that the Docker sandbox supports optimization runs for I10, and whether the wrapper script needs extension.
+14. **Multi-run eval architecture**: I08 (2 portfolio models), I09 (3 risk configurations), and I10 (~180 grid search) require multiple backtest runs per task. The eval scripts need to handle multi-run output directories. Consider a naming convention like `/workspace/results/run_1/`, `/workspace/results/run_2/`, etc.
+15. **Custom risk model testability**: I09's custom `MaxGroupExposureRiskManagementModel` requires group/tier assignments from `universe.json`. Need to verify that the framework risk model can access algorithm state (universe metadata) during `ManageRisk()`.
+16. **Optuna in Docker**: I10's optional Bayesian optimization requires Optuna (Python). The LEAN Docker image is C#-focused. Need to decide: (a) pre-install Optuna in the Docker image, (b) have the agent install it at runtime, or (c) provide a Python-C# bridge script that calls LEAN per Optuna trial.
