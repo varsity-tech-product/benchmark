@@ -4,6 +4,7 @@
   "difficulty": "easy",
   "category": "conceptual_qa",
   "task_type": "single_turn",
+  "requires_tool": false,
   "description": "“Business day” and “due date” for bills",
   "context": null,
   "reference_answer": "I don't believe Saturday is a business day either. When I deposit a check at a bank's drive-in after 4pm Friday, the receipt tells me it will credit as if I deposited on Monday.  If a business' computer doesn't adjust their billing to have a weekday due date, they are supposed to accept the payment on the next business day, else, as you discovered, a Sunday due date is really the prior Friday. In which case they may be running afoul of the rules that require X number of days from the time they mail a bill to the time it's due.  The flip side to all of this, is to pick and choose your battles in life. Just pay the bill 2 days early. The interest on a few hundred dollars is a few cents per week. You save that by not using a stamp, just charge it on their site on the Friday. Keep in mind, you can be right, but their computer still dings you. So you call and spend your valuable time when ever the due date is over a weekend, getting an agent to reverse the late fee. The cost of 'right' is wasting ten minutes, which is worth far more than just avoiding the issue altogether.  But - if you are in the US (you didn't give your country), we have regulations for everything. HR 627, aka The CARD act of 2009, offers - ‘‘(2) WEEKEND OR HOLIDAY DUE DATES.—If the payment due date for a   credit card account under an open end consumer credit plan is a day on   which the creditor does not receive or accept payments by mail   (including weekends and holidays), the creditor may not treat a   payment received on the next business day as late for any purpose.’’. So, if you really want to pursue this, you have the power of our illustrious congress on your side.",
@@ -11,20 +12,5 @@
   "source_dataset": "fiqa",
   "tags": [
     "financial-qa"
-  ],
-  "persona_ids": [],
-  "student_openings": {},
-  "environment": null,
-  "ground_truth": {
-    "expected_outcome": "I don't believe Saturday is a business day either. When I deposit a check at a bank's drive-in after 4pm Friday, the receipt tells me it will credit as if I deposited on Monday.  If a business' computer doesn't adjust their billing to have a weekday due date, they are supposed to accept the payment on the next business day, else, as you discovered, a Sunday due date is really the prior Friday. In which case they may be running afoul of the rules that require X number of days from the time they mail a bill to the time it's due.  The flip side to all of this, is to pick and choose your battles in life. Just pay the bill 2 days early. The interest on a few hundred dollars is a few cents per week. You save that by not using a stamp, just charge it on their site on the Friday. Keep in mind, you can be right, but their computer still dings you. So you call and spend your valuable time when ever the due date is over a weekend, getting an agent to reverse the late fee. The cost of 'right' is wasting ten minutes, which is worth far more than just avoiding the issue altogether.  But - if you are in the US (you didn't give your country), we have regulations for everything. HR 627, aka The CARD act of 2009, offers - ‘‘(2) WEEKEND OR HOLIDAY DUE DATES.—If the payment due date for a   credit card account under an open end consumer credit plan is a day on   which the creditor does not receive or accept payments by mail   (including weekends and holidays), the creditor may not treat a   payment received on the next business day as late for any purpose.’’. So, if you really want to pursue this, you have the power of our illustrious congress on your side.",
-    "required_capabilities": [],
-    "expected_mcp_tools": [],
-    "quant_validation": null,
-    "bug_description": null,
-    "expected_fix": null
-  },
-  "requires_code": false,
-  "sample_code": null,
-  "max_turns": 30,
-  "timeout_minutes": 15
+  ]
 }

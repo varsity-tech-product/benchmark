@@ -58,6 +58,7 @@ daily_interpolated = weekly['Close'].resample('D').interpolate(method='linear')
 | `A`   | Year end       | Last day of year                |
 | `H`   | Hourly         | Every hour                      |
 | `T`   | Minutely       | Every minute                    |
+| `nX`  | n-unit compound | `5T` = 5-min bars, `2H` = 2-hour bars, `3M` = 3-month |
 
 ### OHLCV Resampling Pattern
 
@@ -507,3 +508,18 @@ result = (
     .dropna()
 )
 ```
+
+---
+
+## 9. Common Pitfalls in Quantitative Finance
+
+The following pitfalls are referenced in context throughout this document. This section consolidates them for quick reference.
+
+| Pitfall | Where it arises | Prevention |
+|---------|----------------|------------|
+| Look-ahead bias (centered window) | `rolling(center=True)` -- §2 | Never use centered windows in backtesting; only for offline statistical analysis |
+| Look-ahead bias (backward fill) | `bfill()` -- §6 | Use `ffill()` for price data in trading contexts |
+| Look-ahead bias (no signal delay) | Using signal on same bar -- §3 | Always `shift(1)` signals before applying positions |
+| Fabricated returns | Filling NaN returns with 0 or interpolation -- §6 | Use `dropna()` on return series; do not interpolate returns |
+| Survivorship bias | Selecting tickers based on current index membership | Use point-in-time constituent lists when available |
+| Incorrect OHLCV resampling | Using `mean()` for Open/High/Low/Close -- §1 | Use `first`/`max`/`min`/`last` aggregation respectively |

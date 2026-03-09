@@ -25,10 +25,34 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from config.llm_config import SIMULATOR_DEFAULT_MODEL, resolve_deepeval_model
+from config.llm_config import SIMULATOR_DEFAULT_MODEL
+from config.model_resolver import resolve_deepeval_model
 from config.prompt_config import build_scenario, build_user_description
 
 from orchestrator.schemas import QuantTutorTask, StudentPersona
+
+
+def _normalize_content(content) -> str:
+    """Ensure content is a plain string for DeepEval Turn.
+
+    OpenAI gpt-5.2 occasionally returns ``message.content`` as a list of
+    content-block dicts (``[{"type": "text", "text": "…", …}]``) instead
+    of a plain string.  DeepEval's ``Turn(content=...)`` requires ``str``,
+    so we flatten here.
+    """
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for block in content:
+            if isinstance(block, dict):
+                parts.append(block.get("text", ""))
+            elif isinstance(block, str):
+                parts.append(block)
+        return "\n".join(parts).strip()
+    if content is None:
+        return ""
+    return str(content)
 
 
 def build_conversational_golden(
@@ -107,6 +131,7 @@ def create_model_callback(
             tool_callback=tool_callback,
         )
 
+        response = _normalize_content(response)
         conversation_history.append({"role": "assistant", "content": response})
         return Turn(role="assistant", content=response)
 
@@ -121,7 +146,7 @@ def run_conversation_simulation(
     simulator_model: str = SIMULATOR_DEFAULT_MODEL,
     max_turns: Optional[int] = None,
     tools_enabled: bool = True,
-) -> "ConversationalTestCase":
+) -> tuple["ConversationalTestCase", Optional[float]]:
     """Run a full conversation simulation using DeepEval ConversationSimulator.
 
     Args:
@@ -134,7 +159,9 @@ def run_conversation_simulation(
         tools_enabled: If False, no tools are passed to the agent.
 
     Returns:
-        ConversationalTestCase with the full dialogue.
+        Tuple of (ConversationalTestCase, simulator_cost).
+        simulator_cost is the accumulated USD cost of student message generation,
+        or None if cost tracking is unavailable.
     """
     if not DEEPEVAL_AVAILABLE:
         raise ImportError("deepeval is required. Install with: pip install deepeval")
@@ -163,110 +190,11 @@ def run_conversation_simulation(
         max_user_simulations=max_turns,
     )
 
+    # Extract simulator cost (accumulated by DeepEval when using_native_model=True)
+    simulator_cost = getattr(simulator, "simulation_cost", None)
+
     if test_cases:
-        return test_cases[0]
+        return test_cases[0], simulator_cost
 
     # Fallback: return empty test case
-    return ConversationalTestCase(turns=[])
-
-
-def run_conversation_manual(
-    task: QuantTutorTask,
-    persona: StudentPersona,
-    agent_adapter,
-    proxy,
-    max_turns: Optional[int] = None,
-    tools_enabled: bool = True,
-) -> list[dict]:
-    """Run a conversation using the built-in simple student simulator.
-
-    This is the fallback when DeepEval is not available or for quick testing.
-
-    Args:
-        task: The benchmark task.
-        persona: The student persona.
-        agent_adapter: The agent adapter.
-        proxy: The MCPProxy instance.
-        max_turns: Maximum conversation turns.
-        tools_enabled: If False, no tools are passed to the agent.
-
-    Returns:
-        List of conversation turn dicts.
-    """
-    max_turns = max_turns or task.max_turns
-    opening = task.student_openings.get(persona.persona_id, "Hello, I need help.")
-
-    conversation = [{"role": "user", "content": opening}]
-
-    for turn_idx in range(max_turns):
-        proxy.set_turn(turn_idx)
-
-        if tools_enabled:
-            available_tools = proxy.get_available_tools()
-
-            def tool_callback(name, **kwargs):
-                return proxy.call_tool(name, **kwargs)
-
-        else:
-            available_tools = []
-            tool_callback = None
-
-        agent_response = agent_adapter.generate_response(
-            messages=conversation,
-            available_tools=available_tools,
-            tool_callback=tool_callback,
-        )
-        conversation.append({"role": "assistant", "content": agent_response})
-
-        # Check termination
-        if _should_terminate(conversation, max_turns, turn_idx):
-            break
-
-        # Simple student simulation
-        student_msg = _simulate_student(conversation, persona, turn_idx)
-        conversation.append({"role": "user", "content": student_msg})
-
-    return conversation
-
-
-def _should_terminate(conversation: list[dict], max_turns: int, turn_idx: int) -> bool:
-    """Check if the conversation should end."""
-    if turn_idx >= max_turns - 1:
-        return True
-    if conversation and conversation[-1]["role"] == "assistant":
-        last = conversation[-1]["content"].lower()
-        if any(
-            phrase in last
-            for phrase in [
-                "let me know if you have any other questions",
-                "feel free to ask",
-                "is there anything else",
-                "good luck with your",
-            ]
-        ):
-            return True
-    return False
-
-
-def _simulate_student(
-    conversation: list[dict], persona: StudentPersona, turn_idx: int
-) -> str:
-    """Simple student simulation fallback."""
-    user_turns = sum(1 for m in conversation if m["role"] == "user")
-
-    if user_turns <= 1:
-        if persona.knowledge_level == "beginner":
-            return "That makes sense! Can you show me how to do this step by step?"
-        elif persona.knowledge_level == "intermediate":
-            return "Got it. Can you show me the implementation?"
-        else:
-            return "Interesting approach. What about edge cases?"
-    elif user_turns <= 3:
-        if persona.knowledge_level == "beginner":
-            return "I'm not sure I understand the math part. Can you explain it more simply?"
-        elif persona.knowledge_level == "intermediate":
-            return "The code looks good. How do I interpret these results?"
-        else:
-            return "How does this perform in different market regimes?"
-    else:
-        return "Thank you, this has been very helpful! I think I understand now."
+    return ConversationalTestCase(turns=[]), simulator_cost

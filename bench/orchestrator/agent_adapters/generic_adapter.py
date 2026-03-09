@@ -11,7 +11,7 @@ from typing import Optional
 
 from dotenv import load_dotenv
 
-from .base_adapter import BaseAgentAdapter
+from .base_adapter import BaseAgentAdapter, TokenRecord
 from .prompts import TUTOR_SYSTEM_PROMPT
 
 # Load .env from project root (two levels up from this file)
@@ -43,6 +43,19 @@ class GenericLLMAdapter(BaseAgentAdapter):
             "OPENROUTER_BASE_URL", OPENROUTER_BASE_URL
         )
         self.system_prompt = system_prompt or TUTOR_SYSTEM_PROMPT
+        # Reuse a single client (connection pooling + built-in retry).
+        # max_retries=5 covers transient 429/5xx from OpenRouter.
+        try:
+            from openai import OpenAI
+
+            self._client = OpenAI(
+                api_key=self.api_key,
+                base_url=self.base_url,
+                max_retries=5,
+                timeout=120.0,
+            )
+        except ImportError:
+            self._client = None
 
     def generate_response(
         self,
@@ -51,12 +64,10 @@ class GenericLLMAdapter(BaseAgentAdapter):
         tool_callback: Optional[callable] = None,
     ) -> str:
         """Generate response using OpenAI-compatible API with tool use."""
-        try:
-            from openai import OpenAI
-        except ImportError:
+        if self._client is None:
             return self._fallback_response(messages)
 
-        client = OpenAI(api_key=self.api_key, base_url=self.base_url)
+        client = self._client
 
         # Build messages with system prompt
         api_messages = [{"role": "system", "content": self.system_prompt}]
@@ -72,6 +83,7 @@ class GenericLLMAdapter(BaseAgentAdapter):
                 tools=tools,
                 max_tokens=4096,
             )
+            self._record_usage(response)
 
             message = response.choices[0].message
 
@@ -103,6 +115,7 @@ class GenericLLMAdapter(BaseAgentAdapter):
                     messages=api_messages,
                     max_tokens=4096,
                 )
+                self._record_usage(final_response)
                 return final_response.choices[0].message.content or ""
 
             return message.content or ""
@@ -152,6 +165,23 @@ class GenericLLMAdapter(BaseAgentAdapter):
                 }
             )
         return formatted
+
+    def _record_usage(self, response):
+        """Extract token usage from OpenAI-compatible API response."""
+        usage = getattr(response, "usage", None)
+        if usage:
+            from config.pricing import estimate_cost
+
+            inp = getattr(usage, "prompt_tokens", 0) or 0
+            out = getattr(usage, "completion_tokens", 0) or 0
+            self._token_records.append(
+                TokenRecord(
+                    model=self.model,
+                    input_tokens=inp,
+                    output_tokens=out,
+                    cost_usd=estimate_cost(self.model, inp, out),
+                )
+            )
 
     def _fallback_response(self, messages: list[dict]) -> str:
         """Fallback when OpenAI SDK is not available."""

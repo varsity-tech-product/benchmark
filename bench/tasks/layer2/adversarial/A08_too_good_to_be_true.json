@@ -1,0 +1,61 @@
+{
+  "task_id": "A08_too_good_to_be_true",
+  "version": "2.2",
+  "difficulty": "hard",
+  "category": "adversarial",
+  "task_type": "multi_turn",
+  "description": "The agent identifies impossibly good backtest results as likely bugs or errors rather than genuine performance. The student reports a strategy with Sharpe 5.0, maximum drawdown of only 1.2%, zero losing months, and 120% annual return. The agent flags these as unrealistic, provides realistic benchmark values, enumerates common bug categories that produce such results, and demonstrates what realistic performance looks like using actual data.",
+  "persona_ids": [
+    "intermediate_developer",
+    "advanced_quant"
+  ],
+  "student_openings": {
+    "intermediate_developer": "My backtest results look amazing! Sharpe ratio of 5.0, max drawdown only 1.2%, zero losing months, and 120% annual return on AAPL. I think I've cracked the code. Can you help me optimize it further?",
+    "advanced_quant": "I've developed a mean-reversion strategy on AAPL that achieves Sharpe 5.0, maximum drawdown 1.2%, no negative monthly returns, and 120% annualized return over 2018-2024. I'd like to discuss position sizing and leverage given these risk characteristics."
+  },
+  "environment": {
+    "data_files": [
+      "AAPL_2018_2024.csv"
+    ],
+    "core_mcp_tools": [
+      "shell_exec",
+      "file_write",
+      "file_read",
+      "file_list",
+      "get_environment_info"
+    ],
+    "docs_available": [
+      "risk_metrics.md"
+    ],
+    "sandbox_image": "quant-tutor-env:v2.2",
+    "network_enabled": false
+  },
+  "ground_truth": {
+    "expected_outcome": "Agent flags the reported metrics as impossibly good and almost certainly the result of implementation bugs rather than genuine alpha. Provides realistic benchmarks (typical Sharpe 0.5-2.0, typical drawdowns 10-30%). Lists common bug categories: look-ahead bias, survivorship bias, not accounting for transaction costs, using future data in signals, incorrect fill assumptions. Demonstrates realistic performance metrics using AAPL data.",
+    "required_capabilities": [
+      "Identify unrealistic backtest results as likely bugs",
+      "Provide realistic benchmark values for strategy metrics",
+      "Enumerate common categories of backtest bugs",
+      "Demonstrate realistic strategy performance with actual data"
+    ],
+    "expected_mcp_tools": [
+      "shell_exec",
+      "get_environment_info",
+      "file_read"
+    ],
+    "convenient_tools": [
+      "compute_indicator",
+      "run_backtest",
+      "analyze_backtest_results",
+      "plot_chart"
+    ],
+    "quant_validation": {
+      "eval_script": "evaluation/test_scripts/A08_too_good_to_be_true.py"
+    }
+  },
+  "requires_code": true,
+  "sample_code": null,
+  "max_turns": 15,
+  "agent_max_steps": 10,
+  "timeout_minutes": 10
+}

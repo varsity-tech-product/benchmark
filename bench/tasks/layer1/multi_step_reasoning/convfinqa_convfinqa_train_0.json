@@ -4,6 +4,7 @@
   "difficulty": "easy",
   "category": "multi_step_reasoning",
   "task_type": "single_turn",
+  "requires_tool": false,
   "description": "what was the percentage change in the net cash from operating activities from 2008 to 2009",
   "context": "**Context:**\n26 | 2009 annual report in fiscal 2008 , revenues in the credit union systems and services business segment increased 14% ( 14 % ) from fiscal 2007 .\nall revenue components within the segment experienced growth during fiscal 2008 .\nlicense revenue generated the largest dollar growth in revenue as episys ae , our flagship core processing system aimed at larger credit unions , experienced strong sales throughout the year .\nsupport and service revenue , which is the largest component of total revenues for the credit union segment , experienced 34 percent growth in eft support and 10 percent growth in in-house support .\ngross profit in this business segment increased $ 9344 in fiscal 2008 compared to fiscal 2007 , due primarily to the increase in license revenue , which carries the highest margins .\nliquidity and capital resources we have historically generated positive cash flow from operations and have generally used funds generated from operations and short-term borrowings on our revolving credit facility to meet capital requirements .\nwe expect this trend to continue in the future .\nthe company 2019s cash and cash equivalents increased to $ 118251 at june 30 , 2009 from $ 65565 at june 30 , 2008 .\nthe following table summarizes net cash from operating activities in the statement of cash flows : 2009 2008 2007 .\n\n**Table:**\n| 2008 | year ended june 30 2009 2008 | year ended june 30 2009 2008 | year ended june 30 2009 |\n| --- | --- | --- | --- |\n| net income | $ 103102 | $ 104222 | $ 104681 |\n| non-cash expenses | 74397 | 70420 | 56348 |\n| change in receivables | 21214 | -2913 ( 2913 ) | -28853 ( 28853 ) |\n| change in deferred revenue | 21943 | 5100 | 24576 |\n| change in other assets and liabilities | -14068 ( 14068 ) | 4172 | 17495 |\n| net cash from operating activities | $ 206588 | $ 181001 | $ 174247 |\n\nyear ended june 30 , cash provided by operations increased $ 25587 to $ 206588 for the fiscal year ended june 30 , 2009 as compared to $ 181001 for the fiscal year ended june 30 , 2008 .\nthis increase is primarily attributable to a decrease in receivables compared to the same period a year ago of $ 21214 .\nthis decrease is largely the result of fiscal 2010 annual software maintenance billings being provided to customers earlier than in the prior year , which allowed more cash to be collected before the end of the fiscal year than in previous years .\nfurther , we collected more cash overall related to revenues that will be recognized in subsequent periods in the current year than in fiscal 2008 .\ncash used in investing activities for the fiscal year ended june 2009 was $ 59227 and includes $ 3027 in contingent consideration paid on prior years 2019 acquisitions .\ncash used in investing activities for the fiscal year ended june 2008 was $ 102148 and includes payments for acquisitions of $ 48109 , plus $ 1215 in contingent consideration paid on prior years 2019 acquisitions .\ncapital expenditures for fiscal 2009 were $ 31562 compared to $ 31105 for fiscal 2008 .\ncash used for software development in fiscal 2009 was $ 24684 compared to $ 23736 during the prior year .\nnet cash used in financing activities for the current fiscal year was $ 94675 and includes the repurchase of 3106 shares of our common stock for $ 58405 , the payment of dividends of $ 26903 and $ 13489 net repayment on our revolving credit facilities .\ncash used in financing activities was partially offset by proceeds of $ 3773 from the exercise of stock options and the sale of common stock ( through the employee stock purchase plan ) and $ 348 excess tax benefits from stock option exercises .\nduring fiscal 2008 , net cash used in financing activities for the fiscal year was $ 101905 and includes the repurchase of 4200 shares of our common stock for $ 100996 , the payment of dividends of $ 24683 and $ 429 net repayment on our revolving credit facilities .\ncash used in financing activities was partially offset by proceeds of $ 20394 from the exercise of stock options and the sale of common stock and $ 3809 excess tax benefits from stock option exercises .\nbeginning during fiscal 2008 , us financial markets and many of the largest us financial institutions have been shaken by negative developments in the home mortgage industry and the mortgage markets , and particularly the markets for subprime mortgage-backed securities .\nsince that time , these and other such developments have resulted in a broad , global economic downturn .\nwhile we , as is the case with most companies , have experienced the effects of this downturn , we have not experienced any significant issues with our current collection efforts , and we believe that any future impact to our liquidity will be minimized by cash generated by recurring sources of revenue and due to our access to available lines of credit. .",
   "reference_answer": "**Answer:** 14.1%\n\n**Reasoning:** subtract(206588, 181001), divide(#0, 181001)",
@@ -13,20 +14,5 @@
     "conversational",
     "numerical-reasoning",
     "financial-reports"
-  ],
-  "persona_ids": [],
-  "student_openings": {},
-  "environment": null,
-  "ground_truth": {
-    "expected_outcome": "**Answer:** 14.1%\n\n**Reasoning:** subtract(206588, 181001), divide(#0, 181001)",
-    "required_capabilities": [],
-    "expected_mcp_tools": [],
-    "quant_validation": null,
-    "bug_description": null,
-    "expected_fix": null
-  },
-  "requires_code": false,
-  "sample_code": null,
-  "max_turns": 30,
-  "timeout_minutes": 15
+  ]
 }

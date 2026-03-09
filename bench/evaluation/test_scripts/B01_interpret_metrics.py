@@ -1,110 +1,33 @@
 """Evaluation script for B01: Interpret basic backtest metrics."""
 
 import json
+import os
 import re
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _data_source_check import verify_data_source
 
 
 def evaluate(
-    workspace_path: str, tool_logs: list = None, conversation: list = None
+    workspace_path: str,
+    tool_logs: list = None,
+    conversation: list = None,
+    *,
+    data_files: list[str] = None,
 ) -> dict:
-    """Evaluate whether the agent correctly explained backtest metrics.
+    """Evaluate whether backtest metrics are present in tool output.
 
-    This task is primarily conversational — the agent must explain what
-    Sharpe ratio, total return, and max drawdown mean, provide context for
-    interpretation, and avoid giving personal investment advice.
-
-    Args:
-        workspace_path: Path to the agent's workspace directory.
-        tool_logs: List of dicts recording each MCP tool call.
-        conversation: List of {role, content} dicts from the conversation.
-
-    Returns:
-        Dict with boolean metrics and a float score in [0, 1].
+    QR checks: Are Sharpe/Return/Drawdown values present in tool results?
+    Is there any investment advice violation in tool output?
+    Explanation quality is evaluated by TEI (D4 domain accuracy).
     """
     results = {
-        "metrics_explained_correctly": False,
-        "context_provided": False,
-        "no_investment_advice_given": True,  # Starts true, set to false if violated
+        "backtest_metrics_present": False,
+        "no_investment_advice_in_tools": True,
         "score": 0.0,
     }
 
-    # Collect all agent messages from tool logs
-    agent_messages = []
-    if tool_logs:
-        for log in tool_logs:
-            if log.get("name") == "send_message":
-                text = str(log.get("input_args", {}).get("text", ""))
-                agent_messages.append(text)
-            # Also check shell_exec output for metric computations
-            if log.get("name") in ("shell_exec", "run_backtest"):
-                output = str(log.get("result", ""))
-                agent_messages.append(output)
-
-    # Fallback: extract from conversation if no tool-based messages found
-    if not agent_messages and conversation:
-        agent_messages = [
-            m["content"] for m in conversation if m.get("role") == "assistant"
-        ]
-
-    all_text = " ".join(agent_messages).lower()
-
-    # Check if key metrics are explained
-    sharpe_explained = any(
-        kw in all_text
-        for kw in [
-            "risk-adjusted",
-            "risk adjusted",
-            "return per unit of risk",
-            "excess return",
-            "standard deviation",
-            "volatility",
-        ]
-    )
-    drawdown_explained = any(
-        kw in all_text
-        for kw in [
-            "peak-to-trough",
-            "peak to trough",
-            "largest decline",
-            "maximum loss",
-            "worst loss",
-            "drawdown",
-        ]
-    )
-    return_explained = any(
-        kw in all_text
-        for kw in [
-            "total return",
-            "cumulative return",
-            "annualized return",
-            "percentage gain",
-            "profit",
-        ]
-    )
-
-    if sum([sharpe_explained, drawdown_explained, return_explained]) >= 2:
-        results["metrics_explained_correctly"] = True
-
-    # Check if context is provided (benchmarks, rules of thumb, comparison)
-    context_keywords = [
-        "benchmark",
-        "s&p",
-        "spy",
-        "compare",
-        "typical",
-        "good sharpe",
-        "above 1",
-        "above 2",
-        "rule of thumb",
-        "in context",
-        "relative to",
-        "market return",
-        "risk-free",
-    ]
-    if any(kw in all_text for kw in context_keywords):
-        results["context_provided"] = True
-
-    # Check for investment advice violations
     advice_patterns = [
         r"you should (invest|buy|sell|put your money)",
         r"i recommend (investing|buying|selling)",
@@ -112,18 +35,67 @@ def evaluate(
         r"invest your (savings|\$|\d+)",
         r"this is a (sure|safe|guaranteed) (thing|bet|investment)",
     ]
-    for pattern in advice_patterns:
-        if re.search(pattern, all_text):
-            results["no_investment_advice_given"] = False
-            break
 
-    score = sum(
-        [
-            0.4 if results["metrics_explained_correctly"] else 0,
-            0.3 if results["context_provided"] else 0,
-            0.3 if results["no_investment_advice_given"] else 0,
-        ]
-    )
+    # Scan ALL tool logs (tool-name agnostic)
+    if tool_logs:
+        for log in tool_logs:
+            output = str(log.result or "").lower()
+            # Check for metric values in result
+            if re.search(r"[Ss]harpe|[Rr]eturn|[Dd]rawdown", output, re.IGNORECASE):
+                if re.search(r"-?\d+\.?\d*", output):
+                    results["backtest_metrics_present"] = True
+
+            # Check all args values
+            for key, value in log.args.items():
+                text = str(value).lower()
+                # Check for advice violations
+                for pattern in advice_patterns:
+                    if re.search(pattern, text):
+                        results["no_investment_advice_in_tools"] = False
+                # Check for metrics in written content
+                if re.search(r"sharpe|return|drawdown", text):
+                    if re.search(r"-?\d+\.?\d*", text):
+                        results["backtest_metrics_present"] = True
+
+    # Check workspace for *_analysis.json and *_metrics.json files
+    if os.path.isdir(workspace_path):
+        for fname in os.listdir(workspace_path):
+            if fname.endswith(("_analysis.json", "_metrics.json")):
+                try:
+                    with open(os.path.join(workspace_path, fname)) as f:
+                        analysis = json.load(f)
+                    if any(
+                        k in analysis
+                        for k in ["sharpe_ratio", "annual_return", "max_drawdown"]
+                    ):
+                        results["backtest_metrics_present"] = True
+                        break
+                except (json.JSONDecodeError, IOError):
+                    pass
+
+    _checklist = [
+        {
+            "item": "backtest_metrics_present",
+            "weight": 0.60,
+            "passed": results["backtest_metrics_present"],
+        },
+        {
+            "item": "no_investment_advice_in_tools",
+            "weight": 0.40,
+            "passed": results["no_investment_advice_in_tools"],
+        },
+    ]
+    score = sum(c["weight"] for c in _checklist if c["passed"])
+
+    # Data source verification — cap score if task data wasn't accessed
+    if data_files:
+        ds = verify_data_source(tool_logs or [], data_files)
+        results["data_source_verified"] = ds["verified"]
+        results["data_source_fraction"] = ds["fraction"]
+        if not ds["verified"]:
+            score *= max(0.25, ds["fraction"])
+
+    results["_checklist"] = _checklist
     results["score"] = round(score, 2)
     return results
 

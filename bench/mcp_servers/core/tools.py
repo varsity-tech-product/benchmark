@@ -1,6 +1,6 @@
 """Core MCP tool implementations for QuantTutorBench.
 
-These functions implement the 14 core tools available to the Agent Under Test.
+These functions implement the core tools available to the Agent Under Test.
 They are designed to run inside the Docker sandbox (or locally for development).
 
 Directory paths are read lazily from environment variables so that the
@@ -32,6 +32,122 @@ def _workspace_dir() -> str:
 
 def _student_code_dir() -> str:
     return os.environ.get("QTB_STUDENT_CODE_DIR", "/student_code")
+
+
+def _compute_performance_metrics(returns, annual_factor=252):
+    """Compute standard performance metrics from a daily returns series.
+
+    Shared helper used by both run_backtest and analyze_backtest_results
+    to avoid code duplication.
+
+    Args:
+        returns: pandas Series of daily returns (not cumulative).
+        annual_factor: trading days per year for annualization.
+
+    Returns:
+        dict with sharpe_ratio, annual_return, total_return, max_drawdown,
+        win_rate, volatility, sortino_ratio, calmar_ratio, total_trading_days.
+    """
+    import numpy as np
+
+    returns = returns.dropna()
+    if len(returns) < 2:
+        return {
+            "sharpe_ratio": 0.0,
+            "annual_return": 0.0,
+            "total_return": 0.0,
+            "max_drawdown": 0.0,
+            "win_rate": 0.0,
+            "volatility": 0.0,
+            "sortino_ratio": 0.0,
+            "calmar_ratio": 0.0,
+            "total_trading_days": int(len(returns)),
+        }
+
+    mean_ret = returns.mean()
+    std_ret = returns.std()
+
+    sharpe = (mean_ret / std_ret * np.sqrt(annual_factor)) if std_ret > 0 else 0.0
+    annual_return = (1 + mean_ret) ** annual_factor - 1
+    cumulative = (1 + returns).cumprod()
+    running_max = cumulative.cummax()
+    max_drawdown = ((cumulative / running_max) - 1).min()
+    win_rate = (returns > 0).mean()
+    volatility = std_ret * np.sqrt(annual_factor)
+
+    downside_returns = returns[returns < 0]
+    downside_std = downside_returns.std() if len(downside_returns) > 0 else 0.0
+    sortino = (
+        (mean_ret / downside_std * np.sqrt(annual_factor)) if downside_std > 0 else 0.0
+    )
+    calmar = (annual_return / abs(max_drawdown)) if max_drawdown != 0 else 0.0
+    total_return = float(cumulative.iloc[-1] - 1) if len(cumulative) > 0 else 0.0
+
+    return {
+        "sharpe_ratio": round(float(sharpe), 4),
+        "annual_return": round(float(annual_return), 4),
+        "total_return": round(float(total_return), 4),
+        "max_drawdown": round(float(max_drawdown), 4),
+        "win_rate": round(float(win_rate), 4),
+        "volatility": round(float(volatility), 4),
+        "sortino_ratio": round(float(sortino), 4),
+        "calmar_ratio": round(float(calmar), 4),
+        "total_trading_days": int(len(returns)),
+    }
+
+
+def _resolve_column_name(df, candidates: list[str]) -> Optional[str]:
+    """Resolve the first matching column name, case-insensitively."""
+    lookup = {str(col).lower(): col for col in df.columns}
+    for candidate in candidates:
+        match = lookup.get(candidate.lower())
+        if match is not None:
+            return match
+    return None
+
+
+def _safe_round(value, digits: int = 4) -> Optional[float]:
+    """Round numeric values while preserving None for invalid inputs."""
+    try:
+        import pandas as pd
+
+        if pd.isna(value):
+            return None
+    except Exception:
+        pass
+    try:
+        return round(float(value), digits)
+    except (TypeError, ValueError):
+        return None
+
+
+def _infer_annual_factor(df) -> int:
+    """Infer a rough annualization factor from timestamp-like columns."""
+    import pandas as pd
+
+    time_col = _resolve_column_name(df, ["timestamp", "date", "datetime", "time"])
+    if time_col is None:
+        return 252
+
+    raw = df[time_col]
+    if pd.api.types.is_numeric_dtype(raw):
+        median_abs = raw.dropna().abs().median()
+        unit = "ms" if median_abs and median_abs > 10_000_000_000 else "s"
+        parsed = pd.to_datetime(raw, errors="coerce", utc=True, unit=unit)
+    else:
+        parsed = pd.to_datetime(raw, errors="coerce", utc=True)
+    deltas = parsed.sort_values().diff().dropna()
+    if deltas.empty:
+        return 252
+
+    median_seconds = deltas.median().total_seconds()
+    if median_seconds <= 10 * 60:
+        return 365 * 24 * 12
+    if median_seconds <= 90 * 60:
+        return 365 * 24
+    if median_seconds <= 36 * 3600:
+        return 365
+    return 252
 
 
 def shell_exec(command: str, timeout: int = 30) -> str:
@@ -69,32 +185,146 @@ def file_write(path: str, content: str) -> str:
     return f"Written {len(content)} bytes to {path}"
 
 
-def file_read(path: str) -> str:
-    """Read a file from workspace, data, docs, or student_code."""
-    for base in [_workspace_dir(), _data_dir(), _docs_dir(), _student_code_dir()]:
-        full = os.path.join(base, path) if not path.startswith("/") else path
-        if os.path.isfile(full):
-            with open(full, "r") as f:
-                content = f.read()
-            if len(content) > 50000:
-                return (
-                    content[:50000] + f"\n... (truncated, {len(content)} total bytes)"
-                )
-            return content
-    return f"Error: File not found: {path}"
+def _resolve_path(path: str) -> Optional[str]:
+    """Resolve a relative path across all search directories.
+
+    Handles the common case where the caller includes a known directory
+    prefix (e.g. ``student_code/foo.py``) — we strip the prefix so that
+    the search against the matching base directory doesn't double up.
+
+    Security: absolute paths and path traversal (../) are restricted to
+    the allowed base directories to prevent access to reference answers
+    or other host files in local (non-Docker) mode.
+    """
+    bases = [_workspace_dir(), _data_dir(), _docs_dir(), _student_code_dir()]
+    # Known directory name prefixes that callers might include
+    _KNOWN_PREFIXES = ("workspace/", "data/", "docs/", "student_code/")
+
+    def _is_within_bases(resolved: str) -> bool:
+        """Check that resolved path is under one of the allowed base dirs."""
+        real = os.path.realpath(resolved)
+        return any(real.startswith(os.path.realpath(b) + os.sep) or
+                    real == os.path.realpath(b)
+                    for b in bases)
+
+    # 1. Direct search
+    for base in bases:
+        if path.startswith("/"):
+            full = path
+        else:
+            full = os.path.join(base, path)
+        if (os.path.isfile(full) or os.path.isdir(full)) and _is_within_bases(full):
+            return full
+
+    # 2. Strip known directory prefix and retry
+    for prefix in _KNOWN_PREFIXES:
+        if path.startswith(prefix):
+            stripped = path[len(prefix) :]
+            for base in bases:
+                full = os.path.join(base, stripped)
+                if (os.path.isfile(full) or os.path.isdir(full)) and _is_within_bases(full):
+                    return full
+            break  # Only one prefix can match
+
+    return None
+
+
+def file_read(path: str, offset: int = 0, max_lines: int = 0) -> str:
+    """Read a file from workspace, data, docs, or student_code.
+
+    For large CSV files (>50 rows), returns a smart preview (header +
+    first 5 + last 5 rows) by default.  Use ``offset`` and ``max_lines``
+    to read specific sections.
+
+    Args:
+        path: File path (resolved across workspace/data/docs/student_code).
+        offset: Start reading from this line number (0-based). Default 0.
+        max_lines: Maximum lines to return. 0 means auto (preview for
+                   large CSV, full content for everything else).
+    """
+    resolved = _resolve_path(path)
+    if not resolved or not os.path.isfile(resolved):
+        return f"Error: File not found: {path}"
+
+    # Binary file detection
+    _BINARY_EXTENSIONS = frozenset(
+        {
+            ".png",
+            ".jpg",
+            ".jpeg",
+            ".gif",
+            ".bmp",
+            ".ico",
+            ".svg",
+            ".pdf",
+            ".zip",
+            ".gz",
+            ".tar",
+            ".7z",
+            ".pkl",
+            ".pickle",
+            ".npy",
+            ".npz",
+            ".pyc",
+            ".so",
+            ".dylib",
+            ".dll",
+            ".exe",
+        }
+    )
+    _, ext = os.path.splitext(resolved)
+    if ext.lower() in _BINARY_EXTENSIONS:
+        size = os.path.getsize(resolved)
+        return (
+            f"[{path}] Binary file ({ext}, {size:,} bytes). "
+            f"Cannot display contents. Use shell_exec to process "
+            f"this file with appropriate tools."
+        )
+
+    try:
+        with open(resolved, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+    except UnicodeDecodeError:
+        size = os.path.getsize(resolved)
+        return (
+            f"[{path}] Unable to read as text ({size:,} bytes). "
+            f"The file may be binary or use a non-UTF-8 encoding."
+        )
+
+    total = len(lines)
+
+    # Explicit pagination: offset and/or max_lines specified
+    if offset > 0 or max_lines > 0:
+        start = max(0, offset)
+        subset = lines[start:]
+        if max_lines > 0:
+            subset = subset[:max_lines]
+        end_line = start + len(subset)
+        return f"[{path} | lines {start + 1}-{end_line} of {total}]\n" + "".join(subset)
+
+    # Smart preview for large CSV files
+    if path.endswith(".csv") and total > 50:
+        header = lines[0]
+        head = lines[1:6]
+        tail = lines[-5:]
+        return (
+            f"[{path} | {total} rows | showing header + first 5 + last 5]\n"
+            f"{header}{''.join(head)}\n"
+            f"... ({total - 11} rows omitted) ...\n\n"
+            f"{''.join(tail)}\n"
+            f"Use offset and max_lines parameters to read specific sections."
+        )
+
+    # Small files / non-CSV: return full content
+    return "".join(lines)
 
 
 def file_list(directory: str = ".") -> str:
     """List files in a directory."""
-    for base in [_workspace_dir(), _data_dir(), _docs_dir(), _student_code_dir()]:
-        full = (
-            os.path.join(base, directory)
-            if not directory.startswith("/")
-            else directory
-        )
-        if os.path.isdir(full):
-            entries = sorted(os.listdir(full))
-            return "\n".join(entries) if entries else "(empty directory)"
+    resolved = _resolve_path(directory)
+    if resolved and os.path.isdir(resolved):
+        entries = sorted(os.listdir(resolved))
+        return "\n".join(entries) if entries else "(empty directory)"
     return f"Error: Directory not found: {directory}"
 
 
@@ -113,16 +343,32 @@ def fetch_market_data(symbol: str, start: str = "", end: str = "") -> str:
         df = df[df["Date"] <= end]
     if df.empty:
         return f"No data for {symbol} in range {start} to {end}"
-    return df.to_csv(index=False)
+
+    # Save to workspace so subsequent tools can reference the file
+    out_name = f"{symbol}_data.csv"
+    out_path = os.path.join(_workspace_dir(), out_name)
+    df.to_csv(out_path, index=False)
+
+    # Return file path + compact summary instead of full CSV
+    date_col = "Date"
+    summary_parts = [
+        f"Saved {len(df)} rows to {out_name}",
+        f"Date range: {df[date_col].iloc[0]} to {df[date_col].iloc[-1]}",
+        f"Columns: {', '.join(df.columns)}",
+        "",
+        f"First 5 rows:\n{df.head().to_csv(index=False)}",
+        f"Last 5 rows:\n{df.tail().to_csv(index=False)}",
+    ]
+    return "\n".join(summary_parts)
 
 
 def compute_indicator(
-    data_path: str, indicator: str, params: Optional[dict] = None
+    data_path: str, indicator: str, indicator_params: Optional[dict] = None
 ) -> str:
     """Compute a technical indicator on a dataset."""
     import pandas as pd
 
-    params = params or {}
+    indicator_params = indicator_params or {}
     full_path = _resolve_path(data_path)
     if not full_path:
         return f"Error: File not found: {data_path}"
@@ -133,30 +379,30 @@ def compute_indicator(
 
     indicator = indicator.upper()
     if indicator == "SMA":
-        window = params.get("window", 20)
+        window = indicator_params.get("window", 20)
         df[f"SMA_{window}"] = df["Close"].rolling(window).mean()
     elif indicator == "EMA":
-        span = params.get("span", 20)
+        span = indicator_params.get("span", 20)
         df[f"EMA_{span}"] = df["Close"].ewm(span=span).mean()
     elif indicator == "RSI":
-        window = params.get("window", 14)
+        window = indicator_params.get("window", 14)
         delta = df["Close"].diff()
         gain = delta.where(delta > 0, 0).rolling(window).mean()
         loss = (-delta.where(delta < 0, 0)).rolling(window).mean()
         rs = gain / loss
         df["RSI"] = 100 - (100 / (1 + rs))
     elif indicator == "BOLLINGER":
-        window = params.get("window", 20)
-        std_dev = params.get("std_dev", 2)
+        window = indicator_params.get("window", 20)
+        std_dev = indicator_params.get("std_dev", 2)
         sma = df["Close"].rolling(window).mean()
         std = df["Close"].rolling(window).std()
         df["BB_Upper"] = sma + std_dev * std
         df["BB_Middle"] = sma
         df["BB_Lower"] = sma - std_dev * std
     elif indicator == "MACD":
-        fast = params.get("fast", 12)
-        slow = params.get("slow", 26)
-        signal = params.get("signal", 9)
+        fast = indicator_params.get("fast", 12)
+        slow = indicator_params.get("slow", 26)
+        signal = indicator_params.get("signal", 9)
         ema_fast = df["Close"].ewm(span=fast).mean()
         ema_slow = df["Close"].ewm(span=slow).mean()
         df["MACD"] = ema_fast - ema_slow
@@ -165,30 +411,228 @@ def compute_indicator(
     else:
         return f"Error: Unknown indicator '{indicator}'. Supported: SMA, EMA, RSI, BOLLINGER, MACD"
 
-    return df.tail(20).to_csv(index=False)
+    # Save enriched data to workspace for subsequent tools
+    base_name = os.path.splitext(os.path.basename(data_path))[0]
+    out_name = f"{base_name}_{indicator.lower()}.csv"
+    out_path = os.path.join(_workspace_dir(), out_name)
+    df.to_csv(out_path, index=False)
 
-
-def run_backtest(script_path: str) -> str:
-    """Execute a backtest script and return structured results."""
-    workspace = _workspace_dir()
-    full_path = (
-        os.path.join(workspace, script_path)
-        if not script_path.startswith("/")
-        else script_path
+    return (
+        f"Computed {indicator} and saved to {out_name}\n\n"
+        f"Last 10 rows:\n{df.tail(10).to_csv(index=False)}"
     )
-    if not os.path.isfile(full_path):
-        return f"Error: Script not found: {script_path}"
-    return shell_exec(f"python -u {full_path}", timeout=30)
+
+
+def run_backtest(
+    data_path: str,
+    strategy: str,
+    strategy_params: Optional[dict] = None,
+    start: str = "",
+    end: str = "",
+) -> str:
+    """Run a complete backtest for a built-in strategy type.
+
+    Self-contained: uses pandas/numpy directly. Does NOT call shell_exec
+    or any other MCP tool. The agent does NOT need to write a script —
+    just provide the strategy name and parameters.
+
+    Supported strategies:
+      ma_crossover:       Dual SMA crossover (golden cross / death cross).
+                          Params: fast_window (default 20), slow_window (default 50).
+      rsi_threshold:      RSI overbought / oversold signals.
+                          Params: window (14), overbought (70), oversold (30).
+      bollinger_breakout: Bollinger Band breakout or mean-reversion.
+                          Params: window (20), std_dev (2),
+                                  mode ("breakout" or "mean_reversion").
+
+    Returns performance metrics (Sharpe, return, drawdown, etc.), a trade
+    summary, and saves equity-curve CSV + metrics JSON to the workspace.
+    """
+    import pandas as pd
+
+    strategy_params = strategy_params or {}
+    full_path = _resolve_path(data_path)
+    if not full_path:
+        return f"Error: File not found: {data_path}"
+
+    # Read header to check for Date column
+    with open(full_path) as fh:
+        header = fh.readline()
+    has_date = "Date" in header
+
+    df = pd.read_csv(full_path, parse_dates=["Date"] if has_date else None)
+
+    if "Close" not in df.columns:
+        return (
+            f"Error: Data must have a 'Close' column. " f"Available: {list(df.columns)}"
+        )
+
+    # Optional date-range filter
+    if has_date and "Date" in df.columns:
+        if start:
+            df = df[df["Date"] >= start]
+        if end:
+            df = df[df["Date"] <= end]
+
+    if len(df) < 20:
+        return f"Error: Not enough data ({len(df)} rows) for backtesting"
+
+    df = df.reset_index(drop=True)
+    df["daily_return"] = df["Close"].pct_change()
+
+    strategy_name = strategy.lower().replace("-", "_").replace(" ", "_")
+
+    # ── Strategy: MA Crossover ──────────────────────────────────
+    if strategy_name == "ma_crossover":
+        fast_window = strategy_params.get("fast_window", 20)
+        slow_window = strategy_params.get("slow_window", 50)
+        if fast_window >= slow_window:
+            return (
+                f"Error: fast_window ({fast_window}) must be less "
+                f"than slow_window ({slow_window})"
+            )
+        df["SMA_fast"] = df["Close"].rolling(fast_window).mean()
+        df["SMA_slow"] = df["Close"].rolling(slow_window).mean()
+        # Long when fast SMA > slow SMA (golden cross)
+        df["signal"] = (df["SMA_fast"] > df["SMA_slow"]).astype(int)
+        strategy_desc = f"MA Crossover (fast={fast_window}, slow={slow_window})"
+
+    # ── Strategy: RSI Threshold ─────────────────────────────────
+    elif strategy_name == "rsi_threshold":
+        window = strategy_params.get("window", 14)
+        overbought = strategy_params.get("overbought", 70)
+        oversold = strategy_params.get("oversold", 30)
+
+        delta = df["Close"].diff()
+        gain = delta.where(delta > 0, 0).rolling(window).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(window).mean()
+        rs = gain / loss
+        df["RSI"] = 100 - (100 / (1 + rs))
+
+        # State machine: enter long when RSI < oversold,
+        # exit when RSI > overbought, hold otherwise.
+        position = 0
+        signals = []
+        for rsi_val in df["RSI"]:
+            if pd.isna(rsi_val):
+                signals.append(0)
+            elif rsi_val < oversold:
+                position = 1
+                signals.append(position)
+            elif rsi_val > overbought:
+                position = 0
+                signals.append(position)
+            else:
+                signals.append(position)
+        df["signal"] = signals
+        strategy_desc = (
+            f"RSI Threshold (window={window}, OB={overbought}, OS={oversold})"
+        )
+
+    # ── Strategy: Bollinger Breakout / Mean Reversion ───────────
+    elif strategy_name == "bollinger_breakout":
+        window = strategy_params.get("window", 20)
+        std_dev = strategy_params.get("std_dev", 2)
+        mode = strategy_params.get("mode", "breakout")
+
+        sma = df["Close"].rolling(window).mean()
+        std = df["Close"].rolling(window).std()
+        df["BB_Upper"] = sma + std_dev * std
+        df["BB_Lower"] = sma - std_dev * std
+
+        position = 0
+        signals = []
+        for _, row in df.iterrows():
+            close, upper, lower = row["Close"], row["BB_Upper"], row["BB_Lower"]
+            if pd.isna(upper) or pd.isna(lower):
+                signals.append(0)
+                continue
+            if mode == "breakout":
+                if close > upper:
+                    position = 1
+                elif close < lower:
+                    position = 0
+            else:  # mean_reversion
+                if close < lower:
+                    position = 1
+                elif close > upper:
+                    position = 0
+            signals.append(position)
+        df["signal"] = signals
+        strategy_desc = f"Bollinger {mode.title()} (window={window}, std={std_dev})"
+
+    else:
+        supported = "ma_crossover, rsi_threshold, bollinger_breakout"
+        return f"Error: Unknown strategy '{strategy}'. Supported: {supported}"
+
+    # ── Compute strategy returns (execute signal on next bar) ───
+    df["position"] = df["signal"].shift(1).fillna(0)
+    df["strategy_return"] = df["position"] * df["daily_return"]
+
+    # Drop NaN warm-up rows
+    valid = df.dropna(subset=["strategy_return"])
+    if len(valid) < 2:
+        return "Error: Strategy produced no valid trading days"
+
+    # ── Performance metrics via shared helper ───────────────────
+    metrics = _compute_performance_metrics(valid["strategy_return"])
+    metrics["strategy"] = strategy_desc
+
+    # Trade summary
+    position_changes = valid["position"].diff().fillna(0)
+    entries = int((position_changes == 1).sum())
+    exits = int((position_changes == -1).sum())
+    metrics["total_trades"] = entries + exits
+    metrics["entries"] = entries
+    metrics["exits"] = exits
+
+    # ── Save results to workspace ───────────────────────────────
+    workspace = _workspace_dir()
+
+    cols = ["Close", "signal", "position", "strategy_return"]
+    if "Date" in valid.columns:
+        cols = ["Date"] + cols
+    results_df = valid[cols].copy()
+    results_df["equity"] = (1 + valid["strategy_return"]).cumprod()
+    results_name = f"backtest_{strategy_name}_results.csv"
+    metrics_name = f"backtest_{strategy_name}_metrics.json"
+    results_path = os.path.join(workspace, results_name)
+    results_df.to_csv(results_path, index=False)
+
+    metrics_path = os.path.join(workspace, metrics_name)
+    with open(metrics_path, "w") as f:
+        json.dump(metrics, f, indent=2)
+
+    return (
+        f"Backtest: {strategy_desc}\n"
+        f"Data: {data_path} ({len(valid)} trading days)\n\n"
+        f"Performance Metrics:\n"
+        f"  Sharpe Ratio:   {metrics['sharpe_ratio']}\n"
+        f"  Annual Return:  {metrics['annual_return']:.2%}\n"
+        f"  Total Return:   {metrics['total_return']:.2%}\n"
+        f"  Max Drawdown:   {metrics['max_drawdown']:.2%}\n"
+        f"  Win Rate:       {metrics['win_rate']:.2%}\n"
+        f"  Volatility:     {metrics['volatility']:.2%}\n"
+        f"  Sortino Ratio:  {metrics['sortino_ratio']}\n"
+        f"  Calmar Ratio:   {metrics['calmar_ratio']}\n\n"
+        f"Trade Summary:\n"
+        f"  Total Trades:   {metrics['total_trades']}\n"
+        f"  Entries:        {metrics['entries']}\n"
+        f"  Exits:          {metrics['exits']}\n\n"
+        f"Files saved:\n"
+        f"  {results_name} (equity curve with signals)\n"
+        f"  {metrics_name} (all metrics)"
+    )
 
 
 def compute_statistics(
-    data_path: str, method: str, params: Optional[dict] = None
+    data_path: str, method: str, method_params: Optional[dict] = None
 ) -> str:
-    """Run statistical tests on data."""
+    """Run statistical tests or descriptive analysis on data."""
     import numpy as np
     import pandas as pd
 
-    params = params or {}
+    method_params = method_params or {}
     full_path = _resolve_path(data_path)
     if not full_path:
         return f"Error: File not found: {data_path}"
@@ -198,7 +642,7 @@ def compute_statistics(
     if method == "ADF":
         from statsmodels.tsa.stattools import adfuller
 
-        col = params.get("column", "Close")
+        col = method_params.get("column", "Close")
         result = adfuller(df[col].dropna())
         return json.dumps(
             {
@@ -210,16 +654,22 @@ def compute_statistics(
             indent=2,
         )
     elif method == "CORRELATION":
-        cols = params.get(
+        cols = method_params.get(
             "columns", [c for c in df.select_dtypes(include=[np.number]).columns]
         )
-        corr = df[cols].corr()
+        corr_method = method_params.get("method", "pearson")
+        if corr_method not in ("pearson", "spearman", "kendall"):
+            return (
+                f"Error: Unknown correlation method '{corr_method}'. "
+                f"Supported: pearson, spearman, kendall"
+            )
+        corr = df[cols].corr(method=corr_method)
         return corr.to_csv()
     elif method == "COINTEGRATION":
         from statsmodels.tsa.stattools import coint
 
-        col1 = params.get("column1", df.columns[1])
-        col2 = params.get("column2", df.columns[2])
+        col1 = method_params.get("column1", df.columns[1])
+        col2 = method_params.get("column2", df.columns[2])
         score, pvalue, _ = coint(df[col1].dropna(), df[col2].dropna())
         return json.dumps(
             {
@@ -229,84 +679,440 @@ def compute_statistics(
             },
             indent=2,
         )
+    elif method == "DESCRIPTIVE":
+        col = method_params.get("column", None)
+        if col:
+            series = df[col].dropna()
+            result = {
+                "count": int(series.count()),
+                "mean": round(float(series.mean()), 6),
+                "std": round(float(series.std()), 6),
+                "min": round(float(series.min()), 6),
+                "25%": round(float(series.quantile(0.25)), 6),
+                "50%": round(float(series.quantile(0.50)), 6),
+                "75%": round(float(series.quantile(0.75)), 6),
+                "max": round(float(series.max()), 6),
+                "skew": round(float(series.skew()), 6),
+                "kurtosis": round(float(series.kurtosis()), 6),
+            }
+        else:
+            result = json.loads(df.describe(include="all").to_json())
+        return json.dumps(result, indent=2)
+    elif method == "MISSING":
+        total = len(df)
+        missing = {}
+        for c in df.columns:
+            n_miss = int(df[c].isna().sum())
+            missing[c] = {
+                "missing_count": n_miss,
+                "missing_pct": round(n_miss / total * 100, 2) if total > 0 else 0.0,
+            }
+        return json.dumps({"total_rows": total, "columns": missing}, indent=2)
     else:
-        return f"Error: Unknown method '{method}'. Supported: ADF, CORRELATION, COINTEGRATION"
+        return (
+            f"Error: Unknown method '{method}'. "
+            f"Supported: ADF, CORRELATION, COINTEGRATION, DESCRIPTIVE, MISSING"
+        )
 
 
 def plot_chart(python_code: str) -> str:
-    """Execute matplotlib code, save and return the image path."""
+    """Execute matplotlib Python code in-process and save the chart as PNG.
+
+    Self-contained: uses exec() directly. Does NOT call shell_exec or spawn
+    a subprocess. The Agg backend is forced so no display server is needed.
+
+    The provided code should create matplotlib figures. This tool automatically
+    appends plt.savefig() and plt.close() — the caller does not need to
+    include them (but including them is harmless).
+    """
+    import time as _time
+
+    import matplotlib
+
+    matplotlib.use("Agg")
+
     workspace = _workspace_dir()
-    chart_path = os.path.join(workspace, f"chart_{int(__import__('time').time())}.png")
-    code_with_save = (
+    chart_path = os.path.join(workspace, f"chart_{int(_time.time())}.png")
+
+    full_code = (
         python_code
-        + f"\nimport matplotlib.pyplot as plt\nplt.savefig('{chart_path}', dpi=100, bbox_inches='tight')\nplt.close()"
+        + "\nimport matplotlib.pyplot as plt\n"
+        + f"plt.savefig('{chart_path}', dpi=100, bbox_inches='tight')\n"
+        + "plt.close('all')\n"
     )
-    exec_result = shell_exec(f'python -c "{code_with_save}"')
-    if os.path.isfile(chart_path):
-        return f"Chart saved to {chart_path}"
-    return f"Error generating chart: {exec_result}"
-
-
-def format_table(data: str, columns: Optional[list] = None, title: str = "") -> str:
-    """Format data into a clean markdown table."""
-    import io
-
-    import pandas as pd
 
     try:
-        df = pd.read_csv(io.StringIO(data))
-        if columns:
-            df = df[columns]
-        header = f"### {title}\n\n" if title else ""
-        return header + df.to_markdown(index=False)
+        exec(full_code, {"__builtins__": __builtins__})
     except Exception as e:
-        return f"Error formatting table: {e}"
+        return f"Error generating chart: {type(e).__name__}: {e}"
+
+    if os.path.isfile(chart_path):
+        return f"Chart saved to {chart_path}"
+    return "Error: Chart file was not generated"
 
 
-def compare_series(paths: list, metric: str = "sharpe") -> str:
-    """Compare multiple return series on a given metric."""
-    import numpy as np
+def analyze_backtest_results(data_path: str, returns_column: str = "returns") -> str:
+    """Analyze a CSV with portfolio/strategy returns and compute performance metrics.
+
+    Self-contained: uses pandas/numpy via the shared _compute_performance_metrics
+    helper. Does NOT call shell_exec or any other MCP tool.
+
+    Auto-detects the returns column from common names (returns, daily_return,
+    strategy_return, pnl). If only a 'Close' price column exists, daily
+    returns are computed automatically.
+    """
     import pandas as pd
 
-    results = {}
-    for p in paths:
-        full = _resolve_path(p)
-        if not full:
-            results[p] = {"error": "File not found"}
-            continue
-        df = pd.read_csv(full)
-        returns_col = [c for c in df.columns if "return" in c.lower()]
-        if not returns_col:
-            if "Close" in df.columns:
-                returns = df["Close"].pct_change().dropna()
-            else:
-                results[p] = {"error": "No returns column found"}
-                continue
-        else:
-            returns = df[returns_col[0]].dropna()
+    full_path = _resolve_path(data_path)
+    if not full_path:
+        return f"Error: File not found: {data_path}"
 
-        metric_lower = metric.lower()
-        if metric_lower == "sharpe":
-            val = (
-                returns.mean() / returns.std() * np.sqrt(252)
-                if returns.std() > 0
-                else 0
+    df = pd.read_csv(full_path)
+
+    # Auto-detect returns column
+    ret_col = None
+    for candidate in [
+        returns_column,
+        "returns",
+        "Returns",
+        "daily_return",
+        "daily_returns",
+        "strategy_return",
+        "strategy_returns",
+        "pnl",
+        "PnL",
+    ]:
+        if candidate in df.columns:
+            ret_col = candidate
+            break
+    if ret_col is None and "Close" in df.columns:
+        df["_returns"] = df["Close"].pct_change()
+        ret_col = "_returns"
+    if ret_col is None:
+        return f"Error: No returns column found. Available columns: {list(df.columns)}"
+
+    returns = df[ret_col].dropna()
+    if len(returns) < 2:
+        return f"Error: Not enough data points ({len(returns)}) to compute metrics."
+
+    # Use shared helper for metric computation
+    metrics = _compute_performance_metrics(returns)
+    metrics["data_path"] = data_path
+
+    # Save to workspace as structured JSON
+    base = os.path.splitext(os.path.basename(data_path))[0]
+    out_name = f"{base}_analysis.json"
+    out_path = os.path.join(_workspace_dir(), out_name)
+    with open(out_path, "w") as f:
+        json.dump(metrics, f, indent=2)
+
+    return (
+        f"Backtest Analysis (saved to {out_name}):\n"
+        f"  Sharpe Ratio:   {metrics['sharpe_ratio']}\n"
+        f"  Annual Return:  {metrics['annual_return']:.2%}\n"
+        f"  Total Return:   {metrics['total_return']:.2%}\n"
+        f"  Max Drawdown:   {metrics['max_drawdown']:.2%}\n"
+        f"  Win Rate:       {metrics['win_rate']:.2%}\n"
+        f"  Volatility:     {metrics['volatility']:.2%}\n"
+        f"  Sortino Ratio:  {metrics['sortino_ratio']}\n"
+        f"  Calmar Ratio:   {metrics['calmar_ratio']}\n"
+    )
+
+
+def evaluate_signal(
+    file_path: str,
+    forward_periods: int = 1,
+    quantiles: int = 5,
+    decay_lags: int = 5,
+) -> str:
+    """Evaluate a trading signal against forward returns.
+
+    Input CSV must contain at least a ``signal`` column and a close-price
+    column (``close`` or ``Close``). If no returns column is present, period
+    returns are derived from close prices.
+    """
+    import numpy as np
+    import pandas as pd
+    from scipy.stats import spearmanr
+    from scipy.stats import t as student_t
+
+    full_path = _resolve_path(file_path)
+    if not full_path:
+        return f"Error: File not found: {file_path}"
+
+    forward_periods = max(1, int(forward_periods or 1))
+    quantiles = max(2, int(quantiles or 5))
+    decay_lags = max(1, int(decay_lags or 5))
+
+    df = pd.read_csv(full_path)
+
+    signal_col = _resolve_column_name(df, ["signal"])
+    close_col = _resolve_column_name(
+        df, ["close", "Close", "adj_close", "Adj Close", "price"]
+    )
+    returns_col = _resolve_column_name(
+        df,
+        [
+            "returns",
+            "return",
+            "daily_return",
+            "strategy_return",
+            "pct_return",
+        ],
+    )
+
+    if signal_col is None:
+        return "Error: CSV must contain a 'signal' column."
+    if close_col is None:
+        return "Error: CSV must contain a 'close' or 'Close' column."
+
+    signal = pd.to_numeric(df[signal_col], errors="coerce")
+    close = pd.to_numeric(df[close_col], errors="coerce")
+    returns = (
+        pd.to_numeric(df[returns_col], errors="coerce")
+        if returns_col is not None
+        else close.pct_change()
+    )
+    forward_return = close.shift(-forward_periods) / close - 1
+
+    aligned = pd.DataFrame(
+        {
+            "signal": signal,
+            "returns": returns,
+            "forward_return": forward_return,
+        }
+    ).dropna(subset=["signal", "forward_return"])
+
+    if len(aligned) < max(10, quantiles * 2):
+        return (
+            "Error: Not enough aligned observations to evaluate the signal. "
+            f"Only found {len(aligned)} usable rows."
+        )
+
+    def _spearman_corr(x, y) -> float:
+        if len(x) < 3:
+            return np.nan
+        if (
+            pd.Series(x).nunique(dropna=True) < 2
+            or pd.Series(y).nunique(dropna=True) < 2
+        ):
+            return np.nan
+        corr = spearmanr(x, y).correlation
+        return float(corr) if corr is not None and np.isfinite(corr) else np.nan
+
+    ic_decay: list[float] = []
+    for lag in range(1, decay_lags + 1):
+        lag_forward = close.shift(-lag) / close - 1
+        lag_aligned = pd.DataFrame(
+            {"signal": signal, "forward_return": lag_forward}
+        ).dropna()
+        lag_ic = _spearman_corr(
+            lag_aligned["signal"],
+            lag_aligned["forward_return"],
+        )
+        ic_decay.append(_safe_round(0.0 if np.isnan(lag_ic) else lag_ic, 4) or 0.0)
+
+    window = min(60, max(20, len(aligned) // 5))
+    rolling_ic: list[float] = []
+    if len(aligned) >= window:
+        for end in range(window, len(aligned) + 1):
+            segment = aligned.iloc[end - window : end]
+            corr = _spearman_corr(segment["signal"], segment["forward_return"])
+            if not np.isnan(corr):
+                rolling_ic.append(float(corr))
+
+    if len(rolling_ic) >= 2:
+        ic_mean = float(np.mean(rolling_ic))
+        ic_std = float(np.std(rolling_ic, ddof=1))
+        ic_ir = ic_mean / ic_std if ic_std > 0 else 0.0
+        ic_tstat = ic_mean / (ic_std / np.sqrt(len(rolling_ic))) if ic_std > 0 else 0.0
+        ic_pvalue = (
+            2 * float(student_t.sf(abs(ic_tstat), df=len(rolling_ic) - 1))
+            if ic_std > 0
+            else 1.0
+        )
+    else:
+        single_ic = _spearman_corr(aligned["signal"], aligned["forward_return"])
+        ic_mean = 0.0 if np.isnan(single_ic) else float(single_ic)
+        ic_std = 0.0
+        ic_ir = 0.0
+        ic_tstat = 0.0
+        ic_pvalue = 1.0
+
+    non_zero = aligned["signal"] != 0
+    if non_zero.any():
+        hit_rate = float(
+            (
+                np.sign(aligned.loc[non_zero, "signal"])
+                == np.sign(aligned.loc[non_zero, "forward_return"])
+            ).mean()
+        )
+    else:
+        hit_rate = 0.0
+
+    turnover = (
+        float(signal.diff().abs().dropna().mean()) if signal.notna().sum() > 1 else 0.0
+    )
+    signal_autocorrelation = (
+        float(signal.dropna().autocorr(lag=1)) if signal.dropna().shape[0] > 2 else 0.0
+    )
+
+    ranked = aligned.copy()
+    ranked["bucket"] = pd.qcut(
+        ranked["signal"].rank(method="first"),
+        q=min(quantiles, ranked["signal"].nunique()),
+        labels=False,
+        duplicates="drop",
+    )
+    quantile_returns = (
+        ranked.groupby("bucket", observed=False)["forward_return"].mean().tolist()
+    )
+    if quantile_returns:
+        long_short_spread = float(quantile_returns[-1] - quantile_returns[0])
+        if len(quantile_returns) > 1:
+            monotonicity = _spearman_corr(
+                pd.Series(range(len(quantile_returns))),
+                pd.Series(quantile_returns),
             )
-        elif metric_lower == "volatility":
-            val = returns.std() * np.sqrt(252)
-        elif metric_lower == "total_return":
-            val = (1 + returns).prod() - 1
+            monotonicity_score = max(
+                0.0, 0.0 if np.isnan(monotonicity) else monotonicity
+            )
         else:
-            val = 0
-        results[p] = {metric: round(float(val), 4)}
+            monotonicity_score = 0.0
+    else:
+        long_short_spread = 0.0
+        monotonicity_score = 0.0
 
-    return json.dumps(results, indent=2)
+    strategy_return = (signal.shift(1) * returns).dropna()
+    annual_factor = _infer_annual_factor(df)
+    if len(strategy_return) >= 2:
+        equity = (1 + strategy_return.fillna(0)).cumprod()
+        total_return = float(equity.iloc[-1] - 1)
+        annualized_return = (
+            float((equity.iloc[-1]) ** (annual_factor / len(strategy_return)) - 1)
+            if equity.iloc[-1] > 0
+            else -1.0
+        )
+        sharpe = (
+            float(
+                strategy_return.mean() / strategy_return.std() * np.sqrt(annual_factor)
+            )
+            if float(strategy_return.std()) > 0
+            else 0.0
+        )
+        running_max = equity.cummax()
+        max_drawdown = float(((equity / running_max) - 1).min())
+    else:
+        total_return = 0.0
+        annualized_return = 0.0
+        sharpe = 0.0
+        max_drawdown = 0.0
+
+    corr_abs_return = _spearman_corr(aligned["signal"], aligned["forward_return"].abs())
+
+    result = {
+        "signal_metrics": {
+            "ic_mean": _safe_round(ic_mean, 4),
+            "ic_std": _safe_round(ic_std, 4),
+            "ic_ir": _safe_round(ic_ir, 4),
+            "ic_tstat": _safe_round(ic_tstat, 4),
+            "ic_pvalue": _safe_round(ic_pvalue, 4),
+            "ic_decay": [
+                _safe_round(value, 4) if value is not None else 0.0
+                for value in ic_decay
+            ],
+            "hit_rate": _safe_round(hit_rate, 4),
+            "turnover": _safe_round(turnover, 4),
+            "signal_autocorrelation": _safe_round(signal_autocorrelation, 4),
+        },
+        "quantile_analysis": {
+            "quantile_mean_returns": [
+                _safe_round(value, 6) if value is not None else 0.0
+                for value in quantile_returns
+            ],
+            "long_short_spread": _safe_round(long_short_spread, 6),
+            "monotonicity_score": _safe_round(monotonicity_score, 4),
+        },
+        "rough_pnl": {
+            "total_return": _safe_round(total_return, 4),
+            "annualized_return": _safe_round(annualized_return, 4),
+            "annualized_sharpe": _safe_round(sharpe, 4),
+            "max_drawdown": _safe_round(max_drawdown, 4),
+            "num_observations": int(len(strategy_return)),
+        },
+        "diagnostics": {
+            "signal_coverage": _safe_round(float(signal.notna().mean()), 4),
+            "signal_mean": _safe_round(float(signal.mean()), 4),
+            "signal_std": _safe_round(float(signal.std()), 4),
+            "forward_return_mean": _safe_round(
+                float(aligned["forward_return"].mean()), 6
+            ),
+            "correlation_signal_abs_return": _safe_round(
+                0.0 if np.isnan(corr_abs_return) else corr_abs_return,
+                4,
+            ),
+        },
+    }
+
+    base = os.path.splitext(os.path.basename(file_path))[0]
+    out_name = f"{base}_signal_evaluation.json"
+    out_path = os.path.join(_workspace_dir(), out_name)
+    with open(out_path, "w") as f:
+        json.dump(result, f, indent=2)
+
+    result["saved_to"] = out_name
+    return json.dumps(result, indent=2)
+
+
+def search_web(query: str, max_results: int = 5) -> str:
+    """Search the public web using DuckDuckGo and return result links with snippets."""
+    if not query or not query.strip():
+        return "Error: query must be non-empty."
+
+    max_results = max(1, min(int(max_results or 5), 10))
+
+    try:
+        from ddgs import DDGS
+    except ImportError:
+        try:
+            from duckduckgo_search import DDGS
+        except ImportError:
+            return "Error: web search unavailable (ddgs package not installed)"
+
+    try:
+        raw = DDGS().text(query, max_results=max_results)
+    except Exception as exc:
+        return f"Error: web search failed: {type(exc).__name__}: {exc}"
+
+    if not raw:
+        return json.dumps(
+            {"query": query, "results": [], "note": "No web results returned."},
+            indent=2,
+        )
+
+    results = [
+        {
+            "title": r.get("title", ""),
+            "url": r.get("href", ""),
+            "snippet": r.get("body", ""),
+        }
+        for r in raw
+    ]
+    return json.dumps({"query": query, "results": results}, indent=2)
 
 
 def search_docs(query: str) -> str:
-    """Full-text search across the /docs/ directory."""
+    """Keyword search across the /docs/ directory.
+
+    Splits the query into keywords and scores each line by the number of
+    keywords it contains (case-insensitive).  Returns the top matches
+    ranked by relevance.
+    """
+    keywords = [kw for kw in query.lower().split() if len(kw) >= 2]
+    if not keywords:
+        return f"No results found for '{query}'"
+
     results = []
-    query_lower = query.lower()
     docs_dir = _docs_dir()
     for root, _, files in os.walk(docs_dir):
         for fname in files:
@@ -314,34 +1120,60 @@ def search_docs(query: str) -> str:
                 continue
             fpath = os.path.join(root, fname)
             with open(fpath) as f:
-                content = f.read()
-            lines = content.split("\n")
-            matches = [
-                (i + 1, line.strip())
-                for i, line in enumerate(lines)
-                if query_lower in line.lower()
-            ]
-            if matches:
-                results.append({"file": fname, "matches": matches[:5]})
+                lines = f.read().split("\n")
+
+            scored_lines: list[tuple[int, int, str]] = []  # (score, lineno, text)
+            for i, line in enumerate(lines):
+                line_lower = line.lower()
+                hits = sum(1 for kw in keywords if kw in line_lower)
+                if hits > 0:
+                    scored_lines.append((hits, i + 1, line.strip()))
+
+            if scored_lines:
+                scored_lines.sort(key=lambda x: -x[0])
+                matches = [
+                    {"line": lineno, "score": score, "text": text}
+                    for score, lineno, text in scored_lines[:10]
+                ]
+                results.append({"file": fname, "matches": matches})
+
     if not results:
         return f"No results found for '{query}'"
+    results.sort(key=lambda r: -r["matches"][0]["score"])
     return json.dumps(results, indent=2)
 
 
-def send_message(text: str) -> str:
-    """Send a message to the student. Primary tutoring action."""
-    return (
-        f"Message sent: {text[:100]}..." if len(text) > 100 else f"Message sent: {text}"
-    )
-
-
 def get_environment_info() -> str:
-    """Return available data files, installed packages, and workspace contents."""
-    info = {"data_files": [], "docs": [], "workspace": [], "installed_packages": []}
+    """Return directory paths, available files, and installed packages.
+
+    Provides explicit absolute paths so the agent knows where to find
+    files when using shell_exec (e.g. ``pd.read_csv('/data/AAPL.csv')``).
+    """
+    data_dir = _data_dir()
+    docs_dir = _docs_dir()
+    workspace = _workspace_dir()
+
+    info = {
+        "directories": {
+            "data": data_dir,
+            "docs": docs_dir,
+            "workspace": workspace,
+        },
+        "data_files": [],
+        "docs": [],
+        "workspace": [],
+        "installed_packages": [],
+        "note": (
+            f"Data files are in {data_dir}. "
+            f"Use absolute paths in Python code, "
+            f"e.g. pd.read_csv('{data_dir}/FILENAME.csv'). "
+            f"Workspace for saving outputs: {workspace}."
+        ),
+    }
     for d, key in [
-        (_data_dir(), "data_files"),
-        (_docs_dir(), "docs"),
-        (_workspace_dir(), "workspace"),
+        (data_dir, "data_files"),
+        (docs_dir, "docs"),
+        (workspace, "workspace"),
     ]:
         if os.path.isdir(d):
             info[key] = sorted(os.listdir(d))
@@ -357,17 +1189,6 @@ def get_environment_info() -> str:
     except Exception:
         info["installed_packages"] = ["(unable to list)"]
     return json.dumps(info, indent=2)
-
-
-def _resolve_path(path: str) -> Optional[str]:
-    """Resolve a path by checking workspace, data, docs, student_code."""
-    if os.path.isfile(path):
-        return path
-    for base in [_workspace_dir(), _data_dir(), _docs_dir(), _student_code_dir()]:
-        full = os.path.join(base, path)
-        if os.path.isfile(full):
-            return full
-    return None
 
 
 # Tool registry for the proxy layer
@@ -406,12 +1227,22 @@ CORE_TOOLS = {
     },
     "file_read": {
         "func": file_read,
-        "description": "Read a file from workspace, data, docs, or student_code directories",
+        "description": "Read a file from workspace, data, docs, or student_code directories. Large CSV files (>50 rows) return a smart preview (header + first 5 + last 5 rows) by default. Use offset/max_lines for specific sections.",
         "params": {
             "path": {
                 "type": "string",
                 "description": "File path to read. Searches workspace/, data/, docs/, student_code/ directories.",
                 "required": True,
+            },
+            "offset": {
+                "type": "integer",
+                "description": "Start reading from this line number (0-based). Default: 0.",
+                "required": False,
+            },
+            "max_lines": {
+                "type": "integer",
+                "description": "Maximum number of lines to return. Default: 0 (auto — smart preview for large CSV, full content otherwise).",
+                "required": False,
             },
         },
     },
@@ -428,7 +1259,7 @@ CORE_TOOLS = {
     },
     "fetch_market_data": {
         "func": fetch_market_data,
-        "description": "Return OHLCV data from frozen CSV for a given symbol and date range",
+        "description": "Fetch OHLCV data for a given symbol and date range, save to workspace as CSV, and return a summary with first/last rows",
         "params": {
             "symbol": {
                 "type": "string",
@@ -449,7 +1280,7 @@ CORE_TOOLS = {
     },
     "compute_indicator": {
         "func": compute_indicator,
-        "description": "Compute a technical indicator on a dataset and return the last 20 rows",
+        "description": "Compute a technical indicator (SMA, EMA, RSI, Bollinger Bands, MACD) on a CSV dataset with a 'Close' column. Adds the indicator as new column(s), saves the enriched dataset to workspace, and returns the last 10 rows.",
         "params": {
             "data_path": {
                 "type": "string",
@@ -461,7 +1292,7 @@ CORE_TOOLS = {
                 "description": "Indicator name: SMA, EMA, RSI, BOLLINGER, or MACD",
                 "required": True,
             },
-            "params": {
+            "indicator_params": {
                 "type": "object",
                 "description": 'Indicator parameters as JSON object, e.g. {"window": 20} for SMA, {"fast": 12, "slow": 26, "signal": 9} for MACD',
                 "required": False,
@@ -470,18 +1301,51 @@ CORE_TOOLS = {
     },
     "run_backtest": {
         "func": run_backtest,
-        "description": "Execute a Python backtest script in the workspace and return its output",
+        "description": (
+            "Run a complete backtest for a built-in strategy type. Supports: "
+            "ma_crossover (dual SMA crossover), rsi_threshold (RSI overbought/"
+            "oversold), bollinger_breakout (Bollinger Band breakout or mean "
+            "reversion). Returns performance metrics (Sharpe, return, drawdown) "
+            "and saves equity curve CSV + metrics JSON to workspace. "
+            "Self-contained — no need to write a backtest script."
+        ),
         "params": {
-            "script_path": {
+            "data_path": {
                 "type": "string",
-                "description": "Path to a Python script in the workspace, e.g. 'backtest.py'",
+                "description": "Path to CSV file with OHLCV data (must have 'Close' column)",
                 "required": True,
+            },
+            "strategy": {
+                "type": "string",
+                "description": "Strategy name: 'ma_crossover', 'rsi_threshold', or 'bollinger_breakout'",
+                "required": True,
+            },
+            "strategy_params": {
+                "type": "object",
+                "description": (
+                    "Strategy parameters as JSON object. "
+                    'ma_crossover: {"fast_window": 20, "slow_window": 50}. '
+                    'rsi_threshold: {"window": 14, "overbought": 70, "oversold": 30}. '
+                    'bollinger_breakout: {"window": 20, "std_dev": 2, '
+                    '"mode": "breakout" or "mean_reversion"}.'
+                ),
+                "required": False,
+            },
+            "start": {
+                "type": "string",
+                "description": "Start date filter in YYYY-MM-DD format. Optional.",
+                "required": False,
+            },
+            "end": {
+                "type": "string",
+                "description": "End date filter in YYYY-MM-DD format. Optional.",
+                "required": False,
             },
         },
     },
     "compute_statistics": {
         "func": compute_statistics,
-        "description": "Run statistical tests on data (stationarity, correlation, cointegration)",
+        "description": "Run statistical tests or descriptive analysis on data (stationarity, correlation, cointegration, descriptive stats, missing values)",
         "params": {
             "data_path": {
                 "type": "string",
@@ -490,19 +1354,19 @@ CORE_TOOLS = {
             },
             "method": {
                 "type": "string",
-                "description": "Statistical method: ADF (stationarity test), CORRELATION (correlation matrix), or COINTEGRATION",
+                "description": "Statistical method: ADF (stationarity test), CORRELATION (correlation matrix; supports pearson/spearman/kendall via method_params), COINTEGRATION, DESCRIPTIVE (summary stats: mean/std/quartiles/skew/kurtosis), or MISSING (per-column missing value counts)",
                 "required": True,
             },
-            "params": {
+            "method_params": {
                 "type": "object",
-                "description": 'Method parameters as JSON object, e.g. {"column": "Close"} for ADF, {"column1": "AAPL", "column2": "SPY"} for COINTEGRATION',
+                "description": 'Method parameters as JSON object, e.g. {"column": "Close"} for ADF or DESCRIPTIVE, {"column1": "AAPL", "column2": "SPY"} for COINTEGRATION, {"method": "spearman"} for CORRELATION. Omit for MISSING.',
                 "required": False,
             },
         },
     },
     "plot_chart": {
         "func": plot_chart,
-        "description": "Execute matplotlib Python code, save chart as PNG, and return the image path",
+        "description": "Execute matplotlib Python code and save the resulting chart as PNG. Automatically appends plt.savefig() and plt.close() — just provide the plotting code. Returns the saved image file path.",
         "params": {
             "python_code": {
                 "type": "string",
@@ -511,70 +1375,78 @@ CORE_TOOLS = {
             },
         },
     },
-    "format_table": {
-        "func": format_table,
-        "description": "Format CSV data into a clean markdown table",
+    "analyze_backtest_results": {
+        "func": analyze_backtest_results,
+        "description": "Compute standard performance metrics (Sharpe Ratio, Annual Return, Total Return, Max Drawdown, Win Rate, Volatility, Sortino, Calmar) from a CSV of portfolio/strategy returns. Auto-detects the returns column from common names. Saves structured results as {input_name}_analysis.json in workspace.",
         "params": {
-            "data": {
+            "data_path": {
                 "type": "string",
-                "description": "CSV-formatted string data to display as a table",
+                "description": "Path to CSV file with returns data. Must have a returns column or a 'Close' price column for automatic return computation.",
                 "required": True,
             },
-            "columns": {
-                "type": "array",
-                "items": {"type": "string"},
-                "description": "Column names to include. Omit to show all columns.",
-                "required": False,
-            },
-            "title": {
+            "returns_column": {
                 "type": "string",
-                "description": "Optional table title displayed as a markdown heading",
+                "description": "Name of the returns column. Auto-detects from common names (returns, daily_return, strategy_return, pnl) if omitted. If only 'Close' exists, daily returns are computed automatically.",
                 "required": False,
             },
         },
     },
-    "compare_series": {
-        "func": compare_series,
-        "description": "Compare multiple return series on a performance metric",
+    "evaluate_signal": {
+        "func": evaluate_signal,
+        "description": "Evaluate the quality of a trading signal against forward returns. Computes Information Coefficient, IC decay, quantile returns, turnover, hit rate, and rough PnL metrics from a CSV with at least 'signal' and 'close' columns. Saves structured results as {input_name}_signal_evaluation.json in workspace.",
         "params": {
-            "paths": {
-                "type": "array",
-                "items": {"type": "string"},
-                "description": "List of CSV file paths to compare, e.g. ['strategy_a.csv', 'strategy_b.csv']",
+            "file_path": {
+                "type": "string",
+                "description": "Path to a CSV containing at least a 'signal' column and a close-price column.",
                 "required": True,
             },
-            "metric": {
+            "forward_periods": {
+                "type": "integer",
+                "description": "Number of periods ahead for forward returns. Default: 1.",
+                "required": False,
+            },
+            "quantiles": {
+                "type": "integer",
+                "description": "Number of quantile buckets for quantile analysis. Default: 5.",
+                "required": False,
+            },
+            "decay_lags": {
+                "type": "integer",
+                "description": "Number of lags for IC decay analysis. Default: 5.",
+                "required": False,
+            },
+        },
+    },
+    "search_web": {
+        "func": search_web,
+        "description": "Search the public web using DuckDuckGo. Returns real search result links with titles and snippets. Use for finding API documentation, library references, or technical guides.",
+        "params": {
+            "query": {
                 "type": "string",
-                "description": "Comparison metric: 'sharpe', 'volatility', or 'total_return'. Default: 'sharpe'.",
+                "description": "Search query string, e.g. 'FRED API observations endpoint'",
+                "required": True,
+            },
+            "max_results": {
+                "type": "integer",
+                "description": "Maximum result count (1-10). Default: 5.",
                 "required": False,
             },
         },
     },
     "search_docs": {
         "func": search_docs,
-        "description": "Full-text search across reference documentation in /docs/",
+        "description": "Keyword search across reference documentation in /docs/. Splits the query into keywords and returns lines ranked by relevance (number of keyword matches).",
         "params": {
             "query": {
                 "type": "string",
-                "description": "Search query string, e.g. 'moving average', 'Sharpe ratio', 'backtest'",
-                "required": True,
-            },
-        },
-    },
-    "send_message": {
-        "func": send_message,
-        "description": "Send a message to the student (primary tutoring action)",
-        "params": {
-            "text": {
-                "type": "string",
-                "description": "Message text to send to the student",
+                "description": "Search keywords, e.g. 'moving average', 'read_csv parse_dates', 'Sharpe ratio'",
                 "required": True,
             },
         },
     },
     "get_environment_info": {
         "func": get_environment_info,
-        "description": "Return available data files, installed packages, and workspace contents",
+        "description": "Return directory paths (data, docs, workspace), available files, and installed packages. Use this first to discover file locations and absolute paths for shell_exec.",
         "params": {},
     },
 }

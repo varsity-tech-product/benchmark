@@ -6,6 +6,10 @@ env/
 
 # Data files - never commit datasets
 data/
+!bench/data/
+bench/data/*
+!bench/data/universe.json
+!bench/data/reference/
 *.7z
 *.xml
 *.jsonl
@@ -52,6 +56,12 @@ Thumbs.db
 *.log
 logs/
 
+# Benchmark results (traces, scores, agent files)
+bench/results/
+
 # Checkpoints
 checkpoints/
 *.checkpoint.json
+
+# I-series data cache (downloaded from HuggingFace at runtime)
+bench/data/hf_cache/

@@ -15,13 +15,15 @@ import shutil
 # Use relative imports that work both as package and standalone
 import sys
 import tempfile
+import threading
 import time
 from pathlib import Path
 from typing import Optional
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from config.llm_config import SIMULATOR_DEFAULT_MODEL, resolve_deepeval_model
+from config.llm_config import SIMULATOR_DEFAULT_MODEL
+from config.model_resolver import resolve_deepeval_model
 from config.prompt_config import (
     build_scenario,
     build_tutor_context,
@@ -35,13 +37,11 @@ from orchestrator.container_manager import ContainerManager
 from orchestrator.schemas import (
     BenchmarkReport,
     ConversationTurn,
-    MCPToolCallRecord,
     QuantTutorTask,
     StudentPersona,
     TaskResult,
 )
 from orchestrator.simulator_config import (
-    run_conversation_manual,
     run_conversation_simulation,
 )
 
@@ -53,6 +53,16 @@ except ImportError:
     DEEPEVAL_AVAILABLE = False
 
 
+class EvalAbortError(RuntimeError):
+    """Raised when an evaluation call fails after exhausting retries.
+
+    Per-task abort: this error terminates evaluation for the current task
+    only.  Other parallel tasks are not affected.
+    """
+
+    pass
+
+
 class BenchmarkOrchestrator:
     """Orchestrates the full benchmark evaluation lifecycle."""
 
@@ -61,7 +71,6 @@ class BenchmarkOrchestrator:
         bench_root: Optional[str] = None,
         use_docker: bool = False,
         max_concurrent: int = 1,
-        use_deepeval: bool = True,
         eval_model: Optional[str] = None,
         simulator_model: Optional[str] = None,
     ):
@@ -73,10 +82,11 @@ class BenchmarkOrchestrator:
         self.personas_dir = self.bench_root / "personas"
         self.results_dir = self.bench_root / "results"
         self.container_manager = ContainerManager(use_docker=use_docker)
+        self._lean_data_paths = None  # Lazy-loaded for I-series
         self.max_concurrent = max_concurrent
-        self.use_deepeval = use_deepeval
-        # Resolve model names for DeepEval (strips "openai/" when using native OpenAI API)
-        self.eval_model = resolve_deepeval_model(eval_model)
+        # Keep eval_model as raw (string/list/None) so each downstream
+        # resolve_deepeval_model() call can randomly pick from the model list.
+        self.eval_model = eval_model
         self.simulator_model = resolve_deepeval_model(
             simulator_model or SIMULATOR_DEFAULT_MODEL
         )
@@ -92,6 +102,13 @@ class BenchmarkOrchestrator:
         with open(persona_path) as f:
             return StudentPersona(**json.load(f))
 
+    def _ensure_lean_data(self):
+        """Download LEAN data from HF if not cached. Called once, cached."""
+        if self._lean_data_paths is None:
+            from scripts.data_manager import ensure_data
+            self._lean_data_paths = ensure_data(series="i")
+        return self._lean_data_paths
+
     def run_single_task(
         self,
         task: QuantTutorTask,
@@ -100,6 +117,7 @@ class BenchmarkOrchestrator:
         run_index: int = 0,
         max_turns: Optional[int] = None,
         tools_enabled: bool = True,
+        pre_teardown_hook: Optional[callable] = None,
     ) -> TaskResult:
         """Run a single task with a specific persona and agent.
 
@@ -116,6 +134,7 @@ class BenchmarkOrchestrator:
             run_index=run_index,
             difficulty=task.difficulty.value,
             category=task.category.value,
+            requires_code=task.requires_code,
         )
 
         staged_temp_dirs: list[str] = []
@@ -133,6 +152,17 @@ class BenchmarkOrchestrator:
                 )
             )
 
+            # Detect I-series LEAN tasks and ensure data is available
+            lean_data_dir = None
+            sandbox_img = task.environment.sandbox_image if task.environment else ""
+            if sandbox_img and "lean" in sandbox_img:
+                paths = self._ensure_lean_data()
+                lean_data_dir = paths.lean_data
+                # Stage universe.json from HF cache into data_dir for I-series
+                if paths.universe and os.path.exists(paths.universe):
+                    import shutil as _shutil
+                    _shutil.copy2(paths.universe, os.path.join(staged_data_dir, "universe.json"))
+
             # 1b. Create sandbox container (Docker or local fallback)
             container = self.container_manager.create_container(
                 task_id=f"{task.task_id}_{persona.persona_id}_{run_index}",
@@ -144,9 +174,20 @@ class BenchmarkOrchestrator:
                 sandbox_image=(
                     task.environment.sandbox_image if task.environment else None
                 ),
+                network_enabled=(
+                    task.environment.network_enabled if task.environment else False
+                ),
+                lean_data_dir=lean_data_dir,
             )
 
+            # 1b.5. Start tool executor daemon inside the container (Docker only).
+            # All core tools will be routed through this persistent process.
+            if self.container_manager.use_docker:
+                self.container_manager.start_executor(container.container_id)
+
             # 1c. Set environment vars for tool implementations (lazy reads in tools.py)
+            # In Docker mode these are unused (container uses default /data etc.);
+            # kept for local-mode backward compatibility.
             os.environ["QTB_DATA_DIR"] = staged_data_dir
             os.environ["QTB_DOCS_DIR"] = staged_docs_dir
             os.environ["QTB_WORKSPACE_DIR"] = container.workspace_path
@@ -155,9 +196,10 @@ class BenchmarkOrchestrator:
             # 1d. Configure MCP proxy with task-specific tools + container info
             proxy = create_proxy_for_task(
                 core_tool_names=task.environment.core_mcp_tools,
-                distractor_pool=task.environment.distractor_mcp_tools_pool,
-                num_distractors=task.environment.num_distractors,
-                seed=hash(f"{task.task_id}_{run_index}"),
+                convenient_tool_names=(
+                    task.ground_truth.convenient_tools if task.ground_truth else []
+                ),
+                seed=task.seed if task.seed is not None else hash(f"{task.task_id}_{run_index}"),
                 container_manager=self.container_manager,
                 container_id=container.container_id,
                 workspace_path=container.workspace_path,
@@ -176,75 +218,47 @@ class BenchmarkOrchestrator:
             else:
                 agent.system_prompt = f"{original_system_prompt}\n\n{dynamic_context}"
 
-            # === PHASE 2: INTERACT (via DeepEval ConversationSimulator or manual fallback) ===
-            # Design doc §4.3: ConversationSimulator manages the interaction loop.
-            # ConversationalGolden is built from Task + Persona (§4.7).
+            # Apply per-task agent step limit (controls SDK internal loop depth)
+            agent.set_agent_max_steps(task.agent_max_steps)
+
+            # === PHASE 2: INTERACT (via DeepEval ConversationSimulator) ===
+            # ConversationSimulator manages the interaction loop.
+            # ConversationalGolden is built from Task + Persona.
             # model_callback wraps the Agent Under Test through MCP Proxy.
+            # Termination: max_user_simulations (hard cap) OR LLM-judged
+            # goal achievement (stop_conversation checks expected_outcome).
             try:
-                conversational_test_case = None
-
-                if self.use_deepeval and DEEPEVAL_AVAILABLE:
-                    try:
-                        print(
-                            f"  Using DeepEval ConversationSimulator (model={self.simulator_model or 'default'})..."
-                        )
-                        conversational_test_case = run_conversation_simulation(
-                            task=task,
-                            persona=persona,
-                            agent_adapter=agent,
-                            proxy=proxy,
-                            simulator_model=self.simulator_model
-                            or SIMULATOR_DEFAULT_MODEL,
-                            max_turns=max_turns,
-                            tools_enabled=tools_enabled,
-                        )
-                        # Extract turns from ConversationalTestCase into TaskResult
-                        for t in conversational_test_case.turns:
-                            tool_calls = []
-                            if hasattr(t, "tools_called") and t.tools_called:
-                                tool_calls = [
-                                    MCPToolCallRecord(
-                                        name=tc.name,
-                                        args=tc.input_parameters or {},
-                                        result=tc.output or "",
-                                    )
-                                    for tc in t.tools_called
-                                ]
-                            result.turns.append(
-                                ConversationTurn(
-                                    role=t.role,
-                                    content=t.content,
-                                    tool_calls=tool_calls,
-                                )
-                            )
-                        print(
-                            f"  ConversationSimulator completed: {len(conversational_test_case.turns)} turns"
-                        )
-                    except Exception as e:
-                        print(
-                            f"  ConversationSimulator failed ({e}), falling back to manual mode"
-                        )
-                        conversational_test_case = None
-
-                if conversational_test_case is None:
-                    # Fallback: manual conversation loop via simulator_config
-                    # Uses simple student simulation (hardcoded responses by persona level)
-                    print("  Using manual conversation mode...")
-                    conv_turns = run_conversation_manual(
-                        task=task,
-                        persona=persona,
-                        agent_adapter=agent,
-                        proxy=proxy,
-                        max_turns=max_turns,
-                        tools_enabled=tools_enabled,
+                if not DEEPEVAL_AVAILABLE:
+                    raise RuntimeError(
+                        "DeepEval is required for conversation simulation. "
+                        "Install with: pip install deepeval"
                     )
-                    for t in conv_turns:
-                        result.turns.append(
-                            ConversationTurn(
-                                role=t["role"],
-                                content=t["content"],
-                            )
+
+                simulator_cost = None
+
+                print(
+                    f"  Using DeepEval ConversationSimulator (model={self.simulator_model or 'default'})..."
+                )
+                conversational_test_case, simulator_cost = run_conversation_simulation(
+                    task=task,
+                    persona=persona,
+                    agent_adapter=agent,
+                    proxy=proxy,
+                    simulator_model=self.simulator_model or SIMULATOR_DEFAULT_MODEL,
+                    max_turns=max_turns,
+                    tools_enabled=tools_enabled,
+                )
+                # Extract turns from ConversationalTestCase into TaskResult
+                for t in conversational_test_case.turns:
+                    result.turns.append(
+                        ConversationTurn(
+                            role=t.role,
+                            content=t.content,
                         )
+                    )
+                print(
+                    f"  ConversationSimulator completed: {len(conversational_test_case.turns)} turns"
+                )
             finally:
                 # Restore original system prompt for next task+persona
                 if hasattr(agent, "set_task_context"):
@@ -252,18 +266,35 @@ class BenchmarkOrchestrator:
                 agent.system_prompt = original_system_prompt
 
             # === PHASE 3: CAPTURE ===
-            result.tool_call_log = [
-                MCPToolCallRecord(
-                    name=entry.name,
-                    args=entry.args,
-                    result=entry.result[:500],
-                    timestamp=str(entry.timestamp),
-                    duration_ms=entry.duration_ms,
-                    success=entry.success,
-                    turn_index=entry.turn_index,
+            # Capture workspace file list before teardown destroys the container.
+            # Uses os.walk to include files in subdirectories (e.g. data/).
+            if container.workspace_path and os.path.isdir(container.workspace_path):
+                result.workspace_files = sorted(
+                    os.path.relpath(os.path.join(root, f), container.workspace_path)
+                    for root, _, files in os.walk(container.workspace_path)
+                    for f in files
                 )
-                for entry in proxy.get_logs()
-            ]
+
+            # Capture sandbox execution metadata (diagnostic, not scored).
+            result.sandbox_info = {
+                "container_id": container.container_id,
+                "network_enabled": container.network_enabled,
+                "network_mode": container.network_mode,
+                "use_docker": self.container_manager.use_docker,
+                "sandbox_image": (
+                    task.environment.sandbox_image if task.environment else "N/A"
+                ),
+            }
+
+            # === PHASE 3.5: PRE-TEARDOWN HOOK ===
+            # Allows callers (e.g. reference generator) to capture full proxy
+            # logs and workspace files before evaluation and teardown.
+            if pre_teardown_hook is not None:
+                pre_teardown_hook(
+                    result=result,
+                    proxy=proxy,
+                    workspace_path=container.workspace_path,
+                )
 
             # === PHASE 4: EVALUATE ===
             conversation = [
@@ -280,19 +311,31 @@ class BenchmarkOrchestrator:
             result.quant_result_score = eval_results.get("quant_result", 0.0)
             result.quant_process_score = eval_results.get("quant_process", 0.0)
             result.tutor_scores = eval_results.get("tutor_scores", {})
-            result.tool_metrics = eval_results.get("tool_metrics", {})
+            result.tutor_scores_by_model = eval_results.get("tutor_scores_by_model", {})
             result.process_metrics = eval_results.get("process_metrics", {})
+            result.eval_script_detail = eval_results.get("eval_script_detail", {})
+            result.code_eval = eval_results.get("code_eval", {})
+            result.result_judge = eval_results.get("result_judge", {})
+            result.code_process = eval_results.get("process_metrics", {}).get(
+                "code_process", {}
+            )
 
             score_breakdown = compute_task_score(
                 quant_result_score=result.quant_result_score,
                 quant_process_score=result.quant_process_score,
                 tutor_dimension_scores=result.tutor_scores,
+                category=task.category.value,
+                requires_code=task.requires_code,
             )
             result.overall_score = score_breakdown["overall_score"]
 
             # === PHASE 5: TEARDOWN ===
             self.container_manager.destroy_container(container.container_id)
 
+        except EvalAbortError as e:
+            result.error = str(e)
+            result.eval_aborted = True
+            print(f"  *** EVAL ABORTED: {e}")
         except Exception as e:
             result.error = str(e)
         finally:
@@ -306,13 +349,65 @@ class BenchmarkOrchestrator:
 
         result.duration_seconds = time.time() - start_time
 
-        # §6.5: Estimate cost per task (rough: ~4 chars per token, $0.001 per 1K tokens)
-        total_chars = sum(len(t.content) for t in result.turns)
-        estimated_tokens = total_chars / 4.0
-        # Rough cost estimate: input+output + judge runs (3x7 judge calls)
-        agent_cost = estimated_tokens * 0.001 / 1000
-        judge_cost = estimated_tokens * 0.003 / 1000 * 21  # 3 runs × 7 dims
-        result.cost_usd = round(agent_cost + judge_cost, 4)
+        # §6.5: Aggregate cost from actual token tracking
+        agent_records = agent.get_token_records()
+        agent_input = sum(r.input_tokens for r in agent_records)
+        agent_output = sum(r.output_tokens for r in agent_records)
+        agent_cost = sum(r.cost_usd for r in agent_records)
+
+        # Evaluator cost from _eval_cost fields injected by judge functions.
+        # Note: process_metrics._eval_cost already includes code_process cost
+        # (code_process is one of the tasks inside evaluate_all_process_metrics),
+        # so we must NOT add code_process._eval_cost separately.
+        eval_cost = 0.0
+        eval_cost += result.process_metrics.get("_eval_cost", 0.0)
+        eval_cost += result.result_judge.get("_eval_cost", 0.0)
+        eval_cost += result.tutor_scores.get("_eval_cost", 0.0)
+
+        # Merge per-model cost from all evaluation stages.
+        # Code Process is part of Process Metrics (not a separate stage).
+        eval_cost_by_model: dict[str, float] = {}
+        eval_cost_by_stage_model: dict[str, dict[str, float]] = {}
+        _eval_stages = [
+            ("Tutor 7D", result.tutor_scores),
+            ("Process Metrics", result.process_metrics),
+            ("Result Judge", result.result_judge),
+        ]
+        for stage_name, src in _eval_stages:
+            by_model = src.get("_eval_cost_by_model", {})
+            if by_model:
+                eval_cost_by_stage_model[stage_name] = {
+                    m: round(c, 6) for m, c in by_model.items()
+                }
+            for m, c in by_model.items():
+                eval_cost_by_model[m] = round(eval_cost_by_model.get(m, 0.0) + c, 6)
+
+        agent_model = getattr(agent, "model", "unknown")
+        sim_model_obj = self.simulator_model or SIMULATOR_DEFAULT_MODEL
+        sim_model = getattr(sim_model_obj, "name", str(sim_model_obj))
+        sim_cost = simulator_cost or 0.0
+        result.token_usage = {
+            "agent": {
+                "input_tokens": agent_input,
+                "output_tokens": agent_output,
+                "cost_usd": round(agent_cost, 6),
+                "api_calls": len(agent_records),
+                "model": agent_model,
+            },
+            "simulator": {
+                "cost_usd": round(sim_cost, 6),
+                "model": sim_model,
+            },
+            "eval": {
+                "cost_usd": round(eval_cost, 6),
+                "by_model": eval_cost_by_model,
+                "by_stage_model": eval_cost_by_stage_model,
+            },
+            "total": {
+                "cost_usd": round(agent_cost + sim_cost + eval_cost, 6),
+            },
+        }
+        result.cost_usd = round(agent_cost + sim_cost + eval_cost, 4)
 
         return result
 
@@ -370,7 +465,11 @@ class BenchmarkOrchestrator:
         all_result_objects = list(report.results_by_task.values())
         all_scores = [
             compute_task_score(
-                r.quant_result_score, r.quant_process_score, r.tutor_scores
+                r.quant_result_score,
+                r.quant_process_score,
+                r.tutor_scores,
+                category=r.category,
+                requires_code=r.requires_code,
             )
             for r in all_result_objects
         ]
@@ -385,7 +484,7 @@ class BenchmarkOrchestrator:
                 "tutoring_effectiveness_index", 0.0
             )
             report.adaptiveness_score = kpis.get("adaptiveness_score", 0.0)
-            report.tool_mastery_score = kpis.get("tool_mastery_score", 0.0)
+            report.process_mastery_score = kpis.get("process_mastery_score", 0.0)
 
             # Populate results_by_difficulty and results_by_category (§6.4)
             import statistics as _stats
@@ -420,7 +519,7 @@ class BenchmarkOrchestrator:
 
         Design doc §4.3 Phase 4: EVALUATION (post-hoc, using DeepEval)
         - Quant Result: run eval/test_*.py against workspace files
-        - Quant Process: DeepEval MCP metrics + tool precision/recall
+        - Quant Process: Reformed process metrics (7 dimensions)
         - Tutor Quality: DeepEval ConversationalGEval with 7D persona-aware rubric
 
         Design doc §6.3:
@@ -435,31 +534,17 @@ class BenchmarkOrchestrator:
             conversation: List of {"role", "content"} dicts.
             conversational_test_case: Pre-built ConversationalTestCase from simulator.
         """
-        from orchestrator.trace_assembler import (
-            enrich_test_case_with_mcp,
-        )
-
         results = {
             "quant_result": 0.0,
             "quant_process": 0.0,
             "tutor_scores": {},
             "process_metrics": {},
-            "tool_metrics": {},
         }
 
-        # ── Step 1: Build/enrich ConversationalTestCase with MCP data ──
-        # If we got a test case from ConversationSimulator, enrich it with MCP data.
-        # Otherwise, build one from the task result.
-        if conversational_test_case is not None and DEEPEVAL_AVAILABLE:
-            try:
-                enrich_test_case_with_mcp(
-                    test_case=conversational_test_case,
-                    proxy_logs=proxy.get_logs(),
-                    core_tools=task.environment.core_mcp_tools,
-                    distractor_tools=task.environment.distractor_mcp_tools_pool,
-                )
-            except Exception as e:
-                print(f"  Warning: Failed to enrich test case with MCP data: {e}")
+        # ── Step 1: Prepare ConversationalTestCase for metrics ──
+        # Phase 4: MCP enrichment removed (no longer needed without
+        # MultiTurnMCPUseMetric). Process metrics use the clean test case.
+        clean_test_case = conversational_test_case
 
         # ── Step 2: Quant Result Score (custom eval scripts) ──
         print("  Evaluating Quant Result...")
@@ -470,129 +555,264 @@ class BenchmarkOrchestrator:
             if eval_script.exists():
                 try:
                     import importlib.util
+                    import inspect
 
                     spec = importlib.util.spec_from_file_location(
                         "eval_module", str(eval_script)
                     )
                     module = importlib.util.module_from_spec(spec)
                     spec.loader.exec_module(module)
+
+                    # Detect eval script signature — pass data_files if accepted
+                    sig = inspect.signature(module.evaluate)
+                    eval_kwargs: dict = {}
+                    if "data_files" in sig.parameters:
+                        eval_kwargs["data_files"] = task.environment.data_files or []
                     eval_result = module.evaluate(
-                        workspace_path, proxy.to_dict(), conversation
+                        workspace_path,
+                        proxy.get_logs(),
+                        conversation,
+                        **eval_kwargs,
                     )
                     results["quant_result"] = eval_result.get("score", 0.0)
+                    results["eval_script_detail"] = eval_result
                 except Exception as e:
                     results["quant_result_error"] = str(e)
 
-        # ── Step 3: Quant Process Score (DeepEval MCP metrics + precision/recall) ──
-        print("  Evaluating Quant Process...")
+        # ── Step 2b: Code Execution QR (Phase 1) ──
+        print("  Evaluating Code Execution QR...")
+        reference = None  # loaded here, also used by Step 2c + Step 3b
+        try:
+            from evaluation.code_eval import evaluate_code_combined
+            from reference.reference_store import ReferenceStore
 
-        # 3a: Manual tool precision/recall (always available)
-        from evaluation.deepeval_metrics.mcp_metrics import (
-            check_required_capabilities,
-            compute_tool_precision_recall,
+            ref_store = ReferenceStore()
+            reference = ref_store.load(task.task_id, persona.persona_id)
+
+            code_eval_result = evaluate_code_combined(
+                workspace_path=workspace_path,
+                tool_logs=proxy.get_logs(),
+                reference=reference,
+                task_requires_code=task.requires_code,
+            )
+            results["code_eval"] = code_eval_result
+        except Exception as e:
+            results["code_eval_error"] = str(e)
+
+        # ── Step 2c (pre): Tool Usage (mathematical, no LLM — needed by QP) ──
+        tool_usage_result = None
+        try:
+            from evaluation.deepeval_metrics.tool_usage import evaluate_tool_usage
+
+            tool_usage_result = evaluate_tool_usage(
+                proxy_logs=proxy.get_logs(),
+                expected_tools=(
+                    task.ground_truth.expected_mcp_tools if task.ground_truth else []
+                ),
+                convenient_tools=(
+                    task.ground_truth.convenient_tools if task.ground_truth else []
+                ),
+                distractor_names=proxy.get_distractor_names(),
+                is_adversarial=(task.category.value == "adversarial"),
+            )
+            results["tool_usage"] = tool_usage_result
+        except Exception as e:
+            results["tool_usage_error"] = str(e)
+
+        # ── Steps 2c/3/4: Parallel LLM evaluation (RJ + QP + Tutor) ──
+        # These three evaluators have no cross-dependencies. Each maintains
+        # its own async event loop internally. Peak concurrency ~43 requests
+        # (RJ=3 + QP≤20 + Tutor≤20), well within OpenRouter limits.
+        #
+        # Abort mechanism: a single threading.Event is shared across all 3
+        # threads.  When any evaluator call fails after exhausting retries,
+        # it sets the event → queued coroutines in OTHER threads skip
+        # immediately → we raise EvalAbortError for the task.
+        import concurrent.futures
+
+        _logs = proxy.get_logs()  # snapshot once for all threads
+        _is_adversarial = task.category.value == "adversarial"
+        _abort_event = threading.Event()
+
+        def _run_result_judge() -> dict:
+            """Thread 1: LLM Result Judge (Step 2c)."""
+            print("  [RJ] Evaluating Result Quality (LLM judge)...")
+            from evaluation.deepeval_metrics.result_judge import (
+                evaluate_result_quality,
+            )
+
+            rj_result = evaluate_result_quality(
+                task_description=task.description,
+                category=task.category.value,
+                workspace_path=workspace_path,
+                tool_logs=_logs,
+                conversation=conversation,
+                model=self.eval_model,
+                reference=reference,
+                expected_outcome=(
+                    task.ground_truth.expected_outcome if task.ground_truth else None
+                ),
+                abort_event=_abort_event,
+            )
+            print("  [RJ] Done.")
+            return {"result_judge": rj_result}
+
+        def _run_process_metrics() -> dict:
+            """Thread 2: DeepEval process-level metrics (Step 3)."""
+            print("  [QP] Evaluating Quant Process...")
+            from evaluation.deepeval_metrics.process_metrics import (
+                evaluate_all_process_metrics,
+            )
+
+            agent_outputs = [
+                t["content"] for t in conversation if t["role"] == "assistant"
+            ]
+            combined_output = "\n---\n".join(agent_outputs) if agent_outputs else ""
+
+            process_results = evaluate_all_process_metrics(
+                task_description=task.description,
+                actual_output=combined_output,
+                proxy_logs=_logs,
+                category=task.category.value,
+                conversational_test_case=clean_test_case,
+                model=self.eval_model,
+                reference_trace=reference,
+                is_adversarial=_is_adversarial,
+                tool_usage_result=tool_usage_result,
+                task_requires_code=task.requires_code,
+                abort_event=_abort_event,
+            )
+            print("  [QP] Done.")
+            return {
+                "process_metrics": process_results,
+                "quant_process": round(
+                    process_results.get("aggregate_process_score", 0.5), 4
+                ),
+            }
+
+        def _run_tutor_eval() -> dict:
+            """Thread 3: Tutor Quality Score — 7D ConversationalGEval (Step 4)."""
+            print(
+                "  [Tutor] Evaluating Tutor Quality "
+                "(7D rubric, multi-model × 3x shuffled)..."
+            )
+            from evaluation.deepeval_metrics.tutor_conv_geval import (
+                evaluate_tutor_dimensions,
+            )
+
+            tutor_scores = evaluate_tutor_dimensions(
+                conversation_turns=conversation,
+                persona_level=persona.knowledge_level,
+                scenario=build_scenario(task, persona.persona_id),
+                expected_outcome=task.ground_truth.expected_outcome,
+                user_description=build_user_description(persona),
+                model=self.eval_model,
+                category=task.category.value,
+                requires_code=task.requires_code,
+                abort_event=_abort_event,
+            )
+            per_model = tutor_scores.pop("_per_model", None)
+            out: dict = {"tutor_scores": tutor_scores}
+            if per_model:
+                out["tutor_scores_by_model"] = per_model
+                print("  [Tutor] Per-model tutor scores:")
+                for mname, dim_scores in per_model.items():
+                    clean = {
+                        k: v
+                        for k, v in dim_scores.items()
+                        if not k.startswith("_") and isinstance(v, (int, float))
+                    }
+                    avg = sum(clean.values()) / len(clean) if clean else 0.0
+                    print(f"    {mname}: avg={avg:.4f}")
+                    for dim, sc in sorted(clean.items()):
+                        print(f"      {dim}: {sc:.4f}")
+            print("  [Tutor] Done.")
+            return out
+
+        print("  Running RJ / QP / Tutor in parallel...")
+        _t_parallel = time.time()
+        _thread_errors: list[Exception] = []
+        with concurrent.futures.ThreadPoolExecutor(max_workers=3) as pool:
+            fut_rj = pool.submit(_run_result_judge)
+            fut_qp = pool.submit(_run_process_metrics)
+            fut_tutor = pool.submit(_run_tutor_eval)
+
+            for fut in concurrent.futures.as_completed([fut_rj, fut_qp, fut_tutor]):
+                try:
+                    results.update(fut.result())
+                except Exception as e:
+                    _abort_event.set()  # signal other threads to stop
+                    _thread_errors.append(e)
+
+        if _thread_errors:
+            first = _thread_errors[0]
+            raise EvalAbortError(
+                f"Evaluation aborted: {len(_thread_errors)} evaluator(s) failed. "
+                f"First error: {first}"
+            ) from first
+
+        print(
+            f"  Parallel eval done in {time.time() - _t_parallel:.1f}s "
+            f"(RJ + QP + Tutor)"
         )
 
-        called_tool_names = proxy.get_tool_names_called()
-        tool_metrics = compute_tool_precision_recall(
-            called_tools=called_tool_names,
-            expected_tools=task.ground_truth.expected_mcp_tools,
-            distractor_tools=task.environment.distractor_mcp_tools_pool,
-        )
+        # ── Step 2d: Combine QR components (30/30/40 blend) ──
+        # Must run after RJ completes (needs result_judge score).
+        programmatic_score = results["quant_result"]
+        code_eval_score = results.get("code_eval", {}).get("score", 0.0)
+        code_eval_applicable = results.get("code_eval", {}).get("applicable", False)
+        llm_judge_score = results.get("result_judge", {}).get("score", 0.0)
 
-        # 3a-2: Capability completion check (§6.1.2)
-        tool_call_outputs = {}
-        for log in proxy.get_logs():
-            tool_call_outputs.setdefault(log.name, "")
-            tool_call_outputs[log.name] += (log.result or "") + "\n"
-        cap_check = check_required_capabilities(
-            called_tools=called_tool_names,
-            tool_call_outputs=tool_call_outputs,
-            required_capabilities=[
-                cap.model_dump() for cap in task.ground_truth.required_capabilities
-            ],
-        )
-        tool_metrics["capability_completion"] = cap_check["capability_completion"]
-        tool_metrics["capabilities_met"] = cap_check["met"]
-        tool_metrics["capabilities_total"] = cap_check["total"]
-        results["tool_metrics"] = tool_metrics
+        # Pure-refusal adversarial tasks (requires_code=false): skip code_eval.
+        # Educational adversarial tasks (requires_code=true): allow code_eval
+        # to evaluate the quality of redirected educational code.
+        if _is_adversarial and not task.requires_code:
+            code_eval_applicable = False
 
-        # 3b: DeepEval process-level metrics
-        if self.use_deepeval:
-            try:
-                from evaluation.deepeval_metrics.process_metrics import (
-                    evaluate_all_process_metrics,
-                )
+        # Continuous divergence dampening: smoothly reduce programmatic
+        # weight as divergence between eval script and LLM judge increases.
+        # Uses sigmoid centered at 0.40 — replaces the old binary threshold.
+        import math
 
-                # Build combined agent output for single-turn metrics
-                agent_outputs = [
-                    t["content"] for t in conversation if t["role"] == "assistant"
-                ]
-                combined_output = "\n---\n".join(agent_outputs) if agent_outputs else ""
+        divergence = abs(programmatic_score - llm_judge_score)
+        # factor ≈ 1.0 when divergence ≈ 0, ≈ 0.5 at 0.40, ≈ 0.0 at 0.80+
+        dampening_factor = 1.0 / (1.0 + math.exp(10 * (divergence - 0.40)))
 
-                process_results = evaluate_all_process_metrics(
-                    task_description=task.description,
-                    actual_output=combined_output,
-                    proxy_logs=proxy.get_logs(),
-                    expected_tool_names=task.ground_truth.expected_mcp_tools,
-                    core_tools=task.environment.core_mcp_tools,
-                    distractor_tools=task.environment.distractor_mcp_tools_pool,
-                    conversational_test_case=conversational_test_case,
-                    model=self.eval_model,
-                )
-                results["process_metrics"] = process_results
-
-                # Combine: 50% manual precision/recall F1 + 50% DeepEval aggregate
-                deepeval_process = process_results.get("aggregate_process_score", 0.5)
-                results["quant_process"] = round(
-                    0.5 * tool_metrics["f1"] + 0.5 * deepeval_process, 4
-                )
-            except Exception as e:
-                results["process_eval_error"] = str(e)
-                results["quant_process"] = tool_metrics["f1"]
+        if code_eval_applicable:
+            # Smoothly interpolate between:
+            #   factor=1.0 → (0.30, 0.30, 0.40) [standard]
+            #   factor=0.0 → (0.10, 0.30, 0.60) [fully dampened]
+            w_prog = 0.10 + 0.20 * dampening_factor
+            w_code = 0.30
+            w_judge = 1.0 - w_prog - w_code
+            results["quant_result"] = round(
+                w_prog * programmatic_score
+                + w_code * code_eval_score
+                + w_judge * llm_judge_score,
+                4,
+            )
         else:
-            results["quant_process"] = tool_metrics["f1"]
+            # Smoothly interpolate between:
+            #   factor=1.0 → (0.40, 0.60) [standard]
+            #   factor=0.0 → (0.15, 0.85) [fully dampened]
+            w_prog = 0.15 + 0.25 * dampening_factor
+            w_judge = 1.0 - w_prog
+            results["quant_result"] = round(
+                w_prog * programmatic_score + w_judge * llm_judge_score, 4
+            )
 
-        # ── Step 4: Tutor Quality Score (7D ConversationalGEval) ──
-        print("  Evaluating Tutor Quality (7D rubric, 3x shuffled)...")
-        if self.use_deepeval:
-            try:
-                from evaluation.deepeval_metrics.tutor_conv_geval import (
-                    evaluate_tutor_dimensions,
-                )
+        if dampening_factor < 0.9:
+            print(
+                f"    QR dampening active: programmatic={programmatic_score:.2f} "
+                f"vs judge={llm_judge_score:.2f} "
+                f"(Δ={divergence:.2f}, factor={dampening_factor:.3f})"
+            )
 
-                tutor_scores = evaluate_tutor_dimensions(
-                    conversation_turns=conversation,
-                    persona_level=persona.knowledge_level,
-                    scenario=build_scenario(task, persona.persona_id),
-                    expected_outcome=task.ground_truth.expected_outcome,
-                    user_description=build_user_description(persona),
-                    model=self.eval_model,
-                    conversational_test_case=conversational_test_case,
-                )
-                results["tutor_scores"] = tutor_scores
-            except Exception as e:
-                results["tutor_eval_error"] = str(e)
-                for dim in [
-                    "D1_level_detection",
-                    "D2_language_adaptation",
-                    "D3_scaffolding_calibration",
-                    "D4_domain_accuracy",
-                    "D5_code_teaching",
-                    "D6_empathetic_response",
-                    "D7_safety_boundaries",
-                ]:
-                    results["tutor_scores"][dim] = 0.5
-        else:
-            for dim in [
-                "D1_level_detection",
-                "D2_language_adaptation",
-                "D3_scaffolding_calibration",
-                "D4_domain_accuracy",
-                "D5_code_teaching",
-                "D6_empathetic_response",
-                "D7_safety_boundaries",
-            ]:
-                results["tutor_scores"][dim] = 0.5
+        # Store QR blending diagnostics in result_judge dict for score_report
+        rj = results.get("result_judge")
+        if isinstance(rj, dict):
+            rj["_eval_script_score"] = programmatic_score
+            rj["_dampening_factor"] = round(dampening_factor, 4)
 
         return results
 
@@ -618,7 +838,9 @@ class BenchmarkOrchestrator:
             for fname in data_files:
                 src = os.path.join(self.data_dir, fname)
                 if os.path.isfile(src):
-                    os.symlink(src, os.path.join(staged_data, fname))
+                    dst = os.path.join(staged_data, fname)
+                    os.makedirs(os.path.dirname(dst), exist_ok=True)
+                    shutil.copy2(src, dst)
         else:
             staged_data = self.data_dir  # No filter → full access (backward compat)
 
@@ -628,7 +850,8 @@ class BenchmarkOrchestrator:
             for fname in docs_available:
                 src = os.path.join(self.docs_dir, fname)
                 if os.path.isfile(src):
-                    os.symlink(src, os.path.join(staged_docs, fname))
+                    dst = os.path.join(staged_docs, fname)
+                    shutil.copy2(src, dst)
         else:
             staged_docs = self.docs_dir
 

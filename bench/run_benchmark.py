@@ -45,8 +45,8 @@ from config.conditions import CONDITION_NAMES, CONDITIONS
 from config.llm_config import (
     AGENT_DEFAULT_MODEL,
     OPENROUTER_BASE_URL,
-    get_model_for_agent,
 )
+from config.model_resolver import get_model_for_agent
 
 if os.environ.get("OPENROUTER_API_KEY") and not os.environ.get("OPENAI_API_KEY"):
     os.environ["OPENAI_API_KEY"] = os.environ["OPENROUTER_API_KEY"]
@@ -69,19 +69,26 @@ def _create_agent(args):
 
     agent_type = getattr(args, "agent", "generic")
     condition = CONDITIONS[getattr(args, "condition", "agent")]
+    model_override = getattr(args, "model", None)
 
     system_prompt = (
         TUTOR_SYSTEM_PROMPT
         if condition.prompt_mode == "tutor"
         else BASELINE_SYSTEM_PROMPT
     )
-    agent_name = f"{agent_type}_{condition.name}"
+
+    # Include model short name in agent_name for distinguishable results
+    if model_override:
+        model_short = model_override.split("/")[-1]
+        agent_name = f"{agent_type}_{condition.name}_{model_short}"
+    else:
+        agent_name = f"{agent_type}_{condition.name}"
 
     # Pure LLM conditions: no SDK framework needed, use GenericLLM via OpenRouter
     if not condition.tools_enabled:
         from orchestrator.agent_adapters.generic_adapter import GenericLLMAdapter
 
-        model = get_model_for_agent(agent_type, use_openrouter=True)
+        model = model_override or get_model_for_agent(agent_type, use_openrouter=True)
         return GenericLLMAdapter(
             model=model, system_prompt=system_prompt, agent_name=agent_name
         )
@@ -90,14 +97,14 @@ def _create_agent(args):
     if agent_type == "anthropic":
         from orchestrator.agent_adapters.anthropic_adapter import ClaudeAgentAdapter
 
-        model = get_model_for_agent("anthropic")
+        model = model_override or get_model_for_agent("anthropic")
         return ClaudeAgentAdapter(
             model=model, system_prompt=system_prompt, agent_name=agent_name
         )
     elif agent_type == "google":
         from orchestrator.agent_adapters.google_adapter import GoogleAdapter
 
-        model = get_model_for_agent("google")
+        model = model_override or get_model_for_agent("google")
         return GoogleAdapter(
             model=model, system_prompt=system_prompt, agent_name=agent_name
         )
@@ -105,7 +112,7 @@ def _create_agent(args):
         from orchestrator.agent_adapters.openai_adapter import OpenAIAgentAdapter
 
         # Always route through OpenRouter for higher rate limits / parallelism
-        model = get_model_for_agent("openai", use_openrouter=True)
+        model = model_override or get_model_for_agent("openai", use_openrouter=True)
         return OpenAIAgentAdapter(
             model=model,
             base_url=OPENROUTER_BASE_URL,
@@ -115,20 +122,23 @@ def _create_agent(args):
     else:  # generic
         from orchestrator.agent_adapters.generic_adapter import GenericLLMAdapter
 
-        model = get_model_for_agent("generic")
+        model = model_override or get_model_for_agent("generic")
         return GenericLLMAdapter(
             model=model, system_prompt=system_prompt, agent_name=agent_name
         )
 
 
 def _make_layer1_callback(agent):
-    """Bridge a BaseAgentAdapter to Layer1Runner's callback(question, context) -> str.
+    """Bridge a BaseAgentAdapter to Layer1Runner's callback interface.
 
-    Layer 1 is always single-turn with no tools. The agent's system prompt
-    (tutor vs baseline) is already set by _create_agent().
+    Supports two calling conventions:
+    1. Pure Q&A: callback(context, question) -> str
+    2. Tool-enabled: callback(context, question, tools=..., tool_callback=...) -> str
+
+    The agent's system prompt (tutor vs baseline) is already set by _create_agent().
     """
 
-    def callback(question: str, context: str) -> str:
+    def callback(context: str, question: str, tools=None, tool_callback=None) -> str:
         if context:
             messages = [
                 {
@@ -138,7 +148,11 @@ def _make_layer1_callback(agent):
             ]
         else:
             messages = [{"role": "user", "content": question}]
-        return agent.generate_response(messages=messages, available_tools=[])
+        return agent.generate_response(
+            messages=messages,
+            available_tools=tools or [],
+            tool_callback=tool_callback,
+        )
 
     return callback
 
@@ -183,6 +197,7 @@ def cmd_run(args):
         print("=== Phase 1: Layer 1 (single-turn knowledge) ===")
         from layer1.data_loader import get_layer1_stats, load_layer1_items
         from layer1.runner import Layer1Runner
+        from orchestrator.container_manager import ContainerManager
 
         l1_max = getattr(args, "l1_max_items", None)
         items = load_layer1_items(max_items=l1_max)
@@ -192,10 +207,13 @@ def cmd_run(args):
             print(f"  By category: {stats['by_category']}")
 
             callback = _make_layer1_callback(agent)
+            l1_container_manager = ContainerManager(use_docker=args.docker)
             runner = Layer1Runner(
                 agent_callback=callback,
                 use_deepeval=not getattr(args, "no_deepeval", False),
                 eval_model=getattr(args, "eval_model", None),
+                container_manager=l1_container_manager,
+                use_docker=args.docker,
             )
             l1_results = runner.run_batch(items, max_items=l1_max)
             l1_summary = Layer1Runner.compute_layer1_scores(l1_results)
@@ -228,7 +246,7 @@ def cmd_run(args):
         report.results_by_task = l2_report.results_by_task
         report.total_tasks = l2_report.total_tasks
         report.adaptiveness_score = l2_report.adaptiveness_score
-        report.tool_mastery_score = l2_report.tool_mastery_score
+        report.process_mastery_score = l2_report.process_mastery_score
         report.results_by_difficulty = l2_report.results_by_difficulty
         report.results_by_category = l2_report.results_by_category
         layers_evaluated.append("layer2")
@@ -239,7 +257,13 @@ def cmd_run(args):
     # ── Phase 3: Combined scoring ──
     all_result_objects = list(report.results_by_task.values())
     all_l2_scores = [
-        compute_task_score(r.quant_result_score, r.quant_process_score, r.tutor_scores)
+        compute_task_score(
+            r.quant_result_score,
+            r.quant_process_score,
+            r.tutor_scores,
+            category=r.category,
+            requires_code=r.requires_code,
+        )
         for r in all_result_objects
     ]
 
@@ -273,7 +297,7 @@ def cmd_run(args):
             )
     print(f"Tutoring Effectiveness (TEI):    {report.tutoring_effectiveness_index:.4f}")
     print(f"Adaptiveness Score (AS):         {report.adaptiveness_score:.4f}")
-    print(f"Tool Mastery Score (TMS):        {report.tool_mastery_score:.4f}")
+    print(f"Process Mastery Score (PMS):      {report.process_mastery_score:.4f}")
     if "layer1" in layers_evaluated and report.layer1_summary:
         print(
             f"Layer 1 items evaluated:         {report.layer1_summary['total_items']}"
@@ -323,21 +347,47 @@ def cmd_run_single(args):
     print(f"Max turns: {args.max_turns}")
     print()
 
+    # Prepare result capture hook if --save-result requested
+    save_result = getattr(args, "save_result", False)
+    trace_captured: dict = {}
+    result_dir = None
+
+    if save_result:
+        import shutil
+
+        model_short = agent.model.split("/")[-1] if "/" in agent.model else agent.model
+        result_dir = (
+            BENCH_ROOT
+            / "results"
+            / "run-single"
+            / getattr(args, "agent", "generic")
+            / model_short
+            / task.task_id
+            / persona.persona_id
+        )
+        result_dir.mkdir(parents=True, exist_ok=True)
+        agent_files_dir = result_dir / "agent_files"
+
+        def _capture_for_trace(*, result, proxy, workspace_path):
+            trace_captured["proxy_logs"] = list(proxy.get_logs())
+            if workspace_path and os.path.isdir(workspace_path):
+                if agent_files_dir.exists():
+                    shutil.rmtree(agent_files_dir)
+                shutil.copytree(workspace_path, str(agent_files_dir))
+
     result = orchestrator.run_single_task(
         task=task,
         persona=persona,
         agent=agent,
         max_turns=args.max_turns or 5,
         tools_enabled=condition.tools_enabled,
+        pre_teardown_hook=_capture_for_trace if save_result else None,
     )
 
     print(f"\n--- Conversation ({len(result.turns)} turns) ---")
     for turn in result.turns:
         prefix = "Student" if turn.role == "user" else "Tutor"
         print(f"\n[{prefix}]: {turn.content[:200]}...")
-        if turn.tool_calls:
-            for tc in turn.tool_calls:
-                print(f"  -> Tool: {tc.name}({json.dumps(tc.args)[:80]})")
 
     print("\n--- Scores ---")
     print(f"Quant Result:  {result.quant_result_score:.4f}")
@@ -345,22 +395,230 @@ def cmd_run_single(args):
     print(f"Overall:       {result.overall_score:.4f}")
 
     if result.tutor_scores:
-        print("\n--- Tutor Dimension Scores (7D) ---")
+        print("\n--- Tutor Dimension Scores (7D, averaged) ---")
         for dim, score in sorted(result.tutor_scores.items()):
-            print(f"  {dim}: {score:.4f}")
+            if dim.startswith("_"):
+                continue
+            if isinstance(score, (int, float)):
+                print(f"  {dim}: {score:.4f}")
+            else:
+                print(f"  {dim}: {score}")
 
-    if result.tool_metrics:
-        print("\n--- Tool Metrics ---")
-        for k, v in result.tool_metrics.items():
-            print(f"  {k}: {v:.4f}" if isinstance(v, float) else f"  {k}: {v}")
+    if result.tutor_scores_by_model:
+        print("\n--- Per-Model Tutor Scores ---")
+        for model_name, dim_scores in sorted(result.tutor_scores_by_model.items()):
+            clean = {
+                k: v
+                for k, v in dim_scores.items()
+                if not k.startswith("_") and isinstance(v, (int, float))
+            }
+            avg = sum(clean.values()) / len(clean) if clean else 0.0
+            print(f"  [{model_name}] avg={avg:.4f}")
+            for dim, score in sorted(clean.items()):
+                print(f"    {dim}: {score:.4f}")
 
     if result.process_metrics:
-        print("\n--- Process Metrics (DeepEval) ---")
-        for k, v in result.process_metrics.items():
-            print(f"  {k}: {v:.4f}" if isinstance(v, float) else f"  {k}: {v}")
+        print("\n--- Process Metrics (QP 7 Dimensions) ---")
+        _QP_METRICS = [
+            "tool_usage",
+            "step_efficiency",
+            "process_reasonableness",
+            "process_alignment",
+            "code_process",
+            "role_adherence",
+            "topic_adherence",
+        ]
+        print(f"  {'Metric':<25} {'Score':>8}  {'Status':>6}")
+        print(f"  {'-'*25} {'-'*8}  {'-'*6}")
+        for mn in _QP_METRICS:
+            v = result.process_metrics.get(mn)
+            if v is None:
+                continue
+            if isinstance(v, dict):
+                sc = v.get("score")
+                skipped = v.get("skipped", False)
+                if skipped:
+                    print(f"  {mn:<25} {'N/A':>8}  {'SKIP':>6}")
+                elif sc is not None:
+                    st = "PASS" if v.get("passed") else "FAIL"
+                    print(f"  {mn:<25} {sc:>8.4f}  {st:>6}")
+                else:
+                    print(f"  {mn:<25} {'N/A':>8}  {'?':>6}")
+            elif isinstance(v, (int, float)):
+                print(f"  {mn:<25} {v:>8.4f}")
+        agg = result.process_metrics.get("aggregate_process_score")
+        if agg is not None:
+            print(f"  {'-'*25} {'-'*8}  {'-'*6}")
+            print(f"  {'AGGREGATE':<25} {agg:>8.4f}")
+
+        _pm = result.process_metrics.get("_per_model")
+        if _pm:
+            print("\n  Per-Model QP Breakdown:")
+            for mname in sorted(_pm.keys()):
+                mdata = _pm[mname]
+                short = mname.split("/")[-1] if "/" in mname else mname
+                agg_m = mdata.get("aggregate_process_score", "?")
+                print(f"    [{short}] aggregate={agg_m}")
+                for mn in _QP_METRICS:
+                    ms = mdata.get(mn)
+                    if ms is not None and isinstance(ms, (int, float)):
+                        print(f"      {mn:<25} {ms:>8.4f}")
+                    elif ms is not None:
+                        print(f"      {mn:<25} {ms}")
+
+    if result.code_eval:
+        print("\n--- Code Execution QR ---")
+        ce = result.code_eval
+        print(f"  Applicable: {ce.get('applicable', False)}")
+        if ce.get("applicable"):
+            print(f"  Combined score: {ce.get('score', 0):.4f}")
+            sa = ce.get("static_analysis", {})
+            if sa:
+                print(
+                    f"  Layer A (static):    {sa.get('score', 0):.4f}"
+                    f"  (syntax={'OK' if sa.get('syntax_valid') else 'FAIL'},"
+                    f" files={sa.get('files_analyzed', 0)},"
+                    f" funcs={sa.get('total_functions', 0)})"
+                )
+            ex = ce.get("execution", {})
+            if ex:
+                print(
+                    f"  Layer B (execution): {ex.get('score', 0):.4f}"
+                    f"  (calls={ex.get('exec_calls_found', 0)},"
+                    f" success_rate={ex.get('success_rate', 0):.2f},"
+                    f" untested={ex.get('untested_files', [])})"
+                )
+            ov = ce.get("output_verification")
+            if ov:
+                print(
+                    f"  Layer C (output):    {ov.get('score', 0):.4f}"
+                    f"  (accuracy={ov.get('numerical_accuracy', 0):.2f},"
+                    f" completeness={ov.get('output_completeness', 0):.2f},"
+                    f" metrics_compared={ov.get('metrics_compared', 0)})"
+                )
+            else:
+                print("  Layer C (output):    SKIPPED (no reference)")
+
+    if result.result_judge:
+        print("\n--- LLM Result Judge ---")
+        rj = result.result_judge
+        print(f"  Score: {rj.get('score', 0):.4f}")
+        sub = rj.get("sub_scores", {})
+        if sub:
+            print(
+                f"  Numerical accuracy:  {sub.get('numerical_accuracy', '?')}"
+                f"  Completeness: {sub.get('completeness', '?')}"
+                f"  Correctness: {sub.get('correctness', '?')}"
+            )
+        print(f"  Has reference: {rj.get('has_reference', False)}")
+        reason = rj.get("reason", "")
+        if reason:
+            print(f"  Reason: {reason[:200]}")
+
+    if result.code_process:
+        print("\n--- Code Process Quality ---")
+        cp = result.code_process
+        applicable = cp.get("applicable", False)
+        print(f"  Applicable: {applicable}")
+        if applicable:
+            print(f"  Combined score: {cp.get('score', 0):.4f}")
+            prog = cp.get("programmatic", {})
+            if prog and prog.get("applicable"):
+                psub = prog.get("sub_scores", {})
+                parts = []
+                for k in (
+                    "iterative_refinement",
+                    "test_before_deliver",
+                    "error_recovery",
+                    "code_evolution",
+                ):
+                    v = psub.get(k)
+                    parts.append(f"{k}={v}" if v is not None else f"{k}=N/A")
+                print(
+                    f"  Programmatic ({prog.get('score', 0):.4f}): {', '.join(parts)}"
+                )
+            llm = cp.get("llm_judged", {})
+            if llm and llm.get("applicable"):
+                lsub = llm.get("sub_scores", {})
+                parts = [
+                    f"{k}={lsub.get(k, '?')}"
+                    for k in (
+                        "debugging_competence",
+                        "incremental_development",
+                        "code_explanation_quality",
+                    )
+                ]
+                print(f"  LLM-judged  ({llm.get('score', 0):.4f}): {', '.join(parts)}")
+            reason = cp.get("llm_judged", {}).get("reason", "")
+            if reason:
+                print(f"  Reason: {reason[:200]}")
+
+    if result.tool_usage:
+        print("\n--- Tool Usage ---")
+        tu = result.tool_usage
+        print(f"  Score: {tu.get('score', 0):.4f}")
+        print(
+            f"  base={tu.get('base', '?')}  "
+            f"bonus={tu.get('bonus', '?')}  "
+            f"penalty_exp={tu.get('penalty_expected', '?')}  "
+            f"penalty_dist={tu.get('penalty_distractor', '?')}"
+        )
+        if tu.get("missing_expected"):
+            print(f"  Missing expected: {tu['missing_expected']}")
+        if tu.get("called_distractors"):
+            print(f"  Called distractors: {tu['called_distractors']}")
+        if tu.get("called_convenient"):
+            print(f"  Called convenient: {tu['called_convenient']}")
 
     if result.error:
         print(f"\nError: {result.error}")
+
+    # ── Save results (scores.md + trace.md + cost.md + agent_files/) ──
+    if save_result and result_dir is not None:
+        saved_parts = []
+
+        # scores.md: skip when evaluation was aborted (incomplete/misleading)
+        if not result.eval_aborted:
+            from evaluation.score_report import generate_score_report
+
+            scores_md = generate_score_report(result)
+            (result_dir / "scores.md").write_text(scores_md, encoding="utf-8")
+            saved_parts.append("scores.md")
+        else:
+            # Write a marker file so the user knows this run was aborted
+            (result_dir / "ABORTED.md").write_text(
+                f"# Evaluation Aborted\n\n{result.error}\n",
+                encoding="utf-8",
+            )
+            saved_parts.append("ABORTED.md")
+
+        # trace.md: always save (valuable for debugging aborted runs)
+        if "proxy_logs" in trace_captured:
+            from evaluation.trace_report import generate_trace_md
+
+            trace_md = generate_trace_md(
+                result,
+                trace_captured["proxy_logs"],
+                agent_name=getattr(args, "agent", "generic"),
+                model=agent.model,
+                condition=condition.name,
+            )
+            (result_dir / "trace.md").write_text(trace_md, encoding="utf-8")
+            saved_parts.append("trace.md")
+
+        # cost.md: always save (shows partial spend even for aborted runs)
+        from evaluation.cost_report import generate_cost_report
+
+        cost_md = generate_cost_report(result)
+        (result_dir / "cost.md").write_text(cost_md, encoding="utf-8")
+        saved_parts.append("cost.md")
+
+        n_files = (
+            len(list(agent_files_dir.iterdir())) if agent_files_dir.exists() else 0
+        )
+        saved_parts.append(f"agent_files/ ({n_files} files)")
+        print(f"\nResults saved: {result_dir}")
+        print(f"  {' + '.join(saved_parts)}")
 
 
 def cmd_list_tasks(args):
@@ -387,6 +645,7 @@ def cmd_run_layer1(args):
     from layer1.data_loader import get_layer1_stats, load_layer1_items
     from layer1.runner import Layer1Runner
     from orchestrator.agent_adapters.generic_adapter import GenericLLMAdapter
+    from orchestrator.container_manager import ContainerManager
 
     eval_model_name = args.eval_model or None
 
@@ -410,27 +669,18 @@ def cmd_run_layer1(args):
         agent_name=f"generic_{AGENT_DEFAULT_MODEL}",
     )
 
-    def agent_callback(question: str, context: str) -> str:
-        """Call the real LLM agent to answer the question."""
-        messages = []
-        if context:
-            messages.append(
-                {
-                    "role": "user",
-                    "content": f"Context:\n{context}\n\nQuestion: {question}",
-                }
-            )
-        else:
-            messages.append({"role": "user", "content": question})
-        return agent.generate_response(messages=messages, available_tools=[])
+    callback = _make_layer1_callback(agent)
 
     # Configure eval model for Layer 1 GEval judge.
     # DeepEval accepts a model string and uses OPENAI_API_KEY + OPENAI_BASE_URL
     # from environment (already bridged from OPENROUTER_API_KEY at top of this file).
+    l1_container_manager = ContainerManager(use_docker=False)
     runner = Layer1Runner(
-        agent_callback=agent_callback,
+        agent_callback=callback,
         use_deepeval=not args.no_deepeval,
         eval_model=eval_model_name,
+        container_manager=l1_container_manager,
+        use_docker=False,
     )
 
     results = runner.run_batch(items, max_items=args.max_items)
@@ -659,6 +909,15 @@ def cmd_validate_tasks(args):
 
 
 def main():
+    # ── DeepEval retry policy — strengthen defaults for parallel execution ──
+    # DeepEval's @retry_openai uses Tenacity. Defaults (max=2, cap=5s) are
+    # too aggressive for 10-worker parallel runs hitting OpenRouter rate limits.
+    # setdefault() allows users to override via env vars if needed.
+    os.environ.setdefault("DEEPEVAL_RETRY_MAX_ATTEMPTS", "6")
+    os.environ.setdefault("DEEPEVAL_RETRY_INITIAL_SECONDS", "3")
+    os.environ.setdefault("DEEPEVAL_RETRY_CAP_SECONDS", "60")
+    os.environ.setdefault("DEEPEVAL_RETRY_JITTER", "5")
+
     parser = argparse.ArgumentParser(description="QuantTutorBench CLI")
     subparsers = parser.add_subparsers(dest="command")
 
@@ -716,6 +975,11 @@ def main():
         action="store_true",
         help="Disable DeepEval for Layer 1 (use simple scoring)",
     )
+    run_parser.add_argument(
+        "--model",
+        default=None,
+        help="Override agent model (OpenRouter format, e.g. 'openai/gpt-5.2')",
+    )
 
     # run-single command
     single_parser = subparsers.add_parser("run-single", help="Run single task")
@@ -748,6 +1012,16 @@ def main():
         "--simulator-model",
         default=None,
         help="LLM model for student simulator (OpenRouter format)",
+    )
+    single_parser.add_argument(
+        "--model",
+        default=None,
+        help="Override agent model (OpenRouter format, e.g. 'openai/gpt-5.2')",
+    )
+    single_parser.add_argument(
+        "--save-result",
+        action="store_true",
+        help="Save scores.md, trace.md, and agent_files/ to results/run-single/…",
     )
 
     # run-layer1 command

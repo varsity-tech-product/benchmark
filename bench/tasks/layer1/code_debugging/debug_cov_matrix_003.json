@@ -4,6 +4,7 @@
   "difficulty": "hard",
   "category": "code_debugging",
   "task_type": "single_turn",
+  "requires_tool": true,
   "description": "My portfolio optimization code gives weird results — it suggests putting 300% in one stock with negative weights in others, even though I set bounds to (0, 1). Here's my code:\n\n```python\nimport numpy as np\nimport pandas as pd\nfrom scipy.optimize import minimize\n\n# Get returns\nprices = pd.read_csv('portfolio_prices.csv', index_col=0, parse_dates=True)\nreturns = prices.pct_change().dropna()\n\n# Calculate expected returns and covariance\nmu = returns.mean() * 252  # annualize\ncov = returns.cov()  # NOT annualized!\n\ndef neg_sharpe(weights):\n    port_ret = weights @ mu\n    port_vol = np.sqrt(weights @ cov @ weights)\n    return -port_ret / port_vol\n\nn = len(mu)\nresult = minimize(\n    neg_sharpe,\n    x0=np.ones(n) / n,\n    bounds=[(0, 1)] * n,\n    constraints={'type': 'eq', 'fun': lambda w: w.sum() - 1}\n)\nprint(result.x)\n```\n\nSometimes I get weights > 1 or negative Sharpe ratios. What's wrong?",
   "context": null,
   "reference_answer": "There are two bugs: (1) The covariance matrix is not annualized. `mu` is annualized (`* 252`) but `cov` is still daily. This makes the denominator (volatility) much too small relative to the numerator (return), causing the optimizer to find extreme solutions. Fix: `cov = returns.cov() * 252`. (2) The Sharpe formula divides by `port_vol` which can approach zero for certain weight combinations, creating numerical instability. Add a small epsilon: `port_vol = np.sqrt(weights @ cov @ weights) + 1e-10`. The inconsistent annualization between return and risk is a common quantitative finance bug that leads to grossly distorted optimization results.",
@@ -15,20 +16,5 @@
     "covariance-matrix",
     "scipy",
     "advanced"
-  ],
-  "persona_ids": [],
-  "student_openings": {},
-  "environment": null,
-  "ground_truth": {
-    "expected_outcome": "There are two bugs: (1) The covariance matrix is not annualized. `mu` is annualized (`* 252`) but `cov` is still daily. This makes the denominator (volatility) much too small relative to the numerator (return), causing the optimizer to find extreme solutions. Fix: `cov = returns.cov() * 252`. (2) The Sharpe formula divides by `port_vol` which can approach zero for certain weight combinations, creating numerical instability. Add a small epsilon: `port_vol = np.sqrt(weights @ cov @ weights) + 1e-10`. The inconsistent annualization between return and risk is a common quantitative finance bug that leads to grossly distorted optimization results.",
-    "required_capabilities": [],
-    "expected_mcp_tools": [],
-    "quant_validation": null,
-    "bug_description": null,
-    "expected_fix": null
-  },
-  "requires_code": false,
-  "sample_code": null,
-  "max_turns": 30,
-  "timeout_minutes": 15
+  ]
 }

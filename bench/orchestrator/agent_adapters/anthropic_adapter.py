@@ -19,7 +19,7 @@ from typing import Optional
 
 from dotenv import load_dotenv
 
-from .base_adapter import BaseAgentAdapter
+from .base_adapter import BaseAgentAdapter, TokenRecord
 from .prompts import TUTOR_SYSTEM_PROMPT
 
 _PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
@@ -121,6 +121,10 @@ class ClaudeAgentAdapter(BaseAgentAdapter):
 
         if not os.environ.get("ANTHROPIC_API_KEY"):
             raise ValueError("ANTHROPIC_API_KEY not set in .env")
+
+    def set_agent_max_steps(self, n: int):
+        """Limit Claude SDK internal loop turns per conversation turn."""
+        self.max_agent_turns = n
 
         if not CLAUDE_AGENT_SDK_AVAILABLE:
             raise ImportError(
@@ -244,8 +248,38 @@ class ClaudeAgentAdapter(BaseAgentAdapter):
                     for block in message.content:
                         if isinstance(block, TextBlock):
                             result_text = block.text
+                    # Extract usage if SDK exposes it on AssistantMessage
+                    usage = getattr(message, "usage", None)
+                    if usage:
+                        from config.pricing import estimate_cost
+
+                        inp = getattr(usage, "input_tokens", 0) or 0
+                        out = getattr(usage, "output_tokens", 0) or 0
+                        self._token_records.append(
+                            TokenRecord(
+                                model=self.model,
+                                input_tokens=inp,
+                                output_tokens=out,
+                                cost_usd=estimate_cost(self.model, inp, out),
+                            )
+                        )
                 elif isinstance(message, ResultMessage):
                     if hasattr(message, "result") and message.result:
                         result_text = message.result
+
+        # Fallback: if SDK didn't expose usage, estimate from character count
+        if not any(r.model == self.model for r in self._token_records):
+            from config.pricing import estimate_cost
+
+            est_inp = int(len(prompt) / 3.5)
+            est_out = int(len(result_text) / 3.5)
+            self._token_records.append(
+                TokenRecord(
+                    model=self.model,
+                    input_tokens=est_inp,
+                    output_tokens=est_out,
+                    cost_usd=estimate_cost(self.model, est_inp, est_out),
+                )
+            )
 
         return result_text

@@ -10,7 +10,7 @@ Design doc §6.4: Benchmark-Level KPIs
     QAI  = Quant Agent Index (average quant scores)
     TEI  = Tutoring Effectiveness Index (average tutor rubric scores)
     AS   = Adaptiveness Score (tutor score variance across persona variants)
-    TMS  = Tool Mastery Score (average tool precision × recall)
+    PMS  = Process Mastery Score (average process quality score)
 
 Design doc §6.5: Statistical Reporting
     pass@k and pass^k for each difficulty level
@@ -34,6 +34,8 @@ def compute_task_score(
     quant_result_score: float,
     quant_process_score: float,
     tutor_dimension_scores: dict[str, float],
+    category: Optional[str] = None,
+    requires_code: bool = False,
 ) -> dict:
     """Compute the overall task score.
 
@@ -41,21 +43,38 @@ def compute_task_score(
     Task Score = 0.70 × Quant Agent Score + 0.30 × Tutor Score
     Quant Agent Score = 0.50 × Result + 0.50 × Process
 
+    Tutor Score uses per-category dimension weights for weighted averaging
+    (see CATEGORY_DIMENSION_WEIGHTS in tutor_conv_geval.py).
+
     Args:
         quant_result_score: Score from eval scripts (0-1).
-        quant_process_score: Score from DeepEval MCP metrics + tool precision/recall (0-1).
+        quant_process_score: Score from reformed process metrics (0-1).
         tutor_dimension_scores: Dict of dimension_name -> score (0-1).
+        category: TaskCategory.value for per-category tutor dimension weighting.
+        requires_code: Whether the task expects code output (passed
+            through to compute_tutor_score for D5 weight override).
 
     Returns:
         Dict with all sub-scores and overall score.
     """
+    from evaluation.deepeval_metrics.tutor_conv_geval import compute_tutor_score
+
     quant_score = (
         RESULT_WEIGHT * quant_result_score + PROCESS_WEIGHT * quant_process_score
     )
 
+    # Filter out internal metadata keys (_eval_cost, _eval_cost_by_model)
+    clean_tutor = {
+        k: v
+        for k, v in tutor_dimension_scores.items()
+        if not k.startswith("_") and isinstance(v, (int, float))
+    }
+
     tutor_score = 0.0
-    if tutor_dimension_scores:
-        tutor_score = statistics.mean(tutor_dimension_scores.values())
+    if clean_tutor:
+        tutor_score = compute_tutor_score(
+            clean_tutor, category=category, requires_code=requires_code
+        )
 
     overall = QUANT_WEIGHT * quant_score + TUTOR_WEIGHT * tutor_score
 
@@ -64,9 +83,7 @@ def compute_task_score(
         "quant_process_score": round(quant_process_score, 4),
         "quant_agent_score": round(quant_score, 4),
         "tutor_score": round(tutor_score, 4),
-        "tutor_dimension_scores": {
-            k: round(v, 4) for k, v in tutor_dimension_scores.items()
-        },
+        "tutor_dimension_scores": {k: round(v, 4) for k, v in clean_tutor.items()},
         "overall_score": round(overall, 4),
     }
 
@@ -77,7 +94,7 @@ def compute_benchmark_kpis(
 ) -> dict:
     """Compute benchmark-level KPIs from all task results.
 
-    Design doc §6.4: OAS, QAI, TEI, AS, TMS, Difficulty Curve.
+    Design doc §6.4: OAS, QAI, TEI, AS, PMS, Difficulty Curve.
 
     Args:
         task_results: List of task score dicts from compute_task_score.
@@ -117,11 +134,11 @@ def compute_benchmark_kpis(
         if as_score is not None:
             kpis["adaptiveness_score"] = as_score
 
-    # §6.4: Tool Mastery Score (TMS) — average tool precision × recall
+    # §6.4: Process Mastery Score (PMS) — average process quality score
     if task_result_objects:
-        tms = _compute_tool_mastery_score(task_result_objects)
-        if tms is not None:
-            kpis["tool_mastery_score"] = tms
+        pms = _compute_process_mastery_score(task_result_objects)
+        if pms is not None:
+            kpis["process_mastery_score"] = pms
 
     # §6.4: Difficulty Curve — performance by difficulty level
     if task_result_objects:
@@ -172,7 +189,7 @@ def compute_combined_benchmark_kpis(
     layers = layers_evaluated or []
     layer2_task_results = layer2_task_results or []
 
-    # Get Layer 2 base KPIs (AS, TMS, difficulty curve, pass@k)
+    # Get Layer 2 base KPIs (AS, PMS, difficulty curve, pass@k)
     if layer2_task_results:
         base_kpis = compute_benchmark_kpis(
             layer2_task_results,
@@ -205,15 +222,19 @@ def compute_combined_benchmark_kpis(
     tei = statistics.mean(tutor_scores) if tutor_scores else 0.0
 
     # Blended Result Sub-score
+    # Formula: Result_Sub = λ × Layer1 + (1-λ) × Layer2, where λ = 0.40
+    # When a layer is absent, its contribution counts as 0 (not omitted).
     if "layer1" in layers and "layer2" in layers:
         result_sub = (
             LAYER1_RESULT_WEIGHT * layer1_mean_score
             + (1 - LAYER1_RESULT_WEIGHT) * l2_result_mean
         )
     elif "layer1" in layers:
-        result_sub = layer1_mean_score
+        # Only Layer 1: Layer 2 portion (0.6) is 0
+        result_sub = LAYER1_RESULT_WEIGHT * layer1_mean_score
     else:
-        result_sub = l2_result_mean
+        # Only Layer 2: Layer 1 portion (0.4) is 0
+        result_sub = (1 - LAYER1_RESULT_WEIGHT) * l2_result_mean
 
     # Process Sub-score is Layer 2 only
     process_sub = l2_process_mean
@@ -253,7 +274,14 @@ def _compute_adaptiveness_score(task_result_objects: list) -> Optional[float]:
     by_task = defaultdict(list)
     for r in task_result_objects:
         if hasattr(r, "tutor_scores") and r.tutor_scores:
-            tutor_score = statistics.mean(r.tutor_scores.values())
+            clean_vals = [
+                v
+                for k, v in r.tutor_scores.items()
+                if not k.startswith("_") and isinstance(v, (int, float))
+            ]
+            if not clean_vals:
+                continue
+            tutor_score = statistics.mean(clean_vals)
             by_task[r.task_id].append(tutor_score)
 
     # Compute per-task variance
@@ -267,23 +295,21 @@ def _compute_adaptiveness_score(task_result_objects: list) -> Optional[float]:
     return None
 
 
-def _compute_tool_mastery_score(task_result_objects: list) -> Optional[float]:
-    """Compute Tool Mastery Score: average tool precision × recall.
+def _compute_process_mastery_score(task_result_objects: list) -> Optional[float]:
+    """Compute Process Mastery Score: average process quality across tasks.
 
-    Design doc §6.4: TMS = Average tool precision × recall.
+    Design doc §6.4: PMS = Average quant_process_score (reformed process aggregate).
 
     Returns:
-        Average precision × recall across all tasks, or None.
+        Average quant_process_score across all tasks, or None.
     """
-    pr_products = []
+    scores = []
     for r in task_result_objects:
-        if hasattr(r, "tool_metrics") and r.tool_metrics:
-            p = r.tool_metrics.get("precision", 0)
-            rec = r.tool_metrics.get("recall", 0)
-            pr_products.append(p * rec)
+        if hasattr(r, "quant_process_score"):
+            scores.append(r.quant_process_score)
 
-    if pr_products:
-        return round(statistics.mean(pr_products), 4)
+    if scores:
+        return round(statistics.mean(scores), 4)
     return None
 
 

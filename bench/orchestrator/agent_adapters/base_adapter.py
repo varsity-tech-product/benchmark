@@ -5,7 +5,18 @@ The model_callback signature matches DeepEval ConversationSimulator requirements
 """
 
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from typing import Optional
+
+
+@dataclass
+class TokenRecord:
+    """A single API call's token usage."""
+
+    model: str
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cost_usd: float = 0.0
 
 
 class BaseAgentAdapter(ABC):
@@ -19,6 +30,7 @@ class BaseAgentAdapter(ABC):
 
     def __init__(self, agent_name: str = "unknown"):
         self.agent_name = agent_name
+        self._token_records: list[TokenRecord] = []
 
     @abstractmethod
     def generate_response(
@@ -40,6 +52,19 @@ class BaseAgentAdapter(ABC):
         """
         pass
 
+    def get_token_records(self) -> list[TokenRecord]:
+        """Return accumulated token usage records for cost tracking."""
+        return list(self._token_records)
+
+    def set_agent_max_steps(self, n: int):
+        """Set the max tool-call steps per conversation turn.
+
+        Adapters with internal agentic loops (OpenAI SDK, Claude SDK) override
+        this to limit how many LLM→tool→LLM cycles happen within a single
+        generate_response() call. Adapters without agentic loops ignore this.
+        """
+        pass
+
     def reset(self):
         """Reset any internal state between tasks."""
-        pass
+        self._token_records.clear()

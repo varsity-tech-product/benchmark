@@ -18,6 +18,7 @@ Supports two modes:
 """
 
 import json
+import os
 import subprocess
 import tempfile
 import time
@@ -86,16 +87,23 @@ class Layer1Runner:
         agent_callback=None,
         eval_model: Optional[str] = None,
         use_deepeval: bool = True,
+        container_manager=None,
+        use_docker: bool = False,
     ):
         """
         Args:
-            agent_callback: Function(question, context) -> str. If None, uses synthetic_response.
+            agent_callback: Function(question, context, [tools, tool_callback]) -> str.
+                If None, uses synthetic_response.
             eval_model: LLM model for GEval judge (string, e.g. "openai/gpt-4o").
             use_deepeval: Whether to use DeepEval GEval (vs simple scoring).
+            container_manager: ContainerManager instance for sandbox execution.
+            use_docker: Whether Docker execution is active.
         """
         self.agent_callback = agent_callback
         self.eval_model = eval_model
         self.use_deepeval = use_deepeval and DEEPEVAL_AVAILABLE
+        self.container_manager = container_manager
+        self.use_docker = use_docker
         self._geval_cache: dict[str, "GEval"] = {}
 
     def _get_geval_metric(self, category: str = "conceptual_qa"):
@@ -117,56 +125,119 @@ class Layer1Runner:
     def evaluate_item(self, item: Layer1Item) -> Layer1Result:
         """Evaluate a single Layer 1 item.
 
-        Dispatches to category-specific evaluation:
-        - code_generation/code_debugging: code execution + GEval code quality rubric
-        - All others: GEval with category-specific rubric
+        For requires_tool items: creates a sandbox + MCP proxy with all core
+        tools (no distractors), passes tools to agent_callback so the agent
+        can internally loop (think → call tools → verify → respond).
+
+        For all items: final answer is scored by GEval (or fallback).
+        Code tasks additionally run _execute_code as a secondary signal.
         """
         start = time.time()
+        container = None
+        proxy = None
 
-        # Get actual output
-        if self.agent_callback:
-            context_str = item.context if item.context else ""
-            actual_output = self.agent_callback(item.question, context_str)
-        else:
-            actual_output = item.synthetic_response
+        try:
+            # Set up sandbox + tools if needed
+            if item.requires_tool and self.container_manager and self.agent_callback:
+                container, proxy = self._setup_sandbox_and_proxy(item)
 
-        # Evaluate based on category
-        code_exec_result = None
-        if item.category in (
-            "code_generation",
-            "code_debugging",
-        ) and _contains_python_code(actual_output):
-            # §5.0: Code tasks use automated execution + GEval code quality rubric
-            code_exec_result = _execute_code(actual_output)
-            exec_score = code_exec_result.get("score", 0.0)
-
-            if self.use_deepeval:
-                geval_score, reason = self._evaluate_with_deepeval(item, actual_output)
-                # Combine: 60% execution correctness + 40% GEval code quality
-                score = 0.6 * exec_score + 0.4 * geval_score
-                reason = (
-                    f"Code exec: {exec_score:.2f}, GEval: {geval_score:.2f}. {reason}"
-                )
+            # Get actual output from agent
+            if self.agent_callback:
+                context_str = item.context if item.context else ""
+                if proxy:
+                    actual_output = self.agent_callback(
+                        context_str,
+                        item.question,
+                        tools=proxy.get_available_tools(),
+                        tool_callback=proxy.call_tool,
+                    )
+                else:
+                    actual_output = self.agent_callback(context_str, item.question)
             else:
-                score = exec_score
-                reason = code_exec_result.get("reason", "")
-        elif self.use_deepeval:
-            score, reason = self._evaluate_with_deepeval(item, actual_output)
-        else:
-            score, reason = self._evaluate_simple(item, actual_output)
+                actual_output = item.synthetic_response
 
-        duration_ms = (time.time() - start) * 1000
+            # Evaluate based on category
+            code_exec_result = None
+            if item.category in (
+                "code_generation",
+                "code_debugging",
+            ) and _contains_python_code(actual_output):
+                # §5.0: Code tasks use automated execution + GEval code quality rubric
+                code_exec_result = _execute_code(actual_output)
+                exec_score = code_exec_result.get("score", 0.0)
 
-        return Layer1Result(
-            item_id=item.item_id,
-            category=item.category,
-            difficulty=item.difficulty,
-            score=score,
-            reason=reason,
-            actual_output=actual_output[:500],
-            duration_ms=duration_ms,
-            code_execution_result=code_exec_result,
+                if self.use_deepeval:
+                    geval_score, reason = self._evaluate_with_deepeval(
+                        item, actual_output
+                    )
+                    # Combine: 60% execution correctness + 40% GEval code quality
+                    score = 0.6 * exec_score + 0.4 * geval_score
+                    reason = f"Code exec: {exec_score:.2f}, GEval: {geval_score:.2f}. {reason}"
+                else:
+                    score = exec_score
+                    reason = code_exec_result.get("reason", "")
+            elif self.use_deepeval:
+                score, reason = self._evaluate_with_deepeval(item, actual_output)
+            else:
+                score, reason = self._evaluate_simple(item, actual_output)
+
+            duration_ms = (time.time() - start) * 1000
+
+            return Layer1Result(
+                item_id=item.item_id,
+                category=item.category,
+                difficulty=item.difficulty,
+                score=score,
+                reason=reason,
+                actual_output=actual_output[:500],
+                duration_ms=duration_ms,
+                code_execution_result=code_exec_result,
+            )
+        finally:
+            # Teardown sandbox
+            if container and self.container_manager:
+                self.container_manager.destroy_container(container.container_id)
+
+    def _setup_sandbox_and_proxy(self, item: Layer1Item):
+        """Create a sandbox container and MCP proxy with all core tools.
+
+        Layer 1 tool-enabled tasks get ALL core tools (no distractors),
+        unlike Layer 2 which uses per-task tool subsets + random distractors.
+        """
+        from mcp_servers.core.tools import CORE_TOOLS
+        from mcp_servers.registry import create_proxy_for_task
+
+        # Create sandbox
+        data_dir = os.environ.get(
+            "QTB_DATA_DIR", str(Path(__file__).parent.parent / "data" / "frozen")
         )
+        docs_dir = os.environ.get(
+            "QTB_DOCS_DIR", str(Path(__file__).parent.parent / "docs")
+        )
+
+        container = self.container_manager.create_container(
+            task_id=f"l1_{item.item_id}",
+            data_dir=data_dir,
+            docs_dir=docs_dir,
+        )
+
+        # Start tool executor daemon inside the container (Docker only).
+        if self.use_docker and self.container_manager.use_docker:
+            self.container_manager.start_executor(container.container_id)
+
+        # Set environment vars for tool implementations
+        os.environ["QTB_WORKSPACE_DIR"] = container.workspace_path
+
+        # Create proxy with ALL core tools, no distractors (Layer 1)
+        proxy = create_proxy_for_task(
+            core_tool_names=list(CORE_TOOLS.keys()),
+            container_manager=self.container_manager,
+            container_id=container.container_id,
+            workspace_path=container.workspace_path,
+            use_docker=self.use_docker,
+        )
+
+        return container, proxy
 
     def _evaluate_with_deepeval(
         self, item: Layer1Item, actual_output: str

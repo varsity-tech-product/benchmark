@@ -4,6 +4,7 @@
   "difficulty": "medium",
   "category": "conceptual_qa",
   "task_type": "single_turn",
+  "requires_tool": false,
   "description": "I have a steady job ($50K/yr), 2 credit cards, am renting an apartment, and will start paying back student loans this September (~$10,000). I contribute 5% bi-weekly to my 401K, 5% more is matched by my employer (Federal gov't-TSP).\n\nIs there any one decision I can make that will maximize my financial well-being going towards the future?\n\nedit: For anyone unfamiliar with the [Thrift Savings Plan](http://www.tsp.gov), its basically the 401k plan for US Federal Employees",
   "context": null,
   "reference_answer": "Save in this order\n\n1) Small emergency fund (1 month of expenses or so)\n\n2) Pay off credit cards (if you continue using them, pay off each month)\n\n3) Pay off student loans\n\n4) Add to emergency fund (3-6 months depending on risk of income loss)\n\n5) Open an IRA (read in this /r/ for more details) and max to 5k if possible\n\n6) If you get here, you're a fuckin rockstar - bump 401k contributions to ~15%\n\n7) Depending on your situation, possibly save for house/car\n\n8) Hookers and blow (if you get here, you deserve it)\n\nDon't proceed to the next step without finishing the goal. If you don't meet a previous goal (spent your emergency fund, for example) then go back and complete the step again.",
@@ -11,20 +12,5 @@
   "source_dataset": "reddit.personalfinance",
   "tags": [
     "personalfinance"
-  ],
-  "persona_ids": [],
-  "student_openings": {},
-  "environment": null,
-  "ground_truth": {
-    "expected_outcome": "Save in this order\n\n1) Small emergency fund (1 month of expenses or so)\n\n2) Pay off credit cards (if you continue using them, pay off each month)\n\n3) Pay off student loans\n\n4) Add to emergency fund (3-6 months depending on risk of income loss)\n\n5) Open an IRA (read in this /r/ for more details) and max to 5k if possible\n\n6) If you get here, you're a fuckin rockstar - bump 401k contributions to ~15%\n\n7) Depending on your situation, possibly save for house/car\n\n8) Hookers and blow (if you get here, you deserve it)\n\nDon't proceed to the next step without finishing the goal. If you don't meet a previous goal (spent your emergency fund, for example) then go back and complete the step again.",
-    "required_capabilities": [],
-    "expected_mcp_tools": [],
-    "quant_validation": null,
-    "bug_description": null,
-    "expected_fix": null
-  },
-  "requires_code": false,
-  "sample_code": null,
-  "max_turns": 30,
-  "timeout_minutes": 15
+  ]
 }

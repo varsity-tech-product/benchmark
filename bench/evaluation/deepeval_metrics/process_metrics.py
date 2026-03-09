@@ -3,39 +3,51 @@
 Design doc §6.1 (Quant Process Scoring) and §9 (DeepEval Component Mapping).
 
 Metrics implemented:
-- ArgumentCorrectnessMetric: validates tool call arguments (LLMTestCase)
-- MCPUseMetric: LLM-judged tool selection quality, single-turn (LLMTestCase)
-- MultiTurnMCPUseMetric: LLM-judged contextual tool usage, multi-turn (ConversationalTestCase)
-- StepEfficiencyMetric: reasonable number of steps? (LLMTestCase)
-- RoleAdherenceMetric: stays in "tutor" role? (ConversationalTestCase)
-- KnowledgeRetentionMetric: remembers earlier context? (ConversationalTestCase)
-- TopicAdherenceMetric: stays on quant finance topics? (ConversationalTestCase)
+- Tool Usage: mathematical scoring of tool selection quality (tool_usage.py)
+- Step Efficiency: 3-sub-dimension evaluation via direct GPTModel call
+  (Action Economy, Redundancy Avoidance, Logical Sequencing)
+- Process Reasonableness: tool-agnostic execution quality (process_reasonableness.py)
+- Process Alignment: reference-anchored process comparison (process_reasonableness.py)
+- Code Process: code development process quality (code_process.py)
+- Role Adherence: custom GPTModel direct-call (custom_conv_metrics.py)
+- Topic Adherence: custom GPTModel direct-call (custom_conv_metrics.py)
+
+QP aggregate = weighted average of 7 dimensions:
+    tool_usage              0.20
+    process_reasonableness  0.20
+    step_efficiency         0.15
+    code_process            0.15
+    process_alignment       0.10
+    role_adherence          0.10
+    topic_adherence         0.10
 
 Reference: https://github.com/confident-ai/deepeval
 """
 
 import asyncio
+import json as _json
+import threading
 from typing import Optional
 
-import nest_asyncio
-from config.llm_config import resolve_deepeval_model
+from config.model_resolver import resolve_deepeval_model
+
+# ──────────────────────────────────────────────────────────────
+# Concurrency control — adjustable for parallel runner
+# ──────────────────────────────────────────────────────────────
+_CONCURRENCY = 20  # per-worker asyncio concurrency limit
+
+
+def set_eval_concurrency(n: int) -> None:
+    """Set per-worker concurrency limit (called by parallel runner)."""
+    global _CONCURRENCY
+    _CONCURRENCY = max(3, n)
+
+
+# Sentinel for aborted coroutines
+_ABORT_SENTINEL = object()
 
 try:
-    from deepeval.metrics import (
-        ArgumentCorrectnessMetric,
-        KnowledgeRetentionMetric,
-        MCPUseMetric,
-        MultiTurnMCPUseMetric,
-        RoleAdherenceMetric,
-        StepEfficiencyMetric,
-        TopicAdherenceMetric,
-    )
-    from deepeval.test_case import (
-        ConversationalTestCase,
-        LLMTestCase,
-        ToolCall,
-    )
-    from deepeval.test_case.mcp import MCPServer, MCPToolCall
+    from deepeval.models.llms.openai_model import GPTModel
 
     DEEPEVAL_AVAILABLE = True
 except ImportError:
@@ -71,432 +83,31 @@ QUANT_TUTOR_TOPICS = [
 
 
 # ──────────────────────────────────────────────────────────────
-# Helper: build DeepEval objects from proxy logs
+# QP Dimension Weights (7 dimensions)
 # ──────────────────────────────────────────────────────────────
+# Dimensions with score=None or skipped=True are excluded and
+# remaining weights are renormalized to sum to 1.0.
 
-
-def _build_mcp_tool_calls(proxy_logs: list) -> list:
-    """Convert proxy tool call logs to DeepEval MCPToolCall objects.
-
-    Args:
-        proxy_logs: List of ToolCallLog objects from MCPProxy.
-
-    Returns:
-        List of MCPToolCall objects.
-    """
-    if not DEEPEVAL_AVAILABLE:
-        return []
-    return [
-        MCPToolCall(
-            name=log.name,
-            args=log.args,
-            result=log.result[:500] if log.result else "",
-        )
-        for log in proxy_logs
-    ]
-
-
-def _build_tool_calls(proxy_logs: list) -> list:
-    """Convert proxy tool call logs to DeepEval ToolCall objects.
-
-    Args:
-        proxy_logs: List of ToolCallLog objects from MCPProxy.
-
-    Returns:
-        List of ToolCall objects.
-    """
-    if not DEEPEVAL_AVAILABLE:
-        return []
-    return [
-        ToolCall(
-            name=log.name,
-            input_parameters=log.args,
-            output=log.result[:500] if log.result else "",
-        )
-        for log in proxy_logs
-    ]
-
-
-def _build_expected_tools(expected_tool_names: list[str]) -> list:
-    """Build expected ToolCall objects from tool names.
-
-    Args:
-        expected_tool_names: List of expected tool name strings.
-
-    Returns:
-        List of ToolCall objects with just names.
-    """
-    if not DEEPEVAL_AVAILABLE:
-        return []
-    return [ToolCall(name=name) for name in expected_tool_names]
-
-
-def _build_mcp_servers(core_tools: list[str], distractor_tools: list[str]) -> list:
-    """Build MCPServer objects for DeepEval MCP metrics.
-
-    Args:
-        core_tools: List of core tool names.
-        distractor_tools: List of distractor tool names.
-
-    Returns:
-        List of MCPServer objects.
-    """
-    if not DEEPEVAL_AVAILABLE:
-        return []
-
-    all_tools = core_tools + distractor_tools
-    return [
-        MCPServer(
-            server_name="quant_tutor_bench",
-            available_tools=all_tools,
-        )
-    ]
+_QP_DIMENSION_WEIGHTS = {
+    "tool_usage": 0.20,
+    "process_reasonableness": 0.20,
+    "step_efficiency": 0.15,
+    "code_process": 0.15,
+    "process_alignment": 0.10,
+    "role_adherence": 0.10,
+    "topic_adherence": 0.10,
+}
 
 
 # ──────────────────────────────────────────────────────────────
-# Single-turn metrics (LLMTestCase based)
+# Single-turn metrics
 # ──────────────────────────────────────────────────────────────
 
 
-def evaluate_argument_correctness(
-    input_text: str,
-    actual_output: str,
-    proxy_logs: list,
-    expected_tool_names: list[str],
-    model: Optional[str] = None,
-    threshold: float = 0.5,
-) -> dict:
-    """Evaluate argument correctness of tool calls.
-
-    Design doc §4.6: Were the arguments to each tool call valid?
-
-    Args:
-        input_text: Combined user input/task description.
-        actual_output: Agent's final text output.
-        proxy_logs: Tool call logs from MCPProxy.
-        expected_tool_names: Expected tool names.
-        model: LLM judge model.
-        threshold: Minimum passing score.
-
-    Returns:
-        Dict with score, reason, passed.
-    """
-    if not DEEPEVAL_AVAILABLE:
-        return {"score": 0.5, "reason": "deepeval not available", "passed": True}
-
-    test_case = LLMTestCase(
-        input=input_text,
-        actual_output=actual_output,
-        tools_called=_build_tool_calls(proxy_logs),
-        expected_tools=_build_expected_tools(expected_tool_names),
-    )
-
-    kwargs = {"threshold": threshold}
-    kwargs["model"] = resolve_deepeval_model(model)
-
-    metric = ArgumentCorrectnessMetric(**kwargs)
-
-    try:
-        metric.measure(test_case)
-        return {
-            "score": metric.score,
-            "reason": getattr(metric, "reason", ""),
-            "passed": metric.score >= threshold,
-        }
-    except Exception as e:
-        return {
-            "score": 0.5,
-            "reason": f"ArgumentCorrectnessMetric error: {e}",
-            "passed": True,
-        }
-
-
-def evaluate_mcp_use(
-    input_text: str,
-    actual_output: str,
-    proxy_logs: list,
-    core_tools: list[str],
-    distractor_tools: list[str],
-    model: Optional[str] = None,
-    threshold: float = 0.5,
-) -> dict:
-    """Evaluate MCP tool usage quality (single-turn).
-
-    Design doc §4.6: Given available tools and task, did the agent
-    select and use tools correctly?
-
-    Args:
-        input_text: Combined user input/task description.
-        actual_output: Agent's final text output.
-        proxy_logs: Tool call logs from MCPProxy.
-        core_tools: Core tool names.
-        distractor_tools: Distractor tool names.
-        model: LLM judge model.
-        threshold: Minimum passing score.
-
-    Returns:
-        Dict with score, reason, passed.
-    """
-    if not DEEPEVAL_AVAILABLE:
-        return {"score": 0.5, "reason": "deepeval not available", "passed": True}
-
-    test_case = LLMTestCase(
-        input=input_text,
-        actual_output=actual_output,
-        mcp_tools_called=_build_mcp_tool_calls(proxy_logs),
-        mcp_servers=_build_mcp_servers(core_tools, distractor_tools),
-    )
-
-    kwargs = {"threshold": threshold}
-    kwargs["model"] = resolve_deepeval_model(model)
-
-    metric = MCPUseMetric(**kwargs)
-
-    try:
-        metric.measure(test_case)
-        return {
-            "score": metric.score,
-            "reason": getattr(metric, "reason", ""),
-            "passed": metric.score >= threshold,
-        }
-    except Exception as e:
-        return {"score": 0.5, "reason": f"MCPUseMetric error: {e}", "passed": True}
-
-
-def evaluate_step_efficiency(
-    input_text: str,
-    actual_output: str,
-    proxy_logs: list,
-    model: Optional[str] = None,
-    threshold: float = 0.5,
-) -> dict:
-    """Evaluate step efficiency of tool usage.
-
-    Design doc §4.6: Did the agent take a reasonable number of steps/tool calls?
-
-    Args:
-        input_text: Combined user input/task description.
-        actual_output: Agent's final text output.
-        proxy_logs: Tool call logs from MCPProxy.
-        model: LLM judge model.
-        threshold: Minimum passing score.
-
-    Returns:
-        Dict with score, reason, passed.
-    """
-    if not DEEPEVAL_AVAILABLE:
-        return {"score": 0.5, "reason": "deepeval not available", "passed": True}
-
-    test_case = LLMTestCase(
-        input=input_text,
-        actual_output=actual_output,
-        tools_called=_build_tool_calls(proxy_logs),
-    )
-
-    kwargs = {"threshold": threshold}
-    kwargs["model"] = resolve_deepeval_model(model)
-
-    metric = StepEfficiencyMetric(**kwargs)
-
-    try:
-        metric.measure(test_case)
-        return {
-            "score": metric.score,
-            "reason": getattr(metric, "reason", ""),
-            "passed": metric.score >= threshold,
-        }
-    except Exception as e:
-        return {
-            "score": 0.5,
-            "reason": f"StepEfficiencyMetric error: {e}",
-            "passed": True,
-        }
-
-
 # ──────────────────────────────────────────────────────────────
-# Multi-turn metrics (ConversationalTestCase based)
+# (Sync wrappers removed — runtime uses async versions exclusively
+#  via _build_process_tasks_for_model.)
 # ──────────────────────────────────────────────────────────────
-
-
-def evaluate_multi_turn_mcp(
-    conversational_test_case: "ConversationalTestCase",
-    core_tools: list[str],
-    distractor_tools: list[str],
-    model: Optional[str] = None,
-    threshold: float = 0.5,
-) -> dict:
-    """Evaluate multi-turn MCP tool usage quality.
-
-    Design doc §4.6: Across the conversation, was tool usage
-    contextually appropriate at each turn?
-
-    Args:
-        conversational_test_case: The ConversationalTestCase (with turns + mcp_tools_called).
-        core_tools: Core tool names.
-        distractor_tools: Distractor tool names.
-        model: LLM judge model.
-        threshold: Minimum passing score.
-
-    Returns:
-        Dict with score, reason, passed.
-    """
-    if not DEEPEVAL_AVAILABLE:
-        return {"score": 0.5, "reason": "deepeval not available", "passed": True}
-
-    # Ensure mcp_servers is set on the test case
-    if conversational_test_case.mcp_servers is None:
-        conversational_test_case.mcp_servers = _build_mcp_servers(
-            core_tools, distractor_tools
-        )
-
-    kwargs = {"threshold": threshold}
-    kwargs["model"] = resolve_deepeval_model(model)
-
-    metric = MultiTurnMCPUseMetric(**kwargs)
-
-    try:
-        metric.measure(conversational_test_case)
-        return {
-            "score": metric.score,
-            "reason": getattr(metric, "reason", ""),
-            "passed": metric.score >= threshold,
-        }
-    except Exception as e:
-        return {
-            "score": 0.5,
-            "reason": f"MultiTurnMCPUseMetric error: {e}",
-            "passed": True,
-        }
-
-
-def evaluate_role_adherence(
-    conversational_test_case: "ConversationalTestCase",
-    chatbot_role: str = "quantitative finance tutor",
-    model: Optional[str] = None,
-    threshold: float = 0.5,
-) -> dict:
-    """Evaluate whether the agent stays in its designated role.
-
-    Design doc §9: Does agent stay in "tutor" role?
-
-    Args:
-        conversational_test_case: The ConversationalTestCase.
-        chatbot_role: The role the agent should adhere to.
-        model: LLM judge model.
-        threshold: Minimum passing score.
-
-    Returns:
-        Dict with score, reason, passed.
-    """
-    if not DEEPEVAL_AVAILABLE:
-        return {"score": 0.5, "reason": "deepeval not available", "passed": True}
-
-    # Ensure chatbot_role is set
-    if conversational_test_case.chatbot_role is None:
-        conversational_test_case.chatbot_role = chatbot_role
-
-    kwargs = {"threshold": threshold}
-    kwargs["model"] = resolve_deepeval_model(model)
-
-    metric = RoleAdherenceMetric(**kwargs)
-
-    try:
-        metric.measure(conversational_test_case)
-        return {
-            "score": metric.score,
-            "reason": getattr(metric, "reason", ""),
-            "passed": metric.score >= threshold,
-        }
-    except Exception as e:
-        return {
-            "score": 0.5,
-            "reason": f"RoleAdherenceMetric error: {e}",
-            "passed": True,
-        }
-
-
-def evaluate_knowledge_retention(
-    conversational_test_case: "ConversationalTestCase",
-    model: Optional[str] = None,
-    threshold: float = 0.5,
-) -> dict:
-    """Evaluate whether the agent remembers earlier context.
-
-    Design doc §9: Does agent remember earlier context?
-
-    Args:
-        conversational_test_case: The ConversationalTestCase.
-        model: LLM judge model.
-        threshold: Minimum passing score.
-
-    Returns:
-        Dict with score, reason, passed.
-    """
-    if not DEEPEVAL_AVAILABLE:
-        return {"score": 0.5, "reason": "deepeval not available", "passed": True}
-
-    kwargs = {"threshold": threshold}
-    kwargs["model"] = resolve_deepeval_model(model)
-
-    metric = KnowledgeRetentionMetric(**kwargs)
-
-    try:
-        metric.measure(conversational_test_case)
-        return {
-            "score": metric.score,
-            "reason": getattr(metric, "reason", ""),
-            "passed": metric.score >= threshold,
-        }
-    except Exception as e:
-        return {
-            "score": 0.5,
-            "reason": f"KnowledgeRetentionMetric error: {e}",
-            "passed": True,
-        }
-
-
-def evaluate_topic_adherence(
-    conversational_test_case: "ConversationalTestCase",
-    relevant_topics: Optional[list[str]] = None,
-    model: Optional[str] = None,
-    threshold: float = 0.5,
-) -> dict:
-    """Evaluate whether the agent stays on quant finance topics.
-
-    Design doc §9: Does agent stay on quant finance topics?
-
-    Args:
-        conversational_test_case: The ConversationalTestCase.
-        relevant_topics: List of relevant topic strings (defaults to QUANT_TUTOR_TOPICS).
-        model: LLM judge model.
-        threshold: Minimum passing score.
-
-    Returns:
-        Dict with score, reason, passed.
-    """
-    if not DEEPEVAL_AVAILABLE:
-        return {"score": 0.5, "reason": "deepeval not available", "passed": True}
-
-    topics = relevant_topics or QUANT_TUTOR_TOPICS
-
-    kwargs = {"relevant_topics": topics, "threshold": threshold}
-    kwargs["model"] = resolve_deepeval_model(model)
-
-    metric = TopicAdherenceMetric(**kwargs)
-
-    try:
-        metric.measure(conversational_test_case)
-        return {
-            "score": metric.score,
-            "reason": getattr(metric, "reason", ""),
-            "passed": metric.score >= threshold,
-        }
-    except Exception as e:
-        return {
-            "score": 0.5,
-            "reason": f"TopicAdherenceMetric error: {e}",
-            "passed": True,
-        }
 
 
 # ──────────────────────────────────────────────────────────────
@@ -504,262 +115,372 @@ def evaluate_topic_adherence(
 # ──────────────────────────────────────────────────────────────
 
 
-def _run_async(coro):
-    """Run an async coroutine from synchronous code, handling existing event loops."""
-    try:
-        loop = asyncio.get_running_loop()
-    except RuntimeError:
-        loop = None
-    if loop and loop.is_running():
-        nest_asyncio.apply()
-        return loop.run_until_complete(coro)
+async def _return_hard_zero(metric_name: str, reason: str) -> dict:
+    """Return a hard-zero result for a metric that requires missing data."""
+    return {
+        "score": 0.0,
+        "reason": f"{metric_name}: {reason} (hard zero)",
+        "passed": False,
+    }
+
+
+from evaluation.deepeval_metrics.async_utils import run_async as _run_async
+
+# ──────────────────────────────────────────────────────────────
+# Step Efficiency: 3-sub-dimension evaluation
+# ──────────────────────────────────────────────────────────────
+#
+# Sub-dimensions (Phase 2):
+#   Action Economy    (0.4) — step count ratio vs reference (programmatic);
+#                            hard zero (0.0) when no reference available
+#   Redundancy Avoid. (0.3) — detect wasted/repeated calls (LLM-judged)
+#   Logical Sequencing(0.3) — evaluate action order (LLM-judged)
+
+# Tools excluded from substantive step count — benign metadata reads
+# and text responses that don't represent analytical work.
+_NON_SUBSTANTIVE_TOOLS = frozenset({"get_environment_info"})
+
+
+def _count_substantive_steps(proxy_logs: list) -> int:
+    """Count substantive tool calls, excluding benign metadata reads."""
+    return sum(1 for log in proxy_logs if log.name not in _NON_SUBSTANTIVE_TOOLS)
+
+
+def _compute_action_economy(agent_steps: int, reference_steps: int) -> float:
+    """Compute Action Economy score from step count ratio.
+
+    Thresholds calibrated to 27% natural path variance (Amplifying.ai study):
+        ratio <= 1.3  →  1.0   (within natural variance)
+        ratio <= 1.6  →  0.75  (slightly above variance)
+        ratio <= 2.2  →  0.5   (noticeably more steps)
+        ratio <= 3.0  →  0.25  (significantly more steps)
+        ratio >  3.0  →  0.0   (excessively verbose)
+    """
+    if reference_steps <= 0:
+        return 0.5
+    ratio = agent_steps / reference_steps
+    if ratio <= 1.3:
+        return 1.0
+    elif ratio <= 1.6:
+        return 0.75
+    elif ratio <= 2.2:
+        return 0.5
+    elif ratio <= 3.0:
+        return 0.25
     else:
-        return asyncio.run(coro)
+        return 0.0
 
 
-async def _async_eval_tool_correctness(
-    task_description, actual_output, proxy_logs, expected_tool_names, model
-):
-    """Async wrapper for ToolCorrectness evaluation."""
-    try:
-        from evaluation.deepeval_metrics.mcp_metrics import (
-            create_tool_correctness_metric,
-            create_tool_test_case,
-        )
-
-        test_case = create_tool_test_case(
-            input_text=task_description,
-            actual_output=actual_output,
-            tools_called=[
-                {
-                    "name": log.name,
-                    "input_parameters": log.args,
-                    "output": log.result or "",
-                }
-                for log in proxy_logs
-            ],
-            expected_tools=[{"name": t} for t in expected_tool_names],
-        )
-        metric = create_tool_correctness_metric(threshold=0.5, model=model)
-        await metric.a_measure(test_case)
-        return {
-            "score": metric.score,
-            "reason": getattr(metric, "reason", ""),
-            "passed": metric.score >= 0.5,
-        }
-    except Exception as e:
-        from evaluation.deepeval_metrics.mcp_metrics import (
-            compute_tool_precision_recall,
-        )
-
-        tools_called_names = [log.name for log in proxy_logs]
-        metrics = compute_tool_precision_recall(
-            called_tools=tools_called_names,
-            expected_tools=expected_tool_names,
-            distractor_tools=[],
-        )
-        return {
-            "score": metrics["f1"],
-            "reason": f"Async eval failed ({e}), used manual computation",
-            "passed": metrics["f1"] >= 0.5,
-        }
+def _build_trace_summary_for_prompt(proxy_logs: list) -> str:
+    """Build a concise trace summary for inclusion in the LLM prompt."""
+    lines = []
+    for i, log in enumerate(proxy_logs, 1):
+        if log.name in _NON_SUBSTANTIVE_TOOLS:
+            continue
+        args_preview = _json.dumps(log.args, default=str)
+        if len(args_preview) > 200:
+            args_preview = args_preview[:200] + "..."
+        result_preview = log.result[:150] if log.result else "(no output)"
+        status = "OK" if log.success else "FAIL"
+        lines.append(f"  {i}. {log.name}({args_preview}) → [{status}] {result_preview}")
+    return "\n".join(lines) if lines else "  (no tool calls)"
 
 
-async def _async_eval_argument_correctness(
-    input_text, actual_output, proxy_logs, expected_tool_names, model, threshold=0.5
-):
-    """Async wrapper for ArgumentCorrectness evaluation."""
-    if not DEEPEVAL_AVAILABLE:
-        return {"score": 0.5, "reason": "deepeval not available", "passed": True}
-    test_case = LLMTestCase(
-        input=input_text,
-        actual_output=actual_output,
-        tools_called=_build_tool_calls(proxy_logs),
-        expected_tools=_build_expected_tools(expected_tool_names),
+def _build_step_efficiency_prompt(
+    task: str,
+    agent_trace: str,
+    *,
+    has_reference: bool,
+    ref_step_count: int,
+    ref_trace_summary: str,
+    agent_steps: int,
+    action_economy_precomputed: float | None,
+) -> str:
+    """Build the step efficiency evaluation prompt.
+
+    When reference is available and Action Economy is pre-computed,
+    the LLM only judges Redundancy Avoidance and Logical Sequencing.
+    When no reference, the LLM judges all three dimensions.
+    """
+    header = """You are evaluating the STEP EFFICIENCY of a tool-augmented tutoring agent.
+
+CONTEXT: This agent teaches quantitative finance using tools that fetch market data,
+execute code, compute indicators, create charts, and run backtests. Tool calls that
+serve teaching purposes (demonstrate with real data, verify code, compute metrics,
+create visualizations) are pedagogically valuable.
+
+SCORING SCALE: Use ONLY these values: {0.0, 0.25, 0.5, 0.75, 1.0}.
+When in doubt between two levels, select the LOWER score."""
+
+    task_section = f"\nTASK: {task}"
+
+    # Reference section (only when available)
+    ref_section = ""
+    if has_reference:
+        ref_section = f"""
+REFERENCE EXECUTION (expert baseline):
+- Substantive steps: {ref_step_count}
+- Trace:
+{ref_trace_summary}"""
+
+    agent_section = f"""
+AGENT EXECUTION:
+- Substantive steps: {agent_steps}
+- Trace:
+{agent_trace}"""
+
+    tool_tier_note = """
+NOTE ON TOOL TIERS:
+The agent had access to convenience tools (compute_indicator, run_backtest, etc.) that
+bundle multi-step operations into one call.
+- Using convenience tools is efficient and should be recognized positively.
+- Building equivalent functionality with shell_exec + file_write is equally valid.
+  Judge the step count relative to the approach taken, not against the shortcut."""
+
+    if action_economy_precomputed is not None:
+        # Reference available — LLM judges 2 dimensions only
+        ratio = agent_steps / ref_step_count if ref_step_count > 0 else 0
+        dimensions = f"""
+ACTION ECONOMY (pre-computed): {action_economy_precomputed} (ratio: {ratio:.2f})
+This score is already calculated. Do NOT re-evaluate it.
+
+Evaluate the following TWO dimensions:
+
+1. REDUNDANCY AVOIDANCE (0.0-1.0):
+   Red flags: Same tool called with identical arguments, fetching data never used,
+   re-computing values already obtained, calling tools after the answer is known.
+   Acceptable: Retrying after an error with different parameters, fetching different
+   data for comparison, progressive refinement.
+   - 1.0:  No redundant calls
+   - 0.75: Minor redundancy (1-2 repeated calls but with some purpose)
+   - 0.5:  Some redundancy (repeated calls or unused data fetches)
+   - 0.25: Significant redundancy
+   - 0.0:  Pervasive waste
+
+2. LOGICAL SEQUENCING (0.0-1.0):
+   Evaluate whether actions follow a logical data-dependency order.
+   Good: fetch data → compute indicator → analyze → visualize
+   Bad: visualize before data exists, compute before dependencies ready,
+   backtracking to fix ordering errors.
+   - 1.0:  Perfect logical flow
+   - 0.75: Minor sequencing issues (one action slightly out of order)
+   - 0.5:  Some out-of-order actions
+   - 0.25: Significant ordering problems
+   - 0.0:  Chaotic/random ordering
+
+Return ONLY a JSON object (no markdown, no extra text):
+{{"redundancy_avoidance": <float>, "logical_sequencing": <float>, "reason": "<brief explanation>"}}"""
+    else:
+        # No reference — LLM judges all 3 dimensions
+        dimensions = """
+Evaluate the following THREE dimensions:
+
+1. ACTION ECONOMY (0.0-1.0):
+   Given the task complexity, did the agent use a reasonable number of steps?
+   - 1.0:  Minimal steps, every call essential
+   - 0.75: Mostly efficient, 1-2 extra calls
+   - 0.5:  Moderate excess steps
+   - 0.25: Many unnecessary steps
+   - 0.0:  Excessively verbose
+
+2. REDUNDANCY AVOIDANCE (0.0-1.0):
+   Red flags: Same tool called with identical arguments, fetching data never used,
+   re-computing values already obtained, calling tools after the answer is known.
+   Acceptable: Retrying after an error with different parameters, fetching different
+   data for comparison, progressive refinement.
+   - 1.0:  No redundant calls
+   - 0.75: Minor redundancy (1-2 repeated calls but with some purpose)
+   - 0.5:  Some redundancy (repeated calls or unused data fetches)
+   - 0.25: Significant redundancy
+   - 0.0:  Pervasive waste
+
+3. LOGICAL SEQUENCING (0.0-1.0):
+   Evaluate whether actions follow a logical data-dependency order.
+   Good: fetch data → compute indicator → analyze → visualize
+   Bad: visualize before data exists, compute before dependencies ready,
+   backtracking to fix ordering errors.
+   - 1.0:  Perfect logical flow
+   - 0.75: Minor sequencing issues (one action slightly out of order)
+   - 0.5:  Some out-of-order actions
+   - 0.25: Significant ordering problems
+   - 0.0:  Chaotic/random ordering
+
+Return ONLY a JSON object (no markdown, no extra text):
+{{"action_economy": <float>, "redundancy_avoidance": <float>, "logical_sequencing": <float>, "reason": "<brief explanation>"}}"""
+
+    return (
+        header
+        + task_section
+        + ref_section
+        + agent_section
+        + tool_tier_note
+        + dimensions
     )
-    metric = ArgumentCorrectnessMetric(
-        threshold=threshold, model=resolve_deepeval_model(model)
-    )
-    try:
-        await metric.a_measure(test_case)
-        return {
-            "score": metric.score,
-            "reason": getattr(metric, "reason", ""),
-            "passed": metric.score >= threshold,
-        }
-    except Exception as e:
-        return {
-            "score": 0.5,
-            "reason": f"ArgumentCorrectnessMetric error: {e}",
-            "passed": True,
-        }
 
 
-async def _async_eval_mcp_use(
-    input_text,
-    actual_output,
-    proxy_logs,
-    core_tools,
-    distractor_tools,
-    model,
-    threshold=0.5,
-):
-    """Async wrapper for MCPUse evaluation."""
-    if not DEEPEVAL_AVAILABLE:
-        return {"score": 0.5, "reason": "deepeval not available", "passed": True}
-    test_case = LLMTestCase(
-        input=input_text,
-        actual_output=actual_output,
-        mcp_tools_called=_build_mcp_tool_calls(proxy_logs),
-        mcp_servers=_build_mcp_servers(core_tools, distractor_tools),
-    )
-    metric = MCPUseMetric(threshold=threshold, model=resolve_deepeval_model(model))
+def _extract_json_from_response(text: str) -> dict:
+    """Extract JSON object from LLM response, handling markdown fences."""
+    text = text.strip()
+    # Strip markdown code fences
+    if text.startswith("```"):
+        lines = text.split("\n")
+        # Remove first and last fence lines
+        lines = [ln for ln in lines if not ln.strip().startswith("```")]
+        text = "\n".join(lines).strip()
     try:
-        await metric.a_measure(test_case)
-        return {
-            "score": metric.score,
-            "reason": getattr(metric, "reason", ""),
-            "passed": metric.score >= threshold,
-        }
-    except Exception as e:
-        return {"score": 0.5, "reason": f"MCPUseMetric error: {e}", "passed": True}
+        return _json.loads(text)
+    except _json.JSONDecodeError:
+        # Try to find JSON object in the text
+        import re
+
+        match = re.search(r"\{[^{}]*\}", text, re.DOTALL)
+        if match:
+            try:
+                return _json.loads(match.group())
+            except _json.JSONDecodeError:
+                pass
+    return {}
 
 
 async def _async_eval_step_efficiency(
-    input_text, actual_output, proxy_logs, model, threshold=0.5
+    input_text,
+    actual_output,
+    proxy_logs,
+    model,
+    reference_trace=None,
+    threshold=0.5,
 ):
-    """Async wrapper for StepEfficiency evaluation."""
+    """Evaluate step efficiency with 3 sub-dimensions.
+
+    Uses direct LLM call (via GPTModel) instead of DeepEval's
+    StepEfficiencyMetric to support structured multi-score output.
+
+    Sub-dimensions:
+        Action Economy (0.4): programmatic when reference available
+        Redundancy Avoidance (0.3): LLM-judged
+        Logical Sequencing (0.3): LLM-judged
+    """
     if not DEEPEVAL_AVAILABLE:
         return {"score": 0.5, "reason": "deepeval not available", "passed": True}
-    test_case = LLMTestCase(
-        input=input_text,
-        actual_output=actual_output,
-        tools_called=_build_tool_calls(proxy_logs),
-    )
-    metric = StepEfficiencyMetric(
-        threshold=threshold, model=resolve_deepeval_model(model)
-    )
-    try:
-        await metric.a_measure(test_case)
-        return {
-            "score": metric.score,
-            "reason": getattr(metric, "reason", ""),
-            "passed": metric.score >= threshold,
-        }
-    except Exception as e:
-        return {
-            "score": 0.5,
-            "reason": f"StepEfficiencyMetric error: {e}",
-            "passed": True,
-        }
 
+    # Count substantive steps
+    agent_steps = _count_substantive_steps(proxy_logs)
 
-async def _async_eval_multi_turn_mcp(
-    conversational_test_case, core_tools, distractor_tools, model, threshold=0.5
-):
-    """Async wrapper for MultiTurnMCPUse evaluation."""
-    if not DEEPEVAL_AVAILABLE:
-        return {"score": 0.5, "reason": "deepeval not available", "passed": True}
-    if conversational_test_case.mcp_servers is None:
-        conversational_test_case.mcp_servers = _build_mcp_servers(
-            core_tools, distractor_tools
-        )
-    metric = MultiTurnMCPUseMetric(
-        threshold=threshold, model=resolve_deepeval_model(model)
+    # Reference info
+    has_reference = reference_trace is not None
+    ref_step_count = reference_trace.get("step_count", 0) if has_reference else 0
+    ref_trace_summary = ""
+    if has_reference:
+        # Use trace_summary from reference (list of step descriptions)
+        summary_lines = reference_trace.get("trace_summary", [])
+        if isinstance(summary_lines, list):
+            ref_trace_summary = "\n".join(
+                f"  {i+1}. {s}" for i, s in enumerate(summary_lines)
+            )
+        else:
+            ref_trace_summary = str(summary_lines)
+
+    # Compute Action Economy programmatically when reference available.
+    # Hard zero: without reference, Action Economy = 0.0 (not LLM-judged).
+    if has_reference and ref_step_count > 0:
+        action_economy = _compute_action_economy(agent_steps, ref_step_count)
+    else:
+        action_economy = 0.0
+
+    # Build prompt
+    agent_trace = _build_trace_summary_for_prompt(proxy_logs)
+    prompt = _build_step_efficiency_prompt(
+        task=input_text,
+        agent_trace=agent_trace,
+        has_reference=has_reference,
+        ref_step_count=ref_step_count,
+        ref_trace_summary=ref_trace_summary,
+        agent_steps=agent_steps,
+        action_economy_precomputed=action_economy,
     )
+
+    # Get LLM response via GPTModel
     try:
-        await metric.a_measure(conversational_test_case)
-        return {
-            "score": metric.score,
-            "reason": getattr(metric, "reason", ""),
-            "passed": metric.score >= threshold,
-        }
-    except Exception as e:
-        return {
-            "score": 0.5,
-            "reason": f"MultiTurnMCPUseMetric error: {e}",
-            "passed": True,
-        }
+        model_obj = resolve_deepeval_model(model)
+        if isinstance(model_obj, str):
+            model_obj = GPTModel(model=model_obj)
+        response_text, call_cost = await model_obj.a_generate(prompt)
+        result = _extract_json_from_response(response_text)
+    except Exception:
+        raise  # propagate to abort handler
+
+    # Parse sub-scores (clamp to 5-point ordinal)
+    def _clamp_ordinal(val, default=0.5):
+        """Snap to nearest 5-point ordinal value."""
+        try:
+            v = float(val)
+        except (TypeError, ValueError):
+            return default
+        ordinals = [0.0, 0.25, 0.5, 0.75, 1.0]
+        return min(ordinals, key=lambda x: abs(x - v))
+
+    redundancy = _clamp_ordinal(result.get("redundancy_avoidance", 0.5))
+    sequencing = _clamp_ordinal(result.get("logical_sequencing", 0.5))
+
+    # Action Economy is always pre-computed: programmatic from reference,
+    # or hard zero (0.0) when no reference is available.
+    overall = 0.4 * action_economy + 0.3 * redundancy + 0.3 * sequencing
+
+    return {
+        "score": round(overall, 4),
+        "reason": result.get("reason", ""),
+        "passed": overall >= threshold,
+        "sub_scores": {
+            "action_economy": action_economy,
+            "redundancy_avoidance": redundancy,
+            "logical_sequencing": sequencing,
+        },
+        "agent_substantive_steps": agent_steps,
+        "reference_step_count": ref_step_count if has_reference else None,
+        "_eval_cost": float(call_cost) if call_cost else 0.0,
+    }
 
 
 async def _async_eval_role_adherence(
     conversational_test_case,
     model,
-    chatbot_role="quantitative finance tutor",
     threshold=0.5,
 ):
-    """Async wrapper for RoleAdherence evaluation."""
-    if not DEEPEVAL_AVAILABLE:
-        return {"score": 0.5, "reason": "deepeval not available", "passed": True}
-    if conversational_test_case.chatbot_role is None:
-        conversational_test_case.chatbot_role = chatbot_role
-    metric = RoleAdherenceMetric(
-        threshold=threshold, model=resolve_deepeval_model(model)
-    )
-    try:
-        await metric.a_measure(conversational_test_case)
-        return {
-            "score": metric.score,
-            "reason": getattr(metric, "reason", ""),
-            "passed": metric.score >= threshold,
-        }
-    except Exception as e:
-        return {
-            "score": 0.5,
-            "reason": f"RoleAdherenceMetric error: {e}",
-            "passed": True,
-        }
+    """Evaluate role adherence via custom GPTModel direct call.
 
+    Replaces DeepEval's RoleAdherenceMetric whose wizard-persona prompt
+    caused gpt-5.2 to give 0.0 on 6/11 D-tasks.
+    """
+    from evaluation.deepeval_metrics.custom_conv_metrics import eval_role_adherence
 
-async def _async_eval_knowledge_retention(
-    conversational_test_case, model, threshold=0.5
-):
-    """Async wrapper for KnowledgeRetention evaluation."""
-    if not DEEPEVAL_AVAILABLE:
-        return {"score": 0.5, "reason": "deepeval not available", "passed": True}
-    metric = KnowledgeRetentionMetric(
-        threshold=threshold, model=resolve_deepeval_model(model)
-    )
-    try:
-        await metric.a_measure(conversational_test_case)
-        return {
-            "score": metric.score,
-            "reason": getattr(metric, "reason", ""),
-            "passed": metric.score >= threshold,
-        }
-    except Exception as e:
-        return {
-            "score": 0.5,
-            "reason": f"KnowledgeRetentionMetric error: {e}",
-            "passed": True,
-        }
+    turns = [
+        {"role": t.role, "content": t.content} for t in conversational_test_case.turns
+    ]
+    return await eval_role_adherence(turns, model, threshold=threshold)
 
 
 async def _async_eval_topic_adherence(
-    conversational_test_case, model, relevant_topics=None, threshold=0.5
+    conversational_test_case,
+    model,
+    task_description="",
+    threshold=0.5,
 ):
-    """Async wrapper for TopicAdherence evaluation."""
-    if not DEEPEVAL_AVAILABLE:
-        return {"score": 0.5, "reason": "deepeval not available", "passed": True}
-    topics = relevant_topics or QUANT_TUTOR_TOPICS
-    metric = TopicAdherenceMetric(
-        relevant_topics=topics,
+    """Evaluate topic adherence via custom GPTModel direct call.
+
+    Replaces DeepEval's TopicAdherenceMetric whose QA-pair extraction
+    mechanism failed on tool-use conversations (sonnet fixed at 0.5).
+    """
+    from evaluation.deepeval_metrics.custom_conv_metrics import eval_topic_adherence
+
+    turns = [
+        {"role": t.role, "content": t.content} for t in conversational_test_case.turns
+    ]
+    return await eval_topic_adherence(
+        turns,
+        model,
+        task_description=task_description,
         threshold=threshold,
-        model=resolve_deepeval_model(model),
     )
-    try:
-        await metric.a_measure(conversational_test_case)
-        return {
-            "score": metric.score,
-            "reason": getattr(metric, "reason", ""),
-            "passed": metric.score >= threshold,
-        }
-    except Exception as e:
-        return {
-            "score": 0.5,
-            "reason": f"TopicAdherenceMetric error: {e}",
-            "passed": True,
-        }
 
 
 # ──────────────────────────────────────────────────────────────
@@ -767,128 +488,394 @@ async def _async_eval_topic_adherence(
 # ──────────────────────────────────────────────────────────────
 
 
-def evaluate_all_process_metrics(
+def _build_process_tasks_for_model(
+    single_model,
     task_description: str,
     actual_output: str,
     proxy_logs: list,
-    expected_tool_names: list[str],
-    core_tools: list[str],
-    distractor_tools: list[str],
-    conversational_test_case=None,
-    model: Optional[str] = None,
-) -> dict:
-    """Run all process-level DeepEval metrics in parallel and return consolidated results.
-
-    This is the main entry point called from the orchestrator's _evaluate_task().
-    All metrics are run concurrently via asyncio.gather + a_measure() for speed.
-
-    Args:
-        task_description: Text description of the task (used as LLMTestCase input).
-        actual_output: Agent's combined text output.
-        proxy_logs: Tool call logs from MCPProxy (list of ToolCallLog objects).
-        expected_tool_names: Expected tool names from task ground truth.
-        core_tools: Core tool names from task environment.
-        distractor_tools: Distractor tool names from task environment.
-        conversational_test_case: Pre-built ConversationalTestCase (for multi-turn metrics).
-        model: LLM judge model.
+    category: str,
+    conversational_test_case,
+    is_adversarial: bool,
+    reference_trace: Optional[dict] = None,
+    task_requires_code: bool = False,
+) -> dict[str, object]:
+    """Build async metric coroutines for a single model.
 
     Returns:
-        Dict with per-metric scores and an aggregate process score.
+        Dict mapping metric_name -> coroutine.
     """
-    # Ensure mcp_servers / chatbot_role are set before parallel evaluation
-    # (these are one-time writes that must happen before concurrent reads)
-    if conversational_test_case is not None:
-        if conversational_test_case.mcp_servers is None:
-            conversational_test_case.mcp_servers = _build_mcp_servers(
-                core_tools, distractor_tools
-            )
-        if conversational_test_case.chatbot_role is None:
-            conversational_test_case.chatbot_role = "quantitative finance tutor"
+    from evaluation.deepeval_metrics.code_process import (
+        async_eval_code_process,
+    )
+    from evaluation.deepeval_metrics.process_reasonableness import (
+        async_eval_process_alignment,
+        async_eval_process_reasonableness,
+    )
 
-    # Build all async tasks
-    tasks = {}
+    tasks: dict[str, object] = {}
 
-    # --- Single-turn metrics (always run) ---
-    tasks["tool_correctness"] = _async_eval_tool_correctness(
-        task_description,
-        actual_output,
-        proxy_logs,
-        expected_tool_names,
-        model,
-    )
-    tasks["argument_correctness"] = _async_eval_argument_correctness(
-        task_description,
-        actual_output,
-        proxy_logs,
-        expected_tool_names,
-        model,
-    )
-    tasks["mcp_use"] = _async_eval_mcp_use(
-        task_description,
-        actual_output,
-        proxy_logs,
-        core_tools,
-        distractor_tools,
-        model,
-    )
+    # Step efficiency (Phase 2) — always evaluated
     tasks["step_efficiency"] = _async_eval_step_efficiency(
         task_description,
         actual_output,
         proxy_logs,
-        model,
+        single_model,
+        reference_trace=reference_trace,
     )
 
-    # --- Multi-turn metrics (only if conversational_test_case is available) ---
-    if conversational_test_case is not None:
-        tasks["multi_turn_mcp"] = _async_eval_multi_turn_mcp(
-            conversational_test_case,
-            core_tools,
-            distractor_tools,
-            model,
+    # Process reasonableness (Phase 4) — always evaluated (tool-agnostic)
+    # For code tasks, Error Handling is narrowed to non-code errors
+    # (code-specific debugging evaluated separately by Code Process).
+    _code_categories = ("implementation", "debug", "end_to_end", "data_analysis")
+    tasks["process_reasonableness"] = async_eval_process_reasonableness(
+        task_description=task_description,
+        category=category,
+        proxy_logs=proxy_logs,
+        model=single_model,
+        is_code_task=(category in _code_categories),
+    )
+
+    # Process alignment (Phase 4) — skip for pure-refusal adversarial only.
+    # Educational adversarial (requires_code=true) may have reference traces.
+    # Hard zero: score 0.0 when no reference (not skipped from aggregate).
+    if not (is_adversarial and not task_requires_code):
+        if reference_trace is not None:
+            tasks["process_alignment"] = async_eval_process_alignment(
+                task_description=task_description,
+                category=category,
+                proxy_logs=proxy_logs,
+                reference_trace=reference_trace,
+                model=single_model,
+            )
+        else:
+            tasks["process_alignment"] = _return_hard_zero(
+                "process_alignment", "no reference trace available"
+            )
+
+    # Code process (Phase 5) — auto-detects applicability from logs;
+    # returns score=None when no code activity, excluded from QP aggregate.
+    # Skip for conceptual_qa and pure-refusal adversarial (requires_code=false).
+    # Educational adversarial (requires_code=true) is allowed through.
+    if category not in ("conceptual_qa",) and not (
+        is_adversarial and not task_requires_code
+    ):
+        tasks["code_process"] = async_eval_code_process(
+            task_description=task_description,
+            proxy_logs=proxy_logs,
+            actual_output=actual_output,
+            model=single_model,
         )
+
+    # Conversational metrics — custom GPTModel direct-call (Phase 7)
+    if conversational_test_case is not None:
         tasks["role_adherence"] = _async_eval_role_adherence(
             conversational_test_case,
-            model,
-        )
-        tasks["knowledge_retention"] = _async_eval_knowledge_retention(
-            conversational_test_case,
-            model,
+            single_model,
         )
         tasks["topic_adherence"] = _async_eval_topic_adherence(
             conversational_test_case,
-            model,
+            single_model,
+            task_description=task_description,
         )
 
-    # Run all metrics in parallel
-    metric_count = len(tasks)
-    print(f"    Running {metric_count} process metrics in parallel...")
+    return tasks
 
-    keys = list(tasks.keys())
-    coros = list(tasks.values())
+
+def evaluate_all_process_metrics(
+    task_description: str,
+    actual_output: str,
+    proxy_logs: list,
+    category: str = "",
+    conversational_test_case=None,
+    model=None,
+    reference_trace: Optional[dict] = None,
+    is_adversarial: bool = False,
+    tool_usage_result: Optional[dict] = None,
+    task_requires_code: bool = False,
+    abort_event: Optional[threading.Event] = None,
+) -> dict:
+    """Run all process-level metrics in parallel and return consolidated results.
+
+    Phase 4: Replaced tool-bound metrics with tool-agnostic process_reasonableness
+    and process_alignment. Multi-model support is preserved.
+
+    Args:
+        task_description: Text description of the task.
+        actual_output: Agent's combined text output.
+        proxy_logs: Tool call logs from MCPProxy (list of ToolCallLog objects).
+        category: Task category (e.g. "implementation", "data_analysis").
+        conversational_test_case: Clean ConversationalTestCase (for role_adherence,
+            topic_adherence).
+        model: LLM judge model — single string, list of strings, or None.
+        reference_trace: Reference execution data (from ReferenceStore) for step
+            efficiency and process alignment anchoring.
+        is_adversarial: Whether this is an adversarial task (skips alignment).
+        tool_usage_result: Pre-computed tool usage score (from tool_usage.py).
+        task_requires_code: Whether the task expects code output (allows
+            code_process evaluation for educational adversarial tasks).
+
+    Returns:
+        Dict with per-metric scores (cross-model average), an aggregate
+        process score, and ``_per_model`` breakdown when multi-model.
+    """
+    import copy
+    import time as _time
+
+    from config.llm_config import EVAL_DEFAULT_MODELS
+
+    # ── Resolve model list ──
+    multi_model = False
+    if isinstance(model, list) and len(model) > 0:
+        eval_models = model
+        multi_model = True
+    elif model is None:
+        eval_models = list(EVAL_DEFAULT_MODELS)
+        multi_model = len(eval_models) > 1
+    else:
+        eval_models = [model]
+
+    model_names = [m or "default" for m in eval_models]
+
+    # ── Build tasks for ALL models ──
+    # Each model gets its own deep-copied test cases to avoid state
+    # conflicts when DeepEval metrics mutate internal fields concurrently.
+    # flat_tasks: list of (model_name, metric_name, coroutine)
+    flat_tasks: list[tuple[str, str, object]] = []
+    for model_idx, single_model in enumerate(eval_models):
+        mname = model_names[model_idx]
+        # Deep copy test cases per model so concurrent a_measure() calls
+        # don't interfere with each other
+        model_conv_tc = (
+            copy.deepcopy(conversational_test_case)
+            if conversational_test_case is not None
+            else None
+        )
+        tasks_for_model = _build_process_tasks_for_model(
+            single_model=single_model,
+            task_description=task_description,
+            actual_output=actual_output,
+            proxy_logs=proxy_logs,
+            category=category,
+            conversational_test_case=model_conv_tc,
+            is_adversarial=is_adversarial,
+            reference_trace=reference_trace,
+            task_requires_code=task_requires_code,
+        )
+        for metric_name, coro in tasks_for_model.items():
+            flat_tasks.append((mname, metric_name, coro))
+
+    total_calls = len(flat_tasks)
+    print(
+        f"    Running {total_calls} process metric calls "
+        f"({len(eval_models)} model(s) × metrics) in parallel "
+        f"(concurrency={_CONCURRENCY})..."
+    )
+    t0 = _time.time()
+
+    coros = [coro for _, _, coro in flat_tasks]
+
+    # abort_event is a threading.Event shared with the orchestrator.
+    # When set (by this evaluator or another parallel thread), queued
+    # coroutines are skipped to stop wasting tokens.
+    _abort = abort_event if abort_event is not None else threading.Event()
+    _first_error: list[Exception] = []  # mutable container for nonlocal capture
 
     async def _run_all():
-        return await asyncio.gather(*coros, return_exceptions=True)
+        sem = asyncio.Semaphore(_CONCURRENCY)
+
+        async def _guarded(c):
+            if _abort.is_set():
+                return _ABORT_SENTINEL
+            async with sem:
+                if _abort.is_set():
+                    return _ABORT_SENTINEL
+                try:
+                    return await c
+                except Exception as e:
+                    _abort.set()
+                    if not _first_error:
+                        _first_error.append(e)
+                    return _ABORT_SENTINEL
+
+        return await asyncio.gather(
+            *[_guarded(c) for c in coros], return_exceptions=True
+        )
 
     raw_results = _run_async(_run_all())
+    elapsed = _time.time() - t0
 
-    # Collect results (exceptions become fallback scores)
-    results = {}
-    for key, raw in zip(keys, raw_results):
-        if isinstance(raw, Exception):
-            results[key] = {
-                "score": 0.5,
-                "reason": f"{key} error: {raw}",
-                "passed": True,
-            }
+    aborted = sum(1 for r in raw_results if r is _ABORT_SENTINEL)
+    if aborted:
+        print(
+            f"    Process metrics: {total_calls - aborted}/{total_calls} completed, "
+            f"{aborted} aborted in {elapsed:.1f}s"
+        )
+    else:
+        print(f"    Completed {total_calls} process metric calls in {elapsed:.1f}s")
+
+    # If any coroutine failed, propagate the error to the thread level
+    if _first_error:
+        raise _first_error[0]
+
+    # ── Collect per-model results ──
+    # model_results[model_name][metric_name] = {score, reason, ...}
+    model_results: dict[str, dict[str, dict]] = {mname: {} for mname in model_names}
+
+    for i, (mname, metric_name, _) in enumerate(flat_tasks):
+        raw = raw_results[i]
+        if raw is _ABORT_SENTINEL or isinstance(raw, Exception):
+            # Should not reach here — errors are propagated above
+            raise RuntimeError(f"Unexpected abort/error in {metric_name}")
         else:
-            results[key] = raw
+            model_results[mname][metric_name] = raw
 
-    # Compute aggregate process score
-    all_scores = [
-        v["score"] for v in results.values() if isinstance(v, dict) and "score" in v
-    ]
-    results["aggregate_process_score"] = round(
-        sum(all_scores) / len(all_scores) if all_scores else 0.5, 4
-    )
+    # ── Determine metric names (from first model) ──
+    metric_names = list(model_results[model_names[0]].keys())
+
+    # ── Cross-model average per metric ──
+    results: dict = {}
+    for metric_name in metric_names:
+        scores_across_models = []
+        for mname in model_names:
+            r = model_results[mname].get(metric_name, {})
+            s = r.get("score")
+            if s is not None:
+                scores_across_models.append(s)
+        if scores_across_models:
+            avg_score = round(sum(scores_across_models) / len(scores_across_models), 4)
+        else:
+            avg_score = None
+        # Use the first model's result as base, override score with average
+        base = dict(model_results[model_names[0]].get(metric_name, {}))
+        base["score"] = avg_score
+        # Average sub_scores across models (if present)
+        first_sub = base.get("sub_scores")
+        if isinstance(first_sub, dict) and multi_model:
+            avg_sub: dict[str, float | None] = {}
+            for sub_key in first_sub:
+                sub_vals = []
+                for mname in model_names:
+                    ms = model_results[mname].get(metric_name, {})
+                    sv = (ms.get("sub_scores") or {}).get(sub_key)
+                    if sv is not None:
+                        sub_vals.append(sv)
+                avg_sub[sub_key] = (
+                    round(sum(sub_vals) / len(sub_vals), 4) if sub_vals else None
+                )
+            base["sub_scores"] = avg_sub
+        results[metric_name] = base
+
+    # ── Log per-metric scores ──
+    for metric_name in metric_names:
+        r = results.get(metric_name, {})
+        score = r.get("score", "?")
+        reason = r.get("reason", "")
+        reason_lower = reason.lower() if isinstance(reason, str) else ""
+        is_fallback = reason_lower.startswith(f"{metric_name} error:") or (
+            "not available" in reason_lower and len(reason_lower) < 60
+        )
+        tag = " [FALLBACK]" if is_fallback else ""
+        # Show per-model breakdown inline
+        per_model_str = ""
+        if multi_model:
+            parts = []
+            for mname in model_names:
+                ms = model_results[mname].get(metric_name, {}).get("score", "?")
+                short_name = mname.split("/")[-1] if "/" in mname else mname
+                parts.append(f"{short_name}={ms}")
+            per_model_str = f"  ({', '.join(parts)})"
+        print(f"      {metric_name}: {score}{tag}{per_model_str}")
+
+    # ── Inject pre-computed tool_usage score ──
+    if tool_usage_result is not None:
+        results["tool_usage"] = tool_usage_result
+        tu_score = tool_usage_result.get("score", "?")
+        print(f"      tool_usage: {tu_score}")
+
+    # ── Compute weighted aggregate process score ──
+    available_dims: dict[str, float] = {}
+    for dim, weight in _QP_DIMENSION_WEIGHTS.items():
+        v = results.get(dim)
+        if (
+            isinstance(v, dict)
+            and v.get("score") is not None
+            and not v.get("skipped", False)
+        ):
+            available_dims[dim] = v["score"]
+
+    if available_dims:
+        total_weight = sum(_QP_DIMENSION_WEIGHTS[d] for d in available_dims)
+        aggregate = sum(
+            _QP_DIMENSION_WEIGHTS[d] * available_dims[d] / total_weight
+            for d in available_dims
+        )
+    else:
+        aggregate = 0.5
+
+    results["aggregate_process_score"] = round(aggregate, 4)
+    print(f"      aggregate_process_score: {results['aggregate_process_score']}")
+
+    # ── Per-model aggregate breakdown ──
+    if multi_model:
+        per_model_agg: dict[str, dict] = {}
+        for mname in model_names:
+            m_avail: dict[str, float] = {}
+            for dim, weight in _QP_DIMENSION_WEIGHTS.items():
+                # tool_usage is model-independent — use the same score
+                if dim == "tool_usage" and tool_usage_result is not None:
+                    tu_s = tool_usage_result.get("score")
+                    if tu_s is not None:
+                        m_avail[dim] = tu_s
+                    continue
+                v = model_results[mname].get(dim, {})
+                if (
+                    isinstance(v, dict)
+                    and v.get("score") is not None
+                    and not v.get("skipped", False)
+                ):
+                    m_avail[dim] = v["score"]
+            if m_avail:
+                m_total_w = sum(_QP_DIMENSION_WEIGHTS[d] for d in m_avail)
+                m_agg = sum(
+                    _QP_DIMENSION_WEIGHTS[d] * m_avail[d] / m_total_w for d in m_avail
+                )
+            else:
+                m_agg = 0.5
+            per_model_agg[mname] = {
+                "aggregate_process_score": round(m_agg, 4),
+                **{
+                    k: v.get("score")
+                    for k, v in model_results[mname].items()
+                    if isinstance(v, dict) and not k.startswith("_")
+                },
+                "_sub_scores": {
+                    k: v.get("sub_scores")
+                    for k, v in model_results[mname].items()
+                    if isinstance(v, dict) and isinstance(v.get("sub_scores"), dict)
+                },
+            }
+        results["_per_model"] = per_model_agg
+        print("      Per-model aggregate process scores:")
+        for mname in model_names:
+            agg = per_model_agg[mname]["aggregate_process_score"]
+            print(f"        {mname}: {agg}")
+
+    if is_adversarial and not task_requires_code:
+        print(
+            "      (pure-refusal adversarial: process_alignment + code_process skipped)"
+        )
+
+    # ── Aggregate eval cost from all metric results ──
+    total_eval_cost = 0.0
+    cost_by_model: dict[str, float] = {}
+    for mname in model_names:
+        m_cost = 0.0
+        for metric_name, r in model_results[mname].items():
+            if isinstance(r, dict):
+                m_cost += r.get("_eval_cost", 0.0)
+        cost_by_model[mname] = round(m_cost, 6)
+        total_eval_cost += m_cost
+    results["_eval_cost"] = total_eval_cost
+    results["_eval_cost_by_model"] = cost_by_model
 
     return results

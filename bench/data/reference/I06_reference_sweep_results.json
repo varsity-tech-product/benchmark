@@ -1,0 +1,19 @@
+{
+  "task_id": "I06",
+  "type": "parameter_sweep",
+  "algorithm": "I06MultiSignal",
+  "start_date": "2023-01-01",
+  "end_date": "2023-12-31",
+  "generated_at": null,
+  "status": "placeholder",
+  "note": "This file contains placeholder data for parameter sweep results. Run generate_lean_reference.py --task I06 with sweep options to populate when LEAN infrastructure is live.",
+  "sweep_parameters": {
+    "trend_weight": {"min": 0.2, "max": 0.6, "step": 0.1},
+    "reversion_weight": {"min": 0.1, "max": 0.5, "step": 0.1},
+    "carry_weight": {"min": 0.1, "max": 0.5, "step": 0.1},
+    "constraint": "weights must sum to 1.0"
+  },
+  "sweep_results": [],
+  "best_configuration": null,
+  "total_configurations_tested": 0
+}

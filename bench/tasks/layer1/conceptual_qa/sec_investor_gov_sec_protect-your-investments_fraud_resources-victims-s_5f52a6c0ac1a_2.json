@@ -4,6 +4,7 @@
   "difficulty": "medium",
   "category": "conceptual_qa",
   "task_type": "single_turn",
+  "requires_tool": false,
   "description": "What tips should I follow if I'm using social sentiment investing tools for my investment decisions?",
   "context": null,
   "reference_answer": "If you decide to use social sentiment investing tools as part of your investment research, please remember the following tips:\n\nDO NOT RELY SOLELY on social sentiment investing tools to make investment decisions. Carefully reviewpublicly disclosed company information, and consider reviewing other types of investment analysis, including fundamental value metrics.\n\nRead all the disclosures, disclaimers, and background information provided by a social sentiment investing tool, including how the tool collects and analyzes social media data, and any risks or conflict of interests (for example, incentives from issuers or third-parties to promote a particular security).\n\nKnow yourtime horizonfor investing. Information from social sentiment investing tools is generally short-term in nature (i.e., it focuses on events that may have an immediate impact on investments).\n\nTrack the performance of any investment decisions made using social sentiment investment tools. If you use information from a social sentiment tool to make decisions about buying or selling individual stocks or funds, remember to monitor their investment performance against major market or sector indices.\n\nCreate and follow a long-term financial plan. Do not let short-term emotions about investments disrupt your long-term financial objectives.\n\nTo receive the latest Investor Alerts and other important investor information sign up forThe Alert Investornewsletter.",
@@ -12,20 +13,5 @@
   "tags": [
     "regulatory",
     "investor-education"
-  ],
-  "persona_ids": [],
-  "student_openings": {},
-  "environment": null,
-  "ground_truth": {
-    "expected_outcome": "If you decide to use social sentiment investing tools as part of your investment research, please remember the following tips:\n\nDO NOT RELY SOLELY on social sentiment investing tools to make investment decisions. Carefully reviewpublicly disclosed company information, and consider reviewing other types of investment analysis, including fundamental value metrics.\n\nRead all the disclosures, disclaimers, and background information provided by a social sentiment investing tool, including how the tool collects and analyzes social media data, and any risks or conflict of interests (for example, incentives from issuers or third-parties to promote a particular security).\n\nKnow yourtime horizonfor investing. Information from social sentiment investing tools is generally short-term in nature (i.e., it focuses on events that may have an immediate impact on investments).\n\nTrack the performance of any investment decisions made using social sentiment investment tools. If you use information from a social sentiment tool to make decisions about buying or selling individual stocks or funds, remember to monitor their investment performance against major market or sector indices.\n\nCreate and follow a long-term financial plan. Do not let short-term emotions about investments disrupt your long-term financial objectives.\n\nTo receive the latest Investor Alerts and other important investor information sign up forThe Alert Investornewsletter.",
-    "required_capabilities": [],
-    "expected_mcp_tools": [],
-    "quant_validation": null,
-    "bug_description": null,
-    "expected_fix": null
-  },
-  "requires_code": false,
-  "sample_code": null,
-  "max_turns": 30,
-  "timeout_minutes": 15
+  ]
 }

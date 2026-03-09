@@ -1,90 +1,116 @@
-"""Evaluation script for I01: Implement SMA in pandas."""
+"""Evaluation script for I01: Implement SMA trend filter on LEAN (single symbol)."""
 
 import json
 import os
-import re
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _implementation_check import (
+    collect_artifact_text,
+    check_csharp_patterns,
+    collect_lean_results,
+    compute_behavioral_score,
+    compute_trade_log_score,
+    has_any,
+    has_regex,
+    load_agent_trades,
+    load_reference_trades,
+    match_trades,
+)
+from _data_source_check import verify_data_source
 
 
 def evaluate(
-    workspace_path: str, tool_logs: list = None, conversation: list = None
+    workspace_path: str,
+    tool_logs: list = None,
+    conversation: list = None,
+    *,
+    data_files: list[str] = None,
 ) -> dict:
-    """Evaluate whether the agent helped implement a correct SMA calculation.
+    """Evaluate I01 SMA implementation on LEAN.
 
-    Args:
-        workspace_path: Path to the agent's workspace directory.
-        tool_logs: List of dicts recording each MCP tool call.
-        conversation: List of {role, content} dicts from the conversation.
-
-    Returns:
-        Dict with boolean metrics and a float score in [0, 1].
+    Checks: backtest completion, trade log produced, behavioral equivalence
+    (signal agreement + position overlap + performance + trade similarity),
+    C# code patterns (LEAN API usage), and SMA indicator usage.
     """
     results = {
-        "sma_implemented_correctly": False,
-        "code_runs_without_error": False,
-        "handles_nan_values": False,
+        "backtest_completed": False,
+        "trade_log_produced": False,
+        "signal_agreement": False,
+        "position_overlap": False,
+        "performance_match": False,
+        "trade_count_match": False,
+        "code_patterns": False,
+        "sma_indicator_used": False,
         "score": 0.0,
     }
 
-    # Check workspace for implementation files
-    for fname in os.listdir(workspace_path) if os.path.isdir(workspace_path) else []:
-        fpath = os.path.join(workspace_path, fname)
-        if fname.endswith(".py"):
-            try:
-                with open(fpath) as f:
-                    code = f.read()
-                # Check for rolling().mean() pattern — canonical SMA implementation
-                if re.search(r"\.rolling\(.*?\)\.mean\(\)", code):
-                    results["sma_implemented_correctly"] = True
-                # Check for NaN handling (dropna, fillna, isna, notna, skipna)
-                if re.search(r"(dropna|fillna|isna|notna|skipna|\.iloc\[)", code):
-                    results["handles_nan_values"] = True
-            except (IOError, UnicodeDecodeError):
-                pass
+    artifact_text = collect_artifact_text(workspace_path, tool_logs)
 
-    # Check tool logs for successful execution
-    if tool_logs:
-        for log in tool_logs:
-            if log.get("name") == "shell_exec":
-                output = str(log.get("result", ""))
-                # Check if code ran without error
-                if (
-                    log.get("success", False)
-                    and "error" not in output.lower().split("traceback")[0]
-                    if "traceback" not in output.lower()
-                    else False
-                ):
-                    results["code_runs_without_error"] = True
-                # Alternatively, check for successful output patterns
-                if re.search(r"(SMA|sma|moving.?average)", output, re.IGNORECASE):
-                    results["code_runs_without_error"] = True
+    # ── Backtest completion ──
+    lean_results = collect_lean_results(workspace_path)
+    if lean_results is not None:
+        results["backtest_completed"] = True
+    elif has_any(artifact_text, ["algorithm completed", "total trades", "backtest complete", "i01 complete"]):
+        results["backtest_completed"] = True
 
-                # Check for rolling implementation in executed code
-                cmd = str(log.get("input_args", {}).get("command", ""))
-                if re.search(r"\.rolling\(.*?\)\.mean\(\)", cmd):
-                    results["sma_implemented_correctly"] = True
+    # ── Trade log ──
+    agent_trades = load_agent_trades(workspace_path)
+    if agent_trades:
+        results["trade_log_produced"] = True
 
-                # Check for NaN awareness in output or code
-                if re.search(r"(NaN|nan|null|missing)", output):
-                    results["handles_nan_values"] = True
+    # ── Behavioral scoring ──
+    behavioral = compute_behavioral_score("I01", workspace_path, resolution="daily")
+    results["signal_agreement"] = behavioral.signal_score >= 0.60
+    results["position_overlap"] = behavioral.position_score >= 0.60
+    results["performance_match"] = behavioral.performance_score >= 0.50
+    results["trade_count_match"] = behavioral.trade_score >= 0.40
 
-    # If SMA is implemented and code runs, infer NaN handling from rolling()
-    # since pandas rolling().mean() naturally produces NaN for the first (window-1) rows
-    if results["sma_implemented_correctly"] and results["code_runs_without_error"]:
-        results["handles_nan_values"] = True
+    # ── Code patterns (LEAN API usage) ──
+    expected_patterns = ["AddCryptoFuture", "SMA(", "SetWarmUp", "IsWarmingUp"]
+    cs_matches = check_csharp_patterns(workspace_path, expected_patterns)
+    results["code_patterns"] = sum(cs_matches.values()) >= 3
 
+    # ── SMA indicator specifically used ──
+    if cs_matches.get("SMA(", False):
+        results["sma_indicator_used"] = True
+    elif has_regex(artifact_text, [r"sma\s*\(", r"simplemovingaverage"]):
+        results["sma_indicator_used"] = True
+
+    # ── Scoring ──
+    _checklist = [
+        {"item": "backtest_completed",  "weight": 0.05, "passed": results["backtest_completed"]},
+        {"item": "trade_log_produced",  "weight": 0.05, "passed": results["trade_log_produced"]},
+        {"item": "behavioral_score",    "weight": 0.60, "score": behavioral.composite_score},
+        {"item": "code_patterns",       "weight": 0.10, "passed": results["code_patterns"]},
+        {"item": "sma_indicator_used",  "weight": 0.10, "passed": results["sma_indicator_used"]},
+    ]
     score = sum(
-        [
-            0.5 if results["sma_implemented_correctly"] else 0,
-            0.3 if results["code_runs_without_error"] else 0,
-            0.2 if results["handles_nan_values"] else 0,
-        ]
+        c["weight"] * c.get("score", 1.0 if c.get("passed") else 0.0)
+        for c in _checklist
     )
+
+    # ── Gates ──
+    if not results["backtest_completed"]:
+        score = min(score, 0.10)
+    if not results["trade_log_produced"]:
+        score = min(score, 0.15)
+
+    # ── Data source verification ──
+    if data_files:
+        ds = verify_data_source(tool_logs or [], data_files)
+        results["data_source_verified"] = ds["verified"]
+        results["data_source_fraction"] = ds["fraction"]
+        if not ds["verified"]:
+            score *= max(0.25, ds["fraction"])
+
+    results["_checklist"] = _checklist
+    results["behavioral_composite"] = round(behavioral.composite_score, 4)
+    results["behavioral_layers"] = behavioral.layers_available
     results["score"] = round(score, 2)
     return results
 
 
 if __name__ == "__main__":
-    import sys
-
     workspace = sys.argv[1] if len(sys.argv) > 1 else "/workspace"
     print(json.dumps(evaluate(workspace), indent=2))

@@ -1,44 +1,63 @@
 {
   "task_id": "I01_implement_sma",
-  "version": "1.0",
+  "version": "2.3",
   "difficulty": "easy",
   "category": "implementation",
   "task_type": "multi_turn",
-  "description": "Guide a student to implement a Simple Moving Average (SMA) calculation in pandas, understand the rolling window concept, and verify correctness against known values.",
-  "persona_ids": ["beginner_no_finance", "intermediate_developer", "advanced_quant"],
+  "description": "Guide a student to implement a Simple Moving Average (SMA) trend-following strategy as a LEAN C# algorithm on a single crypto future (BTCUSDT). The student must subscribe to one symbol, create an SMA indicator, implement a price-vs-SMA entry/exit rule, handle warm-up correctly, and produce a trade log. This is the simplest possible LEAN strategy — the 'hello world' of algorithmic trading on QuantConnect.",
+  "persona_ids": [
+    "beginner_no_finance",
+    "intermediate_developer",
+    "advanced_quant"
+  ],
   "student_openings": {
-    "beginner_no_finance": "I keep hearing about 'moving averages' in trading. I know basic Python but I have no idea how to calculate one. Can you help me understand what it is and write the code?",
-    "intermediate_developer": "I need to implement SMA in pandas. I know about rolling windows conceptually but want to make sure I'm handling edge cases like NaN values and alignment correctly.",
-    "advanced_quant": "I'm implementing a suite of technical indicators starting with SMA. I want to ensure numerical stability, handle edge cases at series boundaries, and benchmark performance for large datasets. What's the optimal pandas approach?"
+    "beginner_no_finance": "I have access to a trading engine called LEAN with Bitcoin futures data. I want to test a simple moving average strategy — buy when the price is above the average, sell when it's below. I've never written C# before. Where do I start?",
+    "intermediate_developer": "I need to implement a basic SMA trend filter on LEAN for BTCUSDT daily bars. I know the concept but I've never used the QuantConnect API. How do I set up the algorithm, register the indicator, and manage positions?",
+    "advanced_quant": "I'm bootstrapping a LEAN environment for the first time. I want to start with the simplest possible strategy — SMA(20) on BTCUSDT daily — to validate my setup end-to-end before scaling to multi-symbol. What's the minimal correct implementation?"
   },
   "environment": {
-    "data_files": ["AAPL_2018_2024.csv"],
-    "core_mcp_tools": ["shell_exec", "file_write", "file_read", "file_list", "fetch_market_data", "compute_indicator", "plot_chart", "search_docs", "send_message"],
-    "distractor_mcp_tools_pool": ["train_ml_model", "optimize_portfolio", "fetch_live_price", "submit_order", "fetch_options_chain"],
-    "num_distractors": 5,
-    "docs_available": ["moving_averages.md", "pandas_timeseries.md"],
-    "sandbox_image": "quant-tutor-env:v1.0"
+    "data_files": [
+      "universe.json"
+    ],
+    "core_mcp_tools": [
+      "shell_exec",
+      "file_write",
+      "file_read",
+      "file_list",
+      "get_environment_info"
+    ],
+    "docs_available": [
+      "lean_algorithm_guide.md",
+      "moving_averages.md"
+    ],
+    "sandbox_image": "quant-tutor-env:v2.0-lean",
+    "network_enabled": false
   },
   "ground_truth": {
-    "expected_outcome": "Student has a working SMA implementation in pandas, understands the rolling window concept, can verify correctness by manual calculation, and handles NaN values at the start of the series.",
+    "expected_outcome": "Student produces a working LEAN C# algorithm that (1) subscribes to BTCUSDT daily futures via AddCryptoFuture, (2) creates an SMA(20) indicator, (3) goes long when price > SMA and flattens when price < SMA, (4) handles warm-up correctly with SetWarmUp, (5) runs to completion, and (6) produces a trade log with entry/exit records.",
     "required_capabilities": [
-      {"description": "Loads market data", "tool_any_of": ["fetch_market_data", "file_read"]},
-      {"description": "Implements SMA calculation", "tool": "shell_exec", "output_contains": "rolling"},
-      {"description": "Verifies correctness", "tool": "shell_exec"},
-      {"description": "Explains rolling window concept", "evidence": "explains that SMA is the mean of the last N data points"}
+      "Write a LEAN C# algorithm inheriting QCAlgorithm",
+      "Subscribe to a single crypto future with AddCryptoFuture",
+      "Create and use an SMA indicator with correct resolution",
+      "Implement price-vs-SMA entry/exit logic in OnData",
+      "Handle warm-up period with SetWarmUp and IsWarmingUp guard",
+      "Run the backtest and interpret the results"
     ],
-    "expected_mcp_tools": ["fetch_market_data", "shell_exec", "send_message"],
+    "expected_mcp_tools": [
+      "shell_exec",
+      "get_environment_info"
+    ],
+    "convenient_tools": [
+      "search_docs",
+      "plot_chart"
+    ],
     "quant_validation": {
-      "eval_script": "evaluation/test_scripts/I01_implement_sma.py",
-      "expected_metrics": {
-        "sma_implemented_correctly": true,
-        "code_runs_without_error": true,
-        "handles_nan_values": true
-      }
+      "eval_script": "evaluation/test_scripts/I01_implement_sma.py"
     }
   },
   "requires_code": true,
   "sample_code": null,
-  "max_turns": 20,
-  "timeout_minutes": 10
+  "max_turns": 24,
+  "agent_max_steps": 10,
+  "timeout_minutes": 15
 }

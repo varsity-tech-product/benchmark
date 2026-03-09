@@ -10,14 +10,59 @@ from mcp_servers.core.tools import CORE_TOOLS
 from mcp_servers.distractors.distractor_tools import DISTRACTOR_TOOLS
 from mcp_servers.proxy.mcp_proxy import MCPProxy
 
-# Tools that execute arbitrary code and must run inside Docker
-CODE_EXEC_TOOLS = {"shell_exec", "run_backtest", "plot_chart"}
+# Total tool slots available to the agent (core + convenient + distractors).
+_TOTAL_TOOL_SLOTS = 15
+
+
+def _register_core_tool(
+    proxy, name, container_manager, container_id, workspace_path, use_docker
+):
+    """Register a single core/convenient tool on the proxy.
+
+    In Docker mode, ALL core tools are routed through the container
+    executor daemon via ``make_container_tool()``.  In local mode,
+    ``shell_exec`` gets a subprocess wrapper (cwd=workspace) and the
+    remaining tools use their original implementations.
+    """
+    if name not in CORE_TOOLS:
+        return
+    tool_info = CORE_TOOLS[name]
+
+    if use_docker and container_manager is not None:
+        # Docker mode: every tool goes through the in-container executor.
+        from mcp_servers.core.tool_wrappers import make_container_tool
+
+        func = make_container_tool(
+            tool_name=name,
+            local_func=tool_info["func"],
+            container_manager=container_manager,
+            container_id=container_id,
+            use_docker=use_docker,
+        )
+    elif name == "shell_exec" and container_manager is not None:
+        # Local mode: shell_exec needs explicit cwd=workspace_path.
+        from mcp_servers.core.tool_wrappers import make_shell_exec
+
+        func = make_shell_exec(
+            container_manager,
+            container_id,
+            workspace_path,
+            use_docker=False,
+        )
+    else:
+        func = tool_info["func"]
+
+    proxy.register_tool(
+        name=name,
+        func=func,
+        description=tool_info["description"],
+        params=tool_info.get("params", {}),
+    )
 
 
 def create_proxy_for_task(
     core_tool_names: list[str],
-    distractor_pool: list[str],
-    num_distractors: int = 5,
+    convenient_tool_names: list[str] | None = None,
     seed: Optional[int] = None,
     container_manager=None,
     container_id: Optional[str] = None,
@@ -28,8 +73,9 @@ def create_proxy_for_task(
 
     Args:
         core_tool_names: List of core tool names to make available.
-        distractor_pool: Pool of distractor tool names to sample from.
-        num_distractors: Number of distractors to include.
+        convenient_tool_names: Optional list of convenient tool names
+            (bonus-eligible shortcuts).  Registered as regular tools
+            but tracked separately for evaluation.
         seed: Random seed for reproducible distractor selection.
         container_manager: ContainerManager instance for Docker execution.
         container_id: Docker container ID for code execution tools.
@@ -39,78 +85,53 @@ def create_proxy_for_task(
     Returns:
         Configured MCPProxy instance.
     """
+    convenient_tool_names = convenient_tool_names or []
     proxy = MCPProxy()
 
     # Register core tools
     for name in core_tool_names:
-        if name in CORE_TOOLS:
-            tool_info = CORE_TOOLS[name]
+        _register_core_tool(
+            proxy,
+            name,
+            container_manager,
+            container_id,
+            workspace_path,
+            use_docker,
+        )
 
-            # Code execution tools: use Docker-aware wrappers when container is available
-            if name in CODE_EXEC_TOOLS and container_manager is not None:
-                from mcp_servers.core.tool_wrappers import (
-                    make_plot_chart,
-                    make_run_backtest,
-                    make_shell_exec,
-                )
+    # Register convenient tools (same mechanism as core — agent sees no difference)
+    for name in convenient_tool_names:
+        _register_core_tool(
+            proxy,
+            name,
+            container_manager,
+            container_id,
+            workspace_path,
+            use_docker,
+        )
 
-                factories = {
-                    "shell_exec": make_shell_exec,
-                    "run_backtest": make_run_backtest,
-                    "plot_chart": make_plot_chart,
-                }
-                func = factories[name](
-                    container_manager,
-                    container_id,
-                    workspace_path,
-                    use_docker,
-                )
-            else:
-                func = tool_info["func"]
+    # Sample distractors from global pool, excluding core and convenient.
+    excluded = set(core_tool_names) | set(convenient_tool_names)
+    available = [d for d in DISTRACTOR_TOOLS if d not in excluded]
 
-            proxy.register_tool(
-                name=name,
-                func=func,
-                description=tool_info["description"],
-                params=tool_info.get("params", {}),
-            )
+    n = _TOTAL_TOOL_SLOTS - len(core_tool_names) - len(convenient_tool_names)
+    n = max(0, min(n, len(available)))
 
-    # Sample and register distractors
-    available = [d for d in distractor_pool if d in DISTRACTOR_TOOLS]
     if seed is not None:
         rng = random.Random(seed)
     else:
         rng = random.Random()
 
-    selected = rng.sample(available, min(num_distractors, len(available)))
+    selected = rng.sample(available, n)
 
     for name in selected:
         info = DISTRACTOR_TOOLS[name]
         proxy.register_distractor(
             name=name,
-            error_message=info["error"],
+            error_message=info.get("error", ""),
             description=info["description"],
             params=info.get("params", {}),
+            func=info.get("func"),  # functional distractors have a callable
         )
 
     return proxy
-
-
-def get_all_tool_schemas() -> dict:
-    """Get schemas for all tools (core + distractor)."""
-    schemas = {}
-    for name, info in CORE_TOOLS.items():
-        schemas[name] = {
-            "name": name,
-            "description": info["description"],
-            "parameters": info.get("params", {}),
-            "type": "core",
-        }
-    for name, info in DISTRACTOR_TOOLS.items():
-        schemas[name] = {
-            "name": name,
-            "description": info["description"],
-            "parameters": info.get("params", {}),
-            "type": "distractor",
-        }
-    return schemas

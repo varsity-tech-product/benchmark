@@ -18,12 +18,12 @@ DeepEval API (v3.8+):
 
 from typing import Optional
 
-from config.llm_config import resolve_deepeval_model
+from config.model_resolver import resolve_deepeval_model
 
 try:
     from deepeval.metrics import GEval
     from deepeval.metrics.g_eval import Rubric
-    from deepeval.test_case import LLMTestCase, LLMTestCaseParams
+    from deepeval.test_case import LLMTestCaseParams
 
     DEEPEVAL_AVAILABLE = True
 except ImportError:
@@ -376,10 +376,6 @@ CATEGORY_CONFIGS = {
     },
 }
 
-# Default fallback (backward compatible)
-QUANT_EXPERTISE_CRITERIA = CONCEPTUAL_QA_CRITERIA
-QUANT_EXPERTISE_RUBRIC = CONCEPTUAL_QA_RUBRIC
-
 
 # ──────────────────────────────────────────────────────────────
 # Metric construction
@@ -429,51 +425,3 @@ def create_quant_geval_metric(
     kwargs["model"] = resolve_deepeval_model(model)
 
     return GEval(**kwargs)
-
-
-def create_quant_test_case(
-    question: str,
-    actual_answer: str,
-    reference_answer: str,
-    context: Optional[list[str]] = None,
-) -> "LLMTestCase":
-    """Create an LLMTestCase for a quant knowledge evaluation.
-
-    Args:
-        question: The student's question.
-        actual_answer: The agent's response.
-        reference_answer: The ground truth reference answer.
-        context: Optional context passages.
-
-    Returns:
-        Configured LLMTestCase.
-    """
-    if not DEEPEVAL_AVAILABLE:
-        raise ImportError("deepeval is required. Install with: pip install deepeval")
-
-    return LLMTestCase(
-        input=question,
-        actual_output=actual_answer,
-        expected_output=reference_answer,
-        context=context,
-    )
-
-
-def create_quant_geval_config(category: Optional[str] = None) -> dict:
-    """Create configuration dict for DeepEval GEval metric.
-
-    Args:
-        category: Layer 1 category name.
-
-    Returns:
-        Config dict that can be used to construct GEval manually.
-    """
-    config = CATEGORY_CONFIGS.get(
-        category or "conceptual_qa", CATEGORY_CONFIGS["conceptual_qa"]
-    )
-    return {
-        "name": config["name"],
-        "criteria": config["criteria"],
-        "rubric": config["rubric"],
-        "threshold": 0.5,
-    }

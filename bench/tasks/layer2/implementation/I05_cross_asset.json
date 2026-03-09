@@ -1,0 +1,65 @@
+{
+  "task_id": "I05_cross_asset",
+  "version": "2.2",
+  "difficulty": "hard",
+  "category": "implementation",
+  "task_type": "multi_turn",
+  "description": "Guide a student to implement a pairs trading strategy on LEAN that (1) uses a pre-computed candidate pairs file (I05_candidate_pairs.json) listing top-10 correlated pairs from the 20-symbol universe, (2) implements spread mean-reversion trading on the selected pairs with z-score entry/exit rules, and (3) manages multi-leg positions with proper exposure caps. The student should understand pair selection concepts but does not need to compute pairwise statistics from scratch. This is how institutional stat-arb strategies work \u2014 the pair discovery phase is provided so the task focuses on implementation of spread trading and multi-pair portfolio management.",
+  "persona_ids": [
+    "beginner_no_finance",
+    "intermediate_developer",
+    "advanced_quant"
+  ],
+  "student_openings": {
+    "beginner_no_finance": "I have price data for 20 crypto futures and I heard you can trade pairs that move together. How do I find the best pairs and trade them automatically on LEAN?",
+    "intermediate_developer": "I need to implement a pairs trading scanner on LEAN that screens all pair combinations across 20 symbols, selects the best ones, and trades spread mean-reversion. How do I structure the pair selection and multi-leg position management?",
+    "advanced_quant": "I'm implementing a cross-asset stat-arb strategy on LEAN across ~20 crypto futures. What's the best architecture for pairs-based trading?"
+  },
+  "environment": {
+    "data_files": [
+      "universe.json",
+      "I05_candidate_pairs.json"
+    ],
+    "core_mcp_tools": [
+      "shell_exec",
+      "file_write",
+      "file_read",
+      "file_list",
+      "get_environment_info"
+    ],
+    "docs_available": [
+      "lean_algorithm_guide.md",
+      "statistical_tests.md"
+    ],
+    "sandbox_image": "quant-tutor-env:v2.0-lean",
+    "network_enabled": false
+  },
+  "ground_truth": {
+    "expected_outcome": "Student produces a LEAN C# algorithm that (1) loads candidate pairs from I05_candidate_pairs.json, (2) subscribes to the relevant symbols, (3) tracks per-pair ratio z-scores, (4) enters/exits spread positions atomically per pair, (5) manages portfolio exposure across up to 10 active pairs, and (6) produces per-pair trade logs and a portfolio-level summary. Trade logs for 3 reference pairs should match the ground-truth.",
+    "required_capabilities": [
+      "Load and parse pre-computed candidate pairs from I05_candidate_pairs.json",
+      "Subscribe to symbols from the candidate pairs and understand pair selection concepts",
+      "Compute per-pair rolling ratio z-score",
+      "Manage multiple simultaneous spread positions (up to 10 pairs \u00d7 2 legs = 20 positions)",
+      "Implement atomic spread entry/exit with per-pair stop-loss",
+      "Produce per-pair and portfolio-level results"
+    ],
+    "expected_mcp_tools": [
+      "shell_exec",
+      "get_environment_info"
+    ],
+    "convenient_tools": [
+      "search_docs",
+      "compute_statistics",
+      "plot_chart"
+    ],
+    "quant_validation": {
+      "eval_script": "evaluation/test_scripts/I05_cross_asset.py"
+    }
+  },
+  "requires_code": true,
+  "sample_code": null,
+  "max_turns": 35,
+  "agent_max_steps": 15,
+  "timeout_minutes": 25
+}

@@ -4,6 +4,7 @@
   "difficulty": "easy",
   "category": "conceptual_qa",
   "task_type": "single_turn",
+  "requires_tool": false,
   "description": "Backstory, I have one year of college under my belt (compsci major). Left the school I was going to a year ago in order to get residency in the state it was in (cheaper tuition) only to realize later I really didn't want to go to that school. So now I'm back in my hometown (Pittsburgh, PA), and will probably go to a state school here. I was thinking of buying a house, with the market being so cheap here. After research, I could get a multi bedroom house for under 40k in an ok neighborhood. I'd be able to get some roomates easily, and with the rent they pay have little to no expense on the house/utils/insurance/property tax. If I don't buy a house, I'll soon be renting one anyways, so it doesn't make much sense to me not to buy a house. My dad's old house is forclosed, so theres no luck getting at that one. But even if I do buy a house, I'll have 50k+ to deal with. This whole thing is a bit of a migraine. Disregarding what I will probably do, can you guys give me any other ideas? :)",
   "context": null,
   "reference_answer": "Sorry to hear about your loss. Here's what I would do in your position:\n\n1. Make sure you've got all your tuition taken care of.  Avoid student loans.\n2. Stash away an emergency fund\n3. Open a Roth IRA and add $5k\n4. Put the rest in a CD until you know long-term what you want to do\n\nI get that the idea of purchasing a house sounds like a good idea right now, but I'd avoid it for a couple of reasons.\n\n1. Do you know where you want to be after school?  Don't buy a house you don't plan on living in for at least 7 years.\n2. There are a lot of hidden costs in buying real estate (property tax, utilities, maintenance, insurance, etc.).  A new roof, for example, would chew up a lot of your nest egg. \n3. If you decide to buy a house anyway, get something that's already in excellent (I mean above average) condition. \n4. Holy shit!  $40k?  You'd need literally literally 10x that much to get a house in San Deigo.  \n\nLong story short, you're so young, I wouldn't tie myself into longterm commitments if I were you.  You'll be better off in the long run fully funding retirement accounts at your age and saving the rest until you're done with school and know what you want to do with your life.  Your mindset is going to be worlds apart from where you are now in 7 or 8 years.",
@@ -11,20 +12,5 @@
   "source_dataset": "reddit.personalfinance",
   "tags": [
     "personalfinance"
-  ],
-  "persona_ids": [],
-  "student_openings": {},
-  "environment": null,
-  "ground_truth": {
-    "expected_outcome": "Sorry to hear about your loss. Here's what I would do in your position:\n\n1. Make sure you've got all your tuition taken care of.  Avoid student loans.\n2. Stash away an emergency fund\n3. Open a Roth IRA and add $5k\n4. Put the rest in a CD until you know long-term what you want to do\n\nI get that the idea of purchasing a house sounds like a good idea right now, but I'd avoid it for a couple of reasons.\n\n1. Do you know where you want to be after school?  Don't buy a house you don't plan on living in for at least 7 years.\n2. There are a lot of hidden costs in buying real estate (property tax, utilities, maintenance, insurance, etc.).  A new roof, for example, would chew up a lot of your nest egg. \n3. If you decide to buy a house anyway, get something that's already in excellent (I mean above average) condition. \n4. Holy shit!  $40k?  You'd need literally literally 10x that much to get a house in San Deigo.  \n\nLong story short, you're so young, I wouldn't tie myself into longterm commitments if I were you.  You'll be better off in the long run fully funding retirement accounts at your age and saving the rest until you're done with school and know what you want to do with your life.  Your mindset is going to be worlds apart from where you are now in 7 or 8 years.",
-    "required_capabilities": [],
-    "expected_mcp_tools": [],
-    "quant_validation": null,
-    "bug_description": null,
-    "expected_fix": null
-  },
-  "requires_code": false,
-  "sample_code": null,
-  "max_turns": 30,
-  "timeout_minutes": 15
+  ]
 }

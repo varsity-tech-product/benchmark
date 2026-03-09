@@ -4,6 +4,7 @@
   "difficulty": "medium",
   "category": "code_generation",
   "task_type": "single_turn",
+  "requires_tool": true,
   "description": "Can you help me write a Python backtest for a simple moving average crossover strategy? I want to test 50/200 SMA on a stock and see the returns compared to buy-and-hold.",
   "context": null,
   "reference_answer": "```python\nimport pandas as pd\nimport numpy as np\nimport matplotlib.pyplot as plt\n\ndef sma_crossover_backtest(prices: pd.Series, fast: int = 50, slow: int = 200) -> pd.DataFrame:\n    df = pd.DataFrame({'close': prices})\n    df['sma_fast'] = df['close'].rolling(fast).mean()\n    df['sma_slow'] = df['close'].rolling(slow).mean()\n    df['signal'] = np.where(df['sma_fast'] > df['sma_slow'], 1, 0)\n    df['signal'] = df['signal'].shift(1)  # avoid look-ahead bias\n    df['returns'] = df['close'].pct_change()\n    df['strategy_returns'] = df['signal'] * df['returns']\n    df['cumulative_bh'] = (1 + df['returns']).cumprod()\n    df['cumulative_strategy'] = (1 + df['strategy_returns']).cumprod()\n    return df.dropna()\n```\nKey implementation details: (1) shift(1) on signal prevents look-ahead bias — you trade on today's signal using tomorrow's return. (2) The strategy is long-only (signal=1 when fast>slow, 0 otherwise). (3) No transaction costs included — real performance will be worse. (4) Buy-and-hold comparison is essential to judge whether the complexity adds value.",
@@ -14,20 +15,5 @@
     "backtesting",
     "moving-averages",
     "strategy"
-  ],
-  "persona_ids": [],
-  "student_openings": {},
-  "environment": null,
-  "ground_truth": {
-    "expected_outcome": "```python\nimport pandas as pd\nimport numpy as np\nimport matplotlib.pyplot as plt\n\ndef sma_crossover_backtest(prices: pd.Series, fast: int = 50, slow: int = 200) -> pd.DataFrame:\n    df = pd.DataFrame({'close': prices})\n    df['sma_fast'] = df['close'].rolling(fast).mean()\n    df['sma_slow'] = df['close'].rolling(slow).mean()\n    df['signal'] = np.where(df['sma_fast'] > df['sma_slow'], 1, 0)\n    df['signal'] = df['signal'].shift(1)  # avoid look-ahead bias\n    df['returns'] = df['close'].pct_change()\n    df['strategy_returns'] = df['signal'] * df['returns']\n    df['cumulative_bh'] = (1 + df['returns']).cumprod()\n    df['cumulative_strategy'] = (1 + df['strategy_returns']).cumprod()\n    return df.dropna()\n```\nKey implementation details: (1) shift(1) on signal prevents look-ahead bias — you trade on today's signal using tomorrow's return. (2) The strategy is long-only (signal=1 when fast>slow, 0 otherwise). (3) No transaction costs included — real performance will be worse. (4) Buy-and-hold comparison is essential to judge whether the complexity adds value.",
-    "required_capabilities": [],
-    "expected_mcp_tools": [],
-    "quant_validation": null,
-    "bug_description": null,
-    "expected_fix": null
-  },
-  "requires_code": false,
-  "sample_code": null,
-  "max_turns": 30,
-  "timeout_minutes": 15
+  ]
 }

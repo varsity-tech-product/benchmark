@@ -4,6 +4,7 @@
   "difficulty": "easy",
   "category": "conceptual_qa",
   "task_type": "single_turn",
+  "requires_tool": false,
   "description": "I just discovered this sub-reddit a few days ago and I can't get enough.  The financial advice in here is fantastic.  Given the financial savvy you guys possess, I suppose I shouldn't be surprised, but I've noticed a ton of redditors around  my age (22) who are making 50k+ a year.  \n\nI possess the qualifications to land such a job (I think)  but my job search is going nowhere.  After graduating about a month ago, my job searching has basically been confined to relentlessly poring over Indeed.com and trying different keywords and I feel like I'm treading water.\n\nSo the question is, how did you all get to where are you are today?  Any advice you moguls of personal finance would care to pass along?\n\nedit: removed duplicate word\nApologies if this doesn't belong here, but I'm pretty new to the whole redditing thing in general",
   "context": null,
   "reference_answer": "I make a shit ton of money but to tell the truth every job I've ever gotten was by \"knowing a guy\". Maybe try using LinkedIn and connecting with everyone you know. Then see who they know that works at the company you want to work for and get them to put in a good word for you. This is easier after you have worked a few places and know more people, tougher to break into the business I suppose.",
@@ -11,20 +12,5 @@
   "source_dataset": "reddit.personalfinance",
   "tags": [
     "personalfinance"
-  ],
-  "persona_ids": [],
-  "student_openings": {},
-  "environment": null,
-  "ground_truth": {
-    "expected_outcome": "I make a shit ton of money but to tell the truth every job I've ever gotten was by \"knowing a guy\". Maybe try using LinkedIn and connecting with everyone you know. Then see who they know that works at the company you want to work for and get them to put in a good word for you. This is easier after you have worked a few places and know more people, tougher to break into the business I suppose.",
-    "required_capabilities": [],
-    "expected_mcp_tools": [],
-    "quant_validation": null,
-    "bug_description": null,
-    "expected_fix": null
-  },
-  "requires_code": false,
-  "sample_code": null,
-  "max_turns": 30,
-  "timeout_minutes": 15
+  ]
 }
