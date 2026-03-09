@@ -21,7 +21,7 @@ from pathlib import Path
 
 from huggingface_hub import snapshot_download
 
-HF_REPO_ID = "quant-tutor-bench/quant-tutor-bench-data"
+HF_REPO_ID = "Varsity-Tech/quant-tutor-bench-data"
 DEFAULT_CACHE_DIR = Path(__file__).parent.parent / "data" / "hf_cache"
 
 

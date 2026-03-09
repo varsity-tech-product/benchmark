@@ -1,7 +1,7 @@
 {
   "version": "1.0",
   "freeze_date": "2024-12-31",
-  "hf_repo": "quant-tutor-bench/quant-tutor-bench-data",
+  "hf_repo": "Varsity-Tech/quant-tutor-bench-data",
   "hf_revision": null,
   "tiers": {
     "tier1": {

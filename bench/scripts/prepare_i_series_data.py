@@ -31,7 +31,7 @@ LEAN_DIR = DATA_DIR / "lean"
 UNIVERSE_PATH = DATA_DIR / "universe.json"
 FLAT_UNIVERSE_PATH = DATA_DIR / "lean_universe.json"
 
-DEFAULT_REPO_ID = "quant-tutor-bench/quant-tutor-bench-data"
+DEFAULT_REPO_ID = "Varsity-Tech/quant-tutor-bench-data"
 
 
 def phase_download(workers: int, include_funding: bool, universe: Path | None = None) -> bool:

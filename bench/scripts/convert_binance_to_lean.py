@@ -130,7 +130,7 @@ def write_low_res_zip(
     Output: output_base/crypto/binance/{lean_dir}/{symbol_lower}.zip
     The zip contains a single CSV file named {symbol_lower}.csv.
     """
-    symbol_lower = symbol.lower().replace("usdt", "usdt")
+    symbol_lower = symbol.lower()
     out_dir = output_base / "crypto" / "binance" / lean_dir
     out_dir.mkdir(parents=True, exist_ok=True)
     zip_path = out_dir / f"{symbol_lower}.zip"

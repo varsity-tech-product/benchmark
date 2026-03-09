@@ -27,7 +27,7 @@ from pathlib import Path
 
 DEFAULT_LEAN_DIR = Path(__file__).resolve().parent.parent / "data" / "lean"
 DEFAULT_UNIVERSE = Path(__file__).resolve().parent.parent / "data" / "lean_universe.json"
-DEFAULT_REPO_ID = "quant-tutor-bench/quant-tutor-bench-data"
+DEFAULT_REPO_ID = "Varsity-Tech/quant-tutor-bench-data"
 
 
 def upload(

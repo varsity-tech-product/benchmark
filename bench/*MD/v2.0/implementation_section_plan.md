@@ -286,7 +286,7 @@ This script is **benchmark infrastructure** — it is NOT a task for the agent.
 Both raw and LEAN-format data are uploaded to HuggingFace using Git LFS:
 
 ```
-huggingface.co/datasets/{org}/quant-tutor-bench-data/
+huggingface.co/datasets/Varsity-Tech/quant-tutor-bench-data/
 ├── raw/
 │   ├── sb-series/                    # Small curated datasets for S/B-series
 │   │   ├── BTCUSDT_1d_2021_2024.csv
@@ -325,7 +325,7 @@ huggingface.co/datasets/{org}/quant-tutor-bench-data/
 ```
 ┌─────────────────────────────────────┐
 │         HuggingFace Dataset          │
-│  {org}/quant-tutor-bench-data        │
+│  Varsity-Tech/quant-tutor-bench-data        │
 │                                      │
 │  ├── raw/sb-series/   (S/B data)     │
 │  ├── raw/i-series/    (I raw data)   │
@@ -400,7 +400,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from huggingface_hub import snapshot_download
 
-HF_REPO_ID = "{org}/quant-tutor-bench-data"
+HF_REPO_ID = "Varsity-Tech/quant-tutor-bench-data"
 DEFAULT_CACHE_DIR = Path(__file__).parent.parent / "data" / "hf_cache"
 
 
@@ -555,7 +555,7 @@ A manifest file listing all symbols with metadata, used by both download scripts
 {
   "version": "1.0",
   "freeze_date": "2024-12-31",
-  "hf_repo": "{org}/quant-tutor-bench-data",
+  "hf_repo": "Varsity-Tech/quant-tutor-bench-data",
   "hf_revision": "abc123def456...",
   "tiers": {
     "tier1": {
@@ -1723,18 +1723,18 @@ Each reference trade log must be validated:
 - [x] Write `bench/scripts/prepare_i_series_data.py` — single-command orchestrator for full pipeline (download → convert → flat universe → upload → verify)
 
 **HuggingFace dataset (decoupled storage):**
-- [ ] Create HF dataset repo `{org}/quant-tutor-bench-data`
+- [x] Create HF dataset repo `Varsity-Tech/quant-tutor-bench-data`
 - [ ] Configure Git LFS for large files (`.zip`, `.csv` > 10MB)
 - [ ] Upload raw S/B-series data to `raw/sb-series/`
 - [ ] Upload raw I-series data to `raw/i-series/` (organized by tier)
-- [ ] Upload LEAN-format data to `lean/`
-- [ ] Upload `universe.json` to `raw/i-series/`
+- [x] Upload LEAN-format data to `lean/` *(test subset: 3 symbols, 739 zips uploaded)*
+- [x] Upload `universe.json` to `raw/i-series/` *(flat format for C# algorithms)*
 - [ ] Tag initial dataset version (commit hash for reproducibility)
 - [x] Write `bench/scripts/upload_lean_to_hf.py` — upload LEAN data + flat universe.json via `upload_folder()`
 
 **Data manager (runtime download + cache):**
 - [x] Write `bench/scripts/data_manager.py` (see §2.7)
-- [ ] Add `huggingface_hub` to `bench/requirements.txt`
+- [x] Add `huggingface_hub` to `bench/requirements.txt`
 - [x] Add `bench/data/hf_cache/` to `.gitignore`
 - [ ] Test: first run downloads data; second run uses cache
 - [ ] Test: `revision` parameter pins to specific HF commit
