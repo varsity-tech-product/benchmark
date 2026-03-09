@@ -4,28 +4,37 @@
 Reads raw kline CSVs (from download_binance_full_universe.py) and produces
 the LEAN-format directory tree expected by QuantConnect's data readers.
 
-LEAN TradeBar CSV format:
-    Date, Open (scaled), High (scaled), Low (scaled), Close (scaled), Volume
+Supports two security types (--security-type flag):
 
-Scaling: LEAN stores crypto prices as integers with a fixed scale factor.
-For crypto, prices are multiplied by 10000 (1e4) and stored as integers.
+  cryptofuture (default):
+    Path:   Data/cryptofuture/binance/
+    Daily:  {sym}_trade.zip  →  {sym}_trade_perp.csv
+    Hour:   {sym}_trade.zip  →  {sym}_trade_perp.csv
+    Minute: {date}_trade.zip →  {date}_{sym}_minute_trade_perp.csv
+    Prices: Raw decimals (no scaling)
+    Minute timestamp: milliseconds from midnight (0, 60000, ...)
 
-Directory structure produced:
-    Data/crypto/binance/
-        daily/btcusdt.zip              (low-res: single zip per symbol)
-        hour/btcusdt.zip               (low-res: single zip per symbol)
-        minute/btcusdt/20240101_trade.zip  (high-res: one zip per day)
-        5minute/btcusdt/20240101_trade.zip (high-res: one zip per day)
+  crypto:
+    Path:   Data/crypto/binance/
+    Daily:  {sym}_trade.zip  →  {sym}.csv
+    Hour:   {sym}_trade.zip  →  {sym}.csv
+    Minute: {date}_trade.zip →  {date}_trade.csv
+    Prices: Raw decimals (no scaling)
+    Minute timestamp: milliseconds from midnight (0, 60000, ...)
+
+LEAN TradeBar CSV format (all crypto types):
+    Timestamp, Open, High, Low, Close, Volume
+    Prices are stored as raw decimals (NOT scaled).
 
 Usage:
     python convert_binance_to_lean.py --input-dir PATH --output-dir PATH
     python convert_binance_to_lean.py --input-dir bench/data/raw/i-series --output-dir bench/data/lean
+    python convert_binance_to_lean.py --input-dir PATH --output-dir PATH --security-type crypto
 """
 
 from __future__ import annotations
 
 import argparse
-import io
 import sys
 import zipfile
 from datetime import datetime, timezone
@@ -33,9 +42,6 @@ from pathlib import Path
 
 import pandas as pd
 from tqdm import tqdm
-
-# LEAN crypto price scale factor (prices stored as price * SCALE)
-LEAN_PRICE_SCALE = 10000
 
 # Mapping from Binance interval names to LEAN resolution directory names
 INTERVAL_TO_LEAN_DIR = {
@@ -53,7 +59,7 @@ HIGH_RES_INTERVALS = {"5m", "1m"}
 
 # LEAN date format for low-resolution (daily)
 LEAN_DATE_FMT_DAILY = "%Y%m%d 00:00"
-# LEAN date format for intraday (hourly and sub-hourly)
+# LEAN date format for intraday low-res (hourly, 4hour)
 LEAN_DATE_FMT_INTRADAY = "%Y%m%d %H:%M"
 
 
@@ -77,6 +83,11 @@ def timestamp_ms_to_datetime(ts_ms: int) -> datetime:
     return datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc)
 
 
+def _ms_from_midnight(dt: datetime) -> int:
+    """Return milliseconds elapsed since midnight UTC for a datetime."""
+    return (dt.hour * 3600 + dt.minute * 60 + dt.second) * 1000
+
+
 def format_lean_row(
     dt: datetime,
     open_price: float,
@@ -86,19 +97,21 @@ def format_lean_row(
     volume: float,
     interval: str,
 ) -> str:
-    """Format a single row in LEAN TradeBar CSV format."""
+    """Format a single row in LEAN TradeBar CSV format.
+
+    LEAN crypto data uses raw decimal prices (no scaling).
+    Low-res (daily/hour): timestamp is date string.
+    High-res (minute/5min): timestamp is milliseconds from midnight.
+    """
     if interval == "1d":
-        date_str = dt.strftime(LEAN_DATE_FMT_DAILY)
+        ts = dt.strftime(LEAN_DATE_FMT_DAILY)
+    elif interval in LOW_RES_INTERVALS:
+        ts = dt.strftime(LEAN_DATE_FMT_INTRADAY)
     else:
-        date_str = dt.strftime(LEAN_DATE_FMT_INTRADAY)
+        # High-res: milliseconds from midnight
+        ts = str(_ms_from_midnight(dt))
 
-    # Scale prices to LEAN's integer representation
-    o = int(round(open_price * LEAN_PRICE_SCALE))
-    h = int(round(high_price * LEAN_PRICE_SCALE))
-    lo = int(round(low_price * LEAN_PRICE_SCALE))
-    c = int(round(close_price * LEAN_PRICE_SCALE))
-
-    return f"{date_str},{o},{h},{lo},{c},{volume}"
+    return f"{ts},{open_price},{high_price},{low_price},{close_price},{volume}"
 
 
 def convert_to_lean_lines(df: pd.DataFrame, interval: str) -> list[str]:
@@ -124,21 +137,27 @@ def write_low_res_zip(
     symbol: str,
     lean_dir: str,
     output_base: Path,
+    security_type: str,
 ) -> Path:
-    """Write a single zip file for a low-resolution symbol (daily/hourly).
+    """Write a single zip file for a low-resolution symbol (daily/hourly/4hour).
 
-    Output: output_base/crypto/binance/{lean_dir}/{symbol_lower}.zip
-    The zip contains a single CSV file named {symbol_lower}.csv.
+    CryptoFuture: {sym}_trade.zip containing {sym}_trade_perp.csv
+    Crypto:       {sym}_trade.zip containing {sym}.csv
     """
-    symbol_lower = symbol.lower()
-    out_dir = output_base / "crypto" / "binance" / lean_dir
+    sym = symbol.lower()
+    out_dir = output_base / security_type / "binance" / lean_dir
     out_dir.mkdir(parents=True, exist_ok=True)
-    zip_path = out_dir / f"{symbol_lower}.zip"
+    zip_path = out_dir / f"{sym}_trade.zip"
+
+    if security_type == "cryptofuture":
+        csv_name = f"{sym}_trade_perp.csv"
+    else:
+        csv_name = f"{sym}.csv"
 
     csv_content = "\n".join(lines) + "\n"
 
     with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
-        zf.writestr(f"{symbol_lower}.csv", csv_content)
+        zf.writestr(csv_name, csv_content)
 
     return zip_path
 
@@ -149,15 +168,19 @@ def write_high_res_zips(
     symbol: str,
     lean_dir: str,
     output_base: Path,
+    security_type: str,
 ) -> list[Path]:
     """Write per-day zip files for high-resolution data (5m/1m).
 
-    Output: output_base/crypto/binance/{lean_dir}/{symbol_lower}/{YYYYMMDD}_trade.zip
-    Each zip contains a single CSV named {YYYYMMDD}_trade.csv.
+    CryptoFuture: {date}_trade.zip containing {date}_{sym}_minute_trade_perp.csv
+    Crypto:       {date}_trade.zip containing {date}_trade.csv
     """
-    symbol_lower = symbol.lower()
-    out_dir = output_base / "crypto" / "binance" / lean_dir / symbol_lower
+    sym = symbol.lower()
+    out_dir = output_base / security_type / "binance" / lean_dir / sym
     out_dir.mkdir(parents=True, exist_ok=True)
+
+    # Map LEAN dir back to resolution label for CSV naming
+    res_label = lean_dir  # "minute", "5minute"
 
     # Group lines by date
     dates = []
@@ -175,8 +198,13 @@ def write_high_res_zips(
         zip_path = out_dir / f"{date_str}_trade.zip"
         csv_content = "\n".join(day_lines) + "\n"
 
+        if security_type == "cryptofuture":
+            csv_name = f"{date_str}_{sym}_{res_label}_trade_perp.csv"
+        else:
+            csv_name = f"{date_str}_trade.csv"
+
         with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
-            zf.writestr(f"{date_str}_trade.csv", csv_content)
+            zf.writestr(csv_name, csv_content)
         written.append(zip_path)
 
     return written
@@ -210,6 +238,7 @@ def find_raw_csvs(input_dir: Path) -> list[Path]:
 def convert_single_csv(
     csv_path: Path,
     output_base: Path,
+    security_type: str,
 ) -> tuple[str, int]:
     """Convert a single raw CSV to LEAN format.
 
@@ -232,11 +261,73 @@ def convert_single_csv(
     lines = convert_to_lean_lines(df, interval)
 
     if interval in LOW_RES_INTERVALS:
-        out_path = write_low_res_zip(lines, symbol, lean_dir, output_base)
+        out_path = write_low_res_zip(lines, symbol, lean_dir, output_base, security_type)
         return f"{symbol}/{interval} -> {out_path.name}", len(lines)
     else:
-        written = write_high_res_zips(df, lines, symbol, lean_dir, output_base)
+        written = write_high_res_zips(df, lines, symbol, lean_dir, output_base, security_type)
         return f"{symbol}/{interval} -> {len(written)} daily zips", len(lines)
+
+
+def aggregate_minute_to_daily(
+    minute_csv: Path,
+    output_base: Path,
+    security_type: str,
+    existing_daily_csv: Path | None = None,
+) -> tuple[str, int]:
+    """Aggregate minute raw CSV into daily bars, filling gaps not covered by daily data.
+
+    If existing_daily_csv is provided, only generates bars for dates NOT already
+    present in the daily file, then merges both into a single output.
+    """
+    symbol = detect_symbol_from_filename(minute_csv.name)
+
+    df_min = read_raw_csv(minute_csv)
+    df_min = df_min.sort_values("timestamp").reset_index(drop=True)
+    df_min["date"] = df_min["timestamp"].apply(
+        lambda ts: timestamp_ms_to_datetime(int(ts)).strftime("%Y%m%d")
+    )
+
+    # Aggregate minute → daily OHLCV
+    agg = df_min.groupby("date").agg(
+        open=("open", "first"),
+        high=("high", "max"),
+        low=("low", "min"),
+        close=("close", "last"),
+        volume=("volume", "sum"),
+    ).reset_index()
+
+    # If existing daily data, only keep dates not already covered
+    existing_dates: set[str] = set()
+    if existing_daily_csv and existing_daily_csv.exists():
+        df_daily = read_raw_csv(existing_daily_csv)
+        df_daily = df_daily.sort_values("timestamp").reset_index(drop=True)
+        existing_dates = {
+            timestamp_ms_to_datetime(int(ts)).strftime("%Y%m%d")
+            for ts in df_daily["timestamp"]
+        }
+        new_dates = agg[~agg["date"].isin(existing_dates)]
+        if new_dates.empty:
+            return f"{symbol}/daily: no new dates to fill", 0
+        # Merge: new aggregated dates + existing daily data lines
+        existing_lines = convert_to_lean_lines(df_daily, "1d")
+    else:
+        new_dates = agg
+        existing_lines = []
+
+    # Convert aggregated rows to LEAN lines
+    new_lines = []
+    for _, row in new_dates.iterrows():
+        date_str = f"{row['date']} 00:00"
+        new_lines.append(
+            f"{date_str},{row['open']},{row['high']},{row['low']},{row['close']},{row['volume']}"
+        )
+
+    all_lines = sorted(existing_lines + new_lines)
+
+    out_path = write_low_res_zip(all_lines, symbol, "daily", output_base, security_type)
+    filled = len(new_dates)
+    total = len(all_lines)
+    return f"{symbol}/daily: {filled} bars from minute, {total} total -> {out_path.name}", total
 
 
 def parse_args() -> argparse.Namespace:
@@ -254,7 +345,23 @@ def parse_args() -> argparse.Namespace:
         "--output-dir",
         type=Path,
         required=True,
-        help="Output directory for LEAN-format data (will contain crypto/binance/...).",
+        help="Output directory for LEAN-format data (will contain cryptofuture/binance/...).",
+    )
+    parser.add_argument(
+        "--security-type",
+        choices=["cryptofuture", "crypto"],
+        default="cryptofuture",
+        help="LEAN security type: 'cryptofuture' (default) for AddCryptoFuture, "
+             "'crypto' for AddCrypto.",
+    )
+    parser.add_argument(
+        "--fill-daily-from-minute",
+        type=Path,
+        default=None,
+        metavar="MINUTE_DIR",
+        help="Aggregate minute CSVs from this directory to fill gaps in daily data. "
+             "For each symbol with minute data, generates daily bars for dates "
+             "not already covered by daily raw data.",
     )
     parser.add_argument(
         "--dry-run",
@@ -268,6 +375,7 @@ def main() -> int:
     args = parse_args()
     input_dir = args.input_dir.resolve()
     output_dir = args.output_dir.resolve()
+    security_type = args.security_type
 
     if not input_dir.is_dir():
         print(f"Input directory does not exist: {input_dir}", file=sys.stderr)
@@ -279,6 +387,7 @@ def main() -> int:
         return 2
 
     print(f"Found {len(csvs)} raw CSV files in {input_dir}")
+    print(f"Security type: {security_type}")
 
     if args.dry_run:
         for csv_path in csvs:
@@ -294,15 +403,40 @@ def main() -> int:
 
     for csv_path in tqdm(csvs, desc="Converting", unit="file"):
         try:
-            desc, rows = convert_single_csv(csv_path, output_dir)
+            desc, rows = convert_single_csv(csv_path, output_dir, security_type)
             total_rows += rows
             if desc.startswith("SKIP"):
                 tqdm.write(f"  {desc}")
         except Exception as exc:
             tqdm.write(f"  ERROR {csv_path.name}: {exc}")
 
+    out_path = output_dir / security_type / "binance"
     print(f"\nConversion complete: {total_rows} total rows across {len(csvs)} files")
-    print(f"Output: {output_dir / 'crypto' / 'binance'}")
+    print(f"Output: {out_path}")
+
+    # Fill daily gaps from minute data if requested
+    if args.fill_daily_from_minute:
+        minute_dir = args.fill_daily_from_minute.resolve()
+        minute_csvs = [
+            p for p in find_raw_csvs(minute_dir)
+            if detect_interval_from_filename(p.name) == "1m"
+        ]
+        if minute_csvs:
+            print(f"\nFilling daily gaps from {len(minute_csvs)} minute files...")
+            for mc in minute_csvs:
+                symbol = detect_symbol_from_filename(mc.name)
+                # Find matching daily CSV if it exists
+                daily_csv = input_dir / f"{symbol}_1d.csv"
+                if not daily_csv.exists():
+                    daily_csv = None
+                try:
+                    desc, rows = aggregate_minute_to_daily(
+                        mc, output_dir, security_type, daily_csv
+                    )
+                    print(f"  {desc}")
+                except Exception as exc:
+                    print(f"  ERROR filling daily for {symbol}: {exc}")
+
     return 0
 
 

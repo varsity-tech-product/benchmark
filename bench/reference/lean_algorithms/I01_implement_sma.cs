@@ -40,8 +40,8 @@ namespace QuantTutorBench
 
         public override void Initialize()
         {
-            SetStartDate(2023, 1, 1);
-            SetEndDate(2023, 12, 31);
+            SetStartDate(2024, 2, 1);
+            SetEndDate(2024, 12, 31);
             SetAccountCurrency("USDT");
             SetCash(InitialCash);
 
@@ -70,13 +70,13 @@ namespace QuantTutorBench
             if (price > smaValue && !Portfolio[_btc].Invested)
             {
                 // Price above SMA — go long
-                SetHoldings(_btc, 1.0m, false, "Price > SMA entry");
+                SetHoldings(_btc, 1.0m);
                 Log($"LONG: price={price}, SMA={smaValue}");
             }
             else if (price < smaValue && Portfolio[_btc].Invested)
             {
                 // Price below SMA — flatten
-                Liquidate(_btc, "Price < SMA exit");
+                Liquidate(symbol: _btc, tag: "Price < SMA exit");
                 Log($"FLAT: price={price}, SMA={smaValue}");
             }
         }

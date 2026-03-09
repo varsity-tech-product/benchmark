@@ -47,8 +47,8 @@ TASK_ALGO_MAP = {
 }
 
 DEFAULT_LEAN_IMAGE = "quantconnect/lean:latest"
-DEFAULT_START_DATE = "2023-01-01"
-DEFAULT_END_DATE = "2023-12-31"
+DEFAULT_START_DATE = "2024-02-01"
+DEFAULT_END_DATE = "2024-12-31"
 
 
 def _check_docker():
@@ -91,13 +91,13 @@ def _ensure_lean_data():
     sys.exit(1)
 
 
-def _build_lean_config(algo_name: str, start_date: str, end_date: str) -> dict:
+def _build_lean_config(class_name: str, algo_filename: str, start_date: str, end_date: str) -> dict:
     """Build a minimal LEAN configuration for the backtest."""
     return {
         "environment": "backtesting",
-        "algorithm-type-name": algo_name,
+        "algorithm-type-name": class_name,
         "algorithm-language": "CSharp",
-        "algorithm-location": f"/Lean/Algorithm.CSharp/{algo_name}.cs",
+        "algorithm-location": f"/Lean/Algorithm.CSharp/{algo_filename}",
         "parameters": {},
         "data-folder": "/Lean/Data",
         "results-destination-folder": "/Results",
@@ -110,16 +110,18 @@ def _build_lean_config(algo_name: str, start_date: str, end_date: str) -> dict:
     }
 
 
-def _parse_trade_logs(results_dir: str) -> list[dict]:
-    """Parse LEAN backtest results to extract trade logs.
+def _ci_get(d: dict, key: str, default=None):
+    """Case-insensitive dict get — handles both PascalCase and camelCase LEAN output."""
+    for k in (key, key[0].lower() + key[1:], key.lower()):
+        if k in d:
+            return d[k]
+    return default
 
-    Looks for:
-    1. The orders JSON in the results file
-    2. Log entries matching the TRADE: pattern from OnOrderEvent
-    """
-    trades = []
 
-    # Look for the main results JSON
+def _parse_filled_orders(results_dir: str) -> list[dict]:
+    """Parse filled orders from LEAN backtest results JSON."""
+    orders_list = []
+
     results_files = list(Path(results_dir).glob("*.json"))
     for rf in results_files:
         try:
@@ -128,31 +130,91 @@ def _parse_trade_logs(results_dir: str) -> list[dict]:
         except (json.JSONDecodeError, OSError):
             continue
 
-        # Extract from Orders section
-        orders = data.get("Orders", {})
+        orders = _ci_get(data, "Orders", {})
+        if not isinstance(orders, dict):
+            continue
         for order_id, order in orders.items():
-            if order.get("Status") != 3:  # 3 = Filled
+            if _ci_get(order, "Status") != 3:  # 3 = Filled
                 continue
-            trades.append({
+            sym_obj = _ci_get(order, "Symbol", {})
+            sym_value = _ci_get(sym_obj, "Value", "") if isinstance(sym_obj, dict) else str(sym_obj)
+            orders_list.append({
                 "order_id": int(order_id),
-                "symbol": order.get("Symbol", {}).get("Value", ""),
-                "direction": "Buy" if order.get("Direction") == 0 else "Sell",
-                "quantity": order.get("Quantity", 0),
-                "fill_price": order.get("Price", 0.0),
-                "time": order.get("Time", ""),
-                "tag": order.get("Tag", ""),
-                "type": order.get("Type", ""),
+                "symbol": sym_value,
+                "direction": "Buy" if _ci_get(order, "Direction") == 0 else "Sell",
+                "quantity": abs(_ci_get(order, "Quantity", 0)),
+                "fill_price": _ci_get(order, "Price", 0.0),
+                "time": _ci_get(order, "Time", ""),
+                "tag": _ci_get(order, "Tag", ""),
             })
 
-        # Also extract from log entries as backup
-        logs = data.get("Logs", [])
-        if isinstance(logs, list):
-            for log_entry in logs:
-                log_text = log_entry if isinstance(log_entry, str) else str(log_entry)
-                if "TRADE:" in log_text:
-                    trades.append({"raw_log": log_text})
+    return orders_list
+
+
+def _pair_round_trip_trades(orders: list[dict]) -> list[dict]:
+    """Pair filled orders into round-trip trades (FIFO per symbol).
+
+    For each symbol, pairs entry (Buy) and exit (Sell) orders into
+    round-trip records with entry_time, exit_time, direction, net_pnl —
+    the schema expected by match_trades() in _implementation_check.py.
+    """
+    from collections import defaultdict
+
+    # Group orders by symbol, sorted by time
+    by_symbol: dict[str, list[dict]] = defaultdict(list)
+    for o in orders:
+        by_symbol[o["symbol"]].append(o)
+    for sym in by_symbol:
+        by_symbol[sym].sort(key=lambda o: o["time"])
+
+    trades = []
+    for symbol, sym_orders in by_symbol.items():
+        pending_entry = None
+        for o in sym_orders:
+            if pending_entry is None:
+                # First order for this symbol = entry
+                pending_entry = o
+            else:
+                # Opposite direction = exit → close round-trip
+                if o["direction"] != pending_entry["direction"]:
+                    entry_price = pending_entry["fill_price"]
+                    exit_price = o["fill_price"]
+                    qty = min(pending_entry["quantity"], o["quantity"])
+                    if pending_entry["direction"] == "Buy":
+                        gross_pnl = (exit_price - entry_price) * qty
+                    else:
+                        gross_pnl = (entry_price - exit_price) * qty
+
+                    trades.append({
+                        "symbol": symbol,
+                        "direction": pending_entry["direction"],
+                        "quantity": qty,
+                        "entry_time": pending_entry["time"],
+                        "entry_price": entry_price,
+                        "exit_time": o["time"],
+                        "exit_price": exit_price,
+                        "gross_pnl": gross_pnl,
+                        "net_pnl": gross_pnl,  # no fee model in reference
+                        "entry_tag": pending_entry.get("tag", ""),
+                        "exit_tag": o.get("tag", ""),
+                    })
+                    pending_entry = None
+                else:
+                    # Same direction again — replace entry (scaling in)
+                    pending_entry = o
 
     return trades
+
+
+def _parse_trade_logs(results_dir: str) -> list[dict]:
+    """Parse LEAN backtest results into round-trip trade records.
+
+    Extracts filled orders from the LEAN results JSON, then pairs them
+    into round-trip trades with entry_time/exit_time/direction/net_pnl
+    to match the schema expected by match_trades().
+    """
+    orders = _parse_filled_orders(results_dir)
+    return _pair_round_trip_trades(orders)
 
 
 def _parse_performance_metrics(results_dir: str) -> dict:
@@ -166,7 +228,7 @@ def _parse_performance_metrics(results_dir: str) -> dict:
         except (json.JSONDecodeError, OSError):
             continue
 
-        stats = data.get("Statistics", {})
+        stats = _ci_get(data, "Statistics", {})
         if stats:
             metrics = {
                 "total_trades": stats.get("Total Trades", 0),
@@ -212,14 +274,14 @@ def run_lean_backtest(
         raise FileNotFoundError(f"Algorithm file not found: {algo_file}")
 
     algo_name = algo_file.stem  # e.g., "I02_trend_following"
-    # LEAN expects the class name, which uses PascalCase
+    # LEAN expects fully-qualified class name (Namespace.Class)
     class_name_map = {
-        "I01_implement_sma": "I01ImplementSma",
-        "I02_trend_following": "I02TrendFollowing",
-        "I03_mean_reversion": "I03MeanReversion",
-        "I04_multi_timeframe": "I04MultiTimeframe",
-        "I05_cross_asset": "I05CrossAsset",
-        "I06_multi_signal": "I06MultiSignal",
+        "I01_implement_sma": "QuantTutorBench.I01ImplementSma",
+        "I02_trend_following": "QuantTutorBench.I02TrendFollowing",
+        "I03_mean_reversion": "QuantTutorBench.I03MeanReversion",
+        "I04_multi_timeframe": "QuantTutorBench.I04MultiTimeframe",
+        "I05_cross_asset": "QuantTutorBench.I05CrossAsset",
+        "I06_multi_signal": "QuantTutorBench.I06MultiSignal",
     }
     class_name = class_name_map.get(algo_name, algo_name)
 
@@ -232,8 +294,11 @@ def run_lean_backtest(
         print(f"  Period:     {start_date} → {end_date}")
         return {"status": "dry_run", "task_id": task_id}
 
-    # Set up temporary directories for the run
-    with tempfile.TemporaryDirectory(prefix=f"lean_{task_id}_") as tmpdir:
+    # Set up temporary directories for the run.
+    # Docker creates files as root, so use shutil.rmtree with onerror for cleanup.
+    tmpdir = tempfile.mkdtemp(prefix=f"lean_{task_id}_")
+    try:
+        _tmpdir_ref = tmpdir  # keep reference for finally block
         results_dir = os.path.join(tmpdir, "results")
         config_dir = os.path.join(tmpdir, "config")
         algo_mount_dir = os.path.join(tmpdir, "algorithm")
@@ -241,49 +306,91 @@ def run_lean_backtest(
         os.makedirs(config_dir)
         os.makedirs(algo_mount_dir)
 
-        # Copy algorithm file
+        # Copy algorithm file and create .csproj for compilation
         shutil.copy2(str(algo_file), os.path.join(algo_mount_dir, algo_file.name))
 
-        # Copy flat universe.json so C# algorithms can deserialize it as List<string>.
-        # Prefer the pre-generated flat file; fall back to generating it on the fly
-        # from the structured universe.json.
+        # Write .csproj that references LEAN assemblies in the Docker image
+        csproj_content = """\
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <OutputType>Library</OutputType>
+    <EnableDefaultCompileItems>true</EnableDefaultCompileItems>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="QuantConnect.Algorithm">
+      <HintPath>/Lean/Launcher/bin/Debug/QuantConnect.Algorithm.dll</HintPath>
+    </Reference>
+    <Reference Include="QuantConnect.Common">
+      <HintPath>/Lean/Launcher/bin/Debug/QuantConnect.Common.dll</HintPath>
+    </Reference>
+    <Reference Include="QuantConnect.Indicators">
+      <HintPath>/Lean/Launcher/bin/Debug/QuantConnect.Indicators.dll</HintPath>
+    </Reference>
+    <Reference Include="Newtonsoft.Json">
+      <HintPath>/Lean/Launcher/bin/Debug/Newtonsoft.Json.dll</HintPath>
+    </Reference>
+    <Reference Include="Python.Runtime">
+      <HintPath>/Lean/Launcher/bin/Debug/Python.Runtime.dll</HintPath>
+    </Reference>
+  </ItemGroup>
+</Project>
+"""
+        with open(os.path.join(algo_mount_dir, "CustomAlgo.csproj"), "w") as f:
+            f.write(csproj_content)
+
+        # Copy flat universe.json if available
         flat_universe = BENCH_ROOT / "data" / "lean_universe.json"
         structured_universe = BENCH_ROOT / "data" / "universe.json"
         if not flat_universe.exists() and structured_universe.exists():
-            # Generate flat universe on the fly
             symbols = [
                 sym["symbol"]
                 for sym in json.loads(structured_universe.read_text())["tiers"]["tier1"]["symbols"]
             ]
             flat_universe.write_text(json.dumps(symbols, indent=2))
-
         if flat_universe.exists():
             shutil.copy2(str(flat_universe), os.path.join(algo_mount_dir, "universe.json"))
-            # Also place in the lean data dir (C# algorithms read from /Lean/Data/universe.json)
-            lean_universe_dst = os.path.join(lean_data_dir, "universe.json")
-            if not os.path.exists(lean_universe_dst):
-                shutil.copy2(str(flat_universe), lean_universe_dst)
 
-        # Write LEAN config
-        config = _build_lean_config(class_name, start_date, end_date)
+        # Write LEAN config — point to compiled DLL
+        dll_path = "/CustomAlgo/bin/Debug/net10.0/CustomAlgo.dll"
+        config = _build_lean_config(class_name, algo_file.name, start_date, end_date)
+        config["algorithm-location"] = dll_path
         config_path = os.path.join(config_dir, "config.json")
         with open(config_path, "w") as f:
             json.dump(config, f, indent=2)
 
-        # Run LEAN in Docker
+        # Build data mounts — mount individual subdirs to preserve LEAN's
+        # built-in metadata (symbol-properties, market-hours).
+        data_mounts = []
+        lean_data = Path(lean_data_dir)
+        for child in lean_data.iterdir():
+            if child.name == "universe.json":
+                data_mounts += ["-v", f"{child}:/Lean/Data/universe.json:ro"]
+            elif child.is_dir() or child.is_symlink():
+                data_mounts += ["-v", f"{child.resolve()}:/Lean/Data/{child.name}"]
+
+        # Compile C# algorithm inside the container, then run LEAN
+        build_and_run = (
+            "cd /CustomAlgo && "
+            "dotnet build -c Debug --nologo -v q 2>&1 && "
+            "cd /Lean/Launcher/bin/Debug && "
+            "dotnet QuantConnect.Lean.Launcher.dll"
+        )
+
         cmd = [
             "docker", "run", "--rm",
-            "-v", f"{lean_data_dir}:/Lean/Data:ro",
-            "-v", f"{algo_mount_dir}:/Lean/Algorithm.CSharp:ro",
+            *data_mounts,
+            "-v", f"{algo_mount_dir}:/CustomAlgo",
             "-v", f"{results_dir}:/Results",
-            "-v", f"{config_path}:/Lean/Launcher/config.json:ro",
+            "-v", f"{config_path}:/Lean/Launcher/bin/Debug/config.json:ro",
             "--cpus", "2",
             "--memory", "4g",
+            "--entrypoint", "bash",
             lean_image,
+            "-c", build_and_run,
         ]
 
         print(f"Running LEAN backtest for {task_id} ({class_name})...")
-        print(f"  Command: {' '.join(cmd)}")
 
         try:
             result = subprocess.run(
@@ -295,8 +402,19 @@ def run_lean_backtest(
 
             if result.returncode != 0:
                 print(f"  LEAN exited with code {result.returncode}")
-                print(f"  stderr: {result.stderr[:1000]}")
+                # Show build errors or LEAN errors
+                output_text = result.stdout + result.stderr
+                if "Build FAILED" in output_text:
+                    for line in output_text.split("\n"):
+                        if "error CS" in line:
+                            print(f"  {line.strip()}")
+                else:
+                    print(f"  stderr: {result.stderr[:1000]}")
             else:
+                # Show key stats from stdout
+                for line in result.stdout.split("\n"):
+                    if "STATISTICS:: Total Orders" in line or "STATISTICS:: Net Profit" in line:
+                        print(f"  {line.strip()}")
                 print(f"  LEAN completed successfully")
 
         except subprocess.TimeoutExpired:
@@ -318,7 +436,7 @@ def run_lean_backtest(
             "start_date": start_date,
             "end_date": end_date,
             "lean_image": lean_image,
-            "generated_at": datetime.utcnow().isoformat() + "Z",
+            "generated_at": datetime.now(tz=__import__('datetime').timezone.utc).isoformat(),
             "status": "success" if trades else "no_trades",
             "metrics": metrics,
             "trades": trades,
@@ -333,6 +451,20 @@ def run_lean_backtest(
 
         print(f"  Saved {len(trades)} trades to {output_path}")
         return output
+    finally:
+        # Docker creates files as root — need elevated cleanup
+        try:
+            subprocess.run(
+                ["docker", "run", "--rm", "-v", f"{_tmpdir_ref}:/cleanup",
+                 "alpine", "rm", "-rf", "/cleanup"],
+                timeout=30, capture_output=True,
+            )
+        except Exception:
+            pass
+        try:
+            shutil.rmtree(_tmpdir_ref, ignore_errors=True)
+        except Exception:
+            pass
 
 
 def main():
