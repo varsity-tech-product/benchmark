@@ -94,9 +94,16 @@ class MatchResult:
         return ratio <= tolerance
 
 
-def load_reference_trades(task_id: str) -> list[dict]:
-    """Load reference trade log from bench/data/reference/."""
-    ref_path = _REFERENCE_DIR / f"{task_id}_reference_trades.json"
+def load_reference_trades(task_id: str, run_id: str | None = None) -> list[dict]:
+    """Load reference trade log from bench/data/reference/.
+
+    For multi-run tasks, use run_id to load a specific run's trades:
+        {task_id}_reference_trades_{run_id}.json
+    """
+    if run_id:
+        ref_path = _REFERENCE_DIR / f"{task_id}_reference_trades_{run_id}.json"
+    else:
+        ref_path = _REFERENCE_DIR / f"{task_id}_reference_trades.json"
     if not ref_path.exists():
         return []
     with open(ref_path) as f:
@@ -404,8 +411,11 @@ def load_reference_positions(task_id: str) -> dict:
 
     # Determine date range from the trades file's parent JSON
     ref_path = _REFERENCE_DIR / f"{task_id}_reference_trades.json"
-    start_date = "2024-02-01"
-    end_date = "2024-12-31"
+    import sys as _sys
+    _sys.path.insert(0, str(_BENCH_ROOT))
+    from config.benchmark_dates import BENCH_START, BENCH_END
+    start_date = BENCH_START
+    end_date = BENCH_END
     if ref_path.exists():
         try:
             with open(ref_path) as f:
@@ -419,8 +429,20 @@ def load_reference_positions(task_id: str) -> dict:
     return {"task_id": task_id, "positions": positions}
 
 
-def load_reference_summary(task_id: str) -> dict:
-    """Load reference summary from bench/data/reference/I0X_reference_summary.json."""
+def load_reference_summary(task_id: str, run_id: str | None = None) -> dict:
+    """Load reference summary from bench/data/reference/I0X_reference_summary.json.
+
+    If run_id is provided, also tries {task_id}_reference_summary_{run_id}.json
+    before falling back to the default summary.
+    """
+    if run_id:
+        run_path = _REFERENCE_DIR / f"{task_id}_reference_summary_{run_id}.json"
+        if run_path.exists():
+            try:
+                with open(run_path) as f:
+                    return json.load(f)
+            except (json.JSONDecodeError, IOError):
+                pass
     path = _REFERENCE_DIR / f"{task_id}_reference_summary.json"
     if not path.exists():
         return {}
@@ -837,18 +859,20 @@ def compute_behavioral_score(
     task_id: str,
     workspace_path: str,
     resolution: str = "daily",
+    run_id: str | None = None,
 ) -> BehavioralResult:
     """Main entry: load all data, score each layer, return composite.
 
     Redistributes weights when layers are unavailable.
+    For multi-run tasks, pass run_id to load the correct reference trades/summary.
     """
     result = BehavioralResult()
 
     # ── Load reference data ──
     ref_signals = load_reference_signals(task_id)
     ref_positions = load_reference_positions(task_id)
-    ref_summary = load_reference_summary(task_id)
-    ref_trades = load_reference_trades(task_id)
+    ref_summary = load_reference_summary(task_id, run_id=run_id)
+    ref_trades = load_reference_trades(task_id, run_id=run_id)
 
     # ── Load agent data ──
     agent_trades = load_agent_trades(workspace_path)
@@ -856,8 +880,11 @@ def compute_behavioral_score(
 
     # Build agent positions (prefer orders, fall back to trades)
     ref_meta = ref_signals or ref_positions or {}
-    start_date = ref_meta.get("start_date", "2024-02-01")
-    end_date = ref_meta.get("end_date", "2024-12-31")
+    import sys as _sys
+    _sys.path.insert(0, str(_BENCH_ROOT))
+    from config.benchmark_dates import BENCH_START, BENCH_END
+    start_date = ref_meta.get("start_date", BENCH_START)
+    end_date = ref_meta.get("end_date", BENCH_END)
 
     if agent_orders:
         agent_positions = reconstruct_positions(agent_orders, start_date, end_date)
@@ -921,3 +948,126 @@ def compute_behavioral_score(
 
     result.composite_score = max(0.0, min(1.0, composite))
     return result
+
+
+# ════════════════════════════════════════════════════════════════════
+# Algorithm Framework Helpers (I07–I10)
+# ════════════════════════════════════════════════════════════════════
+
+
+def check_framework_architecture(workspace_path: str) -> dict:
+    """Check for SetAlpha/SetPortfolioConstruction/SetExecution patterns in .cs files."""
+    checks = {
+        "has_set_alpha": False,
+        "has_set_portfolio": False,
+        "has_set_execution": False,
+        "has_add_alpha": False,
+        "has_risk_management": False,
+    }
+
+    cs_text = ""
+    if workspace_path and os.path.isdir(workspace_path):
+        for root, _, files in os.walk(workspace_path):
+            for fname in sorted(files):
+                if fname.endswith(".cs"):
+                    try:
+                        with open(os.path.join(root, fname)) as f:
+                            cs_text += f.read() + "\n"
+                    except (IOError, UnicodeDecodeError):
+                        continue
+
+    cs_lower = cs_text.lower()
+    checks["has_set_alpha"] = bool(re.search(r"setalpha\s*\(", cs_lower))
+    checks["has_add_alpha"] = bool(re.search(r"addalpha\s*\(", cs_lower))
+    checks["has_set_portfolio"] = bool(re.search(r"setportfolioconstruction\s*\(", cs_lower))
+    checks["has_set_execution"] = bool(re.search(r"setexecution\s*\(", cs_lower))
+    checks["has_risk_management"] = bool(re.search(r"(?:set|add)riskmanagement\s*\(", cs_lower))
+
+    return checks
+
+
+def check_alpha_model_class(workspace_path: str) -> dict:
+    """Find classes inheriting AlphaModel with Update() method."""
+    checks = {
+        "inherits_alpha_model": False,
+        "has_update_method": False,
+        "alpha_class_count": 0,
+    }
+
+    cs_text = ""
+    if workspace_path and os.path.isdir(workspace_path):
+        for root, _, files in os.walk(workspace_path):
+            for fname in sorted(files):
+                if fname.endswith(".cs"):
+                    try:
+                        with open(os.path.join(root, fname)) as f:
+                            cs_text += f.read() + "\n"
+                    except (IOError, UnicodeDecodeError):
+                        continue
+
+    alpha_classes = re.findall(r"class\s+\w+\s*:\s*AlphaModel", cs_text, re.IGNORECASE)
+    checks["alpha_class_count"] = len(alpha_classes)
+    checks["inherits_alpha_model"] = len(alpha_classes) > 0
+    checks["has_update_method"] = bool(
+        re.search(r"override\s+.*Update\s*\(", cs_text, re.IGNORECASE)
+    )
+
+    return checks
+
+
+def check_insight_emission(artifact_text: str) -> bool:
+    """Check for Insight.Up/Down emission with magnitude/confidence."""
+    return bool(re.search(
+        r"insight\.(up|down)\s*\(", artifact_text, re.IGNORECASE
+    ))
+
+
+def check_risk_model_class(workspace_path: str) -> dict:
+    """Find classes inheriting RiskManagementModel with ManageRisk()."""
+    checks = {
+        "inherits_risk_model": False,
+        "has_manage_risk": False,
+    }
+
+    cs_text = ""
+    if workspace_path and os.path.isdir(workspace_path):
+        for root, _, files in os.walk(workspace_path):
+            for fname in sorted(files):
+                if fname.endswith(".cs"):
+                    try:
+                        with open(os.path.join(root, fname)) as f:
+                            cs_text += f.read() + "\n"
+                    except (IOError, UnicodeDecodeError):
+                        continue
+
+    checks["inherits_risk_model"] = bool(
+        re.search(r"class\s+\w+\s*:\s*RiskManagementModel", cs_text, re.IGNORECASE)
+    )
+    checks["has_manage_risk"] = bool(
+        re.search(r"override\s+.*ManageRisk\s*\(", cs_text, re.IGNORECASE)
+    )
+
+    return checks
+
+
+def load_multi_run_results(workspace_path: str, run_ids: list[str]) -> dict:
+    """Load results from workspace/results/{run_id}/ subdirs.
+
+    Returns dict mapping run_id → result dict (or None if not found).
+    """
+    results = {}
+    for run_id in run_ids:
+        run_dir = os.path.join(workspace_path, "results", run_id)
+        if os.path.isdir(run_dir):
+            summary_path = os.path.join(run_dir, "summary.json")
+            if os.path.exists(summary_path):
+                try:
+                    with open(summary_path) as f:
+                        results[run_id] = json.load(f)
+                except (json.JSONDecodeError, IOError):
+                    results[run_id] = None
+            else:
+                results[run_id] = None
+        else:
+            results[run_id] = None
+    return results

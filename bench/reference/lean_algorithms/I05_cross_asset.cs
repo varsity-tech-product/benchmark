@@ -38,6 +38,7 @@ namespace QuantTutorBench
         private const decimal ZScoreExit = 0.5m;
         private const int MaxActivePairs = 10;
         private const decimal PerLegWeight = 0.05m;  // 5% per leg
+        private const int MaxSymbols = 50;  // Cap for O(n²) pair computation
         private const decimal InitialCash = 100_000m;
 
         // ── State ──
@@ -56,12 +57,12 @@ namespace QuantTutorBench
 
         public override void Initialize()
         {
-            SetStartDate(2023, 1, 1);
-            SetEndDate(2023, 12, 31);
+            SetStartDate(2022, 1, 1);
+            SetEndDate(2025, 12, 31);
             SetAccountCurrency("USDT");
             SetCash(InitialCash);
 
-            var tickers = LoadUniverse();
+            var tickers = LoadUniverse().Take(MaxSymbols).ToList();
 
             foreach (var ticker in tickers)
             {
@@ -165,15 +166,15 @@ namespace QuantTutorBench
                 if (zScore > ZScoreEntry)
                 {
                     // Spread is high → short spread (short A, long B)
-                    SetHoldings(symA, -PerLegWeight, false, $"Pair short leg z={zScore:F2}");
-                    SetHoldings(symB, PerLegWeight, false, $"Pair long leg z={zScore:F2}");
+                    SetHoldings(symA, -PerLegWeight);
+                    SetHoldings(symB, PerLegWeight);
                     direction = -1;
                 }
                 else if (zScore < -ZScoreEntry)
                 {
                     // Spread is low → long spread (long A, short B)
-                    SetHoldings(symA, PerLegWeight, false, $"Pair long leg z={zScore:F2}");
-                    SetHoldings(symB, -PerLegWeight, false, $"Pair short leg z={zScore:F2}");
+                    SetHoldings(symA, PerLegWeight);
+                    SetHoldings(symB, -PerLegWeight);
                     direction = 1;
                 }
                 else

@@ -105,8 +105,9 @@ class BenchmarkOrchestrator:
     def _ensure_lean_data(self):
         """Download LEAN data from HF if not cached. Called once, cached."""
         if self._lean_data_paths is None:
+            from config.benchmark_config import DATASET_REVISION
             from scripts.data_manager import ensure_data
-            self._lean_data_paths = ensure_data(series="i")
+            self._lean_data_paths = ensure_data(series="i", revision=DATASET_REVISION)
         return self._lean_data_paths
 
     def run_single_task(

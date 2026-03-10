@@ -44,11 +44,132 @@ TASK_ALGO_MAP = {
     "I04": "I04_multi_timeframe.cs",
     "I05": "I05_cross_asset.cs",
     "I06": "I06_multi_signal.cs",
+    "I07": "I07_alpha_model.cs",
+    "I08": "I08_multi_alpha.cs",
+    "I09": "I09_risk_management.cs",
+    "I10": "I10_parameter_optimization.cs",
 }
 
-DEFAULT_LEAN_IMAGE = "quantconnect/lean:latest"
-DEFAULT_START_DATE = "2024-02-01"
-DEFAULT_END_DATE = "2024-12-31"
+# Import canonical config
+sys.path.insert(0, str(BENCH_ROOT))
+from config.benchmark_config import LEAN_IMAGE, DATASET_REVISION  # noqa: E402
+from config.benchmark_dates import BENCH_START, BENCH_END  # noqa: E402
+
+DEFAULT_LEAN_IMAGE = LEAN_IMAGE
+DEFAULT_START_DATE = BENCH_START
+DEFAULT_END_DATE = BENCH_END
+
+
+def _generate_i06_sweep() -> list[dict]:
+    """Generate I06 weight sweep grid (configs where weights sum to 1.0).
+
+    trend_weight:     0.2 to 0.6 step 0.1
+    reversion_weight: 0.1 to 0.5 step 0.1
+    carry_weight:     1.0 - trend - reversion, must be in [0.1, 0.5]
+    """
+    configs = []
+    for tw in [0.2, 0.3, 0.4, 0.5, 0.6]:
+        for rw in [0.1, 0.2, 0.3, 0.4, 0.5]:
+            cw = round(1.0 - tw - rw, 2)
+            if cw < 0.1 or cw > 0.5:
+                continue
+            run_id = f"t{tw:.1f}_r{rw:.1f}_c{cw:.1f}".replace(".", "")
+            configs.append({
+                "run_id": run_id,
+                "parameters": {
+                    "trend_weight": str(tw),
+                    "reversion_weight": str(rw),
+                    "carry_weight": str(cw),
+                },
+            })
+    return configs
+
+
+def _generate_i10_grid() -> list[dict]:
+    """Generate I10 parameter grid (~180 valid combos where fast < slow)."""
+    fast_periods = [5, 10, 15, 20, 25, 30]
+    slow_periods = [20, 30, 40, 50, 60, 70, 80, 90, 100]
+    thresholds = ["0.0", "0.005", "0.01", "0.015", "0.02"]
+    configs = []
+    for fast in fast_periods:
+        for slow in slow_periods:
+            if fast >= slow:
+                continue
+            for thresh in thresholds:
+                run_id = f"f{fast}_s{slow}_t{thresh.replace('.', '')}"
+                configs.append({
+                    "run_id": run_id,
+                    "parameters": {
+                        "fast_period": str(fast),
+                        "slow_period": str(slow),
+                        "signal_threshold": thresh,
+                    },
+                })
+    return configs
+
+
+# Multi-run configurations for tasks that need multiple backtest runs
+TASK_RUN_CONFIGS = {
+    "I06": _generate_i06_sweep(),
+    "I08": [
+        {"run_id": "insight_weighting", "parameters": {"portfolio_model": "InsightWeighting"}},
+        {"run_id": "equal_weighting", "parameters": {"portfolio_model": "EqualWeighting"}},
+    ],
+    "I09": [
+        {"run_id": "norisk", "parameters": {"risk_config": "none"}},
+        {"run_id": "builtin", "parameters": {"risk_config": "builtin"}},
+        {"run_id": "custom", "parameters": {"risk_config": "custom"}},
+    ],
+    "I10": _generate_i10_grid(),
+}
+
+
+def _compute_sharpe_from_trades(trades: list[dict], risk_free_rate: float = 0.0) -> float:
+    """Compute annualized Sharpe ratio from round-trip trade records.
+
+    Groups net_pnl by exit date, computes daily PnL mean/std, annualizes.
+    Used as a fallback when LEAN's Sharpe overflows for high-return crypto.
+    """
+    from collections import defaultdict
+
+    daily_pnl: dict[str, float] = defaultdict(float)
+    for t in trades:
+        exit_date = t.get("exit_time", "")[:10]  # YYYY-MM-DD
+        daily_pnl[exit_date] += float(t.get("net_pnl", 0))
+
+    if len(daily_pnl) < 2:
+        return 0.0
+
+    values = list(daily_pnl.values())
+    mean_pnl = sum(values) / len(values)
+    std_pnl = (sum((v - mean_pnl) ** 2 for v in values) / (len(values) - 1)) ** 0.5
+    if std_pnl < 1e-9:
+        return 0.0
+    return (mean_pnl - risk_free_rate) / std_pnl * (252 ** 0.5)
+
+
+def _fix_bogus_sharpe(metrics: dict, trades: list[dict]) -> None:
+    """Replace LEAN's Sharpe with trade-derived Sharpe when clearly bogus.
+
+    Triggers when:
+    - |sharpe| > 100 (overflow), or
+    - sharpe == 0 but there are enough trades for a meaningful calculation
+      (LEAN sometimes returns 0 instead of NaN for overflow cases).
+    """
+    try:
+        sharpe = float(metrics.get("sharpe_ratio", "0") or "0")
+    except (ValueError, TypeError):
+        sharpe = 0.0
+
+    needs_fix = abs(sharpe) > 100  # clear overflow
+    if sharpe == 0.0 and len(trades) >= 10:
+        # LEAN returned 0 but there are enough trades — likely overflow→0 clamping
+        needs_fix = True
+
+    if needs_fix and trades:
+        computed = _compute_sharpe_from_trades(trades)
+        metrics["sharpe_ratio"] = str(round(computed, 4))
+        metrics["sharpe_source"] = "computed_from_trades"
 
 
 def _check_docker():
@@ -67,11 +188,23 @@ def _check_docker():
 
 def _ensure_lean_data():
     """Ensure LEAN market data is available. Returns data directory path."""
-    # Try to use data_manager if available
+    # Prefer local converted data (populated by convert_binance_to_lean.py)
+    local_lean = BENCH_ROOT / "data" / "lean"
+    if local_lean.is_dir() and any(local_lean.iterdir()):
+        # Warn if custom symbol-properties is missing — LEAN will fall back to
+        # its built-in DB which doesn't cover all universe symbols.
+        if not (local_lean / "symbol-properties").is_dir():
+            print("WARNING: bench/data/lean/symbol-properties/ not found. "
+                  "Run scripts/generate_symbol_properties.py to create it. "
+                  "Without it, some symbols will fail to resolve in LEAN.")
+        print(f"Using LEAN data from: {local_lean}")
+        return str(local_lean)
+
+    # Try to use data_manager (HuggingFace) if local data unavailable
     try:
         sys.path.insert(0, str(BENCH_ROOT))
         from scripts.data_manager import ensure_data
-        paths = ensure_data(series="i")
+        paths = ensure_data(series="i", revision=DATASET_REVISION)
         return paths.lean_data
     except (ImportError, Exception) as e:
         print(f"WARNING: Could not load data via data_manager: {e}")
@@ -80,7 +213,6 @@ def _ensure_lean_data():
     candidates = [
         Path.home() / ".cache" / "quanttutorbench" / "lean_data",
         Path("/tmp/lean_data"),
-        BENCH_ROOT / "data" / "lean",
     ]
     for path in candidates:
         if path.is_dir() and any(path.iterdir()):
@@ -256,6 +388,8 @@ def run_lean_backtest(
     start_date: str = DEFAULT_START_DATE,
     end_date: str = DEFAULT_END_DATE,
     dry_run: bool = False,
+    parameters: dict | None = None,
+    run_id: str | None = None,
 ) -> dict:
     """Run a LEAN backtest for the given task and return structured results.
 
@@ -265,6 +399,8 @@ def run_lean_backtest(
         start_date: Backtest start date (YYYY-MM-DD)
         end_date: Backtest end date (YYYY-MM-DD)
         dry_run: If True, only validate setup without running
+        parameters: Optional dict of algorithm parameters to set in config.json
+        run_id: Optional run identifier for multi-run tasks
 
     Returns:
         Dict with trades, metrics, and metadata
@@ -288,6 +424,10 @@ def run_lean_backtest(
         "I04_multi_timeframe": "QuantTutorBench.I04MultiTimeframe",
         "I05_cross_asset": "QuantTutorBench.I05CrossAsset",
         "I06_multi_signal": "QuantTutorBench.I06MultiSignal",
+        "I07_alpha_model": "QuantTutorBench.I07AlphaModel",
+        "I08_multi_alpha": "QuantTutorBench.I08MultiAlpha",
+        "I09_risk_management": "QuantTutorBench.I09RiskManagement",
+        "I10_parameter_optimization": "QuantTutorBench.I10ParameterOptimization",
     }
     class_name = class_name_map.get(algo_name, algo_name)
 
@@ -298,7 +438,11 @@ def run_lean_backtest(
         print(f"  LEAN image: {lean_image}")
         print(f"  Data dir:   {lean_data_dir}")
         print(f"  Period:     {start_date} → {end_date}")
-        return {"status": "dry_run", "task_id": task_id}
+        if parameters:
+            print(f"  Parameters: {parameters}")
+        if run_id:
+            print(f"  Run ID:     {run_id}")
+        return {"status": "dry_run", "task_id": task_id, "run_id": run_id}
 
     # Set up temporary directories for the run.
     # Docker creates files as root, so use shutil.rmtree with onerror for cleanup.
@@ -339,6 +483,9 @@ def run_lean_backtest(
     <Reference Include="Python.Runtime">
       <HintPath>/Lean/Launcher/bin/Debug/Python.Runtime.dll</HintPath>
     </Reference>
+    <Reference Include="QuantConnect.Algorithm.Framework">
+      <HintPath>/Lean/Launcher/bin/Debug/QuantConnect.Algorithm.Framework.dll</HintPath>
+    </Reference>
   </ItemGroup>
 </Project>
 """
@@ -361,6 +508,9 @@ def run_lean_backtest(
         dll_path = "/CustomAlgo/bin/Debug/net10.0/CustomAlgo.dll"
         config = _build_lean_config(class_name, algo_file.name, start_date, end_date)
         config["algorithm-location"] = dll_path
+        # Merge task-specific parameters into config
+        if parameters:
+            config["parameters"] = {**config.get("parameters", {}), **parameters}
         config_path = os.path.join(config_dir, "config.json")
         with open(config_path, "w") as f:
             json.dump(config, f, indent=2)
@@ -396,7 +546,8 @@ def run_lean_backtest(
             "-c", build_and_run,
         ]
 
-        print(f"Running LEAN backtest for {task_id} ({class_name})...")
+        run_label = f"{task_id}/{run_id}" if run_id else task_id
+        print(f"Running LEAN backtest for {run_label} ({class_name})...")
 
         try:
             result = subprocess.run(
@@ -437,6 +588,9 @@ def run_lean_backtest(
         # Set total_trades from actual paired trade count (not LEAN's "Total Orders")
         metrics["total_trades"] = len(trades)
 
+        # Fix bogus Sharpe from LEAN overflow (common with extreme crypto returns)
+        _fix_bogus_sharpe(metrics, trades)
+
         output = {
             "task_id": task_id,
             "algorithm": class_name,
@@ -453,7 +607,12 @@ def run_lean_backtest(
 
         # Save to reference directory
         REFERENCE_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-        output_path = REFERENCE_OUTPUT_DIR / f"{task_id}_reference_trades.json"
+        if run_id:
+            output_path = REFERENCE_OUTPUT_DIR / f"{task_id}_reference_trades_{run_id}.json"
+            output["run_id"] = run_id
+            output["parameters"] = parameters or {}
+        else:
+            output_path = REFERENCE_OUTPUT_DIR / f"{task_id}_reference_trades.json"
         with open(output_path, "w") as f:
             json.dump(output, f, indent=2)
 
@@ -483,6 +642,169 @@ def run_lean_backtest(
             pass
 
 
+def _export_sweep_summary(task_id: str, results: list[dict]) -> None:
+    """Export aggregated sweep/grid results for multi-run tasks (I06, I10)."""
+    successful = [r for r in results if r.get("status") == "success"]
+    if not successful:
+        return
+
+    sweep_results = []
+    for r in successful:
+        params = r.get("parameters", {})
+        metrics = r.get("metrics", {})
+        entry_metrics = {
+            "total_trades": metrics.get("total_trades", 0),
+            "sharpe_ratio": metrics.get("sharpe_ratio", "0"),
+            "total_return": metrics.get("total_return", "0%"),
+            "max_drawdown": metrics.get("max_drawdown", "0%"),
+            "win_rate": metrics.get("win_rate", "0%"),
+        }
+        # Fix bogus Sharpe for sweep entries too
+        _fix_bogus_sharpe(entry_metrics, r.get("trades", []))
+        sweep_results.append({
+            "run_id": r.get("run_id", ""),
+            "parameters": params,
+            "metrics": entry_metrics,
+        })
+
+    # Sort by Sharpe ratio descending
+    def _sharpe_float(entry):
+        try:
+            return float(entry["metrics"]["sharpe_ratio"])
+        except (ValueError, TypeError):
+            return -999
+    sweep_results.sort(key=_sharpe_float, reverse=True)
+
+    # Export comparison JSON for I08/I09 (not a sweep, but a comparison)
+    # Include ALL runs (even those with 0 trades) to show model differences
+    if task_id in ("I08", "I09"):
+        comparison = {
+            "task_id": task_id,
+            "type": "comparison",
+            "generated_at": datetime.now(tz=__import__('datetime').timezone.utc).isoformat(),
+            "runs": [
+                {
+                    "run_id": r.get("run_id", ""),
+                    "parameters": r.get("parameters", {}),
+                    "metrics": r.get("metrics", {}),
+                    "trade_count": r.get("trade_count", 0),
+                    "status": r.get("status", "unknown"),
+                }
+                for r in results
+                if r.get("status") not in ("error", "timeout")
+            ],
+        }
+        comp_path = REFERENCE_OUTPUT_DIR / f"{task_id}_reference_comparison.json"
+        with open(comp_path, "w") as f:
+            json.dump(comparison, f, indent=2)
+        print(f"  Exported comparison to {comp_path.name}")
+        return  # I08/I09 don't need sweep summary
+
+    # Determine output filename
+    if task_id == "I06":
+        out_path = REFERENCE_OUTPUT_DIR / "I06_reference_sweep_results.json"
+    elif task_id == "I10":
+        out_path = REFERENCE_OUTPUT_DIR / "I10_reference_grid_results.json"
+    else:
+        out_path = REFERENCE_OUTPUT_DIR / f"{task_id}_reference_sweep_results.json"
+
+    summary = {
+        "task_id": task_id,
+        "type": "parameter_sweep",
+        "generated_at": datetime.now(tz=__import__('datetime').timezone.utc).isoformat(),
+        "total_configurations_tested": len(successful),
+        "total_configurations_attempted": len(results),
+        "best_configuration": sweep_results[0] if sweep_results else None,
+        "sweep_results": sweep_results,
+    }
+
+    REFERENCE_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    with open(out_path, "w") as f:
+        json.dump(summary, f, indent=2)
+    print(f"  Exported {len(sweep_results)} sweep results to {out_path.name}")
+    if sweep_results:
+        best = sweep_results[0]
+        print(f"  Best config: {best['run_id']} (Sharpe={best['metrics']['sharpe_ratio']})")
+
+
+def run_lean_backtest_multi(
+    task_id: str,
+    lean_image: str = DEFAULT_LEAN_IMAGE,
+    start_date: str = DEFAULT_START_DATE,
+    end_date: str = DEFAULT_END_DATE,
+    dry_run: bool = False,
+    max_workers: int = 1,
+) -> list[dict]:
+    """Run multiple LEAN backtests for tasks with parameterized configurations.
+
+    For tasks in TASK_RUN_CONFIGS, iterates over each config and runs
+    run_lean_backtest() per config. For I10, uses ThreadPoolExecutor
+    for parallel execution.
+
+    Returns list of result dicts.
+    """
+    task_id = task_id.upper()
+    configs = TASK_RUN_CONFIGS.get(task_id)
+    if not configs:
+        # Single-run task — delegate directly
+        result = run_lean_backtest(task_id, lean_image, start_date, end_date, dry_run)
+        return [result]
+
+    print(f"Multi-run task {task_id}: {len(configs)} configurations")
+
+    if max_workers > 1 and not dry_run:
+        import concurrent.futures
+
+        results = []
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = {}
+            for cfg in configs:
+                future = executor.submit(
+                    run_lean_backtest,
+                    task_id=task_id,
+                    lean_image=lean_image,
+                    start_date=start_date,
+                    end_date=end_date,
+                    dry_run=dry_run,
+                    parameters=cfg["parameters"],
+                    run_id=cfg["run_id"],
+                )
+                futures[future] = cfg["run_id"]
+
+            for future in concurrent.futures.as_completed(futures):
+                rid = futures[future]
+                try:
+                    result = future.result()
+                    results.append(result)
+                    tc = result.get("trade_count", 0)
+                    print(f"  {rid}: {result.get('status', 'unknown')} ({tc} trades)")
+                except Exception as e:
+                    print(f"  {rid}: FAILED - {e}")
+                    results.append({"status": "error", "run_id": rid, "error": str(e)})
+
+        _export_sweep_summary(task_id, results)
+        return results
+    else:
+        results = []
+        for cfg in configs:
+            try:
+                result = run_lean_backtest(
+                    task_id=task_id,
+                    lean_image=lean_image,
+                    start_date=start_date,
+                    end_date=end_date,
+                    dry_run=dry_run,
+                    parameters=cfg["parameters"],
+                    run_id=cfg["run_id"],
+                )
+                results.append(result)
+            except Exception as e:
+                print(f"  {cfg['run_id']}: FAILED - {e}")
+                results.append({"status": "error", "run_id": cfg["run_id"], "error": str(e)})
+        _export_sweep_summary(task_id, results)
+        return results
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Generate reference trade logs from LEAN backtests"
@@ -490,7 +812,7 @@ def main():
     parser.add_argument(
         "--task",
         required=True,
-        help="Task ID (I02-I06) or 'all' to run all tasks",
+        help="Task ID (I01-I10) or 'all' to run all tasks",
     )
     parser.add_argument(
         "--lean-image",
@@ -512,6 +834,12 @@ def main():
         action="store_true",
         help="Validate setup without running LEAN",
     )
+    parser.add_argument(
+        "--max-workers",
+        type=int,
+        default=1,
+        help="Max parallel Docker workers for multi-run tasks (default: 1)",
+    )
 
     args = parser.parse_args()
 
@@ -525,17 +853,30 @@ def main():
     results = {}
     for task_id in tasks:
         try:
-            result = run_lean_backtest(
-                task_id=task_id,
-                lean_image=args.lean_image,
-                start_date=args.start_date,
-                end_date=args.end_date,
-                dry_run=args.dry_run,
-            )
-            results[task_id] = result
-            status = result.get("status", "unknown")
-            trade_count = result.get("trade_count", 0)
-            print(f"  {task_id}: status={status}, trades={trade_count}")
+            if task_id in TASK_RUN_CONFIGS:
+                run_results = run_lean_backtest_multi(
+                    task_id=task_id,
+                    lean_image=args.lean_image,
+                    start_date=args.start_date,
+                    end_date=args.end_date,
+                    dry_run=args.dry_run,
+                    max_workers=args.max_workers,
+                )
+                results[task_id] = run_results
+                total_trades = sum(r.get("trade_count", 0) for r in run_results)
+                print(f"  {task_id}: {len(run_results)} runs, {total_trades} total trades")
+            else:
+                result = run_lean_backtest(
+                    task_id=task_id,
+                    lean_image=args.lean_image,
+                    start_date=args.start_date,
+                    end_date=args.end_date,
+                    dry_run=args.dry_run,
+                )
+                results[task_id] = result
+                status = result.get("status", "unknown")
+                trade_count = result.get("trade_count", 0)
+                print(f"  {task_id}: status={status}, trades={trade_count}")
         except Exception as e:
             print(f"  {task_id}: FAILED - {e}")
             results[task_id] = {"status": "error", "error": str(e)}
@@ -544,9 +885,13 @@ def main():
     print("\n" + "=" * 60)
     print("Reference Generation Summary:")
     for task_id, result in results.items():
-        status = result.get("status", "unknown")
-        trades = result.get("trade_count", 0)
-        print(f"  {task_id}: {status} ({trades} trades)")
+        if isinstance(result, list):
+            total_trades = sum(r.get("trade_count", 0) for r in result)
+            print(f"  {task_id}: {len(result)} runs ({total_trades} total trades)")
+        else:
+            status = result.get("status", "unknown")
+            trades = result.get("trade_count", 0)
+            print(f"  {task_id}: {status} ({trades} trades)")
     print("=" * 60)
 
 

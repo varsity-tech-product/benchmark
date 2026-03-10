@@ -1,0 +1,58 @@
+{
+  "task_id": "I09",
+  "type": "comparison",
+  "generated_at": "2026-03-10T11:42:18.415999+00:00",
+  "runs": [
+    {
+      "run_id": "norisk",
+      "parameters": {
+        "risk_config": "none"
+      },
+      "metrics": {
+        "total_orders": 1004,
+        "sharpe_ratio": "-0.294",
+        "total_return": "-76.644%",
+        "max_drawdown": "92.600%",
+        "win_rate": "36%",
+        "profit_loss_ratio": "1.05",
+        "annual_return": "-30.464%",
+        "total_trades": 395
+      },
+      "trade_count": 395
+    },
+    {
+      "run_id": "builtin",
+      "parameters": {
+        "risk_config": "builtin"
+      },
+      "metrics": {
+        "total_orders": 52166,
+        "sharpe_ratio": "0.307",
+        "total_return": "49.510%",
+        "max_drawdown": "45.100%",
+        "win_rate": "36%",
+        "profit_loss_ratio": "1.78",
+        "annual_return": "10.570%",
+        "total_trades": 24797
+      },
+      "trade_count": 24797
+    },
+    {
+      "run_id": "custom",
+      "parameters": {
+        "risk_config": "custom"
+      },
+      "metrics": {
+        "total_orders": 73461,
+        "sharpe_ratio": "0.514",
+        "total_return": "118.399%",
+        "max_drawdown": "31.100%",
+        "win_rate": "44%",
+        "profit_loss_ratio": "1.33",
+        "annual_return": "21.550%",
+        "total_trades": 33970
+      },
+      "trade_count": 33970
+    }
+  ]
+}

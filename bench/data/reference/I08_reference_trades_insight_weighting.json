@@ -1,0 +1,26 @@
+{
+  "task_id": "I08",
+  "algorithm": "QuantTutorBench.I08MultiAlpha",
+  "algorithm_file": "I08_multi_alpha.cs",
+  "start_date": "2022-01-01",
+  "end_date": "2025-12-31",
+  "lean_image": "quantconnect/lean:latest",
+  "generated_at": "2026-03-10T13:04:04.459178+00:00",
+  "status": "no_trades",
+  "metrics": {
+    "total_orders": 0,
+    "sharpe_ratio": "0",
+    "total_return": "0%",
+    "max_drawdown": "0%",
+    "win_rate": "0%",
+    "profit_loss_ratio": "0",
+    "annual_return": "0%",
+    "total_trades": 0
+  },
+  "trades": [],
+  "trade_count": 0,
+  "run_id": "insight_weighting",
+  "parameters": {
+    "portfolio_model": "InsightWeighting"
+  }
+}

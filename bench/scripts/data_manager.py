@@ -21,7 +21,13 @@ from pathlib import Path
 
 from huggingface_hub import snapshot_download
 
-HF_REPO_ID = "Varsity-Tech/quant-tutor-bench-data"
+# Import pinned defaults from reproducibility config
+import sys as _sys
+_sys.path.insert(0, str(Path(__file__).parent.parent))
+from config.benchmark_config import DATASET_REPO_ID as _CFG_REPO_ID  # noqa: E402
+from config.benchmark_config import DATASET_REVISION as _CFG_REVISION  # noqa: E402
+
+HF_REPO_ID = _CFG_REPO_ID
 DEFAULT_CACHE_DIR = Path(__file__).parent.parent / "data" / "hf_cache"
 
 
@@ -36,7 +42,7 @@ def ensure_data(
     series: str = "i",
     cache_dir: str | Path = DEFAULT_CACHE_DIR,
     hf_repo: str = HF_REPO_ID,
-    revision: str | None = None,
+    revision: str | None = _CFG_REVISION,
 ) -> DataPaths:
     """Download data from HuggingFace if not cached locally.
 

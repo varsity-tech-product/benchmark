@@ -54,8 +54,8 @@ namespace QuantTutorBench
 
         public override void Initialize()
         {
-            SetStartDate(2023, 1, 1);
-            SetEndDate(2023, 12, 31);
+            SetStartDate(2022, 1, 1);
+            SetEndDate(2025, 12, 31);
             SetAccountCurrency("USDT");
             SetCash(InitialCash);
 
@@ -93,7 +93,7 @@ namespace QuantTutorBench
             // Warm up: need EmaPeriod * 4h = 80 hours + RSI warm-up
             SetWarmUp(TimeSpan.FromHours(EmaPeriod * 4 + RsiPeriod));
 
-            Log($"I04 initialized with {tickers.Count} symbols, " +
+            Log($"I04 initialized with {_symbolData.Count} symbols (of {tickers.Count} in universe), " +
                 $"4h EMA({EmaPeriod}) + 1h RSI({RsiPeriod})");
         }
 
@@ -147,8 +147,7 @@ namespace QuantTutorBench
                     var targetWeight = 1.0m / totalAfterEntry;
                     foreach (var symbol in longCandidates)
                     {
-                        SetHoldings(symbol, targetWeight, false,
-                            $"MTF entry: 4h EMA bullish, 1h RSI={_symbolData[symbol].Rsi1h.Current.Value:F1}");
+                        SetHoldings(symbol, targetWeight);
                     }
                 }
             }

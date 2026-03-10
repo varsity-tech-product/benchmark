@@ -36,9 +36,9 @@ namespace QuantTutorBench
         private const int SmaPeriodFast = 20;
         private const int SmaPeriodSlow = 60;
         private const int RsiPeriod = 14;
-        private const decimal TrendWeight = 0.40m;
-        private const decimal ReversionWeight = 0.30m;
-        private const decimal CarryWeight = 0.30m;
+        private decimal TrendWeight = 0.40m;
+        private decimal ReversionWeight = 0.30m;
+        private decimal CarryWeight = 0.30m;
         private const int MaxLongPositions = 20;
         private const int MaxShortPositions = 20;
         private const decimal InitialCash = 100_000m;
@@ -58,10 +58,18 @@ namespace QuantTutorBench
 
         public override void Initialize()
         {
-            SetStartDate(2023, 1, 1);
-            SetEndDate(2023, 12, 31);
+            SetStartDate(2022, 1, 1);
+            SetEndDate(2025, 12, 31);
             SetAccountCurrency("USDT");
             SetCash(InitialCash);
+
+            // Read weights from parameters (for sweep), with defaults matching hardcoded values
+            var twStr = GetParameter("trend_weight");
+            if (!string.IsNullOrEmpty(twStr)) TrendWeight = decimal.Parse(twStr);
+            var rwStr = GetParameter("reversion_weight");
+            if (!string.IsNullOrEmpty(rwStr)) ReversionWeight = decimal.Parse(rwStr);
+            var cwStr = GetParameter("carry_weight");
+            if (!string.IsNullOrEmpty(cwStr)) CarryWeight = decimal.Parse(cwStr);
 
             var tickers = LoadUniverse();
 
@@ -83,7 +91,7 @@ namespace QuantTutorBench
 
             SetWarmUp(SmaPeriodSlow + 1, Resolution.Daily);
 
-            Log($"I06 initialized with {tickers.Count} symbols, " +
+            Log($"I06 initialized with {_data.Count} symbols (of {tickers.Count} in universe), " +
                 $"SMA({SmaPeriodFast}/{SmaPeriodSlow}) + RSI({RsiPeriod}) + ROCP(1), " +
                 $"weights=({TrendWeight}/{ReversionWeight}/{CarryWeight})");
         }
@@ -180,8 +188,7 @@ namespace QuantTutorBench
             // Set target holdings
             foreach (var kvp in targetWeights)
             {
-                SetHoldings(kvp.Key, kvp.Value, false,
-                    $"Composite rebal, w={kvp.Value:F3}");
+                SetHoldings(kvp.Key, kvp.Value);
             }
         }
 

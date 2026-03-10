@@ -40,8 +40,8 @@ namespace QuantTutorBench
 
         public override void Initialize()
         {
-            SetStartDate(2024, 2, 1);
-            SetEndDate(2024, 12, 31);
+            SetStartDate(2022, 1, 1);
+            SetEndDate(2025, 12, 31);
             SetAccountCurrency("USDT");
             SetCash(InitialCash);
 
