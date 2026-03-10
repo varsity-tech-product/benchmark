@@ -67,25 +67,18 @@ namespace QuantTutorBench
 
             foreach (var ticker in tickers)
             {
-                try
-                {
-                    var symbol = AddCryptoFuture(ticker, Resolution.Daily, Market.Binance).Symbol;
+                var symbol = AddCryptoFuture(ticker, Resolution.Daily, Market.Binance).Symbol;
 
-                    var sd = new SymbolData
-                    {
-                        Symbol = symbol,
-                        SmaFast = SMA(symbol, SmaPeriodFast, Resolution.Daily),
-                        SmaSlow = SMA(symbol, SmaPeriodSlow, Resolution.Daily),
-                        Rsi = RSI(symbol, RsiPeriod, MovingAverageType.Wilders, Resolution.Daily),
-                        Momentum1d = ROCP(symbol, 1, Resolution.Daily),
-                    };
-
-                    _data[symbol] = sd;
-                }
-                catch (Exception ex)
+                var sd = new SymbolData
                 {
-                    Log($"Skipping {ticker}: {ex.Message}");
-                }
+                    Symbol = symbol,
+                    SmaFast = SMA(symbol, SmaPeriodFast, Resolution.Daily),
+                    SmaSlow = SMA(symbol, SmaPeriodSlow, Resolution.Daily),
+                    Rsi = RSI(symbol, RsiPeriod, MovingAverageType.Wilders, Resolution.Daily),
+                    Momentum1d = ROCP(symbol, 1, Resolution.Daily),
+                };
+
+                _data[symbol] = sd;
             }
 
             SetWarmUp(SmaPeriodSlow + 1, Resolution.Daily);

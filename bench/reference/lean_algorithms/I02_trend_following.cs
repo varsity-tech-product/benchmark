@@ -50,18 +50,11 @@ namespace QuantTutorBench
 
             foreach (var ticker in universeSymbols)
             {
-                try
-                {
-                    var symbol = AddCryptoFuture(ticker, Resolution.Daily, Market.Binance).Symbol;
-                    _universe.Add(symbol);
+                var symbol = AddCryptoFuture(ticker, Resolution.Daily, Market.Binance).Symbol;
+                _universe.Add(symbol);
 
-                    _fastSma[symbol] = SMA(symbol, FastPeriod, Resolution.Daily);
-                    _slowSma[symbol] = SMA(symbol, SlowPeriod, Resolution.Daily);
-                }
-                catch (Exception ex)
-                {
-                    Log($"Skipping {ticker}: {ex.Message}");
-                }
+                _fastSma[symbol] = SMA(symbol, FastPeriod, Resolution.Daily);
+                _slowSma[symbol] = SMA(symbol, SlowPeriod, Resolution.Daily);
             }
 
             // Warm up indicators before trading

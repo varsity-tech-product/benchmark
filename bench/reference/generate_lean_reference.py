@@ -74,6 +74,12 @@ def _ensure_lean_data():
     # Prefer local converted data (populated by convert_binance_to_lean.py)
     local_lean = BENCH_ROOT / "data" / "lean"
     if local_lean.is_dir() and any(local_lean.iterdir()):
+        # Warn if custom symbol-properties is missing — LEAN will fall back to
+        # its built-in DB which doesn't cover all universe symbols.
+        if not (local_lean / "symbol-properties").is_dir():
+            print("WARNING: bench/data/lean/symbol-properties/ not found. "
+                  "Run scripts/generate_symbol_properties.py to create it. "
+                  "Without it, some symbols will fail to resolve in LEAN.")
         print(f"Using LEAN data from: {local_lean}")
         return str(local_lean)
 

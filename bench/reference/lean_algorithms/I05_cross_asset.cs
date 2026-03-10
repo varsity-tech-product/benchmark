@@ -66,16 +66,9 @@ namespace QuantTutorBench
 
             foreach (var ticker in tickers)
             {
-                try
-                {
-                    var symbol = AddCryptoFuture(ticker, Resolution.Daily, Market.Binance).Symbol;
-                    _symbols.Add(symbol);
-                    _priceHistory[symbol] = new RollingWindow<decimal>(LookbackPeriod);
-                }
-                catch (Exception ex)
-                {
-                    Log($"Skipping {ticker}: {ex.Message}");
-                }
+                var symbol = AddCryptoFuture(ticker, Resolution.Daily, Market.Binance).Symbol;
+                _symbols.Add(symbol);
+                _priceHistory[symbol] = new RollingWindow<decimal>(LookbackPeriod);
             }
 
             SetWarmUp(LookbackPeriod + 1, Resolution.Daily);

@@ -6,11 +6,10 @@ quant-tutor-bench HuggingFace dataset repo, matching the layout that
 data_manager.py expects when downloading.
 
 HF repo layout produced:
-    lean/crypto/binance/daily/*.zip
-    lean/crypto/binance/hour/*.zip
-    lean/crypto/binance/4hour/*.zip
-    lean/crypto/binance/5minute/**/*.zip
-    lean/crypto/binance/minute/**/*.zip
+    lean/cryptofuture/binance/{daily,hour,minute,...}/*.zip
+    lean/symbol-properties/symbol-properties-database.csv
+    lean/symbol-properties/security-database.csv
+    lean/market-hours/market-hours-database.json
     lean/universe.json
     raw/i-series/universe.json
 
@@ -36,7 +35,15 @@ def upload(
     repo_id: str = DEFAULT_REPO_ID,
     dry_run: bool = False,
 ) -> None:
-    """Upload LEAN data and flat universe to HuggingFace."""
+    """Upload LEAN data and flat universe to HuggingFace.
+
+    Uses upload_large_folder for the bulk data (which doesn't support
+    path_in_repo), so we create a staging directory with the correct
+    ``lean/`` prefix via symlinks, then upload that.
+    """
+    import shutil
+    import tempfile
+
     from huggingface_hub import HfApi
 
     if not lean_dir.is_dir():
@@ -46,7 +53,9 @@ def upload(
 
     # Count files for summary
     zip_files = list(lean_dir.rglob("*.zip"))
-    print(f"LEAN directory: {lean_dir} ({len(zip_files)} zip files)")
+    all_files = list(lean_dir.rglob("*"))
+    file_count = sum(1 for f in all_files if f.is_file())
+    print(f"LEAN directory: {lean_dir} ({len(zip_files)} zip files, {file_count} total files)")
     print(f"Flat universe:  {flat_universe}")
     print(f"HF repo:        {repo_id}")
 
@@ -57,29 +66,26 @@ def upload(
     api = HfApi()
     api.create_repo(repo_id=repo_id, repo_type="dataset", exist_ok=True)
 
-    print("\nUploading LEAN data folder...")
-    api.upload_folder(
-        folder_path=str(lean_dir),
-        path_in_repo="lean",
-        repo_id=repo_id,
-        repo_type="dataset",
-    )
+    # Build staging dir: lean/ → symlink to data, plus universe files
+    staging = Path(tempfile.mkdtemp(prefix="hf_upload_"))
+    try:
+        lean_link = staging / "lean"
+        lean_link.symlink_to(lean_dir.resolve())
 
-    print("Uploading flat universe.json to lean/universe.json...")
-    api.upload_file(
-        path_or_fileobj=str(flat_universe),
-        path_in_repo="lean/universe.json",
-        repo_id=repo_id,
-        repo_type="dataset",
-    )
+        # Copy universe files into staging
+        raw_dir = staging / "raw" / "i-series"
+        raw_dir.mkdir(parents=True)
+        shutil.copy2(str(flat_universe), str(raw_dir / "universe.json"))
 
-    print("Uploading flat universe.json to raw/i-series/universe.json...")
-    api.upload_file(
-        path_or_fileobj=str(flat_universe),
-        path_in_repo="raw/i-series/universe.json",
-        repo_id=repo_id,
-        repo_type="dataset",
-    )
+        print(f"\nStaging directory: {staging}")
+        print("Uploading via upload_large_folder...")
+        api.upload_large_folder(
+            folder_path=str(staging),
+            repo_id=repo_id,
+            repo_type="dataset",
+        )
+    finally:
+        shutil.rmtree(staging, ignore_errors=True)
 
     print("\nUpload complete.")
 

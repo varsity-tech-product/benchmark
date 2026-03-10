@@ -63,38 +63,31 @@ namespace QuantTutorBench
 
             foreach (var ticker in tickers)
             {
-                try
+                var security = AddCryptoFuture(ticker, Resolution.Hour, Market.Binance);
+                var symbol = security.Symbol;
+
+                var sd = new SymbolData
                 {
-                    var security = AddCryptoFuture(ticker, Resolution.Hour, Market.Binance);
-                    var symbol = security.Symbol;
+                    Symbol = symbol,
+                    Ema4h = new ExponentialMovingAverage($"{ticker}_EMA4h", EmaPeriod),
+                    Rsi1h = RSI(symbol, RsiPeriod, MovingAverageType.Wilders, Resolution.Hour),
+                    PrevEma4h = 0m,
+                    Ema4hBullish = false,
+                };
 
-                    var sd = new SymbolData
-                    {
-                        Symbol = symbol,
-                        Ema4h = new ExponentialMovingAverage($"{ticker}_EMA4h", EmaPeriod),
-                        Rsi1h = RSI(symbol, RsiPeriod, MovingAverageType.Wilders, Resolution.Hour),
-                        PrevEma4h = 0m,
-                        Ema4hBullish = false,
-                    };
-
-                    // Consolidate hourly bars into 4-hour bars for EMA
-                    Consolidate(symbol, TimeSpan.FromHours(4), (TradeBar bar) =>
-                    {
-                        sd.Ema4h.Update(bar.EndTime, bar.Close);
-                        if (sd.Ema4h.IsReady)
-                        {
-                            var currentEma = sd.Ema4h.Current.Value;
-                            sd.Ema4hBullish = sd.PrevEma4h > 0 && currentEma > sd.PrevEma4h;
-                            sd.PrevEma4h = currentEma;
-                        }
-                    });
-
-                    _symbolData[symbol] = sd;
-                }
-                catch (Exception ex)
+                // Consolidate hourly bars into 4-hour bars for EMA
+                Consolidate(symbol, TimeSpan.FromHours(4), (TradeBar bar) =>
                 {
-                    Log($"Skipping {ticker}: {ex.Message}");
-                }
+                    sd.Ema4h.Update(bar.EndTime, bar.Close);
+                    if (sd.Ema4h.IsReady)
+                    {
+                        var currentEma = sd.Ema4h.Current.Value;
+                        sd.Ema4hBullish = sd.PrevEma4h > 0 && currentEma > sd.PrevEma4h;
+                        sd.PrevEma4h = currentEma;
+                    }
+                });
+
+                _symbolData[symbol] = sd;
             }
 
             // Warm up: need EmaPeriod * 4h = 80 hours + RSI warm-up
