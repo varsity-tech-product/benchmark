@@ -2496,10 +2496,11 @@ Each reference signal file must be validated:
 - [ ] Configure Git LFS for large files (`.zip`, `.csv` > 10MB)
 - [ ] Upload raw S/B-series data to `raw/sb-series/`
 - [ ] Upload raw I-series data to `raw/i-series/` (organized by tier)
-- [x] Upload LEAN-format data to `lean/` *(test subset: 3 symbols, 739 zips uploaded)*
+- [x] Upload LEAN-format data to `lean/` *(full universe: 671 symbols, ~7,991 files including symbol-properties + market-hours)*
 - [x] Upload `universe.json` to `raw/i-series/` *(flat format for C# algorithms)*
 - [ ] Tag initial dataset version (commit hash for reproducibility)
-- [x] Write `bench/scripts/upload_lean_to_hf.py` — upload LEAN data + flat universe.json via `upload_folder()`
+- [x] Write `bench/scripts/upload_lean_to_hf.py` — upload LEAN data + symbol-properties + market-hours + universe via `upload_large_folder()`
+- [x] Write `bench/scripts/generate_symbol_properties.py` — generate custom symbol-properties DB covering all 671 symbols (LEAN built-in only has 591)
 
 **Data manager (runtime download + cache):**
 - [x] Write `bench/scripts/data_manager.py` (see §2.7)
@@ -2540,9 +2541,9 @@ Each reference signal file must be validated:
 - [x] Write reference C# algorithm: `I04_multi_timeframe.cs`
 - [x] Write reference C# algorithm: `I05_cross_asset.cs`
 - [x] Write reference C# algorithm: `I06_multi_signal.cs`
-- [ ] Run all reference algorithms → export trade logs *(reference JSONs exist but need re-generation with flat universe.json)*
+- [x] Run all reference algorithms → export trade logs *(I01=85, I02=1763, I03=662, I04=4026, I05=2294, I06=13719 trades)*
 - [ ] Run I06 parameter sweep → export sweep results *(reference JSON exists)*
-- [ ] Validate all reference trade logs (see §11.3)
+- [x] Validate all reference trade logs — all 6 backtests pass with custom symbol-properties DB, zero skipped symbols
 - [x] Write `bench/reference/generate_reference_signals.py` — deterministic signal computation from raw data (I01–I06)
 - [x] Generate reference signals for I01 (316 signals, SMA(20) on daily BTC)
 - [x] Generate reference signals for I02–I06 (all tasks, all formulas)

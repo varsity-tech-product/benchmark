@@ -123,9 +123,11 @@ bench/
 │   ├── position_bug.py           #   Position signal 1/0 instead of 1/0/-1
 │   └── overfit_single.py         #   Over-parameterized strategy (12 params)
 │
-├── data/                         # Frozen market data
+├── data/                         # Market data + reference outputs
 │   ├── frozen/                   #   Static CSV files (AAPL, SPY, etc.)
 │   ├── universe.json             #   Binance futures symbol universe (3 tiers + funding)
+│   ├── lean_universe.json        #   Flat 671-symbol list for C# algorithms
+│   ├── lean/                     #   LEAN-format data (cryptofuture, symbol-properties, market-hours)
 │   └── reference/                #   Ground-truth trade logs for I-series eval
 │
 ├── docs/reference/               # Agent's reference library
@@ -153,7 +155,8 @@ bench/
 │   ├── download_binance_full_universe.py  # Full-universe Binance kline downloader
 │   ├── convert_binance_to_lean.py #  Convert Binance CSVs → LEAN TradeBar format
 │   ├── generate_flat_universe.py #   Structured universe.json → flat JSON for C# algos
-│   ├── upload_lean_to_hf.py      #   Upload LEAN data + universe to HuggingFace
+│   ├── generate_symbol_properties.py # Generate custom symbol-properties DB for all 671 symbols
+│   ├── upload_lean_to_hf.py      #   Upload LEAN data + metadata to HuggingFace
 │   └── prepare_i_series_data.py  #   End-to-end pipeline orchestrator (download→convert→upload)
 │
 ├── reference/                    # Reference algorithms
@@ -412,7 +415,7 @@ python run_benchmark.py run-single \
 
 | Design Doc Feature | Section | Notes |
 |--------------------|---------|-------|
-| I-series data pipeline full production run | §2.5 | Pipeline tested end-to-end with 3-symbol subset (download → convert → flat universe → HF upload). Full-universe (~100 symbols) run pending. Test data live at `Varsity-Tech/quant-tutor-bench-data` |
+| I-series data pipeline full production run | §2.5 | **Done.** Full 671-symbol universe downloaded, converted to LEAN format, custom symbol-properties DB generated (covers all 671 vs LEAN's built-in 591), uploaded to `Varsity-Tech/quant-tutor-bench-data` (~7,991 files). All 6 reference backtests pass with zero skipped symbols. |
 | Full 41 base tasks (currently 12 Layer 2 tasks) | §5.3 | 12 tasks implemented (D01, S01, I01-I06, B01, X01, E01, A01); remaining 29 to be added |
 | ~2000 Layer 1 items | §5.0 | ~40 items currently; pipeline ready for scale-up |
 | docker-compose.yml | §7.1 | Dockerfile done; compose file not needed for current flow |
@@ -447,13 +450,17 @@ Successfully completed with the following verified:
 
 ### I-Series Data Pipeline
 
+- **Universe**: 671 Binance USDT-M perpetual futures from Data Vision S3 (no cherry-picking, includes delisted)
 - **Download**: Binance klines for all 3 tiers via `download_binance_full_universe.py` (parallel, resume-capable)
 - **Convert**: Raw CSVs → LEAN TradeBar zip format via `convert_binance_to_lean.py` (daily/hour as single zips, minute as per-day zips)
+- **Symbol-properties**: Custom DB covering all 671 symbols via `generate_symbol_properties.py` (LEAN's built-in only has 591). Docker mount overrides LEAN's built-in DB — zero pool limitations, strategies pick tickers.
 - **Flat universe**: Structured `universe.json` → flat `["BTCUSDT",...]` JSON via `generate_flat_universe.py` (required for C# `JsonConvert.DeserializeObject<List<string>>`)
-- **Upload**: LEAN data + flat universe uploaded to HuggingFace via `upload_lean_to_hf.py`
+- **Upload**: LEAN data + symbol-properties + market-hours + universe uploaded to HuggingFace via `upload_lean_to_hf.py`
 - **Orchestrator**: Single-command `prepare_i_series_data.py` runs all phases
 - **Docker mount chain verified**: `data_manager` → `hf_cache/lean/` → container `-v /lean/Data:ro` → LEAN `config.json` `data-folder: /lean/Data`
-- **HF repo**: Test subset (3 symbols, 739 zips, 12.4MB) live at `Varsity-Tech/quant-tutor-bench-data`
+- **HF repo**: Full universe (671 symbols, ~7,991 files) live at `Varsity-Tech/quant-tutor-bench-data`
+- **HF layout**: `lean/cryptofuture/binance/{daily,hour,...}/*.zip`, `lean/symbol-properties/`, `lean/market-hours/`, `lean/universe.json`
+- **Reference backtests**: All 6 pass — I01=85, I02=1,763, I03=662, I04=4,026, I05=2,294, I06=13,719 trades
 
 ### Docker Sandbox
 
