@@ -5,17 +5,18 @@
   "start_date": "2022-01-01",
   "end_date": "2025-12-31",
   "lean_image": "quantconnect/lean:latest",
-  "generated_at": "2026-03-10T11:46:11.403426+00:00",
+  "generated_at": "2026-03-10T13:12:17.721551+00:00",
   "status": "success",
   "metrics": {
     "total_orders": 33411,
-    "sharpe_ratio": "4.29405798345334E+26",
+    "sharpe_ratio": "0.3793",
     "total_return": "24037.488%",
     "max_drawdown": "39.100%",
     "win_rate": "26%",
     "profit_loss_ratio": "150.00",
     "annual_return": "293.498%",
-    "total_trades": 14565
+    "total_trades": 14565,
+    "sharpe_source": "computed_from_trades"
   },
   "trades": [
     {

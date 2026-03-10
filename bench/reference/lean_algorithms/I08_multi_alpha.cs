@@ -72,7 +72,7 @@ namespace QuantTutorBench
             }
             else
             {
-                SetPortfolioConstruction(new InsightWeightingPortfolioConstructionModel());
+                SetPortfolioConstruction(new InsightWeightingPortfolioConstructionModel(Resolution.Daily));
                 Log("Portfolio model: InsightWeighting");
             }
 

@@ -749,9 +749,25 @@ def _empty_signal_result(task_id: str, resolution: str, start: str, end: str, wa
 # Summary extraction from existing reference trades
 # ────────────────────────────────────────────────────────────────────
 
+# Primary run for each multi-run task (used for summary + default behavioral eval)
+MULTI_RUN_PRIMARY = {
+    "I06": "t04_r03_c03",      # Default weights (trend=0.4, reversion=0.3, carry=0.3)
+    "I08": "equal_weighting",  # EW produces trades; IW may produce 0
+    "I09": "builtin",          # Middle-ground risk config
+    "I10": None,               # I10 has too many configs; skip summary
+}
+
+
 def _build_summary(task_id: str) -> dict:
-    """Build standardized summary from existing reference trades JSON."""
-    ref_path = REFERENCE_DIR / f"{task_id}_reference_trades.json"
+    """Build standardized summary from existing reference trades JSON.
+
+    For multi-run tasks (I08, I09), uses the primary run's trades file.
+    """
+    primary_run = MULTI_RUN_PRIMARY.get(task_id)
+    if primary_run:
+        ref_path = REFERENCE_DIR / f"{task_id}_reference_trades_{primary_run}.json"
+    else:
+        ref_path = REFERENCE_DIR / f"{task_id}_reference_trades.json"
     if not ref_path.exists():
         return {"task_id": task_id, "metrics": {}}
 

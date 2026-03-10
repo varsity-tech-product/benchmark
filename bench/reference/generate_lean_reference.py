@@ -124,6 +124,54 @@ TASK_RUN_CONFIGS = {
 }
 
 
+def _compute_sharpe_from_trades(trades: list[dict], risk_free_rate: float = 0.0) -> float:
+    """Compute annualized Sharpe ratio from round-trip trade records.
+
+    Groups net_pnl by exit date, computes daily PnL mean/std, annualizes.
+    Used as a fallback when LEAN's Sharpe overflows for high-return crypto.
+    """
+    from collections import defaultdict
+
+    daily_pnl: dict[str, float] = defaultdict(float)
+    for t in trades:
+        exit_date = t.get("exit_time", "")[:10]  # YYYY-MM-DD
+        daily_pnl[exit_date] += float(t.get("net_pnl", 0))
+
+    if len(daily_pnl) < 2:
+        return 0.0
+
+    values = list(daily_pnl.values())
+    mean_pnl = sum(values) / len(values)
+    std_pnl = (sum((v - mean_pnl) ** 2 for v in values) / (len(values) - 1)) ** 0.5
+    if std_pnl < 1e-9:
+        return 0.0
+    return (mean_pnl - risk_free_rate) / std_pnl * (252 ** 0.5)
+
+
+def _fix_bogus_sharpe(metrics: dict, trades: list[dict]) -> None:
+    """Replace LEAN's Sharpe with trade-derived Sharpe when clearly bogus.
+
+    Triggers when:
+    - |sharpe| > 100 (overflow), or
+    - sharpe == 0 but there are enough trades for a meaningful calculation
+      (LEAN sometimes returns 0 instead of NaN for overflow cases).
+    """
+    try:
+        sharpe = float(metrics.get("sharpe_ratio", "0") or "0")
+    except (ValueError, TypeError):
+        sharpe = 0.0
+
+    needs_fix = abs(sharpe) > 100  # clear overflow
+    if sharpe == 0.0 and len(trades) >= 10:
+        # LEAN returned 0 but there are enough trades — likely overflow→0 clamping
+        needs_fix = True
+
+    if needs_fix and trades:
+        computed = _compute_sharpe_from_trades(trades)
+        metrics["sharpe_ratio"] = str(round(computed, 4))
+        metrics["sharpe_source"] = "computed_from_trades"
+
+
 def _check_docker():
     """Verify Docker is available."""
     try:
@@ -540,6 +588,9 @@ def run_lean_backtest(
         # Set total_trades from actual paired trade count (not LEAN's "Total Orders")
         metrics["total_trades"] = len(trades)
 
+        # Fix bogus Sharpe from LEAN overflow (common with extreme crypto returns)
+        _fix_bogus_sharpe(metrics, trades)
+
         output = {
             "task_id": task_id,
             "algorithm": class_name,
@@ -601,16 +652,19 @@ def _export_sweep_summary(task_id: str, results: list[dict]) -> None:
     for r in successful:
         params = r.get("parameters", {})
         metrics = r.get("metrics", {})
+        entry_metrics = {
+            "total_trades": metrics.get("total_trades", 0),
+            "sharpe_ratio": metrics.get("sharpe_ratio", "0"),
+            "total_return": metrics.get("total_return", "0%"),
+            "max_drawdown": metrics.get("max_drawdown", "0%"),
+            "win_rate": metrics.get("win_rate", "0%"),
+        }
+        # Fix bogus Sharpe for sweep entries too
+        _fix_bogus_sharpe(entry_metrics, r.get("trades", []))
         sweep_results.append({
             "run_id": r.get("run_id", ""),
             "parameters": params,
-            "metrics": {
-                "total_trades": metrics.get("total_trades", 0),
-                "sharpe_ratio": metrics.get("sharpe_ratio", "0"),
-                "total_return": metrics.get("total_return", "0%"),
-                "max_drawdown": metrics.get("max_drawdown", "0%"),
-                "win_rate": metrics.get("win_rate", "0%"),
-            },
+            "metrics": entry_metrics,
         })
 
     # Sort by Sharpe ratio descending

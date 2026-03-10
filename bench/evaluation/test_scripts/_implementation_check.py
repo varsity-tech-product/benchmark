@@ -429,8 +429,20 @@ def load_reference_positions(task_id: str) -> dict:
     return {"task_id": task_id, "positions": positions}
 
 
-def load_reference_summary(task_id: str) -> dict:
-    """Load reference summary from bench/data/reference/I0X_reference_summary.json."""
+def load_reference_summary(task_id: str, run_id: str | None = None) -> dict:
+    """Load reference summary from bench/data/reference/I0X_reference_summary.json.
+
+    If run_id is provided, also tries {task_id}_reference_summary_{run_id}.json
+    before falling back to the default summary.
+    """
+    if run_id:
+        run_path = _REFERENCE_DIR / f"{task_id}_reference_summary_{run_id}.json"
+        if run_path.exists():
+            try:
+                with open(run_path) as f:
+                    return json.load(f)
+            except (json.JSONDecodeError, IOError):
+                pass
     path = _REFERENCE_DIR / f"{task_id}_reference_summary.json"
     if not path.exists():
         return {}
@@ -847,18 +859,20 @@ def compute_behavioral_score(
     task_id: str,
     workspace_path: str,
     resolution: str = "daily",
+    run_id: str | None = None,
 ) -> BehavioralResult:
     """Main entry: load all data, score each layer, return composite.
 
     Redistributes weights when layers are unavailable.
+    For multi-run tasks, pass run_id to load the correct reference trades/summary.
     """
     result = BehavioralResult()
 
     # ── Load reference data ──
     ref_signals = load_reference_signals(task_id)
     ref_positions = load_reference_positions(task_id)
-    ref_summary = load_reference_summary(task_id)
-    ref_trades = load_reference_trades(task_id)
+    ref_summary = load_reference_summary(task_id, run_id=run_id)
+    ref_trades = load_reference_trades(task_id, run_id=run_id)
 
     # ── Load agent data ──
     agent_trades = load_agent_trades(workspace_path)

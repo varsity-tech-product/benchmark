@@ -182,7 +182,7 @@ def evaluate(
         results["trade_log_produced"] = True
 
     # ── Behavioral scoring (uses "builtin" run for matching) ──
-    behavioral = compute_behavioral_score("I09", workspace_path, resolution="hour")
+    behavioral = compute_behavioral_score("I09", workspace_path, resolution="hour", run_id="builtin")
     results["signal_agreement"] = behavioral.signal_score >= 0.60
     results["position_overlap"] = behavioral.position_score >= 0.60
     results["performance_match"] = behavioral.performance_score >= 0.50

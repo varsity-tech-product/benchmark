@@ -5,10 +5,12 @@
   "start_date": "2022-01-01",
   "end_date": "2025-12-31",
   "lean_image": "quantconnect/lean:latest",
-  "generated_at": "2026-03-10T11:49:39.527326+00:00",
+  "generated_at": "2026-03-10T13:15:55.013034+00:00",
   "status": "success",
   "metrics": {
-    "total_trades": 13530
+    "total_trades": 13530,
+    "sharpe_ratio": "0.2922",
+    "sharpe_source": "computed_from_trades"
   },
   "trades": [
     {

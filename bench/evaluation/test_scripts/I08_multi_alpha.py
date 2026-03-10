@@ -141,7 +141,7 @@ def evaluate(
         results["trade_log_produced"] = True
 
     # ── Behavioral scoring (uses insight_weighting run as primary) ──
-    behavioral = compute_behavioral_score("I08", workspace_path, resolution="daily")
+    behavioral = compute_behavioral_score("I08", workspace_path, resolution="daily", run_id="equal_weighting")
     results["signal_agreement"] = behavioral.signal_score >= 0.60
     results["position_overlap"] = behavioral.position_score >= 0.60
     results["performance_match"] = behavioral.performance_score >= 0.50
