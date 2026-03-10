@@ -22,13 +22,31 @@ DEFAULT_INPUT = Path(__file__).resolve().parent.parent / "data" / "universe.json
 DEFAULT_OUTPUT = Path(__file__).resolve().parent.parent / "data" / "lean_universe.json"
 
 
+def _extract_symbol(sym_entry: dict | str) -> str:
+    """Extract symbol string from either a dict entry or plain string."""
+    return sym_entry["symbol"] if isinstance(sym_entry, dict) else sym_entry
+
+
 def generate_flat_universe(input_path: Path) -> list[str]:
-    """Read structured universe.json and return flat list of tier1 symbols."""
+    """Read structured universe.json and return flat list of symbols.
+
+    Ordering: tier2 symbols first (they have hourly data for multi-timeframe
+    strategies), then remaining tier1 symbols sorted alphabetically.
+    """
     with open(input_path) as f:
         universe = json.load(f)
 
-    symbols_raw = universe["tiers"]["tier1"]["symbols"]
-    return [sym["symbol"] for sym in symbols_raw]
+    tier1_raw = universe["tiers"]["tier1"]["symbols"]
+    tier1_syms = [_extract_symbol(s) for s in tier1_raw]
+
+    # Put tier2 symbols first so algorithms that Take(N) get data-rich symbols
+    tier2_raw = universe["tiers"].get("tier2", {}).get("symbols", [])
+    tier2_syms = [_extract_symbol(s) for s in tier2_raw]
+    tier2_set = set(tier2_syms)
+
+    # tier2 first (preserving tier2 order), then remaining tier1 sorted
+    remaining = sorted(s for s in tier1_syms if s not in tier2_set)
+    return tier2_syms + remaining
 
 
 def main() -> int:

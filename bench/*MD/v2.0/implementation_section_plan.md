@@ -121,7 +121,7 @@ I-series is fundamentally different. LEAN is an **industrial-grade backtest engi
 
 ```
 S/B-series data:   2 symbols × 1-2 timeframes × 4 years   = ~40K rows    (learning scale)
-I-series data:     100+ symbols × 5 timeframes × 5+ years  = ~100M+ rows  (production scale)
+I-series data:     670+ symbols × 5 timeframes × 4 years   = ~100M+ rows  (production scale)
 ```
 
 ### 2.2 Data Source
@@ -132,8 +132,8 @@ Binance USDT-M Futures historical klines:
 Base URL: https://data.binance.vision/data/futures/um/daily/klines/
 Pattern:  {SYMBOL}/{INTERVAL}/{SYMBOL}-{INTERVAL}-{DATE}.zip
 
-Universe: ~1,500 symbol folders available (including USDC/BUSD duplicates)
-          ~500-600 unique USDT-margined perpetual contracts
+Universe: ~811 symbol folders available (including delivery contracts)
+          ~671 unique USDT-margined perpetual contracts
 History:  BTCUSDT/ETHUSDT from 2019-12-31; most pairs from 2020-2021 onward
 ```
 
@@ -155,19 +155,19 @@ Not all symbols need all timeframes. We organize into **three tiers** by liquidi
 
 #### Tier 1: Full Universe — Daily Only
 
-**~100 most liquid USDT-M perpetual futures**, selected by average daily trading volume. Daily data for the full backtest period (inception to 2025-12-31).
+**All USDT-M perpetual futures** discovered from Binance Data Vision (`data.binance.vision`). This is a point-in-time S3 archive of ALL historical klines — including delisted symbols — eliminating survivorship bias and manual curation.
 
 Purpose: Universe-wide daily strategies (I02 trend-following, I03 mean-reversion, I06 multi-signal).
 
 | Property | Value |
 |----------|-------|
-| Symbols | ~100 (top by volume: BTCUSDT, ETHUSDT, BNBUSDT, SOLUSDT, XRPUSDT, ADAUSDT, DOGEUSDT, LINKUSDT, AVAXUSDT, DOTUSDT, MATICUSDT, UNIUSDT, 1000SHIBUSDT, 1000PEPEUSDT, LTCUSDT, ATOMUSDT, NEARUSDT, ARBUSDT, OPUSDT, ...) |
+| Symbols | ~670 (all USDT-M perpetuals from Data Vision, no cherry-picking) |
 | Timeframes | 1d |
-| Period | Each symbol from listing date → 2025-12-31 |
-| Rows (approx) | ~100 × ~1,500 avg days = **~150K rows** |
-| Size (approx) | **~15 MB** compressed |
+| Period | 2022-01-01 to 2025-12-31 |
+| Rows (approx) | ~670 × ~1,000 avg days = **~670K rows** |
+| Size (approx) | **~70 MB** compressed |
 
-The exact symbol list will be finalized by ranking all USDT-M perpetuals by 2024 average daily quote volume and taking the top 100. Delisted or settled pairs are excluded.
+The symbol list is auto-discovered by querying the S3 listing at `data.binance.vision` and filtering to perpetual USDT-margined contracts (no delivery contracts like `BTCUSDT_250627`). See `bench/scripts/discover_binance_universe.py`.
 
 #### Tier 2: Core Liquid — Hourly + 4-Hourly
 

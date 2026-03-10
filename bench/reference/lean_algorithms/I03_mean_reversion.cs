@@ -58,10 +58,17 @@ namespace QuantTutorBench
 
             foreach (var ticker in universeSymbols)
             {
-                var symbol = AddCryptoFuture(ticker, Resolution.Daily, Market.Binance).Symbol;
-                _universe.Add(symbol);
+                try
+                {
+                    var symbol = AddCryptoFuture(ticker, Resolution.Daily, Market.Binance).Symbol;
+                    _universe.Add(symbol);
 
-                _rsi[symbol] = RSI(symbol, RsiPeriod, MovingAverageType.Wilders, Resolution.Daily);
+                    _rsi[symbol] = RSI(symbol, RsiPeriod, MovingAverageType.Wilders, Resolution.Daily);
+                }
+                catch (Exception ex)
+                {
+                    Log($"Skipping {ticker}: {ex.Message}");
+                }
             }
 
             SetWarmUp(RsiPeriod + 1, Resolution.Daily);

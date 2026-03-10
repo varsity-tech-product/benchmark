@@ -38,6 +38,7 @@ namespace QuantTutorBench
         private const decimal ZScoreExit = 0.5m;
         private const int MaxActivePairs = 10;
         private const decimal PerLegWeight = 0.05m;  // 5% per leg
+        private const int MaxSymbols = 50;  // Cap for O(n²) pair computation
         private const decimal InitialCash = 100_000m;
 
         // ── State ──
@@ -61,13 +62,20 @@ namespace QuantTutorBench
             SetAccountCurrency("USDT");
             SetCash(InitialCash);
 
-            var tickers = LoadUniverse();
+            var tickers = LoadUniverse().Take(MaxSymbols).ToList();
 
             foreach (var ticker in tickers)
             {
-                var symbol = AddCryptoFuture(ticker, Resolution.Daily, Market.Binance).Symbol;
-                _symbols.Add(symbol);
-                _priceHistory[symbol] = new RollingWindow<decimal>(LookbackPeriod);
+                try
+                {
+                    var symbol = AddCryptoFuture(ticker, Resolution.Daily, Market.Binance).Symbol;
+                    _symbols.Add(symbol);
+                    _priceHistory[symbol] = new RollingWindow<decimal>(LookbackPeriod);
+                }
+                catch (Exception ex)
+                {
+                    Log($"Skipping {ticker}: {ex.Message}");
+                }
             }
 
             SetWarmUp(LookbackPeriod + 1, Resolution.Daily);

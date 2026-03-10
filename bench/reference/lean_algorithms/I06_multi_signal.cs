@@ -67,23 +67,30 @@ namespace QuantTutorBench
 
             foreach (var ticker in tickers)
             {
-                var symbol = AddCryptoFuture(ticker, Resolution.Daily, Market.Binance).Symbol;
-
-                var sd = new SymbolData
+                try
                 {
-                    Symbol = symbol,
-                    SmaFast = SMA(symbol, SmaPeriodFast, Resolution.Daily),
-                    SmaSlow = SMA(symbol, SmaPeriodSlow, Resolution.Daily),
-                    Rsi = RSI(symbol, RsiPeriod, MovingAverageType.Wilders, Resolution.Daily),
-                    Momentum1d = ROCP(symbol, 1, Resolution.Daily),
-                };
+                    var symbol = AddCryptoFuture(ticker, Resolution.Daily, Market.Binance).Symbol;
 
-                _data[symbol] = sd;
+                    var sd = new SymbolData
+                    {
+                        Symbol = symbol,
+                        SmaFast = SMA(symbol, SmaPeriodFast, Resolution.Daily),
+                        SmaSlow = SMA(symbol, SmaPeriodSlow, Resolution.Daily),
+                        Rsi = RSI(symbol, RsiPeriod, MovingAverageType.Wilders, Resolution.Daily),
+                        Momentum1d = ROCP(symbol, 1, Resolution.Daily),
+                    };
+
+                    _data[symbol] = sd;
+                }
+                catch (Exception ex)
+                {
+                    Log($"Skipping {ticker}: {ex.Message}");
+                }
             }
 
             SetWarmUp(SmaPeriodSlow + 1, Resolution.Daily);
 
-            Log($"I06 initialized with {tickers.Count} symbols, " +
+            Log($"I06 initialized with {_data.Count} symbols (of {tickers.Count} in universe), " +
                 $"SMA({SmaPeriodFast}/{SmaPeriodSlow}) + RSI({RsiPeriod}) + ROCP(1), " +
                 $"weights=({TrendWeight}/{ReversionWeight}/{CarryWeight})");
         }

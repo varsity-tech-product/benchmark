@@ -9,6 +9,9 @@ Usage:
     python download_binance_full_universe.py [--tier {1,2,3,all}] [--output-dir PATH]
     python download_binance_full_universe.py --universe universe.json --tier 1
     python download_binance_full_universe.py --tier all --workers 16
+
+    # Download ALL symbols from universe_full.json (discovered from Data Vision S3):
+    python download_binance_full_universe.py --universe-mode full --tier 1 --workers 16
 """
 
 from __future__ import annotations
@@ -33,8 +36,19 @@ from download_binance_klines import (
     validate_kline_frame,
 )
 
+# Import benchmark dates for full-universe mode
+try:
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "config"))
+    from benchmark_dates import BENCH_START, BENCH_END
+    FULL_UNIVERSE_START = date.fromisoformat(BENCH_START)
+    FULL_UNIVERSE_END = date.fromisoformat(BENCH_END)
+except ImportError:
+    FULL_UNIVERSE_START = date(2022, 1, 1)
+    FULL_UNIVERSE_END = date(2025, 12, 31)
+
 DEFAULT_OUTPUT_DIR = Path(__file__).resolve().parent.parent / "data" / "raw" / "i-series"
 DEFAULT_UNIVERSE = Path(__file__).resolve().parent.parent / "data" / "universe.json"
+FULL_UNIVERSE = Path(__file__).resolve().parent.parent / "data" / "universe_full.json"
 
 # Tier-to-interval mapping (matches implementation_section_plan.md section 2.4)
 TIER_CONFIG = {
@@ -82,6 +96,26 @@ def load_universe(universe_path: Path) -> dict:
         raise ValueError(f"universe.json missing 'tiers' key: {universe_path}")
 
     return universe
+
+
+def load_full_universe(full_path: Path) -> dict:
+    """Load universe_full.json and wrap it in tiered format for job building."""
+    with open(full_path) as f:
+        full = json.load(f)
+
+    if "symbols" not in full:
+        raise ValueError(f"universe_full.json missing 'symbols' key: {full_path}")
+
+    # Wrap as tier1-only universe so build_jobs() works unchanged
+    return {
+        "tiers": {
+            "tier1": {
+                "description": "ALL USDT-M perpetual futures from Binance Data Vision",
+                "timeframes": ["1d"],
+                "symbols": full["symbols"],  # plain strings
+            }
+        }
+    }
 
 
 def get_symbols_for_tier(universe: dict, tier_name: str) -> list[dict | str]:
@@ -307,6 +341,13 @@ def parse_args() -> argparse.Namespace:
         default=False,
         help="Also download funding rate data for tier2 symbols.",
     )
+    parser.add_argument(
+        "--universe-mode",
+        choices=["tiered", "full"],
+        default="tiered",
+        help="'tiered' uses universe.json tiers (default). "
+             "'full' reads universe_full.json and downloads ALL symbols as tier1.",
+    )
     return parser.parse_args()
 
 
@@ -322,13 +363,27 @@ def main() -> int:
     output_dir = args.output_dir.resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    try:
-        universe = load_universe(args.universe)
-    except (FileNotFoundError, json.JSONDecodeError, ValueError) as exc:
-        print(f"Error loading universe.json: {exc}", file=sys.stderr)
-        return 2
+    if args.universe_mode == "full":
+        full_path = FULL_UNIVERSE if args.universe == DEFAULT_UNIVERSE else args.universe
+        try:
+            universe = load_full_universe(full_path)
+        except (FileNotFoundError, json.JSONDecodeError, ValueError) as exc:
+            print(f"Error loading full universe: {exc}", file=sys.stderr)
+            return 2
+        tiers = ["tier1"]  # full mode only has tier1
+        # Override tier1 date range to benchmark window
+        TIER_CONFIG["tier1"]["default_start"] = FULL_UNIVERSE_START
+        TIER_CONFIG["tier1"]["default_end"] = FULL_UNIVERSE_END
+        print(f"Full universe mode: {len(universe['tiers']['tier1']['symbols'])} symbols "
+              f"({FULL_UNIVERSE_START} to {FULL_UNIVERSE_END})")
+    else:
+        try:
+            universe = load_universe(args.universe)
+        except (FileNotFoundError, json.JSONDecodeError, ValueError) as exc:
+            print(f"Error loading universe.json: {exc}", file=sys.stderr)
+            return 2
+        tiers = resolve_tiers(args.tier)
 
-    tiers = resolve_tiers(args.tier)
     jobs = build_jobs(universe, tiers, output_dir)
     print(f"Built {len(jobs)} download jobs across tiers: {tiers}")
 
