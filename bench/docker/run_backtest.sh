@@ -36,21 +36,54 @@ LEAN_RUN_TIMEOUT="${LEAN_RUN_TIMEOUT:-300}"
 
 # ── Usage check ────────────────────────────────────────────────────────
 if [ $# -lt 1 ]; then
-    echo "Usage: run_backtest <Algorithm.cs path>"
+    echo "Usage: run_backtest <Algorithm.cs path> [--params '{\"key\":\"value\"}'] [--run-id NAME]"
     echo "  e.g. run_backtest /workspace/Algorithm.cs"
+    echo "  e.g. run_backtest /workspace/Algorithm.cs --params '{\"risk_config\":\"builtin\"}' --run-id builtin"
     exit 1
 fi
 
 ALGO_FILE="$1"
+shift
+
+# Parse optional arguments
+PARAMS_JSON=""
+RUN_ID=""
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --params)
+            PARAMS_JSON="$2"
+            shift 2
+            ;;
+        --run-id)
+            RUN_ID="$2"
+            shift 2
+            ;;
+        *)
+            shift
+            ;;
+    esac
+done
 
 if [ ! -f "$ALGO_FILE" ]; then
     echo "ERROR: Algorithm file not found: $ALGO_FILE"
     exit 1
 fi
 
+# Adjust results directory for run-id
+if [ -n "$RUN_ID" ]; then
+    RESULTS_DIR="/workspace/results/${RUN_ID}"
+fi
+
 echo "=== LEAN Backtest Runner ==="
 echo "  Algorithm: $ALGO_FILE"
 echo "  LEAN root: $LEAN_ROOT"
+if [ -n "$PARAMS_JSON" ]; then
+    echo "  Parameters: $PARAMS_JSON"
+fi
+if [ -n "$RUN_ID" ]; then
+    echo "  Run ID: $RUN_ID"
+    echo "  Results dir: $RESULTS_DIR"
+fi
 echo ""
 
 # ── Step 1: Copy algorithm into LEAN project ──────────────────────────
@@ -72,6 +105,21 @@ if ! dotnet build QuantConnect.Lean.sln -c Debug --no-restore 2>&1; then
     exit 2
 fi
 echo "  -> Build succeeded"
+
+# ── Step 2b: Inject parameters into config.json (if --params provided) ──
+if [ -n "$PARAMS_JSON" ]; then
+    echo "[2b/4] Injecting parameters into config.json..."
+    python3 -c "
+import json, sys
+with open('$LEAN_CONFIG') as f:
+    cfg = json.load(f)
+params = json.loads('$PARAMS_JSON')
+cfg.setdefault('parameters', {}).update(params)
+with open('$LEAN_CONFIG', 'w') as f:
+    json.dump(cfg, f, indent=2)
+print(f'  -> Injected {len(params)} parameter(s)')
+" 2>&1
+fi
 
 # ── Step 3: Run the LEAN engine ───────────────────────────────────────
 echo "[3/4] Running LEAN engine..."

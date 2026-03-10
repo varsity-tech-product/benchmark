@@ -425,6 +425,250 @@ def _signals_i06(start: str = DEFAULT_START, end: str = DEFAULT_END) -> dict:
     }
 
 
+def _signals_i07(start: str = DEFAULT_START, end: str = DEFAULT_END) -> dict:
+    """I07: EMA(10)/EMA(30) crossover on ~20 tier2 symbols, daily.
+
+    signal = +1 if EMA(10) > EMA(30) else -1.
+    """
+    # Load universe to get tier2 symbols (first 20)
+    universe_path = BENCH_ROOT / "data" / "universe.json"
+    if universe_path.exists():
+        with open(universe_path) as f:
+            universe = json.load(f)
+        symbols = universe["tiers"]["tier2"]["symbols"][:20]
+    else:
+        symbols = ["BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "XRPUSDT",
+                    "ADAUSDT", "DOGEUSDT", "AVAXUSDT", "DOTUSDT", "MATICUSDT"]
+
+    all_signals: dict[str, list] = {}
+    warmup = 30
+
+    for sym in symbols:
+        df = _load_daily_csv(sym)
+        df = _filter_dates(df, start, end)
+        if df.empty:
+            continue
+
+        df["ema10"] = df["close"].ewm(span=10, adjust=False).mean()
+        df["ema30"] = df["close"].ewm(span=30, adjust=False).mean()
+
+        signals = []
+        for _, row in df.iterrows():
+            if pd.isna(row["ema10"]) or pd.isna(row["ema30"]):
+                continue
+            sig = 1 if row["ema10"] > row["ema30"] else -1
+            signals.append({"date": str(row["date"]), "signal": sig})
+
+        all_signals[sym] = signals
+
+    return {
+        "task_id": "I07",
+        "seed": None,
+        "resolution": "daily",
+        "start_date": start,
+        "end_date": end,
+        "warmup_periods": warmup,
+        "signals": all_signals,
+    }
+
+
+def _signals_i08(start: str = DEFAULT_START, end: str = DEFAULT_END) -> dict:
+    """I08: Composite 3-signal (SMA trend + RSI + ROC) on tier1 symbols, daily.
+
+    Trend: SMA(20)/SMA(50) → +1/-1
+    MeanReversion: RSI(14) <30 → +1, >70 → -1, else 0
+    Momentum: 20-day ROC >5% → +1, <-5% → -1, else 0
+    Composite: majority vote (sum thresholded at 0)
+    """
+    # Load universe to get tier1 symbols (first 100)
+    universe_path = BENCH_ROOT / "data" / "universe.json"
+    if universe_path.exists():
+        with open(universe_path) as f:
+            universe = json.load(f)
+        symbols = universe["tiers"]["tier1"]["symbols"][:100]
+    else:
+        symbols = ["BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "XRPUSDT",
+                    "ADAUSDT", "DOGEUSDT", "AVAXUSDT", "DOTUSDT", "MATICUSDT"]
+
+    all_signals: dict[str, list] = {}
+    warmup = 50
+
+    for sym in symbols:
+        df = _load_daily_csv(sym)
+        df = _filter_dates(df, start, end)
+        if df.empty or len(df) < warmup:
+            continue
+
+        # Trend: SMA(20)/SMA(50)
+        df["sma20"] = df["close"].rolling(20).mean()
+        df["sma50"] = df["close"].rolling(50).mean()
+        df["trend_sig"] = 0
+        df.loc[df["sma20"] > df["sma50"], "trend_sig"] = 1
+        df.loc[df["sma20"] <= df["sma50"], "trend_sig"] = -1
+
+        # Mean reversion: RSI(14)
+        delta = df["close"].diff()
+        gain = delta.clip(lower=0)
+        loss = -delta.clip(upper=0)
+        avg_gain = gain.rolling(14).mean()
+        avg_loss = loss.rolling(14).mean()
+        rs = avg_gain / avg_loss.replace(0, np.nan)
+        df["rsi"] = 100 - (100 / (1 + rs))
+        df["reversion_sig"] = 0
+        df.loc[df["rsi"] < 30, "reversion_sig"] = 1
+        df.loc[df["rsi"] > 70, "reversion_sig"] = -1
+
+        # Momentum: 20-day ROC
+        df["roc"] = df["close"].pct_change(20) * 100
+        df["momentum_sig"] = 0
+        df.loc[df["roc"] > 5, "momentum_sig"] = 1
+        df.loc[df["roc"] < -5, "momentum_sig"] = -1
+
+        # Composite: sum of three signals
+        df["composite"] = df["trend_sig"] + df["reversion_sig"] + df["momentum_sig"]
+
+        signals = []
+        for _, row in df.iterrows():
+            if pd.isna(row["sma50"]) or pd.isna(row["rsi"]) or pd.isna(row["roc"]):
+                continue
+            c = row["composite"]
+            if c > 0:
+                sig = 1
+            elif c < 0:
+                sig = -1
+            else:
+                sig = 0
+            signals.append({"date": str(row["date"]), "signal": sig})
+
+        if signals:
+            all_signals[sym] = signals
+
+    return {
+        "task_id": "I08",
+        "seed": None,
+        "resolution": "daily",
+        "start_date": start,
+        "end_date": end,
+        "warmup_periods": warmup,
+        "signals": all_signals,
+    }
+
+
+def _signals_i09(start: str = DEFAULT_START, end: str = DEFAULT_END) -> dict:
+    """I09: EMA(24)/EMA(72) on hourly data, resampled to daily, ~20 tier2 symbols.
+
+    signal = +1 if EMA(24) > EMA(72) else -1, evaluated on last hourly bar of the day.
+    """
+    # Load universe to get tier2 symbols (first 20)
+    universe_path = BENCH_ROOT / "data" / "universe.json"
+    if universe_path.exists():
+        with open(universe_path) as f:
+            universe = json.load(f)
+        symbols = universe["tiers"]["tier2"]["symbols"][:20]
+    else:
+        symbols = ["BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "XRPUSDT",
+                    "ADAUSDT", "DOGEUSDT", "AVAXUSDT", "DOTUSDT", "MATICUSDT"]
+
+    all_signals: dict[str, list] = {}
+    warmup = 72
+
+    for sym in symbols:
+        df = _load_hourly_csv(sym, hours=1)
+        if df.empty:
+            continue
+
+        # Compute EMA on hourly close
+        df["ema24"] = df["close"].ewm(span=24, adjust=False).mean()
+        df["ema72"] = df["close"].ewm(span=72, adjust=False).mean()
+
+        # Filter to date range
+        start_ts = pd.Timestamp(start, tz="UTC")
+        end_ts = pd.Timestamp(end, tz="UTC")
+        df_f = df[(df["datetime"] >= start_ts) & (df["datetime"] <= end_ts)].copy()
+
+        if df_f.empty:
+            continue
+
+        # Resample to daily (last value of day)
+        df_f = df_f.set_index("datetime")
+        daily_ema24 = df_f["ema24"].resample("1D").last().dropna()
+        daily_ema72 = df_f["ema72"].resample("1D").last().dropna()
+        combined = pd.DataFrame({"ema24": daily_ema24, "ema72": daily_ema72}).dropna()
+
+        signals = []
+        for dt, row in combined.iterrows():
+            sig = 1 if row["ema24"] > row["ema72"] else -1
+            signals.append({"date": str(dt.date()), "signal": sig})
+
+        if signals:
+            all_signals[sym] = signals
+
+    return {
+        "task_id": "I09",
+        "seed": None,
+        "resolution": "hour",
+        "start_date": start,
+        "end_date": end,
+        "warmup_periods": warmup,
+        "signals": all_signals,
+    }
+
+
+def _signals_i10(start: str = DEFAULT_START, end: str = DEFAULT_END) -> dict:
+    """I10: EMA(10)/EMA(30) with threshold=0.01 on ~20 tier2 symbols, daily.
+
+    signal = +1 if EMA(10) > EMA(30) and spread > threshold,
+             -1 if EMA(10) < EMA(30) and spread > threshold,
+             0 otherwise (below threshold → no signal).
+    """
+    # Load universe to get tier2 symbols (first 20)
+    universe_path = BENCH_ROOT / "data" / "universe.json"
+    if universe_path.exists():
+        with open(universe_path) as f:
+            universe = json.load(f)
+        symbols = universe["tiers"]["tier2"]["symbols"][:20]
+    else:
+        symbols = ["BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "XRPUSDT",
+                    "ADAUSDT", "DOGEUSDT", "AVAXUSDT", "DOTUSDT", "MATICUSDT"]
+
+    threshold = 0.01
+    all_signals: dict[str, list] = {}
+    warmup = 30
+
+    for sym in symbols:
+        df = _load_daily_csv(sym)
+        df = _filter_dates(df, start, end)
+        if df.empty:
+            continue
+
+        df["ema10"] = df["close"].ewm(span=10, adjust=False).mean()
+        df["ema30"] = df["close"].ewm(span=30, adjust=False).mean()
+
+        signals = []
+        for _, row in df.iterrows():
+            if pd.isna(row["ema10"]) or pd.isna(row["ema30"]) or row["ema30"] == 0:
+                continue
+            spread = abs(row["ema10"] - row["ema30"]) / row["ema30"]
+            if spread <= threshold:
+                signals.append({"date": str(row["date"]), "signal": 0})
+            elif row["ema10"] > row["ema30"]:
+                signals.append({"date": str(row["date"]), "signal": 1})
+            else:
+                signals.append({"date": str(row["date"]), "signal": -1})
+
+        all_signals[sym] = signals
+
+    return {
+        "task_id": "I10",
+        "seed": None,
+        "resolution": "daily",
+        "start_date": start,
+        "end_date": end,
+        "warmup_periods": warmup,
+        "signals": all_signals,
+    }
+
+
 def _compute_candidate_pairs(start: str = DEFAULT_START, end: str = DEFAULT_END) -> dict:
     """Pre-compute pairwise correlations for all Tier 2 symbols.
 
@@ -553,6 +797,10 @@ SIGNAL_GENERATORS = {
     "I04": _signals_i04,
     "I05": _signals_i05,
     "I06": _signals_i06,
+    "I07": _signals_i07,
+    "I08": _signals_i08,
+    "I09": _signals_i09,
+    "I10": _signals_i10,
 }
 
 
@@ -592,7 +840,7 @@ def generate(task_id: str, start: str = DEFAULT_START, end: str = DEFAULT_END) -
 
 def main():
     parser = argparse.ArgumentParser(description="Generate reference signals from raw data")
-    parser.add_argument("--task", required=True, help="Task ID (I01-I06) or 'all'")
+    parser.add_argument("--task", required=True, help="Task ID (I01-I10) or 'all'")
     parser.add_argument("--start-date", default=DEFAULT_START)
     parser.add_argument("--end-date", default=DEFAULT_END)
     args = parser.parse_args()

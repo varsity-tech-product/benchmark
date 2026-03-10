@@ -44,6 +44,10 @@ TASK_ALGO_MAP = {
     "I04": "I04_multi_timeframe.cs",
     "I05": "I05_cross_asset.cs",
     "I06": "I06_multi_signal.cs",
+    "I07": "I07_alpha_model.cs",
+    "I08": "I08_multi_alpha.cs",
+    "I09": "I09_risk_management.cs",
+    "I10": "I10_parameter_optimization.cs",
 }
 
 # Import canonical config
@@ -54,6 +58,44 @@ from config.benchmark_dates import BENCH_START, BENCH_END  # noqa: E402
 DEFAULT_LEAN_IMAGE = LEAN_IMAGE
 DEFAULT_START_DATE = BENCH_START
 DEFAULT_END_DATE = BENCH_END
+
+
+def _generate_i10_grid() -> list[dict]:
+    """Generate I10 parameter grid (~180 valid combos where fast < slow)."""
+    fast_periods = [5, 10, 15, 20, 25, 30]
+    slow_periods = [20, 30, 40, 50, 60, 70, 80, 90, 100]
+    thresholds = ["0.0", "0.005", "0.01", "0.015", "0.02"]
+    configs = []
+    for fast in fast_periods:
+        for slow in slow_periods:
+            if fast >= slow:
+                continue
+            for thresh in thresholds:
+                run_id = f"f{fast}_s{slow}_t{thresh.replace('.', '')}"
+                configs.append({
+                    "run_id": run_id,
+                    "parameters": {
+                        "fast_period": str(fast),
+                        "slow_period": str(slow),
+                        "signal_threshold": thresh,
+                    },
+                })
+    return configs
+
+
+# Multi-run configurations for tasks that need multiple backtest runs
+TASK_RUN_CONFIGS = {
+    "I08": [
+        {"run_id": "insight_weighting", "parameters": {"portfolio_model": "InsightWeighting"}},
+        {"run_id": "equal_weighting", "parameters": {"portfolio_model": "EqualWeighting"}},
+    ],
+    "I09": [
+        {"run_id": "norisk", "parameters": {"risk_config": "none"}},
+        {"run_id": "builtin", "parameters": {"risk_config": "builtin"}},
+        {"run_id": "custom", "parameters": {"risk_config": "custom"}},
+    ],
+    "I10": _generate_i10_grid(),
+}
 
 
 def _check_docker():
@@ -272,6 +314,8 @@ def run_lean_backtest(
     start_date: str = DEFAULT_START_DATE,
     end_date: str = DEFAULT_END_DATE,
     dry_run: bool = False,
+    parameters: dict | None = None,
+    run_id: str | None = None,
 ) -> dict:
     """Run a LEAN backtest for the given task and return structured results.
 
@@ -281,6 +325,8 @@ def run_lean_backtest(
         start_date: Backtest start date (YYYY-MM-DD)
         end_date: Backtest end date (YYYY-MM-DD)
         dry_run: If True, only validate setup without running
+        parameters: Optional dict of algorithm parameters to set in config.json
+        run_id: Optional run identifier for multi-run tasks
 
     Returns:
         Dict with trades, metrics, and metadata
@@ -304,6 +350,10 @@ def run_lean_backtest(
         "I04_multi_timeframe": "QuantTutorBench.I04MultiTimeframe",
         "I05_cross_asset": "QuantTutorBench.I05CrossAsset",
         "I06_multi_signal": "QuantTutorBench.I06MultiSignal",
+        "I07_alpha_model": "QuantTutorBench.I07AlphaModel",
+        "I08_multi_alpha": "QuantTutorBench.I08MultiAlpha",
+        "I09_risk_management": "QuantTutorBench.I09RiskManagement",
+        "I10_parameter_optimization": "QuantTutorBench.I10ParameterOptimization",
     }
     class_name = class_name_map.get(algo_name, algo_name)
 
@@ -314,7 +364,11 @@ def run_lean_backtest(
         print(f"  LEAN image: {lean_image}")
         print(f"  Data dir:   {lean_data_dir}")
         print(f"  Period:     {start_date} → {end_date}")
-        return {"status": "dry_run", "task_id": task_id}
+        if parameters:
+            print(f"  Parameters: {parameters}")
+        if run_id:
+            print(f"  Run ID:     {run_id}")
+        return {"status": "dry_run", "task_id": task_id, "run_id": run_id}
 
     # Set up temporary directories for the run.
     # Docker creates files as root, so use shutil.rmtree with onerror for cleanup.
@@ -355,6 +409,9 @@ def run_lean_backtest(
     <Reference Include="Python.Runtime">
       <HintPath>/Lean/Launcher/bin/Debug/Python.Runtime.dll</HintPath>
     </Reference>
+    <Reference Include="QuantConnect.Algorithm.Framework">
+      <HintPath>/Lean/Launcher/bin/Debug/QuantConnect.Algorithm.Framework.dll</HintPath>
+    </Reference>
   </ItemGroup>
 </Project>
 """
@@ -377,6 +434,9 @@ def run_lean_backtest(
         dll_path = "/CustomAlgo/bin/Debug/net10.0/CustomAlgo.dll"
         config = _build_lean_config(class_name, algo_file.name, start_date, end_date)
         config["algorithm-location"] = dll_path
+        # Merge task-specific parameters into config
+        if parameters:
+            config["parameters"] = {**config.get("parameters", {}), **parameters}
         config_path = os.path.join(config_dir, "config.json")
         with open(config_path, "w") as f:
             json.dump(config, f, indent=2)
@@ -412,7 +472,8 @@ def run_lean_backtest(
             "-c", build_and_run,
         ]
 
-        print(f"Running LEAN backtest for {task_id} ({class_name})...")
+        run_label = f"{task_id}/{run_id}" if run_id else task_id
+        print(f"Running LEAN backtest for {run_label} ({class_name})...")
 
         try:
             result = subprocess.run(
@@ -469,7 +530,12 @@ def run_lean_backtest(
 
         # Save to reference directory
         REFERENCE_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-        output_path = REFERENCE_OUTPUT_DIR / f"{task_id}_reference_trades.json"
+        if run_id:
+            output_path = REFERENCE_OUTPUT_DIR / f"{task_id}_reference_trades_{run_id}.json"
+            output["run_id"] = run_id
+            output["parameters"] = parameters or {}
+        else:
+            output_path = REFERENCE_OUTPUT_DIR / f"{task_id}_reference_trades.json"
         with open(output_path, "w") as f:
             json.dump(output, f, indent=2)
 
@@ -499,6 +565,82 @@ def run_lean_backtest(
             pass
 
 
+def run_lean_backtest_multi(
+    task_id: str,
+    lean_image: str = DEFAULT_LEAN_IMAGE,
+    start_date: str = DEFAULT_START_DATE,
+    end_date: str = DEFAULT_END_DATE,
+    dry_run: bool = False,
+    max_workers: int = 1,
+) -> list[dict]:
+    """Run multiple LEAN backtests for tasks with parameterized configurations.
+
+    For tasks in TASK_RUN_CONFIGS, iterates over each config and runs
+    run_lean_backtest() per config. For I10, uses ThreadPoolExecutor
+    for parallel execution.
+
+    Returns list of result dicts.
+    """
+    task_id = task_id.upper()
+    configs = TASK_RUN_CONFIGS.get(task_id)
+    if not configs:
+        # Single-run task — delegate directly
+        result = run_lean_backtest(task_id, lean_image, start_date, end_date, dry_run)
+        return [result]
+
+    print(f"Multi-run task {task_id}: {len(configs)} configurations")
+
+    if max_workers > 1 and not dry_run:
+        import concurrent.futures
+
+        results = []
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = {}
+            for cfg in configs:
+                future = executor.submit(
+                    run_lean_backtest,
+                    task_id=task_id,
+                    lean_image=lean_image,
+                    start_date=start_date,
+                    end_date=end_date,
+                    dry_run=dry_run,
+                    parameters=cfg["parameters"],
+                    run_id=cfg["run_id"],
+                )
+                futures[future] = cfg["run_id"]
+
+            for future in concurrent.futures.as_completed(futures):
+                rid = futures[future]
+                try:
+                    result = future.result()
+                    results.append(result)
+                    tc = result.get("trade_count", 0)
+                    print(f"  {rid}: {result.get('status', 'unknown')} ({tc} trades)")
+                except Exception as e:
+                    print(f"  {rid}: FAILED - {e}")
+                    results.append({"status": "error", "run_id": rid, "error": str(e)})
+
+        return results
+    else:
+        results = []
+        for cfg in configs:
+            try:
+                result = run_lean_backtest(
+                    task_id=task_id,
+                    lean_image=lean_image,
+                    start_date=start_date,
+                    end_date=end_date,
+                    dry_run=dry_run,
+                    parameters=cfg["parameters"],
+                    run_id=cfg["run_id"],
+                )
+                results.append(result)
+            except Exception as e:
+                print(f"  {cfg['run_id']}: FAILED - {e}")
+                results.append({"status": "error", "run_id": cfg["run_id"], "error": str(e)})
+        return results
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Generate reference trade logs from LEAN backtests"
@@ -506,7 +648,7 @@ def main():
     parser.add_argument(
         "--task",
         required=True,
-        help="Task ID (I02-I06) or 'all' to run all tasks",
+        help="Task ID (I01-I10) or 'all' to run all tasks",
     )
     parser.add_argument(
         "--lean-image",
@@ -528,6 +670,12 @@ def main():
         action="store_true",
         help="Validate setup without running LEAN",
     )
+    parser.add_argument(
+        "--max-workers",
+        type=int,
+        default=1,
+        help="Max parallel Docker workers for multi-run tasks (default: 1)",
+    )
 
     args = parser.parse_args()
 
@@ -541,17 +689,30 @@ def main():
     results = {}
     for task_id in tasks:
         try:
-            result = run_lean_backtest(
-                task_id=task_id,
-                lean_image=args.lean_image,
-                start_date=args.start_date,
-                end_date=args.end_date,
-                dry_run=args.dry_run,
-            )
-            results[task_id] = result
-            status = result.get("status", "unknown")
-            trade_count = result.get("trade_count", 0)
-            print(f"  {task_id}: status={status}, trades={trade_count}")
+            if task_id in TASK_RUN_CONFIGS:
+                run_results = run_lean_backtest_multi(
+                    task_id=task_id,
+                    lean_image=args.lean_image,
+                    start_date=args.start_date,
+                    end_date=args.end_date,
+                    dry_run=args.dry_run,
+                    max_workers=args.max_workers,
+                )
+                results[task_id] = run_results
+                total_trades = sum(r.get("trade_count", 0) for r in run_results)
+                print(f"  {task_id}: {len(run_results)} runs, {total_trades} total trades")
+            else:
+                result = run_lean_backtest(
+                    task_id=task_id,
+                    lean_image=args.lean_image,
+                    start_date=args.start_date,
+                    end_date=args.end_date,
+                    dry_run=args.dry_run,
+                )
+                results[task_id] = result
+                status = result.get("status", "unknown")
+                trade_count = result.get("trade_count", 0)
+                print(f"  {task_id}: status={status}, trades={trade_count}")
         except Exception as e:
             print(f"  {task_id}: FAILED - {e}")
             results[task_id] = {"status": "error", "error": str(e)}
@@ -560,9 +721,13 @@ def main():
     print("\n" + "=" * 60)
     print("Reference Generation Summary:")
     for task_id, result in results.items():
-        status = result.get("status", "unknown")
-        trades = result.get("trade_count", 0)
-        print(f"  {task_id}: {status} ({trades} trades)")
+        if isinstance(result, list):
+            total_trades = sum(r.get("trade_count", 0) for r in result)
+            print(f"  {task_id}: {len(result)} runs ({total_trades} total trades)")
+        else:
+            status = result.get("status", "unknown")
+            trades = result.get("trade_count", 0)
+            print(f"  {task_id}: {status} ({trades} trades)")
     print("=" * 60)
 
 

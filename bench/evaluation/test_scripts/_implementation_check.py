@@ -94,9 +94,16 @@ class MatchResult:
         return ratio <= tolerance
 
 
-def load_reference_trades(task_id: str) -> list[dict]:
-    """Load reference trade log from bench/data/reference/."""
-    ref_path = _REFERENCE_DIR / f"{task_id}_reference_trades.json"
+def load_reference_trades(task_id: str, run_id: str | None = None) -> list[dict]:
+    """Load reference trade log from bench/data/reference/.
+
+    For multi-run tasks, use run_id to load a specific run's trades:
+        {task_id}_reference_trades_{run_id}.json
+    """
+    if run_id:
+        ref_path = _REFERENCE_DIR / f"{task_id}_reference_trades_{run_id}.json"
+    else:
+        ref_path = _REFERENCE_DIR / f"{task_id}_reference_trades.json"
     if not ref_path.exists():
         return []
     with open(ref_path) as f:
@@ -927,3 +934,126 @@ def compute_behavioral_score(
 
     result.composite_score = max(0.0, min(1.0, composite))
     return result
+
+
+# ════════════════════════════════════════════════════════════════════
+# Algorithm Framework Helpers (I07–I10)
+# ════════════════════════════════════════════════════════════════════
+
+
+def check_framework_architecture(workspace_path: str) -> dict:
+    """Check for SetAlpha/SetPortfolioConstruction/SetExecution patterns in .cs files."""
+    checks = {
+        "has_set_alpha": False,
+        "has_set_portfolio": False,
+        "has_set_execution": False,
+        "has_add_alpha": False,
+        "has_risk_management": False,
+    }
+
+    cs_text = ""
+    if workspace_path and os.path.isdir(workspace_path):
+        for root, _, files in os.walk(workspace_path):
+            for fname in sorted(files):
+                if fname.endswith(".cs"):
+                    try:
+                        with open(os.path.join(root, fname)) as f:
+                            cs_text += f.read() + "\n"
+                    except (IOError, UnicodeDecodeError):
+                        continue
+
+    cs_lower = cs_text.lower()
+    checks["has_set_alpha"] = bool(re.search(r"setalpha\s*\(", cs_lower))
+    checks["has_add_alpha"] = bool(re.search(r"addalpha\s*\(", cs_lower))
+    checks["has_set_portfolio"] = bool(re.search(r"setportfolioconstruction\s*\(", cs_lower))
+    checks["has_set_execution"] = bool(re.search(r"setexecution\s*\(", cs_lower))
+    checks["has_risk_management"] = bool(re.search(r"(?:set|add)riskmanagement\s*\(", cs_lower))
+
+    return checks
+
+
+def check_alpha_model_class(workspace_path: str) -> dict:
+    """Find classes inheriting AlphaModel with Update() method."""
+    checks = {
+        "inherits_alpha_model": False,
+        "has_update_method": False,
+        "alpha_class_count": 0,
+    }
+
+    cs_text = ""
+    if workspace_path and os.path.isdir(workspace_path):
+        for root, _, files in os.walk(workspace_path):
+            for fname in sorted(files):
+                if fname.endswith(".cs"):
+                    try:
+                        with open(os.path.join(root, fname)) as f:
+                            cs_text += f.read() + "\n"
+                    except (IOError, UnicodeDecodeError):
+                        continue
+
+    alpha_classes = re.findall(r"class\s+\w+\s*:\s*AlphaModel", cs_text, re.IGNORECASE)
+    checks["alpha_class_count"] = len(alpha_classes)
+    checks["inherits_alpha_model"] = len(alpha_classes) > 0
+    checks["has_update_method"] = bool(
+        re.search(r"override\s+.*Update\s*\(", cs_text, re.IGNORECASE)
+    )
+
+    return checks
+
+
+def check_insight_emission(artifact_text: str) -> bool:
+    """Check for Insight.Up/Down emission with magnitude/confidence."""
+    return bool(re.search(
+        r"insight\.(up|down)\s*\(", artifact_text, re.IGNORECASE
+    ))
+
+
+def check_risk_model_class(workspace_path: str) -> dict:
+    """Find classes inheriting RiskManagementModel with ManageRisk()."""
+    checks = {
+        "inherits_risk_model": False,
+        "has_manage_risk": False,
+    }
+
+    cs_text = ""
+    if workspace_path and os.path.isdir(workspace_path):
+        for root, _, files in os.walk(workspace_path):
+            for fname in sorted(files):
+                if fname.endswith(".cs"):
+                    try:
+                        with open(os.path.join(root, fname)) as f:
+                            cs_text += f.read() + "\n"
+                    except (IOError, UnicodeDecodeError):
+                        continue
+
+    checks["inherits_risk_model"] = bool(
+        re.search(r"class\s+\w+\s*:\s*RiskManagementModel", cs_text, re.IGNORECASE)
+    )
+    checks["has_manage_risk"] = bool(
+        re.search(r"override\s+.*ManageRisk\s*\(", cs_text, re.IGNORECASE)
+    )
+
+    return checks
+
+
+def load_multi_run_results(workspace_path: str, run_ids: list[str]) -> dict:
+    """Load results from workspace/results/{run_id}/ subdirs.
+
+    Returns dict mapping run_id → result dict (or None if not found).
+    """
+    results = {}
+    for run_id in run_ids:
+        run_dir = os.path.join(workspace_path, "results", run_id)
+        if os.path.isdir(run_dir):
+            summary_path = os.path.join(run_dir, "summary.json")
+            if os.path.exists(summary_path):
+                try:
+                    with open(summary_path) as f:
+                        results[run_id] = json.load(f)
+                except (json.JSONDecodeError, IOError):
+                    results[run_id] = None
+            else:
+                results[run_id] = None
+        else:
+            results[run_id] = None
+    return results
