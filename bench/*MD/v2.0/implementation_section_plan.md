@@ -1,6 +1,6 @@
 # Implementation Section (I-Series) Design Plan
 
-> Version: v2.3 | Status: In Progress — I01–I06 classic approach built, multi-layer behavioral eval implemented, I07–I10 Algorithm Framework tasks designed | Section: Strategy Implementation on LEAN Engine
+> Version: v2.4 | Status: In Progress — I01–I10 reference data complete, multi-layer behavioral eval with multi-run support, three known issues fixed (I08 PCM, I06 Sharpe overflow, multi-run summaries) | Section: Strategy Implementation on LEAN Engine
 
 ---
 
@@ -1303,7 +1303,7 @@ Output required:
 
 **Runtime budget**: 21 sequential LEAN backtests × ~2 min each + compilation overhead ≈ 45 min total. `timeout_minutes: 45` in the task JSON. Each individual backtest is capped at `LEAN_RUN_TIMEOUT` seconds (default 300s) via `run_backtest.sh`. Exit code 124 indicates a timeout kill.
 
-**Ground-truth preparation**: Run reference algorithm at equal weights → export `I06_reference_trades.json` (10 reference symbols). Run full sweep → export `I06_reference_sweep_results.json` with all 21 combinations.
+**Ground-truth preparation**: Run reference algorithm at default weights (trend=0.4, reversion=0.3, carry=0.3) → export `I06_reference_trades_t04_r03_c03.json` (13,719 trades). Run full sweep → export `I06_reference_sweep_results.json` with all 19 valid weight combinations. **Note**: LEAN's internal Sharpe calculation overflows for high-return crypto futures (14,000%+ returns). A `_compute_sharpe_from_trades()` fallback in `generate_lean_reference.py` recalculates Sharpe from round-trip trade PnL when LEAN's value is bogus (|Sharpe| > 100 or Sharpe == 0 with ≥10 trades). All 19 configs now have reasonable Sharpe values (range: -0.52 to +0.38).
 
 ---
 
@@ -1494,11 +1494,11 @@ Output required:
 - **Multi-alpha architecture**: Code contains ≥ 3 classes inheriting `AlphaModel`, registered via `AddAlpha()`.
 - **Insight emission**: Each alpha emits insights with distinct magnitude/confidence values matching the spec.
 - **Portfolio model comparison**: Two separate backtest runs exist with different portfolio construction models.
-- **Trade log comparison**: For 10 reference symbols under `InsightWeighting`, trades broadly match reference (±2 bars, since framework timing differs).
+- **Trade log comparison**: For reference symbols under `EqualWeighting` (primary run), trades broadly match reference (±2 bars, since framework timing differs). **Note**: `InsightWeightingPortfolioConstructionModel` produces 0 trades even with `Resolution.Daily` rebalancing — conflicting insights from 3 alpha models cancel out under insight-weighted aggregation. EqualWeighting is the primary behavioral eval target.
 - **Comparison output**: A structured comparison of Sharpe/return/drawdown/turnover between the two runs.
 - **Universe coverage**: Algorithm subscribed to ≥ 80 symbols.
 
-**Ground-truth preparation**: Run reference algorithm with both portfolio models → export `I08_reference_trades_iw.json` (InsightWeighting, 10 reference symbols) + `I08_reference_trades_ew.json` (EqualWeighting, 10 reference symbols) + `I08_reference_comparison.json` (side-by-side metrics).
+**Ground-truth preparation**: Run reference algorithm with both portfolio models → export `I08_reference_trades_insight_weighting.json` (InsightWeighting, 0 trades) + `I08_reference_trades_equal_weighting.json` (EqualWeighting, 69 trades) + `I08_reference_comparison.json` (side-by-side metrics). Behavioral eval uses `run_id="equal_weighting"` as the primary reference.
 
 ---
 
@@ -1984,12 +1984,19 @@ Each task has two reference data files beyond the existing trade log:
 
 ```
 bench/data/reference/
-├── I0X_reference_trades.json      # Existing: LEAN round-trip trades
-├── I0X_reference_signals.json     # NEW: deterministic Python signals
-└── I0X_reference_summary.json     # NEW: standardized performance metrics
+├── I0X_reference_trades.json              # Single-run: LEAN round-trip trades
+├── I0X_reference_trades_{run_id}.json     # Multi-run: per-config trades (I06, I08, I09, I10)
+├── I0X_reference_signals.json             # Deterministic Python signals
+├── I0X_reference_summary.json             # Standardized performance metrics
+├── I0X_reference_sweep_results.json       # Sweep/grid aggregated results (I06, I10)
+└── I0X_reference_comparison.json          # Multi-run comparison (I08, I09)
 ```
 
 Reference positions are **not stored as files** — they are reconstructed from `reference_trades.json` at evaluation time via `reconstruct_positions()`. This avoids reference drift and version mismatches between trades and positions.
+
+**Multi-run summary resolution**: `_build_summary()` in `generate_reference_signals.py` uses `MULTI_RUN_PRIMARY` dict to identify the primary run for each multi-run task: I06→`t04_r03_c03` (default weights), I08→`equal_weighting`, I09→`builtin`. The summary is built from that run's trades file.
+
+**Sharpe ratio fix**: LEAN's internal Sharpe calculation overflows for crypto futures with extreme returns (14,000%+). `_compute_sharpe_from_trades()` in `generate_lean_reference.py` provides a fallback that computes annualized Sharpe from daily PnL of round-trip trades. Triggers when |Sharpe| > 100 or Sharpe == 0 with ≥ 10 trades.
 
 **Signal file schema** (`I0X_reference_signals.json`):
 ```json
@@ -2104,7 +2111,7 @@ Shared eval helper module for I-series. Contains both the original trade-matchin
 # bench/evaluation/test_scripts/_implementation_check.py
 
 # ── Original functions (preserved) ──
-- load_reference_trades(task_id) → list[dict]
+- load_reference_trades(task_id, run_id=None) → list[dict]
 - load_agent_trades(workspace_path) → list[dict]
 - match_trades(ref_trades, agent_trades, time_tolerance_bars, resolution) → MatchResult
 - compute_trade_log_score(match_result) → float
@@ -2118,7 +2125,7 @@ Shared eval helper module for I-series. Contains both the original trade-matchin
 - load_reference_signals(task_id) → dict
 - load_reference_positions(task_id) → dict
     Reconstructs from reference trades at runtime (no separate positions file).
-- load_reference_summary(task_id) → dict
+- load_reference_summary(task_id, run_id=None) → dict
 
 # ── New agent data extraction ──
 - load_agent_orders(workspace_path) → list[dict]
@@ -2143,8 +2150,10 @@ class BehavioralResult:
     composite_score: float
     layers_available: list[str]
 
-- compute_behavioral_score(task_id, workspace_path, resolution) → BehavioralResult
+- compute_behavioral_score(task_id, workspace_path, resolution, run_id=None) → BehavioralResult
     Main entry: loads all data, scores each layer, redistributes weights, returns composite.
+    For multi-run tasks, pass run_id to load the correct reference trades/summary
+    (e.g., run_id="equal_weighting" for I08, run_id="builtin" for I09).
 ```
 
 ### 7.3 Per-Task Eval Script Structure
@@ -2448,8 +2457,8 @@ bench/data/reference/
 ├── I06_reference_sweep_results.json       # Parameter sweep results for I06
 ├── I07_reference_trades.json              # Framework approach
 ├── I07_reference_insights.json            # Insight emission log
-├── I08_reference_trades_iw.json           # InsightWeighting run
-├── I08_reference_trades_ew.json           # EqualWeighting run
+├── I08_reference_trades_insight_weighting.json  # InsightWeighting run (0 trades)
+├── I08_reference_trades_equal_weighting.json   # EqualWeighting run (69 trades, primary)
 ├── I08_reference_comparison.json          # Side-by-side metrics
 ├── I09_reference_trades_norisk.json       # No risk management
 ├── I09_reference_trades_builtin.json      # Built-in risk models
@@ -2542,7 +2551,7 @@ Each reference signal file must be validated:
 - [x] Write reference C# algorithm: `I05_cross_asset.cs`
 - [x] Write reference C# algorithm: `I06_multi_signal.cs`
 - [x] Run all reference algorithms → export trade logs *(I01=85, I02=1763, I03=662, I04=4026, I05=2294, I06=13719 trades)*
-- [x] Run I06 parameter sweep → exported 19 configs (251,961 total trades, best Sharpe config: t02_r05_c03)
+- [x] Run I06 parameter sweep → exported 19 configs (251,961 total trades, best Sharpe=0.3793 config: t02_r05_c03)
 - [x] Validate all reference trade logs — all 6 backtests pass with custom symbol-properties DB, zero skipped symbols
 - [x] Write `bench/reference/generate_reference_signals.py` — deterministic signal computation from raw data (I01–I06)
 - [x] Generate reference signals for I01 (316 signals, SMA(20) on daily BTC)
@@ -2562,6 +2571,9 @@ Each reference signal file must be validated:
 - [x] Run I09 (3 risk configs) → exported norisk (395 trades), builtin (24797 trades), custom (33970 trades), comparison JSON
 - [x] Run I10 grid search → exported 250 configs (1,222,914 total trades, best: f15_s20_t0005, Sharpe=0.553)
 - [x] Validate all framework reference trade logs *(306 reference files, 281 trade files validated)
+- [x] Fix I08 InsightWeightingPCM: added `Resolution.Daily` to constructor (still 0 trades — conflicting insights cancel)
+- [x] Fix I06 Sharpe overflow: added `_compute_sharpe_from_trades()` fallback, all 19 sweep configs now have reasonable Sharpe (-0.52 to +0.38)
+- [x] Fix multi-run summary/eval: `_build_summary()` uses `MULTI_RUN_PRIMARY` dict (I06→t04_r03_c03, I08→equal_weighting, I09→builtin); `compute_behavioral_score()` accepts `run_id` parameter; I08/I09 eval scripts pass correct `run_id`
 
 ### Phase 3: Task JSONs (bench/tasks/layer2/implementation/)
 
@@ -2590,6 +2602,7 @@ Each reference signal file must be validated:
   - [x] Agent extractors: `load_agent_orders`, `reconstruct_positions`, `load_agent_summary`
   - [x] Layer scorers: `score_signal_agreement`, `score_position_overlap`, `score_performance`, `score_trade_similarity`
   - [x] `BehavioralResult` dataclass + `compute_behavioral_score()` entry point with weight redistribution
+  - [x] `run_id` parameter on `compute_behavioral_score()` and `load_reference_summary()` for multi-run tasks
 - [x] Migrate I01–I06 eval scripts to use `compute_behavioral_score()` with per-task weight allocation
 - [x] Validate: self-test, shifted-data, inverted-direction, empty-workspace tests all pass
 - [x] I07_alpha_model.py — framework architecture checks + insight log validation
@@ -2721,6 +2734,6 @@ I06 Manual param sweep         ──►   I10 Parameter Optimization (hard)
 11. **Algorithm Framework API stability**: LEAN's Algorithm Framework API (AlphaModel, PortfolioConstructionModel, etc.) may have breaking changes between LEAN versions. Need to verify I07–I10 reference implementations against the pinned LEAN version.
 12. **Framework execution timing**: The Algorithm Framework processes insights and generates orders through a pipeline, which may produce slightly different trade timing compared to classic `OnData()` direct execution. Need to calibrate trade-log comparison tolerance for I07–I10 (currently set to ±2 bars vs ±1 bar for classic).
 13. **LEAN optimizer availability in Docker**: LEAN's optimization engine may require additional configuration or a separate entry point beyond `run_backtest`. Need to verify that the Docker sandbox supports optimization runs for I10, and whether the wrapper script needs extension.
-14. **Multi-run eval architecture**: I08 (2 portfolio models), I09 (3 risk configurations), and I10 (~180 grid search) require multiple backtest runs per task. The eval scripts need to handle multi-run output directories. Consider a naming convention like `/workspace/results/run_1/`, `/workspace/results/run_2/`, etc.
+14. ~~**Multi-run eval architecture**: I08 (2 portfolio models), I09 (3 risk configurations), and I10 (~180 grid search) require multiple backtest runs per task. The eval scripts need to handle multi-run output directories.~~ **Resolved**: Multi-run tasks use `TASK_RUN_CONFIGS` dict in `generate_lean_reference.py` with `run_id` per config. Reference files follow `{task_id}_reference_trades_{run_id}.json` naming. `MULTI_RUN_PRIMARY` dict in `generate_reference_signals.py` maps each task to its primary run for summary/behavioral eval. `compute_behavioral_score()` accepts `run_id` parameter; I08 uses `"equal_weighting"`, I09 uses `"builtin"`.
 15. **Custom risk model testability**: I09's custom `MaxGroupExposureRiskManagementModel` requires group/tier assignments from `universe.json`. Need to verify that the framework risk model can access algorithm state (universe metadata) during `ManageRisk()`.
 16. **Optuna in Docker**: I10's optional Bayesian optimization requires Optuna (Python). The LEAN Docker image is C#-focused. Need to decide: (a) pre-install Optuna in the Docker image, (b) have the agent install it at runtime, or (c) provide a Python-C# bridge script that calls LEAN per Optuna trial.
