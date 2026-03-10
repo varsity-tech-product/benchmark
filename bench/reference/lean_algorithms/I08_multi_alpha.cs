@@ -32,6 +32,7 @@ using QuantConnect.Algorithm.Framework.Portfolio;
 using QuantConnect.Data;
 using QuantConnect.Data.Market;
 using QuantConnect.Indicators;
+using QuantConnect.Data.UniverseSelection;
 using QuantConnect.Orders;
 
 namespace QuantTutorBench
@@ -155,13 +156,13 @@ namespace QuantTutorBench
 
                 if (sd.SmaFast.Current.Value > sd.SmaSlow.Current.Value)
                 {
-                    insights.Add(Insight.Up(sd.Symbol, TimeSpan.FromDays(3),
-                        magnitude: 0.5, confidence: 0.6));
+                    insights.Add(Insight.Price(sd.Symbol, TimeSpan.FromDays(3), InsightDirection.Up,
+                        0.5, 0.6));
                 }
                 else
                 {
-                    insights.Add(Insight.Down(sd.Symbol, TimeSpan.FromDays(3),
-                        magnitude: 0.5, confidence: 0.6));
+                    insights.Add(Insight.Price(sd.Symbol, TimeSpan.FromDays(3), InsightDirection.Down,
+                        0.5, 0.6));
                 }
             }
 
@@ -217,13 +218,13 @@ namespace QuantTutorBench
 
                 if (rsi < 30)
                 {
-                    insights.Add(Insight.Up(sd.Symbol, TimeSpan.FromDays(2),
-                        magnitude: 0.8, confidence: 0.7));
+                    insights.Add(Insight.Price(sd.Symbol, TimeSpan.FromDays(2), InsightDirection.Up,
+                        0.8, 0.7));
                 }
                 else if (rsi > 70)
                 {
-                    insights.Add(Insight.Down(sd.Symbol, TimeSpan.FromDays(2),
-                        magnitude: 0.8, confidence: 0.7));
+                    insights.Add(Insight.Price(sd.Symbol, TimeSpan.FromDays(2), InsightDirection.Down,
+                        0.8, 0.7));
                 }
             }
 
@@ -278,13 +279,13 @@ namespace QuantTutorBench
 
                 if (roc > 5m)
                 {
-                    insights.Add(Insight.Up(sd.Symbol, TimeSpan.FromDays(5),
-                        magnitude: (double)Math.Abs(roc) / 100.0, confidence: 0.5));
+                    insights.Add(Insight.Price(sd.Symbol, TimeSpan.FromDays(5), InsightDirection.Up,
+                        (double)Math.Abs(roc) / 100.0, 0.5));
                 }
                 else if (roc < -5m)
                 {
-                    insights.Add(Insight.Down(sd.Symbol, TimeSpan.FromDays(5),
-                        magnitude: (double)Math.Abs(roc) / 100.0, confidence: 0.5));
+                    insights.Add(Insight.Price(sd.Symbol, TimeSpan.FromDays(5), InsightDirection.Down,
+                        (double)Math.Abs(roc) / 100.0, 0.5));
                 }
             }
 

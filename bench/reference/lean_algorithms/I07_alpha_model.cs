@@ -27,6 +27,7 @@ using QuantConnect.Algorithm.Framework.Portfolio;
 using QuantConnect.Data;
 using QuantConnect.Data.Market;
 using QuantConnect.Indicators;
+using QuantConnect.Data.UniverseSelection;
 using QuantConnect.Orders;
 
 namespace QuantTutorBench
@@ -154,16 +155,8 @@ namespace QuantTutorBench
                     var magnitude = (double)Math.Abs(spread);
                     var confidence = direction == sd.LastDirection ? 0.6 : 0.8;
 
-                    if (direction == InsightDirection.Up)
-                    {
-                        insights.Add(Insight.Up(sd.Symbol, TimeSpan.FromDays(5),
-                            magnitude: magnitude, confidence: confidence));
-                    }
-                    else
-                    {
-                        insights.Add(Insight.Down(sd.Symbol, TimeSpan.FromDays(5),
-                            magnitude: magnitude, confidence: confidence));
-                    }
+                    insights.Add(Insight.Price(sd.Symbol, TimeSpan.FromDays(5),
+                        direction, magnitude, confidence));
                 }
 
                 sd.LastDirection = direction;

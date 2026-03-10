@@ -36,9 +36,9 @@ namespace QuantTutorBench
         private const int SmaPeriodFast = 20;
         private const int SmaPeriodSlow = 60;
         private const int RsiPeriod = 14;
-        private const decimal TrendWeight = 0.40m;
-        private const decimal ReversionWeight = 0.30m;
-        private const decimal CarryWeight = 0.30m;
+        private decimal TrendWeight = 0.40m;
+        private decimal ReversionWeight = 0.30m;
+        private decimal CarryWeight = 0.30m;
         private const int MaxLongPositions = 20;
         private const int MaxShortPositions = 20;
         private const decimal InitialCash = 100_000m;
@@ -62,6 +62,14 @@ namespace QuantTutorBench
             SetEndDate(2025, 12, 31);
             SetAccountCurrency("USDT");
             SetCash(InitialCash);
+
+            // Read weights from parameters (for sweep), with defaults matching hardcoded values
+            var twStr = GetParameter("trend_weight");
+            if (!string.IsNullOrEmpty(twStr)) TrendWeight = decimal.Parse(twStr);
+            var rwStr = GetParameter("reversion_weight");
+            if (!string.IsNullOrEmpty(rwStr)) ReversionWeight = decimal.Parse(rwStr);
+            var cwStr = GetParameter("carry_weight");
+            if (!string.IsNullOrEmpty(cwStr)) CarryWeight = decimal.Parse(cwStr);
 
             var tickers = LoadUniverse();
 

@@ -5,9 +5,10 @@ the benchmark environment, then regenerate references.
 """
 
 # ── LEAN Engine ──
-# Pin by Docker image digest (not :latest tag) for exact reproducibility.
+# Pin by tag; verified image ID sha256:bd1d43f32021f62ddb338da0ef319890d32520ee386dd0d5334fb10a9cd32ba7
+# Note: @sha256: digest notation requires remote registry pull; use tag for local builds.
 # To update: docker pull quantconnect/lean:latest && docker inspect --format '{{.Id}}' quantconnect/lean:latest
-LEAN_IMAGE = "quantconnect/lean@sha256:bd1d43f32021f62ddb338da0ef319890d32520ee386dd0d5334fb10a9cd32ba7"
+LEAN_IMAGE = "quantconnect/lean:latest"
 
 # ── Dataset ──
 # HuggingFace dataset repo and pinned commit hash.

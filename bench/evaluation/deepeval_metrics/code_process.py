@@ -33,10 +33,16 @@ except ImportError:
 
 
 # ──────────────────────────────────────────────────────────────
-# Python execution detection
+# Code execution detection (Python + C#)
 # ──────────────────────────────────────────────────────────────
 
+_CODE_EXTENSIONS = (".py", ".cs")
+
 _PYTHON_CMD_RE = re.compile(r"python3?\s+" r"(?:-c\s+|" r"-\s*<<|" r"[\w./\\-]+\.py)")
+
+_CSHARP_CMD_RE = re.compile(
+    r"(?:dotnet\s+(?:build|run|test)|run_backtest|msbuild)"
+)
 
 
 def _is_python_exec(log) -> bool:
@@ -47,21 +53,49 @@ def _is_python_exec(log) -> bool:
     return bool(_PYTHON_CMD_RE.search(cmd))
 
 
-def _extract_script_name(log) -> str:
-    """Extract script name from a Python shell_exec command."""
+def _is_csharp_exec(log) -> bool:
+    """Check if a shell_exec log runs C# code (dotnet build/run, run_backtest)."""
+    if log.name != "shell_exec":
+        return False
     cmd = log.args.get("command", "")
+    return bool(_CSHARP_CMD_RE.search(cmd))
+
+
+def _is_code_exec(log) -> bool:
+    """Check if a shell_exec log runs any code (Python or C#)."""
+    return _is_python_exec(log) or _is_csharp_exec(log)
+
+
+def _extract_script_name(log) -> str:
+    """Extract script/file name from a code execution command."""
+    cmd = log.args.get("command", "")
+    # Try Python script
     match = re.search(r"([\w./\\-]+\.py)", cmd)
-    return os.path.basename(match.group(1)) if match else "inline"
+    if match:
+        return os.path.basename(match.group(1))
+    # Try C# file
+    match = re.search(r"([\w./\\-]+\.cs)", cmd)
+    if match:
+        return os.path.basename(match.group(1))
+    # C# commands without explicit file reference
+    if _is_csharp_exec(log):
+        return "dotnet"
+    return "inline"
 
 
 def _is_exec_successful(log) -> bool:
-    """Check if a Python execution succeeded (no traceback, no error)."""
+    """Check if a code execution succeeded (no traceback, no error)."""
     result = (log.result or "").lower()
     if "timed out" in result or "timeout" in result:
         return False
     if "syntaxerror" in result:
         return False
     if "traceback (most recent call last)" in result:
+        return False
+    # C# build failures
+    if "build failed" in result:
+        return False
+    if "error cs" in result:
         return False
     if log.success and "error" not in result:
         return True
@@ -110,11 +144,11 @@ def _clamp_ordinal(val, default=0.5) -> float:
 def _metric_iterative_refinement(logs: list) -> Optional[float]:
     """Write→test→fix cycle adherence.
 
-    For each .py file written via file_write, checks whether the agent
-    executes it at least once after writing.  Agents that test every file
-    score 1.0; agents that write and forget score 0.0.
+    For each code file (.py/.cs) written via file_write, checks whether
+    the agent executes it at least once after writing.  Agents that test
+    every file score 1.0; agents that write and forget score 0.0.
 
-    Returns None if no .py files are written (metric not applicable).
+    Returns None if no code files are written (metric not applicable).
     """
     written_scripts: set[str] = set()
     tested_scripts: set[str] = set()
@@ -127,12 +161,12 @@ def _metric_iterative_refinement(logs: list) -> Optional[float]:
         name = log.name
         if name == "file_write":
             path = log.args.get("path", "")
-            if path.endswith(".py"):
+            if any(path.endswith(ext) for ext in _CODE_EXTENSIONS):
                 script = os.path.basename(path)
                 written_scripts.add(script)
                 if script not in write_indices:
                     write_indices[script] = i
-        elif _is_python_exec(log):
+        elif _is_code_exec(log):
             exec_events.append((i, _extract_script_name(log)))
 
     if not written_scripts:
@@ -155,15 +189,15 @@ def _metric_iterative_refinement(logs: list) -> Optional[float]:
 def _metric_test_before_deliver(logs: list) -> Optional[float]:
     """Did the agent verify its code works before the final response?
 
-    Finds the last Python execution before the final tool call.
+    Finds the last code execution (Python or C#) before the final tool call.
     Score 1.0 if it succeeded, 0.0 if it failed.
-    Returns None if no Python execution occurred.
+    Returns None if no code execution occurred.
     """
     boundary = len(logs)
 
-    # Find last Python exec before boundary
+    # Find last code exec before boundary
     for i in range(boundary - 1, -1, -1):
-        if _is_python_exec(logs[i]):
+        if _is_code_exec(logs[i]):
             return 1.0 if _is_exec_successful(logs[i]) else 0.0
 
     return None
@@ -176,12 +210,12 @@ def _metric_error_recovery(logs: list) -> Optional[float]:
     execution of that script succeeds.
     Score = recovered_scripts / scripts_with_failures.
     Returns 1.0 if no failures occurred (vacuously true).
-    Returns None if no Python execution occurred.
+    Returns None if no code execution occurred.
     """
     script_history: dict[str, list[bool]] = {}
 
     for log in logs:
-        if not _is_python_exec(log):
+        if not _is_code_exec(log):
             continue
         script = _extract_script_name(log)
         success = _is_exec_successful(log)
@@ -218,7 +252,7 @@ def _metric_code_evolution(logs: list) -> Optional[float]:
     meaningfully (>5% line-level difference) between versions.
     Files written once score 1.0 (no evolution needed).
 
-    Returns None if no .py files are written.
+    Returns None if no code files are written.
     """
     writes_by_file: dict[str, list[str]] = {}
 
@@ -227,7 +261,7 @@ def _metric_code_evolution(logs: list) -> Optional[float]:
             continue
         path = log.args.get("path", "")
         content = log.args.get("content", "")
-        if path.endswith(".py") and content:
+        if any(path.endswith(ext) for ext in _CODE_EXTENSIONS) and content:
             fname = os.path.basename(path)
             writes_by_file.setdefault(fname, []).append(content)
 
@@ -308,16 +342,19 @@ def _build_code_activity_trace(logs: list) -> str:
 
         if name == "file_write":
             path = log.args.get("path", "")
-            if not path.endswith(".py"):
+            if not any(path.endswith(ext) for ext in _CODE_EXTENSIONS):
                 continue
             content = log.args.get("content", "")
             step += 1
             line_count = len(content.strip().splitlines()) if content else 0
             # Brief preview: first few significant code lines
+            # Skip comments for both Python (#) and C# (//)
             code_lines = [
                 ln.strip()
                 for ln in content.splitlines()
-                if ln.strip() and not ln.strip().startswith("#")
+                if ln.strip()
+                and not ln.strip().startswith("#")
+                and not ln.strip().startswith("//")
             ]
             preview = "; ".join(code_lines[:3])
             if len(preview) > 150:
@@ -327,7 +364,7 @@ def _build_code_activity_trace(logs: list) -> str:
                 f"({line_count} lines) — {preview}"
             )
 
-        elif _is_python_exec(log):
+        elif _is_code_exec(log):
             step += 1
             script = _extract_script_name(log)
             result = log.result or ""
@@ -459,8 +496,9 @@ async def async_eval_code_process(
 ) -> dict:
     """Combined code process evaluation (50% programmatic + 50% LLM-judged).
 
-    Skipped entirely if no code activity (file_write or Python shell_exec)
-    is detected — returns score=None so it's excluded from QP aggregate.
+    Skipped entirely if no code activity (file_write of .py/.cs or
+    code shell_exec) is detected — returns score=None so it's excluded
+    from QP aggregate.
 
     Args:
         task_description: Task description text.

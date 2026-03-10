@@ -60,6 +60,31 @@ DEFAULT_START_DATE = BENCH_START
 DEFAULT_END_DATE = BENCH_END
 
 
+def _generate_i06_sweep() -> list[dict]:
+    """Generate I06 weight sweep grid (configs where weights sum to 1.0).
+
+    trend_weight:     0.2 to 0.6 step 0.1
+    reversion_weight: 0.1 to 0.5 step 0.1
+    carry_weight:     1.0 - trend - reversion, must be in [0.1, 0.5]
+    """
+    configs = []
+    for tw in [0.2, 0.3, 0.4, 0.5, 0.6]:
+        for rw in [0.1, 0.2, 0.3, 0.4, 0.5]:
+            cw = round(1.0 - tw - rw, 2)
+            if cw < 0.1 or cw > 0.5:
+                continue
+            run_id = f"t{tw:.1f}_r{rw:.1f}_c{cw:.1f}".replace(".", "")
+            configs.append({
+                "run_id": run_id,
+                "parameters": {
+                    "trend_weight": str(tw),
+                    "reversion_weight": str(rw),
+                    "carry_weight": str(cw),
+                },
+            })
+    return configs
+
+
 def _generate_i10_grid() -> list[dict]:
     """Generate I10 parameter grid (~180 valid combos where fast < slow)."""
     fast_periods = [5, 10, 15, 20, 25, 30]
@@ -85,6 +110,7 @@ def _generate_i10_grid() -> list[dict]:
 
 # Multi-run configurations for tasks that need multiple backtest runs
 TASK_RUN_CONFIGS = {
+    "I06": _generate_i06_sweep(),
     "I08": [
         {"run_id": "insight_weighting", "parameters": {"portfolio_model": "InsightWeighting"}},
         {"run_id": "equal_weighting", "parameters": {"portfolio_model": "EqualWeighting"}},
@@ -565,6 +591,88 @@ def run_lean_backtest(
             pass
 
 
+def _export_sweep_summary(task_id: str, results: list[dict]) -> None:
+    """Export aggregated sweep/grid results for multi-run tasks (I06, I10)."""
+    successful = [r for r in results if r.get("status") == "success"]
+    if not successful:
+        return
+
+    sweep_results = []
+    for r in successful:
+        params = r.get("parameters", {})
+        metrics = r.get("metrics", {})
+        sweep_results.append({
+            "run_id": r.get("run_id", ""),
+            "parameters": params,
+            "metrics": {
+                "total_trades": metrics.get("total_trades", 0),
+                "sharpe_ratio": metrics.get("sharpe_ratio", "0"),
+                "total_return": metrics.get("total_return", "0%"),
+                "max_drawdown": metrics.get("max_drawdown", "0%"),
+                "win_rate": metrics.get("win_rate", "0%"),
+            },
+        })
+
+    # Sort by Sharpe ratio descending
+    def _sharpe_float(entry):
+        try:
+            return float(entry["metrics"]["sharpe_ratio"])
+        except (ValueError, TypeError):
+            return -999
+    sweep_results.sort(key=_sharpe_float, reverse=True)
+
+    # Export comparison JSON for I08/I09 (not a sweep, but a comparison)
+    # Include ALL runs (even those with 0 trades) to show model differences
+    if task_id in ("I08", "I09"):
+        comparison = {
+            "task_id": task_id,
+            "type": "comparison",
+            "generated_at": datetime.now(tz=__import__('datetime').timezone.utc).isoformat(),
+            "runs": [
+                {
+                    "run_id": r.get("run_id", ""),
+                    "parameters": r.get("parameters", {}),
+                    "metrics": r.get("metrics", {}),
+                    "trade_count": r.get("trade_count", 0),
+                    "status": r.get("status", "unknown"),
+                }
+                for r in results
+                if r.get("status") not in ("error", "timeout")
+            ],
+        }
+        comp_path = REFERENCE_OUTPUT_DIR / f"{task_id}_reference_comparison.json"
+        with open(comp_path, "w") as f:
+            json.dump(comparison, f, indent=2)
+        print(f"  Exported comparison to {comp_path.name}")
+        return  # I08/I09 don't need sweep summary
+
+    # Determine output filename
+    if task_id == "I06":
+        out_path = REFERENCE_OUTPUT_DIR / "I06_reference_sweep_results.json"
+    elif task_id == "I10":
+        out_path = REFERENCE_OUTPUT_DIR / "I10_reference_grid_results.json"
+    else:
+        out_path = REFERENCE_OUTPUT_DIR / f"{task_id}_reference_sweep_results.json"
+
+    summary = {
+        "task_id": task_id,
+        "type": "parameter_sweep",
+        "generated_at": datetime.now(tz=__import__('datetime').timezone.utc).isoformat(),
+        "total_configurations_tested": len(successful),
+        "total_configurations_attempted": len(results),
+        "best_configuration": sweep_results[0] if sweep_results else None,
+        "sweep_results": sweep_results,
+    }
+
+    REFERENCE_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    with open(out_path, "w") as f:
+        json.dump(summary, f, indent=2)
+    print(f"  Exported {len(sweep_results)} sweep results to {out_path.name}")
+    if sweep_results:
+        best = sweep_results[0]
+        print(f"  Best config: {best['run_id']} (Sharpe={best['metrics']['sharpe_ratio']})")
+
+
 def run_lean_backtest_multi(
     task_id: str,
     lean_image: str = DEFAULT_LEAN_IMAGE,
@@ -620,6 +728,7 @@ def run_lean_backtest_multi(
                     print(f"  {rid}: FAILED - {e}")
                     results.append({"status": "error", "run_id": rid, "error": str(e)})
 
+        _export_sweep_summary(task_id, results)
         return results
     else:
         results = []
@@ -638,6 +747,7 @@ def run_lean_backtest_multi(
             except Exception as e:
                 print(f"  {cfg['run_id']}: FAILED - {e}")
                 results.append({"status": "error", "run_id": cfg["run_id"], "error": str(e)})
+        _export_sweep_summary(task_id, results)
         return results
 
 
