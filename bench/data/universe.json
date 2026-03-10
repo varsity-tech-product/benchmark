@@ -1,13 +1,13 @@
 {
   "version": "1.0",
-  "freeze_date": "2024-12-31",
+  "freeze_date": "2025-12-31",
   "hf_repo": "Varsity-Tech/quant-tutor-bench-data",
   "hf_revision": null,
   "tiers": {
     "tier1": {
       "description": "Full universe — daily resolution",
       "timeframes": ["1d"],
-      "period": "listing_date to 2024-12-31",
+      "period": "listing_date to 2025-12-31",
       "symbols": [
         {"symbol": "BTCUSDT", "listing_date": "2019-12-31", "avg_daily_volume_usdt": 25000000000},
         {"symbol": "ETHUSDT", "listing_date": "2019-12-31", "avg_daily_volume_usdt": 12000000000},
@@ -114,7 +114,7 @@
     "tier2": {
       "description": "Core liquid — hourly + 4-hourly",
       "timeframes": ["1h", "4h"],
-      "period": "2022-01-01 to 2024-12-31",
+      "period": "2022-01-01 to 2025-12-31",
       "symbols": [
         "BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "XRPUSDT",
         "ADAUSDT", "DOGEUSDT", "LINKUSDT", "AVAXUSDT", "DOTUSDT",
@@ -125,13 +125,13 @@
     "tier3": {
       "description": "Majors — 5-minute + 1-minute",
       "timeframes": ["5m", "1m"],
-      "period": "2024-01-01 to 2024-12-31",
+      "period": "2024-01-01 to 2025-12-31",
       "symbols": ["BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "XRPUSDT"]
     },
     "funding": {
       "description": "Funding rates — 8-hourly",
       "interval": "8h",
-      "period": "listing_date to 2024-12-31",
+      "period": "listing_date to 2025-12-31",
       "symbols": [
         "BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "XRPUSDT",
         "ADAUSDT", "DOGEUSDT", "LINKUSDT", "AVAXUSDT", "DOTUSDT",

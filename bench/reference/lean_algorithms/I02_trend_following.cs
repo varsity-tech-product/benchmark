@@ -40,8 +40,8 @@ namespace QuantTutorBench
 
         public override void Initialize()
         {
-            SetStartDate(2023, 1, 1);
-            SetEndDate(2023, 12, 31);
+            SetStartDate(2022, 1, 1);
+            SetEndDate(2025, 12, 31);
             SetAccountCurrency("USDT");
             SetCash(InitialCash);
 
@@ -98,7 +98,7 @@ namespace QuantTutorBench
                 var targetWeight = 1.0m / longSignals.Count;
                 foreach (var symbol in longSignals)
                 {
-                    SetHoldings(symbol, targetWeight, false, "SMA bullish");
+                    SetHoldings(symbol, targetWeight);
                 }
             }
         }

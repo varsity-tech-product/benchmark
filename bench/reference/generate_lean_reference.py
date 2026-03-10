@@ -47,8 +47,12 @@ TASK_ALGO_MAP = {
 }
 
 DEFAULT_LEAN_IMAGE = "quantconnect/lean:latest"
-DEFAULT_START_DATE = "2024-02-01"
-DEFAULT_END_DATE = "2024-12-31"
+
+# Import canonical date window
+sys.path.insert(0, str(BENCH_ROOT))
+from config.benchmark_dates import BENCH_START, BENCH_END  # noqa: E402
+DEFAULT_START_DATE = BENCH_START
+DEFAULT_END_DATE = BENCH_END
 
 
 def _check_docker():
@@ -67,7 +71,13 @@ def _check_docker():
 
 def _ensure_lean_data():
     """Ensure LEAN market data is available. Returns data directory path."""
-    # Try to use data_manager if available
+    # Prefer local converted data (populated by convert_binance_to_lean.py)
+    local_lean = BENCH_ROOT / "data" / "lean"
+    if local_lean.is_dir() and any(local_lean.iterdir()):
+        print(f"Using LEAN data from: {local_lean}")
+        return str(local_lean)
+
+    # Try to use data_manager (HuggingFace) if local data unavailable
     try:
         sys.path.insert(0, str(BENCH_ROOT))
         from scripts.data_manager import ensure_data
@@ -80,7 +90,6 @@ def _ensure_lean_data():
     candidates = [
         Path.home() / ".cache" / "quanttutorbench" / "lean_data",
         Path("/tmp/lean_data"),
-        BENCH_ROOT / "data" / "lean",
     ]
     for path in candidates:
         if path.is_dir() and any(path.iterdir()):

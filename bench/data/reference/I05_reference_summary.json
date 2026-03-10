@@ -1,10 +1,10 @@
 {
   "task_id": "I05",
   "metrics": {
-    "total_return_pct": 0.0,
-    "sharpe_ratio": 0.0,
-    "max_drawdown_pct": 0.0,
-    "total_trades": 0,
-    "win_rate": 0.0
+    "total_return_pct": 0.733,
+    "sharpe_ratio": -0.226,
+    "max_drawdown_pct": 27.7,
+    "total_trades": 8310,
+    "win_rate": 0.5106
   }
 }

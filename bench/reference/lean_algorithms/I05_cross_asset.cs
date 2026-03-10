@@ -56,8 +56,8 @@ namespace QuantTutorBench
 
         public override void Initialize()
         {
-            SetStartDate(2023, 1, 1);
-            SetEndDate(2023, 12, 31);
+            SetStartDate(2022, 1, 1);
+            SetEndDate(2025, 12, 31);
             SetAccountCurrency("USDT");
             SetCash(InitialCash);
 
@@ -165,15 +165,15 @@ namespace QuantTutorBench
                 if (zScore > ZScoreEntry)
                 {
                     // Spread is high → short spread (short A, long B)
-                    SetHoldings(symA, -PerLegWeight, false, $"Pair short leg z={zScore:F2}");
-                    SetHoldings(symB, PerLegWeight, false, $"Pair long leg z={zScore:F2}");
+                    SetHoldings(symA, -PerLegWeight);
+                    SetHoldings(symB, PerLegWeight);
                     direction = -1;
                 }
                 else if (zScore < -ZScoreEntry)
                 {
                     // Spread is low → long spread (long A, short B)
-                    SetHoldings(symA, PerLegWeight, false, $"Pair long leg z={zScore:F2}");
-                    SetHoldings(symB, -PerLegWeight, false, $"Pair short leg z={zScore:F2}");
+                    SetHoldings(symA, PerLegWeight);
+                    SetHoldings(symB, -PerLegWeight);
                     direction = 1;
                 }
                 else

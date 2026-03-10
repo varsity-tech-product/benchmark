@@ -404,8 +404,11 @@ def load_reference_positions(task_id: str) -> dict:
 
     # Determine date range from the trades file's parent JSON
     ref_path = _REFERENCE_DIR / f"{task_id}_reference_trades.json"
-    start_date = "2024-02-01"
-    end_date = "2024-12-31"
+    import sys as _sys
+    _sys.path.insert(0, str(_BENCH_ROOT))
+    from config.benchmark_dates import BENCH_START, BENCH_END
+    start_date = BENCH_START
+    end_date = BENCH_END
     if ref_path.exists():
         try:
             with open(ref_path) as f:
@@ -856,8 +859,11 @@ def compute_behavioral_score(
 
     # Build agent positions (prefer orders, fall back to trades)
     ref_meta = ref_signals or ref_positions or {}
-    start_date = ref_meta.get("start_date", "2024-02-01")
-    end_date = ref_meta.get("end_date", "2024-12-31")
+    import sys as _sys
+    _sys.path.insert(0, str(_BENCH_ROOT))
+    from config.benchmark_dates import BENCH_START, BENCH_END
+    start_date = ref_meta.get("start_date", BENCH_START)
+    end_date = ref_meta.get("end_date", BENCH_END)
 
     if agent_orders:
         agent_positions = reconstruct_positions(agent_orders, start_date, end_date)

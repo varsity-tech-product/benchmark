@@ -58,8 +58,8 @@ namespace QuantTutorBench
 
         public override void Initialize()
         {
-            SetStartDate(2023, 1, 1);
-            SetEndDate(2023, 12, 31);
+            SetStartDate(2022, 1, 1);
+            SetEndDate(2025, 12, 31);
             SetAccountCurrency("USDT");
             SetCash(InitialCash);
 
@@ -180,8 +180,7 @@ namespace QuantTutorBench
             // Set target holdings
             foreach (var kvp in targetWeights)
             {
-                SetHoldings(kvp.Key, kvp.Value, false,
-                    $"Composite rebal, w={kvp.Value:F3}");
+                SetHoldings(kvp.Key, kvp.Value);
             }
         }
 

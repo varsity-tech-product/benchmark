@@ -39,7 +39,7 @@ namespace QuantTutorBench
         private const decimal RsiShortEntry = 70m;
         private const decimal RsiShortExit = 50m;
         private const decimal StopLossPct = 0.05m;
-        private const decimal PositionSizePct = 0.02m;
+        private const decimal PositionSizePct = 0.05m;
         private const decimal InitialCash = 100_000m;
 
         // ── State ──
@@ -49,8 +49,8 @@ namespace QuantTutorBench
 
         public override void Initialize()
         {
-            SetStartDate(2023, 1, 1);
-            SetEndDate(2023, 12, 31);
+            SetStartDate(2022, 1, 1);
+            SetEndDate(2025, 12, 31);
             SetAccountCurrency("USDT");
             SetCash(InitialCash);
 
@@ -109,13 +109,13 @@ namespace QuantTutorBench
                     // Long entry: RSI oversold
                     if (rsiValue < RsiLongEntry)
                     {
-                        SetHoldings(symbol, PositionSizePct, false, $"RSI long entry ({rsiValue:F1})");
+                        SetHoldings(symbol, PositionSizePct);
                         _entryPrice[symbol] = price;
                     }
                     // Short entry: RSI overbought
                     else if (rsiValue > RsiShortEntry)
                     {
-                        SetHoldings(symbol, -PositionSizePct, false, $"RSI short entry ({rsiValue:F1})");
+                        SetHoldings(symbol, -PositionSizePct);
                         _entryPrice[symbol] = price;
                     }
                 }

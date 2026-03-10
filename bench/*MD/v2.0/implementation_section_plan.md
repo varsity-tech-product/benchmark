@@ -155,7 +155,7 @@ Not all symbols need all timeframes. We organize into **three tiers** by liquidi
 
 #### Tier 1: Full Universe — Daily Only
 
-**~100 most liquid USDT-M perpetual futures**, selected by average daily trading volume. Daily data for the full backtest period (inception to 2024-12-31).
+**~100 most liquid USDT-M perpetual futures**, selected by average daily trading volume. Daily data for the full backtest period (inception to 2025-12-31).
 
 Purpose: Universe-wide daily strategies (I02 trend-following, I03 mean-reversion, I06 multi-signal).
 
@@ -163,7 +163,7 @@ Purpose: Universe-wide daily strategies (I02 trend-following, I03 mean-reversion
 |----------|-------|
 | Symbols | ~100 (top by volume: BTCUSDT, ETHUSDT, BNBUSDT, SOLUSDT, XRPUSDT, ADAUSDT, DOGEUSDT, LINKUSDT, AVAXUSDT, DOTUSDT, MATICUSDT, UNIUSDT, 1000SHIBUSDT, 1000PEPEUSDT, LTCUSDT, ATOMUSDT, NEARUSDT, ARBUSDT, OPUSDT, ...) |
 | Timeframes | 1d |
-| Period | Each symbol from listing date → 2024-12-31 |
+| Period | Each symbol from listing date → 2025-12-31 |
 | Rows (approx) | ~100 × ~1,500 avg days = **~150K rows** |
 | Size (approx) | **~15 MB** compressed |
 
@@ -179,7 +179,7 @@ Purpose: Multi-asset swing strategies (I05 cross-asset), multi-timeframe strateg
 |----------|-------|
 | Symbols | ~20 (BTCUSDT, ETHUSDT, BNBUSDT, SOLUSDT, XRPUSDT, ADAUSDT, DOGEUSDT, LINKUSDT, AVAXUSDT, DOTUSDT, MATICUSDT, UNIUSDT, LTCUSDT, ATOMUSDT, NEARUSDT, ARBUSDT, OPUSDT, AAVEUSDT, MKRUSDT, APTUSDT) |
 | Timeframes | 1h, 4h |
-| Period | 2022-01-01 → 2024-12-31 (3 years) |
+| Period | 2022-01-01 → 2025-12-31 (4 years) |
 | Rows (approx) | 20 × 26,280 (1h) + 20 × 6,570 (4h) = **~657K rows** |
 | Size (approx) | **~80 MB** compressed |
 
@@ -193,7 +193,7 @@ Purpose: High-frequency / microstructure strategies, execution quality analysis,
 |----------|-------|
 | Symbols | 5 (BTCUSDT, ETHUSDT, BNBUSDT, SOLUSDT, XRPUSDT) |
 | Timeframes | 5m, 1m |
-| Period | 2024-01-01 → 2024-12-31 (1 year for manageability) |
+| Period | 2024-01-01 → 2025-12-31 (2 years) |
 | Rows (approx) | 5 × 105,120 (5m) + 5 × 525,600 (1m) = **~3.15M rows** |
 | Size (approx) | **~400 MB** compressed |
 
@@ -205,7 +205,7 @@ Funding rates for the top 20 symbols (Tier 2), for carry signal construction in 
 |----------|-------|
 | Symbols | ~20 (same as Tier 2) |
 | Interval | 8h (3 per day) |
-| Period | Listing date → 2024-12-31 |
+| Period | Listing date → 2025-12-31 |
 | Rows (approx) | 20 × ~3,000 = **~60K rows** |
 | Source | Binance REST API (`/fapi/v1/fundingRate`) |
 
@@ -561,7 +561,7 @@ A manifest file listing all symbols with metadata, used by both download scripts
 ```json
 {
   "version": "1.0",
-  "freeze_date": "2024-12-31",
+  "freeze_date": "2025-12-31",
   "hf_repo": "Varsity-Tech/quant-tutor-bench-data",
   "hf_revision": "abc123def456...",
   "tiers": {
@@ -582,7 +582,7 @@ A manifest file listing all symbols with metadata, used by both download scripts
     "tier3": {
       "description": "Majors — 5-minute + 1-minute",
       "timeframes": ["5m", "1m"],
-      "period": "2024-01-01 to 2024-12-31",
+      "period": "2024-01-01 to 2025-12-31",
       "symbols": ["BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "XRPUSDT"]
     },
     "funding": {
@@ -880,7 +880,7 @@ The `run_backtest` wrapper script (pre-installed in the sandbox) handles:
 Strategy: Dual Moving Average Crossover — Universe-Wide
 Assets:   All symbols in universe.json Tier 1 (~100 USDT-M perpetual futures)
 Resolution: Daily
-Period:   Each symbol from its listing date → 2024-12-31
+Period:   Each symbol from its listing date → 2025-12-31
 
 Rules (applied independently per symbol):
 - Compute 10-day SMA (fast) and 30-day SMA (slow) of close prices
@@ -961,7 +961,7 @@ Output required:
 Strategy: RSI Mean-Reversion with Stop-Loss — Universe-Wide
 Assets:   All symbols in universe.json Tier 1 (~100 USDT-M perpetual futures)
 Resolution: Daily
-Period:   Each symbol from its listing date → 2024-12-31
+Period:   Each symbol from its listing date → 2025-12-31
 
 Indicators (per symbol):
 - 14-period RSI on close prices
@@ -1049,7 +1049,7 @@ Output required:
 Strategy: Multi-Timeframe Trend Entry — Multi-Asset
 Assets:   All symbols in universe.json Tier 2 (~20 core liquid futures)
 Resolution: Subscribe at 1h, consolidate to 4h
-Period:   2022-01-01 to 2024-12-31
+Period:   2022-01-01 to 2025-12-31
 
 Data (per symbol):
 - 4h bars (via consolidator): for trend direction (20-period EMA slope on 4h)
@@ -1130,7 +1130,7 @@ Output required:
 ```
 Strategy: Universe Pairs Scanner + Spread Trading
 Assets:   All symbols in universe.json Tier 2 (~20 core liquid futures, daily resolution)
-Period:   2022-01-01 to 2024-12-31
+Period:   2022-01-01 to 2025-12-31
 
 Phase 1 — Pair Selection (provided via I05_candidate_pairs.json):
 - Pre-computed: all C(20,2) = 190 pairs scored by 60-day rolling correlation of log returns
@@ -1221,7 +1221,7 @@ Output required:
 Strategy: Composite Signal with Parameter Sweep — Universe-Wide
 Assets:   All symbols in universe.json Tier 1 (~100 USDT-M perpetual futures, daily)
           Funding rate data for Tier 2 subset (~20 symbols)
-Period:   Each symbol from its listing date → 2024-12-31
+Period:   Each symbol from its listing date → 2025-12-31
 
 Signals (computed per symbol, each normalized to [-1, +1]):
 - Signal A (Trend):     sign(close - 50-day SMA) → +1 if above, -1 if below
@@ -1319,7 +1319,7 @@ Output required:
 Strategy: EMA Crossover via Algorithm Framework — Multi-Asset
 Assets:   All symbols in universe.json Tier 2 (~20 core liquid futures)
 Resolution: Daily
-Period:   2022-01-01 to 2024-12-31
+Period:   2022-01-01 to 2025-12-31
 
 Architecture: LEAN Algorithm Framework (NOT classic OnData approach)
 
@@ -1409,7 +1409,7 @@ Output required:
 Strategy: Multi-Alpha with Portfolio Optimization — Universe-Wide
 Assets:   All symbols in universe.json Tier 1 (~100 USDT-M perpetual futures)
 Resolution: Daily
-Period:   Each symbol from its listing date → 2024-12-31
+Period:   Each symbol from its listing date → 2025-12-31
 
 Architecture: LEAN Algorithm Framework with multiple alpha models
 
@@ -1514,7 +1514,7 @@ Output required:
 Strategy: Framework Strategy with Risk Management — Multi-Asset
 Assets:   All symbols in universe.json Tier 2 (~20 core liquid futures)
 Resolution: Hourly (1h) — more granular data for intraday risk events
-Period:   2023-01-01 to 2024-12-31
+Period:   2022-01-01 to 2025-12-31
 
 Architecture: LEAN Algorithm Framework with risk management models
 
@@ -1616,7 +1616,7 @@ Output required:
 Strategy: Parameterized Trend Strategy with Optimization — Multi-Asset
 Assets:   All symbols in universe.json Tier 2 (~20 core liquid futures)
 Resolution: Daily
-Period:   2022-01-01 to 2024-12-31
+Period:   2022-01-01 to 2025-12-31
 
 Architecture: LEAN Algorithm Framework with parameterized alpha model
 
@@ -1996,8 +1996,8 @@ Reference positions are **not stored as files** — they are reconstructed from 
 {
   "task_id": "I01",
   "resolution": "daily",
-  "start_date": "2024-02-01",
-  "end_date": "2024-12-31",
+  "start_date": "2022-01-01",
+  "end_date": "2025-12-31",
   "warmup_periods": 20,
   "signals": {
     "BTCUSDT": [
@@ -2435,7 +2435,7 @@ bench/data/reference/
 ├── I01_reference_trades.json              # LEAN round-trip trades
 ├── I01_reference_signals.json             # Deterministic Python signals (316 signals)
 ├── I01_reference_positions.json           # Daily positions from LEAN orders (201 entries)
-├── I01_reference_summary.json             # Standardized metrics (Sharpe 1.727, 78.1% return)
+├── I01_reference_summary.json             # Standardized metrics (Sharpe 0.168, 32.9% return)
 ├── I02_reference_trades.json
 ├── I02_reference_signals.json             # 676 signals (3 symbols × SMA(10)/SMA(30))
 ├── I02_reference_positions.json
@@ -2482,12 +2482,12 @@ Each reference signal file must be validated:
 **Data pipeline (run once by maintainers):**
 - [x] Finalize `universe.json` — rank all USDT-M perpetuals by 2024 avg daily volume, select top 100 for Tier 1, top 20 for Tier 2, top 5 for Tier 3
 - [x] Write `bench/scripts/download_binance_full_universe.py` — bulk download with parallelism, resume, checksum verification
-- [ ] Download Tier 1: ~100 symbols × 1d (from listing date → 2024-12-31) *(tested with 3-symbol subset)*
-- [ ] Download Tier 2: ~20 symbols × 1h + 4h (2022-01-01 → 2024-12-31) *(tested with 2-symbol subset)*
-- [ ] Download Tier 3: ~5 symbols × 5m + 1m (2024-01-01 → 2024-12-31) *(tested with 1-symbol subset)*
-- [ ] Download funding rates: ~20 symbols (from listing date → 2024-12-31) *(tested with 2-symbol subset)*
+- [x] Download Tier 1: ~100 symbols × 1d (from listing date → 2025-12-31)
+- [x] Download Tier 2: ~20 symbols × 1h + 4h (2022-01-01 → 2025-12-31)
+- [x] Download Tier 3: ~5 symbols × 5m + 1m (2024-01-01 → 2025-12-31)
+- [x] Download funding rates: ~20 symbols (from listing date → 2025-12-31)
 - [x] Write `bench/scripts/convert_binance_to_lean.py` — Binance CSV → LEAN format converter for all tiers/timeframes
-- [ ] Convert all tiers to LEAN format and validate *(tested with subset; full run pending)*
+- [x] Convert all tiers to LEAN format and validate
 - [x] Write `bench/scripts/generate_flat_universe.py` — structured universe.json → flat JSON array for C# algorithms
 - [x] Write `bench/scripts/prepare_i_series_data.py` — single-command orchestrator for full pipeline (download → convert → flat universe → upload → verify)
 

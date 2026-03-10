@@ -41,17 +41,17 @@ TIER_CONFIG = {
     "tier1": {
         "intervals": ["1d"],
         "default_start": date(2019, 12, 31),
-        "default_end": date(2024, 12, 31),
+        "default_end": date(2025, 12, 31),
     },
     "tier2": {
         "intervals": ["1h", "4h"],
         "default_start": date(2022, 1, 1),
-        "default_end": date(2024, 12, 31),
+        "default_end": date(2025, 12, 31),
     },
     "tier3": {
         "intervals": ["5m", "1m"],
         "default_start": date(2024, 1, 1),
-        "default_end": date(2024, 12, 31),
+        "default_end": date(2025, 12, 31),
     },
 }
 
@@ -200,7 +200,7 @@ def download_funding_for_tier(
     universe: dict,
     output_dir: Path,
     start_date: date = date(2019, 12, 31),
-    end_date: date = date(2024, 12, 31),
+    end_date: date = date(2025, 12, 31),
 ) -> int:
     """Download funding rate data for all symbols in the funding tier."""
     from datetime import datetime, timezone
