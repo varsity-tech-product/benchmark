@@ -46,11 +46,12 @@ TASK_ALGO_MAP = {
     "I06": "I06_multi_signal.cs",
 }
 
-DEFAULT_LEAN_IMAGE = "quantconnect/lean:latest"
-
-# Import canonical date window
+# Import canonical config
 sys.path.insert(0, str(BENCH_ROOT))
+from config.benchmark_config import LEAN_IMAGE, DATASET_REVISION  # noqa: E402
 from config.benchmark_dates import BENCH_START, BENCH_END  # noqa: E402
+
+DEFAULT_LEAN_IMAGE = LEAN_IMAGE
 DEFAULT_START_DATE = BENCH_START
 DEFAULT_END_DATE = BENCH_END
 
@@ -87,7 +88,7 @@ def _ensure_lean_data():
     try:
         sys.path.insert(0, str(BENCH_ROOT))
         from scripts.data_manager import ensure_data
-        paths = ensure_data(series="i")
+        paths = ensure_data(series="i", revision=DATASET_REVISION)
         return paths.lean_data
     except (ImportError, Exception) as e:
         print(f"WARNING: Could not load data via data_manager: {e}")
