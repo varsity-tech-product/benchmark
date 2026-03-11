@@ -105,6 +105,14 @@ A strict design constraint: **every individual check in an E-task eval must corr
 
 This ensures E-series measures **orchestration overhead** — the cost of combining skills — not new technical capabilities. A perfect score on all upstream sections should, in theory, guarantee a perfect E-series score. In practice, the integration cost is substantial.
 
+### 1.6 The Two Integration Skills E-Series Uniquely Tests
+
+While E-series re-uses upstream skills, the *combination* surfaces two capabilities that no upstream section tests in isolation:
+
+**Pipeline planning**: The agent must decompose an open-ended brief into ordered stages and communicate a plan before executing. A weak agent dives into code immediately; a strong agent outlines "Step 1: explore, Step 2: define signal, Step 3: backtest, ..." before writing a single line. E-series evals detect this via `pipeline_structure_present`.
+
+**Artifact continuity**: When transitioning between stages (especially Python → LEAN), the agent must carry forward the *same* signal definition, parameters, and logic — not re-invent them. A common failure mode: the Python prototype uses BB(20, 2.0) but the LEAN implementation quietly switches to SMA crossover. E-series evals detect this via `signal_consistency_between_stages` (E02, E05).
+
 ---
 
 ## 2. Difficulty Calibration
@@ -194,13 +202,15 @@ Each E-task has **gates** — hard caps on the maximum score if critical pipelin
 
 | Check | Weight | Method |
 |-------|--------|--------|
+| `pipeline_structure_present` | 0.05 | Conversation contains ordered plan (step/phase numbering, "first...then...finally") |
 | `signal_defined_in_python` | 0.15 | Python code has BB / rolling std signal definition |
 | `python_backtest_produces_metrics` | 0.15 | Python output includes Sharpe/return/drawdown numbers |
 | `lean_backtest_completed` | 0.20 | LEAN summary.json exists in workspace/results/ |
-| `lean_trade_log_produced` | 0.10 | LEAN trades with >0 entries |
+| `lean_trade_log_produced` | 0.05 | LEAN trades with >0 entries |
 | `behavioral_score` | 0.20 | `compute_behavioral_score("E02", workspace_path)` |
+| `signal_consistency` | 0.05 | Same parameters (BB period/std) appear in both Python code and C# code |
 | `comparison_discussed` | 0.10 | Mentions "python vs lean" / "discrepancy" / "comparison" |
-| `code_is_modular` | 0.10 | >=2 Python files or >=3 function defs |
+| `code_is_modular` | 0.05 | >=2 Python files or >=3 function defs |
 
 **Gates**:
 - No LEAN backtest → cap 0.30
@@ -245,13 +255,14 @@ Each E-task has **gates** — hard caps on the maximum score if critical pipelin
 
 | Check | Weight | Method |
 |-------|--------|--------|
+| `pipeline_structure_present` | 0.05 | Conversation contains ordered plan (step/phase numbering, "first...then...finally") |
 | `exploratory_analysis_performed` | 0.10 | Evidence of descriptive stats, autocorrelation, distribution |
 | `signal_formalized` | 0.15 | Signal definition artifact (momentum, pct_change, lookback) |
 | `signal_evaluated` | 0.15 | IC metrics or quantile analysis present |
 | `train_test_split_implemented` | 0.20 | Code splits data by date into distinct train/test periods |
 | `is_oos_metrics_separated` | 0.20 | Both in-sample AND out-of-sample metrics reported separately |
 | `robustness_discussed` | 0.10 | Conversation mentions overfitting gap, regime sensitivity, degradation |
-| `visualization_produced` | 0.10 | Chart files (.png/.svg) in workspace |
+| `visualization_produced` | 0.05 | Chart files (.png/.svg) in workspace |
 
 **Gates**:
 - No train/test split → cap 0.25
@@ -370,21 +381,24 @@ Each stage must build on the previous one. An agent that skips steps or doesn't 
 
 | Check | Weight | Method |
 |-------|--------|--------|
-| `data_exploration_performed` | 0.08 | Descriptive statistics, return analysis evidence |
+| `pipeline_structure_present` | 0.05 | Conversation contains ordered plan (step/phase numbering, "first...then...finally") |
+| `data_exploration_performed` | 0.07 | Descriptive statistics, return analysis evidence |
 | `signal_formalized` | 0.10 | Signal definition artifact (momentum, ranking, pct_change) |
-| `signal_evaluated` | 0.10 | IC or quantile metrics present |
-| `python_backtest_metrics` | 0.12 | Python backtest produces Sharpe/return/drawdown |
+| `signal_evaluated` | 0.08 | IC or quantile metrics present |
+| `python_backtest_metrics` | 0.10 | Python backtest produces Sharpe/return/drawdown |
 | `validation_performed` | 0.10 | Train/test split or OOS evaluation present |
 | `lean_backtest_completed` | 0.15 | LEAN summary.json exists |
-| `lean_trade_log_produced` | 0.10 | LEAN trades with >0 entries |
-| `behavioral_score` | 0.10 | `compute_behavioral_score("E05", workspace_path)` |
-| `comparison_discussed` | 0.10 | Python-vs-LEAN comparison evidence |
-| `code_is_modular` | 0.05 | Multiple Python files or functions |
+| `lean_trade_log_produced` | 0.05 | LEAN trades with >0 entries |
+| `behavioral_score` | 0.15 | `compute_behavioral_score("E05", workspace_path)` |
+| `signal_consistency` | 0.08 | Same signal type (momentum/ROCP) and parameters in Python code and C# code |
+| `comparison_discussed` | 0.07 | Python-vs-LEAN comparison evidence |
 
 **Gates**:
 - No LEAN backtest → cap 0.35
 - No Python metrics → cap 0.40
 - No signal artifact → cap 0.30
+
+**Runtime safety**: E05 is the longest task (35 min timeout). To prevent agents from burning time on repeated LEAN runs, the eval counts LEAN compilation attempts. More than 3 LEAN runs without a successful backtest indicates thrashing, not progress.
 
 **Imports**: `_strategy_research_check` (collect_artifact_text, has_signal_definition, has_metric_numbers, conversation_text, has_any, workspace_has_csv_columns), `_implementation_check` (compute_behavioral_score, collect_lean_results, load_agent_trades, check_csharp_patterns), `_data_source_check` (verify_data_source)
 
@@ -419,6 +433,40 @@ Gates serve two purposes:
 ### 4.3 Data Source Verification
 
 All E-series evals import `_data_source_check.verify_data_source()` to verify that the agent actually accessed the task's data files rather than fabricating synthetic data. If data files weren't accessed, the score is discounted proportionally.
+
+### 4.4 Integration-Specific Checks
+
+Two checks are unique to E-series — they test planning and artifact continuity, the two capabilities that only emerge when skills are combined:
+
+**`pipeline_structure_present`** (E02, E03, E05 — weight 0.05):
+
+Detects whether the agent communicated a structured plan before diving into execution. Looks for ordered step language in the assistant's conversation turns:
+
+```python
+# Detection: any of these patterns in assistant conversation text
+plan_patterns = [
+    r"step\s*[123]",
+    r"phase\s*[123]",
+    r"first.*then.*finally",
+    r"pipeline.*:.*\n.*\d\.",
+    r"1\.\s.*\n.*2\.\s.*\n.*3\.\s",
+]
+```
+
+This is intentionally lightweight (0.05 weight) — planning is valuable but not the core deliverable.
+
+**`signal_consistency_between_stages`** (E02, E05 — weight 0.05-0.08):
+
+Detects whether the Python and LEAN implementations use the same signal logic. For E02, checks that Bollinger Band parameters (period, std multiplier) appear in both Python and C# artifacts. For E05, checks that the momentum signal type (ROCP, pct_change) carries across.
+
+```python
+# Example: extract BB period from both artifacts
+python_text = collect_artifact_text(workspace, tool_logs)  # includes .py files
+cs_text = collect_csharp_text(workspace)                    # includes .cs files
+# Check: both mention the same period (e.g., "20") near "bollinger" or "rolling"
+```
+
+This prevents the common failure mode where an agent prototypes strategy A in Python, then implements strategy B in C# — producing two unrelated backtests that happen to both succeed.
 
 ---
 
