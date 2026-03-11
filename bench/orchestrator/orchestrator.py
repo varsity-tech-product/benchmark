@@ -140,6 +140,8 @@ class BenchmarkOrchestrator:
 
         staged_temp_dirs: list[str] = []
         container = None
+        simulator_cost = None
+        conversational_test_case = None
 
         try:
             # === PHASE 1: RESET ===

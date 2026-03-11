@@ -31,7 +31,7 @@
       "lean_algorithm_guide.md",
       "risk_metrics.md"
     ],
-    "sandbox_image": "quant-tutor-env:v2.0-lean",
+    "sandbox_image": "quant-tutor-env:v2.2",
     "network_enabled": false
   },
   "ground_truth": {

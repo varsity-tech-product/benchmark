@@ -110,7 +110,14 @@ class ContainerManager:
                 f"{image} sleep infinity"
             )
             result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+            if result.returncode != 0:
+                raise RuntimeError(
+                    f"docker run failed (exit {result.returncode}): "
+                    f"{result.stderr.strip() or result.stdout.strip()}"
+                )
             container_id = result.stdout.strip()[:12]
+            if not container_id:
+                raise RuntimeError("docker run returned empty container ID")
 
             # Inject tool_executor.py and tools.py into the container.
             bench_core = Path(__file__).parent.parent / "mcp_servers" / "core"

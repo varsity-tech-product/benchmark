@@ -111,14 +111,14 @@ def _create_agent(args):
     elif agent_type == "openai":
         from orchestrator.agent_adapters.openai_adapter import OpenAIAgentAdapter
 
-        # Always route through OpenRouter for higher rate limits / parallelism
-        model = model_override or get_model_for_agent("openai", use_openrouter=True)
-        return OpenAIAgentAdapter(
-            model=model,
-            base_url=OPENROUTER_BASE_URL,
-            system_prompt=system_prompt,
-            agent_name=agent_name,
-        )
+        # Route through OpenRouter when its key is available; otherwise use
+        # native OpenAI API directly (OPENAI_API_KEY).
+        has_openrouter = bool(os.environ.get("OPENROUTER_API_KEY"))
+        model = model_override or get_model_for_agent("openai", use_openrouter=has_openrouter)
+        kwargs = dict(model=model, system_prompt=system_prompt, agent_name=agent_name)
+        if has_openrouter:
+            kwargs["base_url"] = OPENROUTER_BASE_URL
+        return OpenAIAgentAdapter(**kwargs)
     else:  # generic
         from orchestrator.agent_adapters.generic_adapter import GenericLLMAdapter
 
