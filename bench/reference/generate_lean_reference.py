@@ -48,6 +48,10 @@ TASK_ALGO_MAP = {
     "I08": "I08_multi_alpha.cs",
     "I09": "I09_risk_management.cs",
     "I10": "I10_parameter_optimization.cs",
+    "X07": "X07_warmup_fixed.cs",
+    "X08": "X08_order_type_fixed.cs",
+    "X09": "X09_alpha_conflict_fixed.cs",
+    "X10": "X10_universe_stale_fixed.cs",
 }
 
 # Import canonical config
@@ -428,6 +432,10 @@ def run_lean_backtest(
         "I08_multi_alpha": "QuantTutorBench.I08MultiAlpha",
         "I09_risk_management": "QuantTutorBench.I09RiskManagement",
         "I10_parameter_optimization": "QuantTutorBench.I10ParameterOptimization",
+        "X07_warmup_fixed": "QuantTutorBench.X07WarmupFixed",
+        "X08_order_type_fixed": "QuantTutorBench.X08OrderTypeFixed",
+        "X09_alpha_conflict_fixed": "QuantTutorBench.X09AlphaConflictFixed",
+        "X10_universe_stale_fixed": "QuantTutorBench.X10UniverseStaleFixed",
     }
     class_name = class_name_map.get(algo_name, algo_name)
 

@@ -1,6 +1,6 @@
 # Debug Section (X-Series) Design Plan
 
-> Version: v2.0 | Status: Draft | Section: Algorithm Debugging
+> Version: v2.1 | Status: **Implemented** | Section: Algorithm Debugging
 
 ---
 
@@ -466,7 +466,7 @@ crypto_df["merge_date"] = crypto_df["Date"].dt.tz_convert("US/Eastern").dt.date
 **Category**: debug
 **Skill category**: Initialization
 
-**Student code**: `student_code/warmup_bug.cs` (NEW — to be created)
+**Student code**: `student_code/warmup_bug.cs` (implemented)
 
 A LEAN C# algorithm implementing an EMA(20)/EMA(50) crossover on BTCUSDT daily. The algorithm creates EMA indicators but **does not call `SetWarmUp()`** and does not check `IsWarmingUp` in `OnData()`. This causes the algorithm to trade on partially-initialized indicator values during the first 50 bars, producing spurious signals.
 
@@ -544,7 +544,7 @@ Without warm-up, the EMA indicators start computing from the first bar with inco
 **Category**: debug
 **Skill category**: API misuse
 
-**Student code**: `student_code/order_type_bug.cs` (NEW — to be created)
+**Student code**: `student_code/order_type_bug.cs` (implemented)
 
 A LEAN C# algorithm implementing a momentum strategy on BTCUSDT. The algorithm uses `LimitOrder()` with the *current price* as the limit, which in a trending market often results in unfilled orders (price moves away before the limit can be hit). It should use `MarketOrder()` for immediate execution.
 
@@ -617,7 +617,7 @@ When momentum is positive and rising, using a limit buy at the current price oft
 **Category**: debug
 **Skill category**: Framework conflict
 
-**Student code**: `student_code/alpha_conflict.cs` (NEW — to be created)
+**Student code**: `student_code/alpha_conflict.cs` (implemented)
 
 A LEAN Algorithm Framework strategy with two alpha models (TrendAlpha and ReversionAlpha) that emit conflicting insights. The TrendAlpha emits `Insight.Up` when EMA(10) > EMA(30), while the ReversionAlpha emits `Insight.Down` when RSI > 70. When both conditions are true simultaneously (strong trend + overbought), the framework receives contradictory signals. With `EqualWeightingPortfolioConstructionModel`, the opposing insights cancel out, resulting in zero or near-zero positions.
 
@@ -691,7 +691,7 @@ The portfolio construction model receives Up from one alpha and Down from the ot
 **Category**: debug
 **Skill category**: Data lifecycle
 
-**Student code**: `student_code/universe_stale.cs` (NEW — to be created)
+**Student code**: `student_code/universe_stale.cs` (implemented)
 
 A LEAN C# algorithm that implements a momentum strategy across multiple symbols. The algorithm pre-filters the universe using a **volume threshold computed from today's data** (end-of-backtest snapshot), then subscribes to the filtered list statically in `Initialize()`. This creates two forms of survivorship bias: (1) the volume filter uses future information (2024 volumes to select the 2022 universe), and (2) symbols that were delisted during the backtest are excluded from the universe entirely.
 
@@ -1201,18 +1201,57 @@ The buggy student code is **NOT** run through reference generation — it serves
 
 ## 8. Integration Map
 
-### 8.1 What Already Exists
+### 8.1 Complete File Inventory
 
 | Component | Status | Location |
 |-----------|--------|----------|
+| **Shared Infrastructure** | | |
+| `_debug_check.py` shared helper | Done | `bench/evaluation/test_scripts/_debug_check.py` |
+| `_data_source_check.py` | Done | `bench/evaluation/test_scripts/_data_source_check.py` |
+| `_implementation_check.py` | Done | `bench/evaluation/test_scripts/_implementation_check.py` |
+| **Task JSONs (10 total)** | | |
 | X01 task JSON | Done | `bench/tasks/layer2/debug/X01_ma_offbyone.json` |
+| X02 task JSON | Done | `bench/tasks/layer2/debug/X02_lookahead.json` |
+| X03 task JSON | Done | `bench/tasks/layer2/debug/X03_position_bug.json` |
+| X04 task JSON | Done | `bench/tasks/layer2/debug/X04_returns_diff.json` |
+| X05 task JSON | Done | `bench/tasks/layer2/debug/X05_timezone_merge.json` |
+| X06 task JSON | Done | `bench/tasks/layer2/debug/X06_overfit_single.json` |
+| X07 task JSON | Done | `bench/tasks/layer2/debug/X07_warmup_bug.json` |
+| X08 task JSON | Done | `bench/tasks/layer2/debug/X08_order_type_bug.json` |
+| X09 task JSON | Done | `bench/tasks/layer2/debug/X09_alpha_conflict.json` |
+| X10 task JSON | Done | `bench/tasks/layer2/debug/X10_universe_stale.json` |
+| **Eval Scripts (10 total)** | | |
 | X01 eval script | Done | `bench/evaluation/test_scripts/X01_ma_offbyone.py` |
-| Student code: `ma_offbyone.py` | Done | `bench/student_code/ma_offbyone.py` |
-| Student code: `lookahead.py` | Done | `bench/student_code/lookahead.py` |
-| Student code: `position_bug.py` | Done | `bench/student_code/position_bug.py` |
-| Student code: `returns_diff.py` | Done | `bench/student_code/returns_diff.py` |
-| Student code: `timezone_merge.py` | Done | `bench/student_code/timezone_merge.py` |
-| Student code: `overfit_single.py` | Done | `bench/student_code/overfit_single.py` |
+| X02 eval script | Done | `bench/evaluation/test_scripts/X02_lookahead.py` |
+| X03 eval script | Done | `bench/evaluation/test_scripts/X03_position_bug.py` |
+| X04 eval script | Done | `bench/evaluation/test_scripts/X04_returns_diff.py` |
+| X05 eval script | Done | `bench/evaluation/test_scripts/X05_timezone_merge.py` |
+| X06 eval script | Done | `bench/evaluation/test_scripts/X06_overfit_single.py` |
+| X07 eval script | Done | `bench/evaluation/test_scripts/X07_warmup_bug.py` |
+| X08 eval script | Done | `bench/evaluation/test_scripts/X08_order_type_bug.py` |
+| X09 eval script | Done | `bench/evaluation/test_scripts/X09_alpha_conflict.py` |
+| X10 eval script | Done | `bench/evaluation/test_scripts/X10_universe_stale.py` |
+| **Student Code — Python (6 files)** | | |
+| `ma_offbyone.py` | Done | `bench/student_code/ma_offbyone.py` |
+| `lookahead.py` | Done | `bench/student_code/lookahead.py` |
+| `position_bug.py` | Done | `bench/student_code/position_bug.py` |
+| `returns_diff.py` | Done | `bench/student_code/returns_diff.py` |
+| `timezone_merge.py` | Done | `bench/student_code/timezone_merge.py` |
+| `overfit_single.py` | Done | `bench/student_code/overfit_single.py` |
+| **Student Code — C# (4 files)** | | |
+| `warmup_bug.cs` | Done | `bench/student_code/warmup_bug.cs` |
+| `order_type_bug.cs` | Done | `bench/student_code/order_type_bug.cs` |
+| `alpha_conflict.cs` | Done | `bench/student_code/alpha_conflict.cs` |
+| `universe_stale.cs` | Done | `bench/student_code/universe_stale.cs` |
+| **Reference Algorithms — C# (4 files)** | | |
+| `X07_warmup_fixed.cs` | Done | `bench/reference/lean_algorithms/X07_warmup_fixed.cs` |
+| `X08_order_type_fixed.cs` | Done | `bench/reference/lean_algorithms/X08_order_type_fixed.cs` |
+| `X09_alpha_conflict_fixed.cs` | Done | `bench/reference/lean_algorithms/X09_alpha_conflict_fixed.cs` |
+| `X10_universe_stale_fixed.cs` | Done | `bench/reference/lean_algorithms/X10_universe_stale_fixed.cs` |
+| **Data Files** | | |
+| `BTC_UTC.csv` | Done | `bench/data/frozen/BTC_UTC.csv` (1,096 rows, 2022-2025, UTC timestamps) |
+| X07-X10 reference data | Pending | Requires `generate_lean_reference.py --task X07..X10` via LEAN Docker |
+| **Pre-existing Infrastructure** | | |
 | Orchestrator debug mounting | Done | `orchestrator.py:172-173` mounts `/student_code` when `category == "debug"` |
 | Prompt config sample_code injection | Done | `prompt_config.py:162-165` |
 | Schema `sample_code` field | Done | `schemas.py:90` |
@@ -1220,33 +1259,30 @@ The buggy student code is **NOT** run through reference generation — it serves
 | Tool executor student_code path | Done | `tools.py:199-201` |
 | Result judge debug rubric | Done | `result_judge.py:76-85` |
 | Tutor 7D debug weights | Done | `tutor_conv_geval.py:220-228` |
-| Data source check helper | Done | `_data_source_check.py` |
-| I-series behavioral scoring | Done | `_implementation_check.py` |
 | LEAN Docker sandbox | Done | `quant-tutor-env:v2.0-lean` |
 | Python sandbox | Done | `quant-tutor-env:v2.2` |
 
-### 8.2 What Needs to Be Created
+### 8.2 What Was Created (Implementation Complete)
 
-| Component | Priority | Notes |
-|-----------|----------|-------|
-| X02-X06 task JSONs | P0 | Map existing student_code files to task descriptions |
-| X02-X06 eval scripts | P0 | Checklist-based, follow X01 pattern |
-| `_debug_check.py` shared helper | P0 | Common fix-checking and execution-checking utilities |
-| X07-X10 buggy student code (.cs) | P1 | New C# files with LEAN-specific bugs |
-| X07-X10 reference algorithms (.cs) | P1 | Fixed versions for reference generation |
-| X07-X10 task JSONs | P1 | LEAN sandbox, behavioral scoring |
-| X07-X10 eval scripts | P1 | Behavioral + checklist, reuse `_implementation_check.py` |
-| X07-X10 reference data | P1 | Generate via `generate_lean_reference.py` |
-| `BTC_UTC.csv` data file | P0 | Needed for X05 timezone task |
+| Component | Status | Location |
+|-----------|--------|----------|
+| X02-X06 task JSONs | **Done** | `bench/tasks/layer2/debug/X02_lookahead.json` through `X06_overfit_single.json` |
+| X02-X06 eval scripts | **Done** | `bench/evaluation/test_scripts/X02_lookahead.py` through `X06_overfit_single.py` |
+| `_debug_check.py` shared helper | **Done** | `bench/evaluation/test_scripts/_debug_check.py` — 5 functions: `check_fix_applied`, `check_execution_output`, `check_conversation_concepts`, `check_root_cause_explained`, `check_fix_verified` |
+| X07-X10 buggy student code (.cs) | **Done** | `bench/student_code/warmup_bug.cs`, `order_type_bug.cs`, `alpha_conflict.cs`, `universe_stale.cs` |
+| X07-X10 reference algorithms (.cs) | **Done** | `bench/reference/lean_algorithms/X07_warmup_fixed.cs` through `X10_universe_stale_fixed.cs` |
+| X07-X10 task JSONs | **Done** | `bench/tasks/layer2/debug/X07_warmup_bug.json` through `X10_universe_stale.json` |
+| X07-X10 eval scripts | **Done** | `bench/evaluation/test_scripts/X07_warmup_bug.py` through `X10_universe_stale.py` |
+| X07-X10 reference data | **Pending** | Requires running `generate_lean_reference.py --task X07..X10` via LEAN Docker |
+| `BTC_UTC.csv` data file | **Done** | `bench/data/frozen/BTC_UTC.csv` — 1,096 daily rows (2022-2025) from hourly BTCUSDT data |
 
-### 8.3 What Needs Extension
+### 8.3 What Was Extended (Implementation Complete)
 
-| Component | Change |
-|-----------|--------|
-| `_implementation_check.py` | Support X07-X10 task IDs in `compute_behavioral_score()` |
-| `generate_lean_reference.py` | Add X07-X10 task configs (algorithm path, run configs) |
-| `task_and_eval_guide.md` | Update file location listing to include X02-X10 |
-| `orchestrator.py` | Extend LEAN data mounting for debug category + lean sandbox |
+| Component | Change | Status |
+|-----------|--------|--------|
+| `generate_lean_reference.py` | Added X07-X10 to `TASK_ALGO_MAP` and `class_name_map` | **Done** |
+| `_implementation_check.py` | Already supports arbitrary task IDs in `compute_behavioral_score()` — no changes needed | N/A |
+| `orchestrator.py` | Already mounts both student_code (debug) and LEAN data (lean sandbox) independently — no changes needed | N/A |
 
 ---
 
@@ -1282,64 +1318,74 @@ Same as I-series (§9.2 in implementation plan):
 | X04 | diff() vs pct_change() | medium | Python | Mathematical | `returns_diff.py` | v2.2 | Replace diff with pct_change |
 | X05 | Timezone Misalignment | hard | Python | Cross-domain | `timezone_merge.py` | v2.2 | Add tz_convert before merge |
 | X06 | Overfitting Diagnosis | hard | Python | Statistical | `overfit_single.py` | v2.2 | Diagnose + propose remedies |
-| X07 | Missing Warm-Up | hard | LEAN | Initialization | `warmup_bug.cs` (new) | v2.0-lean | Add SetWarmUp + guard |
-| X08 | Order Type Misuse | hard | LEAN | API misuse | `order_type_bug.cs` (new) | v2.0-lean | LimitOrder→MarketOrder |
-| X09 | Alpha Insight Conflict | hard | LEAN | Framework conflict | `alpha_conflict.cs` (new) | v2.0-lean | Resolve opposing insights |
-| X10 | Stale Universe | hard | LEAN | Data lifecycle | `universe_stale.cs` (new) | v2.0-lean | Dynamic universe handling |
+| X07 | Missing Warm-Up | hard | LEAN | Initialization | `warmup_bug.cs` | v2.0-lean | Add SetWarmUp + guard |
+| X08 | Order Type Misuse | hard | LEAN | API misuse | `order_type_bug.cs` | v2.0-lean | LimitOrder→MarketOrder |
+| X09 | Alpha Insight Conflict | hard | LEAN | Framework conflict | `alpha_conflict.cs` | v2.0-lean | Resolve opposing insights |
+| X10 | Stale Universe | hard | LEAN | Data lifecycle | `universe_stale.cs` | v2.0-lean | Dynamic universe handling |
 
 **X-series total**: 10 tasks × 3 personas = **30 evaluation instances**
 
 ---
 
-## 11. Implementation Sequence
+## 11. Implementation Status
 
-### Phase 1: Python Tasks (X02-X06)
+### Phase 1: Python Tasks (X02-X06) — **COMPLETE**
 
-These are lowest-effort since student code already exists. Order:
+All completed:
 
-1. **Create `_debug_check.py`** shared helper
-2. **X02** (look-ahead) — easiest new task, tests helper infrastructure
-3. **X03** (position bug) — medium difficulty, tests state-checking patterns
-4. **X04** (returns diff) — medium difficulty, tests mathematical verification
-5. **X05** (timezone) — hard, requires `BTC_UTC.csv` data file creation
-6. **X06** (overfitting) — hard, conversation-based eval (different pattern)
+1. **`_debug_check.py`** shared helper — 5 reusable functions
+2. **X02** (look-ahead) — task JSON + eval script (5 checks, weights sum to 1.0)
+3. **X03** (position bug) — task JSON + eval script
+4. **X04** (returns diff) — task JSON + eval script
+5. **X05** (timezone) — task JSON + eval script + `BTC_UTC.csv` (1,096 daily rows from hourly data)
+6. **X06** (overfitting) — task JSON + eval script (6 concept-based checks, no single-line fix)
 
-Each task requires:
-- Task JSON file (`bench/tasks/layer2/debug/X0N_*.json`)
-- Eval script (`bench/evaluation/test_scripts/X0N_*.py`)
-- Verify student code file matches task expectations
+### Phase 2: LEAN Tasks (X07-X10) — **COMPLETE** (except reference data)
 
-### Phase 2: LEAN Tasks (X07-X10)
+All completed except reference data generation (requires LEAN Docker):
 
-Higher effort — requires new buggy C# code, reference algorithms, and reference data generation. Order:
+1. **Buggy student code**: `warmup_bug.cs`, `order_type_bug.cs`, `alpha_conflict.cs`, `universe_stale.cs`
+2. **Reference algorithms**: `X07_warmup_fixed.cs`, `X08_order_type_fixed.cs`, `X09_alpha_conflict_fixed.cs`, `X10_universe_stale_fixed.cs`
+3. **`generate_lean_reference.py`**: Extended with X07-X10 in `TASK_ALGO_MAP` and `class_name_map`
+4. **Task JSONs**: All 4 created with LEAN sandbox config
+5. **Eval scripts**: All 4 created with hybrid behavioral + checklist scoring
+6. **Orchestrator**: No changes needed — debug + lean mounts fire independently
 
-1. **Write buggy student code** for X07-X10 (`bench/student_code/*.cs`)
-2. **Write reference algorithms** for X07-X10 (`bench/reference/lean_algorithms/X0N_*.cs`)
-3. **Generate reference data** via `generate_lean_reference.py`
-4. **Create task JSONs** for X07-X10
-5. **Create eval scripts** for X07-X10 (reuse `_implementation_check.py`)
-6. **Extend orchestrator** for debug+LEAN integration (mounting student_code + LEAN data)
+**Remaining**: Run reference data generation:
+```bash
+python bench/reference/generate_lean_reference.py --task X07
+python bench/reference/generate_lean_reference.py --task X08
+python bench/reference/generate_lean_reference.py --task X09
+python bench/reference/generate_lean_reference.py --task X10
+```
 
-### Phase 3: Validation
+### Phase 3: Validation — **PARTIAL**
 
-1. Run all X-series tasks in dry-run mode
-2. Verify eval scripts produce expected scores on known-good and known-bad inputs
-3. Self-test: run reference (fixed) code through eval → should score high
-4. Bug-test: run buggy code through eval → should score low
-5. Verify triad alignment for all task JSONs
+Completed:
+1. All 9 task JSONs parse correctly with proper category/difficulty/sandbox
+2. All 10 eval scripts compile with valid Python syntax
+3. All checklist weights verified to sum to 1.0
+4. All C# class names verified (QuantTutorBench namespace, correct inheritance)
+5. Bugs confirmed in code (not comments), fixes confirmed in reference algorithms
+6. Student Python code runs without crashes (produces buggy but valid output)
+
+Remaining:
+- Full integration dry-run after reference data generation
+- Self-test with fixed code → should score high
+- Bug-test with buggy code → should score low
 
 ---
 
-## 12. Open Questions & Decisions
+## 12. Open Questions & Decisions (Resolved)
 
-1. **X06 eval approach**: Overfitting diagnosis is conceptual — no single fix to check. Current plan uses conversation keyword matching. Should we also require the student to produce a simplified (3-parameter) strategy and show improved out-of-sample Sharpe?
+1. **X06 eval approach**: **Resolved** — Uses conversation keyword matching with 6 weighted checks (overfitting_identified 0.25, excessive_params_noted 0.20, remedy_proposed 0.15, etc.). No requirement to produce a simplified strategy — the eval focuses on diagnostic reasoning.
 
-2. **X07-X10 difficulty calibration**: All LEAN tasks are marked hard. If X07 (warm-up) proves too easy in practice, should it be downgraded to medium?
+2. **X07-X10 difficulty calibration**: **Resolved** — All LEAN tasks remain hard. Can be revisited after benchmarking.
 
-3. **BTC_UTC.csv generation**: X05 needs a BTC dataset with explicit UTC timestamps. Should this be generated from the existing I-series raw data, or created as a standalone frozen dataset?
+3. **BTC_UTC.csv generation**: **Resolved** — Generated from I-series raw hourly data (`bench/data/raw/i-series/tier2_hourly/BTCUSDT_1h.csv`), resampled to daily OHLCV with explicit UTC timestamps (ISO 8601 with `+00:00`). Saved to `bench/data/frozen/BTC_UTC.csv` (1,096 rows, 2022-2025). Generator script at `bench/scripts/generate_btc_utc.py`.
 
-4. **Debug + LEAN integration**: The orchestrator currently mounts student_code only for debug tasks and LEAN data only for implementation tasks. X07-X10 need both. Should the orchestrator detect `debug + lean sandbox` and mount both, or should this be configured per-task?
+4. **Debug + LEAN integration**: **Resolved** — No orchestrator changes needed. The orchestrator already handles debug category mounting (`student_code_dir`) and LEAN mounting (`lean_data_dir`) as independent conditions. For X07-X10, both conditions fire: `task.category.value == "debug"` triggers student_code mount, and `"lean" in sandbox_image` triggers LEAN data mount.
 
-5. **Reference trade counts for X07-X10**: We need to decide which symbols and period the LEAN debug tasks use. Using the same Tier 2 universe (~20 symbols) and period (2022-2025) as I-series keeps the infrastructure consistent.
+5. **Reference trade counts for X07-X10**: **Resolved** — X07 uses single BTCUSDT (like I01), X08 uses single BTCUSDT, X09 uses first 10 from universe (daily), X10 uses first 30 from universe (daily). All use 2022-2025 period consistent with I-series.
 
-6. **Transaction cost omission (X11 candidate)**: One of the most common backtesting errors — ignoring trading costs — is not covered in X01-X10. A potential X11 would provide a strategy with unrealistic Sharpe that collapses when fees/slippage are included. This would fit naturally as a "hard" Python task between X06 and X07. Deferred to avoid scope creep in v2.0, but strongly recommended for v2.1.
+6. **Transaction cost omission (X11 candidate)**: **Deferred** to v2.1 as planned.
