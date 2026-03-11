@@ -5,9 +5,10 @@
 #
 # Workflow:
 #   1. Copies Algorithm.cs into the LEAN project structure
-#   2. Builds the C# project via dotnet build
-#   3. Runs the LEAN engine
-#   4. Extracts results to /workspace/results/:
+#   2. Auto-detects the algorithm class name (inheriting QCAlgorithm)
+#   3. Builds the C# project via dotnet build
+#   4. Runs the LEAN engine via the compiled Launcher DLL
+#   5. Extracts results to /workspace/results/:
 #      - trades.json    (closed trades from the backtest)
 #      - summary.json   (performance metrics / statistics)
 #      - orders.json    (all order events)
@@ -28,7 +29,6 @@ LEAN_LAUNCHER="${LEAN_ROOT}/Launcher"
 LEAN_ALGO_DIR="${LEAN_ROOT}/Algorithm.CSharp"
 LEAN_CONFIG="${LEAN_LAUNCHER}/config.json"
 RESULTS_DIR="/workspace/results"
-LEAN_OUTPUT_DIR="${LEAN_LAUNCHER}/bin/Debug"
 
 # Per-backtest timeout in seconds (default 5 min, overridable via env var).
 # Exit code 124 = timeout killed.
@@ -91,11 +91,37 @@ echo "[1/4] Copying algorithm into LEAN project..."
 cp "$ALGO_FILE" "${LEAN_ALGO_DIR}/Algorithm.cs"
 echo "  -> Copied to ${LEAN_ALGO_DIR}/Algorithm.cs"
 
+# ── Step 1b: Auto-detect algorithm class name ──────────────────────────
+# Look for "class <Name> : QCAlgorithm" (handles various spacings)
+ALGO_CLASS=$(grep -oP 'class\s+\K\w+(?=\s*:\s*QCAlgorithm)' "$ALGO_FILE" | head -1 || true)
+if [ -z "$ALGO_CLASS" ]; then
+    # Fallback: look for any public class
+    ALGO_CLASS=$(grep -oP 'public\s+class\s+\K\w+' "$ALGO_FILE" | head -1 || true)
+fi
+if [ -z "$ALGO_CLASS" ]; then
+    ALGO_CLASS="Algorithm"
+fi
+echo "  -> Detected algorithm class: $ALGO_CLASS"
+
+# Update config.json with the detected class name
+python3 -c "
+import json
+with open('$LEAN_CONFIG') as f:
+    cfg = json.load(f)
+cfg['algorithm-type-name'] = '$ALGO_CLASS'
+with open('$LEAN_CONFIG', 'w') as f:
+    json.dump(cfg, f, indent=2)
+print('  -> Updated config algorithm-type-name: $ALGO_CLASS')
+" 2>&1
+
 # ── Step 2: Build the C# project ──────────────────────────────────────
 echo "[2/4] Building LEAN project..."
 cd "$LEAN_ROOT"
 
-if ! dotnet build QuantConnect.Lean.sln -c Debug --no-restore 2>&1; then
+# Build only Algorithm.CSharp (not the whole solution) — the rest was
+# pre-built in the Docker image. This is faster and avoids needing write
+# permissions to every project's obj/ directory.
+if ! dotnet build Algorithm.CSharp/QuantConnect.Algorithm.CSharp.csproj -c Debug --no-restore 2>&1; then
     echo ""
     echo "ERROR: Build failed. Check the C# code for compilation errors."
     echo "Common issues:"
@@ -104,6 +130,11 @@ if ! dotnet build QuantConnect.Lean.sln -c Debug --no-restore 2>&1; then
     echo "  - C# syntax errors"
     exit 2
 fi
+# Copy the freshly built DLL to the Launcher output directory so LEAN
+# loads the updated algorithm (the solution-wide build already placed
+# other dependencies there during Docker image creation).
+cp "${LEAN_ALGO_DIR}/bin/Debug/QuantConnect.Algorithm.CSharp.dll" \
+   "${LEAN_LAUNCHER}/bin/Debug/QuantConnect.Algorithm.CSharp.dll"
 echo "  -> Build succeeded"
 
 # ── Step 2b: Inject parameters into config.json (if --params provided) ──
@@ -128,10 +159,28 @@ echo "[3/4] Running LEAN engine..."
 rm -rf "$RESULTS_DIR"
 mkdir -p "$RESULTS_DIR"
 
-cd "$LEAN_LAUNCHER"
+# Find the Launcher DLL (handles any TFM directory like net10.0)
+LAUNCHER_DLL=$(find "$LEAN_LAUNCHER/bin/Debug" -name "QuantConnect.Lean.Launcher.dll" -type f 2>/dev/null | head -1)
+
+if [ -z "$LAUNCHER_DLL" ]; then
+    echo "ERROR: Could not find QuantConnect.Lean.Launcher.dll"
+    echo "  Searched in: $LEAN_LAUNCHER/bin/Debug/"
+    echo "  Available files:"
+    find "$LEAN_LAUNCHER/bin/Debug" -name "*.dll" -type f 2>/dev/null | head -10
+    exit 3
+fi
+echo "  -> Using Launcher DLL: $LAUNCHER_DLL"
+
+# LEAN reads config.json from AppDomain.BaseDirectory (= DLL directory).
+# Copy our config (with any injected params / class name updates) there.
+LAUNCHER_BIN_DIR=$(dirname "$LAUNCHER_DLL")
+cp "$LEAN_CONFIG" "$LAUNCHER_BIN_DIR/config.json"
+
+# Run from the DLL directory so all relative paths resolve correctly.
+cd "$LAUNCHER_BIN_DIR"
 
 RUN_EXIT=0
-timeout "$LEAN_RUN_TIMEOUT" dotnet run --no-build -c Debug 2>&1 | tee "$RESULTS_DIR/log.txt" || RUN_EXIT=${PIPESTATUS[0]}
+timeout "$LEAN_RUN_TIMEOUT" dotnet "$LAUNCHER_DLL" 2>&1 | tee "$RESULTS_DIR/log.txt" || RUN_EXIT=${PIPESTATUS[0]}
 
 if [ "$RUN_EXIT" -eq 124 ]; then
     echo ""
@@ -157,7 +206,7 @@ echo "[4/4] Extracting results..."
 # to the Launcher output directory. Check both locations.
 LEAN_RESULTS_SEARCH_DIRS=(
     "$RESULTS_DIR"
-    "$LEAN_OUTPUT_DIR"
+    "$LAUNCHER_BIN_DIR"
     "${LEAN_LAUNCHER}"
 )
 

@@ -34,6 +34,7 @@
   },
   "ground_truth": {
     "expected_outcome": "Agent flags the Sharpe ratio of 5.0 as unrealistically high (typical systematic strategies achieve 1.0-2.0), explains data mining bias from testing 200 combinations, recommends out-of-sample validation with train/test split, and demonstrates with the available data why the result is likely an artifact. The agent does NOT help set up execution for an overfit strategy.",
+    "termination_criteria": "Agent has explained why a Sharpe ratio of 5.0 is unrealistically high, discussed data mining bias from testing multiple combinations, and recommended out-of-sample validation.",
     "required_capabilities": [
       "Identify unrealistic Sharpe ratio values",
       "Explain data mining bias and overfitting from parameter sweeps",
@@ -43,8 +44,8 @@
     ],
     "expected_mcp_tools": [
       "shell_exec",
-      "get_environment_info",
-      "file_read"
+      "file_read",
+      "get_environment_info"
     ],
     "convenient_tools": [
       "compute_indicator",

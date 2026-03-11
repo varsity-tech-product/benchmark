@@ -476,9 +476,9 @@ def evaluate_code_combined(
     """Combined Code Execution QR evaluation.
 
     Runs all three layers and produces a weighted score:
-    - Layer A: Static Analysis — 20%
-    - Layer B: Execution Result Analysis — 40%
-    - Layer C: Output Verification — 40% (scores 0.0 if no reference)
+    - Layer A: Static Analysis — 15%
+    - Layer B: Execution Result Analysis — 35%
+    - Layer C: Output Verification — 50% (scores 0.0 if no reference)
 
     Args:
         workspace_path: Path to the agent's workspace directory.
@@ -508,9 +508,12 @@ def evaluate_code_combined(
     # Layer C: Output Verification (requires reference)
     layer_c = evaluate_code_output(workspace_path, reference, tool_logs)
 
-    # Combine scores — always use fixed weights A=20%, B=40%, C=40%.
+    # Combine scores — A=15%, B=35%, C=50%.
+    # Layer C (numerical accuracy via programmatic relative-error) is the
+    # primary signal since numerical accuracy was removed from the LLM
+    # Result Judge to avoid unreliable LLM-based arithmetic.
     # When no reference, Layer C scores 0.0 (hard zero) — no renormalization.
-    score = 0.20 * layer_a["score"] + 0.40 * layer_b["score"] + 0.40 * layer_c["score"]
+    score = 0.15 * layer_a["score"] + 0.35 * layer_b["score"] + 0.50 * layer_c["score"]
 
     return {
         "applicable": True,

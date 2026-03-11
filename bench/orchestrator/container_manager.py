@@ -48,7 +48,18 @@ class ContainerManager:
     """Manages Docker containers for task execution.
 
     Falls back to local subprocess execution if Docker is not available.
+
+    Resource limits per image type (based on actual memory profiling):
+        Standard (v2.2): peak ~460 MiB → --memory 768m, --cpus 1
+        LEAN (v2.2-lean): peak ~520 MiB → --memory 1g, --cpus 2
     """
+
+    # Resource presets keyed by image name substring.
+    # Each maps to (memory_limit, cpu_limit).
+    _RESOURCE_PRESETS: dict[str, tuple[str, str]] = {
+        "lean": ("1g", "2"),
+        "_default": ("768m", "1"),
+    }
 
     def __init__(
         self, docker_image: str = "quant-tutor-env:v2.2", use_docker: bool = True
@@ -65,6 +76,15 @@ class ContainerManager:
             return result.returncode == 0
         except (FileNotFoundError, subprocess.TimeoutExpired):
             return False
+
+    @classmethod
+    def _resolve_resources(cls, image: str) -> tuple[str, str]:
+        """Return (memory_limit, cpu_limit) for a Docker image name."""
+        image_lower = image.lower()
+        for key, preset in cls._RESOURCE_PRESETS.items():
+            if key != "_default" and key in image_lower:
+                return preset
+        return cls._RESOURCE_PRESETS["_default"]
 
     def create_container(
         self,
@@ -103,9 +123,10 @@ class ContainerManager:
 
             network_flag = "--network bridge" if network_enabled else "--network none"
             network_mode = "bridge" if network_enabled else "none"
+            mem_limit, cpu_limit = self._resolve_resources(image)
             cmd = (
                 f"docker run -d --name qtb_{task_id}_{int(time.time())} "
-                f"{network_flag} --cpus 2 --memory 4g "
+                f"{network_flag} --cpus {cpu_limit} --memory {mem_limit} "
                 f"{' '.join(mounts)} "
                 f"{image} sleep infinity"
             )

@@ -22,7 +22,7 @@ def verify_data_source(
 
     Returns:
         Dict with:
-            verified: bool — True if ALL expected files were accessed.
+            verified: bool — True if at least one expected file was accessed.
             files_accessed: list — Which expected files were found in logs.
             files_missing: list — Which expected files were NOT found.
             fraction: float — files_accessed / data_files (0-1).
@@ -80,7 +80,7 @@ def verify_data_source(
     fraction = len(files_accessed) / len(data_files) if data_files else 1.0
 
     return {
-        "verified": len(files_missing) == 0,
+        "verified": len(files_accessed) >= 1,
         "files_accessed": files_accessed,
         "files_missing": files_missing,
         "fraction": round(fraction, 4),

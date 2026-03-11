@@ -1,7 +1,7 @@
 # Dockerfile.lean — LEAN engine sandbox for I-series implementation tasks.
 #
 # Extends the base quant-tutor-env image with:
-#   - .NET SDK 8.0 (for C# algorithm compilation)
+#   - .NET SDK 10.0 (for C# algorithm compilation)
 #   - QuantConnect LEAN engine (cloned and pre-built)
 #   - Pre-configured lean-config.json for Binance futures backtesting
 #   - run_backtest wrapper script
@@ -28,18 +28,21 @@ FROM quant-tutor-env:v2.2
 
 USER root
 
-# ── Install .NET SDK 8.0 ──────────────────────────────────────────────
-# Microsoft package repository for Debian
+# ── Install .NET SDK 10.0 via install script ────────────────────────
+# Bypasses Microsoft apt repository (SHA1 GPG signature rejected by
+# Debian trixie since 2026-02-01). Uses the official dotnet-install.sh
+# script which downloads the SDK tarball directly.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         wget \
-        apt-transport-https \
-    && wget -q https://packages.microsoft.com/config/debian/12/packages-microsoft-prod.deb \
-    && dpkg -i packages-microsoft-prod.deb \
-    && rm packages-microsoft-prod.deb \
-    && apt-get update \
-    && apt-get install -y --no-install-recommends dotnet-sdk-8.0 \
-    && rm -rf /var/lib/apt/lists/*
+        git \
+        libicu-dev \
+    && rm -rf /var/lib/apt/lists/* \
+    && wget -q https://dot.net/v1/dotnet-install.sh -O /tmp/dotnet-install.sh \
+    && chmod +x /tmp/dotnet-install.sh \
+    && /tmp/dotnet-install.sh --channel 10.0 --install-dir /usr/share/dotnet \
+    && ln -sf /usr/share/dotnet/dotnet /usr/bin/dotnet \
+    && rm /tmp/dotnet-install.sh
 
 # ── Clone and build LEAN engine ───────────────────────────────────────
 RUN git clone --depth 1 https://github.com/QuantConnect/Lean.git /lean
@@ -49,7 +52,12 @@ RUN dotnet restore QuantConnect.Lean.sln \
     && dotnet build QuantConnect.Lean.sln -c Debug --no-restore
 
 # ── Configure LEAN for Binance futures backtesting ────────────────────
+# Copy to BOTH the project dir and the build output dir.
+# LEAN reads config.json from AppDomain.BaseDirectory (= DLL directory),
+# so the bin/Debug/ copy is the one actually used at runtime.
+# The Launcher/ copy is kept as the canonical source for run_backtest.sh.
 COPY lean-config.json /lean/Launcher/config.json
+RUN cp /lean/Launcher/config.json /lean/Launcher/bin/Debug/config.json
 
 # ── Install backtest wrapper script ──────────────────────────────────
 COPY run_backtest.sh /usr/local/bin/run_backtest
@@ -61,7 +69,8 @@ RUN chmod +x /usr/local/bin/run_backtest
 # /data       — universe.json and metadata (read-only)
 # /docs       — reference documentation (read-only)
 RUN mkdir -p /lean/Data /workspace /data /docs \
-    && chown -R sandbox:sandbox /workspace
+    && chown -R sandbox:sandbox /workspace \
+    && chown -R sandbox:sandbox /lean
 
 # ── Runtime configuration ────────────────────────────────────────────
 ENV DOTNET_CLI_TELEMETRY_OPTOUT=1

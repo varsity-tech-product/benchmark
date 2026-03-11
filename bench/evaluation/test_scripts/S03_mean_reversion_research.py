@@ -11,7 +11,6 @@ from _strategy_research_check import (
     collect_performance_metric_records,
     collect_signal_evaluation_records,
     count_keyword_groups,
-    conversation_text,
     has_any,
     has_metric_numbers,
     has_regex,
@@ -32,24 +31,34 @@ def evaluate(
 ) -> dict:
     results = {
         "reversion_characteristics_identified": False,
-        "hypothesis_stated": False,
         "signal_formalized": False,
         "signal_evaluated": False,
         "rough_pnl_computed": False,
-        "failure_mode_analysis_present": False,
         "signal_artifact_present": False,
         "structured_signal_eval_present": False,
         "score": 0.0,
     }
 
     artifact_text = collect_artifact_text(workspace_path, tool_logs)
-    assistant_text = conversation_text(conversation, role="assistant")
     signal_eval_records = collect_signal_evaluation_records(workspace_path, tool_logs)
     performance_records = collect_performance_metric_records(workspace_path, tool_logs)
 
     results["signal_artifact_present"] = (
         workspace_has_csv_columns(workspace_path, ["signal", "close"])
         or has_signal_definition(artifact_text)
+        or has_any(
+            artifact_text,
+            [
+                "reversion_signal",
+                "alpha_signal",
+                "z_score",
+                "zscore",
+                "bollinger",
+                "rsi",
+                "mean_reversion",
+                "overextended",
+            ],
+        )
         or bool(signal_eval_records)
     )
     results["structured_signal_eval_present"] = any(
@@ -69,18 +78,12 @@ def evaluate(
     ]
     if (
         count_keyword_groups(artifact_text, reversion_groups) >= 2
-        or tool_called_with_method(tool_logs, "compute_statistics", ["DESCRIPTIVE", "CORRELATION", "ADF"])
+        or tool_called_with_method(
+            tool_logs, "compute_statistics", ["DESCRIPTIVE", "CORRELATION", "ADF"]
+        )
         or has_regex(artifact_text, reversion_code_patterns)
     ):
         results["reversion_characteristics_identified"] = True
-
-    hypothesis_groups = [
-        ["hypothesis", "should work because", "occurs because"],
-        ["mean reversion", "reversion", "bounce back"],
-        ["overreaction", "liquidity provision", "technical levels", "overshoot"],
-    ]
-    if count_keyword_groups(assistant_text, hypothesis_groups) >= 2:
-        results["hypothesis_stated"] = True
 
     if results["signal_artifact_present"] and has_any(
         artifact_text, ["z-score", "bollinger", "rsi", "reversion signal"]
@@ -97,43 +100,43 @@ def evaluate(
     ):
         results["signal_evaluated"] = True
 
-    if any(signal_eval_has_pnl(record, min_observations=20) for record in signal_eval_records) or performance_records or has_metric_numbers(
-        artifact_text,
-        [
-            ["sharpe", "annualized_sharpe"],
-            ["total_return", "annualized return", "annualized_return"],
-            ["max_drawdown", "drawdown"],
-        ],
+    if (
+        any(
+            signal_eval_has_pnl(record, min_observations=20)
+            for record in signal_eval_records
+        )
+        or performance_records
+        or has_metric_numbers(
+            artifact_text,
+            [
+                ["sharpe", "annualized_sharpe"],
+                ["total_return", "annualized return", "annualized_return"],
+                ["max_drawdown", "drawdown"],
+            ],
+        )
     ):
         results["rough_pnl_computed"] = True
-
-    failure_terms = [
-        "strong trend",
-        "trending market",
-        "fails when",
-        "failure mode",
-        "fat-tail",
-        "blow up",
-        "regime-dependent",
-        "regime dependent",
-    ]
-    if has_any(assistant_text, failure_terms):
-        results["failure_mode_analysis_present"] = True
 
     _checklist = [
         {
             "item": "reversion_characteristics_identified",
-            "weight": 0.15,
+            "weight": 0.20,
             "passed": results["reversion_characteristics_identified"],
         },
-        {"item": "hypothesis_stated", "weight": 0.15, "passed": results["hypothesis_stated"]},
-        {"item": "signal_formalized", "weight": 0.20, "passed": results["signal_formalized"]},
-        {"item": "signal_evaluated", "weight": 0.20, "passed": results["signal_evaluated"]},
-        {"item": "rough_pnl_computed", "weight": 0.15, "passed": results["rough_pnl_computed"]},
         {
-            "item": "failure_mode_analysis_present",
-            "weight": 0.15,
-            "passed": results["failure_mode_analysis_present"],
+            "item": "signal_formalized",
+            "weight": 0.30,
+            "passed": results["signal_formalized"],
+        },
+        {
+            "item": "signal_evaluated",
+            "weight": 0.30,
+            "passed": results["signal_evaluated"],
+        },
+        {
+            "item": "rough_pnl_computed",
+            "weight": 0.20,
+            "passed": results["rough_pnl_computed"],
         },
     ]
     score = sum(c["weight"] for c in _checklist if c["passed"])

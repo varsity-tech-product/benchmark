@@ -12,6 +12,9 @@ Usage:
     python run_benchmark.py run --agent openai --condition pure_llm --layer 1       # Layer 1 only
     python run_benchmark.py run --agent openai --layer all --l1-max-items 100       # Cap Layer 1
     python run_benchmark.py run-single --task S01_ma_crossover --persona beginner_no_finance
+    python run_benchmark.py run-single --task D01 --workers 3                       # All personas
+    python run_benchmark.py run-group --group data_analysis --docker --workers 3
+    python run_benchmark.py run-layer2 --agent openai --docker --workers 3
     python run_benchmark.py run-layer1 --max-items 10                               # Standalone L1
     python run_benchmark.py list-tasks
     python run_benchmark.py test-e2e
@@ -53,337 +56,148 @@ if os.environ.get("OPENROUTER_API_KEY") and not os.environ.get("OPENAI_API_KEY")
     os.environ["OPENAI_BASE_URL"] = OPENROUTER_BASE_URL
 
 
-def _create_agent(args):
-    """Create the appropriate agent adapter based on --agent and --condition.
+# ---------------------------------------------------------------------------
+# Task & group loaders
+# ---------------------------------------------------------------------------
 
-    The 2x2 matrix:
-      --condition agent            → SDK adapter + native model + TUTOR prompt
-      --condition baseline         → SDK adapter + native model + BASELINE prompt
-      --condition pure_llm         → GenericLLM + OpenRouter model + TUTOR prompt
-      --condition pure_llm_baseline → GenericLLM + OpenRouter model + BASELINE prompt
-
-    OpenAI Agent SDK always routes through OpenRouter for higher rate limits.
-    Anthropic and Google SDKs use their native APIs.
-    """
-    from config.prompt_config import BASELINE_SYSTEM_PROMPT, TUTOR_SYSTEM_PROMPT
-
-    agent_type = getattr(args, "agent", "generic")
-    condition = CONDITIONS[getattr(args, "condition", "agent")]
-    model_override = getattr(args, "model", None)
-
-    system_prompt = (
-        TUTOR_SYSTEM_PROMPT
-        if condition.prompt_mode == "tutor"
-        else BASELINE_SYSTEM_PROMPT
-    )
-
-    # Include model short name in agent_name for distinguishable results
-    if model_override:
-        model_short = model_override.split("/")[-1]
-        agent_name = f"{agent_type}_{condition.name}_{model_short}"
-    else:
-        agent_name = f"{agent_type}_{condition.name}"
-
-    # Pure LLM conditions: no SDK framework needed, use GenericLLM via OpenRouter
-    if not condition.tools_enabled:
-        from orchestrator.agent_adapters.generic_adapter import GenericLLMAdapter
-
-        model = model_override or get_model_for_agent(agent_type, use_openrouter=True)
-        return GenericLLMAdapter(
-            model=model, system_prompt=system_prompt, agent_name=agent_name
-        )
-
-    # Tools-enabled conditions: use the native SDK adapter
-    if agent_type == "anthropic":
-        from orchestrator.agent_adapters.anthropic_adapter import ClaudeAgentAdapter
-
-        model = model_override or get_model_for_agent("anthropic")
-        return ClaudeAgentAdapter(
-            model=model, system_prompt=system_prompt, agent_name=agent_name
-        )
-    elif agent_type == "google":
-        from orchestrator.agent_adapters.google_adapter import GoogleAdapter
-
-        model = model_override or get_model_for_agent("google")
-        return GoogleAdapter(
-            model=model, system_prompt=system_prompt, agent_name=agent_name
-        )
-    elif agent_type == "openai":
-        from orchestrator.agent_adapters.openai_adapter import OpenAIAgentAdapter
-
-        # Always route through OpenRouter for higher rate limits / parallelism
-        model = model_override or get_model_for_agent("openai", use_openrouter=True)
-        return OpenAIAgentAdapter(
-            model=model,
-            base_url=OPENROUTER_BASE_URL,
-            system_prompt=system_prompt,
-            agent_name=agent_name,
-        )
-    else:  # generic
-        from orchestrator.agent_adapters.generic_adapter import GenericLLMAdapter
-
-        model = model_override or get_model_for_agent("generic")
-        return GenericLLMAdapter(
-            model=model, system_prompt=system_prompt, agent_name=agent_name
-        )
+_LAYER2_GROUPS = [
+    "data_analysis",
+    "strategy",
+    "backtest",
+    "implementation",
+    "end_to_end",
+    "debug",
+    "adversarial",
+]
 
 
-def _make_layer1_callback(agent):
-    """Bridge a BaseAgentAdapter to Layer1Runner's callback interface.
+def _find_and_load_task(task_id: str):
+    """Find a task JSON by ID across all category directories."""
+    from orchestrator.schemas import QuantTutorTask
 
-    Supports two calling conventions:
-    1. Pure Q&A: callback(context, question) -> str
-    2. Tool-enabled: callback(context, question, tools=..., tool_callback=...) -> str
-
-    The agent's system prompt (tutor vs baseline) is already set by _create_agent().
-    """
-
-    def callback(context: str, question: str, tools=None, tool_callback=None) -> str:
-        if context:
-            messages = [
-                {
-                    "role": "user",
-                    "content": f"Context:\n{context}\n\nQuestion: {question}",
-                }
-            ]
-        else:
-            messages = [{"role": "user", "content": question}]
-        return agent.generate_response(
-            messages=messages,
-            available_tools=tools or [],
-            tool_callback=tool_callback,
-        )
-
-    return callback
-
-
-def cmd_run(args):
-    """Run the full benchmark (Layer 1 + Layer 2, or individually via --layer)."""
-    from evaluation.scoring import compute_combined_benchmark_kpis, compute_task_score
-    from orchestrator.orchestrator import BenchmarkOrchestrator
-    from orchestrator.schemas import BenchmarkReport
-
-    condition = CONDITIONS[getattr(args, "condition", "agent")]
-    agent = _create_agent(args)
-    layer = getattr(args, "layer", "all")
-
-    orchestrator = BenchmarkOrchestrator(
-        bench_root=str(BENCH_ROOT),
-        use_docker=args.docker,
-        eval_model=getattr(args, "eval_model", None),
-        simulator_model=getattr(args, "simulator_model", None),
-    )
-
-    task_filter = args.tasks.split(",") if args.tasks else None
-    persona_filter = args.personas.split(",") if args.personas else None
-
-    print("=== QuantTutorBench - Unified Benchmark ===")
-    print(f"Agent: {agent.agent_name}")
-    print(f"Condition: {condition.name} — {condition.description}")
-    print(f"Model: {agent.model}")
-    print(f"Layer(s): {layer}")
-    print(f"Tools: {'enabled' if condition.tools_enabled else 'disabled'}")
-    print(f"Prompt: {condition.prompt_mode}")
-    print(f"Docker: {args.docker}")
-    print(f"Max turns: {args.max_turns}")
-    print(f"Trials: {args.trials}")
-    print()
-
-    report = BenchmarkReport(agent_name=agent.agent_name)
-    layers_evaluated = []
-
-    # ── Phase 1: Layer 1 (single-turn knowledge) ──
-    if layer in ("all", "1"):
-        print("=== Phase 1: Layer 1 (single-turn knowledge) ===")
-        from layer1.data_loader import get_layer1_stats, load_layer1_items
-        from layer1.runner import Layer1Runner
-        from orchestrator.container_manager import ContainerManager
-
-        l1_max = getattr(args, "l1_max_items", None)
-        items = load_layer1_items(max_items=l1_max)
-        if items:
-            stats = get_layer1_stats(items)
-            print(f"  Loaded {stats['total_items']} items")
-            print(f"  By category: {stats['by_category']}")
-
-            callback = _make_layer1_callback(agent)
-            l1_container_manager = ContainerManager(use_docker=args.docker)
-            runner = Layer1Runner(
-                agent_callback=callback,
-                use_deepeval=not getattr(args, "no_deepeval", False),
-                eval_model=getattr(args, "eval_model", None),
-                container_manager=l1_container_manager,
-                use_docker=args.docker,
-            )
-            l1_results = runner.run_batch(items, max_items=l1_max)
-            l1_summary = Layer1Runner.compute_layer1_scores(l1_results)
-
-            report.layer1_results = [r.to_dict() for r in l1_results]
-            report.layer1_summary = l1_summary
-            report.layer1_mean_score = l1_summary.get("mean_score", 0.0)
-            layers_evaluated.append("layer1")
-
-            print(
-                f"  Layer 1 complete: {l1_summary['total_items']} items, "
-                f"mean={l1_summary['mean_score']:.4f}"
-            )
-        else:
-            print("  No Layer 1 items found, skipping.")
-        print()
-
-    # ── Phase 2: Layer 2 (multi-turn tutoring) ──
-    if layer in ("all", "2"):
-        print("=== Phase 2: Layer 2 (multi-turn tutoring) ===")
-        l2_report = orchestrator.run_benchmark(
-            agent=agent,
-            task_filter=task_filter,
-            persona_filter=persona_filter,
-            num_trials=args.trials,
-            max_turns_override=args.max_turns,
-            tools_enabled=condition.tools_enabled,
-        )
-        # Merge Layer 2 results into unified report
-        report.results_by_task = l2_report.results_by_task
-        report.total_tasks = l2_report.total_tasks
-        report.adaptiveness_score = l2_report.adaptiveness_score
-        report.process_mastery_score = l2_report.process_mastery_score
-        report.results_by_difficulty = l2_report.results_by_difficulty
-        report.results_by_category = l2_report.results_by_category
-        layers_evaluated.append("layer2")
-        print()
-
-    report.layers_evaluated = layers_evaluated
-
-    # ── Phase 3: Combined scoring ──
-    all_result_objects = list(report.results_by_task.values())
-    all_l2_scores = [
-        compute_task_score(
-            r.quant_result_score,
-            r.quant_process_score,
-            r.tutor_scores,
-            category=r.category,
-            requires_code=r.requires_code,
-        )
-        for r in all_result_objects
-    ]
-
-    combined_kpis = compute_combined_benchmark_kpis(
-        layer2_task_results=all_l2_scores,
-        layer2_result_objects=all_result_objects if all_result_objects else None,
-        layer1_mean_score=report.layer1_mean_score,
-        layer1_summary=report.layer1_summary,
-        layers_evaluated=layers_evaluated,
-    )
-
-    report.overall_agent_score = combined_kpis.get("overall_agent_score", 0.0)
-    report.quant_agent_index = combined_kpis.get("quant_agent_index", 0.0)
-    report.tutoring_effectiveness_index = combined_kpis.get(
-        "tutoring_effectiveness_index", 0.0
-    )
-    report.combined_result_subscore = combined_kpis.get("combined_result_subscore")
-
-    # ── Output ──
-    report_path = orchestrator.save_results(report)
-
-    print("=== Benchmark-Level KPIs (§6.3 + §6.4) ===")
-    print(f"Layers evaluated:                {', '.join(layers_evaluated)}")
-    print(f"Overall Agent Score (OAS):       {report.overall_agent_score:.4f}")
-    print(f"Quant Agent Index (QAI):         {report.quant_agent_index:.4f}")
-    if report.combined_result_subscore is not None:
-        print(f"  Result Sub-score (blended):    {report.combined_result_subscore:.4f}")
-        if "layer1" in layers_evaluated:
-            print(
-                f"    Layer 1 contribution:        {report.layer1_mean_score:.4f} (weight=0.40)"
-            )
-    print(f"Tutoring Effectiveness (TEI):    {report.tutoring_effectiveness_index:.4f}")
-    print(f"Adaptiveness Score (AS):         {report.adaptiveness_score:.4f}")
-    print(f"Process Mastery Score (PMS):      {report.process_mastery_score:.4f}")
-    if "layer1" in layers_evaluated and report.layer1_summary:
-        print(
-            f"Layer 1 items evaluated:         {report.layer1_summary['total_items']}"
-        )
-    if "layer2" in layers_evaluated:
-        print(f"Layer 2 tasks evaluated:         {report.total_tasks}")
-    print(f"\nReport saved: {report_path}")
-
-
-def cmd_run_single(args):
-    """Run a single task for debugging."""
-    from orchestrator.orchestrator import BenchmarkOrchestrator
-
-    condition = CONDITIONS[getattr(args, "condition", "agent")]
-    agent = _create_agent(args)
-
-    orchestrator = BenchmarkOrchestrator(
-        bench_root=str(BENCH_ROOT),
-        use_docker=args.docker,
-        eval_model=getattr(args, "eval_model", None),
-        simulator_model=getattr(args, "simulator_model", None),
-    )
-
-    # Find the task file
-    task_file = None
     for category_dir in (BENCH_ROOT / "tasks" / "layer2").iterdir():
         if category_dir.is_dir():
             for f in category_dir.glob("*.json"):
-                if args.task in f.stem:
-                    task_file = f
-                    break
+                if task_id in f.stem:
+                    with open(f) as fh:
+                        return QuantTutorTask(**json.load(fh))
+    print(f"Task not found: {task_id}")
+    sys.exit(1)
 
-    if not task_file:
-        print(f"Task not found: {args.task}")
+
+def _load_tasks_by_group(group: str) -> list:
+    """Load all tasks in a category group."""
+    from orchestrator.schemas import QuantTutorTask
+
+    group_dir = BENCH_ROOT / "tasks" / "layer2" / group
+    if not group_dir.is_dir():
+        print(f"Group not found: {group}")
         sys.exit(1)
+    tasks = []
+    for f in sorted(group_dir.glob("*.json")):
+        with open(f) as fh:
+            tasks.append(QuantTutorTask(**json.load(fh)))
+    return tasks
 
-    task = orchestrator.load_task(str(task_file))
-    persona = orchestrator.load_persona(args.persona)
 
-    print("=== QuantTutorBench - Single Task ===")
-    print(f"Task: {task.task_id}")
-    print(f"Persona: {persona.persona_id}")
-    print(f"Agent: {agent.agent_name}")
-    print(f"Condition: {condition.name} — {condition.description}")
-    print(f"Model: {agent.model}")
-    print(f"Tools: {'enabled' if condition.tools_enabled else 'disabled'}")
-    print(f"Max turns: {args.max_turns}")
-    print()
+def _load_all_layer2_tasks() -> list:
+    """Load all Layer 2 tasks across all categories."""
+    from orchestrator.schemas import QuantTutorTask
 
-    # Prepare result capture hook if --save-result requested
-    save_result = getattr(args, "save_result", False)
-    trace_captured: dict = {}
-    result_dir = None
+    tasks = []
+    for category_dir in sorted((BENCH_ROOT / "tasks" / "layer2").iterdir()):
+        if category_dir.is_dir():
+            for f in sorted(category_dir.glob("*.json")):
+                with open(f) as fh:
+                    tasks.append(QuantTutorTask(**json.load(fh)))
+    return tasks
 
-    if save_result:
-        import shutil
 
-        model_short = agent.model.split("/")[-1] if "/" in agent.model else agent.model
-        result_dir = (
-            BENCH_ROOT
-            / "results"
-            / "run-single"
-            / getattr(args, "agent", "generic")
-            / model_short
-            / task.task_id
-            / persona.persona_id
-        )
-        result_dir.mkdir(parents=True, exist_ok=True)
-        agent_files_dir = result_dir / "agent_files"
+def _load_persona(persona_id: str):
+    """Load a persona by ID."""
+    from orchestrator.schemas import StudentPersona
 
-        def _capture_for_trace(*, result, proxy, workspace_path):
-            trace_captured["proxy_logs"] = list(proxy.get_logs())
-            if workspace_path and os.path.isdir(workspace_path):
-                if agent_files_dir.exists():
-                    shutil.rmtree(agent_files_dir)
-                shutil.copytree(workspace_path, str(agent_files_dir))
+    persona_path = BENCH_ROOT / "personas" / f"{persona_id}.json"
+    with open(persona_path) as f:
+        return StudentPersona(**json.load(f))
 
-    result = orchestrator.run_single_task(
+
+# ---------------------------------------------------------------------------
+# Job building helpers
+# ---------------------------------------------------------------------------
+
+
+def _build_result_base_dir(args, subcommand: str = "run-single") -> Path:
+    """Build the base result directory from args."""
+    agent_type = getattr(args, "agent", "generic")
+    model_override = getattr(args, "model", None)
+    if model_override:
+        model_short = model_override.split("/")[-1]
+    else:
+        model = get_model_for_agent(agent_type)
+        model_short = model.split("/")[-1] if "/" in model else model
+    return BENCH_ROOT / "results" / subcommand / agent_type / model_short
+
+
+def _build_job_spec(task, persona, args, result_base_dir: Path):
+    """Build a JobSpec from a task, persona, and CLI args."""
+    from orchestrator.job_runner import JobSpec
+
+    runonly = getattr(args, "runonly", False)
+    evalonly = getattr(args, "evalonly", False)
+    if runonly and evalonly:
+        print("ERROR: --runonly and --evalonly are mutually exclusive.")
+        sys.exit(1)
+    return JobSpec(
         task=task,
         persona=persona,
-        agent=agent,
-        max_turns=args.max_turns or 5,
-        tools_enabled=condition.tools_enabled,
-        pre_teardown_hook=_capture_for_trace if save_result else None,
+        agent_type=getattr(args, "agent", "generic"),
+        condition_name=getattr(args, "condition", "agent"),
+        max_turns=getattr(args, "max_turns", 5),
+        use_docker=getattr(args, "docker", False),
+        save_result=getattr(args, "save_result", False) or runonly or evalonly,
+        result_base_dir=result_base_dir,
+        eval_model=getattr(args, "eval_model", None),
+        simulator_model=getattr(args, "simulator_model", None),
+        model_override=getattr(args, "model", None),
+        skip_eval=runonly,
     )
 
+
+def _build_jobs_for_tasks(tasks, persona_ids, args, result_base_dir: Path) -> list:
+    """Build JobSpec list for multiple tasks × personas."""
+
+    jobs = []
+    for task in tasks:
+        pids = persona_ids or task.persona_ids
+        for pid in pids:
+            persona = _load_persona(pid)
+            jobs.append(_build_job_spec(task, persona, args, result_base_dir))
+    return jobs
+
+
+# ---------------------------------------------------------------------------
+# Progress + summary display
+# ---------------------------------------------------------------------------
+
+
+def _progress(completed: int, total: int, latest):
+    """Print progress update."""
+    if latest.task_result:
+        status = "OK"
+    elif latest.error:
+        status = f"ERR: {latest.error[:60]}"
+    else:
+        status = "???"
+    print(
+        f"  [{completed}/{total}] {latest.job.task.task_id} x "
+        f"{latest.job.persona.persona_id} — {status} "
+        f"({latest.duration_seconds:.1f}s)"
+    )
+
+
+def _print_single_result(result):
+    """Print detailed result for a single task (preserves existing display)."""
     print(f"\n--- Conversation ({len(result.turns)} turns) ---")
     for turn in result.turns:
         prefix = "Student" if turn.role == "user" else "Tutor"
@@ -506,7 +320,6 @@ def cmd_run_single(args):
         sub = rj.get("sub_scores", {})
         if sub:
             print(
-                f"  Numerical accuracy:  {sub.get('numerical_accuracy', '?')}"
                 f"  Completeness: {sub.get('completeness', '?')}"
                 f"  Correctness: {sub.get('correctness', '?')}"
             )
@@ -573,52 +386,666 @@ def cmd_run_single(args):
     if result.error:
         print(f"\nError: {result.error}")
 
-    # ── Save results (scores.md + trace.md + cost.md + agent_files/) ──
-    if save_result and result_dir is not None:
-        saved_parts = []
 
-        # scores.md: skip when evaluation was aborted (incomplete/misleading)
-        if not result.eval_aborted:
-            from evaluation.score_report import generate_score_report
+def _print_group_summary(results: list):
+    """Print summary table after group/layer execution."""
+    is_runonly = any(r.job.skip_eval for r in results if r.job)
 
-            scores_md = generate_score_report(result)
-            (result_dir / "scores.md").write_text(scores_md, encoding="utf-8")
-            saved_parts.append("scores.md")
-        else:
-            # Write a marker file so the user knows this run was aborted
-            (result_dir / "ABORTED.md").write_text(
-                f"# Evaluation Aborted\n\n{result.error}\n",
-                encoding="utf-8",
-            )
-            saved_parts.append("ABORTED.md")
+    print(f"\n{'='*110}")
+    print("Summary" + (" (RUNONLY — no evaluation)" if is_runonly else ""))
+    print(f"{'='*110}")
 
-        # trace.md: always save (valuable for debugging aborted runs)
-        if "proxy_logs" in trace_captured:
-            from evaluation.trace_report import generate_trace_md
-
-            trace_md = generate_trace_md(
-                result,
-                trace_captured["proxy_logs"],
-                agent_name=getattr(args, "agent", "generic"),
-                model=agent.model,
-                condition=condition.name,
-            )
-            (result_dir / "trace.md").write_text(trace_md, encoding="utf-8")
-            saved_parts.append("trace.md")
-
-        # cost.md: always save (shows partial spend even for aborted runs)
-        from evaluation.cost_report import generate_cost_report
-
-        cost_md = generate_cost_report(result)
-        (result_dir / "cost.md").write_text(cost_md, encoding="utf-8")
-        saved_parts.append("cost.md")
-
-        n_files = (
-            len(list(agent_files_dir.iterdir())) if agent_files_dir.exists() else 0
+    if is_runonly:
+        print(f"{'Task':<30} {'Persona':<25} {'Turns':>6} " f"{'Time':>7} {'Status'}")
+        print("-" * 80)
+    else:
+        print(
+            f"{'Task':<30} {'Persona':<25} {'OAS':>6} {'QR':>6} {'QP':>6} "
+            f"{'Time':>7} {'Status'}"
         )
-        saved_parts.append(f"agent_files/ ({n_files} files)")
-        print(f"\nResults saved: {result_dir}")
-        print(f"  {' + '.join(saved_parts)}")
+        print("-" * 110)
+
+    total_time = 0.0
+    total_cost = 0.0
+    ok_count = 0
+    err_count = 0
+    for r in results:
+        if r.task_result:
+            tr = r.task_result
+            if is_runonly:
+                print(
+                    f"{tr.task_id:<30} {tr.persona_id:<25} "
+                    f"{len(tr.turns):>6} {r.duration_seconds:>6.1f}s OK"
+                )
+            else:
+                print(
+                    f"{tr.task_id:<30} {tr.persona_id:<25} "
+                    f"{tr.overall_score:>6.4f} {tr.quant_result_score:>6.4f} "
+                    f"{tr.quant_process_score:>6.4f} {r.duration_seconds:>6.1f}s OK"
+                )
+            total_cost += tr.cost_usd
+            ok_count += 1
+        else:
+            if is_runonly:
+                print(
+                    f"{r.job.task.task_id:<30} {r.job.persona.persona_id:<25} "
+                    f"{'---':>6} {r.duration_seconds:>6.1f}s ERR"
+                )
+            else:
+                print(
+                    f"{r.job.task.task_id:<30} {r.job.persona.persona_id:<25} "
+                    f"{'---':>6} {'---':>6} {'---':>6} {r.duration_seconds:>6.1f}s ERR"
+                )
+            err_count += 1
+        total_time += r.duration_seconds
+
+    print("-" * (80 if is_runonly else 110))
+    status_parts = [f"{ok_count} OK"]
+    if err_count:
+        status_parts.append(f"{err_count} ERR")
+    print(
+        f"Total: {len(results)} jobs ({', '.join(status_parts)}), "
+        f"{total_time:.1f}s wall time, ${total_cost:.4f}"
+    )
+
+
+def _save_group_summary(results: list, label: str, result_base_dir: Path):
+    """Save a summary.md for group/layer runs."""
+    result_base_dir.mkdir(parents=True, exist_ok=True)
+    is_runonly = any(r.job.skip_eval for r in results if r.job)
+
+    lines = [f"# {label} Summary\n"]
+    if is_runonly:
+        lines.append("*RUNONLY mode — no evaluation scores*\n\n")
+        lines.append(
+            "| Task | Persona | Turns | Time | Status |\n"
+            "|------|---------|-------|------|--------|\n"
+        )
+    else:
+        lines.append(
+            "| Task | Persona | OAS | QR | QP | Time | Status |\n"
+            "|------|---------|-----|----|----|------|--------|\n"
+        )
+    for r in results:
+        if r.task_result:
+            tr = r.task_result
+            if is_runonly:
+                lines.append(
+                    f"| {tr.task_id} | {tr.persona_id} | "
+                    f"{len(tr.turns)} | {r.duration_seconds:.1f}s | OK |\n"
+                )
+            else:
+                lines.append(
+                    f"| {tr.task_id} | {tr.persona_id} | "
+                    f"{tr.overall_score:.4f} | {tr.quant_result_score:.4f} | "
+                    f"{tr.quant_process_score:.4f} | {r.duration_seconds:.1f}s | OK |\n"
+                )
+        else:
+            if is_runonly:
+                lines.append(
+                    f"| {r.job.task.task_id} | {r.job.persona.persona_id} | "
+                    f"--- | {r.duration_seconds:.1f}s | ERR |\n"
+                )
+            else:
+                lines.append(
+                    f"| {r.job.task.task_id} | {r.job.persona.persona_id} | "
+                    f"--- | --- | --- | {r.duration_seconds:.1f}s | ERR |\n"
+                )
+    (result_base_dir / "summary.md").write_text("".join(lines), encoding="utf-8")
+
+
+# ---------------------------------------------------------------------------
+# Agent creation (used by cmd_run and cmd_run_layer1)
+# ---------------------------------------------------------------------------
+
+
+def _create_agent(args):
+    """Create the appropriate agent adapter based on --agent and --condition.
+
+    The 2x2 matrix:
+      --condition agent            → SDK adapter + native model + TUTOR prompt
+      --condition baseline         → SDK adapter + native model + BASELINE prompt
+      --condition pure_llm         → GenericLLM + OpenRouter model + TUTOR prompt
+      --condition pure_llm_baseline → GenericLLM + OpenRouter model + BASELINE prompt
+
+    OpenAI Agent SDK always routes through OpenRouter for higher rate limits.
+    Anthropic and Google SDKs use their native APIs.
+    """
+    from config.prompt_config import BASELINE_SYSTEM_PROMPT, TUTOR_SYSTEM_PROMPT
+
+    agent_type = getattr(args, "agent", "generic")
+    condition = CONDITIONS[getattr(args, "condition", "agent")]
+    model_override = getattr(args, "model", None)
+
+    system_prompt = (
+        TUTOR_SYSTEM_PROMPT
+        if condition.prompt_mode == "tutor"
+        else BASELINE_SYSTEM_PROMPT
+    )
+
+    # Include model short name in agent_name for distinguishable results
+    if model_override:
+        model_short = model_override.split("/")[-1]
+        agent_name = f"{agent_type}_{condition.name}_{model_short}"
+    else:
+        agent_name = f"{agent_type}_{condition.name}"
+
+    # Pure LLM conditions: no SDK framework needed, use GenericLLM via OpenRouter
+    if not condition.tools_enabled:
+        from orchestrator.agent_adapters.generic_adapter import GenericLLMAdapter
+
+        model = model_override or get_model_for_agent(agent_type, use_openrouter=True)
+        return GenericLLMAdapter(
+            model=model, system_prompt=system_prompt, agent_name=agent_name
+        )
+
+    # Tools-enabled conditions: use the native SDK adapter
+    if agent_type == "anthropic":
+        from orchestrator.agent_adapters.anthropic_adapter import ClaudeAgentAdapter
+
+        model = model_override or get_model_for_agent("anthropic")
+        return ClaudeAgentAdapter(
+            model=model, system_prompt=system_prompt, agent_name=agent_name
+        )
+    elif agent_type == "google":
+        from orchestrator.agent_adapters.google_adapter import GoogleAdapter
+
+        model = model_override or get_model_for_agent("google")
+        return GoogleAdapter(
+            model=model, system_prompt=system_prompt, agent_name=agent_name
+        )
+    elif agent_type == "openai":
+        from orchestrator.agent_adapters.openai_adapter import OpenAIAgentAdapter
+
+        # Always route through OpenRouter for higher rate limits / parallelism
+        model = model_override or get_model_for_agent("openai", use_openrouter=True)
+        return OpenAIAgentAdapter(
+            model=model,
+            base_url=OPENROUTER_BASE_URL,
+            system_prompt=system_prompt,
+            agent_name=agent_name,
+        )
+    else:  # generic
+        from orchestrator.agent_adapters.generic_adapter import GenericLLMAdapter
+
+        model = model_override or get_model_for_agent("generic")
+        return GenericLLMAdapter(
+            model=model, system_prompt=system_prompt, agent_name=agent_name
+        )
+
+
+def _make_layer1_callback(agent):
+    """Bridge a BaseAgentAdapter to Layer1Runner's callback interface.
+
+    Supports two calling conventions:
+    1. Pure Q&A: callback(context, question) -> str
+    2. Tool-enabled: callback(context, question, tools=..., tool_callback=...) -> str
+
+    The agent's system prompt (tutor vs baseline) is already set by _create_agent().
+    """
+
+    def callback(context: str, question: str, tools=None, tool_callback=None) -> str:
+        if context:
+            messages = [
+                {
+                    "role": "user",
+                    "content": f"Context:\n{context}\n\nQuestion: {question}",
+                }
+            ]
+        else:
+            messages = [{"role": "user", "content": question}]
+        return agent.generate_response(
+            messages=messages,
+            available_tools=tools or [],
+            tool_callback=tool_callback,
+        )
+
+    return callback
+
+
+# ---------------------------------------------------------------------------
+# Concurrency guard
+# ---------------------------------------------------------------------------
+
+
+def _validate_workers(args):
+    """Enforce safety: local mode (no Docker) must use workers=1.
+
+    Exception: --evalonly is safe with workers > 1 (no containers, no shared env).
+    """
+    workers = getattr(args, "workers", 1)
+    docker = getattr(args, "docker", False)
+    evalonly = getattr(args, "evalonly", False)
+    if workers > 1 and not docker and not evalonly:
+        print(
+            "ERROR: --workers > 1 requires --docker (or --evalonly). "
+            "Local mode uses os.environ which is not thread-safe."
+        )
+        sys.exit(1)
+    return workers
+
+
+# ---------------------------------------------------------------------------
+# CLI commands
+# ---------------------------------------------------------------------------
+
+
+def cmd_run(args):
+    """Run the full benchmark (Layer 1 + Layer 2, or individually via --layer)."""
+    from evaluation.scoring import compute_combined_benchmark_kpis, compute_task_score
+    from orchestrator.orchestrator import BenchmarkOrchestrator
+    from orchestrator.schemas import BenchmarkReport
+
+    condition = CONDITIONS[getattr(args, "condition", "agent")]
+    agent = _create_agent(args)
+    layer = getattr(args, "layer", "all")
+    workers = _validate_workers(args)
+
+    orchestrator = BenchmarkOrchestrator(
+        bench_root=str(BENCH_ROOT),
+        use_docker=args.docker,
+        eval_model=getattr(args, "eval_model", None),
+        simulator_model=getattr(args, "simulator_model", None),
+    )
+
+    task_filter = args.tasks.split(",") if args.tasks else None
+    persona_filter = args.personas.split(",") if args.personas else None
+
+    print("=== QuantTutorBench - Unified Benchmark ===")
+    print(f"Agent: {agent.agent_name}")
+    print(f"Condition: {condition.name} — {condition.description}")
+    print(f"Model: {agent.model}")
+    print(f"Layer(s): {layer}")
+    print(f"Tools: {'enabled' if condition.tools_enabled else 'disabled'}")
+    print(f"Prompt: {condition.prompt_mode}")
+    print(f"Docker: {args.docker}")
+    print(f"Max turns: {args.max_turns}")
+    print(f"Trials: {args.trials}")
+    print(f"Workers: {workers}")
+    print()
+
+    report = BenchmarkReport(agent_name=agent.agent_name)
+    layers_evaluated = []
+
+    # ── Phase 1: Layer 1 (single-turn knowledge) ──
+    if layer in ("all", "1"):
+        print("=== Phase 1: Layer 1 (single-turn knowledge) ===")
+        from layer1.data_loader import get_layer1_stats, load_layer1_items
+        from layer1.runner import Layer1Runner
+        from orchestrator.container_manager import ContainerManager
+
+        l1_max = getattr(args, "l1_max_items", None)
+        items = load_layer1_items(max_items=l1_max)
+        if items:
+            stats = get_layer1_stats(items)
+            print(f"  Loaded {stats['total_items']} items")
+            print(f"  By category: {stats['by_category']}")
+
+            callback = _make_layer1_callback(agent)
+            l1_container_manager = ContainerManager(use_docker=args.docker)
+            runner = Layer1Runner(
+                agent_callback=callback,
+                use_deepeval=not getattr(args, "no_deepeval", False),
+                eval_model=getattr(args, "eval_model", None),
+                container_manager=l1_container_manager,
+                use_docker=args.docker,
+            )
+            l1_results = runner.run_batch(items, max_items=l1_max)
+            l1_summary = Layer1Runner.compute_layer1_scores(l1_results)
+
+            report.layer1_results = [r.to_dict() for r in l1_results]
+            report.layer1_summary = l1_summary
+            report.layer1_mean_score = l1_summary.get("mean_score", 0.0)
+            layers_evaluated.append("layer1")
+
+            print(
+                f"  Layer 1 complete: {l1_summary['total_items']} items, "
+                f"mean={l1_summary['mean_score']:.4f}"
+            )
+        else:
+            print("  No Layer 1 items found, skipping.")
+        print()
+
+    # ── Phase 2: Layer 2 (multi-turn tutoring) ──
+    if layer in ("all", "2"):
+        print("=== Phase 2: Layer 2 (multi-turn tutoring) ===")
+
+        if workers > 1:
+            # Parallel execution via job runner
+            from orchestrator.job_runner import JobSpec
+            from orchestrator.parallel_runner import run_jobs_parallel
+
+            tasks = _load_all_layer2_tasks()
+            result_base_dir = _build_result_base_dir(args, "run")
+            save_result = getattr(args, "save_result", False)
+
+            jobs = []
+            for task in tasks:
+                if task_filter and task.task_id not in task_filter:
+                    continue
+                for persona_id in task.persona_ids:
+                    if persona_filter and persona_id not in persona_filter:
+                        continue
+                    persona = _load_persona(persona_id)
+                    for trial in range(args.trials):
+                        jobs.append(
+                            JobSpec(
+                                task=task,
+                                persona=persona,
+                                agent_type=getattr(args, "agent", "generic"),
+                                condition_name=getattr(args, "condition", "agent"),
+                                max_turns=args.max_turns,
+                                use_docker=args.docker,
+                                save_result=save_result,
+                                result_base_dir=result_base_dir,
+                                eval_model=getattr(args, "eval_model", None),
+                                simulator_model=getattr(args, "simulator_model", None),
+                                model_override=getattr(args, "model", None),
+                                trial_index=trial,
+                            )
+                        )
+
+            print(f"  Running {len(jobs)} jobs with {workers} workers...")
+            job_results = run_jobs_parallel(
+                jobs, max_workers=workers, progress_callback=_progress
+            )
+
+            # Merge into report
+            for jr in job_results:
+                if jr.task_result:
+                    result_key = (
+                        f"{jr.task_result.task_id}_{jr.task_result.persona_id}"
+                        f"_t{jr.job.trial_index}"
+                    )
+                    report.results_by_task[result_key] = jr.task_result
+                    report.total_tasks += 1
+
+            _print_group_summary(job_results)
+        else:
+            # Sequential execution (original path)
+            l2_report = orchestrator.run_benchmark(
+                agent=agent,
+                task_filter=task_filter,
+                persona_filter=persona_filter,
+                num_trials=args.trials,
+                max_turns_override=args.max_turns,
+                tools_enabled=condition.tools_enabled,
+            )
+            report.results_by_task = l2_report.results_by_task
+            report.total_tasks = l2_report.total_tasks
+            report.adaptiveness_score = l2_report.adaptiveness_score
+            report.process_mastery_score = l2_report.process_mastery_score
+            report.results_by_difficulty = l2_report.results_by_difficulty
+            report.results_by_category = l2_report.results_by_category
+
+        layers_evaluated.append("layer2")
+        print()
+
+    report.layers_evaluated = layers_evaluated
+
+    # ── Phase 3: Combined scoring ──
+    all_result_objects = list(report.results_by_task.values())
+    all_l2_scores = [
+        compute_task_score(
+            r.quant_result_score,
+            r.quant_process_score,
+            r.tutor_scores,
+            category=r.category,
+            requires_code=r.requires_code,
+        )
+        for r in all_result_objects
+    ]
+
+    combined_kpis = compute_combined_benchmark_kpis(
+        layer2_task_results=all_l2_scores,
+        layer2_result_objects=all_result_objects if all_result_objects else None,
+        layer1_mean_score=report.layer1_mean_score,
+        layer1_summary=report.layer1_summary,
+        layers_evaluated=layers_evaluated,
+    )
+
+    report.overall_agent_score = combined_kpis.get("overall_agent_score", 0.0)
+    report.quant_agent_index = combined_kpis.get("quant_agent_index", 0.0)
+    report.tutoring_effectiveness_index = combined_kpis.get(
+        "tutoring_effectiveness_index", 0.0
+    )
+    report.combined_result_subscore = combined_kpis.get("combined_result_subscore")
+
+    # Compute KPIs that may not have been set in parallel path
+    if workers > 1 and all_l2_scores:
+        from evaluation.scoring import compute_benchmark_kpis
+
+        kpis = compute_benchmark_kpis(
+            all_l2_scores, task_result_objects=all_result_objects
+        )
+        report.adaptiveness_score = kpis.get("adaptiveness_score", 0.0)
+        report.process_mastery_score = kpis.get("process_mastery_score", 0.0)
+
+        import statistics as _stats
+        from collections import defaultdict
+
+        by_diff = defaultdict(list)
+        by_cat = defaultdict(list)
+        for r_obj, r_score in zip(all_result_objects, all_l2_scores):
+            if r_obj.difficulty:
+                by_diff[r_obj.difficulty].append(r_score["overall_score"])
+            if r_obj.category:
+                by_cat[r_obj.category].append(r_score["overall_score"])
+        report.results_by_difficulty = {
+            k: round(_stats.mean(v), 4) for k, v in sorted(by_diff.items())
+        }
+        report.results_by_category = {
+            k: round(_stats.mean(v), 4) for k, v in sorted(by_cat.items())
+        }
+
+    # ── Output ──
+    report_path = orchestrator.save_results(report)
+
+    print("=== Benchmark-Level KPIs (§6.3 + §6.4) ===")
+    print(f"Layers evaluated:                {', '.join(layers_evaluated)}")
+    print(f"Overall Agent Score (OAS):       {report.overall_agent_score:.4f}")
+    print(f"Quant Agent Index (QAI):         {report.quant_agent_index:.4f}")
+    if report.combined_result_subscore is not None:
+        print(f"  Result Sub-score (blended):    {report.combined_result_subscore:.4f}")
+        if "layer1" in layers_evaluated:
+            print(
+                f"    Layer 1 contribution:        {report.layer1_mean_score:.4f} (weight=0.40)"
+            )
+    print(f"Tutoring Effectiveness (TEI):    {report.tutoring_effectiveness_index:.4f}")
+    print(f"Adaptiveness Score (AS):         {report.adaptiveness_score:.4f}")
+    print(f"Process Mastery Score (PMS):      {report.process_mastery_score:.4f}")
+    if "layer1" in layers_evaluated and report.layer1_summary:
+        print(
+            f"Layer 1 items evaluated:         {report.layer1_summary['total_items']}"
+        )
+    if "layer2" in layers_evaluated:
+        print(f"Layer 2 tasks evaluated:         {report.total_tasks}")
+    print(f"\nReport saved: {report_path}")
+
+
+def cmd_run_single(args):
+    """Run a single task (one persona or all personas in parallel)."""
+    from orchestrator.parallel_runner import run_jobs_parallel
+
+    workers = _validate_workers(args)
+    task = _find_and_load_task(args.task)
+    condition = CONDITIONS[getattr(args, "condition", "agent")]
+
+    runonly = getattr(args, "runonly", False)
+    evalonly = getattr(args, "evalonly", False)
+
+    # Determine personas
+    if args.persona:
+        persona_ids = [args.persona]
+        if not evalonly:
+            workers = 1
+    else:
+        persona_ids = task.persona_ids
+
+    result_base_dir = _build_result_base_dir(args, "run-single")
+
+    # Build jobs
+    jobs = []
+    for pid in persona_ids:
+        persona = _load_persona(pid)
+        jobs.append(_build_job_spec(task, persona, args, result_base_dir))
+
+    # Print header
+    agent_type = getattr(args, "agent", "generic")
+    model_override = getattr(args, "model", None)
+    model_display = model_override or get_model_for_agent(agent_type)
+    print("=== QuantTutorBench - Single Task ===")
+    print(f"Task: {task.task_id}")
+    print(f"Persona(s): {', '.join(persona_ids)}")
+    if evalonly:
+        print("Mode: EVALONLY (evaluate saved results)")
+        print(f"Source: {result_base_dir}")
+    else:
+        print(f"Agent: {agent_type}")
+        print(f"Condition: {condition.name} — {condition.description}")
+        print(f"Model: {model_display}")
+        print(f"Tools: {'enabled' if condition.tools_enabled else 'disabled'}")
+        print(f"Max turns: {args.max_turns}")
+        if runonly:
+            print("Mode: RUNONLY (no evaluation)")
+    if len(jobs) > 1:
+        print(f"Workers: {workers} (parallel personas)")
+    print()
+
+    # Select job executor
+    job_fn = None
+    if evalonly:
+        from orchestrator.job_runner import eval_single_job
+
+        job_fn = eval_single_job
+
+    if len(jobs) == 1:
+        # Single persona — run directly, show detailed output
+        job_result = run_jobs_parallel(jobs, max_workers=1, job_fn=job_fn)[0]
+        if job_result.task_result:
+            if runonly:
+                tr = job_result.task_result
+                print(f"\n--- Conversation ({len(tr.turns)} turns) ---")
+                for turn in tr.turns:
+                    prefix = "Student" if turn.role == "user" else "Tutor"
+                    print(f"\n[{prefix}]: {turn.content[:200]}...")
+                print("\n[RUNONLY] Evaluation skipped.")
+            else:
+                _print_single_result(job_result.task_result)
+        elif job_result.error:
+            print(f"\nError: {job_result.error}")
+        # Print save info
+        _should_save = getattr(args, "save_result", False) or runonly or evalonly
+        if _should_save and job_result.task_result:
+            _result_dir = (
+                result_base_dir / task.category.value / task.task_id / persona_ids[0]
+            )
+            print(f"\nResults saved: {_result_dir}")
+    else:
+        # Multi-persona — run in parallel, show summary table
+        print(f"Running {len(jobs)} jobs...")
+        job_results = run_jobs_parallel(
+            jobs,
+            max_workers=workers,
+            progress_callback=_progress,
+            job_fn=job_fn,
+        )
+        _print_group_summary(job_results)
+        _should_save = getattr(args, "save_result", False) or runonly or evalonly
+        if _should_save:
+            print(
+                f"\nResults saved: {result_base_dir / task.category.value / task.task_id}"
+            )
+
+
+def cmd_run_group(args):
+    """Run all tasks in a category group."""
+    from orchestrator.parallel_runner import run_jobs_parallel
+
+    workers = _validate_workers(args)
+    tasks = _load_tasks_by_group(args.group)
+    persona_ids = [args.persona] if args.persona else None
+
+    result_base_dir = _build_result_base_dir(args, "run-group") / args.group
+    jobs = _build_jobs_for_tasks(tasks, persona_ids, args, result_base_dir)
+
+    runonly = getattr(args, "runonly", False)
+    evalonly = getattr(args, "evalonly", False)
+    print(f"=== QuantTutorBench - Group: {args.group} ===")
+    print(
+        f"Tasks: {len(tasks)} | "
+        f"Personas: {len(persona_ids) if persona_ids else 'all'} each | "
+        f"Jobs: {len(jobs)} | Workers: {workers}"
+    )
+    if evalonly:
+        print("Mode: EVALONLY (evaluate saved results)")
+    elif runonly:
+        print("Mode: RUNONLY (no evaluation)")
+    print()
+
+    job_fn = None
+    if evalonly:
+        from orchestrator.job_runner import eval_single_job
+
+        job_fn = eval_single_job
+
+    job_results = run_jobs_parallel(
+        jobs,
+        max_workers=workers,
+        progress_callback=_progress,
+        job_fn=job_fn,
+    )
+    _print_group_summary(job_results)
+
+    _should_save = getattr(args, "save_result", False) or runonly or evalonly
+    if _should_save:
+        _save_group_summary(job_results, f"Group: {args.group}", result_base_dir)
+        print(f"\nResults saved: {result_base_dir}")
+
+
+def cmd_run_layer2(args):
+    """Run all Layer 2 tasks in parallel."""
+    from orchestrator.parallel_runner import run_jobs_parallel
+
+    workers = _validate_workers(args)
+    tasks = _load_all_layer2_tasks()
+    persona_ids = [args.persona] if args.persona else None
+
+    result_base_dir = _build_result_base_dir(args, "run-layer2")
+    jobs = _build_jobs_for_tasks(tasks, persona_ids, args, result_base_dir)
+
+    runonly = getattr(args, "runonly", False)
+    evalonly = getattr(args, "evalonly", False)
+    print("=== QuantTutorBench - Layer 2 (All Tasks) ===")
+    print(
+        f"Tasks: {len(tasks)} | "
+        f"Personas: {len(persona_ids) if persona_ids else 'all'} each | "
+        f"Jobs: {len(jobs)} | Workers: {workers}"
+    )
+    if evalonly:
+        print("Mode: EVALONLY (evaluate saved results)")
+    elif runonly:
+        print("Mode: RUNONLY (no evaluation)")
+    print()
+
+    job_fn = None
+    if evalonly:
+        from orchestrator.job_runner import eval_single_job
+
+        job_fn = eval_single_job
+
+    job_results = run_jobs_parallel(
+        jobs,
+        max_workers=workers,
+        progress_callback=_progress,
+        job_fn=job_fn,
+    )
+    _print_group_summary(job_results)
+
+    _should_save = getattr(args, "save_result", False) or runonly or evalonly
+    if _should_save:
+        _save_group_summary(job_results, "Layer 2 (All Tasks)", result_base_dir)
+        print(f"\nResults saved: {result_base_dir}")
 
 
 def cmd_list_tasks(args):
@@ -908,6 +1335,68 @@ def cmd_validate_tasks(args):
     return len(errors) == 0
 
 
+# ---------------------------------------------------------------------------
+# Shared argparse argument definitions
+# ---------------------------------------------------------------------------
+
+
+def _add_common_args(parser):
+    """Add arguments shared by run-single, run-group, run-layer2."""
+    parser.add_argument(
+        "--agent",
+        default="generic",
+        choices=["generic", "openai", "anthropic", "google"],
+        help="Agent SDK / model family",
+    )
+    parser.add_argument(
+        "--condition",
+        default="agent",
+        choices=CONDITION_NAMES,
+        help="Test condition (2x2 matrix cell)",
+    )
+    parser.add_argument("--docker", action="store_true", help="Use Docker sandbox")
+    parser.add_argument("--max-turns", type=int, default=5, help="Max turns")
+    parser.add_argument(
+        "--eval-model",
+        default=None,
+        help="LLM model for GEval judge (OpenRouter format)",
+    )
+    parser.add_argument(
+        "--simulator-model",
+        default=None,
+        help="LLM model for student simulator (OpenRouter format)",
+    )
+    parser.add_argument(
+        "--model",
+        default=None,
+        help="Override agent model (OpenRouter format, e.g. 'openai/gpt-5.2')",
+    )
+    parser.add_argument(
+        "--save-result",
+        action="store_true",
+        help="Save scores.md, trace.md, cost.md, and agent_files/",
+    )
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=3,
+        help="Max parallel workers (default: 3, each standard container ~1 CPU + 768MB; LEAN ~2 CPU + 1GB)",
+    )
+    parser.add_argument(
+        "--runonly",
+        action="store_true",
+        help="Run agent only (no evaluation). Implies --save-result. "
+        "Saves trace.md + agent_files/ + cost.md + run_state.json, skips scores.md.",
+    )
+    parser.add_argument(
+        "--evalonly",
+        action="store_true",
+        help="Evaluate previously saved --runonly results. "
+        "Reads run_state.json from result dirs, runs evaluation, "
+        "saves scores.md + updated cost.md. No agent/docker needed.",
+    )
+
+
 def main():
     # ── DeepEval retry policy — strengthen defaults for parallel execution ──
     # DeepEval's @retry_openai uses Tenacity. Defaults (max=2, cap=5s) are
@@ -980,49 +1469,53 @@ def main():
         default=None,
         help="Override agent model (OpenRouter format, e.g. 'openai/gpt-5.2')",
     )
+    run_parser.add_argument(
+        "--workers",
+        type=int,
+        default=1,
+        help="Max parallel workers for Layer 2 (default: 1 = sequential)",
+    )
+    run_parser.add_argument(
+        "--save-result",
+        action="store_true",
+        help="Save per-job results (only used with --workers > 1)",
+    )
 
     # run-single command
     single_parser = subparsers.add_parser("run-single", help="Run single task")
     single_parser.add_argument("--task", required=True, help="Task ID")
     single_parser.add_argument(
-        "--persona", default="beginner_no_finance", help="Persona ID"
-    )
-    single_parser.add_argument(
-        "--agent",
-        default="generic",
-        choices=["generic", "openai", "anthropic", "google"],
-        help="Agent SDK / model family",
-    )
-    single_parser.add_argument(
-        "--condition",
-        default="agent",
-        choices=CONDITION_NAMES,
-        help="Test condition (2x2 matrix cell)",
-    )
-    single_parser.add_argument(
-        "--docker", action="store_true", help="Use Docker sandbox"
-    )
-    single_parser.add_argument("--max-turns", type=int, default=5, help="Max turns")
-    single_parser.add_argument(
-        "--eval-model",
+        "--persona",
         default=None,
-        help="LLM model for GEval judge (OpenRouter format)",
+        help="Persona ID (omit to run all personas in parallel)",
     )
-    single_parser.add_argument(
-        "--simulator-model",
+    _add_common_args(single_parser)
+
+    # run-group command
+    group_parser = subparsers.add_parser(
+        "run-group", help="Run all tasks in a category group"
+    )
+    group_parser.add_argument(
+        "--group",
+        required=True,
+        choices=_LAYER2_GROUPS,
+        help="Task category/group to run",
+    )
+    group_parser.add_argument(
+        "--persona",
         default=None,
-        help="LLM model for student simulator (OpenRouter format)",
+        help="Single persona (omit for all)",
     )
-    single_parser.add_argument(
-        "--model",
+    _add_common_args(group_parser)
+
+    # run-layer2 command
+    layer2_parser = subparsers.add_parser("run-layer2", help="Run all Layer 2 tasks")
+    layer2_parser.add_argument(
+        "--persona",
         default=None,
-        help="Override agent model (OpenRouter format, e.g. 'openai/gpt-5.2')",
+        help="Single persona (omit for all)",
     )
-    single_parser.add_argument(
-        "--save-result",
-        action="store_true",
-        help="Save scores.md, trace.md, and agent_files/ to results/run-single/…",
-    )
+    _add_common_args(layer2_parser)
 
     # run-layer1 command
     layer1_parser = subparsers.add_parser(
@@ -1055,6 +1548,10 @@ def main():
         cmd_run(args)
     elif args.command == "run-single":
         cmd_run_single(args)
+    elif args.command == "run-group":
+        cmd_run_group(args)
+    elif args.command == "run-layer2":
+        cmd_run_layer2(args)
     elif args.command == "run-layer1":
         cmd_run_layer1(args)
     elif args.command == "list-tasks":

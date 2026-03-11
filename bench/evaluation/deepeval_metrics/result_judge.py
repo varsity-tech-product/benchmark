@@ -1,13 +1,12 @@
 """LLM-as-Judge for Quant Result quality (Phase 3).
 
 Evaluates the RESULT QUALITY of an agent's task execution by comparing
-against reference execution results (when available) and applying
-category-specific rubrics.
+against reference execution results (when available) and the task's
+expected_outcome acceptance criteria.
 
-Three sub-dimensions:
-    Numerical Accuracy (0.35): Are quantitative results close to reference?
-    Completeness      (0.35): Did agent produce all expected outputs?
-    Correctness       (0.30): Are outputs usable, runnable, and in expected format?
+Two sub-dimensions (numerical accuracy is handled by code_eval Layer C):
+    Completeness (0.55): Did agent produce all expected outputs?
+    Correctness  (0.45): Are outputs usable, runnable, and in expected format?
 
 Uses 5-point ordinal scale: {0.0, 0.25, 0.5, 0.75, 1.0}.
 """
@@ -25,93 +24,6 @@ try:
     DEEPEVAL_AVAILABLE = True
 except ImportError:
     DEEPEVAL_AVAILABLE = False
-
-
-# ──────────────────────────────────────────────────────────────
-# Category-specific rubrics for result evaluation
-# ──────────────────────────────────────────────────────────────
-_CATEGORY_RUBRICS = {
-    "data_analysis": (
-        "Focus on: (1) correct data loading and parsing (CSV read, date "
-        "parsing, dtype handling); (2) accurate statistical summaries "
-        "(describe, mean, std, percentiles, distribution shape); "
-        "(3) valid domain-specific observations (OHLCV column semantics, "
-        "missing-data patterns, return computation, volume anomalies); "
-        "(4) data quality checks (NaN detection, gap identification, "
-        "outlier flagging, calendar-aware gap vs feed-issue distinction); "
-        "(5) appropriate use of pandas operations (rolling, pct_change, "
-        "groupby, resample) with correct parameters."
-    ),
-    "strategy": (
-        "Focus on: (1) whether the agent guided a real research process "
-        "instead of jumping straight to a canned strategy; (2) whether a "
-        "clear hypothesis and rationale for the alpha were stated; (3) "
-        "whether the signal was formalized precisely enough to compute; "
-        "(4) whether signal quality was evaluated with appropriate research "
-        "metrics such as IC, decay, quantile spread, turnover, and a rough "
-        "PnL check; (5) whether failure modes, robustness, and limitations "
-        "were discussed honestly."
-    ),
-    "implementation": (
-        "Focus on: (1) code correctness (produces expected output matching reference — "
-        "for LEAN C# tasks, trades match ground-truth in timing and direction; for Python "
-        "tasks, numerical values match known references); (2) completeness (all specified "
-        "rules implemented: entry, exit, stop-loss, position sizing); (3) API usage "
-        "(correct use of LEAN C# API or pandas/numpy as appropriate); (4) execution "
-        "(backtest or script runs to completion and produces valid output); (5) "
-        "interpretation (agent explains results meaningfully)."
-    ),
-    "backtest": (
-        "Focus on: (1) correct interpretation of backtest metrics "
-        "(Sharpe ratio magnitude and sign, max drawdown severity, "
-        "win rate vs profit factor relationship); (2) understanding of "
-        "statistical significance (sample size, regime dependency, "
-        "look-ahead bias risks); (3) identification of potential "
-        "overfitting signals (excessive parameter tuning, in-sample "
-        "vs out-of-sample gap); (4) valid comparison reasoning when "
-        "multiple strategies or parameter sets are evaluated; "
-        "(5) actionable interpretation (what the metrics imply for "
-        "real deployment feasibility)."
-    ),
-    "debug": (
-        "Focus on: (1) correct identification of the root cause, not "
-        "just surface symptoms (e.g., off-by-one in index vs wrong "
-        "formula); (2) targeted fix that addresses the underlying "
-        "issue without introducing new problems; (3) verification "
-        "that the fix restores correct behavior with concrete evidence "
-        "(before/after output comparison); (4) explanation of why the "
-        "original code failed (the mechanism, not just 'it was wrong'); "
-        "(5) defensive checks or best practices suggested to prevent "
-        "similar bugs."
-    ),
-    "end_to_end": (
-        "Focus on: (1) complete pipeline coverage from data ingestion "
-        "through indicators, signal generation, backtesting, to "
-        "performance analysis; (2) correct integration between pipeline "
-        "stages (data flows, column dependencies, date alignment); "
-        "(3) production of all required artifacts (runnable script, "
-        "performance metrics, equity curve or signal chart); "
-        "(4) coherent interpretation of final results connecting "
-        "strategy logic to observed performance; (5) iterative "
-        "refinement evidence (parameter tuning, comparing variants, "
-        "or suggesting improvements based on results)."
-    ),
-    "adversarial": (
-        "Focus on: (1) factual accuracy of financial/quantitative "
-        "concepts presented; (2) appropriate recognition of limitations, "
-        "risks, or ethical concerns in the scenario; (3) refusal to "
-        "provide harmful, misleading, or overconfident advice where "
-        "applicable; (4) nuanced explanation that addresses the "
-        "student's potential misconception without being dismissive; "
-        "(5) educational redirection toward sound practices when "
-        "the student's premise is flawed."
-    ),
-}
-
-
-def _get_category_rubric_text(category: str) -> str:
-    """Get a detailed category-specific rubric for result evaluation."""
-    return _CATEGORY_RUBRICS.get(category, _CATEGORY_RUBRICS["adversarial"])
 
 
 # ──────────────────────────────────────────────────────────────
@@ -143,8 +55,10 @@ def _extract_agent_key_outputs(tool_logs: list) -> str:
         if not log.result:
             continue
 
-        # Truncate long outputs but keep enough for evaluation
-        result_preview = str(log.result)[:400]
+        # Keep enough per-result for the judge to see key metrics.
+        # Most structured tool outputs (run_backtest ~800, evaluate_signal
+        # ~770, compute_statistics ~1500) fit within 1500 chars.
+        result_preview = str(log.result)[:1500]
         status = "OK" if log.success else "FAIL"
         key_outputs.append(f"  {log.name} [{status}]: {result_preview}")
 
@@ -161,10 +75,11 @@ def _extract_agent_summary(conversation: list) -> str:
 
     # Use last 3 messages as the summary (most relevant to final result)
     recent = assistant_msgs[-3:]
+    # Dynamic budget: 6000 chars total, split evenly across messages
+    per_msg_limit = 6000 // len(recent)
     summary_parts = []
     for msg in recent:
-        # Truncate each message
-        text = str(msg)[:500]
+        text = str(msg)[:per_msg_limit]
         summary_parts.append(text)
 
     return "\n---\n".join(summary_parts)
@@ -196,17 +111,15 @@ def _build_result_judge_prompt(
     expected_outcome: str | None = None,
 ) -> str:
     """Build the result quality evaluation prompt."""
-    category_rubric = _get_category_rubric_text(category)
 
     header = """You are evaluating the RESULT QUALITY of an AI tutoring agent's task execution.
 
 SCORING SCALE: Use ONLY these values: {0.0, 0.25, 0.5, 0.75, 1.0}.
-When in doubt between two levels, select the LOWER score."""
+When in doubt between two levels, select the score that best reflects the evidence."""
 
     task_section = f"""
 TASK: {task_description}
-CATEGORY: {category}
-CATEGORY-SPECIFIC FOCUS: {category_rubric}"""
+CATEGORY: {category}"""
 
     if expected_outcome:
         task_section += f"""
@@ -214,9 +127,8 @@ CATEGORY-SPECIFIC FOCUS: {category_rubric}"""
 EXPECTED OUTCOME (acceptance criteria):
 {expected_outcome}
 
-Use the EXPECTED OUTCOME to evaluate completeness: the agent should have
-addressed all items listed above. Items not mentioned in EXPECTED OUTCOME
-should not be penalized if missing."""
+Evaluate the agent's outputs against the EXPECTED OUTCOME above.
+Items not mentioned in EXPECTED OUTCOME should not be penalized if missing."""
 
     # Reference section
     ref_section = ""
@@ -249,22 +161,38 @@ AGENT RESULT:
 - Key tool outputs:
 {agent_key_outputs}
 - Agent's explanation (summary):
-{agent_summary[:800]}"""
+{agent_summary}"""
 
-    # Dimensions
+    # Evaluation guidelines (reduce systematic LLM mis-judgments)
+    guidelines = """
+IMPORTANT EVALUATION GUIDELINES:
+1. SUBSET VARIATION IS EXPECTED: The same metric computed over different
+   time periods, data subsets, parameter choices, or model specifications
+   will naturally produce different values. This is NOT inconsistency.
+   Only flag contradictions when identical inputs yield conflicting outputs.
+2. SEPARATE CORRECTNESS FROM QUALITY: A correctly implemented analysis
+   may produce unfavorable results (poor strategy returns, weak model fit,
+   insignificant test statistics). Judge whether the implementation is
+   methodologically sound and executes without errors — not whether the
+   results are impressive or match expectations.
+3. ACCEPT ALTERNATIVE METHODS: There are often multiple valid approaches
+   to the same analytical task. If the agent uses a different method than
+   what you might expect but arrives at defensible results, this is not
+   an error. Evaluate whether the chosen approach is reasonable for the
+   stated objective.
+4. INTERMEDIATE OUTPUT IS NORMAL: Exploratory analysis, debugging output,
+   and iterative refinement are part of a sound analytical workflow.
+   Do not penalize intermediate or superseded results as long as the
+   final output is coherent.
+"""
+
+    # Dimensions — numerical accuracy is handled separately by programmatic
+    # code_eval (Layer C), so the judge focuses on completeness + correctness.
     if reference:
         dimensions = """
-EVALUATE these THREE dimensions:
+EVALUATE these TWO dimensions:
 
-1. NUMERICAL ACCURACY (0.0-1.0):
-   Compare the agent's quantitative outputs against the reference.
-   - 1.0:  Results match reference closely (within ~5% for numerical values)
-   - 0.75: Results mostly correct, minor deviations (5-15%)
-   - 0.5:  Some results correct, some significantly off (15-30%)
-   - 0.25: Most results substantially different from reference
-   - 0.0:  No correct numerical results, or no results produced
-
-2. COMPLETENESS (0.0-1.0):
+1. COMPLETENESS (0.0-1.0):
    Did the agent produce ALL expected outputs compared to the reference?
    - 1.0:  All reference outputs present (files, metrics, visualizations)
    - 0.75: Most outputs present, one minor item missing
@@ -272,7 +200,7 @@ EVALUATE these THREE dimensions:
    - 0.25: Only partial outputs, several key items missing
    - 0.0:  No meaningful outputs produced
 
-3. CORRECTNESS (0.0-1.0):
+2. CORRECTNESS (0.0-1.0):
    Are the outputs usable and in the expected format?
    - 1.0:  All outputs are runnable/usable, formats match expectations, results are actionable
    - 0.75: Outputs mostly usable, minor format issues (e.g. missing column headers, unlabeled values)
@@ -281,21 +209,13 @@ EVALUATE these THREE dimensions:
    - 0.0:  Outputs are entirely unusable or missing
 
 Return ONLY a JSON object (no markdown, no extra text):
-{"numerical_accuracy": <float>, "completeness": <float>, "correctness": <float>, "reason": "<brief explanation>"}"""
+{"completeness": <float>, "correctness": <float>, "reason": "<brief explanation>"}"""
     else:
         # No reference — evaluate on standalone merit
         dimensions = """
-EVALUATE these THREE dimensions (no reference baseline available):
+EVALUATE these TWO dimensions (no reference baseline available):
 
-1. NUMERICAL ACCURACY (0.0-1.0):
-   Do the agent's quantitative outputs appear reasonable and internally consistent?
-   - 1.0:  All numbers are plausible for financial data and internally consistent
-   - 0.75: Most numbers reasonable, minor inconsistencies
-   - 0.5:  Some numbers seem off or inconsistent
-   - 0.25: Several implausible or contradictory values
-   - 0.0:  No numerical results, or clearly wrong values
-
-2. COMPLETENESS (0.0-1.0):
+1. COMPLETENESS (0.0-1.0):
    Given the task requirements, did the agent produce all expected outputs?
    - 1.0:  Task fully addressed — all requested outputs present
    - 0.75: Most requirements met, one minor item missing
@@ -303,7 +223,7 @@ EVALUATE these THREE dimensions (no reference baseline available):
    - 0.25: Only partial work completed
    - 0.0:  Task barely attempted
 
-3. CORRECTNESS (0.0-1.0):
+2. CORRECTNESS (0.0-1.0):
    Are the outputs usable and in the expected format?
    - 1.0:  All outputs are runnable/usable, formats match expectations, results are actionable
    - 0.75: Outputs mostly usable, minor format issues (e.g. missing column headers, unlabeled values)
@@ -312,9 +232,36 @@ EVALUATE these THREE dimensions (no reference baseline available):
    - 0.0:  Outputs are entirely unusable or missing
 
 Return ONLY a JSON object (no markdown, no extra text):
-{"numerical_accuracy": <float>, "completeness": <float>, "correctness": <float>, "reason": "<brief explanation>"}"""
+{"completeness": <float>, "correctness": <float>, "reason": "<brief explanation>"}"""
 
-    return header + task_section + ref_section + agent_section + dimensions
+    prompt = (
+        header + task_section + ref_section + agent_section + guidelines + dimensions
+    )
+
+    # Safety cap: if prompt exceeds budget, trim agent_key_outputs
+    _TOTAL_PROMPT_CAP = 40000
+    if len(prompt) > _TOTAL_PROMPT_CAP:
+        overshoot = len(prompt) - _TOTAL_PROMPT_CAP
+        trimmed_outputs = agent_key_outputs[
+            : max(200, len(agent_key_outputs) - overshoot)
+        ]
+        agent_section_trimmed = f"""
+AGENT RESULT:
+- Files produced: {agent_files_str}
+- Key tool outputs (trimmed):
+{trimmed_outputs}
+- Agent's explanation (summary):
+{agent_summary}"""
+        prompt = (
+            header
+            + task_section
+            + ref_section
+            + agent_section_trimmed
+            + guidelines
+            + dimensions
+        )
+
+    return prompt
 
 
 # ──────────────────────────────────────────────────────────────
@@ -356,9 +303,8 @@ def _clamp_ordinal(val, default=0.5) -> float:
 # ──────────────────────────────────────────────────────────────
 
 _SUB_WEIGHTS = {
-    "numerical_accuracy": 0.35,
-    "completeness": 0.35,
-    "correctness": 0.30,
+    "completeness": 0.55,
+    "correctness": 0.45,
 }
 
 
@@ -439,7 +385,9 @@ async def async_evaluate_result_quality(
     async def _call_single_model(m):
         model_obj = resolve_deepeval_model(m)
         if isinstance(model_obj, str):
-            model_obj = GPTModel(model=model_obj)
+            from config.pricing import get_deepeval_cost_kwargs
+
+            model_obj = GPTModel(model=model_obj, **get_deepeval_cost_kwargs(model_obj))
         response_text, call_cost = await model_obj.a_generate(prompt)
         parsed = _extract_json_from_response(response_text)
         parsed["_eval_cost"] = float(call_cost) if call_cost else 0.0

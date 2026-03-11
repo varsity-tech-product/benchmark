@@ -6,19 +6,16 @@ import sys
 from collections import Counter
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _data_source_check import verify_data_source
 from _implementation_check import (
-    collect_artifact_text,
     check_csharp_patterns,
+    collect_artifact_text,
     collect_lean_results,
     compute_behavioral_score,
-    compute_trade_log_score,
     has_any,
     has_regex,
     load_agent_trades,
-    load_reference_trades,
-    match_trades,
 )
-from _data_source_check import verify_data_source
 
 
 def evaluate(
@@ -55,7 +52,9 @@ def evaluate(
     lean_results = collect_lean_results(workspace_path)
     if lean_results is not None:
         results["backtest_completed"] = True
-    elif has_any(artifact_text, ["algorithm completed", "total trades", "backtest complete"]):
+    elif has_any(
+        artifact_text, ["algorithm completed", "total trades", "backtest complete"]
+    ):
         results["backtest_completed"] = True
 
     # ── Trade log ──
@@ -74,36 +73,54 @@ def evaluate(
     expected_patterns = ["correlation", "zscore"]
     cs_matches = check_csharp_patterns(workspace_path, expected_patterns)
     has_corr = cs_matches.get("correlation", False) or has_regex(
-        artifact_text, [r"\bcorrelat(?:ion|ed)\b", r"\bpearson\b", r"\bcov(?:ariance)?\b"]
+        artifact_text,
+        [r"\bcorrelat(?:ion|ed)\b", r"\bpearson\b", r"\bcov(?:ariance)?\b"],
     )
     has_zscore = cs_matches.get("zscore", False) or has_regex(
-        artifact_text, [r"\bz.?score\b", r"\bspread\b.*\bstd\b", r"\bstandard.?deviation\b"]
+        artifact_text,
+        [r"\bz.?score\b", r"\bspread\b.*\bstd\b", r"\bstandard.?deviation\b"],
     )
     results["code_patterns"] = has_corr and has_zscore
 
     # ── Candidate pairs file usage ──
     # Check if the agent loaded the provided candidate pairs file
-    if has_any(artifact_text, [
-        "I05_candidate_pairs", "candidate_pairs.json", "candidate_pairs",
-    ]):
+    if has_any(
+        artifact_text,
+        [
+            "I05_candidate_pairs",
+            "candidate_pairs.json",
+            "candidate_pairs",
+        ],
+    ):
         results["candidate_pairs_used"] = True
 
     # ── Pair selection present ──
     # Accept either (a) regex evidence of pair selection logic OR
     # (b) agent loading the candidate pairs file
-    if results["candidate_pairs_used"] or has_regex(artifact_text, [
-        r"pair.?select", r"cointegrat", r"spread\s*=",
-        r"select.*pair", r"rank.*correlat", r"correlat.*rank",
-    ]):
+    if results["candidate_pairs_used"] or has_regex(
+        artifact_text,
+        [
+            r"pair.?select",
+            r"cointegrat",
+            r"spread\s*=",
+            r"select.*pair",
+            r"rank.*correlat",
+            r"correlat.*rank",
+        ],
+    ):
         results["pair_selection_present"] = True
 
     # ── Multi-leg positions ──
-    if has_regex(artifact_text, [
-        r"(?:long|buy)\b.*\b(?:short|sell)",
-        r"leg\s*[12ab]", r"hedge.?ratio",
-        r"setholdings.*setholdings",
-        r"marketorder.*marketorder",
-    ]):
+    if has_regex(
+        artifact_text,
+        [
+            r"(?:long|buy)\b.*\b(?:short|sell)",
+            r"leg\s*[12ab]",
+            r"hedge.?ratio",
+            r"setholdings.*setholdings",
+            r"marketorder.*marketorder",
+        ],
+    ):
         results["multi_leg_positions"] = True
     if agent_trades:
         entry_times = [t.get("entry_time", "") for t in agent_trades]
@@ -112,23 +129,58 @@ def evaluate(
             results["multi_leg_positions"] = True
 
     # ── Exposure capped ──
-    if has_regex(artifact_text, [
-        r"max.?exposure", r"exposure.?limit", r"position.?limit",
-        r"max.?position", r"risk.?limit", r"leverage.?cap",
-        r"setholdings\s*\(.*0\.\d",
-    ]):
+    if has_regex(
+        artifact_text,
+        [
+            r"max.?exposure",
+            r"exposure.?limit",
+            r"position.?limit",
+            r"max.?position",
+            r"risk.?limit",
+            r"leverage.?cap",
+            r"setholdings\s*\(.*0\.\d",
+        ],
+    ):
         results["exposure_capped"] = True
 
     # ── Scoring ──
     _checklist = [
-        {"item": "backtest_completed",      "weight": 0.05, "passed": results["backtest_completed"]},
-        {"item": "trade_log_produced",      "weight": 0.05, "passed": results["trade_log_produced"]},
-        {"item": "behavioral_score",        "weight": 0.50, "score": behavioral.composite_score},
-        {"item": "code_patterns",           "weight": 0.05, "passed": results["code_patterns"]},
-        {"item": "candidate_pairs_used",    "weight": 0.05, "passed": results["candidate_pairs_used"]},
-        {"item": "pair_selection_present",  "weight": 0.05, "passed": results["pair_selection_present"]},
-        {"item": "multi_leg_positions",     "weight": 0.05, "passed": results["multi_leg_positions"]},
-        {"item": "exposure_capped",         "weight": 0.05, "passed": results["exposure_capped"]},
+        {
+            "item": "backtest_completed",
+            "weight": 0.05,
+            "passed": results["backtest_completed"],
+        },
+        {
+            "item": "trade_log_produced",
+            "weight": 0.05,
+            "passed": results["trade_log_produced"],
+        },
+        {
+            "item": "behavioral_score",
+            "weight": 0.65,
+            "score": behavioral.composite_score,
+        },
+        {"item": "code_patterns", "weight": 0.05, "passed": results["code_patterns"]},
+        {
+            "item": "candidate_pairs_used",
+            "weight": 0.05,
+            "passed": results["candidate_pairs_used"],
+        },
+        {
+            "item": "pair_selection_present",
+            "weight": 0.05,
+            "passed": results["pair_selection_present"],
+        },
+        {
+            "item": "multi_leg_positions",
+            "weight": 0.05,
+            "passed": results["multi_leg_positions"],
+        },
+        {
+            "item": "exposure_capped",
+            "weight": 0.05,
+            "passed": results["exposure_capped"],
+        },
     ]
     score = sum(
         c["weight"] * c.get("score", 1.0 if c.get("passed") else 0.0)

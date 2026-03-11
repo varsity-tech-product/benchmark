@@ -157,6 +157,186 @@ if DEEPEVAL_AVAILABLE:
 
 
 # ──────────────────────────────────────────────────────────────
+# Monkey-patch: trimAndLoadJson — preserve raw output on failure
+# ──────────────────────────────────────────────────────────────
+# DeepEval's trimAndLoadJson raises ValueError on invalid JSON and
+# discards the raw LLM response.  This patch saves the raw text on
+# the metric object so our fallback path can attempt extraction.
+
+_TRIM_PATCHED = False
+
+
+def _patch_trim_and_load_json():
+    """Patch trimAndLoadJson to save raw response on the metric before raising."""
+    global _TRIM_PATCHED
+    if _TRIM_PATCHED:
+        return
+    try:
+        import deepeval.metrics.conversational_g_eval.conversational_g_eval as _cge
+        import deepeval.metrics.utils as _du
+    except ImportError:
+        return
+
+    _orig = _du.trimAndLoadJson
+
+    def _patched(input_string, metric=None):
+        try:
+            return _orig(input_string, metric)
+        except ValueError:
+            if metric is not None:
+                metric._raw_failed_response = input_string
+            raise
+
+    _du.trimAndLoadJson = _patched
+    _cge.trimAndLoadJson = _patched
+    _TRIM_PATCHED = True
+
+
+if DEEPEVAL_AVAILABLE:
+    _patch_trim_and_load_json()
+
+
+# ──────────────────────────────────────────────────────────────
+# Fallback helpers for non-JSON eval LLM output
+# ──────────────────────────────────────────────────────────────
+
+import re as _re
+
+
+def _extract_score_from_prose(raw_text: str):
+    """Try to extract a score from non-JSON eval LLM output.
+
+    Returns (score, reason) tuple on success, or None on failure.
+    Score is on the 0-10 scale (not normalized).
+    """
+    if not raw_text:
+        return None
+    text = raw_text.strip()
+
+    # Strategy 1: Partial JSON — find "score" key even in broken JSON
+    score_m = _re.search(r'"score"\s*:\s*(\d+(?:\.\d+)?)', text)
+    reason_m = _re.search(r'"reason"\s*:\s*"([^"]{10,})', text)
+    if score_m:
+        score = float(score_m.group(1))
+        reason = reason_m.group(1) if reason_m else "Extracted from malformed JSON"
+        if 0 <= score <= 10:
+            return score, reason
+
+    # Strategy 2: Natural language score patterns
+    nl_patterns = [
+        r"(?:score|rating|rate)\s*(?::|is|=)\s*(\d+)",
+        r"(\d+)\s*(?:out of|/)\s*10",
+        r"(?:give|assign|award)\s+(?:a\s+)?(\d+)",
+    ]
+    for pat in nl_patterns:
+        m = _re.search(pat, text, _re.IGNORECASE)
+        if m:
+            score = float(m.group(1))
+            if 0 <= score <= 10:
+                return score, f"Extracted from prose: {text[:200]}"
+
+    return None
+
+
+def _extract_json_from_response(text: str) -> dict:
+    """Extract JSON from LLM response. Returns {} on failure (never raises)."""
+    text = text.strip()
+    if text.startswith("```"):
+        lines = text.split("\n")
+        lines = [ln for ln in lines if not ln.strip().startswith("```")]
+        text = "\n".join(lines).strip()
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        m = _re.search(r"\{[^{}]*\}", text, _re.DOTALL)
+        if m:
+            try:
+                return json.loads(m.group())
+            except json.JSONDecodeError:
+                pass
+    return {}
+
+
+async def _fallback_direct_eval(metric, tc, model_name: str):
+    """Fallback: reconstruct the exact ConversationalGEval Phase 2 prompt
+    and send via ``model.a_generate()`` with our robust JSON parser.
+
+    When Phase 2 fails at ``trimAndLoadJson``, Phase 1 has already
+    completed — ``metric.evaluation_steps`` is populated.  We reconstruct
+    the same prompt that ConversationalGEval would have sent, but route
+    it through ``a_generate()`` (returns text) instead of
+    ``a_generate_raw_response()`` (returns ChatCompletion), then parse
+    with our robust ``_extract_json_from_response`` (returns {} on
+    failure, never raises).
+
+    Uses the same eval model as the primary path for scoring consistency.
+
+    Returns (score, reason) where score is on 0-10 scale.
+    """
+    from config.pricing import get_deepeval_cost_kwargs
+    from deepeval.models.llms.openai_model import GPTModel as _GPTModel
+
+    # ── Reconstruct the Phase 2 prompt (same as ConversationalGEval) ──
+    try:
+        from deepeval.metrics.conversational_g_eval.template import (
+            ConversationalGEvalTemplate,
+        )
+        from deepeval.metrics.utils import convert_turn_to_dict
+        from deepeval.test_case import TurnParams
+
+        eval_params = getattr(
+            metric,
+            "evaluation_params",
+            [TurnParams.CONTENT, TurnParams.ROLE],
+        )
+
+        # evaluation_steps from Phase 1 (already completed)
+        if hasattr(metric, "evaluation_steps") and metric.evaluation_steps:
+            steps_str = metric.number_evaluation_steps()
+        else:
+            # Phase 1 also failed — use criteria directly as step
+            steps_str = f"1. {metric.criteria[:500]}"
+
+        turns_dicts = [convert_turn_to_dict(turn, eval_params) for turn in tc.turns]
+
+        # Parameters string: "Content and Role"
+        from deepeval.metrics.g_eval.utils import (
+            construct_conversational_g_eval_turn_params_string,
+        )
+
+        params_str = construct_conversational_g_eval_turn_params_string(eval_params)
+
+        prompt = ConversationalGEvalTemplate.generate_evaluation_results(
+            evaluation_steps=steps_str,
+            test_case_content="",  # empty for Content+Role params
+            turns=turns_dicts,
+            parameters=params_str,
+        )
+    except Exception:
+        # If template reconstruction fails, use simplified prompt
+        turns_text = "\n".join(f"[{t.role}]: {t.content[:500]}" for t in tc.turns)
+        prompt = (
+            f"Evaluate this tutoring conversation on: {metric.name}\n\n"
+            f"Criteria:\n{metric.criteria}\n\n"
+            f"Conversation:\n{turns_text}\n\n"
+            f"Return ONLY a JSON: "
+            f'{{"score": <0-10>, "reason": "..."}}'
+        )
+
+    # ── Call same eval model via a_generate (text return, no logprobs) ──
+    model_obj = resolve_deepeval_model(model_name)
+    if isinstance(model_obj, str):
+        model_obj = _GPTModel(model=model_obj, **get_deepeval_cost_kwargs(model_obj))
+
+    response_text, cost = await model_obj.a_generate(prompt)
+    parsed = _extract_json_from_response(response_text)
+
+    score = parsed.get("score", 5)
+    reason = parsed.get("reason", "Fallback evaluation")
+    return float(score), reason
+
+
+# ──────────────────────────────────────────────────────────────
 # 7 Dimensions of the tutoring rubric (design doc §6.2)
 # ──────────────────────────────────────────────────────────────
 
@@ -433,6 +613,11 @@ def create_tutor_geval_metrics(
 
 from evaluation.deepeval_metrics.async_utils import run_async as _run_async
 
+# Dimensions evaluated against the enriched conversation (with tool-activity
+# summaries).  D4/D5/D7 need to see tool outputs to verify domain accuracy,
+# code quality, and safety-relevant tool behaviour.
+_ENRICHED_DIMS = {"D4_domain_accuracy", "D5_code_teaching", "D7_safety_boundaries"}
+
 
 def evaluate_tutor_dimensions(
     conversation_turns: list[dict],
@@ -446,11 +631,25 @@ def evaluate_tutor_dimensions(
     category: Optional[str] = None,
     requires_code: bool = False,
     abort_event: Optional[threading.Event] = None,
+    enriched_conversation_turns: Optional[list[dict]] = None,
 ) -> dict[str, float]:
     """Evaluate tutoring dimensions with shuffled judge runs.
 
     Design doc §6.2: Judge runs 3 times with shuffled dimension order,
     scores averaged for stability (§4.1: "3x shuffled prompts").
+
+    Two-tier conversation input:
+      - **Teaching-quality dimensions** (D1, D2, D3, D6) are evaluated
+        against the *original* ``conversation_turns`` so that tool-activity
+        text does not interfere with assessment of the tutor's own language,
+        scaffolding, and empathy.
+      - **Competence dimensions** (D4, D5, D7) are evaluated against
+        ``enriched_conversation_turns`` (which appends [Tool Activity]
+        summaries to assistant turns) so the judge can verify domain
+        accuracy and code quality against actual tool outputs.
+
+    When ``enriched_conversation_turns`` is None, all dimensions fall back
+    to ``conversation_turns`` (backward-compatible).
 
     Multi-model support: when ``model`` is a list of N model names, EACH
     model independently performs ``num_judge_runs`` shuffled runs across
@@ -464,7 +663,10 @@ def evaluate_tutor_dimensions(
     (no API calls). Weights are stored in CATEGORY_DIMENSION_WEIGHTS.
 
     Args:
-        conversation_turns: List of {"role": str, "content": str} dicts.
+        conversation_turns: Original conversation (no tool summaries).
+        enriched_conversation_turns: Conversation with [Tool Activity]
+            summaries appended to assistant turns.  Used for D4/D5/D7.
+            Falls back to conversation_turns when None.
         persona_level: Student persona level ('beginner', 'intermediate', 'advanced').
         scenario: Description of the tutoring scenario.
         expected_outcome: Expected learning outcome.
@@ -530,21 +732,43 @@ def evaluate_tutor_dimensions(
     import copy
     import time as _time
 
-    # Build base test case
+    # ── Build base test cases ──
+    # Two-tier: original conversation for teaching-quality dims (D1/D2/D3/D6),
+    # enriched conversation for competence dims (D4/D5/D7).
     if conversational_test_case is not None:
-        base_test_case = conversational_test_case
+        base_tc_original = conversational_test_case
+        base_tc_enriched = conversational_test_case  # caller pre-built
     else:
-        turns = [Turn(role=t["role"], content=t["content"]) for t in conversation_turns]
-        base_test_case = ConversationalTestCase(
-            turns=turns,
+        _tc_kwargs = dict(
             scenario=scenario,
             expected_outcome=expected_outcome,
             user_description=user_description,
         )
+        turns_original = [
+            Turn(role=t["role"], content=t["content"]) for t in conversation_turns
+        ]
+        base_tc_original = ConversationalTestCase(
+            turns=turns_original,
+            **_tc_kwargs,
+        )
+        # Enriched version — falls back to original when not provided.
+        _enriched_src = enriched_conversation_turns or conversation_turns
+        if _enriched_src is conversation_turns:
+            base_tc_enriched = base_tc_original
+        else:
+            turns_enriched = [
+                Turn(role=t["role"], content=t["content"]) for t in _enriched_src
+            ]
+            base_tc_enriched = ConversationalTestCase(
+                turns=turns_enriched,
+                **_tc_kwargs,
+            )
 
     # ── Build ALL metric instances (models × runs × dims) ──
     # Each metric gets its own deep-copied test case to avoid state
     # conflicts when DeepEval's a_measure() mutates internal fields.
+    # Dimensions in _ENRICHED_DIMS get the enriched test case; others
+    # get the original (no tool-activity summaries).
     all_metrics = []
     all_test_cases = []
     # task_keys: (model_name, run_idx, dim_name) for each metric
@@ -568,7 +792,13 @@ def evaluate_tutor_dimensions(
             )
             for metric in metrics:
                 all_metrics.append(metric)
-                all_test_cases.append(copy.deepcopy(base_test_case))
+                # Route: enriched test case for D4/D5/D7, original for rest
+                base = (
+                    base_tc_enriched
+                    if metric.name in _ENRICHED_DIMS
+                    else base_tc_original
+                )
+                all_test_cases.append(copy.deepcopy(base))
                 task_keys.append((mname, run_idx, metric.name))
 
     # ── Run ALL judge calls in parallel with concurrency limit ──
@@ -580,26 +810,67 @@ def evaluate_tutor_dimensions(
 
     _abort = abort_event if abort_event is not None else threading.Event()
     _first_error: list[Exception] = []
+    _fallback_count = [0]  # mutable counter for nonlocal capture
 
     async def _run_all():
         sem = asyncio.Semaphore(_CONCURRENCY)
 
-        async def _guarded(metric, tc):
+        _MAX_RETRIES = 2
+
+        async def _guarded(metric, tc, model_name):
             if _abort.is_set():
                 return _ABORT_SENTINEL
             async with sem:
                 if _abort.is_set():
                     return _ABORT_SENTINEL
-                try:
-                    return await metric.a_measure(tc)
-                except Exception as e:
-                    _abort.set()
-                    if not _first_error:
-                        _first_error.append(e)
-                    return _ABORT_SENTINEL
+                last_exc = None
+                raw_text = None
+                for attempt in range(_MAX_RETRIES + 1):
+                    try:
+                        return await metric.a_measure(tc)
+                    except Exception as e:
+                        last_exc = e
+                        # Capture raw output saved by patched trimAndLoadJson
+                        if hasattr(metric, "_raw_failed_response"):
+                            raw_text = metric._raw_failed_response
+                            del metric._raw_failed_response
+                        if attempt < _MAX_RETRIES and "invalid JSON" in str(e):
+                            await asyncio.sleep(1)
+                            continue
+                        # ── Retries exhausted: try fallback ──
+                        # Layer 1: extract score from raw prose
+                        if raw_text:
+                            extracted = _extract_score_from_prose(raw_text)
+                            if extracted:
+                                score, reason = extracted
+                                metric.score = score / 10.0
+                                metric.reason = f"[FALLBACK-EXTRACT] {reason}"
+                                metric.evaluation_cost = 0.0
+                                _fallback_count[0] += 1
+                                return score / 10.0
+                        # Layer 2: direct GPTModel call with robust parser
+                        try:
+                            score, reason = await _fallback_direct_eval(
+                                metric, tc, model_name
+                            )
+                            metric.score = score / 10.0
+                            metric.reason = f"[FALLBACK-DIRECT] {reason}"
+                            metric.evaluation_cost = 0.0
+                            _fallback_count[0] += 1
+                            return score / 10.0
+                        except Exception:
+                            pass
+                        # All fallbacks failed — abort this evaluator
+                        _abort.set()
+                        if not _first_error:
+                            _first_error.append(last_exc)
+                        return _ABORT_SENTINEL
 
         return await asyncio.gather(
-            *[_guarded(m, tc) for m, tc in zip(all_metrics, all_test_cases)],
+            *[
+                _guarded(m, tc, mk[0])
+                for m, tc, mk in zip(all_metrics, all_test_cases, task_keys)
+            ],
             return_exceptions=True,
         )
 
@@ -613,7 +884,12 @@ def evaluate_tutor_dimensions(
             f"{aborted} aborted in {elapsed:.1f}s"
         )
     else:
-        print(f"    Completed {len(all_metrics)} judge calls in {elapsed:.1f}s")
+        fb = _fallback_count[0]
+        fb_msg = f" ({fb} via fallback)" if fb else ""
+        print(
+            f"    Completed {len(all_metrics)} judge calls in "
+            f"{elapsed:.1f}s{fb_msg}"
+        )
 
     # If any coroutine failed, propagate the error
     if _first_error:
@@ -664,6 +940,8 @@ def evaluate_tutor_dimensions(
 
     if multi_model:
         final_scores["_per_model"] = per_model
+
+    final_scores["_fallback_count"] = _fallback_count[0]
 
     return final_scores
 

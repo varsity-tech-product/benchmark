@@ -4,7 +4,7 @@
   "difficulty": "hard",
   "category": "implementation",
   "task_type": "multi_turn",
-  "description": "Guide a student to implement a multi-timeframe strategy on LEAN that uses 4h bars for trend direction and 1h bars for precise entry timing, applied across ~20 liquid crypto futures. The student must learn to use LEAN's Consolidate() to build 4h bars from 1h data, manage per-symbol dual-timeframe indicator state, and ensure 4h indicators only update on 4h bar completion. Running this at scale across 20 symbols with 3 years of hourly data tests both correctness and performance.",
+  "description": "Guide a student to implement a multi-timeframe strategy on LEAN that uses 4h bars for trend direction and 1h bars for precise entry timing, applied across ~20 liquid crypto futures. The student must learn to use LEAN's Consolidate() to build 4h bars from 1h data, manage per-symbol dual-timeframe indicator state, and ensure 4h indicators only update on 4h bar completion.",
   "persona_ids": [
     "beginner_no_finance",
     "intermediate_developer",
@@ -30,7 +30,7 @@
       "lean_algorithm_guide.md",
       "moving_averages.md"
     ],
-    "sandbox_image": "quant-tutor-env:v2.0-lean",
+    "sandbox_image": "quant-tutor-env:v2.2-lean",
     "network_enabled": false
   },
   "ground_truth": {
@@ -45,6 +45,7 @@
     ],
     "expected_mcp_tools": [
       "shell_exec",
+      "file_read",
       "get_environment_info"
     ],
     "convenient_tools": [

@@ -6,19 +6,16 @@ import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _data_source_check import verify_data_source
 from _implementation_check import (
-    collect_artifact_text,
     check_csharp_patterns,
+    collect_artifact_text,
     collect_lean_results,
     compute_behavioral_score,
-    compute_trade_log_score,
     has_any,
     has_regex,
     load_agent_trades,
-    load_reference_trades,
-    match_trades,
 )
-from _data_source_check import verify_data_source
 
 
 def evaluate(
@@ -54,7 +51,9 @@ def evaluate(
     lean_results = collect_lean_results(workspace_path)
     if lean_results is not None:
         results["backtest_completed"] = True
-    elif has_any(artifact_text, ["algorithm completed", "total trades", "backtest complete"]):
+    elif has_any(
+        artifact_text, ["algorithm completed", "total trades", "backtest complete"]
+    ):
         results["backtest_completed"] = True
 
     # ── Trade log ──
@@ -74,10 +73,16 @@ def evaluate(
     cs_matches = check_csharp_patterns(workspace_path, expected_patterns)
     has_signal_weight = (
         cs_matches.get("signal", False) and cs_matches.get("weight", False)
-    ) or has_regex(artifact_text, [
-        r"signal.?weight", r"weight.?signal", r"composite.?score",
-        r"weighted.?sum", r"signal.?combin",
-    ])
+    ) or has_regex(
+        artifact_text,
+        [
+            r"signal.?weight",
+            r"weight.?signal",
+            r"composite.?score",
+            r"weighted.?sum",
+            r"signal.?combin",
+        ],
+    )
     has_funding = cs_matches.get("funding", False) or has_regex(
         artifact_text, [r"funding.?rate", r"funding.?fee", r"funding.?cost"]
     )
@@ -97,18 +102,27 @@ def evaluate(
             pass
 
     if not results["sweep_completed"]:
-        combo_matches = re.findall(r"combo|combination|config|parameter.?set", artifact_text)
+        combo_matches = re.findall(
+            r"combo|combination|config|parameter.?set", artifact_text
+        )
         if len(combo_matches) >= 10:
             results["sweep_completed"] = True
-        elif has_regex(artifact_text, [r"21\s*combo", r"21\s*config", r"sweep.*(?:complete|done|finish)"]):
+        elif has_regex(
+            artifact_text,
+            [r"21\s*combo", r"21\s*config", r"sweep.*(?:complete|done|finish)"],
+        ):
             results["sweep_completed"] = True
 
     # ── Top configs identified ──
-    if has_regex(artifact_text, [
-        r"(?:top|best|optimal)\s*(?:\d+\s*)?config",
-        r"(?:top|best|optimal)\s*(?:\d+\s*)?param",
-        r"ranked.*config", r"sort.*(?:sharpe|return|pnl)",
-    ]):
+    if has_regex(
+        artifact_text,
+        [
+            r"(?:top|best|optimal)\s*(?:\d+\s*)?config",
+            r"(?:top|best|optimal)\s*(?:\d+\s*)?param",
+            r"ranked.*config",
+            r"sort.*(?:sharpe|return|pnl)",
+        ],
+    ):
         results["top_configs_identified"] = True
     ranking_path = os.path.join(workspace_path, "results", "top_configs.json")
     if os.path.exists(ranking_path):
@@ -119,13 +133,37 @@ def evaluate(
 
     # ── Scoring ──
     _checklist = [
-        {"item": "backtest_completed",      "weight": 0.05, "passed": results["backtest_completed"]},
-        {"item": "trade_log_produced",      "weight": 0.05, "passed": results["trade_log_produced"]},
-        {"item": "behavioral_score",        "weight": 0.45, "score": behavioral.composite_score},
-        {"item": "code_patterns",           "weight": 0.05, "passed": results["code_patterns"]},
-        {"item": "sweep_completed",         "weight": 0.10, "passed": results["sweep_completed"]},
-        {"item": "top_configs_identified",  "weight": 0.05, "passed": results["top_configs_identified"]},
-        {"item": "funding_handled",         "weight": 0.05, "passed": results["funding_handled"]},
+        {
+            "item": "backtest_completed",
+            "weight": 0.05,
+            "passed": results["backtest_completed"],
+        },
+        {
+            "item": "trade_log_produced",
+            "weight": 0.05,
+            "passed": results["trade_log_produced"],
+        },
+        {
+            "item": "behavioral_score",
+            "weight": 0.65,
+            "score": behavioral.composite_score,
+        },
+        {"item": "code_patterns", "weight": 0.05, "passed": results["code_patterns"]},
+        {
+            "item": "sweep_completed",
+            "weight": 0.10,
+            "passed": results["sweep_completed"],
+        },
+        {
+            "item": "top_configs_identified",
+            "weight": 0.05,
+            "passed": results["top_configs_identified"],
+        },
+        {
+            "item": "funding_handled",
+            "weight": 0.05,
+            "passed": results["funding_handled"],
+        },
     ]
     score = sum(
         c["weight"] * c.get("score", 1.0 if c.get("passed") else 0.0)

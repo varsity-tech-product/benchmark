@@ -116,12 +116,26 @@ def count_keyword_groups(text: str, keyword_groups: list[list[str]]) -> int:
 
 
 def has_signal_definition(text: str) -> bool:
-    """Detect whether a formal signal definition exists in code/data artifacts."""
+    """Detect whether a formal signal definition exists in code/data artifacts.
+
+    Broadened to accept descriptive column names commonly used by agents
+    (e.g., 'close_gt_sma200', 'regime', 'crossover') in addition to
+    the canonical 'signal' column name.
+    """
     patterns = [
+        # Canonical: column literally named "signal"
         r"df\[[\"']signal[\"']\]\s*=",
         r"[a-z_][a-z0-9_]*\[[\"']signal[\"']\]\s*=",
+        # Canonical: known signal variable names
         r"\b(?:alpha_signal|trend_signal|reversion_signal|microstructure_signal|cross_asset_signal|composite_signal)\s*=",
+        # CSV header containing "signal"
         r"(?:^|,)\s*signal\s*(?:,|$)",
+        # Broad: any column with "signal" as substring
+        r"\[[\"'][a-z_]*signal[a-z_]*[\"']\]\s*=",
+        # Broad: comparison-derived columns (close_gt_sma, price_above_ma, etc.)
+        r"\[[\"'][a-z_]*(?:_gt_|_above_|_below_|_cross_)[a-z_]*[\"']\]\s*=",
+        # Broad: common signal-related column names
+        r"\[[\"'](?:regime|crossover|position|indicator|breakout)[\"']\]\s*=",
     ]
     return has_regex(text, patterns)
 

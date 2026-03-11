@@ -26,6 +26,7 @@ def evaluate(
         "sharpe_ratio_in_range": False,
         "strategy_uses_two_ma_windows": False,
         "backtest_produces_return": False,
+        "visualization_present": False,
         "score": 0.0,
     }
 
@@ -81,8 +82,15 @@ def evaluate(
             except (IOError, UnicodeDecodeError):
                 pass
 
+    # Check workspace for visualization artifacts
+    for fname in workspace_files:
+        if fname.endswith((".png", ".jpg", ".jpeg", ".svg")):
+            results["visualization_present"] = True
+            break
+
     # --- Source 2: Scan ALL tool logs (tool-name agnostic) ---
     if tool_logs:
+        _indicator_windows: set[int] = set()
         for log in tool_logs:
             # Check result values
             output = str(log.result or "")
@@ -96,21 +104,59 @@ def evaluate(
                     results["strategy_uses_two_ma_windows"] = True
                 _check_metrics_in_text(text, results)
 
+            # Detect MA windows from compute_indicator tool
+            if log.name == "compute_indicator":
+                indicator = str(log.args.get("indicator", "")).upper()
+                if indicator in ("SMA", "EMA"):
+                    params = log.args.get("params") or {}
+                    if isinstance(params, dict):
+                        window = params.get("window")
+                        if window is not None:
+                            _indicator_windows.add(int(window))
+
+            # Detect MA windows from run_backtest tool
+            if log.name == "run_backtest":
+                strategy = str(log.args.get("strategy", "")).lower()
+                if strategy == "ma_crossover":
+                    sp = log.args.get("strategy_params") or {}
+                    if (
+                        isinstance(sp, dict)
+                        and sp.get("short_window")
+                        and sp.get("long_window")
+                    ):
+                        results["strategy_uses_two_ma_windows"] = True
+
+            # Detect visualization from tool calls
+            if log.name == "plot_chart":
+                results["visualization_present"] = True
+            if log.name == "shell_exec":
+                cmd = str(log.args.get("command", ""))
+                if re.search(r"(?:matplotlib|plt\.savefig|\.plot\()", cmd):
+                    results["visualization_present"] = True
+
+        if len(_indicator_windows) >= 2:
+            results["strategy_uses_two_ma_windows"] = True
+
     _checklist = [
         {
             "item": "strategy_uses_two_ma_windows",
-            "weight": 0.30,
+            "weight": 0.25,
             "passed": results["strategy_uses_two_ma_windows"],
         },
         {
             "item": "sharpe_ratio_in_range",
-            "weight": 0.40,
+            "weight": 0.35,
             "passed": results["sharpe_ratio_in_range"],
         },
         {
             "item": "backtest_produces_return",
-            "weight": 0.30,
+            "weight": 0.25,
             "passed": results["backtest_produces_return"],
+        },
+        {
+            "item": "visualization_present",
+            "weight": 0.15,
+            "passed": results["visualization_present"],
         },
     ]
     score = sum(c["weight"] for c in _checklist if c["passed"])

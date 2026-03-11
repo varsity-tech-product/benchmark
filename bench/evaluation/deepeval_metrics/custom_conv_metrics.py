@@ -60,7 +60,9 @@ async def _call_llm(model, prompt: str) -> dict:
     """Call LLM via GPTModel and parse JSON response."""
     model_obj = resolve_deepeval_model(model)
     if isinstance(model_obj, str):
-        model_obj = GPTModel(model=model_obj)
+        from config.pricing import get_deepeval_cost_kwargs
+
+        model_obj = GPTModel(model=model_obj, **get_deepeval_cost_kwargs(model_obj))
     response_text, call_cost = await model_obj.a_generate(prompt)
     result = _extract_json_from_response(response_text)
     result["_eval_cost"] = float(call_cost) if call_cost else 0.0

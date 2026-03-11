@@ -73,9 +73,15 @@ def build_conversational_golden(
     if not DEEPEVAL_AVAILABLE:
         raise ImportError("deepeval is required. Install with: pip install deepeval")
 
+    # stop_conversation uses expected_outcome to decide when to end.
+    # For adversarial tasks, termination_criteria contains only positive
+    # conditions so the LLM checker can actually judge "complete".
+    stop_outcome = (
+        task.ground_truth.termination_criteria or task.ground_truth.expected_outcome
+    )
     return ConversationalGolden(
         scenario=build_scenario(task, persona.persona_id),
-        expected_outcome=task.ground_truth.expected_outcome,
+        expected_outcome=stop_outcome,
         user_description=build_user_description(persona),
     )
 

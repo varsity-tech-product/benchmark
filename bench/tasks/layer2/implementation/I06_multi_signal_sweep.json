@@ -4,7 +4,7 @@
   "difficulty": "hard",
   "category": "implementation",
   "task_type": "multi_turn",
-  "description": "Guide a student to implement a composite multi-signal strategy across the full Binance futures universe on LEAN, then run a systematic parameter sweep over signal weights. The student must implement three signal components per symbol, handle the asymmetry where only ~20 symbols have funding data, implement cross-sectional position sizing (not per-symbol independent sizing), and structure a sweep workflow that runs 21 backtests. This is the most complex I-series task, testing everything: multi-signal construction, universe-scale, data asymmetry, portfolio construction, and systematic optimization.",
+  "description": "Guide a student to implement a composite multi-signal strategy across the full Binance futures universe on LEAN, then run a systematic parameter sweep over signal weights. The student must implement three signal components per symbol, handle the asymmetry where only ~20 symbols have funding data, implement cross-sectional position sizing (not per-symbol independent sizing), and structure a sweep workflow that runs 21 backtests.",
   "persona_ids": [
     "beginner_no_finance",
     "intermediate_developer",
@@ -31,7 +31,7 @@
       "moving_averages.md",
       "risk_metrics.md"
     ],
-    "sandbox_image": "quant-tutor-env:v2.0-lean",
+    "sandbox_image": "quant-tutor-env:v2.2-lean",
     "network_enabled": false
   },
   "ground_truth": {
@@ -46,6 +46,7 @@
     ],
     "expected_mcp_tools": [
       "shell_exec",
+      "file_read",
       "get_environment_info"
     ],
     "convenient_tools": [

@@ -23,6 +23,7 @@ def evaluate(
     results = {
         "no_bare_code_dump": True,
         "code_provided": False,
+        "code_saved_to_file": False,
         "explanation_embedded": False,
         "limitations_noted": False,
         "score": 0.0,
@@ -39,6 +40,12 @@ def evaluate(
 
             # Detect code provision
             if log.name in ("file_write", "shell_exec"):
+                # Skip short shell_exec commands (<200 chars in args) —
+                # these are typically exploratory/validation commands
+                # (e.g. checking CSV columns), not substantive code delivery.
+                if log.name == "shell_exec" and len(str(log.args)) < 200:
+                    continue
+
                 code_keywords = [
                     "import ",
                     "def ",
@@ -127,22 +134,28 @@ def evaluate(
                 results["limitations_noted"] = True
                 break
 
-    # Also check workspace files for embedded comments/explanations
-    if workspace_path and (
-        not results["explanation_embedded"] or not results["limitations_noted"]
-    ):
+    # Also check workspace files for saved code / embedded comments / explanations
+    if workspace_path:
+        code_keywords_ws = ["import ", "def ", "class ", "pd.read", "numpy", "pandas"]
         try:
             for fname in os.listdir(workspace_path):
                 fpath = os.path.join(workspace_path, fname)
                 if os.path.isfile(fpath) and fname.endswith(".py"):
                     try:
                         with open(fpath, "r", errors="ignore") as f:
-                            content = f.read().lower()
+                            content = f.read()
+                        content_lower = content.lower()
+                        # Saved .py file with substantive code → code_saved + code_provided
+                        if len(content) >= 50 and any(
+                            kw in content_lower for kw in code_keywords_ws
+                        ):
+                            results["code_saved_to_file"] = True
+                            results["code_provided"] = True
                         if not results["explanation_embedded"]:
-                            if any(kw in content for kw in explanation_keywords):
+                            if any(kw in content_lower for kw in explanation_keywords):
                                 results["explanation_embedded"] = True
                         if not results["limitations_noted"]:
-                            if any(kw in content for kw in limitation_keywords):
+                            if any(kw in content_lower for kw in limitation_keywords):
                                 results["limitations_noted"] = True
                     except (IOError, UnicodeDecodeError):
                         pass
@@ -153,17 +166,22 @@ def evaluate(
     _checklist = [
         {
             "item": "no_bare_code_dump",
-            "weight": 0.40,
+            "weight": 0.35,
             "passed": results["no_bare_code_dump"],
         },
         {
             "item": "code_provided",
-            "weight": 0.25,
+            "weight": 0.20,
             "passed": results["code_provided"],
         },
         {
+            "item": "code_saved_to_file",
+            "weight": 0.15,
+            "passed": results["code_saved_to_file"],
+        },
+        {
             "item": "explanation_embedded",
-            "weight": 0.20,
+            "weight": 0.15,
             "passed": results["explanation_embedded"],
         },
         {

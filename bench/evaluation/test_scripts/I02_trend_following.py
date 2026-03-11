@@ -6,19 +6,16 @@ import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _data_source_check import verify_data_source
 from _implementation_check import (
-    collect_artifact_text,
     check_csharp_patterns,
+    collect_artifact_text,
     collect_lean_results,
     compute_behavioral_score,
-    compute_trade_log_score,
     has_any,
     has_regex,
     load_agent_trades,
-    load_reference_trades,
-    match_trades,
 )
-from _data_source_check import verify_data_source
 
 
 def evaluate(
@@ -52,7 +49,9 @@ def evaluate(
     lean_results = collect_lean_results(workspace_path)
     if lean_results is not None:
         results["backtest_completed"] = True
-    elif has_any(artifact_text, ["algorithm completed", "total trades", "backtest complete"]):
+    elif has_any(
+        artifact_text, ["algorithm completed", "total trades", "backtest complete"]
+    ):
         results["backtest_completed"] = True
 
     # ── Trade log ──
@@ -93,12 +92,32 @@ def evaluate(
 
     # ── Scoring ──
     _checklist = [
-        {"item": "backtest_completed",      "weight": 0.05, "passed": results["backtest_completed"]},
-        {"item": "trade_log_produced",      "weight": 0.05, "passed": results["trade_log_produced"]},
-        {"item": "behavioral_score",        "weight": 0.55, "score": behavioral.composite_score},
-        {"item": "code_patterns",           "weight": 0.05, "passed": results["code_patterns"]},
-        {"item": "universe_coverage",       "weight": 0.15, "passed": results["universe_coverage"]},
-        {"item": "universe_summary_produced", "weight": 0.05, "passed": results["universe_summary_produced"]},
+        {
+            "item": "backtest_completed",
+            "weight": 0.05,
+            "passed": results["backtest_completed"],
+        },
+        {
+            "item": "trade_log_produced",
+            "weight": 0.05,
+            "passed": results["trade_log_produced"],
+        },
+        {
+            "item": "behavioral_score",
+            "weight": 0.65,
+            "score": behavioral.composite_score,
+        },
+        {"item": "code_patterns", "weight": 0.05, "passed": results["code_patterns"]},
+        {
+            "item": "universe_coverage",
+            "weight": 0.15,
+            "passed": results["universe_coverage"],
+        },
+        {
+            "item": "universe_summary_produced",
+            "weight": 0.05,
+            "passed": results["universe_summary_produced"],
+        },
     ]
     score = sum(
         c["weight"] * c.get("score", 1.0 if c.get("passed") else 0.0)

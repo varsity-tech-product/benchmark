@@ -63,6 +63,96 @@ class EvalAbortError(RuntimeError):
     pass
 
 
+# ──────────────────────────────────────────────────────────────
+# Tool-activity enrichment for Tutor 7D evaluation
+# ──────────────────────────────────────────────────────────────
+
+_SKIP_TOOLS_IN_SUMMARY = {"get_environment_info", "send_message"}
+_MAX_RESULT_CHARS = 500  # per-tool result preview length (head + tail)
+_MAX_SUMMARY_CHARS = 1500  # per-turn tool summary cap
+
+
+def _brief_args(args: dict) -> str:
+    """Compress tool args into a short representation."""
+    if not args:
+        return ""
+    parts = []
+    for k, v in args.items():
+        v_str = str(v)
+        if len(v_str) > 60:
+            v_str = v_str[:57] + "..."
+        parts.append(f"{k}={v_str}")
+    return ", ".join(parts[:3])
+
+
+def _summarize_tool_calls(logs: list) -> str:
+    """Generate a concise tool activity summary for one conversation turn."""
+    lines = []
+    for log in logs:
+        if log.name in _SKIP_TOOLS_IN_SUMMARY:
+            continue
+        result_str = str(log.result or "")
+        if len(result_str) <= _MAX_RESULT_CHARS:
+            result_preview = result_str
+        else:
+            # Keep head + tail so key numerical results at the end are preserved
+            half = _MAX_RESULT_CHARS // 2
+            result_preview = result_str[:half] + " ... " + result_str[-half:]
+        status = "OK" if log.success else "ERROR"
+        lines.append(
+            f"- {log.name}({_brief_args(log.args)}) -> [{status}] {result_preview}"
+        )
+
+    if not lines:
+        return ""
+
+    summary = "[Tool Activity]\n" + "\n".join(lines)
+    if len(summary) > _MAX_SUMMARY_CHARS:
+        summary = summary[:_MAX_SUMMARY_CHARS] + "\n... (truncated)"
+    return summary
+
+
+def _enrich_conversation_with_tools(
+    conversation: list[dict],
+    tool_logs: list,
+) -> list[dict]:
+    """Append tool-activity summaries to assistant turns for tutor evaluation.
+
+    Uses ToolCallLog.turn_index to correlate tool calls to conversation turns.
+    Only enriches assistant turns; user turns pass through unchanged.
+    """
+    if not tool_logs:
+        return conversation
+
+    from collections import defaultdict
+
+    logs_by_turn = defaultdict(list)
+    for log in tool_logs:
+        logs_by_turn[log.turn_index].append(log)
+
+    enriched = []
+    assistant_idx = 0
+    for turn in conversation:
+        if turn["role"] != "assistant":
+            enriched.append(turn)
+            continue
+
+        turn_logs = logs_by_turn.get(assistant_idx, [])
+        summary = _summarize_tool_calls(turn_logs) if turn_logs else ""
+        if summary:
+            enriched.append(
+                {
+                    **turn,
+                    "content": turn["content"] + "\n\n" + summary,
+                }
+            )
+        else:
+            enriched.append(turn)
+        assistant_idx += 1
+
+    return enriched
+
+
 class BenchmarkOrchestrator:
     """Orchestrates the full benchmark evaluation lifecycle."""
 
@@ -75,14 +165,13 @@ class BenchmarkOrchestrator:
         simulator_model: Optional[str] = None,
     ):
         self.bench_root = Path(bench_root or Path(__file__).parent.parent)
-        self.data_dir = str(self.bench_root / "data" / "frozen")
-        self.docs_dir = str(self.bench_root / "docs" / "reference")
-        self.student_code_dir = str(self.bench_root / "student_code")
         self.tasks_dir = self.bench_root / "tasks" / "layer2"
         self.personas_dir = self.bench_root / "personas"
         self.results_dir = self.bench_root / "results"
         self.container_manager = ContainerManager(use_docker=use_docker)
-        self._lean_data_paths = None  # Lazy-loaded for I-series
+        # Lazy-loaded HF data paths (populated by _ensure_paths)
+        self._paths_i = None
+        self._paths_non_i = None
         self.max_concurrent = max_concurrent
         # Keep eval_model as raw (string/list/None) so each downstream
         # resolve_deepeval_model() call can randomly pick from the model list.
@@ -102,13 +191,23 @@ class BenchmarkOrchestrator:
         with open(persona_path) as f:
             return StudentPersona(**json.load(f))
 
-    def _ensure_lean_data(self):
-        """Download LEAN data from HF if not cached. Called once, cached."""
-        if self._lean_data_paths is None:
-            from config.benchmark_config import DATASET_REVISION
-            from scripts.data_manager import ensure_data
-            self._lean_data_paths = ensure_data(series="i", revision=DATASET_REVISION)
-        return self._lean_data_paths
+    def _ensure_paths(self, task):
+        """Download HF data for the task's series if not cached. Returns DataPaths."""
+        from config.benchmark_config import DATASET_REVISION
+
+        from scripts.data_manager import ensure_data
+
+        sandbox_img = task.environment.sandbox_image if task.environment else ""
+        if sandbox_img and "lean" in sandbox_img:
+            if self._paths_i is None:
+                self._paths_i = ensure_data(series="i", revision=DATASET_REVISION)
+            return self._paths_i
+        else:
+            if self._paths_non_i is None:
+                self._paths_non_i = ensure_data(
+                    series="non_i", revision=DATASET_REVISION
+                )
+            return self._paths_non_i
 
     def run_single_task(
         self,
@@ -119,6 +218,7 @@ class BenchmarkOrchestrator:
         max_turns: Optional[int] = None,
         tools_enabled: bool = True,
         pre_teardown_hook: Optional[callable] = None,
+        skip_eval: bool = False,
     ) -> TaskResult:
         """Run a single task with a specific persona and agent.
 
@@ -143,35 +243,41 @@ class BenchmarkOrchestrator:
 
         try:
             # === PHASE 1: RESET ===
-            # 1a. Create staged directories with only the files allowed by this task
+            # 1a. Download HF data and create staged directories
+            paths = self._ensure_paths(task)
             data_files = task.environment.data_files if task.environment else []
             docs_available = task.environment.docs_available if task.environment else []
             staged_data_dir, staged_docs_dir, staged_temp_dirs = (
                 self._create_staged_dirs(
                     data_files,
                     docs_available,
+                    data_search_dirs=paths.data_search_dirs,
+                    docs_dir=paths.docs,
                 )
             )
 
-            # Detect I-series LEAN tasks and ensure data is available
-            lean_data_dir = None
-            sandbox_img = task.environment.sandbox_image if task.environment else ""
-            if sandbox_img and "lean" in sandbox_img:
-                paths = self._ensure_lean_data()
-                lean_data_dir = paths.lean_data
-                # Stage universe.json from HF cache into data_dir for I-series
-                if paths.universe and os.path.exists(paths.universe):
-                    import shutil as _shutil
-                    _shutil.copy2(paths.universe, os.path.join(staged_data_dir, "universe.json"))
+            # LEAN data mount (I-series only)
+            lean_data_dir = paths.lean_data
+
+            # Student code for debug tasks
+            student_code_dir = None
+            if task.category.value == "debug":
+                non_i = self._paths_non_i
+                if non_i is None:
+                    from config.benchmark_config import DATASET_REVISION
+
+                    from scripts.data_manager import ensure_data
+
+                    non_i = ensure_data(series="non_i", revision=DATASET_REVISION)
+                    self._paths_non_i = non_i
+                student_code_dir = non_i.student_code
 
             # 1b. Create sandbox container (Docker or local fallback)
             container = self.container_manager.create_container(
                 task_id=f"{task.task_id}_{persona.persona_id}_{run_index}",
                 data_dir=staged_data_dir,
                 docs_dir=staged_docs_dir,
-                student_code_dir=(
-                    self.student_code_dir if task.category.value == "debug" else None
-                ),
+                student_code_dir=student_code_dir,
                 sandbox_image=(
                     task.environment.sandbox_image if task.environment else None
                 ),
@@ -192,7 +298,7 @@ class BenchmarkOrchestrator:
             os.environ["QTB_DATA_DIR"] = staged_data_dir
             os.environ["QTB_DOCS_DIR"] = staged_docs_dir
             os.environ["QTB_WORKSPACE_DIR"] = container.workspace_path
-            os.environ["QTB_STUDENT_CODE_DIR"] = self.student_code_dir
+            os.environ["QTB_STUDENT_CODE_DIR"] = student_code_dir or ""
 
             # 1d. Configure MCP proxy with task-specific tools + container info
             proxy = create_proxy_for_task(
@@ -200,7 +306,11 @@ class BenchmarkOrchestrator:
                 convenient_tool_names=(
                     task.ground_truth.convenient_tools if task.ground_truth else []
                 ),
-                seed=task.seed if task.seed is not None else hash(f"{task.task_id}_{run_index}"),
+                seed=(
+                    task.seed
+                    if task.seed is not None
+                    else hash(f"{task.task_id}_{run_index}")
+                ),
                 container_manager=self.container_manager,
                 container_id=container.container_id,
                 workspace_path=container.workspace_path,
@@ -298,37 +408,45 @@ class BenchmarkOrchestrator:
                 )
 
             # === PHASE 4: EVALUATE ===
-            conversation = [
-                {"role": t.role, "content": t.content} for t in result.turns
-            ]
-            eval_results = self._evaluate_task(
-                task,
-                persona,
-                container.workspace_path,
-                proxy,
-                conversation,
-                conversational_test_case=conversational_test_case,
-            )
-            result.quant_result_score = eval_results.get("quant_result", 0.0)
-            result.quant_process_score = eval_results.get("quant_process", 0.0)
-            result.tutor_scores = eval_results.get("tutor_scores", {})
-            result.tutor_scores_by_model = eval_results.get("tutor_scores_by_model", {})
-            result.process_metrics = eval_results.get("process_metrics", {})
-            result.eval_script_detail = eval_results.get("eval_script_detail", {})
-            result.code_eval = eval_results.get("code_eval", {})
-            result.result_judge = eval_results.get("result_judge", {})
-            result.code_process = eval_results.get("process_metrics", {}).get(
-                "code_process", {}
-            )
+            if skip_eval:
+                print("  [RUNONLY] Skipping evaluation (--runonly mode)")
+            else:
+                conversation = [
+                    {"role": t.role, "content": t.content} for t in result.turns
+                ]
+                eval_results = self._evaluate_task(
+                    task,
+                    persona,
+                    container.workspace_path,
+                    proxy,
+                    conversation,
+                    conversational_test_case=conversational_test_case,
+                )
+                result.quant_result_score = eval_results.get("quant_result", 0.0)
+                result.quant_process_score = eval_results.get("quant_process", 0.0)
+                result.tutor_scores = eval_results.get("tutor_scores", {})
+                result.tutor_scores_by_model = eval_results.get(
+                    "tutor_scores_by_model", {}
+                )
+                result.tutor_fallback_count = eval_results.get(
+                    "tutor_fallback_count", 0
+                )
+                result.process_metrics = eval_results.get("process_metrics", {})
+                result.eval_script_detail = eval_results.get("eval_script_detail", {})
+                result.code_eval = eval_results.get("code_eval", {})
+                result.result_judge = eval_results.get("result_judge", {})
+                result.code_process = eval_results.get("process_metrics", {}).get(
+                    "code_process", {}
+                )
 
-            score_breakdown = compute_task_score(
-                quant_result_score=result.quant_result_score,
-                quant_process_score=result.quant_process_score,
-                tutor_dimension_scores=result.tutor_scores,
-                category=task.category.value,
-                requires_code=task.requires_code,
-            )
-            result.overall_score = score_breakdown["overall_score"]
+                score_breakdown = compute_task_score(
+                    quant_result_score=result.quant_result_score,
+                    quant_process_score=result.quant_process_score,
+                    tutor_dimension_scores=result.tutor_scores,
+                    category=task.category.value,
+                    requires_code=task.requires_code,
+                )
+                result.overall_score = score_breakdown["overall_score"]
 
             # === PHASE 5: TEARDOWN ===
             self.container_manager.destroy_container(container.container_id)
@@ -625,15 +743,15 @@ class BenchmarkOrchestrator:
         # its own async event loop internally. Peak concurrency ~43 requests
         # (RJ=3 + QP≤20 + Tutor≤20), well within OpenRouter limits.
         #
-        # Abort mechanism: a single threading.Event is shared across all 3
-        # threads.  When any evaluator call fails after exhausting retries,
-        # it sets the event → queued coroutines in OTHER threads skip
-        # immediately → we raise EvalAbortError for the task.
+        # Abort mechanism: _abort_event is shared between RJ and QP only.
+        # Tutor manages its own abort independently (has internal fallback
+        # for non-JSON eval LLM responses). If Tutor fails even after
+        # fallback, it degrades gracefully without killing RJ/QP.
         import concurrent.futures
 
         _logs = proxy.get_logs()  # snapshot once for all threads
         _is_adversarial = task.category.value == "adversarial"
-        _abort_event = threading.Event()
+        _abort_event = threading.Event()  # shared by RJ + QP only
 
         def _run_result_judge() -> dict:
             """Thread 1: LLM Result Judge (Step 2c)."""
@@ -701,8 +819,17 @@ class BenchmarkOrchestrator:
                 evaluate_tutor_dimensions,
             )
 
+            # Two-tier conversation input for Tutor 7D evaluation:
+            # - D4/D5/D7 (competence dims) use enriched conversation so the
+            #   judge can verify domain accuracy against tool outputs.
+            # - D1/D2/D3/D6 (teaching-quality dims) use the original
+            #   conversation so tool-activity text doesn't interfere with
+            #   evaluation of the tutor's own language and empathy.
+            enriched_conv = _enrich_conversation_with_tools(conversation, _logs)
+
             tutor_scores = evaluate_tutor_dimensions(
                 conversation_turns=conversation,
+                enriched_conversation_turns=enriched_conv,
                 persona_level=persona.knowledge_level,
                 scenario=build_scenario(task, persona.persona_id),
                 expected_outcome=task.ground_truth.expected_outcome,
@@ -710,10 +837,13 @@ class BenchmarkOrchestrator:
                 model=self.eval_model,
                 category=task.category.value,
                 requires_code=task.requires_code,
-                abort_event=_abort_event,
+                abort_event=None,  # independent — has internal fallback
             )
+            fallback_count = tutor_scores.pop("_fallback_count", 0)
             per_model = tutor_scores.pop("_per_model", None)
             out: dict = {"tutor_scores": tutor_scores}
+            if fallback_count > 0:
+                out["tutor_fallback_count"] = fallback_count
             if per_model:
                 out["tutor_scores_by_model"] = per_model
                 print("  [Tutor] Per-model tutor scores:")
@@ -742,8 +872,15 @@ class BenchmarkOrchestrator:
                 try:
                     results.update(fut.result())
                 except Exception as e:
-                    _abort_event.set()  # signal other threads to stop
-                    _thread_errors.append(e)
+                    if fut is fut_tutor:
+                        # Tutor is independent — graceful degradation
+                        print(f"  *** TUTOR EVAL WARNING: {e}")
+                        results["tutor_scores"] = {}
+                        results["tutor_eval_error"] = str(e)
+                    else:
+                        # RJ / QP share abort cascade
+                        _abort_event.set()
+                        _thread_errors.append(e)
 
         if _thread_errors:
             first = _thread_errors[0]
@@ -769,6 +906,27 @@ class BenchmarkOrchestrator:
         # to evaluate the quality of redirected educational code.
         if _is_adversarial and not task.requires_code:
             code_eval_applicable = False
+
+        # When the eval script returns score=None, it signals insufficient
+        # programmatic evidence (e.g. A04: no tool calls → can't judge
+        # technical dump from tool logs alone).  Defer entirely to LLM Judge.
+        if programmatic_score is None:
+            if code_eval_applicable:
+                results["quant_result"] = round(
+                    0.30 * code_eval_score + 0.70 * llm_judge_score, 4
+                )
+            else:
+                results["quant_result"] = round(llm_judge_score, 4)
+            print(
+                f"    QR: eval script returned None "
+                f"(insufficient signal) → deferring to LLM Judge "
+                f"({llm_judge_score:.2f})"
+            )
+            rj = results.get("result_judge")
+            if isinstance(rj, dict):
+                rj["_eval_script_score"] = None
+                rj["_dampening_factor"] = None
+            return results
 
         # Continuous divergence dampening: smoothly reduce programmatic
         # weight as divergence between eval script and LLM judge increases.
@@ -821,12 +979,16 @@ class BenchmarkOrchestrator:
         self,
         data_files: list[str],
         docs_available: list[str],
+        data_search_dirs: list[str],
+        docs_dir: str,
     ) -> tuple[str, str, list[str]]:
-        """Create temp directories with symlinks to only the allowed files.
+        """Create temp directories with copies of only the allowed files.
 
         Args:
-            data_files: List of allowed data file names (e.g. ["AAPL_2018_2024.csv"]).
+            data_files: List of allowed data file names (e.g. ["BTCUSDT_1h.csv"]).
             docs_available: List of allowed doc file names (e.g. ["moving_averages.md"]).
+            data_search_dirs: Directories to search for data files (from HF cache).
+            docs_dir: Directory containing reference docs (from HF cache).
 
         Returns:
             (staged_data_dir, staged_docs_dir, temp_dirs_to_cleanup)
@@ -837,24 +999,26 @@ class BenchmarkOrchestrator:
             staged_data = tempfile.mkdtemp(prefix="qtb_data_")
             temp_dirs.append(staged_data)
             for fname in data_files:
-                src = os.path.join(self.data_dir, fname)
-                if os.path.isfile(src):
-                    dst = os.path.join(staged_data, fname)
-                    os.makedirs(os.path.dirname(dst), exist_ok=True)
-                    shutil.copy2(src, dst)
+                for search_dir in data_search_dirs:
+                    src = os.path.join(search_dir, fname)
+                    if os.path.isfile(src):
+                        dst = os.path.join(staged_data, fname)
+                        os.makedirs(os.path.dirname(dst), exist_ok=True)
+                        shutil.copy2(src, dst)
+                        break
         else:
-            staged_data = self.data_dir  # No filter → full access (backward compat)
+            staged_data = data_search_dirs[0] if data_search_dirs else ""
 
         if docs_available:
             staged_docs = tempfile.mkdtemp(prefix="qtb_docs_")
             temp_dirs.append(staged_docs)
             for fname in docs_available:
-                src = os.path.join(self.docs_dir, fname)
+                src = os.path.join(docs_dir, fname)
                 if os.path.isfile(src):
                     dst = os.path.join(staged_docs, fname)
                     shutil.copy2(src, dst)
         else:
-            staged_docs = self.docs_dir
+            staged_docs = docs_dir
 
         return staged_data, staged_docs, temp_dirs
 

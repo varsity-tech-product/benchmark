@@ -43,6 +43,7 @@ class QuantValidation(BaseModel):
 
 class GroundTruth(BaseModel):
     expected_outcome: str
+    termination_criteria: str = ""
     required_capabilities: list[str] = Field(default_factory=list)
     expected_mcp_tools: list[str] = Field(default_factory=list)
     convenient_tools: list[str] = Field(default_factory=list)
@@ -91,7 +92,9 @@ class QuantTutorTask(BaseModel):
     max_turns: int = 30
     agent_max_steps: int = 10
     timeout_minutes: int = 15
-    seed: Optional[int] = None  # Reproducibility seed; overrides hash(task_id_run_index)
+    seed: Optional[int] = (
+        None  # Reproducibility seed; overrides hash(task_id_run_index)
+    )
 
 
 class StudentPersona(BaseModel):
@@ -128,6 +131,7 @@ class TaskResult(BaseModel):
     tutor_scores_by_model: dict[str, dict[str, float]] = Field(
         default_factory=dict
     )  # {model_name: {dim: score}} per-judge-model breakdown
+    tutor_fallback_count: int = 0  # Tutor evals that used fallback recovery
     overall_score: float = 0.0
     # Extended metrics (design doc §6.1, §6.4)
     process_metrics: dict = Field(

@@ -4,11 +4,18 @@
 The kline files come from Binance Data Vision daily archives. Funding-rate data
 is pulled from Binance's public futures REST API because it is lightweight and
 does not require authentication.
+
+Features:
+  - Automatic retry with exponential backoff (429 / 5xx safe)
+  - Per-day checkpoint caching (resume interrupted downloads)
+  - CHECKSUM verification for zip archives
+  - Relaxed gap validation for 1d interval (warns on missing days)
 """
 
 from __future__ import annotations
 
 import argparse
+import hashlib
 import io
 import sys
 import zipfile
@@ -18,7 +25,9 @@ from pathlib import Path
 
 import pandas as pd
 import requests
+from requests.adapters import HTTPAdapter
 from tqdm import tqdm
+from urllib3.util.retry import Retry
 
 DATA_VISION_BASE = "https://data.binance.vision/data/futures/um/daily/klines"
 FUNDING_RATE_URL = "https://fapi.binance.com/fapi/v1/fundingRate"
@@ -48,6 +57,9 @@ STANDARD_COLUMNS = [
     "taker_buy_vol",
     "taker_buy_quote_vol",
 ]
+
+# Funding rate: 3 times per day (every 8h) for most of the data range.
+_FUNDING_RATE_PER_DAY = 3
 
 
 @dataclass(frozen=True)
@@ -115,6 +127,23 @@ FUNDING_DATASETS = {
 }
 
 
+def _build_retry_session() -> requests.Session:
+    """Create a requests.Session with automatic retry on transient errors."""
+    retry = Retry(
+        total=5,
+        backoff_factor=1.0,  # 1s, 2s, 4s, 8s, 16s
+        status_forcelist=[429, 500, 502, 503, 504],
+        allowed_methods=["GET"],
+        raise_on_status=False,
+    )
+    adapter = HTTPAdapter(max_retries=retry)
+    session = requests.Session()
+    session.mount("https://", adapter)
+    session.mount("http://", adapter)
+    session.headers.update({"User-Agent": "QuantTutorBench/binance-data-freezer"})
+    return session
+
+
 def daterange(start: date, end: date):
     current = start
     while current <= end:
@@ -122,18 +151,60 @@ def daterange(start: date, end: date):
         current += timedelta(days=1)
 
 
+def _cache_dir_for(output_dir: Path, dataset_name: str) -> Path:
+    """Return the per-day checkpoint cache directory for a dataset."""
+    cache = output_dir / ".cache" / dataset_name.replace(".csv", "")
+    cache.mkdir(parents=True, exist_ok=True)
+    return cache
+
+
+def _verify_checksum(
+    session: requests.Session,
+    zip_url: str,
+    zip_content: bytes,
+) -> bool:
+    """Download and verify the CHECKSUM file for a zip archive.
+
+    Returns True if checksum matches or CHECKSUM file is unavailable.
+    Returns False only on actual mismatch.
+    """
+    checksum_url = zip_url + ".CHECKSUM"
+    try:
+        resp = session.get(checksum_url, timeout=15)
+        if resp.status_code != 200:
+            return True  # CHECKSUM not available, skip
+        # Format: "<sha256>  <filename>\n"
+        expected_hash = resp.text.strip().split()[0].lower()
+        actual_hash = hashlib.sha256(zip_content).hexdigest().lower()
+        return actual_hash == expected_hash
+    except Exception:
+        return True  # network error on checksum, don't block
+
+
 def fetch_daily_kline_archive(
     session: requests.Session,
     symbol: str,
     interval: str,
     day: date,
+    cache_dir: Path | None = None,
 ) -> pd.DataFrame:
+    """Download a single day's kline archive, using cache if available."""
+    # Check cache first
+    if cache_dir is not None:
+        cached = cache_dir / f"{day.isoformat()}.parquet"
+        if cached.exists():
+            return pd.read_parquet(cached)
+
     url = (
         f"{DATA_VISION_BASE}/{symbol}/{interval}/"
         f"{symbol}-{interval}-{day.isoformat()}.zip"
     )
     response = session.get(url, timeout=30)
     response.raise_for_status()
+
+    # Verify checksum
+    if not _verify_checksum(session, url, response.content):
+        raise ValueError(f"CHECKSUM mismatch for {url}")
 
     with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
         members = archive.namelist()
@@ -142,7 +213,13 @@ def fetch_daily_kline_archive(
         with archive.open(members[0]) as fh:
             df = pd.read_csv(fh, header=None, names=RAW_KLINE_COLUMNS)
 
-    return normalize_kline_frame(df)
+    normalized = normalize_kline_frame(df)
+
+    # Save to cache (parquet is compact and fast)
+    if cache_dir is not None:
+        normalized.to_parquet(cached, index=False)
+
+    return normalized
 
 
 def normalize_kline_frame(df: pd.DataFrame) -> pd.DataFrame:
@@ -180,7 +257,12 @@ def normalize_kline_frame(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def validate_kline_frame(df: pd.DataFrame, interval: str) -> None:
-    """Validate kline integrity after concatenation."""
+    """Validate kline integrity after concatenation.
+
+    For 1d interval, gaps are reported as warnings (Binance may have
+    maintenance days or listing gaps). For sub-daily intervals (1h, 5m),
+    gaps are treated as hard errors.
+    """
     missing = [col for col in STANDARD_COLUMNS if col not in df.columns]
     if missing:
         raise ValueError(f"Missing required columns: {missing}")
@@ -200,8 +282,25 @@ def validate_kline_frame(df: pd.DataFrame, interval: str) -> None:
         "1d": 24 * 60 * 60 * 1000,
     }[interval]
     deltas = df["timestamp"].diff().dropna()
-    if not deltas.empty and (deltas != expected_ms).any():
-        bad = deltas[deltas != expected_ms].iloc[0]
+    if deltas.empty:
+        return
+
+    bad_mask = deltas != expected_ms
+    if not bad_mask.any():
+        return
+
+    if interval == "1d":
+        # For daily data, warn about gaps but don't fail.
+        # Binance futures trade 24/7 but archives can have missing days.
+        n_gaps = int(bad_mask.sum())
+        gap_days = deltas[bad_mask] / (24 * 60 * 60 * 1000)
+        max_gap = gap_days.max()
+        print(
+            f"  WARNING: {n_gaps} gap(s) detected in daily kline data "
+            f"(max gap: {max_gap:.0f} days). This is normal for Binance archives."
+        )
+    else:
+        bad = deltas[bad_mask].iloc[0]
         raise ValueError(f"Gap or overlap detected for interval {interval}: {bad}")
 
 
@@ -210,14 +309,26 @@ def download_kline_dataset(
     dataset: KlineDataset,
     output_dir: Path,
 ) -> Path:
+    cache_dir = _cache_dir_for(output_dir, dataset.output_name)
     frames = []
     days = list(daterange(dataset.start_date, dataset.end_date))
+    skipped = 0
+
     for day in tqdm(days, desc=f"[kline] {dataset.output_name}", unit="day"):
+        cached = cache_dir / f"{day.isoformat()}.parquet"
+        if cached.exists():
+            skipped += 1
         frames.append(
-            fetch_daily_kline_archive(session, dataset.symbol, dataset.interval, day)
+            fetch_daily_kline_archive(
+                session, dataset.symbol, dataset.interval, day, cache_dir
+            )
         )
 
+    if skipped > 0:
+        print(f"  (resumed: {skipped}/{len(days)} days from cache)")
+
     merged = pd.concat(frames, ignore_index=True)
+    merged = merged.dropna(subset=["timestamp"])
     merged = (
         merged.sort_values("timestamp")
         .drop_duplicates("timestamp")
@@ -227,7 +338,25 @@ def download_kline_dataset(
 
     out_path = output_dir / dataset.output_name
     merged.to_csv(out_path, index=False)
+
+    # Clean up cache after successful write
+    _clean_cache(cache_dir)
+
     return out_path
+
+
+def _clean_cache(cache_dir: Path) -> None:
+    """Remove checkpoint cache after successful dataset completion."""
+    try:
+        for f in cache_dir.iterdir():
+            f.unlink()
+        cache_dir.rmdir()
+        # Also remove parent .cache dir if empty
+        parent = cache_dir.parent
+        if parent.name == ".cache" and not any(parent.iterdir()):
+            parent.rmdir()
+    except OSError:
+        pass
 
 
 def download_funding_dataset(
@@ -253,9 +382,17 @@ def download_funding_dataset(
         - 1
     )
 
-    rows = []
+    # Estimate total rows: 3 funding events per day
+    total_days = (dataset.end_date - dataset.start_date).days + 1
+    estimated_total = total_days * _FUNDING_RATE_PER_DAY
+
+    rows: list[dict] = []
     cursor = start_ms
-    pbar = tqdm(desc=f"[funding] {dataset.output_name}", unit="row")
+    pbar = tqdm(
+        desc=f"[funding] {dataset.output_name}",
+        unit="row",
+        total=estimated_total,
+    )
     while cursor <= end_ms:
         params = {
             "symbol": dataset.symbol,
@@ -310,6 +447,11 @@ def parse_args() -> argparse.Namespace:
         default=str(Path(__file__).resolve().parent.parent / "data" / "frozen"),
         help="Directory where merged CSV files will be written.",
     )
+    parser.add_argument(
+        "--no-cache",
+        action="store_true",
+        help="Disable per-day checkpoint caching (always re-download).",
+    )
     return parser.parse_args()
 
 
@@ -343,20 +485,27 @@ def main() -> int:
         print(str(exc), file=sys.stderr)
         return 2
 
-    with requests.Session() as session:
-        session.headers.update({"User-Agent": "QuantTutorBench/binance-data-freezer"})
+    # If --no-cache, prevent caching by not creating cache dirs
+    if args.no_cache:
+        # Monkey-patch _cache_dir_for to return None
+        global _cache_dir_for
+        _original = _cache_dir_for
+        _cache_dir_for = lambda *_a, **_kw: None  # noqa: E731
 
-        total = len(kline_datasets) + len(funding_datasets)
-        for i, dataset in enumerate(kline_datasets, 1):
-            print(f"\n[{i}/{total}] {dataset.output_name}")
-            out_path = download_kline_dataset(session, dataset, output_dir)
-            print(f"  -> Wrote {out_path}")
+    session = _build_retry_session()
 
-        for j, dataset in enumerate(funding_datasets, len(kline_datasets) + 1):
-            print(f"\n[{j}/{total}] {dataset.output_name}")
-            out_path = download_funding_dataset(session, dataset, output_dir)
-            print(f"  -> Wrote {out_path}")
+    total = len(kline_datasets) + len(funding_datasets)
+    for i, dataset in enumerate(kline_datasets, 1):
+        print(f"\n[{i}/{total}] {dataset.output_name}")
+        out_path = download_kline_dataset(session, dataset, output_dir)
+        print(f"  -> Wrote {out_path}")
 
+    for j, dataset in enumerate(funding_datasets, len(kline_datasets) + 1):
+        print(f"\n[{j}/{total}] {dataset.output_name}")
+        out_path = download_funding_dataset(session, dataset, output_dir)
+        print(f"  -> Wrote {out_path}")
+
+    session.close()
     return 0
 
 

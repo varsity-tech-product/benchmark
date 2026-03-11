@@ -4,7 +4,7 @@
   "difficulty": "easy",
   "category": "implementation",
   "task_type": "multi_turn",
-  "description": "Guide a student to implement a Simple Moving Average (SMA) trend-following strategy as a LEAN C# algorithm on a single crypto future (BTCUSDT). The student must subscribe to one symbol, create an SMA indicator, implement a price-vs-SMA entry/exit rule, handle warm-up correctly, and produce a trade log. This is the simplest possible LEAN strategy — the 'hello world' of algorithmic trading on QuantConnect.",
+  "description": "Guide a student to implement a Simple Moving Average (SMA) trend-following strategy as a LEAN C# algorithm on a single crypto future (BTCUSDT). The student must subscribe to one symbol, create an SMA indicator, implement a price-vs-SMA entry/exit rule, handle warm-up correctly, and produce a trade log.",
   "persona_ids": [
     "beginner_no_finance",
     "intermediate_developer",
@@ -30,7 +30,7 @@
       "lean_algorithm_guide.md",
       "moving_averages.md"
     ],
-    "sandbox_image": "quant-tutor-env:v2.0-lean",
+    "sandbox_image": "quant-tutor-env:v2.2-lean",
     "network_enabled": false
   },
   "ground_truth": {
@@ -45,6 +45,7 @@
     ],
     "expected_mcp_tools": [
       "shell_exec",
+      "file_read",
       "get_environment_info"
     ],
     "convenient_tools": [

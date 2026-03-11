@@ -4,7 +4,7 @@
   "difficulty": "hard",
   "category": "implementation",
   "task_type": "multi_turn",
-  "description": "Guide a student to implement a pairs trading strategy on LEAN that (1) uses a pre-computed candidate pairs file (I05_candidate_pairs.json) listing top-10 correlated pairs from the 20-symbol universe, (2) implements spread mean-reversion trading on the selected pairs with z-score entry/exit rules, and (3) manages multi-leg positions with proper exposure caps. The student should understand pair selection concepts but does not need to compute pairwise statistics from scratch. This is how institutional stat-arb strategies work \u2014 the pair discovery phase is provided so the task focuses on implementation of spread trading and multi-pair portfolio management.",
+  "description": "Guide a student to implement a pairs trading strategy on LEAN that (1) uses a pre-computed candidate pairs file (I05_candidate_pairs.json) listing top-10 correlated pairs from the 20-symbol universe, (2) implements spread mean-reversion trading on the selected pairs with z-score entry/exit rules, and (3) manages multi-leg positions with proper exposure caps. The student should understand pair selection concepts but does not need to compute pairwise statistics from scratch.",
   "persona_ids": [
     "beginner_no_finance",
     "intermediate_developer",
@@ -31,7 +31,7 @@
       "lean_algorithm_guide.md",
       "statistical_tests.md"
     ],
-    "sandbox_image": "quant-tutor-env:v2.0-lean",
+    "sandbox_image": "quant-tutor-env:v2.2-lean",
     "network_enabled": false
   },
   "ground_truth": {
@@ -46,6 +46,7 @@
     ],
     "expected_mcp_tools": [
       "shell_exec",
+      "file_read",
       "get_environment_info"
     ],
     "convenient_tools": [

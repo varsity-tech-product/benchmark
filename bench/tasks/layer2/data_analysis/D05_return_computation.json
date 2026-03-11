@@ -28,7 +28,7 @@
       "get_environment_info"
     ],
     "docs_available": [
-      "backtesting_101.md",
+      "statistical_tests.md",
       "pandas_timeseries.md"
     ],
     "sandbox_image": "quant-tutor-env:v2.2",
@@ -43,8 +43,8 @@
     ],
     "expected_mcp_tools": [
       "shell_exec",
-      "get_environment_info",
-      "file_read"
+      "file_read",
+      "get_environment_info"
     ],
     "convenient_tools": [
       "plot_chart"

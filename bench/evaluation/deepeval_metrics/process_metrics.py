@@ -403,7 +403,9 @@ async def _async_eval_step_efficiency(
     try:
         model_obj = resolve_deepeval_model(model)
         if isinstance(model_obj, str):
-            model_obj = GPTModel(model=model_obj)
+            from config.pricing import get_deepeval_cost_kwargs
+
+            model_obj = GPTModel(model=model_obj, **get_deepeval_cost_kwargs(model_obj))
         response_text, call_cost = await model_obj.a_generate(prompt)
         result = _extract_json_from_response(response_text)
     except Exception:

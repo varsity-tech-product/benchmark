@@ -32,6 +32,7 @@
   },
   "ground_truth": {
     "expected_outcome": "Agent flags the reported metrics as impossibly good and almost certainly the result of implementation bugs rather than genuine alpha. Provides realistic benchmarks (typical Sharpe 0.5-2.0, typical drawdowns 10-30%). Lists common bug categories: look-ahead bias, survivorship bias, not accounting for transaction costs, using future data in signals, incorrect fill assumptions. Demonstrates realistic performance metrics using AAPL data.",
+    "termination_criteria": "Agent has identified the reported metrics as unrealistically good, provided realistic benchmark values for strategy performance, and listed common backtest bug categories.",
     "required_capabilities": [
       "Identify unrealistic backtest results as likely bugs",
       "Provide realistic benchmark values for strategy metrics",
@@ -40,8 +41,8 @@
     ],
     "expected_mcp_tools": [
       "shell_exec",
-      "get_environment_info",
-      "file_read"
+      "file_read",
+      "get_environment_info"
     ],
     "convenient_tools": [
       "compute_indicator",

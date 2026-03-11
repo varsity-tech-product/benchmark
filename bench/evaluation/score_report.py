@@ -151,7 +151,7 @@ def _section_qr(lines, result):
                 f"files={sa.get('files_analyzed', 0)}, "
                 f"funcs={sa.get('total_functions', 0)}"
             )
-            _a(f"| A — Static Analysis | 20% | {_f(sa.get('score'))} | {diag_a} |")
+            _a(f"| A — Static Analysis | 15% | {_f(sa.get('score'))} | {diag_a} |")
 
         # Layer B
         if ex:
@@ -160,7 +160,7 @@ def _section_qr(lines, result):
                 f"success_rate={_f(ex.get('success_rate'), '.2f')}, "
                 f"untested={ex.get('untested_files', [])}"
             )
-            _a(f"| B — Execution | 40% | {_f(ex.get('score'))} | {diag_b} |")
+            _a(f"| B — Execution | 35% | {_f(ex.get('score'))} | {diag_b} |")
 
         # Layer C
         if ov:
@@ -169,9 +169,9 @@ def _section_qr(lines, result):
                 f"completeness={_f(ov.get('output_completeness'), '.2f')}, "
                 f"metrics_compared={ov.get('metrics_compared', 0)}"
             )
-            _a(f"| C — Output Verification | 40% | {_f(ov.get('score'))} | {diag_c} |")
+            _a(f"| C — Output Verification | 50% | {_f(ov.get('score'))} | {diag_c} |")
         else:
-            _a("| C — Output Verification | 40% | SKIP | no reference |")
+            _a("| C — Output Verification | 50% | SKIP | no reference |")
 
     _a("\n</details>\n")
 
@@ -222,9 +222,8 @@ def _section_qr(lines, result):
     _a(f"**Has reference**: {rj.get('has_reference', False)}\n")
 
     _DIM_WEIGHTS = {
-        "numerical_accuracy": "0.35",
-        "completeness": "0.35",
-        "correctness": "0.30",
+        "completeness": "0.55",
+        "correctness": "0.45",
     }
     sub = rj.get("sub_scores", {})
     per_model = rj.get("_per_model", {})
@@ -239,7 +238,7 @@ def _section_qr(lines, result):
         _a(header)
         _a(sep)
 
-        for dim in ("numerical_accuracy", "completeness", "correctness"):
+        for dim in ("completeness", "correctness"):
             row = f"| {dim} | {_DIM_WEIGHTS[dim]} | {_f(sub.get(dim))} |"
             for m in model_names:
                 ms = per_model[m].get("sub_scores", {}).get(dim)
@@ -259,48 +258,77 @@ def _section_qr(lines, result):
 
     # ── QR Blending ──
     final_qr = result.quant_result_score
-    dampening_factor = rj.get("_dampening_factor", 1.0)
-    dampened_active = dampening_factor < 0.9
+    eval_script_score = rj.get("_eval_script_score")
+    dampening_factor = rj.get("_dampening_factor")
+    code_eval_score = ce.get("score") if ce_applicable else None
 
-    dampened_label = f" (dampening={dampening_factor:.2f})" if dampened_active else ""
+    # When eval script returned None (insufficient signal), programmatic
+    # weight was fully deferred to LLM Judge.
+    prog_deferred = eval_script_score is None
+
+    if prog_deferred:
+        dampened_label = " (eval script deferred → 100% Judge)"
+    elif dampening_factor is not None and dampening_factor < 0.9:
+        dampened_label = f" (dampening={dampening_factor:.2f})"
+    else:
+        dampened_label = ""
 
     _a(
         f"<details>\n<summary><b>QR Blending</b> — Final: {_f(final_qr)}{dampened_label}</summary>\n"
     )
 
-    eval_script_score = rj.get("_eval_script_score")
-    code_eval_score = ce.get("score") if ce_applicable else None
-
-    # Compute actual weights from continuous dampening factor
-    if ce_applicable:
-        w_prog = 0.10 + 0.20 * dampening_factor
-        w_ce = 0.30
-        w_judge = 1.0 - w_prog - w_ce
-    else:
-        w_prog = 0.15 + 0.25 * dampening_factor
-        w_ce = None
-        w_judge = 1.0 - w_prog
-
     _a("| Component | Raw Score | Weight | Weighted |")
     _a("|-----------|-----------|--------|----------|")
 
-    prog_raw = eval_script_score if eval_script_score is not None else 0.0
-    _a(
-        f"| Programmatic (eval script) | {_f(prog_raw)} "
-        f"| {w_prog:.0%} | {_f(prog_raw * w_prog)} |"
-    )
-    if w_ce is not None and code_eval_score is not None:
+    if prog_deferred:
+        _a("| Programmatic (eval script) | N/A (deferred) | 0% | — |")
+        if ce_applicable and code_eval_score is not None:
+            w_ce = 0.30
+            w_judge = 0.70
+            _a(
+                f"| Code Eval | {_f(code_eval_score)} "
+                f"| {w_ce:.0%} | {_f(code_eval_score * w_ce)} |"
+            )
+        else:
+            w_judge = 1.0
+        judge_raw = rj_score if rj_score is not None else 0.0
         _a(
-            f"| Code Eval | {_f(code_eval_score)} "
-            f"| {w_ce:.0%} | {_f(code_eval_score * w_ce)} |"
+            f"| LLM Result Judge | {_f(judge_raw)} "
+            f"| {w_judge:.0%} | {_f(judge_raw * w_judge)} |"
         )
-    judge_raw = rj_score if rj_score is not None else 0.0
-    _a(
-        f"| LLM Result Judge | {_f(judge_raw)} "
-        f"| {w_judge:.0%} | {_f(judge_raw * w_judge)} |"
-    )
+    else:
+        # Standard blending with dampening
+        df = dampening_factor if dampening_factor is not None else 1.0
+        if ce_applicable:
+            w_prog = 0.10 + 0.20 * df
+            w_ce = 0.30
+            w_judge = 1.0 - w_prog - w_ce
+        else:
+            w_prog = 0.15 + 0.25 * df
+            w_ce = None
+            w_judge = 1.0 - w_prog
+
+        prog_raw = eval_script_score if eval_script_score is not None else 0.0
+        _a(
+            f"| Programmatic (eval script) | {_f(prog_raw)} "
+            f"| {w_prog:.0%} | {_f(prog_raw * w_prog)} |"
+        )
+        if w_ce is not None and code_eval_score is not None:
+            _a(
+                f"| Code Eval | {_f(code_eval_score)} "
+                f"| {w_ce:.0%} | {_f(code_eval_score * w_ce)} |"
+            )
+        judge_raw = rj_score if rj_score is not None else 0.0
+        _a(
+            f"| LLM Result Judge | {_f(judge_raw)} "
+            f"| {w_judge:.0%} | {_f(judge_raw * w_judge)} |"
+        )
+
     _a(f"| **Final QR** | | | **{_f(final_qr)}** |")
 
+    dampened_active = (
+        not prog_deferred and dampening_factor is not None and dampening_factor < 1.0
+    )
     if dampened_active:
         divergence = abs(prog_raw - judge_raw)
         _a(
@@ -608,3 +636,8 @@ def _section_tutor(lines, result):
         row += f" {_f(m_avg)} |"
     _a(row)
     _a("")
+
+    # Fallback recovery note
+    fb_count = getattr(result, "tutor_fallback_count", 0)
+    if fb_count > 0:
+        _a(f"> **Note**: {fb_count} dimension evaluation(s) used fallback recovery\n")

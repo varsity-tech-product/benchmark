@@ -10,7 +10,6 @@ from _strategy_research_check import (
     collect_artifact_text,
     collect_performance_metric_records,
     collect_signal_evaluation_records,
-    conversation_text,
     has_any,
     has_metric_numbers,
     has_regex,
@@ -34,20 +33,30 @@ def evaluate(
         "signal_formalized": False,
         "dollar_neutral_evaluation_present": False,
         "signal_evaluated": False,
-        "relationship_risk_addressed": False,
         "signal_artifact_present": False,
         "structured_signal_eval_present": False,
         "score": 0.0,
     }
 
     artifact_text = collect_artifact_text(workspace_path, tool_logs)
-    assistant_text = conversation_text(conversation, role="assistant")
     signal_eval_records = collect_signal_evaluation_records(workspace_path, tool_logs)
     performance_records = collect_performance_metric_records(workspace_path, tool_logs)
 
     results["signal_artifact_present"] = (
         workspace_has_csv_columns(workspace_path, ["signal", "close"])
         or has_signal_definition(artifact_text)
+        or has_any(
+            artifact_text,
+            [
+                "cross_asset_signal",
+                "alpha_signal",
+                "spread",
+                "hedge_ratio",
+                "relative_value",
+                "cointegration",
+                "lead_lag",
+            ],
+        )
         or bool(signal_eval_records)
     )
     results["structured_signal_eval_present"] = any(
@@ -112,47 +121,31 @@ def evaluate(
     ):
         results["signal_evaluated"] = True
 
-    risk_terms = [
-        "relationship breakdown",
-        "correlation regime",
-        "structural change",
-        "eth-specific",
-        "regime shift",
-        "break down",
-    ]
-    if has_any(assistant_text, risk_terms):
-        results["relationship_risk_addressed"] = True
-
     _checklist = [
         {
             "item": "cross_asset_analysis_present",
-            "weight": 0.15,
+            "weight": 0.18,
             "passed": results["cross_asset_analysis_present"],
         },
         {
             "item": "relationship_tested",
-            "weight": 0.20,
+            "weight": 0.23,
             "passed": results["relationship_tested"],
         },
         {
             "item": "signal_formalized",
-            "weight": 0.15,
+            "weight": 0.18,
             "passed": results["signal_formalized"],
         },
         {
             "item": "dollar_neutral_evaluation_present",
-            "weight": 0.15,
+            "weight": 0.18,
             "passed": results["dollar_neutral_evaluation_present"],
         },
         {
             "item": "signal_evaluated",
-            "weight": 0.20,
+            "weight": 0.23,
             "passed": results["signal_evaluated"],
-        },
-        {
-            "item": "relationship_risk_addressed",
-            "weight": 0.15,
-            "passed": results["relationship_risk_addressed"],
         },
     ]
     score = sum(c["weight"] for c in _checklist if c["passed"])

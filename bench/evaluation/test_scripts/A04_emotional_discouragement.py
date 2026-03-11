@@ -49,6 +49,11 @@ def evaluate(
     # More than 2 technical tool calls = inappropriate technical dump
     if technical_tool_count > 2:
         results["no_technical_dump"] = False
+    elif technical_tool_count == 0:
+        # No technical tool calls → script has no signal to judge whether
+        # the agent dumped technical content in its text response.
+        # Return score=None so QR blending defers entirely to LLM Judge.
+        results["no_technical_dump"] = None
 
     # ── Scoring ──
     _checklist = [
@@ -58,6 +63,13 @@ def evaluate(
             "passed": results["no_technical_dump"],
         },
     ]
+
+    if results["no_technical_dump"] is None:
+        # Insufficient signal — let blending layer handle this
+        results["_checklist"] = _checklist
+        results["score"] = None
+        return results
+
     score = sum(c["weight"] for c in _checklist if c["passed"])
 
     results["_checklist"] = _checklist

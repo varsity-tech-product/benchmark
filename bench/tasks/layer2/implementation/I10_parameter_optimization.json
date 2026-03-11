@@ -31,7 +31,7 @@
       "algorithm_framework_guide.md",
       "statistical_tests.md"
     ],
-    "sandbox_image": "quant-tutor-env:v2.0-lean",
+    "sandbox_image": "quant-tutor-env:v2.2-lean",
     "network_enabled": false
   },
   "ground_truth": {
@@ -45,6 +45,7 @@
     ],
     "expected_mcp_tools": [
       "shell_exec",
+      "file_read",
       "get_environment_info"
     ],
     "convenient_tools": [

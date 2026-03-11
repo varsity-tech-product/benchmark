@@ -44,8 +44,8 @@
     ],
     "expected_mcp_tools": [
       "shell_exec",
-      "get_environment_info",
-      "file_read"
+      "file_read",
+      "get_environment_info"
     ],
     "convenient_tools": [
       "compute_indicator",

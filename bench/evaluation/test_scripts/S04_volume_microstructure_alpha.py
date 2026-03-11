@@ -9,7 +9,6 @@ from _data_source_check import verify_data_source
 from _strategy_research_check import (
     collect_artifact_text,
     collect_signal_evaluation_records,
-    conversation_text,
     count_keyword_groups,
     has_any,
     has_metric_numbers,
@@ -34,19 +33,29 @@ def evaluate(
         "cross_timeframe_analysis_present": False,
         "signal_formalized": False,
         "signal_evaluated": False,
-        "decay_or_tradability_discussed": False,
         "signal_artifact_present": False,
         "structured_signal_eval_present": False,
         "score": 0.0,
     }
 
     artifact_text = collect_artifact_text(workspace_path, tool_logs)
-    assistant_text = conversation_text(conversation, role="assistant")
     signal_eval_records = collect_signal_evaluation_records(workspace_path, tool_logs)
 
     results["signal_artifact_present"] = (
         workspace_has_csv_columns(workspace_path, ["signal", "close"])
         or has_signal_definition(artifact_text)
+        or has_any(
+            artifact_text,
+            [
+                "microstructure_signal",
+                "alpha_signal",
+                "imbalance",
+                "volume_ratio",
+                "taker_buy",
+                "order_flow",
+                "vpin",
+            ],
+        )
         or bool(signal_eval_records)
     )
     results["structured_signal_eval_present"] = any(
@@ -69,7 +78,9 @@ def evaluate(
     ]
     if has_any(artifact_text, non_price_terms) and (
         has_regex(artifact_text, feature_assignment_patterns)
-        or has_any(artifact_text, ["feature", "signal", "ratio", "z-score", "normalized"])
+        or has_any(
+            artifact_text, ["feature", "signal", "ratio", "z-score", "normalized"]
+        )
     ):
         results["non_price_features_used"] = True
 
@@ -97,7 +108,9 @@ def evaluate(
         ["predict", "predicts", "lead", "propagate"],
         ["resample", "merge", "merge_asof", "groupby", "align", "shift"],
     ]
-    timeframe_group_hits = sum(1 for group in timeframe_groups if has_any(artifact_text, group))
+    timeframe_group_hits = sum(
+        1 for group in timeframe_groups if has_any(artifact_text, group)
+    )
     if (
         timeframe_group_hits >= 2
         and count_keyword_groups(artifact_text, cross_tf_link_groups) >= 2
@@ -117,37 +130,31 @@ def evaluate(
     ):
         results["signal_evaluated"] = True
 
-    practical_terms = [
-        "decay",
-        "decays fast",
-        "latency",
-        "capacity",
-        "tradeable",
-        "tradable",
-        "slippage",
-        "fees",
-    ]
-    if has_any(assistant_text, practical_terms):
-        results["decay_or_tradability_discussed"] = True
-
     _checklist = [
-        {"item": "non_price_features_used", "weight": 0.15, "passed": results["non_price_features_used"]},
+        {
+            "item": "non_price_features_used",
+            "weight": 0.18,
+            "passed": results["non_price_features_used"],
+        },
         {
             "item": "feature_engineering_present",
-            "weight": 0.20,
+            "weight": 0.23,
             "passed": results["feature_engineering_present"],
         },
         {
             "item": "cross_timeframe_analysis_present",
-            "weight": 0.15,
+            "weight": 0.18,
             "passed": results["cross_timeframe_analysis_present"],
         },
-        {"item": "signal_formalized", "weight": 0.15, "passed": results["signal_formalized"]},
-        {"item": "signal_evaluated", "weight": 0.20, "passed": results["signal_evaluated"]},
         {
-            "item": "decay_or_tradability_discussed",
-            "weight": 0.15,
-            "passed": results["decay_or_tradability_discussed"],
+            "item": "signal_formalized",
+            "weight": 0.18,
+            "passed": results["signal_formalized"],
+        },
+        {
+            "item": "signal_evaluated",
+            "weight": 0.23,
+            "passed": results["signal_evaluated"],
         },
     ]
     score = sum(c["weight"] for c in _checklist if c["passed"])

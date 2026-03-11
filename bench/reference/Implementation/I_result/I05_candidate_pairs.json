@@ -1,0 +1,88 @@
+{
+  "task_id": "I05",
+  "universe": "tier2",
+  "selection_method": "60-day rolling correlation of log returns, ranked",
+  "period": "2022-01-01 to 2025-12-31",
+  "candidate_pairs": [
+    {
+      "pair": [
+        "BTCUSDT",
+        "ETHUSDT"
+      ],
+      "avg_correlation": 0.8129,
+      "rank": 1
+    },
+    {
+      "pair": [
+        "ADAUSDT",
+        "DOTUSDT"
+      ],
+      "avg_correlation": 0.8069,
+      "rank": 2
+    },
+    {
+      "pair": [
+        "ATOMUSDT",
+        "DOTUSDT"
+      ],
+      "avg_correlation": 0.7956,
+      "rank": 3
+    },
+    {
+      "pair": [
+        "DOTUSDT",
+        "MATICUSDT"
+      ],
+      "avg_correlation": 0.7755,
+      "rank": 4
+    },
+    {
+      "pair": [
+        "ADAUSDT",
+        "MATICUSDT"
+      ],
+      "avg_correlation": 0.7723,
+      "rank": 5
+    },
+    {
+      "pair": [
+        "AVAXUSDT",
+        "DOTUSDT"
+      ],
+      "avg_correlation": 0.7641,
+      "rank": 6
+    },
+    {
+      "pair": [
+        "ARBUSDT",
+        "ETHUSDT"
+      ],
+      "avg_correlation": 0.7612,
+      "rank": 7
+    },
+    {
+      "pair": [
+        "ATOMUSDT",
+        "MATICUSDT"
+      ],
+      "avg_correlation": 0.7543,
+      "rank": 8
+    },
+    {
+      "pair": [
+        "ADAUSDT",
+        "ATOMUSDT"
+      ],
+      "avg_correlation": 0.7439,
+      "rank": 9
+    },
+    {
+      "pair": [
+        "AVAXUSDT",
+        "SOLUSDT"
+      ],
+      "avg_correlation": 0.7387,
+      "rank": 10
+    }
+  ]
+}

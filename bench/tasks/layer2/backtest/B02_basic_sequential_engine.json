@@ -1,6 +1,6 @@
 {
   "task_id": "B02_basic_sequential_engine",
-  "version": "2.0",
+  "version": "2.2",
   "difficulty": "medium",
   "category": "backtest",
   "task_type": "multi_turn",
@@ -13,7 +13,7 @@
   "student_openings": {
     "beginner_no_finance": "I have some Bitcoin price data and I want to test a moving average strategy on it. I've never built a backtester before. Where do I start?",
     "intermediate_developer": "I need to build a backtest engine for crypto futures. I know Python well, but I want to make sure the architecture is right. How should I structure the components?",
-    "advanced_quant": "I'm building a backtest framework for USDT-M futures. I want a clean data replay layer that guarantees no look-ahead, an engine with proper position accounting, and a pluggable strategy interface. What's a good architecture?"
+    "advanced_quant": "I'm building a backtest framework for USDT-M futures. I want an architecture that guarantees no look-ahead. What's a good design?"
   },
   "environment": {
     "data_files": [
@@ -29,11 +29,11 @@
     "docs_available": [
       "backtesting_101.md"
     ],
-    "sandbox_image": "quant-tutor-env:v2.0",
+    "sandbox_image": "quant-tutor-env:v2.2",
     "network_enabled": false
   },
   "ground_truth": {
-    "expected_outcome": "Student produces a working backtest system with at least three distinct components: (1) a data handler that loads BTCUSDT daily klines and replays bars one at a time without exposing future data, (2) an engine/runner that iterates through bars, manages positions, tracks PnL, and computes basic performance metrics, and (3) a strategy that implements the MA crossover logic and only has access to current and past bars. The system runs end-to-end and produces a performance summary such as total return and number of trades, leaving concrete code artifacts rather than only architectural discussion.",
+    "expected_outcome": "Tutor guides the student to build a working backtest system with three distinct components: a data handler that replays BTCUSDT daily bars without exposing future data, an engine that manages positions, tracks PnL and computes performance metrics, and an MA crossover strategy that only accesses current and past bars. The tutor explains why the three-layer separation matters for data integrity and look-ahead prevention. The system runs end-to-end and produces a performance summary, leaving concrete code artifacts rather than only architectural discussion.",
     "required_capabilities": [
       "Design a data handler that loads CSV data and provides a sequential bar replay interface",
       "Build a backtest engine with position tracking and PnL computation",
@@ -43,10 +43,10 @@
     ],
     "expected_mcp_tools": [
       "shell_exec",
+      "file_read",
       "get_environment_info"
     ],
     "convenient_tools": [
-      "fetch_market_data",
       "plot_chart"
     ],
     "quant_validation": {

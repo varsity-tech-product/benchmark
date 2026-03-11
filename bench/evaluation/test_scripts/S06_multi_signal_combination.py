@@ -9,7 +9,6 @@ from _data_source_check import verify_data_source
 from _strategy_research_check import (
     collect_artifact_text,
     collect_signal_evaluation_records,
-    conversation_text,
     count_keyword_groups,
     has_any,
     has_metric_numbers,
@@ -29,19 +28,18 @@ def evaluate(
     results = {
         "multiple_signal_sources_present": False,
         "signal_correlation_analysis_present": False,
-        "combination_method_stated": False,
         "composite_signal_present": False,
         "composite_vs_individual_comparison_present": False,
-        "limitations_discussed": False,
         "signal_eval_artifact_count": 0,
         "score": 0.0,
     }
 
     artifact_text = collect_artifact_text(workspace_path, tool_logs)
-    assistant_text = conversation_text(conversation, role="assistant")
     signal_eval_records = collect_signal_evaluation_records(workspace_path, tool_logs)
     signal_eval_records = [
-        record for record in signal_eval_records if signal_eval_has_quality_metrics(record)
+        record
+        for record in signal_eval_records
+        if signal_eval_has_quality_metrics(record)
     ]
     signal_eval_file_count = sum(
         1
@@ -56,7 +54,10 @@ def evaluate(
         ["cross-asset", "btc/eth", "relative value", "lead-lag", "spread"],
         ["funding", "carry"],
     ]
-    if signal_eval_file_count >= 2 and count_keyword_groups(artifact_text, signal_groups) >= 3:
+    if (
+        signal_eval_file_count >= 2
+        and count_keyword_groups(artifact_text, signal_groups) >= 3
+    ):
         results["multiple_signal_sources_present"] = True
 
     correlation_patterns = [
@@ -68,14 +69,9 @@ def evaluate(
     if has_regex(artifact_text, correlation_patterns):
         results["signal_correlation_analysis_present"] = True
 
-    if has_any(
-        assistant_text,
-        ["equal weight", "equal-weight", "ic-weighted", "regression", "weighted combination"],
-    ):
-        results["combination_method_stated"] = True
-
     if has_signal_definition(artifact_text) and has_any(
-        artifact_text, ["composite signal", "combined signal", "ensemble", "weighted sum"]
+        artifact_text,
+        ["composite signal", "combined signal", "ensemble", "weighted sum"],
     ):
         results["composite_signal_present"] = True
 
@@ -87,62 +83,50 @@ def evaluate(
         "improved ic",
         "ic ir",
     ]
-    if signal_eval_file_count >= 2 and has_any(
-        artifact_text, comparison_terms
-    ) and has_metric_numbers(
-        artifact_text,
-        [
-            ["sharpe", "annualized_sharpe"],
-            ["ic_mean", "information coefficient", "ic ir"],
-            ["total_return", "annualized return", "annualized_return"],
-        ],
+    if (
+        signal_eval_file_count >= 2
+        and has_any(artifact_text, comparison_terms)
+        and has_metric_numbers(
+            artifact_text,
+            [
+                ["sharpe", "annualized_sharpe"],
+                ["ic_mean", "information coefficient", "ic ir"],
+                ["total_return", "annualized return", "annualized_return"],
+            ],
+        )
     ):
         results["composite_vs_individual_comparison_present"] = True
-
-    limitation_terms = [
-        "correlated drawdowns",
-        "all signals correlated",
-        "regime shift",
-        "crisis",
-        "diversification fails",
-        "tail correlation",
-    ]
-    if has_any(assistant_text, limitation_terms):
-        results["limitations_discussed"] = True
 
     _checklist = [
         {
             "item": "multiple_signal_sources_present",
-            "weight": 0.20,
+            "weight": 0.30,
             "passed": results["multiple_signal_sources_present"],
         },
         {
             "item": "signal_correlation_analysis_present",
-            "weight": 0.15,
+            "weight": 0.20,
             "passed": results["signal_correlation_analysis_present"],
         },
         {
-            "item": "combination_method_stated",
-            "weight": 0.15,
-            "passed": results["combination_method_stated"],
-        },
-        {
             "item": "composite_signal_present",
-            "weight": 0.15,
+            "weight": 0.20,
             "passed": results["composite_signal_present"],
         },
         {
             "item": "composite_vs_individual_comparison_present",
-            "weight": 0.20,
+            "weight": 0.30,
             "passed": results["composite_vs_individual_comparison_present"],
         },
-        {"item": "limitations_discussed", "weight": 0.15, "passed": results["limitations_discussed"]},
     ]
     score = sum(c["weight"] for c in _checklist if c["passed"])
 
     if signal_eval_file_count < 2:
         score = min(score, 0.25)
-    elif not results["multiple_signal_sources_present"] or not results["composite_signal_present"]:
+    elif (
+        not results["multiple_signal_sources_present"]
+        or not results["composite_signal_present"]
+    ):
         score = min(score, 0.35)
 
     if data_files:

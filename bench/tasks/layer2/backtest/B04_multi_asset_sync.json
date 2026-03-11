@@ -1,6 +1,6 @@
 {
   "task_id": "B04_multi_asset_sync",
-  "version": "2.0",
+  "version": "2.2",
   "difficulty": "hard",
   "category": "backtest",
   "task_type": "multi_turn",
@@ -13,7 +13,7 @@
   "student_openings": {
     "beginner_no_finance": "I have Bitcoin and Ethereum price data. I heard you can trade the ratio between them. But how do I even backtest something that involves two assets at the same time?",
     "intermediate_developer": "I need to build a multi-asset backtester. My current engine handles one asset at a time. How should I restructure it to replay multiple assets in sync and track positions per asset?",
-    "advanced_quant": "I'm building a multi-asset backtest engine for crypto futures. I need synchronized bar replay with proper timestamp alignment, per-asset position tracking, and a clean multi-asset strategy API. What's the architecture?"
+    "advanced_quant": "I'm building a multi-asset backtest engine for crypto futures. I need to support BTC and ETH simultaneously. What's the architecture?"
   },
   "environment": {
     "data_files": [
@@ -31,11 +31,11 @@
       "backtesting_101.md",
       "statistical_tests.md"
     ],
-    "sandbox_image": "quant-tutor-env:v2.0",
+    "sandbox_image": "quant-tutor-env:v2.2",
     "network_enabled": false
   },
   "ground_truth": {
-    "expected_outcome": "Student produces a backtest system where (1) the data layer loads and time-aligns BTCUSDT and ETHUSDT daily data, handling timestamp mismatches, (2) the engine replays synchronized bar tuples, (3) the strategy receives both current bars simultaneously and computes a ratio-based signal, and (4) the engine tracks positions in both assets with separate PnL accounting. The system runs end-to-end and reports per-asset and combined performance, leaving concrete multi-asset replay and accounting artifacts.",
+    "expected_outcome": "Tutor guides the student to build a multi-asset backtest system that loads and time-aligns BTCUSDT and ETHUSDT daily data, replays synchronized bar tuples, computes a ratio-based signal from both assets simultaneously, and tracks positions with separate per-asset PnL accounting. The system runs end-to-end and reports per-asset and combined performance, leaving concrete multi-asset replay and accounting artifacts.",
     "required_capabilities": [
       "Load and time-align multiple asset data series",
       "Build a synchronized multi-asset replay mechanism",
@@ -45,10 +45,10 @@
     ],
     "expected_mcp_tools": [
       "shell_exec",
+      "file_read",
       "get_environment_info"
     ],
     "convenient_tools": [
-      "fetch_market_data",
       "compute_statistics",
       "plot_chart"
     ],

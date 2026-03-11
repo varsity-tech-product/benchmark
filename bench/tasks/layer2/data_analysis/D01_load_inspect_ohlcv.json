@@ -13,7 +13,7 @@
   "student_openings": {
     "beginner_no_finance": "I have some stock data files but I don't really understand what's in them. Can you help me figure out what all these numbers mean?",
     "intermediate_developer": "I need to load and inspect some OHLCV data. What's the most efficient way to do initial data exploration with pandas?",
-    "advanced_quant": "I'm onboarding to a new dataset. I want to do a quick quality check on the OHLCV data \u2014 completeness, date gaps, corporate actions. What's your standard approach?"
+    "advanced_quant": "I'm onboarding to a new dataset. I want to do a quick quality check on the OHLCV data — completeness, date gaps, corporate actions. What's your standard approach?"
   },
   "environment": {
     "data_files": [
@@ -43,6 +43,7 @@
     ],
     "expected_mcp_tools": [
       "shell_exec",
+      "file_read",
       "get_environment_info"
     ],
     "convenient_tools": [
