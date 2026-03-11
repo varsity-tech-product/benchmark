@@ -1,6 +1,6 @@
 # End-to-End Section (E-Series) Design Plan
 
-> Version: v2.1 | Status: **Implemented** (E02-E05 task JSONs, eval scripts, reference algos, buggy code, generation script entries) | Section: Workflow Orchestration
+> Version: v2.1 | Status: **Complete** — all code, evals, and reference data generated | Section: Workflow Orchestration
 
 ---
 
@@ -571,17 +571,17 @@ The existing orchestrator handles E-series tasks without modification:
 
 ### 7.3 Generated Files (from reference generation)
 
-| File | Source |
-|------|--------|
-| `bench/data/reference/E02_reference_trades.json` | LEAN backtest |
-| `bench/data/reference/E02_reference_signals.json` | Signal extraction |
-| `bench/data/reference/E02_reference_summary.json` | Performance summary |
-| `bench/data/reference/E04_reference_trades.json` | LEAN backtest |
-| `bench/data/reference/E04_reference_signals.json` | Signal extraction |
-| `bench/data/reference/E04_reference_summary.json` | Performance summary |
-| `bench/data/reference/E05_reference_trades.json` | LEAN backtest |
-| `bench/data/reference/E05_reference_signals.json` | Signal extraction |
-| `bench/data/reference/E05_reference_summary.json` | Performance summary |
+| File | Source | Status |
+|------|--------|--------|
+| `bench/data/reference/E02_reference_trades.json` | LEAN backtest | ✅ 26 trades, +24.9% return |
+| `bench/data/reference/E02_reference_signals.json` | Signal extraction | ✅ 1,442 signals |
+| `bench/data/reference/E02_reference_summary.json` | Performance summary | ✅ |
+| `bench/data/reference/E04_reference_trades.json` | LEAN backtest | ✅ 12 trades, +77.1% return |
+| `bench/data/reference/E04_reference_signals.json` | Signal extraction | ✅ 1,461 signals |
+| `bench/data/reference/E04_reference_summary.json` | Performance summary | ✅ |
+| `bench/data/reference/E05_reference_trades.json` | LEAN backtest | ✅ 1,159 trades, +104.8% return |
+| `bench/data/reference/E05_reference_signals.json` | Signal extraction | ✅ 27,455 signals |
+| `bench/data/reference/E05_reference_summary.json` | Performance summary | ✅ |
 
 ---
 
@@ -593,8 +593,8 @@ The existing orchestrator handles E-series tasks without modification:
 4. **Docs existence**: All `docs_available` entries exist in `bench/docs/reference/`
 5. **Eval script dry-run**: Each script handles empty workspace gracefully (score=0) ✅ All return score=0.0
 6. **E04 buggy code compiles**: Compile in LEAN Docker → runs but produces bad results (no crash)
-7. **Reference generation**: Run for E02/E04/E05 → verify trade counts reasonable (requires Docker + LEAN data)
-8. **Behavioral scoring**: Reference files load correctly for E02/E04/E05 task IDs (requires reference data)
+7. **Reference generation**: Run for E02/E04/E05 → verify trade counts reasonable ✅ E02=26, E04=12, E05=1159
+8. **Behavioral scoring**: Reference files load correctly for E02/E04/E05 task IDs ✅ All reference data generated
 
 ## 9. Implementation Notes
 
@@ -608,14 +608,16 @@ The existing orchestrator handles E-series tasks without modification:
 
 `generate_reference_signals.py` was also modified (not originally listed in Section 7.2). Three new signal generators (`_signals_e02`, `_signals_e04`, `_signals_e05`) were added and registered in `SIGNAL_GENERATORS`.
 
-### 9.3 Remaining Work
+### 9.3 Reference Data Results
 
-Reference data generation (Step 7) requires Docker with the LEAN image and market data:
-```bash
-python3 bench/reference/generate_lean_reference.py --task E02
-python3 bench/reference/generate_lean_reference.py --task E04
-python3 bench/reference/generate_lean_reference.py --task E05
-python3 bench/reference/generate_reference_signals.py --task E02
-python3 bench/reference/generate_reference_signals.py --task E04
-python3 bench/reference/generate_reference_signals.py --task E05
-```
+Reference data generated successfully for all three LEAN-backed tasks:
+
+| Task | Trades | Return | Sharpe | Signals | Strategy |
+|------|--------|--------|--------|---------|----------|
+| E02 | 26 | +24.9% | — | 1,442 | BB(20,2) mean-reversion, BTCUSDT daily |
+| E04 | 12 | +77.1% | — | 1,461 | EMA(20/50) crossover (fixed), BTCUSDT daily |
+| E05 | 1,159 | +104.8% | — | 27,455 | ROCP(20) top-5 momentum, 20 tier2 symbols daily |
+
+Trade counts are consistent with strategy design:
+- E02/E04: Single-symbol daily strategies → low trade counts expected
+- E05: 20-symbol daily rebalancing → ~1K trades over 4 years is reasonable
