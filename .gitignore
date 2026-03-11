@@ -10,6 +10,7 @@ data/
 bench/data/*
 !bench/data/universe.json
 !bench/data/reference/
+!bench/data/frozen/
 *.7z
 *.xml
 *.jsonl

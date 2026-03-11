@@ -1,6 +1,6 @@
 # End-to-End Section (E-Series) Design Plan
 
-> Version: v2.0 | Status: Draft | Section: Workflow Orchestration
+> Version: v2.1 | Status: **Implemented** (E02-E05 task JSONs, eval scripts, reference algos, buggy code, generation script entries) | Section: Workflow Orchestration
 
 ---
 
@@ -218,7 +218,7 @@ Each E-task has **gates** — hard caps on the maximum score if critical pipelin
 
 **Imports**: `_strategy_research_check` (collect_artifact_text, has_signal_definition, has_metric_numbers, conversation_text, has_any, workspace_has_csv_columns), `_implementation_check` (compute_behavioral_score, collect_lean_results, load_agent_trades, check_csharp_patterns), `_data_source_check` (verify_data_source)
 
-**Reference algorithm**: `E02_bb_reversion_fixed.cs` — BB(20, 2.0) on BTCUSDT, daily, 2022-2025. Buy when price < lower band, sell when price > middle band. SetHoldings(1.0).
+**Reference algorithm**: `E02_bb_reversion.cs` — BB(20, 2.0) on BTCUSDT, daily, 2022-2025. Buy when price < lower band, sell when price > middle band. SetHoldings(1.0).
 
 ---
 
@@ -402,7 +402,7 @@ Each stage must build on the previous one. An agent that skips steps or doesn't 
 
 **Imports**: `_strategy_research_check` (collect_artifact_text, has_signal_definition, has_metric_numbers, conversation_text, has_any, workspace_has_csv_columns), `_implementation_check` (compute_behavioral_score, collect_lean_results, load_agent_trades, check_csharp_patterns), `_data_source_check` (verify_data_source)
 
-**Reference algorithm**: `E05_momentum_fixed.cs` — ROCP(20) momentum on ~20 tier2 symbols, long top-5, daily rebalancing, 2022-2025.
+**Reference algorithm**: `E05_momentum_topn.cs` — ROCP(20) momentum on ~20 tier2 symbols, long top-5, daily rebalancing, 2022-2025.
 
 ---
 
@@ -477,10 +477,10 @@ This prevents the common failure mode where an agent prototypes strategy A in Py
 | Task | Reference Algo | Reference Data | Behavioral Scoring |
 |------|---------------|----------------|-------------------|
 | E01 | None | None | No (checklist only) |
-| E02 | `E02_bb_reversion_fixed.cs` | trades + signals + summary | Yes |
+| E02 | `E02_bb_reversion.cs` | trades + signals + summary | Yes |
 | E03 | None | None | No (checklist only) |
 | E04 | `E04_compound_fixed.cs` | trades + signals + summary | Yes |
-| E05 | `E05_momentum_fixed.cs` | trades + signals + summary | Yes |
+| E05 | `E05_momentum_topn.cs` | trades + signals + summary | Yes |
 
 ### 5.2 Reference Algorithm Specifications
 
@@ -546,27 +546,28 @@ The existing orchestrator handles E-series tasks without modification:
 
 ### 7.1 New Files
 
-| # | File | Type |
-|---|------|------|
-| 1 | `bench/*MD/v2.0/end_to_end_section_plan.md` | Design doc (this file) |
-| 2 | `bench/data/frozen/E04_compound_bug.cs` | Buggy student code |
-| 3 | `bench/tasks/layer2/end_to_end/E02_research_to_implementation.json` | Task definition |
-| 4 | `bench/tasks/layer2/end_to_end/E03_strategy_validation.json` | Task definition |
-| 5 | `bench/tasks/layer2/end_to_end/E04_production_debugging.json` | Task definition |
-| 6 | `bench/tasks/layer2/end_to_end/E05_full_quant_workflow.json` | Task definition |
-| 7 | `bench/evaluation/test_scripts/E02_research_to_implementation.py` | Eval script |
-| 8 | `bench/evaluation/test_scripts/E03_strategy_validation.py` | Eval script |
-| 9 | `bench/evaluation/test_scripts/E04_production_debugging.py` | Eval script |
-| 10 | `bench/evaluation/test_scripts/E05_full_quant_workflow.py` | Eval script |
-| 11 | `bench/reference/lean_algorithms/E02_bb_reversion_fixed.cs` | Reference algo |
-| 12 | `bench/reference/lean_algorithms/E04_compound_fixed.cs` | Reference algo |
-| 13 | `bench/reference/lean_algorithms/E05_momentum_fixed.cs` | Reference algo |
+| # | File | Type | Status |
+|---|------|------|--------|
+| 1 | `bench/*MD/v2.0/end_to_end_section_plan.md` | Design doc (this file) | Done |
+| 2 | `bench/data/frozen/E04_compound_bug.cs` | Buggy student code | Done |
+| 3 | `bench/tasks/layer2/end_to_end/E02_research_to_implementation.json` | Task definition | Done |
+| 4 | `bench/tasks/layer2/end_to_end/E03_strategy_validation.json` | Task definition | Done |
+| 5 | `bench/tasks/layer2/end_to_end/E04_production_debugging.json` | Task definition | Done |
+| 6 | `bench/tasks/layer2/end_to_end/E05_full_quant_workflow.json` | Task definition | Done |
+| 7 | `bench/evaluation/test_scripts/E02_research_to_implementation.py` | Eval script (9 checks) | Done |
+| 8 | `bench/evaluation/test_scripts/E03_strategy_validation.py` | Eval script (8 checks) | Done |
+| 9 | `bench/evaluation/test_scripts/E04_production_debugging.py` | Eval script (8 checks) | Done |
+| 10 | `bench/evaluation/test_scripts/E05_full_quant_workflow.py` | Eval script (11 checks) | Done |
+| 11 | `bench/reference/lean_algorithms/E02_bb_reversion.cs` | Reference algo | Done |
+| 12 | `bench/reference/lean_algorithms/E04_compound_fixed.cs` | Reference algo | Done |
+| 13 | `bench/reference/lean_algorithms/E05_momentum_topn.cs` | Reference algo | Done |
 
 ### 7.2 Modified Files
 
-| File | Change |
-|------|--------|
-| `bench/reference/generate_lean_reference.py` | Add E02/E04/E05 to TASK_ALGO_MAP and class_name_map |
+| File | Change | Status |
+|------|--------|--------|
+| `bench/reference/generate_lean_reference.py` | Add E02/E04/E05 to TASK_ALGO_MAP and class_name_map | Done |
+| `bench/reference/generate_reference_signals.py` | Add `_signals_e02/e04/e05()` + register in SIGNAL_GENERATORS | Done |
 
 ### 7.3 Generated Files (from reference generation)
 
@@ -586,11 +587,35 @@ The existing orchestrator handles E-series tasks without modification:
 
 ## 8. Verification Checklist
 
-1. **Schema validation**: Load each task JSON through `QuantTutorTask(**json.load(f))` — verify parsing
-2. **Checklist weight sums**: Verify all weights sum to 1.0 per eval script
+1. **Schema validation**: Load each task JSON through `json.load()` — verify parsing ✅ All 4 parse correctly
+2. **Checklist weight sums**: Verify all weights sum to 1.0 per eval script ✅ E02=1.000, E03=1.000, E04=1.000, E05=1.000
 3. **Data file existence**: All `data_files` entries exist in `bench/data/frozen/` or are auto-staged
 4. **Docs existence**: All `docs_available` entries exist in `bench/docs/reference/`
-5. **Eval script dry-run**: Each script handles empty workspace gracefully (score=0)
+5. **Eval script dry-run**: Each script handles empty workspace gracefully (score=0) ✅ All return score=0.0
 6. **E04 buggy code compiles**: Compile in LEAN Docker → runs but produces bad results (no crash)
-7. **Reference generation**: Run for E02/E04/E05 → verify trade counts reasonable
-8. **Behavioral scoring**: Reference files load correctly for E02/E04/E05 task IDs
+7. **Reference generation**: Run for E02/E04/E05 → verify trade counts reasonable (requires Docker + LEAN data)
+8. **Behavioral scoring**: Reference files load correctly for E02/E04/E05 task IDs (requires reference data)
+
+## 9. Implementation Notes
+
+### 9.1 Filename Deviations from Design
+
+- `E02_bb_reversion_fixed.cs` → `E02_bb_reversion.cs` (dropped `_fixed` — it's a reference, not a fix)
+- `E05_momentum_fixed.cs` → `E05_momentum_topn.cs` (clearer name describing the strategy)
+- `E04_compound_fixed.cs` kept as-is (emphasizes it's the corrected version of the buggy code)
+
+### 9.2 Additional Modification
+
+`generate_reference_signals.py` was also modified (not originally listed in Section 7.2). Three new signal generators (`_signals_e02`, `_signals_e04`, `_signals_e05`) were added and registered in `SIGNAL_GENERATORS`.
+
+### 9.3 Remaining Work
+
+Reference data generation (Step 7) requires Docker with the LEAN image and market data:
+```bash
+python3 bench/reference/generate_lean_reference.py --task E02
+python3 bench/reference/generate_lean_reference.py --task E04
+python3 bench/reference/generate_lean_reference.py --task E05
+python3 bench/reference/generate_reference_signals.py --task E02
+python3 bench/reference/generate_reference_signals.py --task E04
+python3 bench/reference/generate_reference_signals.py --task E05
+```

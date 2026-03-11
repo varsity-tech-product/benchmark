@@ -669,6 +669,156 @@ def _signals_i10(start: str = DEFAULT_START, end: str = DEFAULT_END) -> dict:
     }
 
 
+def _signals_e02(start: str = DEFAULT_START, end: str = DEFAULT_END) -> dict:
+    """E02: BB(20,2) on BTCUSDT daily.
+
+    signal = +1 if close < lower band, 0 if close > middle band, carry otherwise.
+    warmup=20.
+    """
+    symbol = "BTCUSDT"
+    df = _load_daily_csv(symbol)
+    df = _filter_dates(df, start, end)
+    if df.empty:
+        return _empty_signal_result("E02", "daily", start, end, 20)
+
+    df["sma20"] = df["close"].rolling(20).mean()
+    df["std20"] = df["close"].rolling(20).std()
+    df["upper_band"] = df["sma20"] + 2.0 * df["std20"]
+    df["lower_band"] = df["sma20"] - 2.0 * df["std20"]
+    df["middle_band"] = df["sma20"]
+    warmup = 20
+
+    signals = []
+    last_sig = 0
+    for _, row in df.iterrows():
+        if pd.isna(row["sma20"]) or pd.isna(row["std20"]):
+            continue
+        if row["close"] < row["lower_band"]:
+            sig = 1
+        elif row["close"] > row["middle_band"]:
+            sig = 0
+        else:
+            sig = last_sig  # carry previous signal
+        signals.append({"date": str(row["date"]), "signal": sig})
+        last_sig = sig
+
+    return {
+        "task_id": "E02",
+        "seed": None,
+        "resolution": "daily",
+        "start_date": start,
+        "end_date": end,
+        "warmup_periods": warmup,
+        "signals": {symbol: signals},
+    }
+
+
+def _signals_e04(start: str = DEFAULT_START, end: str = DEFAULT_END) -> dict:
+    """E04: EMA(20/50) crossover on BTCUSDT daily.
+
+    signal = +1 if fast > slow, -1 otherwise. warmup=50.
+    """
+    symbol = "BTCUSDT"
+    df = _load_daily_csv(symbol)
+    df = _filter_dates(df, start, end)
+    if df.empty:
+        return _empty_signal_result("E04", "daily", start, end, 50)
+
+    df["ema20"] = df["close"].ewm(span=20, adjust=False).mean()
+    df["ema50"] = df["close"].ewm(span=50, adjust=False).mean()
+    warmup = 50
+
+    signals = []
+    for _, row in df.iterrows():
+        if pd.isna(row["ema20"]) or pd.isna(row["ema50"]):
+            continue
+        sig = 1 if row["ema20"] > row["ema50"] else -1
+        signals.append({"date": str(row["date"]), "signal": sig})
+
+    return {
+        "task_id": "E04",
+        "seed": None,
+        "resolution": "daily",
+        "start_date": start,
+        "end_date": end,
+        "warmup_periods": warmup,
+        "signals": {symbol: signals},
+    }
+
+
+def _signals_e05(start: str = DEFAULT_START, end: str = DEFAULT_END) -> dict:
+    """E05: ROCP(20) on ~20 tier2 symbols, daily.
+
+    Rank daily by ROCP, top-5 get +1, rest get 0. warmup=20.
+    """
+    universe_path = BENCH_ROOT / "data" / "universe.json"
+    if universe_path.exists():
+        with open(universe_path) as f:
+            universe = json.load(f)
+        symbols = universe["tiers"]["tier2"]["symbols"][:20]
+    else:
+        symbols = ["BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "XRPUSDT",
+                    "ADAUSDT", "DOGEUSDT", "AVAXUSDT", "DOTUSDT", "MATICUSDT"]
+
+    warmup = 20
+    top_n = 5
+
+    # Load daily data for all symbols
+    sym_data: dict[str, pd.DataFrame] = {}
+    for sym in symbols:
+        df = _load_daily_csv(sym)
+        df = _filter_dates(df, start, end)
+        if df.empty or len(df) < warmup:
+            continue
+        df["rocp"] = df["close"].pct_change(warmup)
+        sym_data[sym] = df
+
+    if not sym_data:
+        return _empty_signal_result("E05", "daily", start, end, warmup)
+
+    # Collect all unique dates
+    all_dates: set = set()
+    for sym, df in sym_data.items():
+        for _, row in df.iterrows():
+            if not pd.isna(row["rocp"]):
+                all_dates.add(row["date"])
+
+    all_signals: dict[str, list] = {sym: [] for sym in sym_data}
+
+    for date in sorted(all_dates):
+        # Collect ROCP values for this date
+        rankings = []
+        for sym, df in sym_data.items():
+            row = df[df["date"] == date]
+            if row.empty or pd.isna(row.iloc[0]["rocp"]):
+                continue
+            rankings.append((sym, float(row.iloc[0]["rocp"])))
+
+        # Rank and select top-N
+        rankings.sort(key=lambda x: x[1], reverse=True)
+        top_symbols = {sym for sym, _ in rankings[:top_n]}
+
+        for sym in sym_data:
+            row = sym_data[sym][sym_data[sym]["date"] == date]
+            if row.empty or pd.isna(row.iloc[0]["rocp"]):
+                continue
+            sig = 1 if sym in top_symbols else 0
+            all_signals[sym].append({"date": str(date), "signal": sig})
+
+    # Remove empty symbol entries
+    all_signals = {sym: sigs for sym, sigs in all_signals.items() if sigs}
+
+    return {
+        "task_id": "E05",
+        "seed": None,
+        "resolution": "daily",
+        "start_date": start,
+        "end_date": end,
+        "warmup_periods": warmup,
+        "signals": all_signals,
+    }
+
+
 def _compute_candidate_pairs(start: str = DEFAULT_START, end: str = DEFAULT_END) -> dict:
     """Pre-compute pairwise correlations for all Tier 2 symbols.
 
@@ -817,6 +967,9 @@ SIGNAL_GENERATORS = {
     "I08": _signals_i08,
     "I09": _signals_i09,
     "I10": _signals_i10,
+    "E02": _signals_e02,
+    "E04": _signals_e04,
+    "E05": _signals_e05,
 }
 
 
