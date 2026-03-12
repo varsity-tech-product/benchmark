@@ -11,25 +11,39 @@ Every LEAN algorithm inherits from `QCAlgorithm`. The engine calls two primary m
 - **`Initialize()`** -- called once at startup. Set dates, cash, subscriptions, indicators, and parameters here.
 - **`OnData(Slice data)`** -- called on every new data point (bar or tick). This is where trading logic lives.
 
-LEAN compiles C# source files at runtime inside the Docker container. The algorithm class must be `public` and reside in the `QuantConnect.Algorithm.CSharp` namespace.
+The algorithm class must be `public` and reside in the `QuantConnect.Algorithm.CSharp` namespace.
+
+To compile and run your algorithm, use the `run_backtest` command:
+
+```bash
+run_backtest /workspace/Algorithm.cs
+```
 
 ### Minimal skeleton
 
 ```csharp
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using Newtonsoft.Json;
 using QuantConnect;
 using QuantConnect.Algorithm;
 using QuantConnect.Data;
+using QuantConnect.Data.Market;
+using QuantConnect.Indicators;
+using QuantConnect.Orders;
 
 namespace QuantConnect.Algorithm.CSharp
 {
-    public class MyAlgorithm : QCAlgorithm
+    public class Algorithm : QCAlgorithm
     {
         public override void Initialize()
         {
             SetStartDate(2023, 1, 1);
             SetEndDate(2024, 1, 1);
             SetAccountCurrency("USDT");
-            SetCash("USDT", 100000);
+            SetCash(100000);
 
             AddCryptoFuture("BTCUSDT", Resolution.Daily, Market.Binance);
         }
@@ -45,13 +59,15 @@ namespace QuantConnect.Algorithm.CSharp
 }
 ```
 
+**Note**: The `using` directives above cover the most common needs (indicators, orders, JSON loading, LINQ). Add framework-specific usings for Algorithm Framework tasks (see the Algorithm Framework Guide).
+
 ### Lifecycle overview
 
-1. Engine loads and compiles the `.cs` file.
+1. `run_backtest` copies your `.cs` file into the LEAN project, builds it, and runs the LEAN engine.
 2. `Initialize()` runs -- sets universe, indicators, warm-up period.
 3. If `SetWarmUp()` was called, the engine feeds historical data silently (indicators update but orders are blocked).
 4. `OnData()` fires for each slice in the date range.
-5. At `SetEndDate`, the engine liquidates remaining positions and writes results.
+5. At `SetEndDate`, the engine liquidates remaining positions and writes results to `/workspace/results/`.
 
 ---
 
@@ -74,7 +90,9 @@ Binance futures are margined in USDT. Always call this before `SetCash`:
 
 ```csharp
 SetAccountCurrency("USDT");
-SetCash("USDT", 100000);
+SetCash(100000);              // 1-param form: sets cash in account currency
+// or equivalently:
+// SetCash("USDT", 100000);  // 2-param form: explicit currency
 ```
 
 ### Resolution options
@@ -342,7 +360,7 @@ public override void Initialize()
     SetStartDate(2023, 1, 1);
     SetEndDate(2024, 1, 1);
     SetAccountCurrency("USDT");
-    SetCash("USDT", 100000);
+    SetCash(100000);
 
     var tickers = new[] {
         "BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "XRPUSDT",
@@ -356,6 +374,54 @@ public override void Initialize()
     }
 }
 ```
+
+### Loading universe from file
+
+For multi-symbol strategies, load the symbol list from `universe.json` (mounted in the Docker container). Try multiple paths in order of priority:
+
+```csharp
+private List<string> LoadUniverse()
+{
+    var paths = new[]
+    {
+        Path.Combine(Globals.DataFolder, "universe.json"),
+        "/data/universe.json",
+        "/lean/Data/universe.json"
+    };
+
+    foreach (var path in paths)
+    {
+        if (File.Exists(path))
+        {
+            var json = File.ReadAllText(path);
+            var symbols = JsonConvert.DeserializeObject<List<string>>(json);
+            Log($"Loaded {symbols.Count} symbols from {path}");
+            return symbols;
+        }
+    }
+
+    // Fallback: small default universe
+    Log("WARNING: universe.json not found, using default universe");
+    return new List<string>
+    {
+        "BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "XRPUSDT",
+        "ADAUSDT", "DOGEUSDT", "AVAXUSDT", "DOTUSDT", "MATICUSDT"
+    };
+}
+```
+
+Then use it in `Initialize()`:
+
+```csharp
+var tickers = LoadUniverse();
+foreach (var ticker in tickers)
+{
+    var crypto = AddCryptoFuture(ticker, Resolution.Daily, Market.Binance);
+    _symbols.Add(crypto.Symbol);
+}
+```
+
+This pattern is used by all multi-symbol algorithms and ensures consistent universe membership. Requires `using System.IO;` and `using Newtonsoft.Json;`.
 
 ### Iterating symbols in OnData
 
@@ -511,35 +577,39 @@ LEAN supports named parameters that can be swept across values for optimization.
 
 ### Setting parameters
 
+Current LEAN C# source includes typed `GetParameter()` overloads. Prefer them for numeric parameters:
+
 ```csharp
 public override void Initialize()
 {
-    var fastPeriod = GetParameter("fast-period", 10);
-    var slowPeriod = GetParameter("slow-period", 50);
-    var rsiThreshold = GetParameter("rsi-threshold", 30);
+    int fastPeriod = GetParameter("fast_period", 10);
+    int slowPeriod = GetParameter("slow_period", 50);
+    decimal threshold = GetParameter("signal_threshold", 0.01m);
 
     _smaFast = SMA("BTCUSDT", fastPeriod, Resolution.Daily);
     _smaSlow = SMA("BTCUSDT", slowPeriod, Resolution.Daily);
 }
 ```
 
+If you need custom parsing, the string overload still exists:
+
+```csharp
+var mode = GetParameter("portfolio_model", "InsightWeighting");
+```
+
 ### Passing parameters at runtime
 
-Parameters are passed via the LEAN configuration or command line. In our Docker setup, they are injected through the config:
+Parameters are injected via the `--params` flag on `run_backtest`:
 
-```json
-{
-  "parameters": {
-    "fast-period": "10",
-    "slow-period": "50",
-    "rsi-threshold": "30"
-  }
-}
+```bash
+run_backtest /workspace/Algorithm.cs --params '{"fast_period":"15","slow_period":"50"}' --run-id config1
 ```
+
+The `--run-id` flag saves results to a subdirectory (`/workspace/results/config1/`), allowing you to compare multiple runs. `run_backtest` resets the LEAN `parameters` section on each invocation so later runs do not inherit stale values.
 
 ### Parameter sweep pattern
 
-To run a parameter sweep, modify the config and re-run the container for each combination. The harness automates this by varying parameter values and collecting results from each run.
+To run a parameter sweep, call `run_backtest` multiple times with different `--params` and `--run-id` values. Collect and compare `summary.json` from each run's results subdirectory.
 
 ---
 
@@ -547,42 +617,54 @@ To run a parameter sweep, modify the config and re-run the container for each co
 
 ### The run_backtest command
 
-The benchmark harness launches LEAN inside Docker. The typical flow:
+Use `run_backtest` to compile and run your algorithm:
 
-1. The harness writes the algorithm `.cs` file into the workspace.
-2. It mounts the data directory and config into the container.
-3. It runs the LEAN engine container.
-4. Results are written to the results directory.
+```bash
+# Basic usage
+run_backtest /workspace/Algorithm.cs
+
+# With parameters and run ID
+run_backtest /workspace/Algorithm.cs --params '{"risk_config":"builtin"}' --run-id builtin
+```
+
+The command:
+
+1. Copies your `.cs` file into the LEAN project.
+2. Runs `dotnet build` to compile.
+3. Runs the LEAN engine.
+4. Extracts results to `/workspace/results/` (or `/workspace/results/<run-id>/`).
+
+**Exit codes**:
+- `0` = success
+- `1` = usage error or missing algorithm file
+- `2` = build failure
+- `3` = runtime failure
+- `4` = results extraction failure (`summary.json` missing after a successful run)
+- `124` = timeout
 
 ### Output files
 
-After a backtest completes, the results directory contains:
+After a backtest completes, the results directory (`/workspace/results/`) contains:
 
 | File                        | Contents                                        |
 |-----------------------------|-------------------------------------------------|
-| `results.json`              | Full backtest results (orders, equity curve, statistics) |
-| `log.txt`                   | All `Log()` output from the algorithm           |
-| `orders.json`               | Detailed order-by-order execution log            |
+| `summary.json`              | Performance statistics (flat key-value dict)    |
+| `trades.json`               | Closed trade records                             |
+| `orders.json`               | All order events                                 |
+| `log.txt`                   | All `Log()` output and engine messages           |
 
 ### Interpreting results
 
-Key statistics in `results.json`:
+Key statistics in `summary.json`:
 
 ```
-TotalPerformance.TradeStatistics:
-  - TotalNumberOfTrades
-  - WinRate
-  - AverageProfit
-  - AverageLoss
-  - ProfitLossRatio
-
-Statistics:
-  - Total Trades
-  - Sharpe Ratio
-  - Compounding Annual Return
-  - Max Drawdown
-  - Net Profit
-  - Total Fees
+Total Trades
+Sharpe Ratio
+Compounding Annual Return
+Max Drawdown
+Net Profit
+Win Rate
+Total Fees
 ```
 
 ### Reading results programmatically
@@ -590,14 +672,26 @@ Statistics:
 ```python
 import json
 
-with open("results/results.json") as f:
-    results = json.load(f)
+with open("/workspace/results/summary.json") as f:
+    stats = json.load(f)
 
-stats = results["Statistics"]
-sharpe = float(stats["Sharpe Ratio"])
-max_dd = float(stats["Max Drawdown"].replace("%", ""))
-net_profit = float(stats["Net Profit"].replace("%", "").replace(",", ""))
+sharpe = float(stats.get("Sharpe Ratio", "0"))
+total_trades = int(stats.get("Total Trades", "0"))
+net_profit = stats.get("Net Profit", "0%")
 ```
+
+### Checking for errors
+
+After running a backtest, always verify that it completed successfully:
+
+1. **Check for results**: Confirm `results/summary.json` exists. If it is missing, the backtest crashed before completion.
+2. **Check stderr/logs**: Look for LEAN error messages in the container output. Common failures include:
+   - `Symbol not found` or `No data files found` — the symbol ticker is misspelled or data is not mounted
+   - `Runtime Error` — an unhandled exception in your algorithm (null reference, key not found, etc.)
+   - `Insufficient buying power` — position size exceeds available margin
+   - Warm-up period longer than the backtest date range
+3. **Check trade count**: If `Total Trades` is 0, your signal logic may never be triggering. Verify indicator readiness checks and data availability.
+4. **Check for NaN/Infinity**: If Sharpe Ratio or other statistics show `NaN` or `∞`, this usually means the algorithm had no variance in returns (e.g., no trades or flat equity).
 
 ---
 

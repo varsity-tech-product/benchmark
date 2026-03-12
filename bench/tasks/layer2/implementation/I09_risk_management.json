@@ -4,7 +4,7 @@
   "difficulty": "hard",
   "category": "implementation",
   "task_type": "multi_turn",
-  "description": "Guide a student to implement and compare risk management models in LEAN's Algorithm Framework. The student must build a framework algorithm with EMA-based alpha on hourly data, then run three configurations: (1) no risk management, (2) built-in models (MaximumDrawdownPerSecurity + TrailingStop), (3) a custom RiskManagementModel that limits total portfolio exposure. The student compares drawdown and performance across all three runs, demonstrating understanding of the risk management pipeline stage.",
+  "description": "Guide a student to implement and compare risk management models in LEAN's Algorithm Framework. The student must build a framework algorithm with EMA-based alpha on hourly data, then run three configurations: (1) no risk management, (2) built-in models (MaximumDrawdownPercentPerSecurity + TrailingStop), (3) a custom RiskManagementModel that limits total portfolio exposure. The student compares drawdown and performance across all three runs, demonstrating understanding of the risk management pipeline stage.",
   "persona_ids": [
     "beginner_no_finance",
     "intermediate_developer",
@@ -12,7 +12,7 @@
   ],
   "student_openings": {
     "beginner_no_finance": "I want to add risk controls to my LEAN framework algorithm — like automatic stop-losses and position limits. I also want to see how much difference it makes compared to having no risk management. How do I set this up?",
-    "intermediate_developer": "I'm implementing risk management in LEAN's Algorithm Framework. I want to compare three configurations: no risk management, built-in models (MaximumDrawdownPerSecurity + TrailingStop), and a custom RiskManagementModel. How should I structure the comparison using GetParameter()?",
+    "intermediate_developer": "I'm implementing risk management in LEAN's Algorithm Framework. I want to compare three configurations: no risk management, built-in models (MaximumDrawdownPercentPerSecurity + TrailingStop), and a custom RiskManagementModel. How should I structure the comparison using GetParameter()?",
     "advanced_quant": "I need to implement a custom RiskManagementModel (total exposure cap at 40%) alongside built-in risk models, compare three risk configurations via parameterized runs on hourly EMA alpha, and analyze the drawdown impact across configs. Architecture?"
   },
   "environment": {
@@ -31,14 +31,14 @@
       "algorithm_framework_guide.md",
       "risk_metrics.md"
     ],
-    "sandbox_image": "quant-tutor-env:v2.2",
+    "sandbox_image": "quant-tutor-env:v2.2-lean",
     "network_enabled": false
   },
   "ground_truth": {
-    "expected_outcome": "Student produces (1) a LEAN framework algorithm with EMA(24)/EMA(72) hourly alpha, (2) three risk configurations selectable via GetParameter('risk_config'): none, builtin (MaximumDrawdownPerSecurity + TrailingStop), custom (MaxGroupExposureRiskManagementModel + TrailingStop), (3) a custom RiskManagementModel class inheriting from RiskManagementModel with ManageRisk() method, (4) three result sets showing drawdown improvement with risk management enabled, (5) a structured comparison output.",
+    "expected_outcome": "Student produces (1) a LEAN framework algorithm with EMA(24)/EMA(72) hourly alpha, (2) three risk configurations selectable via GetParameter('risk_config'): none, builtin (MaximumDrawdownPercentPerSecurity + TrailingStop), custom (MaxGroupExposureRiskManagementModel + TrailingStop), (3) a custom RiskManagementModel class inheriting from RiskManagementModel with ManageRisk() method, (4) three result sets showing drawdown improvement with risk management enabled, (5) a structured comparison output.",
     "required_capabilities": [
       "Implement a framework algorithm with hourly resolution alpha model",
-      "Use built-in risk management models (MaximumDrawdownPerSecurity, TrailingStopRiskManagementModel)",
+      "Use built-in risk management models (MaximumDrawdownPercentPerSecurity, TrailingStopRiskManagementModel)",
       "Implement a custom RiskManagementModel class with ManageRisk() method",
       "Use GetParameter() to switch risk configurations between runs",
       "Compare performance across three risk configurations and analyze drawdown impact"

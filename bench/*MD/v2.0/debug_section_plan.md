@@ -83,7 +83,7 @@ X-series spans two execution environments, mirroring the broader benchmark:
 
 **Tier A: Python/pandas (X01-X06)** — Uses the existing `quant-tutor-env:v2.2` sandbox. Bugs are in standalone Python scripts using pandas, numpy, and standard quant patterns. These test debugging skills in the most common quant prototyping environment.
 
-**Tier B: LEAN C# (X07-X10)** — Uses the `quant-tutor-env:v2.0-lean` sandbox. Bugs are in LEAN C# algorithms with engine-specific issues (missing warm-up, wrong order types, framework conflicts, stale universe). These test debugging skills in a production backtest engine environment.
+**Tier B: LEAN C# (X07-X10)** — Uses the `quant-tutor-env:v2.2-lean` sandbox. Bugs are in LEAN C# algorithms with engine-specific issues (missing warm-up, wrong order types, framework conflicts, stale universe). These test debugging skills in a production backtest engine environment.
 
 ```
 Tier A: Python/pandas (X01–X06)                Tier B: LEAN C# (X07–X10)
@@ -515,7 +515,7 @@ Without warm-up, the EMA indicators start computing from the first bar with inco
   "data_files": ["universe.json"],
   "core_mcp_tools": ["shell_exec", "file_write", "file_read", "file_list", "get_environment_info", "search_docs"],
   "docs_available": ["lean_algorithm_guide.md"],
-  "sandbox_image": "quant-tutor-env:v2.0-lean",
+  "sandbox_image": "quant-tutor-env:v2.2-lean",
   "network_enabled": false
 }
 ```
@@ -588,7 +588,7 @@ When momentum is positive and rising, using a limit buy at the current price oft
   "data_files": ["universe.json"],
   "core_mcp_tools": ["shell_exec", "file_write", "file_read", "file_list", "get_environment_info", "search_docs"],
   "docs_available": ["lean_algorithm_guide.md"],
-  "sandbox_image": "quant-tutor-env:v2.0-lean",
+  "sandbox_image": "quant-tutor-env:v2.2-lean",
   "network_enabled": false
 }
 ```
@@ -636,14 +636,14 @@ The portfolio construction model receives Up from one alpha and Down from the ot
 - Individual alphas would produce trades, but together they produce nothing
 
 **Fix**: Several valid approaches (agent should guide student to at least one):
-1. Add insight confidence/magnitude weighting with `InsightWeightingPortfolioConstructionModel`
+1. Add explicit `Insight.Weight` values with `InsightWeightingPortfolioConstructionModel`
 2. Use a custom PCM that resolves conflicts (e.g., trend takes priority)
 3. Make alphas non-overlapping (different regimes: trend alpha only in trending, reversion only in range-bound)
 4. Use `CompositeAlphaModel` with explicit aggregation logic
 
-**Description**: Guide a student to diagnose and fix an insight conflict in a LEAN Algorithm Framework strategy with two alpha models (trend + reversion) that emit contradictory signals during strong trends. The `EqualWeightingPortfolioConstructionModel` averages the opposing insights, resulting in near-zero positions. The student must understand the framework's insight aggregation mechanism and propose a resolution strategy.
+**Description**: Guide a student to diagnose and fix an insight conflict in a LEAN Algorithm Framework strategy with two alpha models (trend + reversion) that emit contradictory signals during strong trends. The student must understand the framework's insight aggregation mechanism, including that built-in portfolio construction models act on the last active insight per symbol, and propose a resolution strategy.
 
-**Expected outcome**: Student identifies that conflicting insights from two alphas cancel in the portfolio construction model, understands the framework's insight-to-target pipeline, implements a conflict resolution approach (confidence weighting, custom PCM, regime gating, or alpha combination), and verifies that the strategy now produces trades during strong trends.
+**Expected outcome**: Student identifies that conflicting insights from two alphas need explicit resolution in the portfolio construction stage, understands the framework's insight-to-target pipeline, implements a conflict resolution approach (explicit weights, custom PCM, regime gating, or alpha ordering/combination), and verifies that the strategy now produces trades during strong trends.
 
 **Required capabilities**:
 1. Understand the Algorithm Framework pipeline: Alpha → Insights → PCM → Targets → Execution
@@ -654,15 +654,15 @@ The portfolio construction model receives Up from one alpha and Down from the ot
 **Student openings**:
 - **beginner_no_finance**: "I'm using LEAN's Algorithm Framework with two signal models — one for trends and one for mean reversion — but my strategy barely makes any trades. Both models seem to be generating signals. Why aren't any trades happening?"
 - **intermediate_developer**: "My LEAN framework strategy has a TrendAlpha and ReversionAlpha. Each works fine alone but together the portfolio is flat most of the time. I think the insights are canceling each other out in the EqualWeightingPortfolioConstructionModel. How do I fix this?"
-- **advanced_quant**: "I'm seeing insight cancellation in a dual-alpha framework strategy on LEAN. The TrendAlpha emits Up and ReversionAlpha emits Down during overbought trends, and EqualWeighting PCM averages them to zero. I need an insight conflict resolution strategy — confidence weighting, custom PCM, or regime gating?"
+- **advanced_quant**: "I'm seeing insight cancellation in a dual-alpha framework strategy on LEAN. The TrendAlpha emits Up and ReversionAlpha emits Down during overbought trends, and EqualWeighting PCM leaves the portfolio effectively flat. I need an insight conflict resolution strategy — explicit weights, custom PCM, alpha ordering, or regime gating?"
 
 **Environment**:
 ```json
 {
   "data_files": ["universe.json"],
   "core_mcp_tools": ["shell_exec", "file_write", "file_read", "file_list", "get_environment_info", "search_docs"],
-  "docs_available": ["lean_algorithm_guide.md", "lean_framework_guide.md"],
-  "sandbox_image": "quant-tutor-env:v2.0-lean",
+  "docs_available": ["lean_algorithm_guide.md", "algorithm_framework_guide.md"],
+  "sandbox_image": "quant-tutor-env:v2.2-lean",
   "network_enabled": false
 }
 ```
@@ -674,14 +674,14 @@ The portfolio construction model receives Up from one alpha and Down from the ot
 **Eval strategy** (behavioral + checklist):
 | Check | Weight | Method |
 |-------|--------|--------|
-| `conflict_resolved` | 0.25 | C# patterns: changed PCM type, OR added confidence/magnitude to insights, OR added regime gating logic |
+| `conflict_resolved` | 0.25 | C# patterns: changed PCM type, OR added explicit weight to insights, OR added regime gating logic |
 | `fix_verified` | 0.10 | Before/after: agent shows trades now occur (vs ~0 before), or shows non-flat portfolio |
 | `root_cause_explained` | 0.10 | Conversation/logs explain: opposing insights cancel in EqualWeighting, OR "insight conflict" / "insights cancel" |
 | `trades_produced` | 0.15 | LEAN backtest produces > 10 trades (buggy version produces ~0) |
 | `backtest_completed` | 0.15 | LEAN backtest ran to completion |
 | `behavioral_score` | 0.25 | Behavioral scoring against reference (with conflict resolution) |
 
-**Ground-truth preparation**: Write reference `alpha_conflict_fixed.cs` with confidence-weighted PCM → run via `generate_lean_reference.py` → export reference data.
+**Ground-truth preparation**: Write reference `alpha_conflict_fixed.cs` with explicit insight weights and deterministic alpha ordering → run via `generate_lean_reference.py` → export reference data.
 
 ---
 
@@ -765,7 +765,7 @@ Or use `AddUniverse()` with `ScheduledUniverseSelectionModel` for a scheduled mo
   "data_files": ["universe.json"],
   "core_mcp_tools": ["shell_exec", "file_write", "file_read", "file_list", "get_environment_info", "search_docs"],
   "docs_available": ["lean_algorithm_guide.md"],
-  "sandbox_image": "quant-tutor-env:v2.0-lean",
+  "sandbox_image": "quant-tutor-env:v2.2-lean",
   "network_enabled": false
 }
 ```
@@ -1259,7 +1259,7 @@ The buggy student code is **NOT** run through reference generation — it serves
 | Tool executor student_code path | Done | `tools.py:199-201` |
 | Result judge debug rubric | Done | `result_judge.py:76-85` |
 | Tutor 7D debug weights | Done | `tutor_conv_geval.py:220-228` |
-| LEAN Docker sandbox | Done | `quant-tutor-env:v2.0-lean` |
+| LEAN Docker sandbox | Done | `quant-tutor-env:v2.2-lean` |
 | Python sandbox | Done | `quant-tutor-env:v2.2` |
 
 ### 8.2 What Was Created (Implementation Complete)
@@ -1318,10 +1318,10 @@ Same as I-series (§9.2 in implementation plan):
 | X04 | diff() vs pct_change() | medium | Python | Mathematical | `returns_diff.py` | v2.2 | Replace diff with pct_change |
 | X05 | Timezone Misalignment | hard | Python | Cross-domain | `timezone_merge.py` | v2.2 | Add tz_convert before merge |
 | X06 | Overfitting Diagnosis | hard | Python | Statistical | `overfit_single.py` | v2.2 | Diagnose + propose remedies |
-| X07 | Missing Warm-Up | hard | LEAN | Initialization | `warmup_bug.cs` | v2.0-lean | Add SetWarmUp + guard |
-| X08 | Order Type Misuse | hard | LEAN | API misuse | `order_type_bug.cs` | v2.0-lean | LimitOrder→MarketOrder |
-| X09 | Alpha Insight Conflict | hard | LEAN | Framework conflict | `alpha_conflict.cs` | v2.0-lean | Resolve opposing insights |
-| X10 | Stale Universe | hard | LEAN | Data lifecycle | `universe_stale.cs` | v2.0-lean | Dynamic universe handling |
+| X07 | Missing Warm-Up | hard | LEAN | Initialization | `warmup_bug.cs` | v2.2-lean | Add SetWarmUp + guard |
+| X08 | Order Type Misuse | hard | LEAN | API misuse | `order_type_bug.cs` | v2.2-lean | LimitOrder→MarketOrder |
+| X09 | Alpha Insight Conflict | hard | LEAN | Framework conflict | `alpha_conflict.cs` | v2.2-lean | Resolve opposing insights |
+| X10 | Stale Universe | hard | LEAN | Data lifecycle | `universe_stale.cs` | v2.2-lean | Dynamic universe handling |
 
 **X-series total**: 10 tasks × 3 personas = **30 evaluation instances**
 

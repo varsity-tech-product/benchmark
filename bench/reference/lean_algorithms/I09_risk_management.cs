@@ -9,7 +9,7 @@
  *   - Execution: ImmediateExecutionModel
  *   - Risk: Parameterized via GetParameter("risk_config"):
  *       "none"    → no risk management
- *       "builtin" → MaximumDrawdownPerSecurity(5%) + TrailingStop(3%)
+ *       "builtin" → MaximumDrawdownPercentPerSecurity(5%) + TrailingStop(3%)
  *       "custom"  → MaxGroupExposureRiskManagementModel(40%) + TrailingStop(3%)
  *
  * LEAN API: Algorithm Framework (AlphaModel, RiskManagementModel,

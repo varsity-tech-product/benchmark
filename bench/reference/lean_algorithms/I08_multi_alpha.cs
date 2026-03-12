@@ -14,6 +14,7 @@
  *   - Execution: ImmediateExecutionModel
  *
  * Key: Uses AddAlpha() (accumulates) not SetAlpha() (replaces).
+ * For InsightWeighting, each alpha emits an explicit Insight.Weight value.
  *
  * LEAN API: Algorithm Framework (AddAlpha, multiple AlphaModels,
  *           InsightWeightingPortfolioConstructionModel)
@@ -134,6 +135,7 @@ namespace QuantTutorBench
     {
         private const int FastPeriod = 20;
         private const int SlowPeriod = 50;
+        private const double Weight = 0.45;
 
         private class SymbolData
         {
@@ -157,12 +159,12 @@ namespace QuantTutorBench
                 if (sd.SmaFast.Current.Value > sd.SmaSlow.Current.Value)
                 {
                     insights.Add(Insight.Price(sd.Symbol, TimeSpan.FromDays(3), InsightDirection.Up,
-                        0.5, 0.6));
+                        0.5, 0.6, weight: Weight));
                 }
                 else
                 {
                     insights.Add(Insight.Price(sd.Symbol, TimeSpan.FromDays(3), InsightDirection.Down,
-                        0.5, 0.6));
+                        0.5, 0.6, weight: Weight));
                 }
             }
 
@@ -195,6 +197,7 @@ namespace QuantTutorBench
     public class MeanReversionAlpha : AlphaModel
     {
         private const int RsiPeriod = 14;
+        private const double Weight = 0.35;
 
         private class SymbolData
         {
@@ -219,12 +222,12 @@ namespace QuantTutorBench
                 if (rsi < 30)
                 {
                     insights.Add(Insight.Price(sd.Symbol, TimeSpan.FromDays(2), InsightDirection.Up,
-                        0.8, 0.7));
+                        0.8, 0.7, weight: Weight));
                 }
                 else if (rsi > 70)
                 {
                     insights.Add(Insight.Price(sd.Symbol, TimeSpan.FromDays(2), InsightDirection.Down,
-                        0.8, 0.7));
+                        0.8, 0.7, weight: Weight));
                 }
             }
 
@@ -256,6 +259,7 @@ namespace QuantTutorBench
     public class MomentumAlpha : AlphaModel
     {
         private const int RocPeriod = 20;
+        private const double Weight = 0.20;
 
         private class SymbolData
         {
@@ -280,12 +284,12 @@ namespace QuantTutorBench
                 if (roc > 5m)
                 {
                     insights.Add(Insight.Price(sd.Symbol, TimeSpan.FromDays(5), InsightDirection.Up,
-                        (double)Math.Abs(roc) / 100.0, 0.5));
+                        (double)Math.Abs(roc) / 100.0, 0.5, weight: Weight));
                 }
                 else if (roc < -5m)
                 {
                     insights.Add(Insight.Price(sd.Symbol, TimeSpan.FromDays(5), InsightDirection.Down,
-                        (double)Math.Abs(roc) / 100.0, 0.5));
+                        (double)Math.Abs(roc) / 100.0, 0.5, weight: Weight));
                 }
             }
 

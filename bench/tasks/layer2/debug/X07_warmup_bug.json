@@ -30,7 +30,7 @@
     "docs_available": [
       "lean_algorithm_guide.md"
     ],
-    "sandbox_image": "quant-tutor-env:v2.2",
+    "sandbox_image": "quant-tutor-env:v2.2-lean",
     "network_enabled": false
   },
   "ground_truth": {

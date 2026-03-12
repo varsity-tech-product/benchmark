@@ -80,9 +80,9 @@ def _check_alpha_model_class(workspace_path: str, artifact_text: str) -> dict:
 
 
 def _check_insight_emission(artifact_text: str) -> bool:
-    """Check for Insight.Up/Down emission with parameters."""
+    """Check for Insight.Up/Down/Price emission with parameters."""
     return bool(re.search(
-        r"insight\.(up|down)\s*\(", artifact_text, re.IGNORECASE
+        r"insight\.(up|down|price)\s*\(", artifact_text, re.IGNORECASE
     ))
 
 

@@ -30,11 +30,13 @@ def evaluate(
 
     # --- 1. conflict_resolved (0.25) ---
     # Check if PCM was changed or confidence/magnitude was adjusted
-    # Acceptable fixes: InsightWeighting, different confidence values, regime gating, removing one alpha
+    # Acceptable fixes: InsightWeighting, explicit weights, different confidence values,
+    # regime gating, removing one alpha
     pcm_fix = check_fix_applied(
         workspace_path, tool_logs,
         fix_patterns=[
             r'InsightWeighting',
+            r'weight\s*[:=]\s*0\.[1-9]',
             r'confidence\s*[:=]\s*0\.[89]',   # higher confidence for one alpha
             r'confidence\s*[:=]\s*0\.[1-4]',   # lower confidence for other
         ],

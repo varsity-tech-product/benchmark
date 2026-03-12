@@ -1,5 +1,5 @@
 /*
- * X09 — Alpha Conflict Fixed (Confidence-Weighted Resolution)
+ * X09 — Alpha Conflict Fixed (Explicit Weight + Ordering Resolution)
  *
  * Bug context:
  *   The buggy version uses EqualWeightingPortfolioConstructionModel with two
@@ -8,17 +8,16 @@
  *   cancel out and produce zero or near-zero target holdings → no trades.
  *
  * Fix:
- *   Switch to InsightWeightingPortfolioConstructionModel(Resolution.Daily).
- *   TrendAlpha emits confidence=0.8, ReversionAlpha emits confidence=0.4.
- *   Under insight-weighting, the higher-confidence trend signal dominates,
- *   resolving the cancellation and producing actual trades.
+ *   Switch to InsightWeightingPortfolioConstructionModel(Resolution.Daily),
+ *   emit explicit Insight.Weight values, and add the dominant trend alpha last
+ *   so same-bar conflicts prefer the trend insight for a symbol.
  *
  * Strategy:
  *   - Universe: First 10 symbols from universe.json
  *   - Timeframe: Daily bars
  *   - Two AlphaModels via AddAlpha():
- *       1. TrendAlpha:     EMA(10)/EMA(30) crossover, magnitude 0.5, confidence 0.8
- *       2. ReversionAlpha: RSI(14) extremes, magnitude 0.8, confidence 0.4
+ *       1. ReversionAlpha: RSI(14) extremes, magnitude 0.8, confidence 0.4, weight 0.25
+ *       2. TrendAlpha:     EMA(10)/EMA(30) crossover, magnitude 0.5, confidence 0.8, weight 0.65
  *   - Portfolio: InsightWeightingPortfolioConstructionModel(Resolution.Daily)
  *   - Execution: ImmediateExecutionModel
  *   - WarmUp: 30 daily bars
@@ -66,12 +65,10 @@ namespace QuantTutorBench
             }
 
             // Two conflicting alpha models (AddAlpha accumulates)
-            AddAlpha(new X09TrendAlpha());
             AddAlpha(new X09ReversionAlpha());
+            AddAlpha(new X09TrendAlpha());
 
-            // FIX: Use InsightWeightingPortfolioConstructionModel instead of EqualWeighting.
-            // TrendAlpha confidence (0.8) dominates ReversionAlpha confidence (0.4),
-            // so when both fire on the same symbol, the trend signal wins.
+            // FIX: Use explicit insight weights and add the dominant trend alpha last.
             SetPortfolioConstruction(new InsightWeightingPortfolioConstructionModel(Resolution.Daily));
 
             SetExecution(new ImmediateExecutionModel());
@@ -79,8 +76,8 @@ namespace QuantTutorBench
             SetWarmUp(30, Resolution.Daily);
 
             Log($"X09 FIXED initialized with {subset.Count} symbols (of {tickers.Count}), " +
-                $"TrendAlpha(conf=0.8) + ReversionAlpha(conf=0.4), " +
-                $"InsightWeightingPCM → trend dominates on conflict");
+                $"ReversionAlpha(weight=0.25) + TrendAlpha(weight=0.65), " +
+                $"InsightWeightingPCM with trend alpha added last");
         }
 
         public override void OnOrderEvent(OrderEvent orderEvent)
@@ -127,7 +124,7 @@ namespace QuantTutorBench
     /// <summary>
     /// Trend alpha: EMA(10)/EMA(30) crossover.
     /// Emits Up when fast > slow, Down when fast < slow.
-    /// High confidence (0.8) — intended to dominate under insight-weighting.
+    /// Higher weight than reversion and added last to win same-bar conflicts.
     /// </summary>
     public class X09TrendAlpha : AlphaModel
     {
@@ -135,6 +132,7 @@ namespace QuantTutorBench
         private const int SlowPeriod = 30;
         private const double Magnitude = 0.5;
         private const double Confidence = 0.8;
+        private const double Weight = 0.65;
 
         private class SymbolData
         {
@@ -170,7 +168,7 @@ namespace QuantTutorBench
                     direction = InsightDirection.Down;
 
                 insights.Add(Insight.Price(sd.Symbol, TimeSpan.FromDays(5),
-                    direction, Magnitude, Confidence));
+                    direction, Magnitude, Confidence, weight: Weight));
 
                 sd.LastDirection = direction;
             }
@@ -203,13 +201,14 @@ namespace QuantTutorBench
     /// <summary>
     /// Mean-reversion alpha: RSI(14) extremes.
     /// RSI > 70 → Down (overbought), RSI < 30 → Up (oversold).
-    /// Low confidence (0.4) — defers to trend under insight-weighting.
+    /// Lower weight than trend, so the dominant trend insight sizes larger when active.
     /// </summary>
     public class X09ReversionAlpha : AlphaModel
     {
         private const int RsiPeriod = 14;
         private const double Magnitude = 0.8;
         private const double Confidence = 0.4;
+        private const double Weight = 0.25;
 
         private class SymbolData
         {
@@ -234,12 +233,12 @@ namespace QuantTutorBench
                 if (rsi > 70)
                 {
                     insights.Add(Insight.Price(sd.Symbol, TimeSpan.FromDays(3),
-                        InsightDirection.Down, Magnitude, Confidence));
+                        InsightDirection.Down, Magnitude, Confidence, weight: Weight));
                 }
                 else if (rsi < 30)
                 {
                     insights.Add(Insight.Price(sd.Symbol, TimeSpan.FromDays(3),
-                        InsightDirection.Up, Magnitude, Confidence));
+                        InsightDirection.Up, Magnitude, Confidence, weight: Weight));
                 }
             }
 

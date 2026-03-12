@@ -82,7 +82,7 @@ E-series tasks fall into three structural patterns based on which sandboxes they
 ```
 Pattern A: Python Only                  Pattern B: LEAN Only                Pattern C: Python + LEAN
 ──────────────────────                  ────────────────────                ────────────────────────
-quant-tutor-env:v2.2                    quant-tutor-env:v2.0-lean           quant-tutor-env:v2.0-lean
+quant-tutor-env:v2.2                    quant-tutor-env:v2.2-lean           quant-tutor-env:v2.2-lean
                                                                             (includes Python)
 
   Data → Signal → Backtest               Buggy Code → Diagnose               Research → Prototype →
@@ -97,7 +97,7 @@ quant-tutor-env:v2.2                    quant-tutor-env:v2.0-lean           quan
 
 **Pattern B (E04)**: LEAN-only debugging — start from broken C#, systematically diagnose compound bugs, fix, and verify. Tests the I→X pipeline using the LEAN engine.
 
-**Pattern C (E02, E05)**: Dual-sandbox workflow — research in Python, implement in LEAN C#, compare results. Tests the S→B→I pipeline (E02) or the full D→S→B→I pipeline (E05). Uses `quant-tutor-env:v2.0-lean` which includes both Python and the LEAN engine.
+**Pattern C (E02, E05)**: Dual-sandbox workflow — research in Python, implement in LEAN C#, compare results. Tests the S→B→I pipeline (E02) or the full D→S→B→I pipeline (E05). Uses `quant-tutor-env:v2.2-lean` which includes both Python and the LEAN engine.
 
 ### 1.5 No New Skills, Only Integration
 
@@ -176,7 +176,7 @@ Each E-task has **gates** — hard caps on the maximum score if critical pipelin
 **Difficulty**: medium
 **Category**: end_to_end
 **Pattern**: C (Python + LEAN)
-**Sandbox**: `quant-tutor-env:v2.0-lean`
+**Sandbox**: `quant-tutor-env:v2.2-lean`
 
 **Scenario**: Student researches a Bollinger Band mean-reversion signal on BTC in Python, backtests it to get preliminary metrics, then implements the same strategy as a LEAN C# algorithm and compares results across backends.
 
@@ -280,7 +280,7 @@ Each E-task has **gates** — hard caps on the maximum score if critical pipelin
 **Difficulty**: hard
 **Category**: end_to_end
 **Pattern**: B (LEAN only)
-**Sandbox**: `quant-tutor-env:v2.0-lean`
+**Sandbox**: `quant-tutor-env:v2.2-lean`
 
 **Scenario**: Student has a LEAN C# EMA crossover algorithm with **three interacting bugs**. The agent must guide systematic diagnosis of each bug, explain root causes, apply fixes, and verify the corrected algorithm produces reasonable results.
 
@@ -343,7 +343,7 @@ Each E-task has **gates** — hard caps on the maximum score if critical pipelin
 **Difficulty**: hard
 **Category**: end_to_end
 **Pattern**: C (Python + LEAN)
-**Sandbox**: `quant-tutor-env:v2.0-lean`
+**Sandbox**: `quant-tutor-env:v2.2-lean`
 
 **Scenario**: Complete quant research cycle. Student explores BTC data, designs a momentum strategy, prototypes in Python, implements in LEAN, evaluates performance, and discusses risks. **This is the hardest task in the benchmark.**
 
@@ -535,10 +535,10 @@ The existing orchestrator handles E-series tasks without modification:
 | Task | Sandbox | Reason |
 |------|---------|--------|
 | E01 | `quant-tutor-env:v2.2` | Python-only |
-| E02 | `quant-tutor-env:v2.0-lean` | Python + LEAN |
+| E02 | `quant-tutor-env:v2.2-lean` | Python + LEAN |
 | E03 | `quant-tutor-env:v2.2` | Python-only |
-| E04 | `quant-tutor-env:v2.0-lean` | LEAN debugging |
-| E05 | `quant-tutor-env:v2.0-lean` | Python + LEAN |
+| E04 | `quant-tutor-env:v2.2-lean` | LEAN debugging |
+| E05 | `quant-tutor-env:v2.2-lean` | Python + LEAN |
 
 ---
 

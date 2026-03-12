@@ -52,9 +52,9 @@ namespace QuantTutorBench
             SetCash(InitialCash);
 
             // Read parameters with defaults
-            int fastPeriod = int.Parse(GetParameter("fast_period", "10"));
-            int slowPeriod = int.Parse(GetParameter("slow_period", "30"));
-            decimal signalThreshold = decimal.Parse(GetParameter("signal_threshold", "0.01"));
+            int fastPeriod = GetParameter("fast_period", 10);
+            int slowPeriod = GetParameter("slow_period", 30);
+            decimal signalThreshold = GetParameter("signal_threshold", 0.01m);
 
             var tickers = LoadUniverse();
             var subset = tickers.Take(MaxSymbols).ToList();

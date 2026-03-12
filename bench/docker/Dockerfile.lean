@@ -1,8 +1,8 @@
 # Dockerfile.lean — LEAN engine sandbox for I-series implementation tasks.
 #
 # Extends the base quant-tutor-env image with:
-#   - .NET SDK 8.0 (for C# algorithm compilation)
-#   - QuantConnect LEAN engine (cloned and pre-built)
+#   - .NET SDK 10.0 (required by current pinned LEAN source)
+#   - QuantConnect LEAN engine (cloned and pre-built at a pinned commit)
 #   - Pre-configured lean-config.json for Binance futures backtesting
 #   - run_backtest wrapper script
 #
@@ -28,21 +28,28 @@ FROM quant-tutor-env:v2.2
 
 USER root
 
-# ── Install .NET SDK 8.0 ──────────────────────────────────────────────
+# ── Install .NET SDK 10.0 ─────────────────────────────────────────────
 # Microsoft package repository for Debian
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
+        git \
         wget \
         apt-transport-https \
     && wget -q https://packages.microsoft.com/config/debian/12/packages-microsoft-prod.deb \
     && dpkg -i packages-microsoft-prod.deb \
     && rm packages-microsoft-prod.deb \
     && apt-get update \
-    && apt-get install -y --no-install-recommends dotnet-sdk-8.0 \
+    && apt-get install -y --no-install-recommends dotnet-sdk-10.0 \
     && rm -rf /var/lib/apt/lists/*
 
 # ── Clone and build LEAN engine ───────────────────────────────────────
-RUN git clone --depth 1 https://github.com/QuantConnect/Lean.git /lean
+# Pinned to QuantConnect/Lean master at build-time review:
+#   0c4a121371be684c7e9e8d0e92816a2f34a185b9
+ARG LEAN_COMMIT=0c4a121371be684c7e9e8d0e92816a2f34a185b9
+RUN git init /lean \
+    && git -C /lean remote add origin https://github.com/QuantConnect/Lean.git \
+    && git -C /lean fetch --depth 1 origin ${LEAN_COMMIT} \
+    && git -C /lean checkout FETCH_HEAD
 
 WORKDIR /lean
 RUN dotnet restore QuantConnect.Lean.sln \
@@ -57,10 +64,12 @@ RUN chmod +x /usr/local/bin/run_backtest
 
 # ── Create mount-point directories ───────────────────────────────────
 # /lean/Data  — LEAN-format market data (mounted at runtime, NOT baked in)
+# /Lean      — compatibility symlink for tools that expect the upstream path
 # /workspace  — agent's working directory (read-write)
 # /data       — universe.json and metadata (read-only)
 # /docs       — reference documentation (read-only)
 RUN mkdir -p /lean/Data /workspace /data /docs \
+    && ln -s /lean /Lean \
     && chown -R sandbox:sandbox /workspace
 
 # ── Runtime configuration ────────────────────────────────────────────

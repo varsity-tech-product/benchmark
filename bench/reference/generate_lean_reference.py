@@ -3,7 +3,7 @@
 
 Usage:
     python generate_lean_reference.py --task I02
-    python generate_lean_reference.py --task I03 --lean-image quantconnect/lean:latest
+    python generate_lean_reference.py --task I03 --lean-image quant-tutor-env:v2.2-lean
     python generate_lean_reference.py --task all
 
 This script:
@@ -16,7 +16,7 @@ This script:
 Prerequisites:
 - Docker must be installed and running
 - LEAN market data must be available (via data_manager.py or manual download)
-- The LEAN Docker image must be pulled (default: quantconnect/lean:latest)
+- The LEAN Docker image must be built locally (default: quant-tutor-env:v2.2-lean)
 """
 
 import argparse

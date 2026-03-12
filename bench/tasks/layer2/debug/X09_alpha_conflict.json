@@ -13,7 +13,7 @@
   "student_openings": {
     "beginner_no_finance": "I set up two alpha models in LEAN — one for trend following and one for mean reversion — but the algorithm barely trades at all. Both alphas seem to be generating insights but nothing happens. Can you help?",
     "intermediate_developer": "My LEAN framework algorithm has TrendAlpha and ReversionAlpha both emitting insights, but EqualWeightingPortfolioConstructionModel produces almost no positions. I think the insights are canceling each other. How do I fix this?",
-    "advanced_quant": "I have a multi-alpha LEAN setup with trend and mean-reversion models. Under EqualWeighting, the opposing insights neutralize, resulting in near-zero net exposure. I need to implement a priority scheme or confidence-weighted aggregation. Can you help me diagnose the insight conflict?"
+    "advanced_quant": "I have a multi-alpha LEAN setup with trend and mean-reversion models. Under EqualWeighting, the opposing insights neutralize, resulting in near-zero net exposure. I need to implement a priority scheme or explicit weight-based aggregation. Can you help me diagnose the insight conflict?"
   },
   "environment": {
     "data_files": [
@@ -29,18 +29,18 @@
     ],
     "docs_available": [
       "lean_algorithm_guide.md",
-      "lean_framework_guide.md"
+      "algorithm_framework_guide.md"
     ],
-    "sandbox_image": "quant-tutor-env:v2.2",
+    "sandbox_image": "quant-tutor-env:v2.2-lean",
     "network_enabled": false
   },
   "ground_truth": {
-    "expected_outcome": "Student resolves the insight conflict by switching to InsightWeightingPortfolioConstructionModel or adjusting confidence levels so one alpha dominates, producing meaningful trades.",
+    "expected_outcome": "Student resolves the insight conflict by switching to InsightWeightingPortfolioConstructionModel with explicit insight weights, or by implementing gating/priority so one alpha dominates per symbol, producing meaningful trades.",
     "required_capabilities": [
       "Read the framework algorithm and identify the two alpha models",
       "Understand how EqualWeighting treats opposing insights",
       "Diagnose why trades are near zero",
-      "Fix by changing PCM or adjusting confidence/magnitude",
+      "Fix by changing PCM, assigning explicit weights, or adding signal priority/gating",
       "Verify trades now occur after the fix"
     ],
     "expected_mcp_tools": [

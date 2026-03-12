@@ -141,7 +141,7 @@ bench/
 │
 ├── docker/                       # Sandbox environment
 │   ├── Dockerfile                #   Python 3.11 + pandas/numpy/scipy/etc.
-│   ├── Dockerfile.lean           #   LEAN engine image (.NET 8.0 + QuantConnect)
+│   ├── Dockerfile.lean           #   LEAN engine image (.NET 10.0 + pinned QuantConnect LEAN)
 │   ├── lean-config.json          #   LEAN pre-configured for Binance futures
 │   └── run_backtest.sh           #   Wrapper: compile + run LEAN backtest
 │
@@ -287,10 +287,10 @@ docker build -t quant-tutor-env:v2.2 docker/
 ### LEAN engine image (I01-I10)
 
 ```bash
-docker build -t quant-tutor-env:v2.0-lean -f docker/Dockerfile.lean .
+docker build -t quant-tutor-env:v2.2-lean -f docker/Dockerfile.lean .
 ```
 
-LEAN-based tasks (I01-I10) use a separate Docker image with .NET 8.0 and the QuantConnect LEAN engine. Market data is mounted read-only from a HuggingFace dataset cache via `/lean/Data`. I07-I10 additionally require the `QuantConnect.Algorithm.Framework.dll` assembly (included in the image).
+LEAN-based tasks (I01-I10) use a separate Docker image with .NET 10.0 and a pinned QuantConnect LEAN commit (`0c4a121371be684c7e9e8d0e92816a2f34a185b9`). Market data is mounted read-only from a HuggingFace dataset cache via `/lean/Data`. I07-I10 additionally require the `QuantConnect.Algorithm.Framework.dll` assembly (included in the image).
 
 ### Container specs
 
@@ -302,8 +302,8 @@ LEAN-based tasks (I01-I10) use a separate Docker image with .NET 8.0 and the Qua
 - **Resources**: CPU 2 / RAM 4GB
 - **Mounts**: `/workspace` (RW), `/data` (RO), `/docs` (RO), `/student_code` (RO)
 
-**LEAN image (`quant-tutor-env:v2.0-lean`)**:
-- **Base**: quant-tutor-env:v2.2 + .NET SDK 8.0 + LEAN engine
+**LEAN image (`quant-tutor-env:v2.2-lean`)**:
+- **Base**: quant-tutor-env:v2.2 + .NET SDK 10.0 + pinned LEAN engine
 - **Mounts**: All standard mounts + `/lean/Data` (RO, Binance futures OHLCV)
 - **Usage**: C# algorithm compilation + LEAN backtesting (I01-I10)
 

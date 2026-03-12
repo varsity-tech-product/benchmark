@@ -14,11 +14,12 @@
 #      - log.txt        (algorithm log output)
 #
 # Exit codes:
-#   0  — backtest completed successfully
-#   1  — usage error or missing file
-#   2  — build failure
-#   3  — LEAN engine runtime failure
-#   4  — results extraction failure
+#   0    — backtest completed successfully
+#   1    — usage error or missing file
+#   2    — build failure
+#   3    — LEAN engine runtime failure
+#   4    — results extraction failure
+#   124  — timeout killed the LEAN process
 
 set -euo pipefail
 
@@ -106,20 +107,22 @@ if ! dotnet build QuantConnect.Lean.sln -c Debug --no-restore 2>&1; then
 fi
 echo "  -> Build succeeded"
 
-# ── Step 2b: Inject parameters into config.json (if --params provided) ──
-if [ -n "$PARAMS_JSON" ]; then
-    echo "[2b/4] Injecting parameters into config.json..."
-    python3 -c "
-import json, sys
+# ── Step 2b: Reset and inject parameters into config.json ─────────────
+echo "[2b/4] Preparing config.json parameters..."
+python3 -c "
+import json
+
 with open('$LEAN_CONFIG') as f:
     cfg = json.load(f)
-params = json.loads('$PARAMS_JSON')
-cfg.setdefault('parameters', {}).update(params)
+
+params = json.loads('''$PARAMS_JSON''') if '$PARAMS_JSON' else {}
+cfg['parameters'] = params
+
 with open('$LEAN_CONFIG', 'w') as f:
     json.dump(cfg, f, indent=2)
-print(f'  -> Injected {len(params)} parameter(s)')
+
+print(f'  -> Set {len(params)} parameter(s)')
 " 2>&1
-fi
 
 # ── Step 3: Run the LEAN engine ───────────────────────────────────────
 echo "[3/4] Running LEAN engine..."
@@ -188,6 +191,13 @@ copy_result "*-statistics.json" "summary.json"
 # The log was already captured by tee above
 if [ -f "$RESULTS_DIR/log.txt" ]; then
     echo "  -> log.txt (captured during run)"
+fi
+
+if [ ! -f "$RESULTS_DIR/summary.json" ]; then
+    echo ""
+    echo "ERROR: LEAN run finished but summary.json could not be extracted."
+    echo "Check $RESULTS_DIR/log.txt and the LEAN output directories for details."
+    exit 4
 fi
 
 # ── Summary ───────────────────────────────────────────────────────────
