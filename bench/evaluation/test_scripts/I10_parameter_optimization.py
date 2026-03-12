@@ -180,7 +180,7 @@ def evaluate(
         results["trade_log_produced"] = True
 
     # ── Behavioral scoring (best config) ──
-    behavioral = compute_behavioral_score("I10", workspace_path, resolution="daily")
+    behavioral = compute_behavioral_score("I10", workspace_path, resolution="daily", run_id="f15_s20_t0005")
     results["signal_agreement"] = behavioral.signal_score >= 0.60
     results["position_overlap"] = behavioral.position_score >= 0.60
     results["performance_match"] = behavioral.performance_score >= 0.50

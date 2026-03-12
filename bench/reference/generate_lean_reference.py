@@ -155,6 +155,46 @@ def _compute_sharpe_from_trades(trades: list[dict], risk_free_rate: float = 0.0)
     return (mean_pnl - risk_free_rate) / std_pnl * (252 ** 0.5)
 
 
+def _fix_missing_return_drawdown(
+    metrics: dict, trades: list[dict], initial_capital: float = 100_000.0
+) -> None:
+    """Compute total_return and max_drawdown from trades when LEAN didn't output them.
+
+    Uses sum(net_pnl)/initial_capital for return and peak-to-trough for drawdown.
+    Only fills in values that are missing from metrics (does not override LEAN's own stats).
+    """
+    if not trades:
+        return
+
+    has_return = "total_return" in metrics
+    has_drawdown = "max_drawdown" in metrics
+
+    if has_return and has_drawdown:
+        return
+
+    if not has_return:
+        total_pnl = sum(float(t.get("net_pnl", 0)) for t in trades)
+        total_return_pct = total_pnl / initial_capital * 100
+        metrics["total_return"] = f"{total_return_pct:.3f}%"
+
+    if not has_drawdown:
+        sorted_trades = sorted(trades, key=lambda t: t.get("exit_time", ""))
+        equity = initial_capital
+        peak = equity
+        max_dd = 0.0
+        for t in sorted_trades:
+            equity += float(t.get("net_pnl", 0))
+            if equity > peak:
+                peak = equity
+            dd = (peak - equity) / peak * 100 if peak > 0 else 0
+            if dd > max_dd:
+                max_dd = dd
+        metrics["max_drawdown"] = f"{max_dd:.3f}%"
+
+    if not has_return or not has_drawdown:
+        metrics.setdefault("metrics_source", "computed_from_trades")
+
+
 def _fix_bogus_sharpe(metrics: dict, trades: list[dict]) -> None:
     """Replace LEAN's Sharpe with trade-derived Sharpe when clearly bogus.
 
@@ -604,6 +644,8 @@ def run_lean_backtest(
 
         # Fix bogus Sharpe from LEAN overflow (common with extreme crypto returns)
         _fix_bogus_sharpe(metrics, trades)
+        # Fill in total_return/max_drawdown when LEAN didn't output Statistics
+        _fix_missing_return_drawdown(metrics, trades)
 
         output = {
             "task_id": task_id,

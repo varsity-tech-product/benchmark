@@ -904,7 +904,7 @@ MULTI_RUN_PRIMARY = {
     "I06": "t04_r03_c03",      # Default weights (trend=0.4, reversion=0.3, carry=0.3)
     "I08": "equal_weighting",  # EW produces trades; IW may produce 0
     "I09": "builtin",          # Middle-ground risk config
-    "I10": None,               # I10 has too many configs; skip summary
+    "I10": "f15_s20_t0005",    # Use grid search best config as primary
 }
 
 

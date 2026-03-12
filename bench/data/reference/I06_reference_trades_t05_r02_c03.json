@@ -10,7 +10,10 @@
   "metrics": {
     "total_trades": 13530,
     "sharpe_ratio": "0.2922",
-    "sharpe_source": "computed_from_trades"
+    "sharpe_source": "computed_from_trades",
+    "total_return": "32060.574%",
+    "max_drawdown": "874.402%",
+    "metrics_source": "computed_from_trades"
   },
   "trades": [
     {

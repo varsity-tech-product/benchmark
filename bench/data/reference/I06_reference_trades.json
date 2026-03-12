@@ -8,7 +8,10 @@
   "generated_at": "2026-03-10T07:01:45.242111+00:00",
   "status": "success",
   "metrics": {
-    "total_trades": 13719
+    "total_trades": 13719,
+    "total_return": "27604.073%",
+    "max_drawdown": "878.327%",
+    "metrics_source": "computed_from_trades"
   },
   "trades": [
     {
