@@ -29,17 +29,18 @@ FROM quant-tutor-env:v2.2
 USER root
 
 # ── Install .NET SDK 10.0 ─────────────────────────────────────────────
-# Microsoft package repository for Debian
+# Use dotnet-install.sh instead of the Debian apt repo because the
+# Microsoft repo signing chain currently fails under newer Debian policy.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         git \
+        libicu-dev \
         wget \
-        apt-transport-https \
-    && wget -q https://packages.microsoft.com/config/debian/12/packages-microsoft-prod.deb \
-    && dpkg -i packages-microsoft-prod.deb \
-    && rm packages-microsoft-prod.deb \
-    && apt-get update \
-    && apt-get install -y --no-install-recommends dotnet-sdk-10.0 \
+    && wget -q https://dot.net/v1/dotnet-install.sh -O /tmp/dotnet-install.sh \
+    && chmod +x /tmp/dotnet-install.sh \
+    && /tmp/dotnet-install.sh --channel 10.0 --install-dir /usr/share/dotnet \
+    && ln -s /usr/share/dotnet/dotnet /usr/local/bin/dotnet \
+    && rm /tmp/dotnet-install.sh \
     && rm -rf /var/lib/apt/lists/*
 
 # ── Clone and build LEAN engine ───────────────────────────────────────
@@ -56,10 +57,10 @@ RUN dotnet restore QuantConnect.Lean.sln \
     && dotnet build QuantConnect.Lean.sln -c Debug --no-restore
 
 # ── Configure LEAN for Binance futures backtesting ────────────────────
-COPY lean-config.json /lean/Launcher/config.json
+COPY docker/lean-config.json /lean/Launcher/config.json
 
 # ── Install backtest wrapper script ──────────────────────────────────
-COPY run_backtest.sh /usr/local/bin/run_backtest
+COPY docker/run_backtest.sh /usr/local/bin/run_backtest
 RUN chmod +x /usr/local/bin/run_backtest
 
 # ── Create mount-point directories ───────────────────────────────────
@@ -70,11 +71,14 @@ RUN chmod +x /usr/local/bin/run_backtest
 # /docs       — reference documentation (read-only)
 RUN mkdir -p /lean/Data /workspace /data /docs \
     && ln -s /lean /Lean \
-    && chown -R sandbox:sandbox /workspace
+    && mkdir -p /home/sandbox/.nuget /home/sandbox/.dotnet \
+    && mkdir -p /lean/Launcher/bin/Debug/storage \
+    && chown -R sandbox:sandbox /lean /workspace /home/sandbox
 
 # ── Runtime configuration ────────────────────────────────────────────
 ENV DOTNET_CLI_TELEMETRY_OPTOUT=1
 ENV DOTNET_NOLOGO=1
+ENV DOTNET_ROOT=/usr/share/dotnet
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV HOME=/home/sandbox
 ENV PYTHONPATH=/opt/bench
