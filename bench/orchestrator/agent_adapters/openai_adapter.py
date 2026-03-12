@@ -252,7 +252,10 @@ class OpenAIAgentAdapter(BaseAgentAdapter):
                 agent,
                 self._input_history,
                 max_turns=self.max_turns,
-                run_config=RunConfig(tracing_disabled=bool(self.base_url)),
+                run_config=RunConfig(
+                    tracing_disabled=bool(self.base_url),
+                    trace_include_sensitive_data=False,
+                ),
             )
 
             # Preserve full SDK context for next turn.

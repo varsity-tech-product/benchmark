@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Live test: run all 10 I-series implementation tasks through the full run-single pipeline.
-# Uses OpenAI direct API with gpt-4o-mini (cheapest capable model).
+# Uses OpenRouter-routed OpenAI models by default.
 # All I-series tasks require --docker (LEAN sandbox).
 #
 # Usage: bash bench/scripts/test_i_series_live.sh
@@ -21,13 +21,13 @@ if [ -f "$PROJECT_DIR/.venv/bin/activate" ]; then
 fi
 
 # ── Configuration ──
-AGENT="openai"
-MODEL="gpt-4o-mini"
-EVAL_MODEL="gpt-4o-mini"
-SIMULATOR_MODEL="gpt-4o-mini"
-PERSONA="intermediate_developer"
-CONDITION="agent"
-MAX_TURNS=10
+AGENT="${AGENT:-openai}"
+MODEL="${MODEL:-openai/gpt-5.2}"
+EVAL_MODEL="${EVAL_MODEL:-$MODEL}"
+SIMULATOR_MODEL="${SIMULATOR_MODEL:-$MODEL}"
+PERSONA="${PERSONA:-intermediate_developer}"
+CONDITION="${CONDITION:-agent}"
+MAX_TURNS="${MAX_TURNS:-10}"
 MAX_PARALLEL="${MAX_PARALLEL:-all}"
 
 TASKS=(

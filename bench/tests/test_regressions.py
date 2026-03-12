@@ -156,8 +156,9 @@ class OpenAIAdapterCleanupTests(unittest.TestCase):
         fake_runner = types.SimpleNamespace(run_sync=MagicMock(return_value=fake_result))
 
         class FakeRunConfig:
-            def __init__(self, tracing_disabled=False):
+            def __init__(self, tracing_disabled=False, trace_include_sensitive_data=True):
                 self.tracing_disabled = tracing_disabled
+                self.trace_include_sensitive_data = trace_include_sensitive_data
 
         with patch(
             "orchestrator.agent_adapters.openai_adapter.OPENAI_AGENTS_AVAILABLE",
@@ -170,6 +171,10 @@ class OpenAIAdapterCleanupTests(unittest.TestCase):
             "orchestrator.agent_adapters.openai_adapter.RunConfig",
             FakeRunConfig,
             create=True,
+        ), patch(
+            "orchestrator.agent_adapters.openai_adapter.MaxTurnsExceeded",
+            RuntimeError,
+            create=True,
         ):
             response = adapter.generate_response(
                 messages=[{"role": "user", "content": "hello"}],
@@ -180,6 +185,7 @@ class OpenAIAdapterCleanupTests(unittest.TestCase):
         self.assertEqual(response, "ok")
         run_config = fake_runner.run_sync.call_args.kwargs["run_config"]
         self.assertTrue(run_config.tracing_disabled)
+        self.assertFalse(run_config.trace_include_sensitive_data)
 
     def test_generate_response_keeps_tracing_for_native_openai(self):
         adapter = OpenAIAgentAdapter(model="gpt-4o-mini", api_key="test-key")
@@ -193,8 +199,9 @@ class OpenAIAdapterCleanupTests(unittest.TestCase):
         fake_runner = types.SimpleNamespace(run_sync=MagicMock(return_value=fake_result))
 
         class FakeRunConfig:
-            def __init__(self, tracing_disabled=False):
+            def __init__(self, tracing_disabled=False, trace_include_sensitive_data=True):
                 self.tracing_disabled = tracing_disabled
+                self.trace_include_sensitive_data = trace_include_sensitive_data
 
         with patch(
             "orchestrator.agent_adapters.openai_adapter.OPENAI_AGENTS_AVAILABLE",
@@ -207,6 +214,10 @@ class OpenAIAdapterCleanupTests(unittest.TestCase):
             "orchestrator.agent_adapters.openai_adapter.RunConfig",
             FakeRunConfig,
             create=True,
+        ), patch(
+            "orchestrator.agent_adapters.openai_adapter.MaxTurnsExceeded",
+            RuntimeError,
+            create=True,
         ):
             response = adapter.generate_response(
                 messages=[{"role": "user", "content": "hello"}],
@@ -217,6 +228,7 @@ class OpenAIAdapterCleanupTests(unittest.TestCase):
         self.assertEqual(response, "ok")
         run_config = fake_runner.run_sync.call_args.kwargs["run_config"]
         self.assertFalse(run_config.tracing_disabled)
+        self.assertFalse(run_config.trace_include_sensitive_data)
 
 
 if __name__ == "__main__":
