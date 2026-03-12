@@ -1,6 +1,7 @@
-"""Model pricing — hardcoded from OpenRouter API (2026-03-03).
+"""Model pricing — hardcoded from provider pricing snapshots.
 
-Per-token USD prices.  Model names use OpenRouter format.
+Per-token USD prices. Model names may be bare provider names
+(``gpt-4o-mini``) or provider-prefixed names (``openai/gpt-4o-mini``).
 """
 
 import warnings
@@ -8,14 +9,41 @@ import warnings
 # (input_price_per_token, output_price_per_token)
 MODEL_PRICING: dict[str, tuple[float, float]] = {
     "openai/gpt-5.2": (0.00000175, 0.000014),
+    "openai/gpt-4o-mini": (0.00000015, 0.0000006),
+    "gpt-4o-mini": (0.00000015, 0.0000006),
     "anthropic/claude-sonnet-4.6": (0.000003, 0.000015),
     "anthropic/claude-opus-4.6": (0.000005, 0.000025),
 }
 
 
+def resolve_pricing_key(model: str) -> str | None:
+    """Return the best-known pricing key for a model identifier."""
+    normalized = (model or "").strip()
+    if not normalized:
+        return None
+
+    candidates = [normalized]
+    if "/" in normalized:
+        candidates.append(normalized.split("/")[-1])
+    else:
+        candidates.extend(
+            [
+                f"openai/{normalized}",
+                f"anthropic/{normalized}",
+                f"google/{normalized}",
+            ]
+        )
+
+    for candidate in candidates:
+        if candidate in MODEL_PRICING:
+            return candidate
+    return None
+
+
 def estimate_cost(model: str, input_tokens: int, output_tokens: int) -> float:
     """Return USD cost from token counts.  0.0 + warning if model unknown."""
-    pricing = MODEL_PRICING.get(model)
+    pricing_key = resolve_pricing_key(model)
+    pricing = MODEL_PRICING.get(pricing_key) if pricing_key else None
     if pricing is None:
         warnings.warn(f"No pricing for model '{model}', cost=0")
         return 0.0
@@ -25,7 +53,8 @@ def estimate_cost(model: str, input_tokens: int, output_tokens: int) -> float:
 def get_deepeval_cost_kwargs(model: str) -> dict:
     """Return ``cost_per_input_token`` / ``cost_per_output_token`` kwargs
     suitable for ``deepeval.models.llms.openai_model.GPTModel``."""
-    pricing = MODEL_PRICING.get(model)
+    pricing_key = resolve_pricing_key(model)
+    pricing = MODEL_PRICING.get(pricing_key) if pricing_key else None
     if pricing is None:
         return {}
     return {

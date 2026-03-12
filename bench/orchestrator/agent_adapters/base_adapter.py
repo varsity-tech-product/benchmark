@@ -68,3 +68,7 @@ class BaseAgentAdapter(ABC):
     def reset(self):
         """Reset any internal state between tasks."""
         self._token_records.clear()
+
+    def close(self):
+        """Release any external resources held by the adapter."""
+        pass

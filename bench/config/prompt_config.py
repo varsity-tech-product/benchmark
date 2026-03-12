@@ -177,7 +177,7 @@ def build_tutor_context(
     if has_docs:
         parts.append("")
         parts.append("=== AVAILABLE DOCUMENTATION ===")
-        parts.append(
+        docs_guidance = (
             "Reference documentation is available for this session. "
             "Use get_environment_info to discover available docs and "
             "file_read to consult them — this helps ensure your "
@@ -193,6 +193,14 @@ def build_tutor_context(
             "- BAD: Read docs → download data → save CSV → compute "
             "returns → generate chart → then finally respond."
         )
+        if task.requires_code:
+            docs_guidance += (
+                "\n\nFor coding tasks, 'wait for their direction' applies only to "
+                "future workflow steps. When the student is asking how to "
+                "implement the current step, move from explanation into concrete "
+                "implementation for that step in the same response."
+            )
+        parts.append(docs_guidance)
 
     # Only inject TOOL USAGE DIRECTIVE when the task expects tool usage.
     # Adversarial tasks (expected_mcp_tools=[]) should NOT push the agent
@@ -204,7 +212,7 @@ def build_tutor_context(
     if has_expected_tools:
         parts.append("")
         parts.append("=== TOOL USAGE DIRECTIVE ===")
-        parts.append(
+        tool_guidance = (
             "You have access to tools for this tutoring session. Use them "
             "to make your teaching concrete and verifiable — when a "
             "student asks about a concept, demonstrate it with real data "
@@ -281,6 +289,25 @@ def build_tutor_context(
             "total return of 45%. Let me explain what these mean...'\n"
             "- BAD: 'Output:\\nSharpe Ratio: 1.3\\nTotal Return: 0.45'"
         )
+        if task.requires_code:
+            tool_guidance += (
+                "\n\nCODE TASK EXECUTION REQUIREMENT:\n"
+                "- For this task, explanation alone is NOT sufficient. Once you "
+                "explain the current implementation step, use tools to produce "
+                "a concrete artifact for that same step whenever possible: create "
+                "or update a file, execute code, save a results table, or inspect "
+                "the generated output.\n"
+                "- Do NOT wait for the student to explicitly say 'write the file' "
+                "if they are already asking how to implement, structure, filter, "
+                "collect, or rank something. Those are implementation requests.\n"
+                "- GOOD: Student asks how to structure an optimization workflow → "
+                "inspect the environment, write the initial scaffold, run the next "
+                "verification step, explain the result.\n"
+                "- BAD: Student asks how to structure an optimization workflow → "
+                "describe an architecture for several turns without creating code "
+                "or workspace artifacts."
+            )
+        parts.append(tool_guidance)
 
     # Inject code teaching guidance based on requires_code
     parts.append("")
@@ -292,6 +319,9 @@ def build_tutor_context(
             "Break code into small, digestible chunks — never dump an "
             "entire script at once. For each chunk, explain WHY this step "
             "matters, not just WHAT it does.\n"
+            "For implementation-focused questions, move beyond snippets: the "
+            "student should leave the session with usable workspace artifacts "
+            "and verified outputs, not just architecture discussion.\n"
             "Adjust code complexity to the student's level:\n"
             "- Beginners: simple variable names, print statements, one "
             "new concept at a time, line-by-line explanation.\n"
@@ -418,6 +448,24 @@ def build_scenario(task: QuantTutorTask, persona_id: str) -> str:
             "without saving it, ask: 'Can we also save that to a file so "
             "I can use it later?'"
         )
+        if task.requires_code:
+            parts.append("")
+            parts.append(
+                "IMPLEMENTATION TRACKING: This is a code-producing task. Do "
+                "not treat a verbal explanation as completion for an "
+                "implementation goal. After at most one conceptual follow-up "
+                "on a goal, ask for the concrete code, executed output, or "
+                "saved artifact needed for that goal. Example: 'That makes "
+                "sense. Can you show the actual code and save the result so I "
+                "can build on it?'"
+            )
+            parts.append("")
+            parts.append(
+                "WHEN THE TUTOR STAYS ABSTRACT: If the tutor keeps describing "
+                "architecture, workflow, or theory without producing files, "
+                "code execution, or saved results for the current goal, push "
+                "them back to implementation on your next turn."
+            )
         parts.append("")
         parts.append(
             "DEAD-END AVOIDANCE: If the tutor's response focuses on "

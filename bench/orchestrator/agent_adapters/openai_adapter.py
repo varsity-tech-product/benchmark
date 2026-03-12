@@ -5,16 +5,18 @@ make multiple tool calls autonomously within a single generate_response()
 call, controlled by max_turns. Dynamic instructions inject per-task context.
 
 Supports both native OpenAI API and OpenRouter routing.
-When base_url is provided (e.g. OpenRouter), uses OpenAIChatCompletionsModel
-with a custom AsyncOpenAI client for clean isolation from env vars.
+Uses OpenAIChatCompletionsModel with an adapter-owned AsyncOpenAI client so
+the benchmark can reset and close SDK resources deterministically.
 
 Install: pip install openai-agents
 
 Reference: https://github.com/openai/openai-agents-python
 """
 
+import asyncio
 import json
 import os
+import threading
 from pathlib import Path
 from typing import Optional
 
@@ -79,6 +81,8 @@ class OpenAIAgentAdapter(BaseAgentAdapter):
         self._tool_callback = (
             None  # Updated each turn, referenced by FunctionTool closures
         )
+        self._model_obj = None
+        self._async_client = None
 
         if base_url:
             # Custom provider (e.g. OpenRouter): prefer OPENROUTER_API_KEY
@@ -111,6 +115,14 @@ class OpenAIAgentAdapter(BaseAgentAdapter):
         self._input_history = []
         self._tool_callback = None
 
+    def reset(self):
+        """Reset per-task state while preserving provider configuration."""
+        super().reset()
+        self._agent = None
+        self._input_history = []
+        self._tool_callback = None
+        self._task_context = ""
+
     def set_agent_max_steps(self, n: int):
         """Limit SDK internal loop turns per conversation turn."""
         self.max_turns = n
@@ -129,19 +141,55 @@ class OpenAIAgentAdapter(BaseAgentAdapter):
     def _resolve_model(self):
         """Resolve the model object for the Agent SDK.
 
-        When base_url is set, returns an OpenAIChatCompletionsModel with a
-        custom AsyncOpenAI client. Otherwise returns the model name string
-        for native OpenAI.
+        Use an explicit AsyncOpenAI client even for native OpenAI so the
+        adapter owns the resource lifecycle and can close it deterministically
+        after each benchmark task.
         """
-        if self.base_url:
+        if self._model_obj is None:
             from agents.models.openai_chatcompletions import (
                 OpenAIChatCompletionsModel,
             )
             from openai import AsyncOpenAI
 
-            client = AsyncOpenAI(api_key=self.api_key, base_url=self.base_url)
-            return OpenAIChatCompletionsModel(model=self.model, openai_client=client)
-        return self.model
+            client_kwargs = {"api_key": self.api_key}
+            if self.base_url:
+                client_kwargs["base_url"] = self.base_url
+            self._async_client = AsyncOpenAI(**client_kwargs)
+            self._model_obj = OpenAIChatCompletionsModel(
+                model=self.model,
+                openai_client=self._async_client,
+            )
+        return self._model_obj
+
+    def close(self):
+        """Release async client resources used by the Agents SDK."""
+        self._agent = None
+        self._input_history = []
+        self._tool_callback = None
+        self._task_context = ""
+        self._model_obj = None
+
+        client = self._async_client
+        self._async_client = None
+        if client is None:
+            return
+
+        try:
+            asyncio.run(client.close())
+        except RuntimeError:
+            close_error: list[Exception] = []
+
+            def _close_in_thread():
+                try:
+                    asyncio.run(client.close())
+                except Exception as exc:  # pragma: no cover - defensive cleanup
+                    close_error.append(exc)
+
+            thread = threading.Thread(target=_close_in_thread, daemon=True)
+            thread.start()
+            thread.join()
+            if close_error:
+                raise close_error[0]
 
     def _get_or_create_agent(self, available_tools: list[dict]) -> "Agent":
         """Create the Agent once per task, reuse across conversation turns.

@@ -129,6 +129,7 @@ class BenchmarkOrchestrator:
         """
         start_time = time.time()
         max_turns = max_turns or task.max_turns
+        agent.reset()
         result = TaskResult(
             task_id=task.task_id,
             persona_id=persona.persona_id,
@@ -349,6 +350,10 @@ class BenchmarkOrchestrator:
                 except Exception:
                     pass
             self._cleanup_staged_dirs(staged_temp_dirs)
+            try:
+                agent.close()
+            except Exception as close_err:
+                print(f"  [warn] agent.close() failed: {close_err}")
 
         result.duration_seconds = time.time() - start_time
 
