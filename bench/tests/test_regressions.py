@@ -2,12 +2,15 @@ import sys
 import types
 import warnings
 import unittest
+from unittest.mock import MagicMock, patch
+from types import SimpleNamespace
 
 sys.modules.setdefault(
     "dotenv",
     types.SimpleNamespace(load_dotenv=lambda *args, **kwargs: None),
 )
 
+from run_benchmark import _collect_remote_endpoints
 from config.pricing import estimate_cost
 from config.prompt_config import build_scenario, build_tutor_context
 from orchestrator.agent_adapters.openai_adapter import OpenAIAgentAdapter
@@ -71,6 +74,33 @@ class PricingTests(unittest.TestCase):
         self.assertTrue(any("No pricing for model" in str(item.message) for item in caught))
 
 
+class NetworkPreflightTests(unittest.TestCase):
+    def test_collect_remote_endpoints_uses_openai_when_no_openrouter_key(self):
+        args = SimpleNamespace(
+            command="run-single",
+            agent="openai",
+            eval_model="gpt-4o-mini",
+            simulator_model="gpt-4o-mini",
+        )
+        with patch.dict("os.environ", {}, clear=False):
+            endpoints = _collect_remote_endpoints(args)
+        hosts = {host for _, host in endpoints}
+        self.assertIn("api.openai.com", hosts)
+        self.assertNotIn("openrouter.ai", hosts)
+
+    def test_collect_remote_endpoints_uses_openrouter_when_key_present(self):
+        args = SimpleNamespace(
+            command="run-single",
+            agent="openai",
+            eval_model="gpt-4o-mini",
+            simulator_model="gpt-4o-mini",
+        )
+        with patch.dict("os.environ", {"OPENROUTER_API_KEY": "test"}, clear=False):
+            endpoints = _collect_remote_endpoints(args)
+        hosts = {host for _, host in endpoints}
+        self.assertIn("openrouter.ai", hosts)
+
+
 class PromptRegressionTests(unittest.TestCase):
     def test_code_tasks_require_artifacts_in_tutor_context(self):
         context = build_tutor_context(_make_task(requires_code=True), _make_persona())
@@ -109,6 +139,84 @@ class OpenAIAdapterCleanupTests(unittest.TestCase):
 
         self.assertTrue(fake_client.closed)
         self.assertIsNone(adapter._async_client)
+
+    def test_generate_response_disables_sdk_tracing_for_custom_provider(self):
+        adapter = OpenAIAgentAdapter(
+            model="gpt-4o-mini",
+            api_key="test-key",
+            base_url="https://openrouter.ai/api/v1",
+        )
+        adapter._agent = object()
+
+        fake_result = types.SimpleNamespace(
+            final_output="ok",
+            raw_responses=[],
+            to_input_list=lambda: [{"role": "assistant", "content": "ok"}],
+        )
+        fake_runner = types.SimpleNamespace(run_sync=MagicMock(return_value=fake_result))
+
+        class FakeRunConfig:
+            def __init__(self, tracing_disabled=False):
+                self.tracing_disabled = tracing_disabled
+
+        with patch(
+            "orchestrator.agent_adapters.openai_adapter.OPENAI_AGENTS_AVAILABLE",
+            True,
+        ), patch(
+            "orchestrator.agent_adapters.openai_adapter.Runner",
+            fake_runner,
+            create=True,
+        ), patch(
+            "orchestrator.agent_adapters.openai_adapter.RunConfig",
+            FakeRunConfig,
+            create=True,
+        ):
+            response = adapter.generate_response(
+                messages=[{"role": "user", "content": "hello"}],
+                available_tools=[],
+                tool_callback=None,
+            )
+
+        self.assertEqual(response, "ok")
+        run_config = fake_runner.run_sync.call_args.kwargs["run_config"]
+        self.assertTrue(run_config.tracing_disabled)
+
+    def test_generate_response_keeps_tracing_for_native_openai(self):
+        adapter = OpenAIAgentAdapter(model="gpt-4o-mini", api_key="test-key")
+        adapter._agent = object()
+
+        fake_result = types.SimpleNamespace(
+            final_output="ok",
+            raw_responses=[],
+            to_input_list=lambda: [{"role": "assistant", "content": "ok"}],
+        )
+        fake_runner = types.SimpleNamespace(run_sync=MagicMock(return_value=fake_result))
+
+        class FakeRunConfig:
+            def __init__(self, tracing_disabled=False):
+                self.tracing_disabled = tracing_disabled
+
+        with patch(
+            "orchestrator.agent_adapters.openai_adapter.OPENAI_AGENTS_AVAILABLE",
+            True,
+        ), patch(
+            "orchestrator.agent_adapters.openai_adapter.Runner",
+            fake_runner,
+            create=True,
+        ), patch(
+            "orchestrator.agent_adapters.openai_adapter.RunConfig",
+            FakeRunConfig,
+            create=True,
+        ):
+            response = adapter.generate_response(
+                messages=[{"role": "user", "content": "hello"}],
+                available_tools=[],
+                tool_callback=None,
+            )
+
+        self.assertEqual(response, "ok")
+        run_config = fake_runner.run_sync.call_args.kwargs["run_config"]
+        self.assertFalse(run_config.tracing_disabled)
 
 
 if __name__ == "__main__":

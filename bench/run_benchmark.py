@@ -19,6 +19,7 @@ Usage:
 import argparse
 import json
 import os
+import socket
 import sys
 from pathlib import Path
 
@@ -114,7 +115,9 @@ def _create_agent(args):
         # Route through OpenRouter when its key is available; otherwise use
         # native OpenAI API directly (OPENAI_API_KEY).
         has_openrouter = bool(os.environ.get("OPENROUTER_API_KEY"))
-        model = model_override or get_model_for_agent("openai", use_openrouter=has_openrouter)
+        model = model_override or get_model_for_agent(
+            "openai", use_openrouter=has_openrouter
+        )
         kwargs = dict(model=model, system_prompt=system_prompt, agent_name=agent_name)
         if has_openrouter:
             kwargs["base_url"] = OPENROUTER_BASE_URL
@@ -125,6 +128,92 @@ def _create_agent(args):
         model = model_override or get_model_for_agent("generic")
         return GenericLLMAdapter(
             model=model, system_prompt=system_prompt, agent_name=agent_name
+        )
+
+
+def _add_endpoint(endpoints: list[tuple[str, str]], seen: set[str], label: str, host: str):
+    if host not in seen:
+        endpoints.append((label, host))
+        seen.add(host)
+
+
+def _deepeval_host_for_model(model_name: str | None) -> tuple[str, str]:
+    if os.environ.get("OPENROUTER_API_KEY"):
+        return ("OpenRouter (DeepEval)", "openrouter.ai")
+
+    name = (model_name or "").strip().lower()
+    if name.startswith("anthropic/") or "claude" in name:
+        return ("Anthropic (DeepEval)", "api.anthropic.com")
+    if name.startswith("google/") or "gemini" in name:
+        return ("Google (DeepEval)", "generativelanguage.googleapis.com")
+    return ("OpenAI (DeepEval)", "api.openai.com")
+
+
+def _collect_remote_endpoints(args) -> list[tuple[str, str]]:
+    endpoints: list[tuple[str, str]] = []
+    seen: set[str] = set()
+
+    if args.command in {"run", "run-single", "test-e2e"}:
+        agent_type = getattr(args, "agent", "generic")
+        if agent_type in {"openai", "generic"}:
+            if os.environ.get("OPENROUTER_API_KEY"):
+                _add_endpoint(endpoints, seen, "OpenRouter (agent)", "openrouter.ai")
+            else:
+                _add_endpoint(endpoints, seen, "OpenAI (agent)", "api.openai.com")
+        elif agent_type == "anthropic":
+            _add_endpoint(endpoints, seen, "Anthropic (agent)", "api.anthropic.com")
+        elif agent_type == "google":
+            _add_endpoint(
+                endpoints,
+                seen,
+                "Google (agent)",
+                "generativelanguage.googleapis.com",
+            )
+
+    if args.command == "run-single":
+        for model_name in (getattr(args, "eval_model", None), getattr(args, "simulator_model", None)):
+            label, host = _deepeval_host_for_model(model_name)
+            _add_endpoint(endpoints, seen, label, host)
+    elif args.command == "run":
+        if getattr(args, "layer", "all") in {"all", "1"} and not getattr(args, "no_deepeval", False):
+            label, host = _deepeval_host_for_model(getattr(args, "eval_model", None))
+            _add_endpoint(endpoints, seen, label, host)
+        if getattr(args, "layer", "all") in {"all", "2"}:
+            for model_name in (getattr(args, "eval_model", None), getattr(args, "simulator_model", None)):
+                label, host = _deepeval_host_for_model(model_name)
+                _add_endpoint(endpoints, seen, label, host)
+    elif args.command == "run-layer1" and not getattr(args, "no_deepeval", False):
+        label, host = _deepeval_host_for_model(getattr(args, "eval_model", None))
+        _add_endpoint(endpoints, seen, label, host)
+    elif args.command == "test-e2e":
+        label, host = _deepeval_host_for_model(getattr(args, "eval_model", None))
+        _add_endpoint(endpoints, seen, label, host)
+
+    return endpoints
+
+
+def _preflight_remote_endpoints(args):
+    if os.environ.get("QTB_SKIP_NETWORK_PREFLIGHT") == "1":
+        return
+
+    if args.command not in {"run", "run-single", "run-layer1", "test-e2e"}:
+        return
+
+    failures = []
+    for label, host in _collect_remote_endpoints(args):
+        try:
+            with socket.create_connection((host, 443), timeout=5):
+                pass
+        except OSError as exc:
+            failures.append(f"{label}: {host}: {exc}")
+
+    if failures:
+        joined = "\n".join(f"  - {item}" for item in failures)
+        raise SystemExit(
+            "Network preflight failed. Required providers are unreachable:\n"
+            f"{joined}\n\n"
+            "If this is a sandboxed environment, rerun with unrestricted network "
+            "access or set QTB_SKIP_NETWORK_PREFLIGHT=1 to bypass this check."
         )
 
 
@@ -913,6 +1002,9 @@ def main():
     # DeepEval's @retry_openai uses Tenacity. Defaults (max=2, cap=5s) are
     # too aggressive for 10-worker parallel runs hitting OpenRouter rate limits.
     # setdefault() allows users to override via env vars if needed.
+    os.environ.setdefault("DEEPEVAL_TELEMETRY_OPT_OUT", "1")
+    os.environ.setdefault("DEEPEVAL_CACHE_FOLDER", str(BENCH_ROOT / ".deepeval"))
+    os.makedirs(os.environ["DEEPEVAL_CACHE_FOLDER"], exist_ok=True)
     os.environ.setdefault("DEEPEVAL_RETRY_MAX_ATTEMPTS", "6")
     os.environ.setdefault("DEEPEVAL_RETRY_INITIAL_SECONDS", "3")
     os.environ.setdefault("DEEPEVAL_RETRY_CAP_SECONDS", "60")
@@ -1050,6 +1142,7 @@ def main():
     subparsers.add_parser("test-e2e", help="Run end-to-end validation test")
 
     args = parser.parse_args()
+    _preflight_remote_endpoints(args)
 
     if args.command == "run":
         cmd_run(args)

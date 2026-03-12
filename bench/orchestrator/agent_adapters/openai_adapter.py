@@ -31,7 +31,7 @@ load_dotenv(_PROJECT_ROOT / ".env")
 from config.llm_config import OPENAI_AGENT_MODEL
 
 try:
-    from agents import Agent, MaxTurnsExceeded, Runner
+    from agents import Agent, MaxTurnsExceeded, Runner, RunConfig
     from agents.model_settings import ModelSettings
     from agents.tool import FunctionTool
 
@@ -252,6 +252,7 @@ class OpenAIAgentAdapter(BaseAgentAdapter):
                 agent,
                 self._input_history,
                 max_turns=self.max_turns,
+                run_config=RunConfig(tracing_disabled=bool(self.base_url)),
             )
 
             # Preserve full SDK context for next turn.
