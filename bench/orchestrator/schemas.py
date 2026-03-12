@@ -57,6 +57,8 @@ class EnvironmentConfig(BaseModel):
     # Whether this task requires outbound internet access inside the sandbox.
     # Default is False for reproducibility/safety.
     network_enabled: bool = False
+    # Maximum backtest trials for I-series tasks (0 = no trial system).
+    max_backtest_trials: int = 0
 
 
 class QuantTutorTask(BaseModel):
@@ -148,6 +150,7 @@ class TaskResult(BaseModel):
     tool_usage: dict = Field(
         default_factory=dict
     )  # Tool Usage scoring (expected/convenient/distractor)
+    trial_metadata: dict = Field(default_factory=dict)
     sandbox_info: dict = Field(default_factory=dict)
     token_usage: dict = Field(
         default_factory=dict

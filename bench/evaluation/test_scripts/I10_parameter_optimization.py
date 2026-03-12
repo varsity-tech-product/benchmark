@@ -11,6 +11,7 @@ from _implementation_check import (
     check_csharp_patterns,
     collect_lean_results,
     compute_behavioral_score,
+    compute_trial_efficiency,
     has_any,
     has_regex,
     load_agent_trades,
@@ -211,17 +212,21 @@ def evaluate(
     # ── Bayesian bonus (optional Optuna convergence) ──
     results["bayesian_bonus"] = _check_bayesian_bonus(artifact_text)
 
+    # ── Trial efficiency ──
+    efficiency_score = compute_trial_efficiency(workspace_path)
+
     # ── Scoring ──
     _checklist = [
         {"item": "backtest_completed",    "weight": 0.05, "passed": results["backtest_completed"]},
         {"item": "trade_log_produced",    "weight": 0.05, "passed": results["trade_log_produced"]},
-        {"item": "behavioral_score",      "weight": 0.25, "score": behavioral.composite_score},
+        {"item": "behavioral_score",      "weight": 0.20, "score": behavioral.composite_score},
         {"item": "parameter_api_usage",   "weight": 0.15, "passed": results["parameter_api_usage"]},
         {"item": "grid_completeness",     "weight": 0.15, "passed": results["grid_completeness"]},
         {"item": "results_structure",     "weight": 0.10, "passed": results["results_structure"]},
         {"item": "top5_identification",   "weight": 0.10, "passed": results["top5_identification"]},
         {"item": "code_patterns",         "weight": 0.05, "passed": results["code_patterns"]},
         {"item": "bayesian_bonus",        "weight": 0.10, "passed": results["bayesian_bonus"]},
+        {"item": "trial_efficiency",      "weight": 0.05, "score": efficiency_score},
     ]
     score = sum(
         c["weight"] * c.get("score", 1.0 if c.get("passed") else 0.0)

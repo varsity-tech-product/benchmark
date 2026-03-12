@@ -955,6 +955,37 @@ def compute_behavioral_score(
 # ════════════════════════════════════════════════════════════════════
 
 
+def compute_trial_efficiency(workspace_path: str, default_max: int = 5) -> float:
+    """Compute trial efficiency score from .trials/manifest.json.
+
+    efficiency = (max_trials - trials_used) / (max_trials - 1)
+    Clamped to [0.0, 1.0].
+
+    If no manifest exists (agent used shell_exec directly), returns 1.0
+    (full efficiency bonus — solved without the trial system).
+    """
+    manifest_path = os.path.join(workspace_path, ".trials", "manifest.json")
+    if not os.path.exists(manifest_path):
+        return 1.0
+
+    try:
+        with open(manifest_path) as f:
+            manifest = json.load(f)
+    except (json.JSONDecodeError, IOError):
+        return 1.0
+
+    max_trials = manifest.get("max_trials", default_max)
+    trials_used = manifest.get("trials_used", 0)
+
+    if max_trials <= 1:
+        return 1.0
+    if trials_used <= 0:
+        return 1.0
+
+    efficiency = (max_trials - trials_used) / (max_trials - 1)
+    return max(0.0, min(1.0, efficiency))
+
+
 def check_framework_architecture(workspace_path: str) -> dict:
     """Check for SetAlpha/SetPortfolioConstruction/SetExecution patterns in .cs files."""
     checks = {

@@ -11,6 +11,7 @@ from _implementation_check import (
     collect_lean_results,
     compute_behavioral_score,
     compute_trade_log_score,
+    compute_trial_efficiency,
     has_any,
     has_regex,
     load_agent_trades,
@@ -95,15 +96,19 @@ def evaluate(
         if has_any(artifact_text, ["setholdings", "marketorder", "buy", "sell"]):
             results["long_short_both"] = True
 
+    # ── Trial efficiency ──
+    efficiency_score = compute_trial_efficiency(workspace_path)
+
     # ── Scoring ──
     _checklist = [
         {"item": "backtest_completed",  "weight": 0.05, "passed": results["backtest_completed"]},
         {"item": "trade_log_produced",  "weight": 0.05, "passed": results["trade_log_produced"]},
-        {"item": "behavioral_score",    "weight": 0.50, "score": behavioral.composite_score},
+        {"item": "behavioral_score",    "weight": 0.45, "score": behavioral.composite_score},
         {"item": "code_patterns",       "weight": 0.05, "passed": results["code_patterns"]},
         {"item": "stop_loss_present",   "weight": 0.08, "passed": results["stop_loss_present"]},
         {"item": "long_short_both",     "weight": 0.07, "passed": results["long_short_both"]},
         {"item": "exit_reason_tagged",  "weight": 0.05, "passed": results["exit_reason_tagged"]},
+        {"item": "trial_efficiency",    "weight": 0.05, "score": efficiency_score},
     ]
     score = sum(
         c["weight"] * c.get("score", 1.0 if c.get("passed") else 0.0)

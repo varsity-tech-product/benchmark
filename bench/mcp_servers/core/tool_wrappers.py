@@ -11,7 +11,7 @@ which read QTB_* environment variables for path resolution.
 import subprocess
 
 # Tools that may run for a long time (heavy computation, exec(), subprocess).
-_LONG_TIMEOUT_TOOLS = {"plot_chart", "run_backtest", "shell_exec", "compute_statistics"}
+_LONG_TIMEOUT_TOOLS = {"plot_chart", "run_backtest", "shell_exec", "compute_statistics", "run_lean_backtest", "submit_trial"}
 
 
 def make_container_tool(

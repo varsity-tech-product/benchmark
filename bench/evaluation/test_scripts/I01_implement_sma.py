@@ -11,6 +11,7 @@ from _implementation_check import (
     collect_lean_results,
     compute_behavioral_score,
     compute_trade_log_score,
+    compute_trial_efficiency,
     has_any,
     has_regex,
     load_agent_trades,
@@ -77,13 +78,17 @@ def evaluate(
     elif has_regex(artifact_text, [r"sma\s*\(", r"simplemovingaverage"]):
         results["sma_indicator_used"] = True
 
+    # ── Trial efficiency ──
+    efficiency_score = compute_trial_efficiency(workspace_path)
+
     # ── Scoring ──
     _checklist = [
         {"item": "backtest_completed",  "weight": 0.05, "passed": results["backtest_completed"]},
         {"item": "trade_log_produced",  "weight": 0.05, "passed": results["trade_log_produced"]},
-        {"item": "behavioral_score",    "weight": 0.60, "score": behavioral.composite_score},
+        {"item": "behavioral_score",    "weight": 0.55, "score": behavioral.composite_score},
         {"item": "code_patterns",       "weight": 0.10, "passed": results["code_patterns"]},
         {"item": "sma_indicator_used",  "weight": 0.10, "passed": results["sma_indicator_used"]},
+        {"item": "trial_efficiency",    "weight": 0.05, "score": efficiency_score},
     ]
     score = sum(
         c["weight"] * c.get("score", 1.0 if c.get("passed") else 0.0)

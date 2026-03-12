@@ -309,6 +309,34 @@ def build_tutor_context(
             )
         parts.append(tool_guidance)
 
+    # Inject backtest trial system guidance for I-series tasks
+    max_bt = (
+        task.environment.max_backtest_trials
+        if task.environment and hasattr(task.environment, "max_backtest_trials")
+        else 0
+    )
+    if max_bt > 0:
+        parts.append("")
+        parts.append("=== BACKTEST TRIAL SYSTEM ===")
+        parts.append(
+            f"You have a trial budget of {max_bt} backtest attempts for this task. "
+            "Use the trial tools to iterate efficiently:\n\n"
+            "WORKFLOW:\n"
+            "1. Write your C# algorithm file\n"
+            "2. Call run_lean_backtest(algorithm_path) to compile + run + record a trial\n"
+            "3. Review the result (compile errors, empty trades, metrics)\n"
+            "4. Fix issues and run again (each run uses 1 trial)\n"
+            "5. Call select_submission(trial_id) to pick your best version\n"
+            "6. Call get_trial_status() anytime to review all trials\n\n"
+            "EFFICIENCY BONUS: Solving in fewer trials earns a higher efficiency score. "
+            "Plan carefully before each attempt.\n\n"
+            "NOTES:\n"
+            "- shell_exec is still available for non-backtest commands "
+            "(reading files, compiling, checking logs, etc.)\n"
+            "- If you exhaust all trials, you must select from existing trials\n"
+            "- If you don't call select_submission, the best trial is auto-selected"
+        )
+
     # Inject code teaching guidance based on requires_code
     parts.append("")
     parts.append("=== CODE IN RESPONSES ===")

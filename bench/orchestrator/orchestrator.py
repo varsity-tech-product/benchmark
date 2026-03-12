@@ -196,6 +196,12 @@ class BenchmarkOrchestrator:
             os.environ["QTB_DOCS_DIR"] = staged_docs_dir
             os.environ["QTB_WORKSPACE_DIR"] = container.workspace_path
             os.environ["QTB_STUDENT_CODE_DIR"] = self.student_code_dir
+            # Pass max_backtest_trials so trial tools know the budget
+            max_bt = (
+                task.environment.max_backtest_trials
+                if task.environment else 0
+            )
+            os.environ["QTB_MAX_BACKTEST_TRIALS"] = str(max_bt)
 
             # 1d. Configure MCP proxy with task-specific tools + container info
             proxy = create_proxy_for_task(
@@ -289,6 +295,36 @@ class BenchmarkOrchestrator:
                     task.environment.sandbox_image if task.environment else "N/A"
                 ),
             }
+
+            # === PHASE 3.25: TRIAL FINALIZATION ===
+            # If the task uses the trial system, auto-select best trial
+            # when the agent didn't explicitly call select_submission.
+            max_bt = (
+                task.environment.max_backtest_trials
+                if task.environment else 0
+            )
+            if max_bt > 0 and container.workspace_path:
+                manifest_path = os.path.join(
+                    container.workspace_path, ".trials", "manifest.json"
+                )
+                if os.path.exists(manifest_path):
+                    try:
+                        from mcp_servers.core.trial_manager import TrialManager
+
+                        tm = TrialManager(
+                            container.workspace_path, max_trials=max_bt
+                        )
+                        status = tm.get_status()
+                        if not status.get("selected_trial") and status["trials"]:
+                            selected = tm.auto_select()
+                            print(
+                                f"  [Trials] Auto-selected trial {selected} "
+                                f"(agent did not call select_submission)"
+                            )
+                        # Populate trial_metadata on the result
+                        result.trial_metadata = tm.get_status()
+                    except Exception as e:
+                        print(f"  [Trials] Warning: finalization failed: {e}")
 
             # === PHASE 3.5: PRE-TEARDOWN HOOK ===
             # Allows callers (e.g. reference generator) to capture full proxy

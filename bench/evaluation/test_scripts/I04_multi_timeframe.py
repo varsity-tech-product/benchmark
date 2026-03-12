@@ -11,6 +11,7 @@ from _implementation_check import (
     collect_lean_results,
     compute_behavioral_score,
     compute_trade_log_score,
+    compute_trial_efficiency,
     has_any,
     has_regex,
     load_agent_trades,
@@ -87,14 +88,18 @@ def evaluate(
     if has_ema and has_rsi and (has_4h or has_1h):
         results["dual_resolution_indicators"] = True
 
+    # ── Trial efficiency ──
+    efficiency_score = compute_trial_efficiency(workspace_path)
+
     # ── Scoring ──
     _checklist = [
         {"item": "backtest_completed",          "weight": 0.05, "passed": results["backtest_completed"]},
         {"item": "trade_log_produced",          "weight": 0.05, "passed": results["trade_log_produced"]},
-        {"item": "behavioral_score",            "weight": 0.55, "score": behavioral.composite_score},
+        {"item": "behavioral_score",            "weight": 0.50, "score": behavioral.composite_score},
         {"item": "code_patterns",               "weight": 0.05, "passed": results["code_patterns"]},
         {"item": "consolidator_used",           "weight": 0.10, "passed": results["consolidator_used"]},
         {"item": "dual_resolution_indicators",  "weight": 0.10, "passed": results["dual_resolution_indicators"]},
+        {"item": "trial_efficiency",            "weight": 0.05, "score": efficiency_score},
     ]
     score = sum(
         c["weight"] * c.get("score", 1.0 if c.get("passed") else 0.0)
