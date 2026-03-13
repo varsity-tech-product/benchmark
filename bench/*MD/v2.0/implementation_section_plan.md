@@ -1,6 +1,6 @@
 # Implementation Section (I-Series) Design Plan
 
-> Version: v2.4 | Status: In Progress — I01–I10 reference data complete, multi-layer behavioral eval with multi-run support, three known issues fixed (I08 PCM, I06 Sharpe overflow, multi-run summaries) | Section: Strategy Implementation on LEAN Engine
+> Version: v2.5 | Status: In Progress — I01–I10 reference data complete, multi-layer behavioral eval with multi-run support, trial-manager workflow integrated, and the section is now operationally usable for live runs (OpenRouter default; native OpenAI mainly for single-task debugging due to quota/TPM limits) | Section: Strategy Implementation on LEAN Engine
 
 ---
 
@@ -108,6 +108,17 @@ The agent does **NOT** need to:
 - Set up the C# build environment
 
 A reference document (`lean_algorithm_guide.md`, see §6) will be provided to teach the LEAN C# API basics.
+
+### 1.5 Current Operational Status (2026-03-13)
+
+I-series is now **operationally usable**. The benchmark can run end-to-end, save artifacts, and evaluate live agent behavior on LEAN tasks. The main blockers encountered during live validation were infrastructure/runtime issues rather than task-definition issues:
+
+1. **Sandbox/network**: Native OpenAI runs previously failed with `APIConnectionError` when executed under restricted network conditions. This was an environment problem, not an I-series task problem.
+2. **DeepEval telemetry writes**: Parallel runs initially failed on `.deepeval/.deepeval_telemetry.txt` permissions. The runner now opts out of DeepEval telemetry and uses a writable cache directory.
+3. **OpenAI SDK tracing**: OpenRouter runs produced non-fatal OpenAI tracing `401`s, and native `gpt-5.2` runs hit an OpenAI Agents SDK tracing `RecursionError`. The benchmark now uses provider-aware tracing: OpenRouter disables SDK tracing entirely, while native OpenAI keeps tracing enabled but omits sensitive trace payloads to avoid the recursion bug.
+4. **Provider limits**: Full native OpenAI suite runs remain constrained by account TPM/quota. In practice, OpenRouter is the better default for full-suite live validation, while native OpenAI is best used for targeted single-task debugging.
+
+The consequence is important: **I-series can work today**, but raw benchmark quality is still model-dependent. The current remaining problem is not “can I-series run?” but “does the agent actually use the LEAN/trial workflow to achieve strong QR?”
 
 ---
 
@@ -2526,6 +2537,15 @@ Each reference signal file must be validated:
 - [x] Test: I-series task container sees data at `/lean/Data/` *(validated via I07-I10 LEAN backtest runs)
 - [x] Verify: S/B-series tasks unaffected — LEAN mount only triggers when `"lean" in sandbox_image`
 
+**Live-run hardening (runtime reliability):**
+- [x] Opt out of DeepEval telemetry and force writable `DEEPEVAL_CACHE_FOLDER`
+- [x] Add provider/network preflight to fail fast when required APIs are unreachable
+- [x] Add provider-aware OpenAI Agents tracing:
+  - [x] OpenRouter path disables SDK tracing entirely
+  - [x] Native OpenAI keeps tracing enabled but omits sensitive trace payloads to avoid SDK recursion on `gpt-5.2`
+- [x] Validate that native OpenAI single-task runs work with unrestricted network access
+- [x] Validate that OpenRouter-routed suite runs are the practical default for full live suites
+
 **Docker / LEAN environment (engine only, no data):**
 - [x] Build Docker image `quant-tutor-env:v2.2-lean` with LEAN engine + .NET SDK (NO data, ~3GB) — `docker/Dockerfile.lean`
 - [x] Write and test `run_backtest` wrapper script — `docker/run_backtest.sh`
@@ -2587,6 +2607,12 @@ Each reference signal file must be validated:
 - [x] I08_multi_alpha.json
 - [x] I09_risk_management.json
 - [x] I10_parameter_optimization.json
+- [x] Add `max_backtest_trials` to I01–I10 environment configs
+- [x] Add trial tools to I-series task environments:
+  - [x] `run_lean_backtest`
+  - [x] `submit_trial`
+  - [x] `select_submission`
+  - [x] `get_trial_status`
 
 ### Phase 4: Eval Scripts (bench/evaluation/test_scripts/)
 
@@ -2610,6 +2636,21 @@ Each reference signal file must be validated:
 - [x] I09_risk_management.py — risk model registration + 3-way comparison checks
 - [x] I10_parameter_optimization.py — GetParameter() usage + grid completeness checks
 - [x] Extend `_implementation_check.py` with framework-specific helpers (insight log parsing, multi-run comparison)
+- [x] Add `compute_trial_efficiency()` helper to `_implementation_check.py`
+- [x] Add `trial_efficiency` scoring at 5% weight to all I01–I10 eval scripts
+
+### Phase 4b: Trial System Integration
+
+- [x] Add `TrialManager` with file-locked manifest persistence
+- [x] Add trial MCP tools:
+  - [x] `run_lean_backtest`
+  - [x] `submit_trial`
+  - [x] `select_submission`
+  - [x] `get_trial_status`
+- [x] Register long timeouts for LEAN/trial tools
+- [x] Add orchestrator Phase 3.25 trial finalization before evaluation
+- [x] Add `trial_metadata` to `TaskResult`
+- [x] Inject `=== BACKTEST TRIAL SYSTEM ===` prompt guidance when `max_backtest_trials > 0`
 
 ### Phase 5: Scoring Integration
 
@@ -2622,7 +2663,8 @@ Each reference signal file must be validated:
 
 - [ ] Generate reference executions for all 30 instances (10 tasks × 3 personas)
 - [ ] Validate reference `key_results` and `step_count` baselines
-- [ ] End-to-end integration test: run full benchmark on I-series tasks
+- [x] End-to-end operational smoke test: I-series can run live end-to-end on LEAN tasks
+- [ ] End-to-end benchmark-quality validation: require full-suite runs to complete without provider quota/rate failures and treat internal benchmark errors as script failures
 
 ---
 
@@ -2737,3 +2779,5 @@ I06 Manual param sweep         ──►   I10 Parameter Optimization (hard)
 14. ~~**Multi-run eval architecture**: I08 (2 portfolio models), I09 (3 risk configurations), and I10 (~180 grid search) require multiple backtest runs per task. The eval scripts need to handle multi-run output directories.~~ **Resolved**: Multi-run tasks use `TASK_RUN_CONFIGS` dict in `generate_lean_reference.py` with `run_id` per config. Reference files follow `{task_id}_reference_trades_{run_id}.json` naming. `MULTI_RUN_PRIMARY` dict in `generate_reference_signals.py` maps each task to its primary run for summary/behavioral eval. `compute_behavioral_score()` accepts `run_id` parameter; I08 uses `"equal_weighting"`, I09 uses `"builtin"`.
 15. **Custom risk model testability**: I09's custom `MaxGroupExposureRiskManagementModel` requires group/tier assignments from `universe.json`. Need to verify that the framework risk model can access algorithm state (universe metadata) during `ManageRisk()`.
 16. **Optuna in Docker**: I10's optional Bayesian optimization requires Optuna (Python). The LEAN Docker image is C#-focused. Need to decide: (a) pre-install Optuna in the Docker image, (b) have the agent install it at runtime, or (c) provide a Python-C# bridge script that calls LEAN per Optuna trial.
+17. **Provider budget realism**: Full native OpenAI suite runs on `gpt-5.2` are currently constrained by org TPM/quota. Need a documented default provider strategy (OpenRouter for suites, native OpenAI for isolated debugging) and a recommended concurrency policy.
+18. **Suite-level result classification**: `scripts/test_i_series_live.sh` still treats `run-single` process exit `0` as PASS even when the saved benchmark result contains `error` or `eval_aborted`. Need to classify those cases as failures at the shell-script layer.
