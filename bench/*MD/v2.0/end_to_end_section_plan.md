@@ -1,6 +1,6 @@
 # End-to-End Section (E-Series) Design Plan
 
-> Version: v2.1 | Status: **Complete** — all code, evals, and reference data generated | Section: Workflow Orchestration
+> Version: v2.2 | Status: **Complete and Operationally Validated** — all code, evals, and reference data generated; live suite runs complete end-to-end | Section: Workflow Orchestration
 
 ---
 
@@ -112,6 +112,16 @@ While E-series re-uses upstream skills, the *combination* surfaces two capabilit
 **Pipeline planning**: The agent must decompose an open-ended brief into ordered stages and communicate a plan before executing. A weak agent dives into code immediately; a strong agent outlines "Step 1: explore, Step 2: define signal, Step 3: backtest, ..." before writing a single line. E-series evals detect this via `pipeline_structure_present`.
 
 **Artifact continuity**: When transitioning between stages (especially Python → LEAN), the agent must carry forward the *same* signal definition, parameters, and logic — not re-invent them. A common failure mode: the Python prototype uses BB(20, 2.0) but the LEAN implementation quietly switches to SMA crossover. E-series evals detect this via `signal_consistency_between_stages` (E02, E05).
+
+### 1.7 Current Operational Status (2026-03-13)
+
+E-series is now **operationally validated** in live runs. The full E01–E05 suite executes end-to-end, saves artifacts, and completes without infrastructure-level blockers. In practice:
+
+1. **Harness usability**: The benchmark runner, sandbox, evaluator stack, and result persistence all work for the full E-series.
+2. **Provider/runtime stability**: OpenRouter-routed runs with `gpt-4o-mini` complete cleanly for the suite; no sandbox/network or tracing blocker was observed during the E-series usability run.
+3. **Model-quality caveat**: Operational validity does **not** imply strong end-to-end reasoning. The dominant failure mode in the live run was that the agent stayed in explanatory tutoring mode and did not complete the full multi-stage workflow with runnable artifacts. Tasks therefore completed with low `QR` even though the pipeline itself worked.
+
+The practical conclusion is: **E-series can work today**, and its current bottleneck is model workflow execution quality rather than benchmark infrastructure.
 
 ---
 
