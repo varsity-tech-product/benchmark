@@ -146,9 +146,16 @@ class ClaudeCodeAdapter(BaseAgentAdapter):
                 ",".join(_DISALLOWED_BUILTIN_TOOLS),
             ])
 
-        # Prevent nesting error
+        # Prevent nesting error and set up auth
         env = os.environ.copy()
         env.pop("CLAUDECODE", None)
+
+        # If CLAUDE_CODE_OAUTH_TOKEN is set in env/.env, write a temporary
+        # credentials file so `claude` uses that token instead of local auth.
+        oauth_token = env.pop("CLAUDE_CODE_OAUTH_TOKEN", None)
+        if oauth_token:
+            creds_dir = self._ensure_oauth_creds(oauth_token)
+            env["CLAUDE_CONFIG_DIR"] = creds_dir
 
         try:
             result = subprocess.run(
@@ -235,6 +242,39 @@ class ClaudeCodeAdapter(BaseAgentAdapter):
             return f"[Claude Code error: {data.get('result', 'unknown')}]"
 
         return data.get("result", "")
+
+    # ── OAuth credentials ──────────────────────────────────────
+
+    def _ensure_oauth_creds(self, token: str) -> str:
+        """Write a temporary CLAUDE_CONFIG_DIR with OAuth credentials.
+
+        Returns the path to the temp config directory.
+        """
+        if self._tmp_dir is None:
+            self._tmp_dir = tempfile.mkdtemp(prefix="qtb_claude_code_")
+
+        config_dir = os.path.join(self._tmp_dir, "claude_config")
+        os.makedirs(config_dir, exist_ok=True)
+
+        creds = {
+            "claudeAiOauth": {
+                "accessToken": token,
+                "refreshToken": "",
+                "expiresAt": 9999999999999,
+                "scopes": [
+                    "user:inference",
+                    "user:profile",
+                    "user:sessions:claude_code",
+                ],
+                "subscriptionType": "max",
+            }
+        }
+        creds_path = os.path.join(config_dir, ".credentials.json")
+        with open(creds_path, "w") as f:
+            json.dump(creds, f)
+        os.chmod(creds_path, 0o600)
+
+        return config_dir
 
     # ── MCP Bridge ─────────────────────────────────────────────
 
