@@ -24,7 +24,14 @@ from tools import CORE_TOOLS
 
 # Default per-call timeout (seconds).  The host may also enforce its own
 # timeout; this is a safety net for runaway exec()/subprocess calls.
-_DEFAULT_TIMEOUT = 120
+_DEFAULT_TIMEOUT = 600
+
+# Maximum result size written to the stdout pipe (bytes).  Responses
+# larger than this are truncated to prevent pipe-buffer deadlocks:
+# macOS pipes are limited to 64 KB, and a single write() > 64 KB blocks
+# while the reader's readline() waits for the trailing '\n', causing a
+# mutual wait.  50 KB leaves headroom for the JSON envelope.
+_MAX_RESULT_BYTES = 50_000
 
 
 class _ToolTimeout(Exception):
@@ -102,7 +109,19 @@ def main():
 
 
 def _respond(req_id: int, result: str, error):
-    """Write a single JSON-line response to stdout."""
+    """Write a single JSON-line response to stdout.
+
+    Results exceeding *_MAX_RESULT_BYTES* are truncated to prevent
+    pipe-buffer deadlocks (see module docstring).
+    """
+    if len(result) > _MAX_RESULT_BYTES:
+        original_len = len(result)
+        result = (
+            result[:_MAX_RESULT_BYTES]
+            + f"\n\n... [truncated: {original_len} chars total, "
+            f"showing first {_MAX_RESULT_BYTES}. "
+            f"Use file_read() to access full output from saved files.]"
+        )
     sys.stdout.write(
         json.dumps({"id": req_id, "result": result, "error": error}) + "\n"
     )

@@ -12,6 +12,11 @@ from typing import Callable, Optional
 # Pattern to detect non-zero exit codes appended by shell_exec wrappers
 _EXIT_CODE_RE = re.compile(r"\[exit code\]:\s*(-?\d+)")
 
+# Maximum characters to store in log.result and return to the agent.
+# Prevents oversized distractor tool outputs (e.g. fetch_crypto_data with
+# limit=3000) from bloating traces and consuming agent context.
+_MAX_LOG_RESULT = 50_000
+
 
 @dataclass
 class ToolCallLog:
@@ -47,6 +52,7 @@ class MCPProxy:
         self._tool_schemas: dict[str, dict] = {}
         self._logs: list[ToolCallLog] = []
         self._current_turn: int = 0
+        self._deadline: Optional[float] = None
 
     def register_tool(
         self,
@@ -92,6 +98,12 @@ class MCPProxy:
             "parameters": params or {},
         }
 
+    def set_deadline(self, deadline: Optional[float]):
+        """Set wall-clock deadline.  Tool calls arriving after the deadline
+        are rejected immediately with an error message instead of being
+        forwarded to the real implementation."""
+        self._deadline = deadline
+
     def set_turn(self, turn_index: int):
         """Set the current conversation turn index."""
         self._current_turn = turn_index
@@ -108,6 +120,20 @@ class MCPProxy:
         log = ToolCallLog(
             name=name, args=kwargs, timestamp=timestamp, turn_index=self._current_turn
         )
+
+        # Deadline check: reject new tool calls after the session time limit.
+        # This prevents long-running tools (e.g. run_backtest) from being
+        # started when the conversation should be winding down.
+        if self._deadline is not None and time.time() > self._deadline:
+            log.result = (
+                "Error: Session time limit reached. "
+                "No further tool calls can be executed. "
+                "Please summarize your findings for the student."
+            )
+            log.success = False
+            log.duration_ms = 0.0
+            self._logs.append(log)
+            return log.result
 
         try:
             if name in self._distractors:
@@ -129,12 +155,30 @@ class MCPProxy:
 
             log.result = str(result)
 
+            # Truncate oversized results to prevent trace bloat and
+            # agent context overflow (e.g. distractor returning 500KB).
+            if len(log.result) > _MAX_LOG_RESULT:
+                original_len = len(log.result)
+                log.result = (
+                    log.result[:_MAX_LOG_RESULT]
+                    + f"\n\n... [truncated: {original_len:,} chars total, "
+                    f"showing first {_MAX_LOG_RESULT:,}. "
+                    f"Use file_write() to save large data, then file_read() to access.]"
+                )
+
             # Detect non-zero exit codes from shell_exec (the wrapper appends
             # "[exit code]: N" when returncode != 0).  Mark as failed so trace
             # reports and tool_usage effectiveness scoring see the truth.
             if log.success and log.name == "shell_exec":
                 m = _EXIT_CODE_RE.search(log.result)
                 if m and int(m.group(1)) != 0:
+                    log.success = False
+
+            # Detect shell_exec timeout errors (subprocess.TimeoutExpired
+            # returns an error string, but the proxy sees success=True because
+            # the tool function returned normally instead of raising).
+            if log.success and log.name == "shell_exec":
+                if log.result.startswith("Error: Command timed out"):
                     log.success = False
         except Exception as e:
             log.result = f"Error: {type(e).__name__}: {str(e)}"

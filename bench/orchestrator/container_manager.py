@@ -153,6 +153,38 @@ class ContainerManager:
                 ],
                 capture_output=True,
             )
+
+            # Inject updated run_backtest.sh (the Docker image may have a stale
+            # copy; this ensures the container always uses the latest version).
+            run_backtest_sh = (
+                Path(__file__).parent.parent / "docker" / "run_backtest.sh"
+            )
+            if run_backtest_sh.exists():
+                subprocess.run(
+                    [
+                        "docker",
+                        "cp",
+                        str(run_backtest_sh),
+                        f"{container_id}:/usr/local/bin/run_backtest",
+                    ],
+                    capture_output=True,
+                )
+                # docker cp does NOT preserve execute permissions — fix explicitly.
+                # Must use --user root because the container default user (sandbox)
+                # cannot chmod files owned by root.
+                subprocess.run(
+                    [
+                        "docker",
+                        "exec",
+                        "--user",
+                        "root",
+                        container_id,
+                        "chmod",
+                        "+x",
+                        "/usr/local/bin/run_backtest",
+                    ],
+                    capture_output=True,
+                )
         else:
             container_id = f"local_{task_id}_{int(time.time())}"
             # Local fallback cannot enforce isolation; use host networking semantics.

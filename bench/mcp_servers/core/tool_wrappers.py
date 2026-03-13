@@ -11,7 +11,9 @@ which read QTB_* environment variables for path resolution.
 import subprocess
 
 # Tools that may run for a long time (heavy computation, exec(), subprocess).
-_LONG_TIMEOUT_TOOLS = {"plot_chart", "run_backtest", "shell_exec", "compute_statistics"}
+_LONG_TIMEOUT_TOOLS = {"plot_chart", "compute_statistics"}
+# shell_exec and run_backtest need extra time for LEAN compilation + engine run.
+_EXTRA_LONG_TIMEOUT_TOOLS = {"shell_exec", "run_backtest"}
 
 
 def make_container_tool(
@@ -40,7 +42,12 @@ def make_container_tool(
     if not use_docker:
         return local_func
 
-    timeout = 120.0 if tool_name in _LONG_TIMEOUT_TOOLS else 60.0
+    if tool_name in _EXTRA_LONG_TIMEOUT_TOOLS:
+        timeout = 600.0
+    elif tool_name in _LONG_TIMEOUT_TOOLS:
+        timeout = 120.0
+    else:
+        timeout = 60.0
 
     def _wrapper(**kwargs):
         try:

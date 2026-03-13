@@ -132,6 +132,7 @@ class TaskResult(BaseModel):
         default_factory=dict
     )  # {model_name: {dim: score}} per-judge-model breakdown
     tutor_fallback_count: int = 0  # Tutor evals that used fallback recovery
+    tutor_eval_error: Optional[str] = None  # Exception message when tutor eval failed
     overall_score: float = 0.0
     # Extended metrics (design doc §6.1, §6.4)
     process_metrics: dict = Field(

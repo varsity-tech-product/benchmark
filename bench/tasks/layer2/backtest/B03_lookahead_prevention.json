@@ -48,7 +48,9 @@
     ],
     "convenient_tools": [
       "compute_indicator",
-      "plot_chart"
+      "plot_chart",
+      "analyze_backtest_results",
+      "compare_backtest_results"
     ],
     "quant_validation": {
       "eval_script": "evaluation/test_scripts/B03_lookahead_prevention.py"

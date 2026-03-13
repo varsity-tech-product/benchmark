@@ -8,7 +8,7 @@ Two sub-dimensions (numerical accuracy is handled by code_eval Layer C):
     Completeness (0.55): Did agent produce all expected outputs?
     Correctness  (0.45): Are outputs usable, runnable, and in expected format?
 
-Uses 5-point ordinal scale: {0.0, 0.25, 0.5, 0.75, 1.0}.
+Uses 10-point integer scale (1-10) normalized to 0.0-1.0.
 """
 
 import json as _json
@@ -114,8 +114,8 @@ def _build_result_judge_prompt(
 
     header = """You are evaluating the RESULT QUALITY of an AI tutoring agent's task execution.
 
-SCORING SCALE: Use ONLY these values: {0.0, 0.25, 0.5, 0.75, 1.0}.
-When in doubt between two levels, select the score that best reflects the evidence."""
+SCORING SCALE: Rate each dimension as an INTEGER from 1 to 10.
+Use the full range — avoid defaulting to middle scores (5-6) without justification."""
 
     task_section = f"""
 TASK: {task_description}
@@ -190,49 +190,69 @@ IMPORTANT EVALUATION GUIDELINES:
     # code_eval (Layer C), so the judge focuses on completeness + correctness.
     if reference:
         dimensions = """
-EVALUATE these TWO dimensions:
+EVALUATE these TWO dimensions (integer 1-10):
 
-1. COMPLETENESS (0.0-1.0):
+1. COMPLETENESS (1-10):
    Did the agent produce ALL expected outputs compared to the reference?
-   - 1.0:  All reference outputs present (files, metrics, visualizations)
-   - 0.75: Most outputs present, one minor item missing
-   - 0.5:  Core outputs present but several secondary items missing
-   - 0.25: Only partial outputs, several key items missing
-   - 0.0:  No meaningful outputs produced
+   - 10: All reference outputs present with full detail (files, metrics, visualizations)
+   -  9: All key outputs present; one very minor element has slightly less detail
+   -  8: All key outputs present but one minor output missing (e.g. a secondary chart)
+   -  7: Most outputs present; 1-2 minor items missing but all core deliverables exist
+   -  6: Core outputs present; a few secondary items missing
+   -  5: Core outputs partially present; several items missing
+   -  4: Some outputs present but notable gaps in core deliverables
+   -  3: Only partial outputs; several key items missing
+   -  2: Minimal outputs; most key items missing
+   -  1: No meaningful outputs produced
 
-2. CORRECTNESS (0.0-1.0):
+2. CORRECTNESS (1-10):
    Are the outputs usable and in the expected format?
-   - 1.0:  All outputs are runnable/usable, formats match expectations, results are actionable
-   - 0.75: Outputs mostly usable, minor format issues (e.g. missing column headers, unlabeled values)
-   - 0.5:  Core outputs present but some are unusable or in wrong format
-   - 0.25: Most outputs are broken, unrunnable, or in unexpected format
-   - 0.0:  Outputs are entirely unusable or missing
+   - 10: All outputs are runnable/usable, formats match expectations, results fully actionable
+   -  9: All outputs usable; one trivial format issue (e.g. minor label mismatch)
+   -  8: Outputs mostly usable; minor format issues (e.g. missing column headers)
+   -  7: Outputs functional but with some format or labeling inconsistencies
+   -  6: Core outputs usable but several have format or quality issues
+   -  5: Core outputs present but some are unusable or in wrong format
+   -  4: Several outputs have broken formatting or are partially unusable
+   -  3: Most outputs are broken, unrunnable, or in unexpected format
+   -  2: Nearly all outputs are unusable
+   -  1: Outputs are entirely unusable or missing
 
 Return ONLY a JSON object (no markdown, no extra text):
-{"completeness": <float>, "correctness": <float>, "reason": "<brief explanation>"}"""
+{"completeness": <integer 1-10>, "correctness": <integer 1-10>, "reason": "<brief explanation>"}"""
     else:
         # No reference — evaluate on standalone merit
         dimensions = """
-EVALUATE these TWO dimensions (no reference baseline available):
+EVALUATE these TWO dimensions (no reference baseline available, integer 1-10):
 
-1. COMPLETENESS (0.0-1.0):
+1. COMPLETENESS (1-10):
    Given the task requirements, did the agent produce all expected outputs?
-   - 1.0:  Task fully addressed — all requested outputs present
-   - 0.75: Most requirements met, one minor item missing
-   - 0.5:  Core requirements met but several items missing
-   - 0.25: Only partial work completed
-   - 0.0:  Task barely attempted
+   - 10: Task fully addressed — all requested outputs present with full detail
+   -  9: All key requirements met; one very minor element slightly abbreviated
+   -  8: All key requirements met; one minor item missing
+   -  7: Most requirements met; 1-2 minor items missing
+   -  6: Core requirements met; a few secondary items missing
+   -  5: Core requirements partially met; several items missing
+   -  4: Some requirements addressed but notable gaps
+   -  3: Only partial work completed; several key items missing
+   -  2: Minimal work; most requirements unmet
+   -  1: Task barely attempted
 
-2. CORRECTNESS (0.0-1.0):
+2. CORRECTNESS (1-10):
    Are the outputs usable and in the expected format?
-   - 1.0:  All outputs are runnable/usable, formats match expectations, results are actionable
-   - 0.75: Outputs mostly usable, minor format issues (e.g. missing column headers, unlabeled values)
-   - 0.5:  Core outputs present but some are unusable or in wrong format
-   - 0.25: Most outputs are broken, unrunnable, or in unexpected format
-   - 0.0:  Outputs are entirely unusable or missing
+   - 10: All outputs are runnable/usable, formats match expectations, results fully actionable
+   -  9: All outputs usable; one trivial format issue
+   -  8: Outputs mostly usable; minor format issues (e.g. missing column headers)
+   -  7: Outputs functional but with some format or labeling inconsistencies
+   -  6: Core outputs usable but several have format or quality issues
+   -  5: Core outputs present but some are unusable or in wrong format
+   -  4: Several outputs have broken formatting or are partially unusable
+   -  3: Most outputs are broken, unrunnable, or in unexpected format
+   -  2: Nearly all outputs are unusable
+   -  1: Outputs are entirely unusable or missing
 
 Return ONLY a JSON object (no markdown, no extra text):
-{"completeness": <float>, "correctness": <float>, "reason": "<brief explanation>"}"""
+{"completeness": <integer 1-10>, "correctness": <integer 1-10>, "reason": "<brief explanation>"}"""
 
     prompt = (
         header + task_section + ref_section + agent_section + guidelines + dimensions
@@ -288,14 +308,15 @@ def _extract_json_from_response(text: str) -> dict:
     return {}
 
 
-def _clamp_ordinal(val, default=0.5) -> float:
-    """Snap value to nearest 5-point ordinal."""
-    try:
-        v = float(val)
-    except (TypeError, ValueError):
-        return default
-    ordinals = [0.0, 0.25, 0.5, 0.75, 1.0]
-    return min(ordinals, key=lambda x: abs(x - v))
+def _normalize_score(val, default=0.5) -> float:
+    """Normalize a 1-10 integer score to 0.0-1.0 range.
+
+    Uses normalize_10pt from _scoring_utils.py.
+    Falls back to default if parsing fails.
+    """
+    from evaluation.deepeval_metrics._scoring_utils import normalize_10pt
+
+    return normalize_10pt(val, default=default)
 
 
 # ──────────────────────────────────────────────────────────────
@@ -421,7 +442,7 @@ async def async_evaluate_result_quality(
         m_cost = raw.get("_eval_cost", 0.0)
         cost_by_model[m] = round(m_cost, 6)
         total_eval_cost += m_cost
-        sub = {k: _clamp_ordinal(raw.get(k, 0.5)) for k in _SUB_WEIGHTS}
+        sub = {k: _normalize_score(raw.get(k, 5)) for k in _SUB_WEIGHTS}
         reason = raw.get("reason", "")
         m_overall = sum(_SUB_WEIGHTS[k] * sub[k] for k in _SUB_WEIGHTS)
         per_model[m] = {

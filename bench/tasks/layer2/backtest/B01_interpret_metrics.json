@@ -52,7 +52,8 @@
       "compute_indicator",
       "run_backtest",
       "analyze_backtest_results",
-      "plot_chart"
+      "plot_chart",
+      "compare_backtest_results"
     ],
     "quant_validation": {
       "eval_script": "evaluation/test_scripts/B01_interpret_metrics.py"

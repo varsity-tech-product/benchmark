@@ -121,13 +121,19 @@ cd "$LEAN_ROOT"
 # Build only Algorithm.CSharp (not the whole solution) — the rest was
 # pre-built in the Docker image. This is faster and avoids needing write
 # permissions to every project's obj/ directory.
-if ! dotnet build Algorithm.CSharp/QuantConnect.Algorithm.CSharp.csproj -c Debug --no-restore 2>&1; then
+#
+# stdout/stderr are redirected to build_log.txt to avoid flooding the
+# pipe with ~600 KB of compiler warnings (which can deadlock the
+# container executor's 64 KB pipe buffer).
+mkdir -p "$RESULTS_DIR"
+BUILD_LOG="$RESULTS_DIR/build_log.txt"
+if ! dotnet build Algorithm.CSharp/QuantConnect.Algorithm.CSharp.csproj -c Debug --no-restore > "$BUILD_LOG" 2>&1; then
     echo ""
-    echo "ERROR: Build failed. Check the C# code for compilation errors."
-    echo "Common issues:"
-    echo "  - Missing 'using' statements"
-    echo "  - Incorrect LEAN API usage"
-    echo "  - C# syntax errors"
+    echo "ERROR: Build failed. Errors from build log:"
+    # Show only error lines (skip the hundreds of warnings)
+    grep -i "error" "$BUILD_LOG" | grep -v "warning" | tail -30
+    echo ""
+    echo "Full build log saved to: $BUILD_LOG"
     exit 2
 fi
 # Copy the freshly built DLL to the Launcher output directory so LEAN
@@ -135,7 +141,8 @@ fi
 # other dependencies there during Docker image creation).
 cp "${LEAN_ALGO_DIR}/bin/Debug/QuantConnect.Algorithm.CSharp.dll" \
    "${LEAN_LAUNCHER}/bin/Debug/QuantConnect.Algorithm.CSharp.dll"
-echo "  -> Build succeeded"
+WARN_COUNT=$(grep -c "warning CS" "$BUILD_LOG" 2>/dev/null || echo "0")
+echo "  -> Build succeeded ($WARN_COUNT warnings, see $BUILD_LOG for details)"
 
 # ── Step 2b: Inject parameters into config.json (if --params provided) ──
 if [ -n "$PARAMS_JSON" ]; then
@@ -155,9 +162,16 @@ fi
 # ── Step 3: Run the LEAN engine ───────────────────────────────────────
 echo "[3/4] Running LEAN engine..."
 
-# Clean previous results
+# Clean previous results (preserve build_log.txt from Step 2)
+if [ -f "$RESULTS_DIR/build_log.txt" ]; then
+    BUILD_LOG_BAK=$(mktemp)
+    cp "$RESULTS_DIR/build_log.txt" "$BUILD_LOG_BAK"
+fi
 rm -rf "$RESULTS_DIR"
 mkdir -p "$RESULTS_DIR"
+if [ -n "${BUILD_LOG_BAK:-}" ] && [ -f "$BUILD_LOG_BAK" ]; then
+    mv "$BUILD_LOG_BAK" "$RESULTS_DIR/build_log.txt"
+fi
 
 # Find the Launcher DLL (handles any TFM directory like net10.0)
 LAUNCHER_DLL=$(find "$LEAN_LAUNCHER/bin/Debug" -name "QuantConnect.Lean.Launcher.dll" -type f 2>/dev/null | head -1)
@@ -180,24 +194,29 @@ cp "$LEAN_CONFIG" "$LAUNCHER_BIN_DIR/config.json"
 cd "$LAUNCHER_BIN_DIR"
 
 RUN_EXIT=0
-timeout "$LEAN_RUN_TIMEOUT" dotnet "$LAUNCHER_DLL" 2>&1 | tee "$RESULTS_DIR/log.txt" || RUN_EXIT=${PIPESTATUS[0]}
+# Redirect LEAN engine output to log.txt instead of tee-ing to stdout.
+# The full engine log can be 30+ KB of TRACE lines; the agent can read
+# it later via file_read if needed.
+timeout "$LEAN_RUN_TIMEOUT" dotnet "$LAUNCHER_DLL" > "$RESULTS_DIR/log.txt" 2>&1 || RUN_EXIT=$?
 
 if [ "$RUN_EXIT" -eq 124 ]; then
     echo ""
     echo "ERROR: LEAN engine timed out after ${LEAN_RUN_TIMEOUT}s."
     echo "Increase LEAN_RUN_TIMEOUT env var if the algorithm needs more time."
+    # Show tail of log for debugging
+    echo "Last 10 lines of log:"
+    tail -10 "$RESULTS_DIR/log.txt" 2>/dev/null || true
     exit 124
 elif [ "$RUN_EXIT" -ne 0 ]; then
     echo ""
     echo "ERROR: LEAN engine failed at runtime (exit code $RUN_EXIT)."
     echo "Check $RESULTS_DIR/log.txt for details."
-    echo "Common issues:"
-    echo "  - Data not found for requested symbols/dates"
-    echo "  - Algorithm runtime exceptions"
-    echo "  - Incorrect date ranges"
+    # Show ERROR lines from the log to help the agent fix the issue
+    echo "Errors from log:"
+    grep -i "ERROR" "$RESULTS_DIR/log.txt" | tail -15
     exit 3
 fi
-echo "  -> LEAN engine completed"
+echo "  -> LEAN engine completed (full log: $RESULTS_DIR/log.txt)"
 
 # ── Step 4: Extract results ───────────────────────────────────────────
 echo "[4/4] Extracting results..."
@@ -243,30 +262,31 @@ fi
 echo ""
 echo "=== Backtest Complete ==="
 echo "Results directory: $RESULTS_DIR"
+echo "Files: $(ls "$RESULTS_DIR/" 2>/dev/null | tr '\n' ', ')"
 echo ""
 
-# List result files with sizes
-if [ -d "$RESULTS_DIR" ]; then
-    ls -lh "$RESULTS_DIR/" 2>/dev/null || true
-fi
-
-# Quick summary if statistics file exists
+# Print key metrics from summary.json (the only output the agent typically needs)
 if [ -f "$RESULTS_DIR/summary.json" ]; then
-    echo ""
     echo "--- Performance Summary ---"
-    # Print key metrics if python3 is available
     python3 -c "
 import json, sys
 try:
     with open('$RESULTS_DIR/summary.json') as f:
-        stats = json.load(f)
-    for key in ['Total Trades', 'Net Profit', 'Sharpe Ratio', 'Win Rate',
-                'Average Win', 'Average Loss', 'Compounding Annual Return']:
+        data = json.load(f)
+    stats = data.get('statistics', data)
+    for key in ['Total Orders', 'Total Trades', 'Net Profit', 'Sharpe Ratio',
+                'Sortino Ratio', 'Win Rate', 'Average Win', 'Average Loss',
+                'Compounding Annual Return', 'Drawdown', 'Start Equity', 'End Equity',
+                'Expectancy', 'Profit-Loss Ratio']:
         if key in stats:
             print(f'  {key}: {stats[key]}')
-except Exception:
-    pass
+except Exception as e:
+    print(f'  (could not parse summary: {e})')
 " 2>/dev/null || true
+    echo ""
+    echo "Use file_read('results/summary.json') for full statistics."
+    echo "Use file_read('results/log.txt') for engine log."
+    echo "Use file_read('results/orders.json') for order details."
 fi
 
 exit 0

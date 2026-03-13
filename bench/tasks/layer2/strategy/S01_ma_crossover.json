@@ -52,7 +52,8 @@
       "compute_indicator",
       "run_backtest",
       "analyze_backtest_results",
-      "plot_chart"
+      "plot_chart",
+      "construct_signal"
     ],
     "quant_validation": {
       "eval_script": "evaluation/test_scripts/S01_ma_crossover.py"
@@ -60,7 +61,7 @@
   },
   "requires_code": true,
   "sample_code": null,
-  "max_turns": 30,
+  "max_turns": 20,
   "agent_max_steps": 8,
   "timeout_minutes": 15
 }

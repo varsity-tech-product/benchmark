@@ -444,39 +444,33 @@ async def _async_eval_step_efficiency(
 
 
 async def _async_eval_role_adherence(
-    conversational_test_case,
+    turns: list[dict],
     model,
     threshold=0.5,
 ):
     """Evaluate role adherence via custom GPTModel direct call.
 
-    Replaces DeepEval's RoleAdherenceMetric whose wizard-persona prompt
-    caused gpt-5.2 to give 0.0 on 6/11 D-tasks.
+    Args:
+        turns: Conversation as list of {"role": ..., "content": ...} dicts.
     """
     from evaluation.deepeval_metrics.custom_conv_metrics import eval_role_adherence
 
-    turns = [
-        {"role": t.role, "content": t.content} for t in conversational_test_case.turns
-    ]
     return await eval_role_adherence(turns, model, threshold=threshold)
 
 
 async def _async_eval_topic_adherence(
-    conversational_test_case,
+    turns: list[dict],
     model,
     task_description="",
     threshold=0.5,
 ):
     """Evaluate topic adherence via custom GPTModel direct call.
 
-    Replaces DeepEval's TopicAdherenceMetric whose QA-pair extraction
-    mechanism failed on tool-use conversations (sonnet fixed at 0.5).
+    Args:
+        turns: Conversation as list of {"role": ..., "content": ...} dicts.
     """
     from evaluation.deepeval_metrics.custom_conv_metrics import eval_topic_adherence
 
-    turns = [
-        {"role": t.role, "content": t.content} for t in conversational_test_case.turns
-    ]
     return await eval_topic_adherence(
         turns,
         model,
@@ -496,12 +490,16 @@ def _build_process_tasks_for_model(
     actual_output: str,
     proxy_logs: list,
     category: str,
-    conversational_test_case,
+    conversation: list[dict] | None,
     is_adversarial: bool,
     reference_trace: Optional[dict] = None,
     task_requires_code: bool = False,
 ) -> dict[str, object]:
     """Build async metric coroutines for a single model.
+
+    Args:
+        conversation: List of {"role": ..., "content": ...} dicts for
+            role/topic adherence. None to skip those metrics.
 
     Returns:
         Dict mapping metric_name -> coroutine.
@@ -568,14 +566,14 @@ def _build_process_tasks_for_model(
             model=single_model,
         )
 
-    # Conversational metrics — custom GPTModel direct-call (Phase 7)
-    if conversational_test_case is not None:
+    # Conversational metrics — custom GPTModel direct-call
+    if conversation:
         tasks["role_adherence"] = _async_eval_role_adherence(
-            conversational_test_case,
+            conversation,
             single_model,
         )
         tasks["topic_adherence"] = _async_eval_topic_adherence(
-            conversational_test_case,
+            conversation,
             single_model,
             task_description=task_description,
         )
@@ -588,7 +586,7 @@ def evaluate_all_process_metrics(
     actual_output: str,
     proxy_logs: list,
     category: str = "",
-    conversational_test_case=None,
+    conversation: list[dict] | None = None,
     model=None,
     reference_trace: Optional[dict] = None,
     is_adversarial: bool = False,
@@ -598,16 +596,13 @@ def evaluate_all_process_metrics(
 ) -> dict:
     """Run all process-level metrics in parallel and return consolidated results.
 
-    Phase 4: Replaced tool-bound metrics with tool-agnostic process_reasonableness
-    and process_alignment. Multi-model support is preserved.
-
     Args:
         task_description: Text description of the task.
         actual_output: Agent's combined text output.
         proxy_logs: Tool call logs from MCPProxy (list of ToolCallLog objects).
         category: Task category (e.g. "implementation", "data_analysis").
-        conversational_test_case: Clean ConversationalTestCase (for role_adherence,
-            topic_adherence).
+        conversation: List of {"role": ..., "content": ...} dicts for
+            role/topic adherence evaluation. None to skip those metrics.
         model: LLM judge model — single string, list of strings, or None.
         reference_trace: Reference execution data (from ReferenceStore) for step
             efficiency and process alignment anchoring.
@@ -620,7 +615,6 @@ def evaluate_all_process_metrics(
         Dict with per-metric scores (cross-model average), an aggregate
         process score, and ``_per_model`` breakdown when multi-model.
     """
-    import copy
     import time as _time
 
     from config.llm_config import EVAL_DEFAULT_MODELS
@@ -639,26 +633,17 @@ def evaluate_all_process_metrics(
     model_names = [m or "default" for m in eval_models]
 
     # ── Build tasks for ALL models ──
-    # Each model gets its own deep-copied test cases to avoid state
-    # conflicts when DeepEval metrics mutate internal fields concurrently.
     # flat_tasks: list of (model_name, metric_name, coroutine)
     flat_tasks: list[tuple[str, str, object]] = []
     for model_idx, single_model in enumerate(eval_models):
         mname = model_names[model_idx]
-        # Deep copy test cases per model so concurrent a_measure() calls
-        # don't interfere with each other
-        model_conv_tc = (
-            copy.deepcopy(conversational_test_case)
-            if conversational_test_case is not None
-            else None
-        )
         tasks_for_model = _build_process_tasks_for_model(
             single_model=single_model,
             task_description=task_description,
             actual_output=actual_output,
             proxy_logs=proxy_logs,
             category=category,
-            conversational_test_case=model_conv_tc,
+            conversation=conversation,
             is_adversarial=is_adversarial,
             reference_trace=reference_trace,
             task_requires_code=task_requires_code,

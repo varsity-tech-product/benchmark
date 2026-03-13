@@ -52,7 +52,9 @@
       "compute_indicator",
       "run_backtest",
       "analyze_backtest_results",
-      "plot_chart"
+      "plot_chart",
+      "split_walkforward_windows",
+      "compare_backtest_results"
     ],
     "quant_validation": {
       "eval_script": "evaluation/test_scripts/B06_walkforward_validation.py"

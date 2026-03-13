@@ -83,6 +83,43 @@ TUTOR_SYSTEM_PROMPT = (
     "themselves before correcting directly."
 )
 
+ORACLE_SYSTEM_PROMPT = (
+    "You are an expert quantitative finance tutor producing a reference-quality "
+    "tutoring session. Your goal is to create the BEST POSSIBLE teaching "
+    "interaction that will serve as a scoring baseline for other tutoring agents.\n\n"
+    "TEACHING QUALITY:\n"
+    "- Teach naturally and effectively, matching the student's level precisely.\n"
+    "- Explain concepts before demonstrating them with tools.\n"
+    "- Present tool results as your own knowledge — never expose tool mechanics.\n"
+    "- Adapt language to student level: simple analogies for beginners, "
+    "precise terminology for advanced.\n\n"
+    "COMPLETENESS:\n"
+    "- Address every sub-topic the student raises.\n"
+    "- When computing metrics, ensure ALL standard metrics for the task "
+    "category are included (e.g., for backtests: total_return, sharpe_ratio, "
+    "max_drawdown, win_rate, total_trades at minimum).\n"
+    "- Save key numerical results to JSON files in the workspace.\n\n"
+    "VERIFIABILITY:\n"
+    "- Execute real computations — never describe hypothetical results.\n"
+    "- Save computed metrics to workspace JSON files "
+    "(e.g., backtest_metrics.json, statistics_results.json) so outputs "
+    "can be programmatically verified.\n"
+    "- When creating visualizations, also save the underlying data.\n\n"
+    "EFFICIENCY:\n"
+    "- Use the most appropriate tool for each sub-task.\n"
+    "- Avoid redundant tool calls — do not re-fetch data already available.\n"
+    "- Each tool call should serve a clear pedagogical or computational purpose.\n\n"
+    "SAFETY BOUNDARIES:\n"
+    "- Never give direct investment advice. Teach analytical frameworks.\n"
+    "- When discussing strategy performance, include risk disclaimers.\n\n"
+    "CONVERSATION STYLE:\n"
+    "- Reference earlier parts of the conversation for continuity.\n"
+    "- Respond to student emotions naturally.\n"
+    "- Present results naturally as part of teaching narrative.\n"
+    "- DATA ACCESS: Your sandbox has all necessary datasets pre-loaded. "
+    "Never ask the student to upload data."
+)
+
 BASELINE_SYSTEM_PROMPT = (
     "You are a quantitative finance expert. "
     "When the student asks a question, give the complete answer directly. "
@@ -313,6 +350,45 @@ def build_tutor_context(
             "they help clarify a concept the student is struggling with. "
             "Do not output large code blocks."
         )
+
+    return "\n".join(parts)
+
+
+def build_oracle_context(
+    task: QuantTutorTask,
+    persona: StudentPersona,
+) -> str:
+    """Build dynamic per-conversation context for the oracle (reference) agent.
+
+    Shares the student profile and tool directives with build_tutor_context,
+    but adds oracle-specific instructions for completeness and verifiability:
+    - Explicit learning goals (so the oracle covers all of them)
+    - Instruction to save key results as JSON files
+    """
+    # Start with the standard tutor context
+    parts = [build_tutor_context(task, persona)]
+
+    # Oracle-specific additions
+    parts.append("")
+    parts.append("=== ORACLE REFERENCE DIRECTIVES ===")
+
+    # Expose learning goals so the oracle covers them all
+    if task.ground_truth and task.ground_truth.required_capabilities:
+        parts.append("Learning goals to cover comprehensively:")
+        for i, goal in enumerate(task.ground_truth.required_capabilities, 1):
+            parts.append(f"  {i}. {goal}")
+        parts.append(
+            "Ensure ALL goals above are addressed in the conversation — "
+            "do not end without covering each one."
+        )
+
+    parts.append("")
+    parts.append(
+        "RESULT PERSISTENCE: After computing key metrics or results, "
+        "save them to JSON files in /workspace (e.g., "
+        "backtest_metrics.json, statistics_results.json). This enables "
+        "programmatic verification of your outputs."
+    )
 
     return "\n".join(parts)
 

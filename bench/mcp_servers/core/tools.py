@@ -150,8 +150,12 @@ def _infer_annual_factor(df) -> int:
     return 252
 
 
+_MAX_SHELL_TIMEOUT = 60  # Hard cap — prevents agents from setting timeout=600
+
+
 def shell_exec(command: str, timeout: int = 30) -> str:
     """Execute a shell command in the sandbox."""
+    timeout = min(max(timeout, 1), _MAX_SHELL_TIMEOUT)
     try:
         result = subprocess.run(
             command,
@@ -203,9 +207,10 @@ def _resolve_path(path: str) -> Optional[str]:
     def _is_within_bases(resolved: str) -> bool:
         """Check that resolved path is under one of the allowed base dirs."""
         real = os.path.realpath(resolved)
-        return any(real.startswith(os.path.realpath(b) + os.sep) or
-                    real == os.path.realpath(b)
-                    for b in bases)
+        return any(
+            real.startswith(os.path.realpath(b) + os.sep) or real == os.path.realpath(b)
+            for b in bases
+        )
 
     # 1. Direct search
     for base in bases:
@@ -222,7 +227,9 @@ def _resolve_path(path: str) -> Optional[str]:
             stripped = path[len(prefix) :]
             for base in bases:
                 full = os.path.join(base, stripped)
-                if (os.path.isfile(full) or os.path.isdir(full)) and _is_within_bases(full):
+                if (os.path.isfile(full) or os.path.isdir(full)) and _is_within_bases(
+                    full
+                ):
                     return full
             break  # Only one prefix can match
 
@@ -649,7 +656,7 @@ def compute_statistics(
                 "test_statistic": round(result[0], 4),
                 "p_value": round(result[1], 4),
                 "critical_values": {k: round(v, 4) for k, v in result[4].items()},
-                "stationary": result[1] < 0.05,
+                "stationary": bool(result[1] < 0.05),
             },
             indent=2,
         )
@@ -666,19 +673,96 @@ def compute_statistics(
         corr = df[cols].corr(method=corr_method)
         return corr.to_csv()
     elif method == "COINTEGRATION":
+        import statsmodels.api as sm
         from statsmodels.tsa.stattools import coint
 
+        if len(df.columns) < 3 and (
+            "column1" not in method_params or "column2" not in method_params
+        ):
+            return (
+                "Error: COINTEGRATION requires at least 3 columns or explicit "
+                "'column1' and 'column2' in method_params. "
+                f"Available columns: {list(df.columns)}"
+            )
         col1 = method_params.get("column1", df.columns[1])
-        col2 = method_params.get("column2", df.columns[2])
-        score, pvalue, _ = coint(df[col1].dropna(), df[col2].dropna())
-        return json.dumps(
-            {
-                "test_statistic": round(score, 4),
-                "p_value": round(pvalue, 4),
-                "cointegrated": pvalue < 0.05,
-            },
-            indent=2,
+        col2 = method_params.get(
+            "column2", df.columns[2] if len(df.columns) > 2 else df.columns[1]
         )
+        trend = method_params.get("trend", "c")  # 'c', 'ct', 'ctt', 'n'
+        maxlag = method_params.get("maxlag", None)  # None → auto
+        autolag = method_params.get("autolag", "aic")  # 'aic','bic','t-stat',None
+        save_spread = method_params.get("save_spread", True)
+
+        y = df[col1].dropna().astype(float)
+        x = df[col2].dropna().astype(float)
+        common_idx = y.index.intersection(x.index)
+        y, x = y.loc[common_idx], x.loc[common_idx]
+
+        score, pvalue, _ = coint(y, x, trend=trend, maxlag=maxlag, autolag=autolag)
+
+        # OLS hedge ratio: y = intercept + beta * x + epsilon
+        X_ols = sm.add_constant(x.values)
+        model = sm.OLS(y.values, X_ols).fit()
+        hedge_ratio = float(model.params[1])
+        intercept = float(model.params[0])
+
+        # Spread series
+        spread = y.values - hedge_ratio * x.values - intercept
+        spread_series = pd.Series(spread, index=common_idx)
+
+        # Half-life via mean-reversion speed: Δs_t = λ * s_{t-1} + ε
+        spread_lag = spread_series.shift(1).dropna()
+        spread_diff = spread_series.diff().dropna()
+        common_hl = spread_lag.index.intersection(spread_diff.index)
+        if len(common_hl) > 5:
+            X_hl = sm.add_constant(spread_lag.loc[common_hl].values)
+            model_hl = sm.OLS(spread_diff.loc[common_hl].values, X_hl).fit()
+            lam = model_hl.params[1]
+            half_life = -np.log(2) / lam if lam < 0 else float("inf")
+        else:
+            half_life = float("inf")
+
+        # Z-score of spread
+        spread_mean = float(spread_series.mean())
+        spread_std = float(spread_series.std())
+        current_zscore = (
+            float((spread_series.iloc[-1] - spread_mean) / spread_std)
+            if spread_std > 0
+            else 0.0
+        )
+
+        result = {
+            "test_statistic": round(score, 4),
+            "p_value": round(pvalue, 4),
+            "cointegrated": bool(pvalue < 0.05),
+            "hedge_ratio": round(hedge_ratio, 6),
+            "intercept": round(intercept, 6),
+            "half_life_periods": (
+                round(half_life, 2) if np.isfinite(half_life) else None
+            ),
+            "spread_mean": round(spread_mean, 6),
+            "spread_std": round(spread_std, 6),
+            "current_spread_zscore": round(current_zscore, 4),
+            "r_squared": round(float(model.rsquared), 4),
+        }
+
+        if save_spread:
+            spread_zscore = (
+                (spread - spread_mean) / spread_std if spread_std > 0 else 0.0
+            )
+            spread_df = pd.DataFrame(
+                {
+                    col1: y.values,
+                    col2: x.values,
+                    "spread": spread,
+                    "spread_zscore": spread_zscore,
+                }
+            )
+            spread_file = f"spread_{col1}_{col2}.csv"
+            spread_df.to_csv(os.path.join(_workspace_dir(), spread_file), index=False)
+            result["spread_saved_to"] = spread_file
+
+        return json.dumps(result, indent=2)
     elif method == "DESCRIPTIVE":
         col = method_params.get("column", None)
         if col:
@@ -708,10 +792,368 @@ def compute_statistics(
                 "missing_pct": round(n_miss / total * 100, 2) if total > 0 else 0.0,
             }
         return json.dumps({"total_rows": total, "columns": missing}, indent=2)
+    elif method == "LEAD_LAG":
+        if len(df.columns) < 3 and (
+            "column1" not in method_params or "column2" not in method_params
+        ):
+            return (
+                "Error: LEAD_LAG requires at least 3 columns or explicit "
+                "'column1' and 'column2' in method_params. "
+                f"Available columns: {list(df.columns)}"
+            )
+        col1 = method_params.get("column1", df.columns[1])
+        col2 = method_params.get(
+            "column2", df.columns[2] if len(df.columns) > 2 else df.columns[1]
+        )
+        max_lag = int(method_params.get("max_lag", 10))
+        analysis_type = method_params.get(
+            "type", "both"
+        )  # cross_correlation, granger, both
+
+        s1 = df[col1].dropna().astype(float)
+        s2 = df[col2].dropna().astype(float)
+        common_idx = s1.index.intersection(s2.index)
+        s1, s2 = s1.loc[common_idx], s2.loc[common_idx]
+
+        result = {"column1": col1, "column2": col2}
+
+        # Cross-correlation at multiple lags
+        if analysis_type in ("cross_correlation", "both"):
+            cross_corr = {}
+            for lag in range(-max_lag, max_lag + 1):
+                if lag > 0:
+                    corr = float(
+                        s1.iloc[lag:]
+                        .reset_index(drop=True)
+                        .corr(s2.iloc[:-lag].reset_index(drop=True))
+                    )
+                elif lag < 0:
+                    corr = float(
+                        s1.iloc[:lag]
+                        .reset_index(drop=True)
+                        .corr(s2.iloc[-lag:].reset_index(drop=True))
+                    )
+                else:
+                    corr = float(s1.corr(s2))
+                cross_corr[str(lag)] = round(corr, 4) if np.isfinite(corr) else 0.0
+
+            best_lag = max(cross_corr, key=lambda k: abs(cross_corr[k]))
+            best_val = cross_corr[best_lag]
+            bl = int(best_lag)
+            if bl > 0:
+                interp = f"{col1} leads {col2} by {bl} periods"
+            elif bl < 0:
+                interp = f"{col2} leads {col1} by {abs(bl)} periods"
+            else:
+                interp = "contemporaneous"
+
+            result["cross_correlation"] = {
+                "correlations": cross_corr,
+                "best_lag": bl,
+                "best_correlation": best_val,
+                "interpretation": interp,
+            }
+
+        # Granger causality test
+        if analysis_type in ("granger", "both"):
+            from statsmodels.tsa.stattools import grangercausalitytests
+
+            granger_maxlag = int(method_params.get("granger_maxlag", min(max_lag, 5)))
+            test_data = pd.DataFrame({col1: s1, col2: s2}).dropna()
+
+            gc_results = {}
+            for cause, effect in [(col2, col1), (col1, col2)]:
+                direction = f"{cause}→{effect}"
+                try:
+                    gc_test = grangercausalitytests(
+                        test_data[[effect, cause]],
+                        maxlag=granger_maxlag,
+                        verbose=False,
+                    )
+                    lag_results = {}
+                    for lag_i in range(1, granger_maxlag + 1):
+                        f_stat = gc_test[lag_i][0]["ssr_ftest"][0]
+                        p_val = gc_test[lag_i][0]["ssr_ftest"][1]
+                        lag_results[str(lag_i)] = {
+                            "f_statistic": round(f_stat, 4),
+                            "p_value": round(p_val, 4),
+                            "significant": bool(p_val < 0.05),
+                        }
+                    gc_results[direction] = lag_results
+                except Exception as e:
+                    gc_results[direction] = {"error": str(e)}
+
+            result["granger_causality"] = gc_results
+
+        return json.dumps(result, indent=2)
+
+    elif method == "ROLLING":
+        col1 = method_params.get("column1", method_params.get("column", df.columns[1]))
+        col2 = method_params.get("column2", None)
+        window = int(method_params.get("window", 60))
+        step = int(method_params.get("step", 1))
+        metric = method_params.get("metric", "correlation")
+        workspace = _workspace_dir()
+
+        if metric == "correlation":
+            if col2 is None:
+                return "Error: ROLLING correlation requires column2 parameter"
+            s1 = df[col1].astype(float)
+            s2 = df[col2].astype(float)
+            rolling_corr = s1.rolling(window).corr(s2)
+            if step > 1:
+                rolling_corr = rolling_corr.iloc[::step]
+
+            out_name = f"rolling_corr_{col1}_{col2}_w{window}.csv"
+            result_df = pd.DataFrame(
+                {col1: s1, col2: s2, "rolling_correlation": rolling_corr}
+            )
+            if step > 1:
+                result_df = result_df.iloc[::step]
+            result_df.dropna(subset=["rolling_correlation"]).to_csv(
+                os.path.join(workspace, out_name), index=False
+            )
+
+            rc = rolling_corr.dropna()
+            result = {
+                "metric": "rolling_correlation",
+                "window": window,
+                "step": step,
+                "observations": int(rc.count()),
+                "mean": round(float(rc.mean()), 4),
+                "std": round(float(rc.std()), 4),
+                "min": round(float(rc.min()), 4),
+                "max": round(float(rc.max()), 4),
+                "current": round(float(rc.iloc[-1]), 4),
+                "saved_to": out_name,
+            }
+
+        elif metric == "cointegration":
+            if col2 is None:
+                return "Error: ROLLING cointegration requires column2 parameter"
+            import statsmodels.api as sm
+            from statsmodels.tsa.stattools import coint
+
+            s1 = df[col1].dropna().astype(float)
+            s2 = df[col2].dropna().astype(float)
+            common_idx = s1.index.intersection(s2.index)
+            s1, s2 = s1.loc[common_idx], s2.loc[common_idx]
+            maxlag = method_params.get("maxlag", None)
+            autolag = method_params.get("autolag", "aic")
+
+            results_list = []
+            indices = list(range(window, len(s1), step))
+            for i in indices:
+                y_w = s1.iloc[i - window : i]
+                x_w = s2.iloc[i - window : i]
+                try:
+                    _, pv, _ = coint(y_w, x_w, maxlag=maxlag, autolag=autolag)
+                    X_ols = sm.add_constant(x_w.values)
+                    mdl = sm.OLS(y_w.values, X_ols).fit()
+                    hr = float(mdl.params[1])
+                    results_list.append(
+                        {
+                            "window_end": int(common_idx[i]),
+                            "p_value": round(pv, 4),
+                            "cointegrated": bool(pv < 0.05),
+                            "hedge_ratio": round(hr, 6),
+                        }
+                    )
+                except Exception:
+                    results_list.append(
+                        {
+                            "window_end": int(common_idx[i]),
+                            "p_value": None,
+                            "cointegrated": False,
+                            "hedge_ratio": None,
+                        }
+                    )
+
+            out_name = f"rolling_coint_{col1}_{col2}_w{window}.csv"
+            pd.DataFrame(results_list).to_csv(
+                os.path.join(workspace, out_name), index=False
+            )
+
+            valid = [r for r in results_list if r["p_value"] is not None]
+            coint_pct = (
+                sum(1 for r in valid if r["cointegrated"]) / len(valid) * 100
+                if valid
+                else 0
+            )
+            result = {
+                "metric": "rolling_cointegration",
+                "window": window,
+                "step": step,
+                "total_windows": len(results_list),
+                "valid_windows": len(valid),
+                "cointegrated_pct": round(coint_pct, 1),
+                "mean_p_value": (
+                    round(np.mean([r["p_value"] for r in valid]), 4) if valid else None
+                ),
+                "saved_to": out_name,
+            }
+
+        elif metric == "beta":
+            if col2 is None:
+                return "Error: ROLLING beta requires column2 parameter"
+            import statsmodels.api as sm
+
+            s1 = df[col1].dropna().astype(float)
+            s2 = df[col2].dropna().astype(float)
+            common_idx = s1.index.intersection(s2.index)
+            s1, s2 = s1.loc[common_idx], s2.loc[common_idx]
+
+            results_list = []
+            indices = list(range(window, len(s1), step))
+            for i in indices:
+                y_w = s1.iloc[i - window : i]
+                x_w = s2.iloc[i - window : i]
+                try:
+                    X_ols = sm.add_constant(x_w.values)
+                    mdl = sm.OLS(y_w.values, X_ols).fit()
+                    results_list.append(
+                        {
+                            "window_end": int(common_idx[i]),
+                            "beta": round(float(mdl.params[1]), 6),
+                            "alpha": round(float(mdl.params[0]), 6),
+                            "r_squared": round(float(mdl.rsquared), 4),
+                        }
+                    )
+                except Exception:
+                    results_list.append(
+                        {
+                            "window_end": int(common_idx[i]),
+                            "beta": None,
+                            "alpha": None,
+                            "r_squared": None,
+                        }
+                    )
+
+            out_name = f"rolling_beta_{col1}_{col2}_w{window}.csv"
+            pd.DataFrame(results_list).to_csv(
+                os.path.join(workspace, out_name), index=False
+            )
+
+            valid_betas = [r["beta"] for r in results_list if r["beta"] is not None]
+            result = {
+                "metric": "rolling_beta",
+                "window": window,
+                "step": step,
+                "total_windows": len(results_list),
+                "mean_beta": (
+                    round(float(np.mean(valid_betas)), 6) if valid_betas else None
+                ),
+                "std_beta": (
+                    round(float(np.std(valid_betas)), 6) if valid_betas else None
+                ),
+                "current_beta": (round(valid_betas[-1], 6) if valid_betas else None),
+                "saved_to": out_name,
+            }
+
+        elif metric == "adf":
+            from statsmodels.tsa.stattools import adfuller
+
+            col = method_params.get("column", col1)
+            maxlag_adf = method_params.get("maxlag", None)
+            autolag_adf = method_params.get("autolag", "AIC")
+
+            s = df[col].dropna().astype(float)
+            results_list = []
+            indices = list(range(window, len(s), step))
+            for i in indices:
+                seg = s.iloc[i - window : i]
+                try:
+                    adf_r = adfuller(seg, maxlag=maxlag_adf, autolag=autolag_adf)
+                    results_list.append(
+                        {
+                            "window_end": int(s.index[i]),
+                            "test_statistic": round(adf_r[0], 4),
+                            "p_value": round(adf_r[1], 4),
+                            "stationary": bool(adf_r[1] < 0.05),
+                        }
+                    )
+                except Exception:
+                    results_list.append(
+                        {
+                            "window_end": int(s.index[i]),
+                            "test_statistic": None,
+                            "p_value": None,
+                            "stationary": False,
+                        }
+                    )
+
+            out_name = f"rolling_adf_{col}_w{window}.csv"
+            pd.DataFrame(results_list).to_csv(
+                os.path.join(workspace, out_name), index=False
+            )
+
+            valid = [r for r in results_list if r["p_value"] is not None]
+            stat_pct = (
+                sum(1 for r in valid if r["stationary"]) / len(valid) * 100
+                if valid
+                else 0
+            )
+            result = {
+                "metric": "rolling_adf",
+                "window": window,
+                "step": step,
+                "total_windows": len(results_list),
+                "stationary_pct": round(stat_pct, 1),
+                "saved_to": out_name,
+            }
+
+        elif metric == "volatility":
+            col = method_params.get("column", col1)
+            vol_type = method_params.get("vol_type", "realized")
+
+            if vol_type == "realized":
+                s = df[col].dropna().astype(float).pct_change().dropna()
+                annual_factor = _infer_annual_factor(df)
+                rolling_vol = s.rolling(window).std() * np.sqrt(annual_factor)
+            elif vol_type == "parkinson":
+                high_col = _resolve_column_name(df, ["high", "High"])
+                low_col = _resolve_column_name(df, ["low", "Low"])
+                if not (high_col and low_col):
+                    return "Error: Parkinson volatility requires High and Low columns"
+                hl = np.log(df[high_col].astype(float) / df[low_col].astype(float))
+                annual_factor = _infer_annual_factor(df)
+                rolling_vol = hl.rolling(window).apply(
+                    lambda x: np.sqrt(np.sum(x**2) / (4 * len(x) * np.log(2)))
+                ) * np.sqrt(annual_factor)
+            else:
+                return (
+                    f"Error: Unknown vol_type '{vol_type}'. "
+                    f"Supported: realized, parkinson"
+                )
+
+            out_name = f"rolling_vol_{col}_w{window}.csv"
+            pd.DataFrame({col: df[col], "rolling_volatility": rolling_vol}).to_csv(
+                os.path.join(workspace, out_name), index=False
+            )
+
+            rv = rolling_vol.dropna()
+            result = {
+                "metric": "rolling_volatility",
+                "vol_type": vol_type,
+                "window": window,
+                "mean_volatility": round(float(rv.mean()), 4),
+                "current_volatility": round(float(rv.iloc[-1]), 4),
+                "saved_to": out_name,
+            }
+
+        else:
+            return (
+                f"Error: Unknown rolling metric '{metric}'. "
+                f"Supported: correlation, cointegration, beta, adf, volatility"
+            )
+
+        return json.dumps(result, indent=2)
+
     else:
         return (
             f"Error: Unknown method '{method}'. "
-            f"Supported: ADF, CORRELATION, COINTEGRATION, DESCRIPTIVE, MISSING"
+            f"Supported: ADF, CORRELATION, COINTEGRATION, DESCRIPTIVE, "
+            f"MISSING, LEAD_LAG, ROLLING"
         )
 
 
@@ -1064,6 +1506,576 @@ def evaluate_signal(
     return json.dumps(result, indent=2)
 
 
+def construct_signal(
+    data_path: str,
+    signal_type: str,
+    signal_params: Optional[dict] = None,
+    output_name: Optional[str] = None,
+    close_column: Optional[str] = None,
+) -> str:
+    """Construct a trading signal from data, save as CSV ready for evaluate_signal.
+
+    The output CSV always includes a ``signal`` column and a ``close`` column
+    so that it can be directly passed to ``evaluate_signal()``.
+    Use ``close_column`` to specify which column is the close price when
+    the CSV does not have a standard 'close'/'Close' column (e.g. merged
+    cross-asset data with 'BTC_Close', 'ETH_Close').
+
+    Supported signal_type values:
+      zscore          - Rolling z-score of a column.
+      momentum        - Returns-based momentum (pct_change, log_return, rank).
+      mean_reversion  - Negative z-score, Bollinger position, or RSI-based.
+      spread          - Regression residual between two series (OLS, rolling_ols,
+                        log_ratio).
+      crossover       - Moving-average crossover (SMA or EMA).
+      composite       - Weighted combination of existing columns.
+      volume_imbalance - Microstructure signals (taker_ratio, volume_zscore,
+                         trade_intensity, OBV).
+    """
+    import numpy as np
+    import pandas as pd
+
+    signal_params = signal_params or {}
+    full_path = _resolve_path(data_path)
+    if not full_path:
+        return f"Error: File not found: {data_path}"
+
+    df = pd.read_csv(full_path)
+    signal_type = signal_type.lower()
+    close_col = _resolve_column_name(
+        df, ["close", "Close", "adj_close", "Adj Close", "price"]
+    )
+
+    # ── zscore ──────────────────────────────────────────────────
+    if signal_type == "zscore":
+        column = signal_params.get("column", close_col or df.columns[1])
+        lookback = int(signal_params.get("lookback", 20))
+        returns_based = signal_params.get("returns_based", False)
+
+        s = df[column].astype(float)
+        if returns_based:
+            s = s.pct_change()
+
+        rolling_mean = s.rolling(lookback).mean()
+        rolling_std = s.rolling(lookback).std()
+        df["signal"] = (s - rolling_mean) / rolling_std.replace(0, np.nan)
+        desc = (
+            f"Z-score of {column} (lookback={lookback}, returns_based={returns_based})"
+        )
+
+    # ── momentum ────────────────────────────────────────────────
+    elif signal_type == "momentum":
+        column = signal_params.get("column", close_col or df.columns[1])
+        lookback = int(signal_params.get("lookback", 20))
+        method = signal_params.get("method", "pct_change")
+        normalize = signal_params.get("normalize", False)
+
+        s = df[column].astype(float)
+        if method == "pct_change":
+            raw = s.pct_change(lookback)
+        elif method == "log_return":
+            raw = np.log(s / s.shift(lookback))
+        elif method == "rank":
+            raw = (
+                s.pct_change(lookback)
+                .rolling(max(lookback, 60))
+                .apply(lambda x: pd.Series(x).rank(pct=True).iloc[-1])
+            )
+        else:
+            return (
+                f"Error: Unknown momentum method '{method}'. "
+                f"Supported: pct_change, log_return, rank"
+            )
+
+        if normalize:
+            norm_window = int(signal_params.get("normalize_window", 60))
+            rm = raw.rolling(norm_window).mean()
+            rs = raw.rolling(norm_window).std()
+            df["signal"] = (raw - rm) / rs.replace(0, np.nan)
+        else:
+            df["signal"] = raw
+        desc = f"Momentum {method} (lookback={lookback}, normalize={normalize})"
+
+    # ── mean_reversion ──────────────────────────────────────────
+    elif signal_type == "mean_reversion":
+        column = signal_params.get("column", close_col or df.columns[1])
+        lookback = int(signal_params.get("lookback", 20))
+        method = signal_params.get("method", "zscore")
+
+        s = df[column].astype(float)
+        if method == "zscore":
+            rm = s.rolling(lookback).mean()
+            rs = s.rolling(lookback).std()
+            df["signal"] = -(s - rm) / rs.replace(0, np.nan)
+        elif method == "bollinger":
+            std_dev = float(signal_params.get("std_dev", 2))
+            rm = s.rolling(lookback).mean()
+            rs = s.rolling(lookback).std()
+            band_width = 2 * std_dev * rs
+            df["signal"] = -(s - rm) / band_width.replace(0, np.nan)
+        elif method == "rsi":
+            delta = s.diff()
+            gain = delta.where(delta > 0, 0).rolling(lookback).mean()
+            loss = (-delta.where(delta < 0, 0)).rolling(lookback).mean()
+            rs_val = gain / loss
+            rsi = 100 - (100 / (1 + rs_val))
+            df["signal"] = -(rsi - 50) / 50
+        else:
+            return (
+                f"Error: Unknown mean_reversion method '{method}'. "
+                f"Supported: zscore, bollinger, rsi"
+            )
+        desc = f"Mean reversion {method} (lookback={lookback})"
+
+    # ── spread ──────────────────────────────────────────────────
+    elif signal_type == "spread":
+        if "column1" not in signal_params or "column2" not in signal_params:
+            if len(df.columns) < 3:
+                return (
+                    "Error: spread requires 'column1' and 'column2' in signal_params. "
+                    f"Available columns: {list(df.columns)}"
+                )
+        col1 = signal_params.get("column1", df.columns[1])
+        col2 = signal_params.get(
+            "column2", df.columns[2] if len(df.columns) > 2 else df.columns[1]
+        )
+        method = signal_params.get("method", "ols")
+        lookback = int(signal_params.get("lookback", 60))
+        normalize_spread = signal_params.get("normalize", True)
+
+        y = df[col1].astype(float)
+        x = df[col2].astype(float)
+
+        if method == "ols":
+            import statsmodels.api as sm
+
+            valid = y.notna() & x.notna()
+            X_ols = sm.add_constant(x[valid].values)
+            mdl = sm.OLS(y[valid].values, X_ols).fit()
+            spread = y - mdl.params[1] * x - mdl.params[0]
+        elif method == "rolling_ols":
+            import statsmodels.api as sm
+
+            spread = pd.Series(np.nan, index=df.index)
+            for i in range(lookback, len(df)):
+                y_w = y.iloc[i - lookback : i]
+                x_w = x.iloc[i - lookback : i]
+                valid = y_w.notna() & x_w.notna()
+                if valid.sum() < 10:
+                    continue
+                X_ols = sm.add_constant(x_w[valid].values)
+                mdl = sm.OLS(y_w[valid].values, X_ols).fit()
+                spread.iloc[i] = y.iloc[i] - mdl.params[1] * x.iloc[i] - mdl.params[0]
+        elif method == "log_ratio":
+            spread = np.log(y / x.replace(0, np.nan))
+        else:
+            return (
+                f"Error: Unknown spread method '{method}'. "
+                f"Supported: ols, rolling_ols, log_ratio"
+            )
+
+        if normalize_spread:
+            rm = spread.rolling(lookback).mean()
+            rs = spread.rolling(lookback).std()
+            df["signal"] = (spread - rm) / rs.replace(0, np.nan)
+        else:
+            df["signal"] = spread
+        desc = (
+            f"Spread {method} ({col1} vs {col2}, "
+            f"lookback={lookback}, normalize={normalize_spread})"
+        )
+
+    # ── crossover ───────────────────────────────────────────────
+    elif signal_type == "crossover":
+        column = signal_params.get("column", close_col or df.columns[1])
+        fast = int(signal_params.get("fast", 10))
+        slow = int(signal_params.get("slow", 30))
+        ma_type = signal_params.get("ma_type", "ema")
+
+        s = df[column].astype(float)
+        if ma_type == "sma":
+            fast_ma = s.rolling(fast).mean()
+            slow_ma = s.rolling(slow).mean()
+        elif ma_type == "ema":
+            fast_ma = s.ewm(span=fast).mean()
+            slow_ma = s.ewm(span=slow).mean()
+        else:
+            return f"Error: Unknown ma_type '{ma_type}'. Supported: sma, ema"
+
+        df["signal"] = (fast_ma - slow_ma) / slow_ma.replace(0, np.nan)
+        desc = f"Crossover {ma_type} (fast={fast}, slow={slow})"
+
+    # ── composite ───────────────────────────────────────────────
+    elif signal_type == "composite":
+        columns = signal_params.get("columns", [])
+        weights = signal_params.get("weights", None)
+        combination = signal_params.get("combination", "weighted_mean")
+
+        if not columns:
+            return (
+                "Error: composite signal requires 'columns' parameter "
+                "(list of column names containing individual signals)"
+            )
+        missing = [c for c in columns if c not in df.columns]
+        if missing:
+            return (
+                f"Error: columns not found: {missing}. "
+                f"Available: {list(df.columns)}"
+            )
+
+        signal_df = df[columns].astype(float)
+
+        if combination == "weighted_mean":
+            if weights is None:
+                weights = [1.0 / len(columns)] * len(columns)
+            if len(weights) != len(columns):
+                return (
+                    f"Error: weights length ({len(weights)}) must "
+                    f"match columns length ({len(columns)})"
+                )
+            df["signal"] = sum(w * signal_df[c] for w, c in zip(weights, columns))
+        elif combination == "rank_mean":
+            ranked = signal_df.rank(pct=True)
+            if weights:
+                df["signal"] = sum(w * ranked[c] for w, c in zip(weights, columns))
+            else:
+                df["signal"] = ranked.mean(axis=1)
+        elif combination == "pca":
+            from sklearn.decomposition import PCA
+
+            valid = signal_df.dropna()
+            if len(valid) < 10:
+                return "Error: Not enough valid rows for PCA"
+            pca = PCA(n_components=1)
+            pc1 = pca.fit_transform((valid - valid.mean()) / valid.std().replace(0, 1))
+            df.loc[valid.index, "signal"] = pc1.flatten()
+        else:
+            return (
+                f"Error: Unknown combination '{combination}'. "
+                f"Supported: weighted_mean, rank_mean, pca"
+            )
+        desc = f"Composite {combination} of {columns}"
+
+    # ── volume_imbalance ────────────────────────────────────────
+    elif signal_type == "volume_imbalance":
+        method = signal_params.get("method", "taker_ratio")
+        lookback = int(signal_params.get("lookback", 20))
+        normalize = signal_params.get("normalize", True)
+
+        if method == "taker_ratio":
+            buy_col = _resolve_column_name(
+                df,
+                ["taker_buy_base_vol", "Taker_buy_base_vol", "taker_buy_volume"],
+            )
+            vol_col = _resolve_column_name(df, ["volume", "Volume", "base_vol"])
+            if not (buy_col and vol_col):
+                return (
+                    f"Error: taker_ratio needs taker_buy_base_vol and volume. "
+                    f"Available: {list(df.columns)}"
+                )
+            buy = df[buy_col].astype(float)
+            vol = df[vol_col].astype(float)
+            raw = buy / vol.replace(0, np.nan) - 0.5
+
+        elif method == "volume_zscore":
+            vol_col = _resolve_column_name(df, ["volume", "Volume", "base_vol"])
+            if not vol_col:
+                return (
+                    f"Error: volume_zscore needs volume column. "
+                    f"Available: {list(df.columns)}"
+                )
+            raw = df[vol_col].astype(float)
+
+        elif method == "trade_intensity":
+            trades_col = _resolve_column_name(
+                df,
+                ["trades", "Trades", "trade_count", "num_trades"],
+            )
+            vol_col = _resolve_column_name(df, ["volume", "Volume", "base_vol"])
+            if not (trades_col and vol_col):
+                return (
+                    f"Error: trade_intensity needs trades and volume. "
+                    f"Available: {list(df.columns)}"
+                )
+            raw = df[trades_col].astype(float) / df[vol_col].astype(float).replace(
+                0, np.nan
+            )
+
+        elif method == "obv":
+            vol_col = _resolve_column_name(df, ["volume", "Volume", "base_vol"])
+            if not (close_col and vol_col):
+                return "Error: OBV requires close and volume columns"
+            direction = np.sign(df[close_col].astype(float).diff())
+            raw = (direction * df[vol_col].astype(float)).cumsum()
+            # For OBV, use rate of change as the signal
+            if normalize:
+                df["signal"] = raw.pct_change(lookback)
+                normalize = False  # skip double-normalize below
+            else:
+                df["signal"] = raw
+
+        else:
+            return (
+                f"Error: Unknown volume_imbalance method '{method}'. "
+                f"Supported: taker_ratio, volume_zscore, trade_intensity, obv"
+            )
+
+        if normalize and "signal" not in df.columns:
+            rm = raw.rolling(lookback).mean()
+            rs = raw.rolling(lookback).std()
+            df["signal"] = (raw - rm) / rs.replace(0, np.nan)
+        elif "signal" not in df.columns:
+            df["signal"] = raw
+
+        desc = (
+            f"Volume imbalance {method} "
+            f"(lookback={lookback}, normalize={normalize})"
+        )
+
+    else:
+        return (
+            f"Error: Unknown signal_type '{signal_type}'. Supported: "
+            f"zscore, momentum, mean_reversion, spread, crossover, "
+            f"composite, volume_imbalance"
+        )
+
+    # Ensure close column exists in output for evaluate_signal.
+    # Priority: explicit close_column param > auto-detected close_col.
+    effective_close = close_column or close_col
+    if effective_close and effective_close in df.columns:
+        if effective_close.lower() != "close":
+            df["close"] = df[effective_close]
+    elif close_column and close_column not in df.columns:
+        return (
+            f"Error: close_column '{close_column}' not found. "
+            f"Available: {list(df.columns)}"
+        )
+
+    # Save
+    if output_name is None:
+        base = os.path.splitext(os.path.basename(data_path))[0]
+        output_name = f"{base}_{signal_type}_signal.csv"
+
+    out_path = os.path.join(_workspace_dir(), output_name)
+    df.to_csv(out_path, index=False)
+
+    sig = df["signal"].dropna()
+    stats = {
+        "signal_type": signal_type,
+        "description": desc,
+        "observations": int(len(sig)),
+        "coverage": round(float(sig.count() / len(df)), 4),
+        "mean": round(float(sig.mean()), 6),
+        "std": round(float(sig.std()), 6),
+        "min": round(float(sig.min()), 6),
+        "max": round(float(sig.max()), 6),
+        "saved_to": output_name,
+        "ready_for": "evaluate_signal",
+    }
+    return json.dumps(stats, indent=2)
+
+
+def engineer_features(
+    data_path: str,
+    features: list,
+    feature_params: Optional[dict] = None,
+    output_name: Optional[str] = None,
+) -> str:
+    """Engineer quantitative features from OHLCV+ data.
+
+    Adds computed feature columns and saves the enriched dataset.
+    Gracefully skips features whose required columns are missing.
+
+    Supported feature names:
+      vwap_ratio, volume_zscore, taker_imbalance, trade_intensity,
+      returns_multi, realized_vol, parkinson_vol, log_volume_ratio,
+      obv, atr, price_acceleration
+    """
+    import numpy as np
+    import pandas as pd
+
+    feature_params = feature_params or {}
+    full_path = _resolve_path(data_path)
+    if not full_path:
+        return f"Error: File not found: {data_path}"
+
+    df = pd.read_csv(full_path)
+    close_col = _resolve_column_name(df, ["close", "Close"])
+    added = []
+
+    for feat in features:
+        feat = feat.lower().strip()
+
+        if feat == "vwap_ratio":
+            vol_col = _resolve_column_name(df, ["volume", "Volume", "base_vol"])
+            quote_col = _resolve_column_name(
+                df,
+                ["quote_vol", "Quote_vol", "quote_volume", "Quote Volume"],
+            )
+            if vol_col and quote_col and close_col:
+                vwap = df[quote_col].astype(float) / df[vol_col].astype(float).replace(
+                    0, np.nan
+                )
+                df["vwap_ratio"] = (df[close_col].astype(float) - vwap) / vwap
+                added.append("vwap_ratio")
+            else:
+                added.append("vwap_ratio (SKIPPED: need volume+quote_vol+close)")
+
+        elif feat == "volume_zscore":
+            vol_col = _resolve_column_name(df, ["volume", "Volume", "base_vol"])
+            lb = int(feature_params.get("volume_zscore_lookback", 20))
+            if vol_col:
+                vol = df[vol_col].astype(float)
+                df["volume_zscore"] = (vol - vol.rolling(lb).mean()) / vol.rolling(
+                    lb
+                ).std().replace(0, np.nan)
+                added.append(f"volume_zscore (lookback={lb})")
+            else:
+                added.append("volume_zscore (SKIPPED: no volume column)")
+
+        elif feat == "taker_imbalance":
+            buy_col = _resolve_column_name(
+                df,
+                ["taker_buy_base_vol", "Taker_buy_base_vol", "taker_buy_volume"],
+            )
+            vol_col = _resolve_column_name(df, ["volume", "Volume", "base_vol"])
+            lb = int(feature_params.get("taker_imbalance_lookback", 20))
+            if buy_col and vol_col:
+                ratio = df[buy_col].astype(float) / df[vol_col].astype(float).replace(
+                    0, np.nan
+                )
+                df["taker_imbalance"] = ratio - ratio.rolling(lb).mean()
+                added.append(f"taker_imbalance (lookback={lb})")
+            else:
+                added.append("taker_imbalance (SKIPPED: need taker_buy+volume)")
+
+        elif feat == "trade_intensity":
+            trades_col = _resolve_column_name(
+                df,
+                ["trades", "Trades", "trade_count", "num_trades"],
+            )
+            vol_col = _resolve_column_name(df, ["volume", "Volume", "base_vol"])
+            lb = int(feature_params.get("trade_intensity_lookback", 20))
+            if trades_col and vol_col:
+                intensity = df[trades_col].astype(float) / df[vol_col].astype(
+                    float
+                ).replace(0, np.nan)
+                df["trade_intensity"] = (
+                    intensity - intensity.rolling(lb).mean()
+                ) / intensity.rolling(lb).std().replace(0, np.nan)
+                added.append(f"trade_intensity (lookback={lb})")
+            else:
+                added.append("trade_intensity (SKIPPED: need trades+volume)")
+
+        elif feat == "returns_multi":
+            horizons = feature_params.get("returns_horizons", [1, 5, 10, 20])
+            if close_col:
+                price = df[close_col].astype(float)
+                for h in horizons:
+                    col_name = f"return_{h}d"
+                    df[col_name] = price.pct_change(int(h))
+                    added.append(col_name)
+            else:
+                added.append("returns_multi (SKIPPED: no close column)")
+
+        elif feat == "realized_vol":
+            lb = int(feature_params.get("realized_vol_lookback", 20))
+            if close_col:
+                rets = df[close_col].astype(float).pct_change()
+                af = _infer_annual_factor(df)
+                df["realized_vol"] = rets.rolling(lb).std() * np.sqrt(af)
+                added.append(f"realized_vol (lookback={lb})")
+            else:
+                added.append("realized_vol (SKIPPED: no close column)")
+
+        elif feat == "parkinson_vol":
+            high_col = _resolve_column_name(df, ["high", "High"])
+            low_col = _resolve_column_name(df, ["low", "Low"])
+            lb = int(feature_params.get("parkinson_vol_lookback", 20))
+            if high_col and low_col:
+                hl = np.log(df[high_col].astype(float) / df[low_col].astype(float))
+                af = _infer_annual_factor(df)
+                df["parkinson_vol"] = hl.rolling(lb).apply(
+                    lambda x: np.sqrt(np.sum(x**2) / (4 * len(x) * np.log(2)))
+                ) * np.sqrt(af)
+                added.append(f"parkinson_vol (lookback={lb})")
+            else:
+                added.append("parkinson_vol (SKIPPED: need High+Low)")
+
+        elif feat == "log_volume_ratio":
+            vol_col = _resolve_column_name(df, ["volume", "Volume", "base_vol"])
+            quote_col = _resolve_column_name(
+                df, ["quote_vol", "Quote_vol", "quote_volume"]
+            )
+            if vol_col and quote_col:
+                df["log_volume_ratio"] = np.log(
+                    df[quote_col].astype(float)
+                    / df[vol_col].astype(float).replace(0, np.nan)
+                )
+                added.append("log_volume_ratio")
+            else:
+                added.append("log_volume_ratio (SKIPPED: need volume+quote_vol)")
+
+        elif feat == "obv":
+            vol_col = _resolve_column_name(df, ["volume", "Volume", "base_vol"])
+            if close_col and vol_col:
+                direction = np.sign(df[close_col].astype(float).diff())
+                df["obv"] = (direction * df[vol_col].astype(float)).cumsum()
+                added.append("obv")
+            else:
+                added.append("obv (SKIPPED: need close+volume)")
+
+        elif feat == "atr":
+            high_col = _resolve_column_name(df, ["high", "High"])
+            low_col = _resolve_column_name(df, ["low", "Low"])
+            lb = int(feature_params.get("atr_lookback", 14))
+            if high_col and low_col and close_col:
+                h = df[high_col].astype(float)
+                lo = df[low_col].astype(float)
+                c = df[close_col].astype(float)
+                tr = pd.concat(
+                    [
+                        h - lo,
+                        (h - c.shift(1)).abs(),
+                        (lo - c.shift(1)).abs(),
+                    ],
+                    axis=1,
+                ).max(axis=1)
+                df["atr"] = tr.rolling(lb).mean()
+                added.append(f"atr (lookback={lb})")
+            else:
+                added.append("atr (SKIPPED: need High+Low+Close)")
+
+        elif feat == "price_acceleration":
+            lb = int(feature_params.get("price_acceleration_lookback", 5))
+            if close_col:
+                rets = df[close_col].astype(float).pct_change()
+                df["price_acceleration"] = rets.diff(lb)
+                added.append(f"price_acceleration (lookback={lb})")
+            else:
+                added.append("price_acceleration (SKIPPED: no close column)")
+
+        else:
+            added.append(f"{feat} (UNKNOWN — skipped)")
+
+    if output_name is None:
+        base = os.path.splitext(os.path.basename(data_path))[0]
+        output_name = f"{base}_features.csv"
+
+    out_path = os.path.join(_workspace_dir(), output_name)
+    df.to_csv(out_path, index=False)
+
+    return json.dumps(
+        {
+            "added_features": added,
+            "total_columns": len(df.columns),
+            "total_rows": len(df),
+            "saved_to": output_name,
+        },
+        indent=2,
+    )
+
+
 def search_web(query: str, max_results: int = 5) -> str:
     """Search the public web using DuckDuckGo and return result links with snippets."""
     if not query or not query.strip():
@@ -1148,6 +2160,7 @@ def get_environment_info() -> str:
 
     Provides explicit absolute paths so the agent knows where to find
     files when using shell_exec (e.g. ``pd.read_csv('/data/AAPL.csv')``).
+    Automatically detects LEAN/dotnet environments and reports them.
     """
     data_dir = _data_dir()
     docs_dir = _docs_dir()
@@ -1163,12 +2176,6 @@ def get_environment_info() -> str:
         "docs": [],
         "workspace": [],
         "installed_packages": [],
-        "note": (
-            f"Data files are in {data_dir}. "
-            f"Use absolute paths in Python code, "
-            f"e.g. pd.read_csv('{data_dir}/FILENAME.csv'). "
-            f"Workspace for saving outputs: {workspace}."
-        ),
     }
     for d, key in [
         (data_dir, "data_files"),
@@ -1188,7 +2195,924 @@ def get_environment_info() -> str:
         info["installed_packages"] = result.stdout.strip().split("\n")[:20]
     except Exception:
         info["installed_packages"] = ["(unable to list)"]
+
+    # ---------- LEAN / .NET detection ----------
+    lean_info: dict = {}
+    try:
+        dotnet_result = subprocess.run(
+            "dotnet --version",
+            shell=True,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if dotnet_result.returncode == 0:
+            lean_info["dotnet_version"] = dotnet_result.stdout.strip()
+    except Exception:
+        pass
+
+    lean_launcher = "/lean/Launcher/bin/Debug/QuantConnect.Lean.Launcher.dll"
+    if os.path.isfile(lean_launcher):
+        lean_info["lean_engine"] = True
+        lean_info["lean_root"] = "/lean"
+
+    run_backtest_path = "/usr/local/bin/run_backtest"
+    if os.path.isfile(run_backtest_path):
+        lean_info["run_backtest"] = run_backtest_path
+
+    lean_data_dir = "/lean/Data"
+    if os.path.isdir(lean_data_dir):
+        lean_data_summary: dict = {}
+        cf_binance = os.path.join(lean_data_dir, "cryptofuture", "binance")
+        if os.path.isdir(cf_binance):
+            for res in sorted(os.listdir(cf_binance)):
+                res_path = os.path.join(cf_binance, res)
+                if os.path.isdir(res_path):
+                    symbols = sorted(os.listdir(res_path))
+                    lean_data_summary[res] = symbols[:10]
+        if lean_data_summary:
+            lean_info["available_data"] = lean_data_summary
+
+    if lean_info:
+        info["lean_environment"] = lean_info
+
+    # ---------- Note (context-aware) ----------
+    if lean_info.get("lean_engine"):
+        info["note"] = (
+            f"Data files are in {data_dir}. "
+            f"This environment has LEAN Engine (QuantConnect) with "
+            f".NET {lean_info.get('dotnet_version', 'unknown')}. "
+            f"To run a C# backtest: "
+            f"1) Write your .cs file to {workspace}/Algorithm.cs using file_write, "
+            f"2) Run 'run_backtest {workspace}/Algorithm.cs' using shell_exec "
+            f"(set timeout=600 as compilation + engine run may take a few minutes). "
+            f"The stdout output shows a performance summary; "
+            f"detailed results are saved as files in {workspace}/results/: "
+            f"summary.json (key metrics), log.txt (engine log), "
+            f"orders.json (order details), build_log.txt (compilation output). "
+            f"Use file_read() to inspect these files. "
+            f"LEAN market data is pre-loaded at /lean/Data/. "
+            f"Python is also available for analysis. "
+            f"Workspace for saving outputs: {workspace}."
+        )
+    else:
+        info["note"] = (
+            f"Data files are in {data_dir}. "
+            f"Use absolute paths in Python code, "
+            f"e.g. pd.read_csv('{data_dir}/FILENAME.csv'). "
+            f"Workspace for saving outputs: {workspace}."
+        )
+
     return json.dumps(info, indent=2)
+
+
+def compare_backtest_results(
+    data_paths: list,
+    labels: Optional[list] = None,
+    returns_column: str = "returns",
+    metrics: Optional[list] = None,
+    significance_test: str = "none",
+    bootstrap_samples: int = 1000,
+    benchmark_index: int = 0,
+) -> str:
+    """Compare performance metrics across multiple backtest result CSVs.
+
+    Loads N backtest result CSVs, computes standard performance metrics for
+    each, and presents a side-by-side comparison.  Optionally runs statistical
+    significance tests (bootstrap CI or paired t-test) to determine if
+    differences are meaningful.
+
+    Args:
+        data_paths: List of CSV file paths (2+).
+        labels: Human-readable labels for each backtest. Defaults to filenames.
+        returns_column: Returns column name (auto-detected from common names).
+        metrics: Subset of metrics to compare. None = all standard metrics.
+        significance_test: "none", "bootstrap", or "paired_t".
+        bootstrap_samples: Number of bootstrap resamples (bootstrap mode).
+        benchmark_index: Index in data_paths to use as the reference baseline.
+    """
+    import numpy as np
+    import pandas as pd
+
+    if not isinstance(data_paths, list) or len(data_paths) < 2:
+        return "Error: data_paths must be a list of at least 2 CSV file paths."
+
+    # Resolve paths and load returns
+    all_returns = []
+    resolved_labels = []
+    for i, dp in enumerate(data_paths):
+        full = _resolve_path(dp)
+        if not full:
+            return f"Error: File not found: {dp}"
+        df = pd.read_csv(full)
+
+        # Auto-detect returns column
+        ret_col = None
+        for cand in [
+            returns_column,
+            "returns",
+            "Returns",
+            "daily_return",
+            "daily_returns",
+            "strategy_return",
+            "strategy_returns",
+            "pnl",
+            "PnL",
+        ]:
+            if cand in df.columns:
+                ret_col = cand
+                break
+        if ret_col is None and "Close" in df.columns:
+            df["_returns"] = df["Close"].pct_change()
+            ret_col = "_returns"
+        if ret_col is None:
+            return f"Error: No returns column in {dp}. Columns: {list(df.columns)}"
+
+        all_returns.append(df[ret_col].dropna())
+        if labels and i < len(labels):
+            resolved_labels.append(labels[i])
+        else:
+            resolved_labels.append(os.path.splitext(os.path.basename(dp))[0])
+
+    # Compute metrics for each
+    all_metrics = []
+    for ret_series in all_returns:
+        m = _compute_performance_metrics(ret_series)
+        all_metrics.append(m)
+
+    # Filter metrics if requested
+    if metrics:
+        for m in all_metrics:
+            keys_to_remove = [k for k in m if k not in metrics]
+            for k in keys_to_remove:
+                del m[k]
+
+    # Build comparison table
+    comparison = {"labels": resolved_labels, "metrics": all_metrics}
+
+    # Compute differences relative to benchmark
+    bench_idx = min(benchmark_index, len(all_metrics) - 1)
+    bench = all_metrics[bench_idx]
+    diffs = []
+    for i, m in enumerate(all_metrics):
+        if i == bench_idx:
+            diffs.append({})
+            continue
+        d = {}
+        for k in m:
+            if (
+                k in bench
+                and isinstance(m[k], (int, float))
+                and isinstance(bench[k], (int, float))
+            ):
+                d[k] = round(m[k] - bench[k], 6)
+        diffs.append(d)
+    comparison["differences_vs_benchmark"] = diffs
+    comparison["benchmark"] = resolved_labels[bench_idx]
+
+    # Significance tests
+    if significance_test == "bootstrap" and len(all_returns) >= 2:
+        np_rng = np.random.default_rng(42)
+        sig_results = {}
+        bench_ret = all_returns[bench_idx].values
+        for i, ret_s in enumerate(all_returns):
+            if i == bench_idx:
+                continue
+            ret_vals = ret_s.values
+            # Align lengths
+            min_len = min(len(bench_ret), len(ret_vals))
+            b_r = bench_ret[:min_len]
+            c_r = ret_vals[:min_len]
+            diff_sharpes = []
+            for _ in range(bootstrap_samples):
+                idx = np_rng.integers(0, min_len, size=min_len)
+                s_b = b_r[idx]
+                s_c = c_r[idx]
+                sharpe_b = (
+                    (s_b.mean() / s_b.std() * np.sqrt(252)) if s_b.std() > 0 else 0
+                )
+                sharpe_c = (
+                    (s_c.mean() / s_c.std() * np.sqrt(252)) if s_c.std() > 0 else 0
+                )
+                diff_sharpes.append(sharpe_c - sharpe_b)
+            ds = np.array(diff_sharpes)
+            ci_low, ci_high = float(np.percentile(ds, 2.5)), float(
+                np.percentile(ds, 97.5)
+            )
+            sig_results[resolved_labels[i]] = {
+                "sharpe_diff_mean": round(float(ds.mean()), 4),
+                "ci_95_low": round(ci_low, 4),
+                "ci_95_high": round(ci_high, 4),
+                "significant": bool(ci_low > 0 or ci_high < 0),
+            }
+        comparison["significance_bootstrap"] = sig_results
+
+    elif significance_test == "paired_t" and len(all_returns) >= 2:
+        from scipy.stats import ttest_rel
+
+        sig_results = {}
+        bench_ret = all_returns[bench_idx].values
+        for i, ret_s in enumerate(all_returns):
+            if i == bench_idx:
+                continue
+            ret_vals = ret_s.values
+            min_len = min(len(bench_ret), len(ret_vals))
+            if min_len < 10:
+                sig_results[resolved_labels[i]] = {"error": "too few observations"}
+                continue
+            stat, pval = ttest_rel(bench_ret[:min_len], ret_vals[:min_len])
+            sig_results[resolved_labels[i]] = {
+                "t_statistic": round(float(stat), 4),
+                "p_value": round(float(pval), 4),
+                "significant": bool(pval < 0.05),
+            }
+        comparison["significance_paired_t"] = sig_results
+
+    # Save
+    out_name = "comparison_results.json"
+    out_path = os.path.join(_workspace_dir(), out_name)
+    with open(out_path, "w") as f:
+        json.dump(comparison, f, indent=2)
+
+    # Format text output
+    lines = [f"Comparison of {len(data_paths)} backtests (saved to {out_name}):"]
+    lines.append(f"Benchmark: {resolved_labels[bench_idx]}\n")
+    header = ["Metric"] + resolved_labels
+    lines.append("  ".join(f"{h:>18}" for h in header))
+    lines.append("-" * (18 * len(header) + 2 * (len(header) - 1)))
+    metric_keys = list(all_metrics[0].keys())
+    for k in metric_keys:
+        row = [f"{k:>18}"]
+        for m in all_metrics:
+            v = m.get(k, "N/A")
+            if isinstance(v, float):
+                row.append(f"{v:>18.4f}")
+            else:
+                row.append(f"{str(v):>18}")
+        lines.append("  ".join(row))
+
+    return "\n".join(lines)
+
+
+def align_timeseries(
+    data_paths: list,
+    time_column: str = "auto",
+    method: str = "inner",
+    resample: Optional[str] = None,
+    fill_limit: Optional[int] = None,
+    column_prefix: str = "auto",
+    custom_prefixes: Optional[list] = None,
+    output_name: Optional[str] = None,
+) -> str:
+    """Align and merge multiple time-series CSVs on a common time axis.
+
+    Loads N CSV files, detects or uses the specified time column, aligns
+    them on a common time index using the chosen method, and saves the
+    merged dataset.
+
+    Args:
+        data_paths: List of CSV file paths (2+).
+        time_column: Time column name ("auto" = detect from Date/timestamp/datetime).
+        method: Alignment method — "inner", "outer_ffill", "outer_bfill",
+                "outer_interpolate", or "nearest".
+        resample: Resample frequency before alignment (e.g. "1D", "1H", "5T").
+                  None = no resampling.
+        fill_limit: Max consecutive NaN fills for ffill/bfill. None = unlimited.
+        column_prefix: "auto" (use filename), "none", or "custom".
+        custom_prefixes: List of prefixes when column_prefix="custom".
+        output_name: Output CSV filename. Auto-generated if omitted.
+    """
+    import pandas as pd
+
+    if not isinstance(data_paths, list) or len(data_paths) < 2:
+        return "Error: data_paths must be a list of at least 2 CSV file paths."
+
+    dfs = []
+    prefixes = []
+    time_cols_found = []
+
+    for i, dp in enumerate(data_paths):
+        full = _resolve_path(dp)
+        if not full:
+            return f"Error: File not found: {dp}"
+        df = pd.read_csv(full)
+
+        # Detect time column
+        if time_column == "auto":
+            tc = _resolve_column_name(
+                df,
+                [
+                    "Date",
+                    "date",
+                    "timestamp",
+                    "Timestamp",
+                    "datetime",
+                    "Datetime",
+                    "time",
+                    "Time",
+                ],
+            )
+            if tc is None:
+                return f"Error: No time column detected in {dp}. Columns: {list(df.columns)}"
+        else:
+            tc = time_column if time_column in df.columns else None
+            if tc is None:
+                return f"Error: Column '{time_column}' not found in {dp}."
+
+        time_cols_found.append(tc)
+
+        # Parse time column
+        df[tc] = pd.to_datetime(df[tc], errors="coerce", utc=True)
+        df = df.dropna(subset=[tc]).set_index(tc).sort_index()
+
+        # Resample if requested
+        if resample:
+            # Use last valid observation for resampling
+            numeric_cols = df.select_dtypes(include="number").columns
+            df = df[numeric_cols].resample(resample).last().dropna(how="all")
+
+        # Apply column prefix
+        if column_prefix == "auto":
+            pfx = os.path.splitext(os.path.basename(dp))[0]
+        elif column_prefix == "custom" and custom_prefixes and i < len(custom_prefixes):
+            pfx = custom_prefixes[i]
+        else:
+            pfx = ""
+
+        if pfx:
+            df = df.rename(columns={c: f"{pfx}_{c}" for c in df.columns})
+            prefixes.append(pfx)
+        else:
+            prefixes.append(os.path.splitext(os.path.basename(dp))[0])
+
+        dfs.append(df)
+
+    # Merge based on method
+    join_type = "inner" if method == "inner" else "outer"
+    merged = dfs[0]
+    for df in dfs[1:]:
+        merged = merged.join(df, how=join_type)
+
+    # Fill NaNs for outer join methods
+    if method == "outer_ffill":
+        merged = merged.ffill(limit=fill_limit)
+    elif method == "outer_bfill":
+        merged = merged.bfill(limit=fill_limit)
+    elif method == "outer_interpolate":
+        merged = merged.interpolate(method="time", limit=fill_limit)
+    elif method == "nearest":
+        merged = merged.interpolate(method="nearest", limit=fill_limit)
+
+    # Drop rows that are still all-NaN after filling
+    merged = merged.dropna(how="all")
+
+    # Save
+    if output_name is None:
+        output_name = "aligned_" + "_".join(prefixes[:3]) + ".csv"
+    out_path = os.path.join(_workspace_dir(), output_name)
+    merged.to_csv(out_path)
+
+    # Quality report
+    nan_pct = round(merged.isna().mean().mean() * 100, 2)
+    report = {
+        "method": method,
+        "resample": resample,
+        "input_files": len(data_paths),
+        "input_rows": [len(df) for df in dfs],
+        "output_rows": len(merged),
+        "output_columns": len(merged.columns),
+        "remaining_nan_pct": nan_pct,
+        "time_range": (
+            f"{merged.index[0]} to {merged.index[-1]}" if len(merged) > 0 else "empty"
+        ),
+        "saved_to": output_name,
+    }
+
+    return json.dumps(report, indent=2, default=str)
+
+
+def breakdown_pnl(
+    trades_path: str,
+    input_format: str = "auto",
+    fee_model: str = "percentage",
+    taker_fee: float = 0.0004,
+    maker_fee: float = 0.0002,
+    flat_fee: float = 0.0,
+    fee_tiers: Optional[list] = None,
+    order_type: str = "taker",
+    slippage_model: str = "proportional",
+    slippage_bps: float = 1.0,
+    fixed_slippage: float = 0.0,
+    impact_coefficient: float = 0.1,
+    funding_path: Optional[str] = None,
+    funding_interval_hours: int = 8,
+    initial_capital: float = 10000.0,
+) -> str:
+    """Decompose backtest PnL into gross, fee, slippage, and funding components.
+
+    Accepts either trade-level data (timestamp/side/price/quantity) or
+    return-level data (daily returns series).  Applies configurable cost
+    models and produces a layered PnL breakdown.
+
+    Fee models: "percentage" (maker/taker), "flat" (per-trade), "tiered"
+    (volume-based tiers), "none".
+
+    Slippage models: "none", "fixed" (constant amount), "proportional"
+    (basis points of price), "sqrt_impact" (Almgren-Chriss square-root
+    market impact).
+
+    Funding: Optional perpetual futures funding rate from a separate CSV.
+    """
+    import numpy as np
+    import pandas as pd
+
+    full_path = _resolve_path(trades_path)
+    if not full_path:
+        return f"Error: File not found: {trades_path}"
+    df = pd.read_csv(full_path)
+
+    # Auto-detect format
+    if input_format == "auto":
+        has_side = _resolve_column_name(df, ["side", "Side", "direction"]) is not None
+        has_price = (
+            _resolve_column_name(df, ["price", "Price", "fill_price"]) is not None
+        )
+        has_qty = (
+            _resolve_column_name(df, ["quantity", "qty", "Quantity", "size", "Size"])
+            is not None
+        )
+        if has_side and has_price and has_qty:
+            input_format = "trades"
+        else:
+            input_format = "returns"
+
+    workspace = _workspace_dir()
+
+    if input_format == "trades":
+        # ── Trade-level breakdown ──
+        side_col = _resolve_column_name(df, ["side", "Side", "direction"]) or "side"
+        price_col = (
+            _resolve_column_name(df, ["price", "Price", "fill_price"]) or "price"
+        )
+        qty_col = (
+            _resolve_column_name(df, ["quantity", "qty", "Quantity", "size", "Size"])
+            or "quantity"
+        )
+        otype_col = _resolve_column_name(df, ["order_type", "type"])
+
+        prices = df[price_col].astype(float)
+        quantities = df[qty_col].astype(float)
+        notionals = prices * quantities
+        sides = df[side_col].astype(str).str.lower()
+
+        total_trades = len(df)
+
+        # Gross PnL: sum of signed notional changes
+        # For trade-level data, compute PnL from price changes between entries/exits
+        signed = np.where(sides.isin(["buy", "long", "1"]), 1, -1)
+        gross_pnl = float((signed * notionals).sum())
+
+        # Fee calculation
+        if fee_model == "none":
+            total_fees = 0.0
+        elif fee_model == "flat":
+            total_fees = flat_fee * total_trades
+        elif fee_model == "tiered" and fee_tiers:
+            cumulative_vol = 0.0
+            total_fees = 0.0
+            for _, row_notional in enumerate(notionals):
+                cumulative_vol += float(row_notional)
+                # Find applicable tier
+                applicable_rate = taker_fee  # default
+                for tier in sorted(fee_tiers, key=lambda t: t.get("volume_usd", 0)):
+                    if cumulative_vol >= tier.get("volume_usd", 0):
+                        applicable_rate = tier.get(
+                            order_type + "_fee", tier.get("taker", taker_fee)
+                        )
+                total_fees += float(row_notional) * applicable_rate
+        else:  # percentage
+            fee_rate = taker_fee if order_type == "taker" else maker_fee
+            if otype_col and otype_col in df.columns:
+                per_trade_rate = df[otype_col].apply(
+                    lambda t: maker_fee if str(t).lower() == "maker" else taker_fee
+                )
+                total_fees = float((notionals * per_trade_rate).sum())
+            else:
+                total_fees = float(notionals.sum() * fee_rate)
+
+        # Slippage calculation
+        if slippage_model == "none":
+            total_slippage = 0.0
+        elif slippage_model == "fixed":
+            total_slippage = fixed_slippage * total_trades
+        elif slippage_model == "sqrt_impact":
+            # Almgren-Chriss: impact = coefficient * sqrt(quantity / ADV)
+            adv = quantities.mean()
+            total_slippage = float(
+                (impact_coefficient * np.sqrt(quantities / max(adv, 1)) * prices).sum()
+            )
+        else:  # proportional
+            total_slippage = float(notionals.sum() * slippage_bps / 10000)
+
+    else:
+        # ── Return-level breakdown ──
+        ret_col = None
+        for cand in [
+            "returns",
+            "Returns",
+            "daily_return",
+            "strategy_return",
+            "strategy_returns",
+            "pnl",
+            "PnL",
+        ]:
+            if cand in df.columns:
+                ret_col = cand
+                break
+        if ret_col is None and "Close" in df.columns:
+            df["_returns"] = df["Close"].pct_change()
+            ret_col = "_returns"
+        if ret_col is None:
+            return f"Error: No returns column found. Columns: {list(df.columns)}"
+
+        returns = df[ret_col].dropna().astype(float)
+        total_trades = int((returns.diff().fillna(0) != 0).sum())
+
+        equity = initial_capital * (1 + returns).cumprod()
+        gross_pnl = float(equity.iloc[-1] - initial_capital)
+
+        # Estimate costs on return-level data
+        daily_notional = equity.shift(1).fillna(initial_capital).abs()
+
+        # Fees: applied on position changes (turnover)
+        position_changes = returns.diff().abs().fillna(0)
+        turnover_notional = float((position_changes * daily_notional).sum())
+        fee_rate = taker_fee if order_type == "taker" else maker_fee
+        total_fees = turnover_notional * fee_rate if fee_model != "none" else 0.0
+
+        # Slippage
+        if slippage_model == "none":
+            total_slippage = 0.0
+        elif slippage_model == "proportional":
+            total_slippage = turnover_notional * slippage_bps / 10000
+        else:
+            total_slippage = turnover_notional * slippage_bps / 10000  # fallback
+
+    # Funding rate costs
+    total_funding = 0.0
+    if funding_path:
+        funding_full = _resolve_path(funding_path)
+        if funding_full:
+            fdf = pd.read_csv(funding_full)
+            rate_col = _resolve_column_name(
+                fdf, ["fundingRate", "funding_rate", "rate", "Rate"]
+            )
+            if rate_col:
+                funding_rates = fdf[rate_col].astype(float)
+                # Assume position held throughout, approximate
+                periods_per_day = 24 / funding_interval_hours
+                avg_rate = float(funding_rates.mean())
+                trading_days = total_trades if input_format == "trades" else len(df)
+                total_funding = abs(
+                    initial_capital * avg_rate * trading_days * periods_per_day
+                )
+
+    net_pnl = gross_pnl - total_fees - total_slippage - total_funding
+
+    result = {
+        "gross_pnl": round(gross_pnl, 2),
+        "fee_cost": round(total_fees, 2),
+        "slippage_cost": round(total_slippage, 2),
+        "funding_cost": round(total_funding, 2),
+        "net_pnl": round(net_pnl, 2),
+        "cost_breakdown_pct": {
+            "fees_pct_of_gross": (
+                round(total_fees / abs(gross_pnl) * 100, 2) if gross_pnl != 0 else 0
+            ),
+            "slippage_pct_of_gross": (
+                round(total_slippage / abs(gross_pnl) * 100, 2) if gross_pnl != 0 else 0
+            ),
+            "funding_pct_of_gross": (
+                round(total_funding / abs(gross_pnl) * 100, 2) if gross_pnl != 0 else 0
+            ),
+            "total_cost_pct": (
+                round(
+                    (total_fees + total_slippage + total_funding)
+                    / abs(gross_pnl)
+                    * 100,
+                    2,
+                )
+                if gross_pnl != 0
+                else 0
+            ),
+        },
+        "parameters": {
+            "input_format": input_format,
+            "fee_model": fee_model,
+            "slippage_model": slippage_model,
+            "initial_capital": initial_capital,
+        },
+    }
+
+    out_name = "pnl_breakdown.json"
+    out_path = os.path.join(workspace, out_name)
+    with open(out_path, "w") as f:
+        json.dump(result, f, indent=2)
+
+    return (
+        f"PnL Breakdown (saved to {out_name}):\n"
+        f"  Gross PnL:       ${result['gross_pnl']:,.2f}\n"
+        f"  Fee Cost:        ${result['fee_cost']:,.2f} "
+        f"({result['cost_breakdown_pct']['fees_pct_of_gross']:.1f}% of gross)\n"
+        f"  Slippage Cost:   ${result['slippage_cost']:,.2f} "
+        f"({result['cost_breakdown_pct']['slippage_pct_of_gross']:.1f}% of gross)\n"
+        f"  Funding Cost:    ${result['funding_cost']:,.2f} "
+        f"({result['cost_breakdown_pct']['funding_pct_of_gross']:.1f}% of gross)\n"
+        f"  Net PnL:         ${result['net_pnl']:,.2f}\n"
+        f"  Total Cost:      "
+        f"{result['cost_breakdown_pct']['total_cost_pct']:.1f}% of gross PnL"
+    )
+
+
+def split_walkforward_windows(
+    data_path: str,
+    time_column: str = "auto",
+    scheme: str = "rolling",
+    train_size: int = 252,
+    test_size: int = 63,
+    step_size: Optional[int] = None,
+    min_train_size: Optional[int] = None,
+    embargo_size: int = 0,
+    purge_size: int = 0,
+    n_splits: int = 5,
+    size_unit: str = "rows",
+    save_splits: bool = True,
+    output_prefix: str = "fold",
+) -> str:
+    """Split time-series data into train/test windows for walk-forward validation.
+
+    Supports multiple splitting schemes from simple rolling windows to
+    advanced combinatorial purged cross-validation.
+
+    Schemes:
+      rolling:       Fixed-size train and test windows, sliding by step_size.
+      expanding:     Train window grows from min_train_size; test is fixed.
+      purged_kfold:  Time-series K-fold with embargo and purge gaps.
+      combinatorial: All C(n_splits, 2) train/test combinations with purging.
+
+    Args:
+        data_path: CSV file path.
+        time_column: Time column name ("auto" = detect).
+        scheme: "rolling", "expanding", "purged_kfold", "combinatorial".
+        train_size: Training window size (rows or calendar days).
+        test_size: Test window size.
+        step_size: Slide step (None = test_size for non-overlapping).
+        min_train_size: Minimum train size for expanding scheme.
+        embargo_size: Gap rows between train end and test start.
+        purge_size: Rows to remove from train end (label leakage prevention).
+        n_splits: Number of folds (purged_kfold, combinatorial).
+        size_unit: "rows" or "calendar_days".
+        save_splits: Save individual fold CSVs to workspace.
+        output_prefix: Filename prefix for saved fold CSVs.
+    """
+    import pandas as pd
+
+    full_path = _resolve_path(data_path)
+    if not full_path:
+        return f"Error: File not found: {data_path}"
+    df = pd.read_csv(full_path)
+
+    # Detect time column
+    tc = None
+    if time_column == "auto":
+        tc = _resolve_column_name(
+            df,
+            [
+                "Date",
+                "date",
+                "timestamp",
+                "Timestamp",
+                "datetime",
+                "Datetime",
+                "time",
+                "Time",
+            ],
+        )
+    elif time_column in df.columns:
+        tc = time_column
+
+    # Parse dates if time column found and size_unit is calendar_days
+    if tc and size_unit == "calendar_days":
+        df[tc] = pd.to_datetime(df[tc], errors="coerce", utc=True)
+        df = df.dropna(subset=[tc]).sort_values(tc).reset_index(drop=True)
+
+    n = len(df)
+    step = step_size if step_size is not None else test_size
+    workspace = _workspace_dir()
+    folds = []
+
+    if scheme == "rolling":
+        window_total = train_size + embargo_size + test_size
+        if window_total > n:
+            return (
+                f"Error: train({train_size}) + embargo({embargo_size}) + "
+                f"test({test_size}) = {window_total} > data rows ({n})"
+            )
+        start = 0
+        fold_idx = 0
+        while start + window_total <= n:
+            train_end = start + train_size - purge_size
+            test_start = start + train_size + embargo_size
+            test_end = test_start + test_size
+
+            folds.append(
+                {
+                    "fold": fold_idx,
+                    "train_start": start,
+                    "train_end": train_end,
+                    "test_start": test_start,
+                    "test_end": min(test_end, n),
+                    "train_rows": train_end - start,
+                    "test_rows": min(test_end, n) - test_start,
+                }
+            )
+            fold_idx += 1
+            start += step
+
+    elif scheme == "expanding":
+        min_train = min_train_size if min_train_size else train_size
+        if min_train + embargo_size + test_size > n:
+            return (
+                f"Error: min_train({min_train}) + embargo({embargo_size}) + "
+                f"test({test_size}) = {min_train + embargo_size + test_size} > data rows ({n})"
+            )
+        test_start_pos = min_train + embargo_size
+        fold_idx = 0
+        while test_start_pos + test_size <= n:
+            train_end = test_start_pos - embargo_size - purge_size
+            test_end = test_start_pos + test_size
+
+            folds.append(
+                {
+                    "fold": fold_idx,
+                    "train_start": 0,
+                    "train_end": train_end,
+                    "test_start": test_start_pos,
+                    "test_end": min(test_end, n),
+                    "train_rows": train_end,
+                    "test_rows": min(test_end, n) - test_start_pos,
+                }
+            )
+            fold_idx += 1
+            test_start_pos += step
+
+    elif scheme == "purged_kfold":
+        fold_size = n // n_splits
+        if fold_size < 10:
+            return f"Error: {n} rows / {n_splits} splits = {fold_size} rows per fold (too small)"
+        for i in range(n_splits):
+            test_start = i * fold_size
+            test_end = test_start + fold_size if i < n_splits - 1 else n
+
+            # Train = everything except test + embargo + purge zones
+            train_indices = list(
+                range(0, max(0, test_start - embargo_size - purge_size))
+            )
+            train_indices += list(range(min(n, test_end + embargo_size), n))
+
+            folds.append(
+                {
+                    "fold": i,
+                    "train_start": "non-contiguous",
+                    "train_end": "non-contiguous",
+                    "test_start": test_start,
+                    "test_end": test_end,
+                    "train_rows": len(train_indices),
+                    "test_rows": test_end - test_start,
+                    "_train_indices": train_indices,
+                }
+            )
+
+    elif scheme == "combinatorial":
+        from itertools import combinations
+
+        fold_size = n // n_splits
+        if fold_size < 10:
+            return f"Error: {n} rows / {n_splits} splits = {fold_size} rows per fold (too small)"
+        fold_boundaries = [
+            (i * fold_size, min((i + 1) * fold_size, n)) for i in range(n_splits)
+        ]
+        fold_idx = 0
+        for test_group in combinations(range(n_splits), 2):
+            test_indices = []
+            for g in test_group:
+                s, e = fold_boundaries[g]
+                test_indices.extend(range(s, e))
+            train_indices = []
+            for g in range(n_splits):
+                if g in test_group:
+                    continue
+                s, e = fold_boundaries[g]
+                safe_e = max(s, e - purge_size)
+                train_indices.extend(range(s, safe_e))
+            # Apply embargo
+            if embargo_size > 0:
+                test_set = set(test_indices)
+                train_indices = [
+                    t
+                    for t in train_indices
+                    if not any(abs(t - ts) <= embargo_size for ts in test_set)
+                ]
+
+            folds.append(
+                {
+                    "fold": fold_idx,
+                    "test_groups": list(test_group),
+                    "train_rows": len(train_indices),
+                    "test_rows": len(test_indices),
+                    "_train_indices": train_indices,
+                    "_test_indices": test_indices,
+                }
+            )
+            fold_idx += 1
+    else:
+        return (
+            f"Error: Unknown scheme '{scheme}'. "
+            f"Supported: rolling, expanding, purged_kfold, combinatorial"
+        )
+
+    # Save fold CSVs
+    if save_splits and folds:
+        for fold_info in folds:
+            fi = fold_info["fold"]
+            if "_train_indices" in fold_info:
+                train_df = df.iloc[fold_info["_train_indices"]]
+                if "_test_indices" in fold_info:
+                    test_df = df.iloc[fold_info["_test_indices"]]
+                else:
+                    test_df = df.iloc[fold_info["test_start"] : fold_info["test_end"]]
+            else:
+                train_df = df.iloc[fold_info["train_start"] : fold_info["train_end"]]
+                test_df = df.iloc[fold_info["test_start"] : fold_info["test_end"]]
+            train_df.to_csv(
+                os.path.join(workspace, f"{output_prefix}_{fi}_train.csv"), index=False
+            )
+            test_df.to_csv(
+                os.path.join(workspace, f"{output_prefix}_{fi}_test.csv"), index=False
+            )
+
+    # Clean internal indices from output
+    clean_folds = []
+    for f_info in folds:
+        clean = {k: v for k, v in f_info.items() if not k.startswith("_")}
+        # Add date ranges if time column available
+        if tc and tc in df.columns:
+            if "test_start" in clean and isinstance(clean["test_start"], int):
+                clean["test_date_range"] = (
+                    f"{df[tc].iloc[clean['test_start']]} to "
+                    f"{df[tc].iloc[min(clean['test_end'] - 1, n - 1)]}"
+                )
+        clean_folds.append(clean)
+
+    # Coverage statistics
+    all_test_rows = set()
+    for f_info in folds:
+        if "_test_indices" in f_info:
+            all_test_rows.update(f_info["_test_indices"])
+        elif isinstance(f_info.get("test_start"), int):
+            all_test_rows.update(range(f_info["test_start"], f_info["test_end"]))
+    coverage_pct = round(len(all_test_rows) / n * 100, 1) if n > 0 else 0
+
+    result = {
+        "scheme": scheme,
+        "total_data_rows": n,
+        "total_folds": len(folds),
+        "test_coverage_pct": coverage_pct,
+        "embargo_size": embargo_size,
+        "purge_size": purge_size,
+        "folds": clean_folds,
+        "saved_files": (
+            [
+                f"{output_prefix}_{i}_train.csv, {output_prefix}_{i}_test.csv"
+                for i in range(len(folds))
+            ]
+            if save_splits
+            else []
+        ),
+    }
+
+    out_name = "walkforward_splits.json"
+    out_path = os.path.join(workspace, out_name)
+    with open(out_path, "w") as f:
+        json.dump(result, f, indent=2, default=str)
+
+    return (
+        f"Walk-forward split: {scheme} ({len(folds)} folds)\n"
+        f"Data: {n} rows, test coverage: {coverage_pct}%\n"
+        f"Embargo: {embargo_size}, Purge: {purge_size}\n"
+        f"{'Saved fold CSVs to workspace.' if save_splits else ''}\n"
+        f"Metadata saved to {out_name}"
+    )
 
 
 # Tool registry for the proxy layer
@@ -1345,7 +3269,14 @@ CORE_TOOLS = {
     },
     "compute_statistics": {
         "func": compute_statistics,
-        "description": "Run statistical tests or descriptive analysis on data (stationarity, correlation, cointegration, descriptive stats, missing values)",
+        "description": (
+            "Run statistical tests or analysis on data. Methods: "
+            "ADF (stationarity), CORRELATION (matrix), "
+            "COINTEGRATION (Engle-Granger with hedge ratio, spread, half-life), "
+            "DESCRIPTIVE (summary stats), MISSING (missing values), "
+            "LEAD_LAG (cross-correlation + Granger causality), "
+            "ROLLING (rolling-window: correlation, cointegration, beta, adf, volatility)"
+        ),
         "params": {
             "data_path": {
                 "type": "string",
@@ -1354,12 +3285,29 @@ CORE_TOOLS = {
             },
             "method": {
                 "type": "string",
-                "description": "Statistical method: ADF (stationarity test), CORRELATION (correlation matrix; supports pearson/spearman/kendall via method_params), COINTEGRATION, DESCRIPTIVE (summary stats: mean/std/quartiles/skew/kurtosis), or MISSING (per-column missing value counts)",
+                "description": (
+                    "Statistical method: ADF, CORRELATION, COINTEGRATION, "
+                    "DESCRIPTIVE, MISSING, LEAD_LAG, or ROLLING"
+                ),
                 "required": True,
             },
             "method_params": {
                 "type": "object",
-                "description": 'Method parameters as JSON object, e.g. {"column": "Close"} for ADF or DESCRIPTIVE, {"column1": "AAPL", "column2": "SPY"} for COINTEGRATION, {"method": "spearman"} for CORRELATION. Omit for MISSING.',
+                "description": (
+                    "Method parameters as JSON object. "
+                    'ADF: {"column": "Close", "maxlag": null, "autolag": "aic"}. '
+                    'CORRELATION: {"columns": [...], "method": "spearman"}. '
+                    'COINTEGRATION: {"column1": "X", "column2": "Y", "trend": "c", '
+                    '"maxlag": null, "autolag": "aic", "save_spread": true} — '
+                    "returns hedge_ratio, spread, half_life, z-score. "
+                    'LEAD_LAG: {"column1": "X", "column2": "Y", "max_lag": 10, '
+                    '"type": "both", "granger_maxlag": 5} — '
+                    "cross-correlation + Granger causality. "
+                    'ROLLING: {"column1": "X", "column2": "Y", "window": 60, '
+                    '"step": 1, "metric": "correlation"} — '
+                    "metrics: correlation, cointegration, beta, adf, volatility. "
+                    "For rolling volatility: vol_type: realized or parkinson."
+                ),
                 "required": False,
             },
         },
@@ -1448,5 +3396,425 @@ CORE_TOOLS = {
         "func": get_environment_info,
         "description": "Return directory paths (data, docs, workspace), available files, and installed packages. Use this first to discover file locations and absolute paths for shell_exec.",
         "params": {},
+    },
+    "construct_signal": {
+        "func": construct_signal,
+        "description": (
+            "Construct a trading signal and save as CSV ready for evaluate_signal. "
+            "Signal types: zscore, momentum, mean_reversion, spread, crossover, "
+            "composite, volume_imbalance. Output always has 'signal' + 'close' columns."
+        ),
+        "params": {
+            "data_path": {
+                "type": "string",
+                "description": "Path to CSV file with price/feature data",
+                "required": True,
+            },
+            "signal_type": {
+                "type": "string",
+                "description": (
+                    "Signal type: zscore, momentum, mean_reversion, spread, "
+                    "crossover, composite, or volume_imbalance"
+                ),
+                "required": True,
+            },
+            "signal_params": {
+                "type": "object",
+                "description": (
+                    "Signal parameters as JSON object. "
+                    'zscore: {"column": "Close", "lookback": 20, "returns_based": false}. '
+                    'momentum: {"column": "Close", "lookback": 20, "method": "pct_change", '
+                    '"normalize": false, "normalize_window": 60}. '
+                    'mean_reversion: {"column": "Close", "lookback": 20, '
+                    '"method": "zscore|bollinger|rsi"}. '
+                    'spread: {"column1": "X", "column2": "Y", "method": "ols|rolling_ols|log_ratio", '
+                    '"lookback": 60, "normalize": true}. '
+                    'crossover: {"column": "Close", "fast": 10, "slow": 30, "ma_type": "ema|sma"}. '
+                    'composite: {"columns": [...], "weights": [...], '
+                    '"combination": "weighted_mean|rank_mean|pca"}. '
+                    'volume_imbalance: {"method": "taker_ratio|volume_zscore|trade_intensity|obv", '
+                    '"lookback": 20, "normalize": true}.'
+                ),
+                "required": False,
+            },
+            "output_name": {
+                "type": "string",
+                "description": "Output CSV file name. Auto-generated if omitted.",
+                "required": False,
+            },
+            "close_column": {
+                "type": "string",
+                "description": (
+                    "Name of the column to use as close price. Use when "
+                    "the CSV has non-standard close column names (e.g. "
+                    "'BTC_Close'). If omitted, auto-detects 'close', "
+                    "'Close', 'adj_close', 'Adj Close', 'price'."
+                ),
+                "required": False,
+            },
+        },
+    },
+    "engineer_features": {
+        "func": engineer_features,
+        "description": (
+            "Engineer quantitative features from OHLCV+ data. Adds computed "
+            "feature columns and saves the enriched dataset. Supports: "
+            "vwap_ratio, volume_zscore, taker_imbalance, trade_intensity, "
+            "returns_multi, realized_vol, parkinson_vol, log_volume_ratio, "
+            "obv, atr, price_acceleration. Gracefully skips features whose "
+            "required columns are missing."
+        ),
+        "params": {
+            "data_path": {
+                "type": "string",
+                "description": "Path to CSV file with OHLCV+ data",
+                "required": True,
+            },
+            "features": {
+                "type": "array",
+                "description": (
+                    "List of feature names to compute: vwap_ratio, volume_zscore, "
+                    "taker_imbalance, trade_intensity, returns_multi, realized_vol, "
+                    "parkinson_vol, log_volume_ratio, obv, atr, price_acceleration"
+                ),
+                "required": True,
+            },
+            "feature_params": {
+                "type": "object",
+                "description": (
+                    "Feature-specific parameters as JSON object. "
+                    'E.g. {"volume_zscore_lookback": 20, "atr_lookback": 14, '
+                    '"returns_horizons": [1, 5, 10, 20], '
+                    '"realized_vol_lookback": 20, "parkinson_vol_lookback": 20, '
+                    '"taker_imbalance_lookback": 20, '
+                    '"trade_intensity_lookback": 20, '
+                    '"price_acceleration_lookback": 5}'
+                ),
+                "required": False,
+            },
+            "output_name": {
+                "type": "string",
+                "description": "Output CSV file name. Auto-generated if omitted.",
+                "required": False,
+            },
+        },
+    },
+    "compare_backtest_results": {
+        "func": compare_backtest_results,
+        "description": (
+            "Compare performance metrics across multiple backtest result CSVs. "
+            "Loads N backtests, computes Sharpe/return/drawdown/etc for each, "
+            "and presents side-by-side comparison with optional statistical "
+            "significance testing (bootstrap CI or paired t-test)."
+        ),
+        "params": {
+            "data_paths": {
+                "type": "array",
+                "description": (
+                    "List of CSV file paths to compare (at least 2). "
+                    "Each must contain a returns column or a Close column."
+                ),
+                "required": True,
+            },
+            "labels": {
+                "type": "array",
+                "description": "Human-readable labels for each backtest. Defaults to filenames.",
+                "required": False,
+            },
+            "returns_column": {
+                "type": "string",
+                "description": (
+                    "Returns column name. Auto-detects from common names "
+                    "(returns, daily_return, strategy_return, pnl)."
+                ),
+                "required": False,
+            },
+            "metrics": {
+                "type": "array",
+                "description": (
+                    "Subset of metrics to compare (e.g. ['sharpe_ratio', 'max_drawdown']). "
+                    "None = all standard metrics."
+                ),
+                "required": False,
+            },
+            "significance_test": {
+                "type": "string",
+                "description": (
+                    "Statistical test: 'none' (default), 'bootstrap' "
+                    "(bootstrap CI on Sharpe difference), or 'paired_t' "
+                    "(paired t-test on daily returns)."
+                ),
+                "required": False,
+            },
+            "bootstrap_samples": {
+                "type": "integer",
+                "description": "Number of bootstrap resamples. Default: 1000.",
+                "required": False,
+            },
+            "benchmark_index": {
+                "type": "integer",
+                "description": "Index of the benchmark backtest in data_paths (0-based). Default: 0.",
+                "required": False,
+            },
+        },
+    },
+    "align_timeseries": {
+        "func": align_timeseries,
+        "description": (
+            "Align and merge multiple time-series CSVs on a common time axis. "
+            "Methods: inner (intersection), outer_ffill (union + forward fill), "
+            "outer_bfill, outer_interpolate, nearest. Supports resampling, "
+            "N assets, and auto column-prefixing to avoid name collisions."
+        ),
+        "params": {
+            "data_paths": {
+                "type": "array",
+                "description": "List of CSV file paths to align (at least 2).",
+                "required": True,
+            },
+            "time_column": {
+                "type": "string",
+                "description": (
+                    "Time column name. 'auto' (default) detects from "
+                    "Date/timestamp/datetime/time."
+                ),
+                "required": False,
+            },
+            "method": {
+                "type": "string",
+                "description": (
+                    "Alignment method: 'inner' (default, intersection only), "
+                    "'outer_ffill' (union + forward fill), 'outer_bfill', "
+                    "'outer_interpolate' (linear interpolation), 'nearest'."
+                ),
+                "required": False,
+            },
+            "resample": {
+                "type": "string",
+                "description": (
+                    "Resample frequency before alignment (e.g. '1D', '1H', '5T'). "
+                    "None = no resampling."
+                ),
+                "required": False,
+            },
+            "fill_limit": {
+                "type": "integer",
+                "description": "Max consecutive NaN fills. None = unlimited.",
+                "required": False,
+            },
+            "column_prefix": {
+                "type": "string",
+                "description": (
+                    "'auto' (default, uses filename), 'none' (no prefix), "
+                    "or 'custom' (use custom_prefixes list)."
+                ),
+                "required": False,
+            },
+            "custom_prefixes": {
+                "type": "array",
+                "description": "Custom column prefixes when column_prefix='custom'.",
+                "required": False,
+            },
+            "output_name": {
+                "type": "string",
+                "description": "Output CSV filename. Auto-generated if omitted.",
+                "required": False,
+            },
+        },
+    },
+    "breakdown_pnl": {
+        "func": breakdown_pnl,
+        "description": (
+            "Decompose backtest PnL into gross, fee, slippage, and funding "
+            "cost components. Accepts trade-level or return-level CSVs. "
+            "Fee models: percentage (maker/taker), flat, tiered, none. "
+            "Slippage: none, fixed, proportional (bps), sqrt_impact "
+            "(Almgren-Chriss). Optional funding rate integration for "
+            "perpetual futures."
+        ),
+        "params": {
+            "trades_path": {
+                "type": "string",
+                "description": (
+                    "Path to CSV with trade data (side/price/quantity columns) "
+                    "or returns data (returns/daily_return column)."
+                ),
+                "required": True,
+            },
+            "input_format": {
+                "type": "string",
+                "description": (
+                    "'auto' (default, detects from columns), 'trades' "
+                    "(side/price/quantity), or 'returns' (daily return series)."
+                ),
+                "required": False,
+            },
+            "fee_model": {
+                "type": "string",
+                "description": (
+                    "Fee model: 'percentage' (default, uses taker_fee/maker_fee), "
+                    "'flat' (fixed per trade), 'tiered' (volume-based), 'none'."
+                ),
+                "required": False,
+            },
+            "taker_fee": {
+                "type": "number",
+                "description": "Taker fee rate (e.g. 0.0004 = 4 bps). Default: 0.0004.",
+                "required": False,
+            },
+            "maker_fee": {
+                "type": "number",
+                "description": "Maker fee rate (e.g. 0.0002 = 2 bps). Default: 0.0002.",
+                "required": False,
+            },
+            "flat_fee": {
+                "type": "number",
+                "description": "Fixed fee per trade (flat model). Default: 0.",
+                "required": False,
+            },
+            "fee_tiers": {
+                "type": "array",
+                "description": (
+                    "Volume-based fee tiers for tiered model. List of objects: "
+                    '[{"volume_usd": 1000000, "taker": 0.0004, "maker": 0.0002}, ...]'
+                ),
+                "required": False,
+            },
+            "order_type": {
+                "type": "string",
+                "description": "Default order type: 'taker' (default) or 'maker'.",
+                "required": False,
+            },
+            "slippage_model": {
+                "type": "string",
+                "description": (
+                    "Slippage model: 'proportional' (default, bps), 'fixed', "
+                    "'sqrt_impact' (Almgren-Chriss), 'none'."
+                ),
+                "required": False,
+            },
+            "slippage_bps": {
+                "type": "number",
+                "description": "Slippage in basis points (proportional model). Default: 1.0.",
+                "required": False,
+            },
+            "fixed_slippage": {
+                "type": "number",
+                "description": "Fixed slippage amount per trade. Default: 0.",
+                "required": False,
+            },
+            "impact_coefficient": {
+                "type": "number",
+                "description": "Market impact coefficient (sqrt_impact model). Default: 0.1.",
+                "required": False,
+            },
+            "funding_path": {
+                "type": "string",
+                "description": (
+                    "Path to funding rate CSV (for perpetual futures). "
+                    "Must have a fundingRate/funding_rate/rate column."
+                ),
+                "required": False,
+            },
+            "funding_interval_hours": {
+                "type": "integer",
+                "description": "Funding settlement interval in hours. Default: 8.",
+                "required": False,
+            },
+            "initial_capital": {
+                "type": "number",
+                "description": "Initial capital for return-level PnL calculation. Default: 10000.",
+                "required": False,
+            },
+        },
+    },
+    "split_walkforward_windows": {
+        "func": split_walkforward_windows,
+        "description": (
+            "Split time-series data into train/test windows for walk-forward "
+            "validation. Schemes: rolling (fixed sliding window), expanding "
+            "(growing train), purged_kfold (time-series K-fold with embargo), "
+            "combinatorial (all C(n,2) combos with purging). Saves fold CSVs "
+            "to workspace."
+        ),
+        "params": {
+            "data_path": {
+                "type": "string",
+                "description": "Path to CSV file with time-series data.",
+                "required": True,
+            },
+            "time_column": {
+                "type": "string",
+                "description": (
+                    "Time column name. 'auto' (default) detects from "
+                    "Date/timestamp/datetime."
+                ),
+                "required": False,
+            },
+            "scheme": {
+                "type": "string",
+                "description": (
+                    "Splitting scheme: 'rolling' (default), 'expanding', "
+                    "'purged_kfold', or 'combinatorial'."
+                ),
+                "required": False,
+            },
+            "train_size": {
+                "type": "integer",
+                "description": "Training window size in rows. Default: 252 (~1 year daily).",
+                "required": False,
+            },
+            "test_size": {
+                "type": "integer",
+                "description": "Test window size in rows. Default: 63 (~1 quarter daily).",
+                "required": False,
+            },
+            "step_size": {
+                "type": "integer",
+                "description": "Slide step in rows. Default: test_size (non-overlapping).",
+                "required": False,
+            },
+            "min_train_size": {
+                "type": "integer",
+                "description": "Minimum train size for expanding scheme. Default: train_size.",
+                "required": False,
+            },
+            "embargo_size": {
+                "type": "integer",
+                "description": (
+                    "Gap rows between train and test to prevent label leakage. "
+                    "Default: 0."
+                ),
+                "required": False,
+            },
+            "purge_size": {
+                "type": "integer",
+                "description": (
+                    "Rows to remove from train end (forward-looking label "
+                    "leakage prevention). Default: 0."
+                ),
+                "required": False,
+            },
+            "n_splits": {
+                "type": "integer",
+                "description": "Number of folds for purged_kfold/combinatorial. Default: 5.",
+                "required": False,
+            },
+            "size_unit": {
+                "type": "string",
+                "description": "'rows' (default) or 'calendar_days'.",
+                "required": False,
+            },
+            "save_splits": {
+                "type": "boolean",
+                "description": "Save individual fold train/test CSVs. Default: true.",
+                "required": False,
+            },
+            "output_prefix": {
+                "type": "string",
+                "description": "Filename prefix for fold CSVs. Default: 'fold'.",
+                "required": False,
+            },
+        },
     },
 }

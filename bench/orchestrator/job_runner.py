@@ -33,6 +33,7 @@ class JobSpec:
     model_override: Optional[str] = None
     trial_index: int = 0
     skip_eval: bool = False
+    timeout_minutes: Optional[int] = None
 
 
 @dataclass
@@ -107,10 +108,12 @@ def run_single_job(job: JobSpec, create_agent_fn=None) -> JobResult:
             persona=job.persona,
             agent=agent,
             run_index=job.trial_index,
-            max_turns=job.max_turns or 5,
+            max_turns=job.max_turns,
             tools_enabled=condition.tools_enabled,
             pre_teardown_hook=_capture if job.save_result else None,
             skip_eval=job.skip_eval,
+            prompt_mode=condition.prompt_mode,
+            timeout_minutes=job.timeout_minutes,
         )
 
         # 5. Save reports
@@ -143,15 +146,20 @@ def _create_agent_from_spec(job: JobSpec):
     from config.conditions import CONDITIONS
     from config.llm_config import OPENROUTER_BASE_URL
     from config.model_resolver import get_model_for_agent
-    from config.prompt_config import BASELINE_SYSTEM_PROMPT, TUTOR_SYSTEM_PROMPT
+    from config.prompt_config import (
+        BASELINE_SYSTEM_PROMPT,
+        ORACLE_SYSTEM_PROMPT,
+        TUTOR_SYSTEM_PROMPT,
+    )
 
     condition = CONDITIONS[job.condition_name]
 
-    system_prompt = (
-        TUTOR_SYSTEM_PROMPT
-        if condition.prompt_mode == "tutor"
-        else BASELINE_SYSTEM_PROMPT
-    )
+    _PROMPT_MAP = {
+        "tutor": TUTOR_SYSTEM_PROMPT,
+        "baseline": BASELINE_SYSTEM_PROMPT,
+        "oracle": ORACLE_SYSTEM_PROMPT,
+    }
+    system_prompt = _PROMPT_MAP.get(condition.prompt_mode, TUTOR_SYSTEM_PROMPT)
 
     if job.model_override:
         model_short = job.model_override.split("/")[-1]
@@ -211,15 +219,33 @@ def _save_run_state(
     agent,
     job: JobSpec,
 ):
-    """Save structured execution state for later --evalonly evaluation."""
+    """Save structured execution state for later --evalonly evaluation.
+
+    The saved state includes 3 reference-compatible fields
+    (key_results, trace_summary, step_count) so any run can be
+    promoted to a reference via ``generate_reference promote``.
+    """
+    from evaluation.trace_utils import build_trace_summary, extract_key_results
+
     agent_records = (
         agent.get_token_records() if hasattr(agent, "get_token_records") else []
     )
+    tool_logs_dicts = [asdict(log) for log in trace_captured.get("proxy_logs", [])]
+
+    # Non-substantive tools excluded from step count
+    _NON_SUBSTANTIVE = {"send_message", "get_environment_info"}
+    substantive_count = sum(
+        1 for log in tool_logs_dicts if log["name"] not in _NON_SUBSTANTIVE
+    )
+
+    # Workspace path for key_results extraction
+    workspace_path = str(result_dir / "agent_files")
+
     state = {
         "task_id": result.task_id,
         "persona_id": result.persona_id,
         "conversation": [{"role": t.role, "content": t.content} for t in result.turns],
-        "tool_logs": [asdict(log) for log in trace_captured.get("proxy_logs", [])],
+        "tool_logs": tool_logs_dicts,
         "distractor_names": trace_captured.get("distractor_names", []),
         "workspace_files": result.workspace_files or [],
         "agent_cost": {
@@ -235,6 +261,10 @@ def _save_run_state(
             else 0.0
         ),
         "duration_seconds": result.duration_seconds,
+        # Reference-compatible fields (enable promote to reference)
+        "key_results": extract_key_results(workspace_path, tool_logs_dicts),
+        "trace_summary": build_trace_summary(tool_logs_dicts),
+        "step_count": substantive_count,
     }
     (result_dir / "run_state.json").write_text(
         json.dumps(state, indent=2, default=str), encoding="utf-8"
@@ -253,9 +283,12 @@ def _save_job_reports(
 
     condition = CONDITIONS[job.condition_name]
 
+    # Always save run_state.json (enables --evalonly and promote-to-reference)
+    _save_run_state(result_dir, result, trace_captured, agent, job)
+
     # scores.md: skip when evaluation was aborted or skipped (--runonly)
     if job.skip_eval:
-        _save_run_state(result_dir, result, trace_captured, agent, job)
+        pass  # runonly — no scores.md
     elif not result.eval_aborted:
         from evaluation.score_report import generate_score_report
 
@@ -355,17 +388,6 @@ def eval_single_job(job: JobSpec) -> JobResult:
         # Conversation as list of dicts
         conversation = state["conversation"]
 
-        # Reconstruct ConversationalTestCase
-        try:
-            from deepeval.test_case import ConversationalTestCase
-            from deepeval.test_case import LLMTestCaseTurn as Turn
-
-            test_case = ConversationalTestCase(
-                turns=[Turn(role=t["role"], content=t["content"]) for t in conversation]
-            )
-        except ImportError:
-            test_case = None
-
         # Create orchestrator (for _evaluate_task only — no docker needed)
         orchestrator = BenchmarkOrchestrator(
             bench_root=str(Path(__file__).parent.parent),
@@ -400,7 +422,6 @@ def eval_single_job(job: JobSpec) -> JobResult:
             workspace_path,
             proxy,
             conversation,
-            conversational_test_case=test_case,
         )
 
         # Populate result with evaluation scores
@@ -409,6 +430,7 @@ def eval_single_job(job: JobSpec) -> JobResult:
         result.tutor_scores = eval_results.get("tutor_scores", {})
         result.tutor_scores_by_model = eval_results.get("tutor_scores_by_model", {})
         result.tutor_fallback_count = eval_results.get("tutor_fallback_count", 0)
+        result.tutor_eval_error = eval_results.get("tutor_eval_error")
         result.process_metrics = eval_results.get("process_metrics", {})
         result.eval_script_detail = eval_results.get("eval_script_detail", {})
         result.code_eval = eval_results.get("code_eval", {})

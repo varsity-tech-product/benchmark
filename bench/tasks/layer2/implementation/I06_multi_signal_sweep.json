@@ -61,7 +61,7 @@
   },
   "requires_code": true,
   "sample_code": null,
-  "max_turns": 40,
-  "agent_max_steps": 18,
-  "timeout_minutes": 45
+  "max_turns": 20,
+  "agent_max_steps": 10,
+  "timeout_minutes": 30
 }

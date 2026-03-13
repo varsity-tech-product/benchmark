@@ -50,6 +50,12 @@ CONDITIONS: dict[str, TestCondition] = {
         prompt_mode="baseline",
         description="Pure LLM baseline: no tools + dump-the-answer prompt",
     ),
+    "reference": TestCondition(
+        name="reference",
+        tools_enabled=True,
+        prompt_mode="oracle",
+        description="Reference oracle: tools + oracle prompt (for generating scoring baselines)",
+    ),
 }
 
 CONDITION_NAMES = list(CONDITIONS.keys())

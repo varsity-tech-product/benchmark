@@ -56,7 +56,8 @@
       "compute_indicator",
       "compute_statistics",
       "evaluate_signal",
-      "plot_chart"
+      "plot_chart",
+      "construct_signal"
     ],
     "quant_validation": {
       "eval_script": "evaluation/test_scripts/S06_multi_signal_combination.py"
@@ -64,7 +65,7 @@
   },
   "requires_code": true,
   "sample_code": null,
-  "max_turns": 35,
+  "max_turns": 20,
   "agent_max_steps": 12,
   "timeout_minutes": 25
 }

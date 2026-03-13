@@ -54,7 +54,8 @@
     "convenient_tools": [
       "compute_indicator",
       "analyze_backtest_results",
-      "plot_chart"
+      "plot_chart",
+      "breakdown_pnl"
     ],
     "quant_validation": {
       "eval_script": "evaluation/test_scripts/B05_execution_simulation.py"

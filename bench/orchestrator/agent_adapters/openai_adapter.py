@@ -37,10 +37,12 @@ try:
 except ImportError:
     OPENAI_AGENTS_AVAILABLE = False
 
-# Max LLM invocations per generate_response() call.
-# The SDK agent loop: LLM call -> tool execution -> LLM call -> ...
-# until final text output. Each LLM call counts as one turn.
-DEFAULT_AGENT_MAX_TURNS = 15
+# Max LLM invocations per generate_response() call (i.e. per conversation
+# turn).  The SDK agent loop: LLM call -> tool execution -> LLM call -> ...
+# until final text output.  Each LLM call counts as one turn.
+# NOTE: This is a constructor default only.  The orchestrator overrides it
+# per-task via set_agent_max_steps(task.agent_max_steps).
+DEFAULT_AGENT_MAX_TURNS = 8
 
 
 class OpenAIAgentAdapter(BaseAgentAdapter):

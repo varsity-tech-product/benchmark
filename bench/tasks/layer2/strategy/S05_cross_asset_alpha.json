@@ -54,7 +54,8 @@
     "convenient_tools": [
       "compute_statistics",
       "evaluate_signal",
-      "plot_chart"
+      "plot_chart",
+      "construct_signal"
     ],
     "quant_validation": {
       "eval_script": "evaluation/test_scripts/S05_cross_asset_alpha.py"
@@ -62,7 +63,7 @@
   },
   "requires_code": true,
   "sample_code": null,
-  "max_turns": 35,
+  "max_turns": 20,
   "agent_max_steps": 12,
   "timeout_minutes": 25
 }

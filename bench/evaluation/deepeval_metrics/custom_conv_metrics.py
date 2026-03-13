@@ -46,14 +46,11 @@ def _extract_json_from_response(text: str) -> dict:
     return {}
 
 
-def _clamp_ordinal(val, default=0.5) -> float:
-    """Snap value to nearest 5-point ordinal."""
-    try:
-        v = float(val)
-    except (TypeError, ValueError):
-        return default
-    ordinals = [0.0, 0.25, 0.5, 0.75, 1.0]
-    return min(ordinals, key=lambda x: abs(x - v))
+def _normalize_score(val, default=0.5) -> float:
+    """Normalize a 1-10 integer score to 0.0-1.0 range."""
+    from evaluation.deepeval_metrics._scoring_utils import normalize_10pt
+
+    return normalize_10pt(val, default=default)
 
 
 async def _call_llm(model, prompt: str) -> dict:
@@ -130,34 +127,45 @@ where the agent clearly abandons the teaching context (e.g., becomes a
 generic task-completion assistant with zero educational framing, refuses
 to teach, or takes on a completely unrelated role).
 
-SCORING SCALE: Use ONLY these values: {{0.0, 0.25, 0.5, 0.75, 1.0}}.
+SCORING SCALE: Rate each dimension as an INTEGER from 1 to 10.
+Use the full range — avoid defaulting to middle scores (5-6) without justification.
 
 Evaluate these 2 sub-dimensions:
 
-1. PERSONA_CONSISTENCY (0.0-1.0):
+1. PERSONA_CONSISTENCY (1-10):
    Does the agent maintain a consistent tutor persona throughout the conversation?
-   - 1.0: Every substantive response includes educational framing (explains what,
-          why, how) even when executing code or using tools
-   - 0.75: Mostly tutoring; occasional responses are pure task execution without
-           educational context, but the overall tone is pedagogical
-   - 0.5: Mixed — sometimes teaches, sometimes just silently executes without
-          any explanation or educational framing
-   - 0.25: Mostly silent execution with rare teaching moments
-   - 0.0: No evidence of tutoring behavior; purely mechanical task execution
+   - 10: Every substantive response includes educational framing (explains what,
+         why, how) even when executing code or using tools
+   -  9: Nearly all responses have educational framing; one brief gap
+   -  8: Mostly tutoring with consistent pedagogical tone; occasional brief responses
+        that are pure execution without explanation
+   -  7: Good tutoring overall; a few responses lack educational context
+   -  6: Generally pedagogical but noticeable gaps in educational framing
+   -  5: Mixed — sometimes teaches, sometimes just silently executes without
+        any explanation or educational framing
+   -  4: More silent execution than teaching; educational framing inconsistent
+   -  3: Mostly silent execution with rare teaching moments
+   -  2: Minimal tutoring behavior; almost entirely mechanical execution
+   -  1: No evidence of tutoring behavior; purely mechanical task execution
 
-2. BOUNDARY_MAINTENANCE (0.0-1.0):
+2. BOUNDARY_MAINTENANCE (1-10):
    Does the agent stay within the tutor role boundaries?
-   - 1.0: Consistently acts as educator; all content serves learning objectives
-   - 0.75: Good boundaries; minor forays into non-educational territory
-   - 0.5: Acceptable; some content doesn't serve educational purpose
-   - 0.25: Frequently steps outside tutor role
-   - 0.0: Completely abandons tutor role
+   - 10: Consistently acts as educator; all content serves learning objectives
+   -  9: Excellent boundaries; one trivial non-educational aside
+   -  8: Good boundaries; minor forays into non-educational territory
+   -  7: Mostly within role; a few moments of non-pedagogical content
+   -  6: Generally within role but some content doesn't clearly serve learning
+   -  5: Acceptable; some content doesn't serve educational purpose
+   -  4: Noticeable departures from tutor role
+   -  3: Frequently steps outside tutor role
+   -  2: Mostly outside tutor role
+   -  1: Completely abandons tutor role
 
 CONVERSATION:
 {turns_text}
 
 Return a valid JSON object with exactly these keys:
-{{"persona_consistency": <float>, "boundary_maintenance": <float>, "reason": "<1-3 sentences>"}}
+{{"persona_consistency": <integer 1-10>, "boundary_maintenance": <integer 1-10>, "reason": "<1-3 sentences>"}}
 
 JSON:"""
 
@@ -185,8 +193,8 @@ async def eval_role_adherence(
 
     result = await _call_llm(model, prompt)
 
-    persona = _clamp_ordinal(result.get("persona_consistency", 0.5))
-    boundary = _clamp_ordinal(result.get("boundary_maintenance", 0.5))
+    persona = _normalize_score(result.get("persona_consistency", 5))
+    boundary = _normalize_score(result.get("boundary_maintenance", 5))
     score = round(0.5 * persona + 0.5 * boundary, 4)
 
     return {
@@ -225,31 +233,42 @@ CRITICAL CONTEXT FOR TOOL-USE AGENTS:
 - Only flag content that is genuinely UNRELATED to the task or listed topic
   domains (e.g., discussing cooking recipes, unrelated personal topics).
 
-SCORING SCALE: Use ONLY these values: {{0.0, 0.25, 0.5, 0.75, 1.0}}.
+SCORING SCALE: Rate each dimension as an INTEGER from 1 to 10.
+Use the full range — avoid defaulting to middle scores (5-6) without justification.
 
 Evaluate these 2 sub-dimensions:
 
-1. TOPIC_RELEVANCE (0.0-1.0):
+1. TOPIC_RELEVANCE (1-10):
    How well does the conversation content align with the task and topic domains?
-   - 1.0: All substantive content directly serves the task within listed domains
-   - 0.75: Mostly on-topic with minor tangents that don't derail the session
-   - 0.5: Mixed — significant portions are relevant but notable off-topic content
-   - 0.25: Mostly off-topic with some relevant content
-   - 0.0: Entirely off-topic
+   - 10: All substantive content directly serves the task within listed domains
+   -  9: Nearly all content on-topic; one trivial tangent
+   -  8: Mostly on-topic with minor tangents that don't derail the session
+   -  7: Good relevance; a few moments of tangential content
+   -  6: Generally on-topic but some noticeable tangents
+   -  5: Mixed — significant portions are relevant but notable off-topic content
+   -  4: More off-topic than on-topic
+   -  3: Mostly off-topic with some relevant content
+   -  2: Nearly all off-topic
+   -  1: Entirely off-topic
 
-2. TASK_FOCUS (0.0-1.0):
+2. TASK_FOCUS (1-10):
    Does the agent stay focused on the specific task objectives?
-   - 1.0: Agent consistently works toward the stated task goals
-   - 0.75: Mostly focused; minor diversions that still relate to quant finance
-   - 0.5: Partially focused; some work doesn't contribute to task completion
-   - 0.25: Poorly focused; substantial effort wasted on unrelated directions
-   - 0.0: No focus on the stated task
+   - 10: Agent consistently works toward the stated task goals
+   -  9: Excellent focus; one minor diversion that still relates to the domain
+   -  8: Mostly focused; minor diversions that still relate to quant finance
+   -  7: Good focus; a few moments working on tangential aspects
+   -  6: Generally focused but some effort on non-core aspects
+   -  5: Partially focused; some work doesn't contribute to task completion
+   -  4: Noticeably unfocused; significant effort on non-core work
+   -  3: Poorly focused; substantial effort wasted on unrelated directions
+   -  2: Minimal focus on stated task
+   -  1: No focus on the stated task
 
 CONVERSATION:
 {turns_text}
 
 Return a valid JSON object with exactly these keys:
-{{"topic_relevance": <float>, "task_focus": <float>, "reason": "<1-3 sentences>"}}
+{{"topic_relevance": <integer 1-10>, "task_focus": <integer 1-10>, "reason": "<1-3 sentences>"}}
 
 JSON:"""
 
@@ -290,8 +309,8 @@ async def eval_topic_adherence(
 
     result = await _call_llm(model, prompt)
 
-    relevance = _clamp_ordinal(result.get("topic_relevance", 0.5))
-    focus = _clamp_ordinal(result.get("task_focus", 0.5))
+    relevance = _normalize_score(result.get("topic_relevance", 5))
+    focus = _normalize_score(result.get("task_focus", 5))
     score = round(0.6 * relevance + 0.4 * focus, 4)
 
     return {

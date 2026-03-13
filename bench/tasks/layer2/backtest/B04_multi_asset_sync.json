@@ -50,7 +50,9 @@
     ],
     "convenient_tools": [
       "compute_statistics",
-      "plot_chart"
+      "plot_chart",
+      "align_timeseries",
+      "analyze_backtest_results"
     ],
     "quant_validation": {
       "eval_script": "evaluation/test_scripts/B04_multi_asset_sync.py"

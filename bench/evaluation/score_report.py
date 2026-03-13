@@ -336,6 +336,17 @@ def _section_qr(lines, result):
             f"judge={_f(judge_raw)} "
             f"({chr(916)}={_f(divergence)}, factor={dampening_factor:.3f})"
         )
+        # Show nominal vs actual weights for transparency
+        if ce_applicable:
+            nom_prog, nom_ce, nom_judge = "30%", "30%", "40%"
+        else:
+            nom_prog, nom_judge = "40%", "60%"
+            nom_ce = None
+        parts = [f"programmatic {nom_prog}{chr(8594)}{w_prog:.0%}"]
+        if nom_ce is not None:
+            parts.append(f"code_eval {nom_ce}{chr(8594)}{w_ce:.0%}")
+        parts.append(f"judge {nom_judge}{chr(8594)}{w_judge:.0%}")
+        _a(f"> Actual weights: {', '.join(parts)}")
 
     _a("\n</details>\n")
 
@@ -403,8 +414,6 @@ def _section_qp(lines, result):
 
     for mn in _QP_METRICS:
         v = pm.get(mn)
-        if v is None:
-            continue
 
         weight_str = _QP_WEIGHTS.get(mn)
         if weight_str is not None:
@@ -412,7 +421,9 @@ def _section_qp(lines, result):
         else:
             weight_str = "—"
 
-        if isinstance(v, dict):
+        if v is None:
+            avg_str = "—"
+        elif isinstance(v, dict):
             sc = v.get("score")
             skipped = v.get("skipped", False)
             if skipped:
@@ -641,3 +652,8 @@ def _section_tutor(lines, result):
     fb_count = getattr(result, "tutor_fallback_count", 0)
     if fb_count > 0:
         _a(f"> **Note**: {fb_count} dimension evaluation(s) used fallback recovery\n")
+
+    # Tutor eval error note
+    tutor_err = getattr(result, "tutor_eval_error", None)
+    if tutor_err:
+        _a(f"> **Tutor eval error**: `{tutor_err}`\n")

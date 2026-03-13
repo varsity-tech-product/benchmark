@@ -47,7 +47,9 @@
       "get_environment_info"
     ],
     "convenient_tools": [
-      "plot_chart"
+      "plot_chart",
+      "analyze_backtest_results",
+      "compute_indicator"
     ],
     "quant_validation": {
       "eval_script": "evaluation/test_scripts/B02_basic_sequential_engine.py"

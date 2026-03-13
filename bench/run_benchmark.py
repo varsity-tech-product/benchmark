@@ -153,7 +153,7 @@ def _build_job_spec(task, persona, args, result_base_dir: Path):
         persona=persona,
         agent_type=getattr(args, "agent", "generic"),
         condition_name=getattr(args, "condition", "agent"),
-        max_turns=getattr(args, "max_turns", 5),
+        max_turns=getattr(args, "max_turns", None),
         use_docker=getattr(args, "docker", False),
         save_result=getattr(args, "save_result", False) or runonly or evalonly,
         result_base_dir=result_base_dir,
@@ -161,6 +161,7 @@ def _build_job_spec(task, persona, args, result_base_dir: Path):
         simulator_model=getattr(args, "simulator_model", None),
         model_override=getattr(args, "model", None),
         skip_eval=runonly,
+        timeout_minutes=getattr(args, "max_minutes", None),
     )
 
 
@@ -511,17 +512,22 @@ def _create_agent(args):
     OpenAI Agent SDK always routes through OpenRouter for higher rate limits.
     Anthropic and Google SDKs use their native APIs.
     """
-    from config.prompt_config import BASELINE_SYSTEM_PROMPT, TUTOR_SYSTEM_PROMPT
+    from config.prompt_config import (
+        BASELINE_SYSTEM_PROMPT,
+        ORACLE_SYSTEM_PROMPT,
+        TUTOR_SYSTEM_PROMPT,
+    )
 
     agent_type = getattr(args, "agent", "generic")
     condition = CONDITIONS[getattr(args, "condition", "agent")]
     model_override = getattr(args, "model", None)
 
-    system_prompt = (
-        TUTOR_SYSTEM_PROMPT
-        if condition.prompt_mode == "tutor"
-        else BASELINE_SYSTEM_PROMPT
-    )
+    _PROMPT_MAP = {
+        "tutor": TUTOR_SYSTEM_PROMPT,
+        "baseline": BASELINE_SYSTEM_PROMPT,
+        "oracle": ORACLE_SYSTEM_PROMPT,
+    }
+    system_prompt = _PROMPT_MAP.get(condition.prompt_mode, TUTOR_SYSTEM_PROMPT)
 
     # Include model short name in agent_name for distinguishable results
     if model_override:
@@ -959,18 +965,36 @@ def cmd_run_single(args):
 
 
 def cmd_run_group(args):
-    """Run all tasks in a category group."""
+    """Run all tasks in a category group.
+
+    In --evalonly mode, ``--group`` also accepts a single task_id
+    (e.g. ``B01_interpret_metrics``).  The task JSON is loaded to
+    obtain its category, so the result directory is resolved
+    automatically without filesystem scanning.
+    """
     from orchestrator.parallel_runner import run_jobs_parallel
 
     workers = _validate_workers(args)
-    tasks = _load_tasks_by_group(args.group)
-    persona_ids = [args.persona] if args.persona else None
-
-    result_base_dir = _build_result_base_dir(args, "run-group") / args.group
-    jobs = _build_jobs_for_tasks(tasks, persona_ids, args, result_base_dir)
-
     runonly = getattr(args, "runonly", False)
     evalonly = getattr(args, "evalonly", False)
+
+    # Resolve tasks: group_arg can be a category name OR a task_id (evalonly)
+    group_dir = BENCH_ROOT / "tasks" / "layer2" / args.group
+    if group_dir.is_dir():
+        # Standard path: category name
+        tasks = _load_tasks_by_group(args.group)
+    elif evalonly:
+        # Treat as task_id in evalonly mode
+        tasks = [_find_and_load_task(args.group)]
+    else:
+        print(f"Group not found: {args.group}")
+        sys.exit(1)
+
+    persona_ids = [args.persona] if args.persona else None
+
+    result_base_dir = _build_result_base_dir(args, "run-group")
+    jobs = _build_jobs_for_tasks(tasks, persona_ids, args, result_base_dir)
+
     print(f"=== QuantTutorBench - Group: {args.group} ===")
     print(
         f"Tasks: {len(tasks)} | "
@@ -1355,7 +1379,12 @@ def _add_common_args(parser):
         help="Test condition (2x2 matrix cell)",
     )
     parser.add_argument("--docker", action="store_true", help="Use Docker sandbox")
-    parser.add_argument("--max-turns", type=int, default=5, help="Max turns")
+    parser.add_argument(
+        "--max-turns",
+        type=int,
+        default=None,
+        help="Max conversation turns (default: use task JSON max_turns)",
+    )
     parser.add_argument(
         "--eval-model",
         default=None,
@@ -1381,6 +1410,12 @@ def _add_common_args(parser):
         type=int,
         default=3,
         help="Max parallel workers (default: 3, each standard container ~1 CPU + 768MB; LEAN ~2 CPU + 1GB)",
+    )
+    parser.add_argument(
+        "--max-minutes",
+        type=int,
+        default=None,
+        help="Max wall-clock minutes per task (overrides task JSON timeout_minutes)",
     )
     parser.add_argument(
         "--runonly",
@@ -1498,8 +1533,10 @@ def main():
     group_parser.add_argument(
         "--group",
         required=True,
-        choices=_LAYER2_GROUPS,
-        help="Task category/group to run",
+        help=(
+            "Task category group (e.g. backtest, strategy) or, "
+            "with --evalonly, a single task_id (e.g. B01_interpret_metrics)"
+        ),
     )
     group_parser.add_argument(
         "--persona",

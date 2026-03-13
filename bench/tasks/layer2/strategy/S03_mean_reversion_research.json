@@ -53,7 +53,8 @@
       "compute_indicator",
       "compute_statistics",
       "evaluate_signal",
-      "plot_chart"
+      "plot_chart",
+      "construct_signal"
     ],
     "quant_validation": {
       "eval_script": "evaluation/test_scripts/S03_mean_reversion_research.py"
@@ -61,7 +62,7 @@
   },
   "requires_code": true,
   "sample_code": null,
-  "max_turns": 30,
+  "max_turns": 20,
   "agent_max_steps": 10,
   "timeout_minutes": 20
 }

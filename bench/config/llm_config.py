@@ -29,6 +29,13 @@ EVAL_DEFAULT_MODELS: list[str] = [
 ]
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 
+# --- OAuth direct (Claude Max plan) ---
+# When True, Anthropic eval models use OAuth token → Anthropic API directly,
+# bypassing OpenRouter.  Falls back to OpenRouter if token missing or call fails.
+# Requires CLAUDE_CODE_OAUTH_TOKEN in env.
+EVAL_USE_OAUTH = True
+OAUTH_BETA_HEADER = "oauth-2025-04-20"
+
 # --- Model mapping: agent type → (native model, OpenRouter model) ---
 AGENT_MODEL_MAP: dict[str, tuple[str, str]] = {
     "openai": (OPENAI_AGENT_MODEL, OPENAI_AGENT_MODEL_OR),

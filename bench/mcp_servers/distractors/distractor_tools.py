@@ -819,6 +819,7 @@ def _fetch_crypto_data(
     symbol: str = "BTC", interval: str = "1d", limit: int = 5
 ) -> str:
     """Fetch cryptocurrency OHLCV data."""
+    limit = min(max(limit, 1), 500)  # Cap to prevent oversized responses
     # Hardcoded plausible crypto data
     base_prices = {
         "BTC": 43250.0,

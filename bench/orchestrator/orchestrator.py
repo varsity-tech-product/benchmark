@@ -25,6 +25,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from config.llm_config import SIMULATOR_DEFAULT_MODEL
 from config.model_resolver import resolve_deepeval_model
 from config.prompt_config import (
+    build_oracle_context,
     build_scenario,
     build_tutor_context,
     build_user_description,
@@ -219,6 +220,8 @@ class BenchmarkOrchestrator:
         tools_enabled: bool = True,
         pre_teardown_hook: Optional[callable] = None,
         skip_eval: bool = False,
+        prompt_mode: str = "tutor",
+        timeout_minutes: Optional[int] = None,
     ) -> TaskResult:
         """Run a single task with a specific persona and agent.
 
@@ -226,6 +229,9 @@ class BenchmarkOrchestrator:
 
         Args:
             tools_enabled: If False, no tools are passed to the agent (pure LLM conditions).
+            prompt_mode: "tutor", "baseline", or "oracle". Controls which
+                dynamic context builder is used (oracle adds learning goals
+                and result-persistence directives).
         """
         start_time = time.time()
         max_turns = max_turns or task.max_turns
@@ -321,7 +327,10 @@ class BenchmarkOrchestrator:
             # Temporarily augment the agent's system prompt with task/persona
             # context so it knows what to teach and who the student is.
             original_system_prompt = agent.system_prompt
-            dynamic_context = build_tutor_context(task, persona)
+            if prompt_mode == "oracle":
+                dynamic_context = build_oracle_context(task, persona)
+            else:
+                dynamic_context = build_tutor_context(task, persona)
             # Use set_task_context() if available (OpenAI SDK adapter uses
             # dynamic instructions callable); fall back to direct mutation.
             if hasattr(agent, "set_task_context"):
@@ -358,6 +367,7 @@ class BenchmarkOrchestrator:
                     simulator_model=self.simulator_model or SIMULATOR_DEFAULT_MODEL,
                     max_turns=max_turns,
                     tools_enabled=tools_enabled,
+                    timeout_minutes=timeout_minutes,
                 )
                 # Extract turns from ConversationalTestCase into TaskResult
                 for t in conversational_test_case.turns:
@@ -420,7 +430,6 @@ class BenchmarkOrchestrator:
                     container.workspace_path,
                     proxy,
                     conversation,
-                    conversational_test_case=conversational_test_case,
                 )
                 result.quant_result_score = eval_results.get("quant_result", 0.0)
                 result.quant_process_score = eval_results.get("quant_process", 0.0)
@@ -431,6 +440,7 @@ class BenchmarkOrchestrator:
                 result.tutor_fallback_count = eval_results.get(
                     "tutor_fallback_count", 0
                 )
+                result.tutor_eval_error = eval_results.get("tutor_eval_error")
                 result.process_metrics = eval_results.get("process_metrics", {})
                 result.eval_script_detail = eval_results.get("eval_script_detail", {})
                 result.code_eval = eval_results.get("code_eval", {})
@@ -632,7 +642,6 @@ class BenchmarkOrchestrator:
         workspace_path,
         proxy,
         conversation,
-        conversational_test_case=None,
     ) -> dict:
         """Run full evaluation on a completed task.
 
@@ -651,7 +660,6 @@ class BenchmarkOrchestrator:
             workspace_path: Path to the container workspace.
             proxy: The MCPProxy instance with tool call logs.
             conversation: List of {"role", "content"} dicts.
-            conversational_test_case: Pre-built ConversationalTestCase from simulator.
         """
         results = {
             "quant_result": 0.0,
@@ -659,11 +667,6 @@ class BenchmarkOrchestrator:
             "tutor_scores": {},
             "process_metrics": {},
         }
-
-        # ── Step 1: Prepare ConversationalTestCase for metrics ──
-        # Phase 4: MCP enrichment removed (no longer needed without
-        # MultiTurnMCPUseMetric). Process metrics use the clean test case.
-        clean_test_case = conversational_test_case
 
         # ── Step 2: Quant Result Score (custom eval scripts) ──
         print("  Evaluating Quant Result...")
@@ -793,7 +796,7 @@ class BenchmarkOrchestrator:
                 actual_output=combined_output,
                 proxy_logs=_logs,
                 category=task.category.value,
-                conversational_test_case=clean_test_case,
+                conversation=conversation,
                 model=self.eval_model,
                 reference_trace=reference,
                 is_adversarial=_is_adversarial,
