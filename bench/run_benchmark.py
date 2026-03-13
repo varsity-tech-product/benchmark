@@ -95,7 +95,14 @@ def _create_agent(args):
         )
 
     # Tools-enabled conditions: use the native SDK adapter
-    if agent_type == "anthropic":
+    if agent_type == "claude-code":
+        from orchestrator.agent_adapters.claude_code_adapter import ClaudeCodeAdapter
+
+        model = model_override or "sonnet"
+        return ClaudeCodeAdapter(
+            model=model, system_prompt=system_prompt, agent_name=agent_name
+        )
+    elif agent_type == "anthropic":
         from orchestrator.agent_adapters.anthropic_adapter import ClaudeAgentAdapter
 
         model = model_override or get_model_for_agent("anthropic")
@@ -1018,7 +1025,7 @@ def main():
     run_parser.add_argument(
         "--agent",
         default="generic",
-        choices=["generic", "openai", "anthropic", "google"],
+        choices=["generic", "openai", "anthropic", "google", "claude-code"],
         help="Agent SDK / model family",
     )
     run_parser.add_argument(
@@ -1082,7 +1089,7 @@ def main():
     single_parser.add_argument(
         "--agent",
         default="generic",
-        choices=["generic", "openai", "anthropic", "google"],
+        choices=["generic", "openai", "anthropic", "google", "claude-code"],
         help="Agent SDK / model family",
     )
     single_parser.add_argument(
