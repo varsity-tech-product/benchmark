@@ -21,6 +21,7 @@ from run_benchmark import _collect_remote_endpoints
 from config.model_resolver import resolve_deepeval_model
 from config.pricing import estimate_cost
 from config.prompt_config import build_scenario, build_tutor_context
+from orchestrator.agent_adapters.claude_code_adapter import ClaudeCodeAdapter
 from orchestrator.agent_adapters.openai_adapter import OpenAIAgentAdapter
 from orchestrator.deepeval_models import ClaudeCodeModel
 from orchestrator.schemas import (
@@ -190,6 +191,102 @@ class PromptRegressionTests(unittest.TestCase):
         scenario = build_scenario(_make_task(requires_code=True), "intermediate_developer")
         self.assertIn("IMPLEMENTATION TRACKING", scenario)
         self.assertIn("WHEN THE TUTOR STAYS ABSTRACT", scenario)
+
+
+class ClaudeCodeAdapterTests(unittest.TestCase):
+    def test_build_command_uses_resume_for_existing_persistent_session(self):
+        adapter = ClaudeCodeAdapter(model="haiku")
+        adapter._session_id = "session-123"
+
+        cmd = adapter._build_command(
+            effective_prompt="system",
+            mcp_config_path=None,
+            use_persistent_session=True,
+        )
+
+        self.assertIn("--resume", cmd)
+        self.assertNotIn("--no-session-persistence", cmd)
+        self.assertNotIn("--system-prompt", cmd)
+
+    def test_build_command_keeps_system_prompt_for_first_persistent_turn(self):
+        adapter = ClaudeCodeAdapter(model="haiku")
+
+        cmd = adapter._build_command(
+            effective_prompt="system",
+            mcp_config_path=None,
+            use_persistent_session=True,
+        )
+
+        self.assertNotIn("--resume", cmd)
+        self.assertIn("--system-prompt", cmd)
+        self.assertNotIn("--no-session-persistence", cmd)
+
+    def test_build_command_uses_stateless_mode_when_persistence_disabled(self):
+        adapter = ClaudeCodeAdapter(model="haiku")
+
+        cmd = adapter._build_command(
+            effective_prompt="system",
+            mcp_config_path=None,
+            use_persistent_session=False,
+        )
+
+        self.assertIn("--no-session-persistence", cmd)
+        self.assertIn("--system-prompt", cmd)
+
+    def test_build_prompt_uses_only_latest_message_for_incremental_turns(self):
+        adapter = ClaudeCodeAdapter(model="haiku")
+        prompt = adapter._build_prompt(
+            [
+                {"role": "user", "content": "first"},
+                {"role": "assistant", "content": "reply"},
+                {"role": "user", "content": "latest"},
+            ],
+            incremental=True,
+        )
+        self.assertEqual(prompt, "latest")
+
+    def test_build_env_uses_oauth_override_only_for_stateless_mode(self):
+        adapter = ClaudeCodeAdapter(model="haiku")
+        with patch.object(adapter, "_ensure_oauth_creds", return_value="/tmp/creds"):
+            with patch.dict(
+                "os.environ",
+                {
+                    "CLAUDE_CODE_OAUTH_TOKEN": "token",
+                    "CLAUDE_CODE_OAUTH_REFRESH_TOKEN": "refresh",
+                },
+                clear=False,
+            ):
+                stateless_env = adapter._build_env(False)
+                persistent_env = adapter._build_env(True)
+
+        self.assertEqual(stateless_env["CLAUDE_CONFIG_DIR"], "/tmp/creds")
+        self.assertNotIn("CLAUDE_CONFIG_DIR", persistent_env)
+
+    def test_parse_output_records_session_id(self):
+        adapter = ClaudeCodeAdapter(model="haiku")
+        response = adapter._parse_output(
+            json.dumps(
+                {
+                    "is_error": False,
+                    "result": "OK",
+                    "session_id": "session-abc",
+                    "modelUsage": {},
+                }
+            )
+        )
+        self.assertEqual(response, "OK")
+        self.assertEqual(adapter._session_id, "session-abc")
+
+    def test_detect_local_auth_reads_claude_auth_status_json(self):
+        adapter = ClaudeCodeAdapter(model="haiku")
+        with patch(
+            "orchestrator.agent_adapters.claude_code_adapter.subprocess.run"
+        ) as mock_run:
+            mock_run.return_value = SimpleNamespace(
+                returncode=0,
+                stdout=json.dumps({"loggedIn": True}),
+            )
+            self.assertTrue(adapter._detect_local_auth())
 
 
 class OpenAIAdapterCleanupTests(unittest.TestCase):

@@ -66,6 +66,8 @@ class ClaudeCodeAdapter(BaseAgentAdapter):
         self.system_prompt = system_prompt or TUTOR_SYSTEM_PROMPT
         self.max_agent_turns = max_agent_turns
         self._task_context: str = ""
+        self._session_id: Optional[str] = None
+        self._local_auth_available: Optional[bool] = None
 
         # Bridge state (lazy-initialized per generate_response call)
         self._socket_path: Optional[str] = None
@@ -87,6 +89,7 @@ class ClaudeCodeAdapter(BaseAgentAdapter):
         """Reset between tasks."""
         super().reset()
         self._task_context = ""
+        self._session_id = None
         self._stop_bridge()
 
     def close(self):
@@ -110,6 +113,7 @@ class ClaudeCodeAdapter(BaseAgentAdapter):
         - All built-in tools disabled
         """
         self._tool_callback = tool_callback
+        use_persistent_session = self._should_use_persistent_session()
 
         # Build the effective system prompt
         effective_prompt = self.system_prompt
@@ -117,7 +121,10 @@ class ClaudeCodeAdapter(BaseAgentAdapter):
             effective_prompt = f"{effective_prompt}\n\n{self._task_context}"
 
         # Build prompt from conversation history
-        prompt = self._build_prompt(messages)
+        prompt = self._build_prompt(
+            messages,
+            incremental=use_persistent_session and self._session_id is not None,
+        )
 
         # Set up MCP bridge if tools are available
         mcp_config_path = None
@@ -125,42 +132,14 @@ class ClaudeCodeAdapter(BaseAgentAdapter):
             mcp_config_path = self._setup_bridge(available_tools)
 
         # Build CLI command
-        cmd = [
-            "claude",
-            "--print",
-            "--output-format", "json",
-            "--no-session-persistence",
-            "--dangerously-skip-permissions",
-            "--model", self.model,
-            "--system-prompt", effective_prompt,
-            # Safety budget cap per turn ($2 generous for single response)
-            "--max-budget-usd", "2.00",
-        ]
-
-        # Add MCP config if tools are available
-        if mcp_config_path:
-            cmd.extend(["--mcp-config", mcp_config_path])
-            cmd.append("--strict-mcp-config")
-            # Block built-in tools so agent only uses benchmark MCP tools
-            cmd.extend([
-                "--disallowed-tools",
-                ",".join(_DISALLOWED_BUILTIN_TOOLS),
-            ])
+        cmd = self._build_command(
+            effective_prompt=effective_prompt,
+            mcp_config_path=mcp_config_path,
+            use_persistent_session=use_persistent_session,
+        )
 
         # Prevent nesting error and set up auth
-        env = os.environ.copy()
-        env.pop("CLAUDECODE", None)
-
-        # If CLAUDE_CODE_OAUTH_TOKEN is set in env/.env, write a temporary
-        # credentials file so `claude` uses that token instead of local auth.
-        oauth_token = env.pop("CLAUDE_CODE_OAUTH_TOKEN", None)
-        refresh_token = env.pop("CLAUDE_CODE_OAUTH_REFRESH_TOKEN", None)
-        if oauth_token:
-            creds_dir = self._ensure_oauth_creds(
-                oauth_token,
-                refresh_token=refresh_token or "",
-            )
-            env["CLAUDE_CONFIG_DIR"] = creds_dir
+        env = self._build_env(use_persistent_session)
 
         try:
             result = subprocess.run(
@@ -192,12 +171,15 @@ class ClaudeCodeAdapter(BaseAgentAdapter):
 
     # ── Prompt building ────────────────────────────────────────
 
-    def _build_prompt(self, messages: list[dict]) -> str:
+    def _build_prompt(self, messages: list[dict], incremental: bool = False) -> str:
         """Format conversation history as a single prompt string.
 
         Claude Code's --print mode takes a single prompt. We format
         the full conversation so Claude has context from prior turns.
         """
+        if incremental:
+            return messages[-1]["content"]
+
         if len(messages) == 1:
             return messages[0]["content"]
 
@@ -211,6 +193,93 @@ class ClaudeCodeAdapter(BaseAgentAdapter):
             f"Respond to the student's latest message as the tutor."
         )
         return "\n\n".join(parts)
+
+    def _build_command(
+        self,
+        *,
+        effective_prompt: str,
+        mcp_config_path: Optional[str],
+        use_persistent_session: bool,
+    ) -> list[str]:
+        """Build the Claude CLI command for the current turn."""
+        cmd = [
+            "claude",
+            "--print",
+            "--output-format",
+            "json",
+            "--dangerously-skip-permissions",
+            "--model",
+            self.model,
+            "--max-budget-usd",
+            "2.00",
+        ]
+
+        if use_persistent_session and self._session_id:
+            cmd.extend(["--resume", self._session_id])
+        else:
+            if not use_persistent_session:
+                cmd.append("--no-session-persistence")
+            cmd.extend(["--system-prompt", effective_prompt])
+
+        if mcp_config_path:
+            cmd.extend(["--mcp-config", mcp_config_path])
+            cmd.append("--strict-mcp-config")
+            cmd.extend(
+                [
+                    "--disallowed-tools",
+                    ",".join(_DISALLOWED_BUILTIN_TOOLS),
+                ]
+            )
+
+        return cmd
+
+    def _build_env(self, use_persistent_session: bool) -> dict[str, str]:
+        """Build the subprocess environment for Claude CLI."""
+        env = os.environ.copy()
+        env.pop("CLAUDECODE", None)
+
+        # Persistent task sessions require Claude's native on-disk session
+        # machinery. When local Claude auth is available, prefer that path.
+        # Otherwise, keep the previous stateless OAuth-credential override.
+        if not use_persistent_session:
+            oauth_token = env.pop("CLAUDE_CODE_OAUTH_TOKEN", None)
+            refresh_token = env.pop("CLAUDE_CODE_OAUTH_REFRESH_TOKEN", None)
+            if oauth_token:
+                creds_dir = self._ensure_oauth_creds(
+                    oauth_token,
+                    refresh_token=refresh_token or "",
+                )
+                env["CLAUDE_CONFIG_DIR"] = creds_dir
+
+        return env
+
+    def _should_use_persistent_session(self) -> bool:
+        """Return True when Claude's native task sessions should be used."""
+        if self._local_auth_available is None:
+            self._local_auth_available = self._detect_local_auth()
+        return self._local_auth_available
+
+    def _detect_local_auth(self) -> bool:
+        """Check whether the locally installed Claude CLI is already logged in."""
+        try:
+            result = subprocess.run(
+                ["claude", "auth", "status"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+                env={k: v for k, v in os.environ.items() if k != "CLAUDECODE"},
+            )
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            return False
+
+        if result.returncode != 0 or not result.stdout.strip():
+            return False
+
+        try:
+            data = json.loads(result.stdout)
+        except json.JSONDecodeError:
+            return False
+        return bool(data.get("loggedIn"))
 
     # ── Output parsing ─────────────────────────────────────────
 
@@ -242,6 +311,9 @@ class ClaudeCodeAdapter(BaseAgentAdapter):
                     cost_usd=cost,
                 )
             )
+
+        if data.get("session_id"):
+            self._session_id = data["session_id"]
 
         if data.get("is_error"):
             return f"[Claude Code error: {data.get('result', 'unknown')}]"
