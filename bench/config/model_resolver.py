@@ -28,8 +28,16 @@ def get_model_for_agent(agent_type: str, use_openrouter: bool = False) -> str:
 def resolve_deepeval_model(model=None):
     """Resolve model for DeepEval components (judge, simulator).
 
-    Always routes through OpenRouter when OPENROUTER_API_KEY is available.
-    Returns a GPTModel instance or a plain model name string.
+    Routing strategy:
+    - Explicit ``claude-code/...`` model names use the Claude Code CLI via a
+      custom DeepEval wrapper.
+    - Prefer OpenRouter when OPENROUTER_API_KEY is available.
+    - Otherwise, for provider-prefixed non-OpenAI models such as
+      ``anthropic/claude-sonnet-4.6``, use DeepEval's LiteLLM wrapper so the
+      corresponding native provider API key can be used directly.
+    - Fall back to DeepEval's OpenAI-compatible GPTModel/plain names.
+
+    Returns a model object or a plain model name string.
     """
     if model is not None and not isinstance(model, (str, list)):
         return model
@@ -38,6 +46,11 @@ def resolve_deepeval_model(model=None):
         model = random.choice(model)
     elif model is None:
         model = random.choice(EVAL_DEFAULT_MODELS)
+
+    if model == "claude-code" or model.startswith("claude-code/"):
+        from orchestrator.deepeval_models import ClaudeCodeModel
+
+        return ClaudeCodeModel(model=model)
 
     openrouter_key = os.environ.get("OPENROUTER_API_KEY", "")
     if openrouter_key:
@@ -55,6 +68,19 @@ def resolve_deepeval_model(model=None):
             )
         except Exception:
             pass
+
+    # Native provider routing for provider-prefixed models when OpenRouter is
+    # not configured. DeepEval's GPTModel always builds an OpenAI client, so
+    # non-OpenAI providers need LiteLLM to reach their native APIs.
+    if "/" in model:
+        provider = model.split("/", 1)[0].lower()
+        if provider != "openai":
+            try:
+                from deepeval.models.llms.litellm_model import LiteLLMModel
+
+                return LiteLLMModel(model=model)
+            except Exception:
+                pass
 
     base_url = os.environ.get("OPENAI_BASE_URL", "")
     if "openrouter" in base_url:

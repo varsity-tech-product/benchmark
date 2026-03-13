@@ -28,6 +28,7 @@ Based on the design document: `design_2026_2_12_updated.md`
 │  │  - generic    │   │  /workspace (RW)  │   │  - Simulator   │  │
 │  │  - openai     │   │  /data     (RO)   │   │  - GEval       │  │
 │  │  - anthropic  │   │  /docs     (RO)   │   │  - MCP Metrics │  │
+│  │  - claude-code│   │  /student_code    │   │  - Claude Code │  │
 │  │  - google     │   │  /student_code    │   │  - Conv.GEval  │  │
 │  └──────────────┘   │  --network none    │   └────────────────┘  │
 │                     │  CPU:2 / RAM:4GB   │                       │
@@ -56,11 +57,14 @@ bench/
 │   ├── container_manager.py      #   Docker container lifecycle + local fallback
 │   ├── simulator_config.py       #   DeepEval ConversationSimulator integration
 │   ├── trace_assembler.py        #   Combines proxy logs + dialogue → TestCase
+│   ├── deepeval_models/          #   Custom DeepEval model wrappers
+│   │   └── claude_code_model.py  #     Claude Code CLI baseline model
 │   └── agent_adapters/           #   SDK-specific agent wrappers
 │       ├── base_adapter.py       #     Abstract base class
 │       ├── generic_adapter.py    #     OpenAI-compatible API (OpenRouter)
 │       ├── openai_adapter.py     #     OpenAI Agents SDK (native)
 │       ├── anthropic_adapter.py  #     Claude Agent SDK (native)
+│       ├── claude_code_adapter.py #    Claude Code CLI agent adapter
 │       ├── google_adapter.py     #     Google ADK (native)
 │       └── prompts.py            #     Re-exports from config/prompt_config.py
 │
@@ -267,9 +271,12 @@ Baseline      │  baseline           │  pure_llm_baseline   │
 | `generic`  | OpenAI-compatible API | `google/gemini-3-flash-preview` (via OpenRouter) | OpenAI function calling |
 | `openai`   | OpenAI Agents SDK    | `gpt-4o`              | Native FunctionTool |
 | `anthropic`| Claude Agent SDK     | `claude-sonnet-4-6`   | SdkMcpTool + ClaudeSDKClient |
+| `claude-code` | Claude Code CLI   | `sonnet`              | MCP bridge over stdio + Unix socket |
 | `google`   | Google ADK           | `gemini-2.5-flash`    | Native tools |
 
 All adapters implement `BaseAgentAdapter.generate_response(messages, available_tools, tool_callback)`.
+
+For DeepEval-backed simulator/judge calls, Claude Code is available as an explicit baseline model via `claude-code/<model>` (for example `claude-code/sonnet`). This path is separate from `--agent claude-code`.
 
 ---
 
@@ -332,10 +339,15 @@ pip install -r requirements.txt
 # 2. Set environment variables (in project root .env)
 OPENROUTER_API_KEY=sk-or-...
 # Optional: OPENAI_API_KEY, ANTHROPIC_API_KEY, GOOGLE_API_KEY
+# Optional for Claude Code agent/baseline paths:
+# CLAUDE_CODE_OAUTH_TOKEN=...
+# CLAUDE_CODE_OAUTH_REFRESH_TOKEN=...
 
 # 3. Build Docker image (optional, for sandboxed execution)
 docker build -t quant-tutor-env:v2.2 docker/
 ```
+
+If you want to use Claude Code for either the agent or the DeepEval simulator/judge baseline, install the `claude` CLI and configure the OAuth token(s) above.
 
 ### CLI Commands
 
@@ -375,6 +387,16 @@ python run_benchmark.py run-single \
   --persona intermediate_developer \
   --eval-model "anthropic/claude-sonnet-4.6" \
   --simulator-model "openai/gpt-4o"
+
+# Run Claude Code for all three roles: agent, simulator, and judge
+python run_benchmark.py run-single \
+  --task I01_implement_sma \
+  --persona intermediate_developer \
+  --agent claude-code \
+  --model sonnet \
+  --eval-model "claude-code/sonnet" \
+  --simulator-model "claude-code/sonnet" \
+  --docker
 ```
 
 ---
@@ -407,11 +429,11 @@ python run_benchmark.py run-single \
 
 | Extension | Description | Files |
 |-----------|-------------|-------|
-| **Multi-SDK adapter system** | 4 native SDK adapters (OpenAI, Anthropic, Google, Generic) with unified interface, beyond the design doc's single adapter pattern | `orchestrator/agent_adapters/` |
+| **Multi-adapter + CLI adapter system** | 4 SDK adapters plus a Claude Code CLI adapter, all behind one agent interface | `orchestrator/agent_adapters/` |
 | **2x2 test condition matrix** | Systematic ablation: agent / baseline / pure_llm / pure_llm_baseline. Design doc mentioned baseline but not the full matrix | `config/conditions.py` |
 | **Layer 1 + Layer 2 blending** | Combined scoring formula (Result_Sub = 0.40 × L1 + 0.60 × L2) with unified CLI. Design doc described layers separately | `evaluation/scoring.py`, `run_benchmark.py` |
 | **Dynamic tutor prompt injection** | Per-task/persona context injected into agent system prompt at runtime, restored after each task | `config/prompt_config.py`, `orchestrator/orchestrator.py` |
-| **DeepEval model routing** | `resolve_deepeval_model()` handles mixed API keys (OpenAI + OpenRouter), auto-routes non-OpenAI judge models through OpenRouter | `config/llm_config.py` |
+| **DeepEval model routing** | `resolve_deepeval_model()` supports OpenRouter, native provider-prefixed models via LiteLLM, and explicit `claude-code/...` baseline models via the Claude CLI | `config/model_resolver.py`, `orchestrator/deepeval_models/` |
 | **Central model configuration** | All model names in one file with per-SDK native + OpenRouter mappings | `config/llm_config.py` |
 | **Docker exec wrappers** | Factory pattern for code execution tools: `make_shell_exec`, `make_run_backtest`, `make_plot_chart` with host/container mode | `mcp_servers/core/tool_wrappers.py` |
 | **Lazy environment variable reads** | Tools read env vars at call time (not import time), enabling per-task file access control without module reloading | `mcp_servers/core/tools.py` |
@@ -481,11 +503,12 @@ Successfully completed with the following verified:
 
 ### DeepEval Model Routing
 
-- `resolve_deepeval_model()` correctly handles 4 cases:
-  - OpenRouter base URL → model name as-is
-  - Native OpenAI + OpenAI model → strip "openai/" prefix
+- `resolve_deepeval_model()` correctly handles 5 cases:
+  - Explicit `claude-code/...` model → route through `ClaudeCodeModel` and the local `claude` CLI
+  - OpenRouter configured → create a `GPTModel` against OpenRouter
+  - Provider-prefixed non-OpenAI model without OpenRouter (for example `anthropic/...`) → create `LiteLLMModel(model=...)`
+  - Native OpenAI + OpenAI model → strip `openai/` prefix
   - Non-provider-prefixed model → pass through
-  - Non-OpenAI model on native API → create GPTModel via OpenRouter
 
 ### Agent Adapter Tool Calling
 

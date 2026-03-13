@@ -1,19 +1,28 @@
+import asyncio
+import json
 import sys
 import types
 import warnings
 import unittest
-from unittest.mock import MagicMock, patch
+from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock, patch
 from types import SimpleNamespace
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 sys.modules.setdefault(
     "dotenv",
     types.SimpleNamespace(load_dotenv=lambda *args, **kwargs: None),
 )
 
+from pydantic import BaseModel
+
 from run_benchmark import _collect_remote_endpoints
+from config.model_resolver import resolve_deepeval_model
 from config.pricing import estimate_cost
 from config.prompt_config import build_scenario, build_tutor_context
 from orchestrator.agent_adapters.openai_adapter import OpenAIAgentAdapter
+from orchestrator.deepeval_models import ClaudeCodeModel
 from orchestrator.schemas import (
     Difficulty,
     EnvironmentConfig,
@@ -99,6 +108,71 @@ class NetworkPreflightTests(unittest.TestCase):
             endpoints = _collect_remote_endpoints(args)
         hosts = {host for _, host in endpoints}
         self.assertIn("openrouter.ai", hosts)
+
+
+class ClaudeCodeModelTests(unittest.TestCase):
+    def test_resolve_deepeval_model_uses_claude_code_wrapper_explicitly(self):
+        with patch.dict("os.environ", {"OPENROUTER_API_KEY": "test"}, clear=False):
+            model = resolve_deepeval_model("claude-code/sonnet")
+
+        self.assertIsInstance(model, ClaudeCodeModel)
+        self.assertEqual(model.cli_model, "sonnet")
+        self.assertEqual(model.get_model_name(), "claude-code/sonnet")
+
+    def test_claude_code_model_parses_json_output_and_schema(self):
+        class ScoreSchema(BaseModel):
+            score: int
+            reason: str
+
+        payload = json.dumps(
+            {
+                "is_error": False,
+                "result": json.dumps({"score": 9, "reason": "solid"}),
+                "total_cost_usd": 0.125,
+            }
+        )
+
+        model = ClaudeCodeModel(model="claude-code/sonnet")
+        result, cost = model._parse_output(payload)
+        parsed = model._coerce_schema_result(result, ScoreSchema)
+
+        self.assertEqual(parsed.score, 9)
+        self.assertEqual(parsed.reason, "solid")
+        self.assertEqual(cost, 0.125)
+
+    def test_claude_code_model_uses_structured_output_payload_when_present(self):
+        payload = json.dumps(
+            {
+                "is_error": False,
+                "result": "",
+                "structured_output": {"answer": "OK"},
+                "total_cost_usd": 0.5,
+            }
+        )
+
+        model = ClaudeCodeModel(model="claude-code/sonnet")
+        result, cost = model._parse_output(payload)
+
+        self.assertEqual(result, {"answer": "OK"})
+        self.assertEqual(cost, 0.5)
+
+    def test_claude_code_model_async_schema_returns_schema_instance(self):
+        class ScoreSchema(BaseModel):
+            score: int
+            reason: str
+
+        model = ClaudeCodeModel(model="claude-code/sonnet")
+        expected = ScoreSchema(score=7, reason="kept as object")
+
+        with patch.object(
+            model,
+            "_run_async",
+            AsyncMock(return_value=(expected, 0.25)),
+        ):
+            result = asyncio.run(model.a_generate("prompt", schema=ScoreSchema))
+
+        self.assertIsInstance(result, ScoreSchema)
+        self.assertEqual(result.score, 7)
 
 
 class PromptRegressionTests(unittest.TestCase):

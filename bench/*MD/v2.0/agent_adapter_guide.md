@@ -4,14 +4,16 @@
 
 This project uses the **Adapter pattern** to integrate agents from different SDKs into the benchmark evaluation framework. All adapters inherit from `BaseAgentAdapter` and expose a unified `generate_response()` interface, which is called by the orchestrator during the conversation loop.
 
-The currently verified reference implementation is the **OpenAI Agent SDK adapter** (`openai_adapter.py`). Other adapters (anthropic, google) are rough scaffolds that have not been validated. When building a new adapter, strictly follow the patterns established by the OpenAI adapter.
+The currently verified reference implementation is the **OpenAI Agent SDK adapter** (`openai_adapter.py`). Other SDK adapters (anthropic, google) are rough scaffolds that have not been validated. The repo also includes a **Claude Code CLI adapter** (`claude_code_adapter.py`), which is distinct from the SDK adapters because it shells out to the `claude` CLI and bridges benchmark MCP tools over stdio/socket transport.
+
+Separately, DeepEval baseline-model wrappers live under `bench/orchestrator/deepeval_models/`. Those wrappers are not `BaseAgentAdapter` implementations and should not be mixed into the agent-adapter workflow described in this guide.
 
 ## 2. Architecture Overview
 
 ```
 run_benchmark.py
   └── _create_agent(args) ← Instantiates adapter based on --agent argument
-        └── OpenAIAgentAdapter / ClaudeAgentAdapter / GoogleAdapter / ...
+        └── OpenAIAgentAdapter / ClaudeAgentAdapter / ClaudeCodeAdapter / GoogleAdapter / ...
 
 orchestrator.py
   └── run_single_task(task, persona, agent: BaseAgentAdapter, ...)

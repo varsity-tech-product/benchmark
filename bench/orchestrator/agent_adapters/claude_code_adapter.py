@@ -140,6 +140,7 @@ class ClaudeCodeAdapter(BaseAgentAdapter):
         # Add MCP config if tools are available
         if mcp_config_path:
             cmd.extend(["--mcp-config", mcp_config_path])
+            cmd.append("--strict-mcp-config")
             # Block built-in tools so agent only uses benchmark MCP tools
             cmd.extend([
                 "--disallowed-tools",
@@ -153,8 +154,12 @@ class ClaudeCodeAdapter(BaseAgentAdapter):
         # If CLAUDE_CODE_OAUTH_TOKEN is set in env/.env, write a temporary
         # credentials file so `claude` uses that token instead of local auth.
         oauth_token = env.pop("CLAUDE_CODE_OAUTH_TOKEN", None)
+        refresh_token = env.pop("CLAUDE_CODE_OAUTH_REFRESH_TOKEN", None)
         if oauth_token:
-            creds_dir = self._ensure_oauth_creds(oauth_token)
+            creds_dir = self._ensure_oauth_creds(
+                oauth_token,
+                refresh_token=refresh_token or "",
+            )
             env["CLAUDE_CONFIG_DIR"] = creds_dir
 
         try:
@@ -245,7 +250,7 @@ class ClaudeCodeAdapter(BaseAgentAdapter):
 
     # ── OAuth credentials ──────────────────────────────────────
 
-    def _ensure_oauth_creds(self, token: str) -> str:
+    def _ensure_oauth_creds(self, token: str, refresh_token: str = "") -> str:
         """Write a temporary CLAUDE_CONFIG_DIR with OAuth credentials.
 
         Returns the path to the temp config directory.
@@ -259,7 +264,7 @@ class ClaudeCodeAdapter(BaseAgentAdapter):
         creds = {
             "claudeAiOauth": {
                 "accessToken": token,
-                "refreshToken": "",
+                "refreshToken": refresh_token,
                 "expiresAt": 9999999999999,
                 "scopes": [
                     "user:inference",
