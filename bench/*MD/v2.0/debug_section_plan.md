@@ -1,6 +1,6 @@
 # Debug Section (X-Series) Design Plan
 
-> Version: v2.1 | Status: **Implemented** | Section: Algorithm Debugging
+> Version: v2.2 | Status: **Implemented and Operationally Validated** | Section: Algorithm Debugging
 
 ---
 
@@ -93,6 +93,16 @@ student_code/*.py provided                      student_code/*.cs provided (new)
 Checklist-based eval scripts                    Behavioral scoring + checklist eval
 No reference data generation                    LEAN reference generation needed
 ```
+
+### 1.5 Current Operational Status (2026-03-13)
+
+X-series is now **operationally validated** in live runs. The full X01–X10 suite executes end-to-end, saves artifacts, and completes without infrastructure-level blockers. In practice:
+
+1. **Harness usability**: The benchmark runner, sandbox, docs, evaluator stack, and result persistence all work for the full X-series.
+2. **Provider/runtime stability**: OpenRouter-routed runs with `gpt-4o-mini` complete cleanly for the full suite; no sandbox/network regression was observed during the X-series usability check.
+3. **Model-quality caveat**: Operational validity does **not** imply strong debugging skill. The dominant failure mode in the live run was that the agent explained the bug conceptually but did not actually patch, execute, and verify fixes. Many tasks therefore completed with low `QR` despite the harness working correctly.
+
+The practical conclusion is: **X-series can work today**, and its current bottleneck is model debugging quality rather than benchmark infrastructure.
 
 ---
 
