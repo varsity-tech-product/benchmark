@@ -50,7 +50,7 @@
       "plot_chart"
     ],
     "quant_validation": {
-      "eval_script": "evaluation/test_scripts/D02_missing_data_detection_handling.py"
+      "eval_script": "evaluation/test_scripts/data_analysis/D02_missing_data_detection_handling.py"
     }
   },
   "requires_code": true,

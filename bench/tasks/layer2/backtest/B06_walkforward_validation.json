@@ -57,7 +57,7 @@
       "compare_backtest_results"
     ],
     "quant_validation": {
-      "eval_script": "evaluation/test_scripts/B06_walkforward_validation.py"
+      "eval_script": "evaluation/test_scripts/backtest/B06_walkforward_validation.py"
     }
   },
   "requires_code": true,

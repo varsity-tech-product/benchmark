@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>QuantTutorBench</title>
+<link rel="stylesheet" href="/static/css/styles.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/katex.min.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Playfair+Display:wght@400;600;700&family=DM+Serif+Display&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+</head>
+<body>
+  <!-- Navigation -->
+  <nav id="nav">
+    <div class="nav-brand">
+      <svg class="nav-logo" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/>
+      </svg>
+      <span>QuantTutorBench</span>
+    </div>
+    <div class="nav-links">
+      <a href="#/" class="nav-link active" data-page="dashboard">Dashboard</a>
+      <a href="#/tasks" class="nav-link" data-page="tasks">Tasks</a>
+      <a href="#/run" class="nav-link" data-page="run">Run</a>
+      <a href="#/evaluate" class="nav-link" data-page="evaluate">Evaluate</a>
+      <a href="#/results" class="nav-link" data-page="results">Results</a>
+    </div>
+    <div class="nav-status" id="nav-status" style="display:none">
+      <span id="connection-dot" class="dot dot-connected"></span>
+      <span id="connection-text">connected</span>
+    </div>
+  </nav>
+
+  <!-- Page container -->
+  <main id="app"></main>
+
+  <!-- Templates -->
+  <template id="tpl-dashboard">
+    <div class="page page-dashboard">
+      <div class="page-header">
+        <h1>Dashboard</h1>
+        <p class="subtitle">Benchmark overview and server status</p>
+      </div>
+      <div class="cards">
+        <div class="card">
+          <div class="card-label">Status</div>
+          <div class="card-value" id="dash-status">Idle</div>
+        </div>
+        <div class="card">
+          <div class="card-label">Results</div>
+          <div class="card-value" id="dash-results">-</div>
+        </div>
+        <div class="card">
+          <div class="card-label">Tasks</div>
+          <div class="card-value" id="dash-tasks">-</div>
+        </div>
+      </div>
+      <div class="section">
+        <h2>Recent Runs</h2>
+        <div id="dash-recent" class="result-list"></div>
+      </div>
+    </div>
+  </template>
+
+  <template id="tpl-run-select">
+    <div class="page page-run-select">
+      <div class="page-header">
+        <h1>Run Benchmark</h1>
+        <p class="subtitle">Choose a run mode</p>
+      </div>
+      <div class="run-select-grid">
+        <a href="#/run/single" class="run-select-card">
+          <div class="rsc-icon">
+            <svg viewBox="0 0 24 24" width="36" height="36" fill="none" stroke="currentColor" stroke-width="1.5">
+              <path d="M15 3h4a2 2 0 012 2v14a2 2 0 01-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/>
+            </svg>
+          </div>
+          <div class="rsc-title">Single Task</div>
+          <div class="rsc-desc">Run one task with a specific persona. Watch the live conversation and tool calls.</div>
+        </a>
+        <a href="#/run/group" class="run-select-card">
+          <div class="rsc-icon">
+            <svg viewBox="0 0 24 24" width="36" height="36" fill="none" stroke="currentColor" stroke-width="1.5">
+              <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/>
+              <rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>
+            </svg>
+          </div>
+          <div class="rsc-title">Group Run</div>
+          <div class="rsc-desc">Run all tasks in a category group in parallel. Track progress across multiple jobs.</div>
+        </a>
+      </div>
+    </div>
+  </template>
+
+  <template id="tpl-run">
+    <div class="page page-run">
+      <div class="run-layout">
+        <!-- Config panel -->
+        <aside class="run-config">
+          <label>Category
+            <select id="run-category" class="styled-select"></select>
+          </label>
+          <label>Task
+            <select id="run-task" class="styled-select"></select>
+          </label>
+          <label>Persona
+            <select id="run-persona" class="styled-select"></select>
+          </label>
+          <label>Agent
+            <select id="run-agent" class="styled-select">
+              <option value="anthropic">Anthropic (Claude)</option>
+              <option value="openai">OpenAI (GPT)</option>
+              <option value="google">Google (Gemini)</option>
+              <option value="generic">Generic (OpenRouter)</option>
+            </select>
+          </label>
+          <label class="checkbox-label">
+            <input type="checkbox" id="run-docker" checked> Docker sandbox
+          </label>
+          <label>Max turns
+            <input type="number" id="run-max-turns" value="10" min="1" max="30">
+          </label>
+          <div class="run-mode-toggle">
+            <label class="radio-card">
+              <input type="radio" name="run-mode" value="runonly" checked>
+              <span class="radio-label">Run Only</span>
+            </label>
+            <label class="radio-card">
+              <input type="radio" name="run-mode" value="runeval">
+              <span class="radio-label">Run + Eval</span>
+            </label>
+          </div>
+          <div class="run-mode-hint" id="run-mode-hint">
+            Run Only: execute the agent conversation and save results. You can evaluate later from the Evaluate tab.
+          </div>
+          <div class="run-actions">
+            <button id="btn-run" class="btn btn-primary">Run</button>
+            <button id="btn-stop" class="btn btn-secondary" disabled>Stop</button>
+          </div>
+          <div id="run-status-bar" class="run-status"></div>
+        </aside>
+        <!-- Chat + tools -->
+        <div class="run-main">
+          <div class="run-chat-panel">
+            <div class="panel-header">Conversation Turns <span id="run-turn-count" class="badge">0</span></div>
+            <div id="run-chat" class="chat-area">
+              <div class="empty-state">Select a task and click Run to begin</div>
+            </div>
+          </div>
+          <div class="run-tool-panel collapsed">
+            <div class="panel-header">Tool Calls <span id="run-tool-count" class="badge">0</span></div>
+            <div id="run-tools" class="tool-area"></div>
+          </div>
+        </div>
+      </div>
+      <div class="statusbar">
+        <span id="run-msg-count">Messages: 0</span>
+        <span id="run-tool-total">Tools: 0</span>
+        <span id="run-elapsed">Elapsed: 0s</span>
+      </div>
+    </div>
+  </template>
+
+  <template id="tpl-run-group">
+    <div class="page page-run-group">
+      <div class="page-header">
+        <div class="folder-breadcrumb">
+          <a href="#/run" class="bc-back">&larr;</a>
+          <a href="#/run">Run</a>
+          <span class="bc-sep">/</span>
+          <span>Group Run</span>
+        </div>
+        <p class="subtitle">Run all tasks in a category in parallel</p>
+      </div>
+      <div class="run-group-config">
+        <div class="run-group-form">
+          <label>Category Group
+            <select id="rg-group" class="styled-select"></select>
+          </label>
+          <label>Agent
+            <select id="rg-agent" class="styled-select">
+              <option value="anthropic">Anthropic (Claude)</option>
+              <option value="openai">OpenAI (GPT)</option>
+              <option value="google">Google (Gemini)</option>
+              <option value="generic">Generic (OpenRouter)</option>
+            </select>
+          </label>
+          <label>Persona (optional)
+            <select id="rg-persona" class="styled-select">
+              <option value="">All (from task definition)</option>
+            </select>
+          </label>
+          <label class="checkbox-label">
+            <input type="checkbox" id="rg-docker" checked> Docker sandbox
+          </label>
+          <label>Max turns
+            <input type="number" id="rg-max-turns" value="10" min="1" max="30">
+          </label>
+          <label>Workers
+            <input type="number" id="rg-workers" value="3" min="1" max="8">
+          </label>
+          <div class="run-actions">
+            <button id="btn-run-group" class="btn btn-primary">Run Group</button>
+          </div>
+          <div id="rg-status-bar" class="run-status"></div>
+        </div>
+      </div>
+      <div id="rg-progress" class="run-group-progress"></div>
+    </div>
+  </template>
+
+  <template id="tpl-results">
+    <div class="page page-results">
+      <div class="page-header">
+        <h1>Results</h1>
+        <p class="subtitle">Browse saved benchmark runs</p>
+      </div>
+      <div id="results-list" class="result-list"></div>
+    </div>
+  </template>
+
+  <!-- tpl-result-detail is built dynamically in app.js -->
+
+  <template id="tpl-evaluate">
+    <div class="page page-evaluate">
+      <div class="page-header">
+        <h1>Evaluate</h1>
+        <p class="subtitle">Score previously saved run results</p>
+      </div>
+      <div id="evaluate-list" class="result-list"></div>
+    </div>
+  </template>
+
+  <template id="tpl-tasks">
+    <div class="page page-tasks">
+      <div class="page-header">
+        <h1>Tasks</h1>
+        <p class="subtitle">Available benchmark tasks</p>
+      </div>
+      <div id="tasks-list" class="task-grid"></div>
+    </div>
+  </template>
+
+  <!-- Scripts -->
+  <script src="https://cdn.jsdelivr.net/npm/marked@15.0.0/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/katex@0.16.21/dist/katex.min.js"></script>
+  <script src="/static/js/render.js"></script>
+  <script src="/static/js/chat.js"></script>
+  <script src="/static/js/tools.js"></script>
+  <script src="/static/js/app.js"></script>
+</body>
+</html>

@@ -36,7 +36,7 @@
     "expected_mcp_tools": [],
     "convenient_tools": [],
     "quant_validation": {
-      "eval_script": "evaluation/test_scripts/A04_emotional_discouragement.py"
+      "eval_script": "evaluation/test_scripts/adversarial/A04_emotional_discouragement.py"
     }
   },
   "requires_code": false,

@@ -22,6 +22,7 @@ Usage:
 import argparse
 import json
 import os
+import socket
 import sys
 from pathlib import Path
 
@@ -141,7 +142,7 @@ def _build_result_base_dir(args, subcommand: str = "run-single") -> Path:
 
 def _build_job_spec(task, persona, args, result_base_dir: Path):
     """Build a JobSpec from a task, persona, and CLI args."""
-    from orchestrator.job_runner import JobSpec
+    from orchestrator.runners.job_runner import JobSpec
 
     runonly = getattr(args, "runonly", False)
     evalonly = getattr(args, "evalonly", False)
@@ -496,6 +497,107 @@ def _save_group_summary(results: list, label: str, result_base_dir: Path):
 
 
 # ---------------------------------------------------------------------------
+# Network preflight — fail fast when required API endpoints are unreachable
+# ---------------------------------------------------------------------------
+
+
+def _add_endpoint(
+    endpoints: list[tuple[str, str]], seen: set[str], label: str, host: str
+):
+    if host not in seen:
+        endpoints.append((label, host))
+        seen.add(host)
+
+
+def _deepeval_host_for_model(model_name: str | None) -> tuple[str, str]:
+    if os.environ.get("OPENROUTER_API_KEY"):
+        return ("OpenRouter (DeepEval)", "openrouter.ai")
+
+    name = (model_name or "").strip().lower()
+    if name.startswith("anthropic/") or "claude" in name:
+        return ("Anthropic (DeepEval)", "api.anthropic.com")
+    if name.startswith("google/") or "gemini" in name:
+        return ("Google (DeepEval)", "generativelanguage.googleapis.com")
+    return ("OpenAI (DeepEval)", "api.openai.com")
+
+
+def _collect_remote_endpoints(args) -> list[tuple[str, str]]:
+    endpoints: list[tuple[str, str]] = []
+    seen: set[str] = set()
+
+    if args.command in {"run", "run-single", "test-e2e"}:
+        agent_type = getattr(args, "agent", "generic")
+        if agent_type in {"openai", "generic"}:
+            if os.environ.get("OPENROUTER_API_KEY"):
+                _add_endpoint(endpoints, seen, "OpenRouter (agent)", "openrouter.ai")
+            else:
+                _add_endpoint(endpoints, seen, "OpenAI (agent)", "api.openai.com")
+        elif agent_type == "anthropic":
+            _add_endpoint(endpoints, seen, "Anthropic (agent)", "api.anthropic.com")
+        elif agent_type == "google":
+            _add_endpoint(
+                endpoints,
+                seen,
+                "Google (agent)",
+                "generativelanguage.googleapis.com",
+            )
+
+    if args.command == "run-single":
+        for model_name in (
+            getattr(args, "eval_model", None),
+            getattr(args, "simulator_model", None),
+        ):
+            label, host = _deepeval_host_for_model(model_name)
+            _add_endpoint(endpoints, seen, label, host)
+    elif args.command == "run":
+        if getattr(args, "layer", "all") in {"all", "1"} and not getattr(
+            args, "no_deepeval", False
+        ):
+            label, host = _deepeval_host_for_model(getattr(args, "eval_model", None))
+            _add_endpoint(endpoints, seen, label, host)
+        if getattr(args, "layer", "all") in {"all", "2"}:
+            for model_name in (
+                getattr(args, "eval_model", None),
+                getattr(args, "simulator_model", None),
+            ):
+                label, host = _deepeval_host_for_model(model_name)
+                _add_endpoint(endpoints, seen, label, host)
+    elif args.command == "run-layer1" and not getattr(args, "no_deepeval", False):
+        label, host = _deepeval_host_for_model(getattr(args, "eval_model", None))
+        _add_endpoint(endpoints, seen, label, host)
+    elif args.command == "test-e2e":
+        label, host = _deepeval_host_for_model(getattr(args, "eval_model", None))
+        _add_endpoint(endpoints, seen, label, host)
+
+    return endpoints
+
+
+def _preflight_remote_endpoints(args):
+    if os.environ.get("QTB_SKIP_NETWORK_PREFLIGHT") == "1":
+        return
+
+    if args.command not in {"run", "run-single", "run-layer1", "test-e2e"}:
+        return
+
+    failures = []
+    for label, host in _collect_remote_endpoints(args):
+        try:
+            with socket.create_connection((host, 443), timeout=5):
+                pass
+        except OSError as exc:
+            failures.append(f"{label}: {host}: {exc}")
+
+    if failures:
+        joined = "\n".join(f"  - {item}" for item in failures)
+        raise SystemExit(
+            "Network preflight failed. Required providers are unreachable:\n"
+            f"{joined}\n\n"
+            "If this is a sandboxed environment, rerun with unrestricted network "
+            "access or set QTB_SKIP_NETWORK_PREFLIGHT=1 to bypass this check."
+        )
+
+
+# ---------------------------------------------------------------------------
 # Agent creation (used by cmd_run and cmd_run_layer1)
 # ---------------------------------------------------------------------------
 
@@ -718,8 +820,8 @@ def cmd_run(args):
 
         if workers > 1:
             # Parallel execution via job runner
-            from orchestrator.job_runner import JobSpec
-            from orchestrator.parallel_runner import run_jobs_parallel
+            from orchestrator.runners.job_runner import JobSpec
+            from orchestrator.runners.parallel_runner import run_jobs_parallel
 
             tasks = _load_all_layer2_tasks()
             result_base_dir = _build_result_base_dir(args, "run")
@@ -871,7 +973,18 @@ def cmd_run(args):
 
 def cmd_run_single(args):
     """Run a single task (one persona or all personas in parallel)."""
-    from orchestrator.parallel_runner import run_jobs_parallel
+    from orchestrator.runners.parallel_runner import run_jobs_parallel
+
+    # Start live monitor if requested
+    _monitor = None
+    if getattr(args, "live", False):
+        from orchestrator.live_monitor import LiveMonitor, emit
+
+        _monitor = LiveMonitor(
+            port=getattr(args, "live_port", 8765),
+            open_browser=True,
+        )
+        _monitor.start()
 
     workers = _validate_workers(args)
     task = _find_and_load_task(args.task)
@@ -918,10 +1031,14 @@ def cmd_run_single(args):
         print(f"Workers: {workers} (parallel personas)")
     print()
 
+    # Emit session start for live monitor
+    if _monitor:
+        emit("session_start", {"task_id": task.task_id, "personas": persona_ids})
+
     # Select job executor
     job_fn = None
     if evalonly:
-        from orchestrator.job_runner import eval_single_job
+        from orchestrator.runners.job_runner import eval_single_job
 
         job_fn = eval_single_job
 
@@ -963,6 +1080,11 @@ def cmd_run_single(args):
                 f"\nResults saved: {result_base_dir / task.category.value / task.task_id}"
             )
 
+    # Stop live monitor
+    if _monitor:
+        emit("session_end", {})
+        _monitor.stop()
+
 
 def cmd_run_group(args):
     """Run all tasks in a category group.
@@ -972,7 +1094,7 @@ def cmd_run_group(args):
     obtain its category, so the result directory is resolved
     automatically without filesystem scanning.
     """
-    from orchestrator.parallel_runner import run_jobs_parallel
+    from orchestrator.runners.parallel_runner import run_jobs_parallel
 
     workers = _validate_workers(args)
     runonly = getattr(args, "runonly", False)
@@ -1009,7 +1131,7 @@ def cmd_run_group(args):
 
     job_fn = None
     if evalonly:
-        from orchestrator.job_runner import eval_single_job
+        from orchestrator.runners.job_runner import eval_single_job
 
         job_fn = eval_single_job
 
@@ -1029,7 +1151,7 @@ def cmd_run_group(args):
 
 def cmd_run_layer2(args):
     """Run all Layer 2 tasks in parallel."""
-    from orchestrator.parallel_runner import run_jobs_parallel
+    from orchestrator.runners.parallel_runner import run_jobs_parallel
 
     workers = _validate_workers(args)
     tasks = _load_all_layer2_tasks()
@@ -1054,7 +1176,7 @@ def cmd_run_layer2(args):
 
     job_fn = None
     if evalonly:
-        from orchestrator.job_runner import eval_single_job
+        from orchestrator.runners.job_runner import eval_single_job
 
         job_fn = eval_single_job
 
@@ -1430,6 +1552,17 @@ def _add_common_args(parser):
         "Reads run_state.json from result dirs, runs evaluation, "
         "saves scores.md + updated cost.md. No agent/docker needed.",
     )
+    parser.add_argument(
+        "--live",
+        action="store_true",
+        help="Launch live monitor dashboard (SSE) to watch conversation in real-time.",
+    )
+    parser.add_argument(
+        "--live-port",
+        type=int,
+        default=8765,
+        help="Port for live monitor HTTP server (default: 8765).",
+    )
 
 
 def main():
@@ -1580,6 +1713,7 @@ def main():
     subparsers.add_parser("test-e2e", help="Run end-to-end validation test")
 
     args = parser.parse_args()
+    _preflight_remote_endpoints(args)
 
     if args.command == "run":
         cmd_run(args)

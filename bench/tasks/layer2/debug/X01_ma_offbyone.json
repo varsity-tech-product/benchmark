@@ -24,7 +24,7 @@
       "file_write",
       "file_read",
       "file_list",
-      "get_environment_info"
+      "search_docs"
     ],
     "docs_available": [
       "moving_averages.md",
@@ -42,10 +42,9 @@
       "Verify the fix produces correct results"
     ],
     "expected_mcp_tools": [
-      "shell_exec",
       "file_read",
-      "file_write",
-      "get_environment_info"
+      "shell_exec",
+      "file_write"
     ],
     "convenient_tools": [
       "fetch_market_data",
@@ -53,7 +52,7 @@
       "plot_chart"
     ],
     "quant_validation": {
-      "eval_script": "evaluation/test_scripts/X01_ma_offbyone.py"
+      "eval_script": "evaluation/test_scripts/debug/X01_ma_offbyone.py"
     }
   },
   "requires_code": true,

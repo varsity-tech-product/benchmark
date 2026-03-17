@@ -60,7 +60,7 @@
       "construct_signal"
     ],
     "quant_validation": {
-      "eval_script": "evaluation/test_scripts/S06_multi_signal_combination.py"
+      "eval_script": "evaluation/test_scripts/strategy/S06_multi_signal_combination.py"
     }
   },
   "requires_code": true,

@@ -58,7 +58,7 @@
       "construct_signal"
     ],
     "quant_validation": {
-      "eval_script": "evaluation/test_scripts/S05_cross_asset_alpha.py"
+      "eval_script": "evaluation/test_scripts/strategy/S05_cross_asset_alpha.py"
     }
   },
   "requires_code": true,

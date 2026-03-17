@@ -57,7 +57,7 @@
       "construct_signal"
     ],
     "quant_validation": {
-      "eval_script": "evaluation/test_scripts/S02_trend_following_research.py"
+      "eval_script": "evaluation/test_scripts/strategy/S02_trend_following_research.py"
     }
   },
   "requires_code": true,

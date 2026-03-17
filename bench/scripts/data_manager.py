@@ -3,17 +3,18 @@
 Usage:
     from scripts.data_manager import ensure_data
 
-    # Before running I-series tasks:
-    paths = ensure_data(series="i")
-    # paths.lean_data         -> LEAN-format data dir (mount as /lean/Data/)
-    # paths.data_search_dirs  -> [hf_cache/I/] for staging universe.json etc.
+    # Before running LEAN tasks (I/E/X-series with LEAN engine):
+    paths = ensure_data(series="lean")
+    # paths.lean_data         -> hf_cache/lean/I/ (mount as /lean/Data/)
+    # paths.data_search_dirs  -> [hf_cache/lean/I/, hf_cache/lean/E/, hf_cache/lean/X/]
+    # paths.student_code      -> hf_cache/lean/X/
     # paths.docs              -> hf_cache/docs/
 
-    # Before running non-I tasks (B/D/S/E/X/A):
-    paths = ensure_data(series="non_i")
-    # paths.data_search_dirs  -> [hf_cache/BDS/, hf_cache/A/]
+    # Before running normal tasks (B/D/S/E/X/A):
+    paths = ensure_data(series="normal")
+    # paths.data_search_dirs  -> [hf_cache/normal/BDEX/, hf_cache/normal/A/]
+    # paths.student_code      -> hf_cache/normal/X/
     # paths.docs              -> hf_cache/docs/
-    # paths.student_code      -> hf_cache/X/
 """
 
 from __future__ import annotations
@@ -39,11 +40,11 @@ DEFAULT_CACHE_DIR = Path(__file__).parent.parent / "data" / "hf_cache"
 @dataclass
 class DataPaths:
     docs: str | None = None  # hf_cache/docs/
-    lean_data: str | None = None  # hf_cache/I/ (I-series LEAN mount)
+    lean_data: str | None = None  # hf_cache/lean/I/ (LEAN mount)
     data_search_dirs: list[str] = field(
         default_factory=list
     )  # dirs to search for data_files
-    student_code: str | None = None  # hf_cache/X/ (debug tasks)
+    student_code: str | None = None  # debug task student code dir
 
 
 def _ensure_docs(
@@ -73,7 +74,8 @@ def ensure_data(
     """Download data from HuggingFace if not cached locally.
 
     Args:
-        series: "i" for I-series (LEAN format), "non_i" for all other series.
+        series: "lean" for LEAN tasks (I/E/X with v2.2-lean),
+                "normal" for all other tasks (B/D/S/E/X/A with v2.2).
         cache_dir: Local directory for caching downloaded data.
         hf_repo: HuggingFace dataset repo ID.
         revision: Optional HF commit hash for reproducible runs.
@@ -87,8 +89,9 @@ def ensure_data(
     # Docs are shared across all series
     docs_path = _ensure_docs(cache_dir, hf_repo, revision)
 
-    if series == "i":
-        i_dir = cache_dir / "I"
+    if series == "lean":
+        lean_dir = cache_dir / "lean"
+        i_dir = lean_dir / "I"
         # Check for a key marker file, not just directory existence,
         # to handle partial downloads from interrupted runs.
         if not (i_dir / "universe.json").exists():
@@ -101,36 +104,46 @@ def ensure_data(
                 revision=revision,
             )
             with tarfile.open(archive, "r:gz") as tf:
-                tf.extractall(path=str(cache_dir))
+                tf.extractall(path=str(lean_dir))
             # Remove archive after extraction to save disk space
             os.remove(archive)
 
         return DataPaths(
             docs=docs_path,
             lean_data=str(i_dir),
-            data_search_dirs=[str(i_dir)],
+            data_search_dirs=[
+                str(i_dir),
+                str(lean_dir / "E"),
+                str(lean_dir / "X"),
+            ],
+            student_code=str(lean_dir / "X"),
         )
 
-    elif series == "non_i":
-        bds_dir = cache_dir / "BDS"
+    elif series == "normal":
+        normal_dir = cache_dir / "normal"
+        bdex_dir = normal_dir / "BDEX"
 
-        if not bds_dir.exists():
+        if not bdex_dir.exists():
             snapshot_download(
                 repo_id=hf_repo,
                 repo_type="dataset",
                 allow_patterns=["BDS/**", "X/**", "A/**"],
-                local_dir=str(cache_dir),
+                local_dir=str(normal_dir),
                 revision=revision,
             )
+            # Rename BDS → BDEX after download
+            bds_downloaded = normal_dir / "BDS"
+            if bds_downloaded.exists():
+                bds_downloaded.rename(bdex_dir)
 
         return DataPaths(
             docs=docs_path,
             data_search_dirs=[
-                str(bds_dir),
-                str(cache_dir / "A"),
+                str(bdex_dir),
+                str(normal_dir / "A"),
             ],
-            student_code=str(cache_dir / "X"),
+            student_code=str(normal_dir / "X"),
         )
 
     else:
-        raise ValueError(f"Unknown series: {series!r}. Use 'i' or 'non_i'.")
+        raise ValueError(f"Unknown series: {series!r}. Use 'lean' or 'normal'.")

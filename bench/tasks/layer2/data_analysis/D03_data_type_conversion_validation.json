@@ -48,7 +48,7 @@
     ],
     "convenient_tools": [],
     "quant_validation": {
-      "eval_script": "evaluation/test_scripts/D03_data_type_conversion_validation.py"
+      "eval_script": "evaluation/test_scripts/data_analysis/D03_data_type_conversion_validation.py"
     }
   },
   "requires_code": true,

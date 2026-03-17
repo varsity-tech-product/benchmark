@@ -9,6 +9,17 @@ import time
 from dataclasses import dataclass
 from typing import Callable, Optional
 
+
+def _emit(event_type: str, data: dict):
+    """Lazy wrapper for live_monitor.emit() to avoid import-time failures."""
+    try:
+        from orchestrator.live_monitor import emit
+
+        emit(event_type, data)
+    except ImportError:
+        pass
+
+
 # Pattern to detect non-zero exit codes appended by shell_exec wrappers
 _EXIT_CODE_RE = re.compile(r"\[exit code\]:\s*(-?\d+)")
 
@@ -117,9 +128,11 @@ class MCPProxy:
         start_time = time.time()
         timestamp = start_time
 
+        call_id = f"{name}_{len(self._logs)}"
         log = ToolCallLog(
             name=name, args=kwargs, timestamp=timestamp, turn_index=self._current_turn
         )
+        _emit("tool_start", {"call_id": call_id, "name": name, "args": kwargs})
 
         # Deadline check: reject new tool calls after the session time limit.
         # This prevents long-running tools (e.g. run_backtest) from being
@@ -133,6 +146,16 @@ class MCPProxy:
             log.success = False
             log.duration_ms = 0.0
             self._logs.append(log)
+            _emit(
+                "tool_result",
+                {
+                    "call_id": call_id,
+                    "name": name,
+                    "result": log.result,
+                    "success": False,
+                    "duration_ms": 0.0,
+                },
+            )
             return log.result
 
         try:
@@ -186,6 +209,16 @@ class MCPProxy:
 
         log.duration_ms = (time.time() - start_time) * 1000
         self._logs.append(log)
+        _emit(
+            "tool_result",
+            {
+                "call_id": call_id,
+                "name": name,
+                "result": log.result[:500] if len(log.result) > 500 else log.result,
+                "success": log.success,
+                "duration_ms": log.duration_ms,
+            },
+        )
 
         return log.result
 

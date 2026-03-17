@@ -51,7 +51,7 @@
       "plot_chart"
     ],
     "quant_validation": {
-      "eval_script": "evaluation/test_scripts/D08_alternative_data_integration.py"
+      "eval_script": "evaluation/test_scripts/data_analysis/D08_alternative_data_integration.py"
     }
   },
   "requires_code": true,

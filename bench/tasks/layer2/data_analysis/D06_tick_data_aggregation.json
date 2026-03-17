@@ -49,7 +49,7 @@
       "plot_chart"
     ],
     "quant_validation": {
-      "eval_script": "evaluation/test_scripts/D06_tick_data_aggregation.py"
+      "eval_script": "evaluation/test_scripts/data_analysis/D06_tick_data_aggregation.py"
     }
   },
   "requires_code": true,

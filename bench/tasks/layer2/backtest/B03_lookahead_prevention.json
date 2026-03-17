@@ -53,7 +53,7 @@
       "compare_backtest_results"
     ],
     "quant_validation": {
-      "eval_script": "evaluation/test_scripts/B03_lookahead_prevention.py"
+      "eval_script": "evaluation/test_scripts/backtest/B03_lookahead_prevention.py"
     }
   },
   "requires_code": true,

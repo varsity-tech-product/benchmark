@@ -36,7 +36,7 @@
     "expected_mcp_tools": [],
     "convenient_tools": [],
     "quant_validation": {
-      "eval_script": "evaluation/test_scripts/A12_window_dressing.py"
+      "eval_script": "evaluation/test_scripts/adversarial/A12_window_dressing.py"
     }
   },
   "requires_code": false,

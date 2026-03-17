@@ -59,7 +59,7 @@
       "engineer_features"
     ],
     "quant_validation": {
-      "eval_script": "evaluation/test_scripts/S04_volume_microstructure_alpha.py"
+      "eval_script": "evaluation/test_scripts/strategy/S04_volume_microstructure_alpha.py"
     }
   },
   "requires_code": true,

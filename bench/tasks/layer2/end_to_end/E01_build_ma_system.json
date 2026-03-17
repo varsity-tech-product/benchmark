@@ -4,7 +4,7 @@
   "difficulty": "medium",
   "category": "end_to_end",
   "task_type": "multi_turn",
-  "description": "Guide a student through building a complete moving average crossover trading system from scratch — from loading data, computing indicators, generating signals, running a backtest, to interpreting results and iterating on parameters.",
+  "description": "Guide a student through building a complete moving average crossover trading system from scratch \u2014 from loading data, computing indicators, generating signals, running a backtest, to interpreting results and iterating on parameters.",
   "persona_ids": [
     "beginner_no_finance",
     "intermediate_developer",
@@ -12,7 +12,7 @@
   ],
   "student_openings": {
     "beginner_no_finance": "I want to build my first trading strategy from scratch. I've heard moving averages are a good starting point. I know basic Python but nothing about finance or backtesting. Where do I even begin?",
-    "intermediate_developer": "I want to build a complete MA crossover system — data loading, signal generation, backtest, and performance analysis. I'm comfortable with Python and pandas. What's a clean architecture for this?",
+    "intermediate_developer": "I want to build a complete MA crossover system \u2014 data loading, signal generation, backtest, and performance analysis. I'm comfortable with Python and pandas. What's a clean architecture for this?",
     "advanced_quant": "I'm building a reference MA crossover system as a baseline for more complex strategies. I want clean modular code, vectorized backtest, transaction cost modeling, and proper walk-forward validation. Let's architect this properly."
   },
   "environment": {
@@ -25,7 +25,7 @@
       "file_write",
       "file_read",
       "file_list",
-      "get_environment_info"
+      "search_docs"
     ],
     "docs_available": [
       "moving_averages.md",
@@ -47,9 +47,7 @@
       "Interpret results and iterate on parameters"
     ],
     "expected_mcp_tools": [
-      "shell_exec",
-      "file_read",
-      "get_environment_info"
+      "shell_exec"
     ],
     "convenient_tools": [
       "fetch_market_data",
@@ -60,12 +58,12 @@
       "plot_chart"
     ],
     "quant_validation": {
-      "eval_script": "evaluation/test_scripts/E01_build_ma_system.py"
+      "eval_script": "evaluation/test_scripts/end_to_end/E01_build_ma_system.py"
     }
   },
   "requires_code": true,
   "sample_code": null,
-  "max_turns": 20,
+  "max_turns": 40,
   "agent_max_steps": 10,
   "timeout_minutes": 25
 }

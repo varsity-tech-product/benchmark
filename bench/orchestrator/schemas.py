@@ -55,6 +55,8 @@ class EnvironmentConfig(BaseModel):
     core_mcp_tools: list[str] = Field(default_factory=list)
     docs_available: list[str] = Field(default_factory=list)
     sandbox_image: str = "quant-tutor-env:v2.2"
+    # Maximum backtest trials for I-series tasks (0 = no trial system).
+    max_backtest_trials: int = 0
     # Whether this task requires outbound internet access inside the sandbox.
     # Default is False for reproducibility/safety.
     network_enabled: bool = False
@@ -153,6 +155,7 @@ class TaskResult(BaseModel):
     tool_usage: dict = Field(
         default_factory=dict
     )  # Tool Usage scoring (expected/convenient/distractor)
+    trial_metadata: dict = Field(default_factory=dict)  # Trial system results
     sandbox_info: dict = Field(default_factory=dict)
     token_usage: dict = Field(
         default_factory=dict

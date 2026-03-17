@@ -4,7 +4,7 @@
   "difficulty": "hard",
   "category": "implementation",
   "task_type": "multi_turn",
-  "description": "Guide a student to implement a multi-timeframe strategy on LEAN that uses 4h bars for trend direction and 1h bars for precise entry timing, applied across ~20 liquid crypto futures. The student must learn to use LEAN's Consolidate() to build 4h bars from 1h data, manage per-symbol dual-timeframe indicator state, and ensure 4h indicators only update on 4h bar completion.",
+  "description": "Guide a student to implement a multi-timeframe strategy on LEAN that uses 4h bars for trend direction and 1h bars for precise entry timing, applied across ~20 liquid crypto futures. The student must learn to use LEAN's Consolidate() to build 4h bars from 1h data, manage per-symbol dual-timeframe indicator state, and ensure 4h indicators only update on 4h bar completion. Running this at scale across 20 symbols with 3 years of hourly data tests both correctness and performance.",
   "persona_ids": [
     "beginner_no_finance",
     "intermediate_developer",
@@ -24,14 +24,19 @@
       "file_write",
       "file_read",
       "file_list",
-      "get_environment_info"
+      "get_environment_info",
+      "run_lean_backtest",
+      "submit_trial",
+      "select_submission",
+      "get_trial_status"
     ],
     "docs_available": [
       "lean_algorithm_guide.md",
       "moving_averages.md"
     ],
     "sandbox_image": "quant-tutor-env:v2.2-lean",
-    "network_enabled": false
+    "network_enabled": false,
+    "max_backtest_trials": 5
   },
   "ground_truth": {
     "expected_outcome": "Student produces a LEAN C# algorithm that (1) subscribes to ~20 symbols at hourly resolution and consolidates to 4h bars per symbol, (2) computes 20-period EMA on 4h bars and RSI on 1h bars per symbol, (3) implements multi-timeframe entry/exit logic independently per symbol, (4) ensures 4h indicators update only on 4h bar completion, (5) manages per-symbol position state, and (6) produces per-symbol trade logs and universe summary. Trade logs for 5 reference symbols should match the ground-truth.",
@@ -45,8 +50,8 @@
     ],
     "expected_mcp_tools": [
       "shell_exec",
-      "file_read",
-      "get_environment_info"
+      "get_environment_info",
+      "run_lean_backtest"
     ],
     "convenient_tools": [
       "search_docs",
@@ -54,12 +59,12 @@
       "plot_chart"
     ],
     "quant_validation": {
-      "eval_script": "evaluation/test_scripts/I04_multi_timeframe.py"
+      "eval_script": "evaluation/test_scripts/implementation/I04_multi_timeframe.py"
     }
   },
   "requires_code": true,
   "sample_code": null,
-  "max_turns": 18,
-  "agent_max_steps": 10,
+  "max_turns": 35,
+  "agent_max_steps": 15,
   "timeout_minutes": 25
 }

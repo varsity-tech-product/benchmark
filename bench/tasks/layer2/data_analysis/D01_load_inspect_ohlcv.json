@@ -51,7 +51,7 @@
       "plot_chart"
     ],
     "quant_validation": {
-      "eval_script": "evaluation/test_scripts/D01_load_inspect_ohlcv.py"
+      "eval_script": "evaluation/test_scripts/data_analysis/D01_load_inspect_ohlcv.py"
     }
   },
   "requires_code": true,

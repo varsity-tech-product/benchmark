@@ -48,7 +48,7 @@
       "plot_chart"
     ],
     "quant_validation": {
-      "eval_script": "evaluation/test_scripts/D11_realtime_data_fetch.py"
+      "eval_script": "evaluation/test_scripts/data_analysis/D11_realtime_data_fetch.py"
     }
   },
   "requires_code": true,

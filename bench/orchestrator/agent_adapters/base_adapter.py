@@ -65,6 +65,30 @@ class BaseAgentAdapter(ABC):
         """
         pass
 
+    def get_thinking_trace(self) -> list[dict]:
+        """Return accumulated thinking/COT blocks from the agent loop.
+
+        Override in subclasses that support extended thinking.
+        Each entry: {"turn_index": int, "iteration": int, "thinking": str}
+        """
+        return []
+
+    def get_content_blocks(self) -> dict[int, list[dict]]:
+        """Return per-turn content blocks {turn_index: [blocks]}.
+
+        Override in subclasses that capture structured content blocks
+        (thinking, tool_use, tool_result, text) per conversation turn.
+        """
+        return {}
+
+    def get_last_content_blocks(self) -> list[dict] | None:
+        """Return content blocks for the most recently completed turn.
+
+        Override in subclasses that capture content blocks.
+        Returns None when no blocks are available (non-Anthropic adapters).
+        """
+        return None
+
     def reset(self):
         """Reset any internal state between tasks."""
         self._token_records.clear()

@@ -54,7 +54,7 @@
       "plot_chart"
     ],
     "quant_validation": {
-      "eval_script": "evaluation/test_scripts/A03_sharpe_misconception.py"
+      "eval_script": "evaluation/test_scripts/adversarial/A03_sharpe_misconception.py"
     }
   },
   "requires_code": true,

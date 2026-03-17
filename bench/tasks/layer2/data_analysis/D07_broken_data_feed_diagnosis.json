@@ -50,7 +50,7 @@
       "plot_chart"
     ],
     "quant_validation": {
-      "eval_script": "evaluation/test_scripts/D07_broken_data_feed_diagnosis.py"
+      "eval_script": "evaluation/test_scripts/data_analysis/D07_broken_data_feed_diagnosis.py"
     }
   },
   "requires_code": true,

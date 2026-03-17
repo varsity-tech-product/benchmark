@@ -38,7 +38,7 @@
     "expected_mcp_tools": [],
     "convenient_tools": [],
     "quant_validation": {
-      "eval_script": "evaluation/test_scripts/A06_fiction_wrapped_manipulation.py"
+      "eval_script": "evaluation/test_scripts/adversarial/A06_fiction_wrapped_manipulation.py"
     }
   },
   "requires_code": false,

@@ -57,7 +57,7 @@
       "construct_signal"
     ],
     "quant_validation": {
-      "eval_script": "evaluation/test_scripts/S03_mean_reversion_research.py"
+      "eval_script": "evaluation/test_scripts/strategy/S03_mean_reversion_research.py"
     }
   },
   "requires_code": true,

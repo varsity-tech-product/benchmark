@@ -50,6 +50,25 @@ def _format_tool_call(log, step: int) -> list[str]:
     return lines
 
 
+def _format_thinking_block(entry: dict) -> list[str]:
+    """Format a single thinking trace entry as a collapsible Markdown block."""
+    lines: list[str] = []
+    iteration = entry.get("iteration", "?")
+    thinking = entry.get("thinking", "")
+    token_estimate = len(thinking) // 4  # rough char→token estimate
+    lines.append("")
+    lines.append(
+        f"<details><summary>Thinking (iteration {iteration}, "
+        f"~{token_estimate} tokens)</summary>"
+    )
+    lines.append("")
+    lines.append(thinking)
+    lines.append("")
+    lines.append("</details>")
+    lines.append("")
+    return lines
+
+
 def generate_trace_md(
     result,
     proxy_logs: list,
@@ -57,13 +76,14 @@ def generate_trace_md(
     agent_name: str = "",
     model: str = "",
     condition: str = "",
+    thinking_trace: list[dict] | None = None,
 ) -> str:
     """Generate a full execution trace Markdown report.
 
     Tool calls are grouped under the conversation turn in which they
     occurred, using the ``turn_index`` field from each ToolCallLog.
-    This gives a unified view: conversation message followed by the
-    tool operations the agent performed during that turn.
+    Thinking (COT) blocks are interleaved before tool calls under the
+    same turn, each wrapped in a collapsible ``<details>`` element.
 
     Args:
         result: TaskResult object (from schemas.py).
@@ -71,6 +91,8 @@ def generate_trace_md(
         agent_name: Agent SDK identifier (e.g. "openai").
         model: Model name (e.g. "openai/gpt-5.2").
         condition: Test condition (e.g. "agent").
+        thinking_trace: List of thinking entries from adapter.get_thinking_trace().
+            Each entry: {"turn_index": int, "iteration": int, "thinking": str}.
 
     Returns:
         Complete Markdown string (no truncation anywhere).
@@ -103,7 +125,16 @@ def generate_trace_md(
         display_idx = raw_idx * 2 + 1  # attach to assistant turn
         tools_by_turn[display_idx].append(log)
 
-    # ── Interleaved Conversation + Tool Calls ──
+    # ── Group thinking blocks by conversation-turn index ──
+    # thinking_trace entries use turn_index=N matching the proxy convention.
+    # Display under the assistant turn (2*N + 1), before tool calls.
+    thinking_by_turn: dict[int, list[dict]] = defaultdict(list)
+    for entry in thinking_trace or []:
+        raw_idx = entry.get("turn_index", 0)
+        display_idx = raw_idx * 2 + 1
+        thinking_by_turn[display_idx].append(entry)
+
+    # ── Interleaved Conversation + Thinking + Tool Calls ──
     _a("## Conversation & Agent Trace\n")
     turns = getattr(result, "turns", [])
     global_step = 0
@@ -114,6 +145,11 @@ def generate_trace_md(
         _a(f"### Turn {turn_num} — {role_label}\n")
         _a(turn.content)
         _a("")
+
+        # Thinking blocks (COT) — rendered before tool calls
+        turn_thinking = thinking_by_turn.get(i, [])
+        for entry in turn_thinking:
+            lines.extend(_format_thinking_block(entry))
 
         # Tool calls that the agent made to produce this turn's response
         turn_tools = tools_by_turn.get(i, [])

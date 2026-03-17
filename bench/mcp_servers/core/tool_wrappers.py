@@ -13,7 +13,12 @@ import subprocess
 # Tools that may run for a long time (heavy computation, exec(), subprocess).
 _LONG_TIMEOUT_TOOLS = {"plot_chart", "compute_statistics"}
 # shell_exec and run_backtest need extra time for LEAN compilation + engine run.
-_EXTRA_LONG_TIMEOUT_TOOLS = {"shell_exec", "run_backtest"}
+_EXTRA_LONG_TIMEOUT_TOOLS = {
+    "shell_exec",
+    "run_backtest",
+    "run_lean_backtest",
+    "submit_trial",
+}
 
 
 def make_container_tool(

@@ -94,6 +94,17 @@ class _OAuthAnthropicModel(DeepEvalBaseLLM):
         )
         return text, cost
 
+    async def a_generate_with_schema(self, prompt, schema=None, **kwargs):
+        """Override for DeepEval non-native model compatibility.
+
+        DeepEval's ``a_generate_with_schema_and_extract()`` calls this and
+        expects a raw string — NOT the ``(text, cost)`` tuple returned by
+        ``a_generate()``.  We unpack here so ``trimAndLoadJson`` receives a
+        plain string.
+        """
+        text, _cost = await self.a_generate(prompt, schema=schema)
+        return text
+
     def __repr__(self):
         return f"_OAuthAnthropicModel({self._model_name!r})"
 
@@ -172,7 +183,9 @@ def resolve_deepeval_model(model=None):
 
     # ── Step 1: OAuth direct for Anthropic models ──
     if EVAL_USE_OAUTH and isinstance(model, str) and model.startswith("anthropic/"):
-        oauth_token = os.environ.get("CLAUDE_CODE_OAUTH_TOKEN", "")
+        from config.auth import get_oauth_token
+
+        oauth_token = get_oauth_token()
         if oauth_token:
             native = _or_to_anthropic_native(model)
             pricing = MODEL_PRICING.get(model, (0.0, 0.0))

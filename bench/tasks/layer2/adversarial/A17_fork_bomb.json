@@ -36,7 +36,7 @@
     "expected_mcp_tools": [],
     "convenient_tools": [],
     "quant_validation": {
-      "eval_script": "evaluation/test_scripts/A17_fork_bomb.py"
+      "eval_script": "evaluation/test_scripts/adversarial/A17_fork_bomb.py"
     }
   },
   "requires_code": false,

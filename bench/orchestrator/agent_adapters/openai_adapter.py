@@ -1,19 +1,24 @@
-"""OpenAI Agent SDK adapter for QuantTutorBench.
+"""OpenAI adapter for QuantTutorBench.
 
-Uses the SDK's Runner agent loop for multi-step reasoning: the agent can
-make multiple tool calls autonomously within a single generate_response()
-call, controlled by max_turns. Dynamic instructions inject per-task context.
+Supports two modes controlled by OPENAI_USE_DIRECT_API:
 
-Supports both native OpenAI API and OpenRouter routing.
-When base_url is provided (e.g. OpenRouter), uses OpenAIChatCompletionsModel
-with a custom AsyncOpenAI client for clean isolation from env vars.
+  - SDK mode (False): OpenAI Agents SDK — Runner.run_sync() manages the
+    agent loop as a black box. Requires openai-agents package.
 
-Install: pip install openai-agents
+  - Direct API mode (True): OpenAI Chat Completions API with a while loop.
+    GPT autonomously decides all tool calls; we implement only the mechanical
+    transport loop. Visible intermediate reasoning, per-turn token tracking.
 
-Reference: https://github.com/openai/openai-agents-python
+Both modes route tool calls through the benchmark's MCPProxy for logging.
+
+Supports both native OpenAI API and OpenRouter routing (via base_url).
+
+Install (SDK mode): pip install openai-agents
+Install (direct mode): pip install openai
 """
 
 import json
+import logging
 import os
 from pathlib import Path
 from typing import Optional
@@ -26,8 +31,16 @@ from .prompts import TUTOR_SYSTEM_PROMPT
 _PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
 load_dotenv(_PROJECT_ROOT / ".env")
 
-from config.llm_config import OPENAI_AGENT_MODEL
+from config.llm_config import (
+    OPENAI_AGENT_MODEL,
+    OPENAI_ENABLE_REASONING,
+    OPENAI_REASONING_EFFORT,
+    OPENAI_USE_DIRECT_API,
+)
 
+log = logging.getLogger(__name__)
+
+# --- OpenAI Agents SDK imports (SDK mode only) ---
 try:
     from agents import Agent, MaxTurnsExceeded, Runner
     from agents.model_settings import ModelSettings
@@ -37,23 +50,37 @@ try:
 except ImportError:
     OPENAI_AGENTS_AVAILABLE = False
 
-# Max LLM invocations per generate_response() call (i.e. per conversation
-# turn).  The SDK agent loop: LLM call -> tool execution -> LLM call -> ...
-# until final text output.  Each LLM call counts as one turn.
-# NOTE: This is a constructor default only.  The orchestrator overrides it
-# per-task via set_agent_max_steps(task.agent_max_steps).
+# Max LLM invocations per generate_response() call.
 DEFAULT_AGENT_MAX_TURNS = 8
+
+# --- Direct API: history compaction ---
+# Mirrors Anthropic BetaToolRunner's compaction_control.
+# When total prompt_tokens in the last API call exceeds this threshold,
+# the history is summarized and replaced to prevent O(n²) token growth.
+COMPACTION_TOKEN_THRESHOLD = 100_000
+
+COMPACTION_SUMMARY_PROMPT = (
+    "You have been tutoring a student. Summarize the conversation so far "
+    "into a concise continuation context that allows you to resume "
+    "naturally.  Include:\n"
+    "1. Task Overview — the student's learning goal and current topic\n"
+    "2. Current State — what has been completed, files created, key "
+    "tool outputs\n"
+    "3. Important Discoveries — constraints, decisions, errors resolved\n"
+    "4. Next Steps — what remains, open questions\n"
+    "Be concise but complete — preserve all info needed to continue "
+    "without repeating work."
+)
 
 
 class OpenAIAgentAdapter(BaseAgentAdapter):
-    """Adapter for agents built with the OpenAI Agents SDK.
+    """Adapter for OpenAI agent under test.
 
-    Uses the SDK's Runner for true agentic behavior: the agent can chain
-    multiple tool calls autonomously within a single conversation turn.
+    Two modes:
+      - SDK (OPENAI_USE_DIRECT_API=False): Agents SDK Runner (black-box loop)
+      - Direct API (OPENAI_USE_DIRECT_API=True): Chat Completions with while loop
 
-    Supports two modes:
-      - Native OpenAI API (default): uses OPENAI_API_KEY
-      - OpenRouter routing: pass base_url to route through OpenRouter
+    In both modes, GPT autonomously decides which tools to call and when.
     """
 
     def __init__(
@@ -72,25 +99,19 @@ class OpenAIAgentAdapter(BaseAgentAdapter):
         self.max_turns = max_turns
         self._task_context = ""
 
-        # Persistent agent state across conversation turns.
-        # Created once per task in _get_or_create_agent(), reused across turns.
+        # Persistent state across conversation turns (both modes)
         self._agent = None
-        self._input_history: list = (
-            []
-        )  # Accumulated SDK input items (includes tool calls/results)
-        self._tool_callback = (
-            None  # Updated each turn, referenced by FunctionTool closures
-        )
+        self._input_history: list = []
+        self._tool_callback = None
+        self._direct_client = None  # lazy-init OpenAI client for Direct API mode
 
         if base_url:
-            # Custom provider (e.g. OpenRouter): prefer OPENROUTER_API_KEY
             self.api_key = (
                 api_key
                 or os.environ.get("OPENROUTER_API_KEY", "")
                 or os.environ.get("OPENAI_API_KEY", "")
             )
         else:
-            # Native OpenAI
             self.api_key = api_key or os.environ.get("OPENAI_API_KEY", "")
 
         if not self.api_key:
@@ -98,71 +119,45 @@ class OpenAIAgentAdapter(BaseAgentAdapter):
             raise ValueError(f"{key_name} not set in .env")
 
         if not base_url:
-            # Native OpenAI mode: set env vars for the Agent SDK
             os.environ["OPENAI_API_KEY"] = self.api_key
             os.environ.pop("OPENAI_BASE_URL", None)
+
+        # Validate SDK availability for SDK mode
+        if not OPENAI_USE_DIRECT_API and not OPENAI_AGENTS_AVAILABLE:
+            raise ImportError(
+                "openai-agents required for SDK mode. "
+                "pip install openai-agents  OR  set OPENAI_USE_DIRECT_API=True"
+            )
 
     def set_task_context(self, context: str):
         """Set per-task dynamic context injected into system prompt.
 
-        Resets the persistent agent and conversation state so a fresh
-        Agent is created for the new task.
+        Resets persistent agent and conversation state for the new task.
         """
         self._task_context = context
+        # Reset SDK mode state
         self._agent = None
         self._input_history = []
         self._tool_callback = None
 
+    def reset(self):
+        """Reset internal state between tasks."""
+        super().reset()
+        self._input_history = []
+        self._task_context = ""
+        self._agent = None
+        self._tool_callback = None
+
     def set_agent_max_steps(self, n: int):
-        """Limit SDK internal loop turns per conversation turn."""
+        """Limit how many LLM→tool→LLM cycles per generate_response() call."""
         self.max_turns = n
 
-    def _dynamic_instructions(self, ctx, agent):
-        """Dynamic instructions callable for the Agent.
-
-        The SDK calls this before each LLM invocation, allowing per-task
-        context to be injected alongside the base system prompt.
-        """
+    def _get_full_system_prompt(self) -> str:
+        """Build system prompt with optional task context."""
         base = self.system_prompt
         if self._task_context:
             base += "\n\n" + self._task_context
         return base
-
-    def _resolve_model(self):
-        """Resolve the model object for the Agent SDK.
-
-        When base_url is set, returns an OpenAIChatCompletionsModel with a
-        custom AsyncOpenAI client. Otherwise returns the model name string
-        for native OpenAI.
-        """
-        if self.base_url:
-            from agents.models.openai_chatcompletions import (
-                OpenAIChatCompletionsModel,
-            )
-            from openai import AsyncOpenAI
-
-            client = AsyncOpenAI(api_key=self.api_key, base_url=self.base_url)
-            return OpenAIChatCompletionsModel(model=self.model, openai_client=client)
-        return self.model
-
-    def _get_or_create_agent(self, available_tools: list[dict]) -> "Agent":
-        """Create the Agent once per task, reuse across conversation turns.
-
-        The Agent and its FunctionTool bindings persist across turns so
-        the SDK can maintain full context — including previous tool calls
-        and their results — via accumulated input_history.
-        """
-        if self._agent is None:
-            agent_tools = self._build_agent_tools(available_tools)
-
-            self._agent = Agent(
-                name="quant_tutor",
-                instructions=self._dynamic_instructions,
-                model=self._resolve_model(),
-                tools=agent_tools,
-                model_settings=ModelSettings(tool_choice="auto"),
-            )
-        return self._agent
 
     def generate_response(
         self,
@@ -170,26 +165,223 @@ class OpenAIAgentAdapter(BaseAgentAdapter):
         available_tools: list[dict],
         tool_callback: Optional[callable] = None,
     ) -> str:
-        """Generate a response using the OpenAI Agents SDK.
+        """Route to direct API or SDK path based on OPENAI_USE_DIRECT_API."""
+        if OPENAI_USE_DIRECT_API:
+            return self._generate_direct(messages, available_tools, tool_callback)
+        else:
+            return self._generate_sdk(messages, available_tools, tool_callback)
 
-        The Agent persists across conversation turns. Context is accumulated
-        via to_input_list(), which preserves all intermediate state including
-        tool call requests and results from previous turns. This enables
-        true multi-turn agentic behavior where the agent remembers what
-        tools it used and what results it obtained.
+    # ==================================================================
+    # Direct API mode: Chat Completions with tool_calls loop
+    # ==================================================================
+
+    def _get_direct_client(self):
+        """Lazy-init and reuse OpenAI client for Direct API mode."""
+        if self._direct_client is None:
+            from openai import OpenAI
+
+            client_kwargs = {"api_key": self.api_key}
+            if self.base_url:
+                client_kwargs["base_url"] = self.base_url
+            self._direct_client = OpenAI(**client_kwargs)
+        return self._direct_client
+
+    def _generate_direct(
+        self,
+        messages: list[dict],
+        available_tools: list[dict],
+        tool_callback: Optional[callable] = None,
+    ) -> str:
+        """Generate response via OpenAI Chat Completions API.
+
+        GPT autonomously decides tool calls. We implement only the
+        mechanical transport loop: send → execute tool_calls → return results.
+        Cross-turn context is preserved via _input_history (includes
+        tool_calls and tool results from previous turns).
         """
-        if not OPENAI_AGENTS_AVAILABLE:
-            return self._fallback_completions(messages, available_tools, tool_callback)
+        from config.pricing import estimate_cost
+
+        # Extract the latest user message (same pattern as SDK mode)
+        new_user_msg = None
+        for msg in reversed(messages):
+            if msg["role"] == "user":
+                new_user_msg = msg["content"]
+                break
+        if new_user_msg is None:
+            return ""
+
+        self._input_history.append({"role": "user", "content": new_user_msg})
+
+        client = self._get_direct_client()
+        tools = self._format_tools_openai(available_tools) if available_tools else None
+
+        # Build from persistent history (preserves tool_calls/tool results)
+        api_messages = [{"role": "system", "content": self._get_full_system_prompt()}]
+        api_messages.extend(self._input_history)
+
+        result_text = ""
+        turns = 0
+        last_prompt_tokens = 0
 
         try:
-            # Update tool callback for this turn (FunctionTool closures reference this)
-            self._tool_callback = tool_callback
+            while turns < self.max_turns:
+                turns += 1
 
+                create_kwargs = dict(
+                    model=self.model,
+                    messages=api_messages,
+                    tools=tools,
+                    max_tokens=8192,
+                )
+                if OPENAI_ENABLE_REASONING:
+                    create_kwargs["reasoning_effort"] = OPENAI_REASONING_EFFORT
+
+                response = client.chat.completions.create(**create_kwargs)
+
+                # --- Token tracking ---
+                usage = getattr(response, "usage", None)
+                if usage:
+                    inp = getattr(usage, "prompt_tokens", 0) or 0
+                    out = getattr(usage, "completion_tokens", 0) or 0
+                    last_prompt_tokens = inp
+                    self._token_records.append(
+                        TokenRecord(
+                            model=self.model,
+                            input_tokens=inp,
+                            output_tokens=out,
+                            cost_usd=estimate_cost(self.model, inp, out),
+                        )
+                    )
+
+                message = response.choices[0].message
+
+                if message.content:
+                    result_text = self._ensure_str(message.content)
+
+                # Append ALL assistant messages (intermediate + final)
+                api_messages.append(message.model_dump(exclude_none=True))
+
+                # No tool calls → GPT decided to stop
+                if not message.tool_calls or not tool_callback:
+                    break
+
+                # --- Execute tools (through MCPProxy) ---
+                for tc in message.tool_calls:
+                    args = (
+                        json.loads(tc.function.arguments)
+                        if tc.function.arguments
+                        else {}
+                    )
+                    try:
+                        result = tool_callback(tc.function.name, **args)
+                        api_messages.append(
+                            {
+                                "tool_call_id": tc.id,
+                                "role": "tool",
+                                "content": str(result),
+                            }
+                        )
+                    except Exception as e:
+                        api_messages.append(
+                            {
+                                "tool_call_id": tc.id,
+                                "role": "tool",
+                                "content": f"Error: {e}",
+                            }
+                        )
+            else:
+                log.warning("Direct API: max_turns (%d) reached", self.max_turns)
+
+            # --- History compaction (mirrors Anthropic BetaToolRunner) ---
+            # When context grows too large, summarize and replace history
+            # to prevent O(n²) token growth across conversation turns.
+            if last_prompt_tokens > COMPACTION_TOKEN_THRESHOLD:
+                api_messages = self._compact_history(client, api_messages)
+
+            # Persist full history (skip system message)
+            self._input_history = api_messages[1:]
+
+            return result_text if result_text else "[No response from OpenAI API]"
+
+        except Exception as e:
+            log.error(f"OpenAI direct API error: {e}")
+            return f"[OpenAI API error: {e}]"
+
+    def _compact_history(self, client, api_messages: list[dict]) -> list[dict]:
+        """Summarize and replace message history to cap context growth.
+
+        Mirrors Anthropic BetaToolRunner's compaction_control: sends the
+        full history to the LLM with a summarization prompt, then replaces
+        the conversation body with the summary.  The system message
+        (api_messages[0]) is always preserved.
+
+        Returns a new api_messages list: [system, assistant_summary].
+        """
+        log.info(
+            "Compacting history (%d messages) — token threshold exceeded.",
+            len(api_messages),
+        )
+        try:
+            summary_messages = list(api_messages)  # copy
+            summary_messages.append(
+                {"role": "user", "content": COMPACTION_SUMMARY_PROMPT}
+            )
+            summary_resp = client.chat.completions.create(
+                model=self.model,
+                messages=summary_messages,
+                max_tokens=2048,
+            )
+            summary_text = summary_resp.choices[0].message.content or ""
+
+            # Track the compaction call's token usage
+            from config.pricing import estimate_cost
+
+            s_usage = getattr(summary_resp, "usage", None)
+            if s_usage:
+                s_inp = getattr(s_usage, "prompt_tokens", 0) or 0
+                s_out = getattr(s_usage, "completion_tokens", 0) or 0
+                self._token_records.append(
+                    TokenRecord(
+                        model=self.model,
+                        input_tokens=s_inp,
+                        output_tokens=s_out,
+                        cost_usd=estimate_cost(self.model, s_inp, s_out),
+                    )
+                )
+
+            log.info("Compaction complete (%d chars summary).", len(summary_text))
+
+            # Replace history: keep system message + summary as assistant
+            return [
+                api_messages[0],  # system prompt
+                {"role": "assistant", "content": summary_text},
+            ]
+        except Exception as e:
+            log.warning("Compaction failed (%s), keeping full history.", e)
+            return api_messages
+
+    # ==================================================================
+    # SDK mode: OpenAI Agents SDK (Runner.run_sync) — black-box
+    # ==================================================================
+
+    def _generate_sdk(
+        self,
+        messages: list[dict],
+        available_tools: list[dict],
+        tool_callback: Optional[callable] = None,
+    ) -> str:
+        """Generate response using OpenAI Agents SDK.
+
+        The SDK's Runner manages the agent loop as a black box.
+        Agent persists across conversation turns via _input_history.
+        """
+        if not OPENAI_AGENTS_AVAILABLE:
+            return "[Error: openai-agents package not available]"
+
+        try:
+            self._tool_callback = tool_callback
             agent = self._get_or_create_agent(available_tools)
 
-            # Extract only the latest user message from the conversation.
-            # Previous turns are already preserved in _input_history with
-            # full SDK context (tool calls, tool results, etc.).
             new_user_msg = None
             for msg in reversed(messages):
                 if msg["role"] == "user":
@@ -199,7 +391,6 @@ class OpenAIAgentAdapter(BaseAgentAdapter):
             if new_user_msg is None:
                 return ""
 
-            # Append new user message to the accumulated SDK history
             self._input_history.append({"role": "user", "content": new_user_msg})
 
             result = Runner.run_sync(
@@ -208,17 +399,11 @@ class OpenAIAgentAdapter(BaseAgentAdapter):
                 max_turns=self.max_turns,
             )
 
-            # Preserve full SDK context for next turn.
-            # to_input_list() merges original input + new items (tool calls,
-            # tool results, assistant messages) into a continuation-ready list.
             self._input_history = result.to_input_list()
-
             self._record_usage_from_run_result(result)
             return result.final_output or ""
 
         except MaxTurnsExceeded:
-            # Agent used all available tool-calling turns within this conversation turn.
-            # Return a graceful response instead of leaking SDK internals.
             if hasattr(self, "_input_history") and self._input_history:
                 for item in reversed(self._input_history):
                     if isinstance(item, dict) and item.get("role") == "assistant":
@@ -230,24 +415,51 @@ class OpenAIAgentAdapter(BaseAgentAdapter):
                 "Let me summarize what we've covered so far and continue from here."
             )
         except Exception as e:
-            import logging
-
-            logging.getLogger(__name__).error(f"Agent SDK error: {e}")
+            log.error(f"Agent SDK error: {e}")
             return (
                 "I encountered a technical issue. Let me try a different approach "
                 "to help you with your question."
             )
 
+    def _dynamic_instructions(self, ctx, agent):
+        """Dynamic instructions callable for the Agent (SDK mode)."""
+        return self._get_full_system_prompt()
+
+    def _resolve_model(self):
+        """Resolve model object for the Agent SDK."""
+        if self.base_url:
+            from agents.models.openai_chatcompletions import (
+                OpenAIChatCompletionsModel,
+            )
+            from openai import AsyncOpenAI
+
+            client = AsyncOpenAI(api_key=self.api_key, base_url=self.base_url)
+            return OpenAIChatCompletionsModel(model=self.model, openai_client=client)
+        return self.model
+
+    def _get_or_create_agent(self, available_tools: list[dict]) -> "Agent":
+        """Create the Agent once per task, reuse across turns (SDK mode)."""
+        if self._agent is None:
+            agent_tools = self._build_agent_tools(available_tools)
+            model_settings_kwargs = {"tool_choice": "auto"}
+            if OPENAI_ENABLE_REASONING:
+                from openai.types.shared import Reasoning
+
+                model_settings_kwargs["reasoning"] = Reasoning(
+                    effort=OPENAI_REASONING_EFFORT
+                )
+
+            self._agent = Agent(
+                name="quant_tutor",
+                instructions=self._dynamic_instructions,
+                model=self._resolve_model(),
+                tools=agent_tools,
+                model_settings=ModelSettings(**model_settings_kwargs),
+            )
+        return self._agent
+
     def _build_agent_tools(self, available_tools: list[dict]) -> list:
-        """Build OpenAI Agent SDK tools from MCP tool schemas.
-
-        FunctionTool.on_invoke_tool expects: async (ToolContext, str) -> Any
-        where str is the JSON-encoded arguments from the LLM.
-
-        Tool closures reference self._tool_callback (updated each turn in
-        generate_response) so the same FunctionTool instances work across
-        all conversation turns.
-        """
+        """Build OpenAI Agent SDK FunctionTool objects (SDK mode)."""
         if not OPENAI_AGENTS_AVAILABLE:
             return []
 
@@ -323,11 +535,15 @@ class OpenAIAgentAdapter(BaseAgentAdapter):
                     )
                 )
 
+    # ==================================================================
+    # Shared utilities
+    # ==================================================================
+
     @staticmethod
     def _ensure_str(content) -> str:
         """Flatten OpenAI content to a plain string.
 
-        gpt-5.2 occasionally returns ``message.content`` as a list of
+        gpt-5.2 occasionally returns message.content as a list of
         content-block dicts instead of a string.
         """
         if content is None:
@@ -340,74 +556,8 @@ class OpenAIAgentAdapter(BaseAgentAdapter):
             ).strip()
         return str(content)
 
-    def _fallback_completions(
-        self,
-        messages: list[dict],
-        available_tools: list[dict],
-        tool_callback: Optional[callable] = None,
-    ) -> str:
-        """Fallback to direct OpenAI completions API."""
-        try:
-            from openai import OpenAI
-        except ImportError:
-            return "[Error: neither openai-agents nor openai package available]"
-
-        client_kwargs = {"api_key": self.api_key}
-        if self.base_url:
-            client_kwargs["base_url"] = self.base_url
-        client = OpenAI(**client_kwargs)
-
-        api_messages = [{"role": "system", "content": self.system_prompt}]
-        api_messages.extend(messages)
-
-        tools = None
-        if available_tools:
-            tools = self._format_tools_openai(available_tools)
-
-        try:
-            response = client.chat.completions.create(
-                model=self.model,
-                messages=api_messages,
-                tools=tools,
-                max_tokens=4096,
-            )
-
-            message = response.choices[0].message
-
-            if message.tool_calls and tool_callback:
-                tool_results = []
-                for tc in message.tool_calls:
-                    args = (
-                        json.loads(tc.function.arguments)
-                        if tc.function.arguments
-                        else {}
-                    )
-                    result = tool_callback(tc.function.name, **args)
-                    tool_results.append(
-                        {
-                            "tool_call_id": tc.id,
-                            "role": "tool",
-                            "content": str(result),
-                        }
-                    )
-
-                api_messages.append(message.model_dump())
-                api_messages.extend(tool_results)
-
-                final_response = client.chat.completions.create(
-                    model=self.model,
-                    messages=api_messages,
-                    max_tokens=4096,
-                )
-                return self._ensure_str(final_response.choices[0].message.content)
-
-            return self._ensure_str(message.content)
-
-        except Exception as e:
-            return f"[OpenAI API error: {str(e)}]"
-
     def _format_tools_openai(self, tools: list[dict]) -> list[dict]:
-        """Convert tool schemas to OpenAI function calling format."""
+        """Convert benchmark tool schemas to OpenAI function calling format."""
         formatted = []
         for tool in tools:
             params = tool.get("parameters", {})

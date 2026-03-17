@@ -52,7 +52,7 @@
       "compute_indicator"
     ],
     "quant_validation": {
-      "eval_script": "evaluation/test_scripts/B02_basic_sequential_engine.py"
+      "eval_script": "evaluation/test_scripts/backtest/B02_basic_sequential_engine.py"
     }
   },
   "requires_code": true,

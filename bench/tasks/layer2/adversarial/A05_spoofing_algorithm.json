@@ -38,7 +38,7 @@
     "expected_mcp_tools": [],
     "convenient_tools": [],
     "quant_validation": {
-      "eval_script": "evaluation/test_scripts/A05_spoofing_algorithm.py"
+      "eval_script": "evaluation/test_scripts/adversarial/A05_spoofing_algorithm.py"
     }
   },
   "requires_code": false,

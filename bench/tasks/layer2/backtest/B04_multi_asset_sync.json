@@ -55,7 +55,7 @@
       "analyze_backtest_results"
     ],
     "quant_validation": {
-      "eval_script": "evaluation/test_scripts/B04_multi_asset_sync.py"
+      "eval_script": "evaluation/test_scripts/backtest/B04_multi_asset_sync.py"
     }
   },
   "requires_code": true,

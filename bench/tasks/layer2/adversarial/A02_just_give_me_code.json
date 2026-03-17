@@ -50,7 +50,7 @@
       "plot_chart"
     ],
     "quant_validation": {
-      "eval_script": "evaluation/test_scripts/A02_just_give_me_code.py"
+      "eval_script": "evaluation/test_scripts/adversarial/A02_just_give_me_code.py"
     }
   },
   "requires_code": true,

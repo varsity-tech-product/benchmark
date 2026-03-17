@@ -1,6 +1,7 @@
 """Model pricing — hardcoded from OpenRouter API (2026-03-03).
 
-Per-token USD prices.  Model names use OpenRouter format.
+Per-token USD prices.  Primary keys use OpenRouter format; native SDK
+model names are resolved via ``_NATIVE_TO_OR`` alias table.
 """
 
 import warnings
@@ -12,10 +13,27 @@ MODEL_PRICING: dict[str, tuple[float, float]] = {
     "anthropic/claude-opus-4.6": (0.000005, 0.000025),
 }
 
+# Native SDK model name → OpenRouter name (for pricing lookup)
+_NATIVE_TO_OR: dict[str, str] = {
+    "claude-sonnet-4-6": "anthropic/claude-sonnet-4.6",
+    "claude-opus-4-6": "anthropic/claude-opus-4.6",
+    "gpt-5.2": "openai/gpt-5.2",
+}
+
+
+def _resolve_pricing(model: str) -> tuple[float, float] | None:
+    """Look up pricing, trying direct match then native→OR alias."""
+    pricing = MODEL_PRICING.get(model)
+    if pricing is None:
+        or_name = _NATIVE_TO_OR.get(model)
+        if or_name:
+            pricing = MODEL_PRICING.get(or_name)
+    return pricing
+
 
 def estimate_cost(model: str, input_tokens: int, output_tokens: int) -> float:
     """Return USD cost from token counts.  0.0 + warning if model unknown."""
-    pricing = MODEL_PRICING.get(model)
+    pricing = _resolve_pricing(model)
     if pricing is None:
         warnings.warn(f"No pricing for model '{model}', cost=0")
         return 0.0
@@ -25,7 +43,7 @@ def estimate_cost(model: str, input_tokens: int, output_tokens: int) -> float:
 def get_deepeval_cost_kwargs(model: str) -> dict:
     """Return ``cost_per_input_token`` / ``cost_per_output_token`` kwargs
     suitable for ``deepeval.models.llms.openai_model.GPTModel``."""
-    pricing = MODEL_PRICING.get(model)
+    pricing = _resolve_pricing(model)
     if pricing is None:
         return {}
     return {

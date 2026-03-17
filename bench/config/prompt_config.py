@@ -9,10 +9,179 @@ Parallels config/llm_config.py (model configuration).
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from orchestrator.schemas import QuantTutorTask, StudentPersona
+
+
+# ── Category-Based Prompt Injection ──────────────────────────
+# Categories eligible for implementation-push prompts (I/E/X series).
+_IEX_CATEGORIES: frozenset[str] = frozenset(
+    {
+        "implementation",
+        "end_to_end",
+        "debug",
+    }
+)
+
+# Prompt A — wait override (tutor context, inside AVAILABLE DOCUMENTATION)
+# Relaxes the "wait for student direction" rule for coding tasks so the
+# tutor moves from explanation into implementation within the same response.
+_PROMPT_A_WAIT_OVERRIDE = (
+    "\nFor coding tasks, 'wait for their direction' applies only to "
+    "future workflow steps. When the student is asking how to "
+    "implement the current step, move from explanation into concrete "
+    "implementation for that step in the same response."
+)
+
+# Prompt B — CODE TASK EXECUTION REQUIREMENT (tutor context, inside TOOL USAGE DIRECTIVE)
+# Pushes requires_code tasks to produce artifacts, not just explanations.
+_PROMPT_B_CODE_TASK_EXECUTION = (
+    "\nCODE TASK EXECUTION REQUIREMENT:\n"
+    "- For this task, explanation alone is NOT sufficient. Once you "
+    "explain the current implementation step, use tools to produce "
+    "a concrete artifact for that same step whenever possible: create "
+    "or update a file, execute code, save a results table, or inspect "
+    "the generated output.\n"
+    "- Do NOT wait for the student to explicitly say 'write the file' "
+    "if they are already asking how to implement, structure, filter, "
+    "collect, or rank something. Those are implementation requests.\n"
+    "- GOOD: Student asks how to structure an optimization workflow → "
+    "inspect the environment, write the initial scaffold, run the next "
+    "verification step, explain the result.\n"
+    "- BAD: Student asks how to structure an optimization workflow → "
+    "describe an architecture for several turns without creating code "
+    "or workspace artifacts."
+)
+
+# Prompt C — move beyond snippets (tutor context, inside CODE IN RESPONSES)
+# Ensures implementation tasks produce workspace artifacts, not just snippets.
+_PROMPT_C_BEYOND_SNIPPETS = (
+    "For implementation-focused questions, move beyond snippets: the "
+    "student should leave the session with usable workspace artifacts "
+    "and verified outputs, not just architecture discussion.\n"
+)
+
+# Prompt D — IMPLEMENTATION TRACKING (simulator scenario, inside build_scenario)
+# Two sub-segments that make the simulated student push for concrete artifacts.
+_PROMPT_D_IMPLEMENTATION_TRACKING = (
+    "IMPLEMENTATION TRACKING: This is a code-producing task. Do "
+    "not treat a verbal explanation as completion for an "
+    "implementation goal. After at most one conceptual follow-up "
+    "on a goal, ask for the concrete code, executed output, or "
+    "saved artifact needed for that goal. Example: 'That makes "
+    "sense. Can you show the actual code and save the result so I "
+    "can build on it?'"
+)
+
+_PROMPT_D_ABSTRACT_PUSH = (
+    "WHEN THE TUTOR STAYS ABSTRACT: If the tutor keeps describing "
+    "architecture, workflow, or theory without producing files, "
+    "code execution, or saved results for the current goal, push "
+    "them back to implementation on your next turn."
+)
+
+# Prompt E — BACKTEST TRIAL SYSTEM (tutor context)
+# Injected when the task has a trial budget (max_backtest_trials > 0).
+_PROMPT_E_BACKTEST_TRIAL_SYSTEM = (
+    "Use the trial tools to iterate efficiently:\n\n"
+    "WORKFLOW:\n"
+    "1. Write your C# algorithm file\n"
+    "2. Call run_lean_backtest(algorithm_path) to compile + run + record a trial\n"
+    "3. Review the result (compile errors, empty trades, metrics)\n"
+    "4. Fix issues and run again (each run uses 1 trial)\n"
+    "5. Call select_submission(trial_id) to pick your best version\n"
+    "6. Call get_trial_status() anytime to review all trials\n\n"
+    "EFFICIENCY BONUS: Solving in fewer trials earns a higher efficiency score. "
+    "Plan carefully before each attempt.\n\n"
+    "NOTES:\n"
+    "- shell_exec is still available for non-backtest commands "
+    "(reading files, compiling, checking logs, etc.)\n"
+    "- If you exhaust all trials, you must select from existing trials\n"
+    "- If you don't call select_submission, the best trial is auto-selected"
+)
+
+
+@dataclass
+class PromptSegments:
+    """Container for category-filtered prompt segments.
+
+    Each field holds the text to inject (or empty string when filtered out).
+    The orchestrator can inspect individual segments or use the helper
+    properties to get the assembled text for each injection target.
+    """
+
+    a_wait_override: str = ""
+    b_code_task_execution: str = ""
+    c_beyond_snippets: str = ""
+    d_implementation_tracking: str = ""
+    d_abstract_push: str = ""
+    e_backtest_trial_system: str = ""
+    max_backtest_trials: int = 0
+
+
+def get_filtered_prompt_segments(
+    category: str,
+    requires_code: bool,
+    max_backtest_trials: int,
+) -> PromptSegments:
+    """Return prompt segments filtered by category and task properties.
+
+    Filtering rules:
+        A (wait override)          — I/E/X categories only
+        B (code task execution)    — all requires_code=True tasks
+        C (move beyond snippets)   — I/E/X categories only
+        D (implementation tracking)— I/E/X categories only
+        E (backtest trial system)  — max_backtest_trials > 0 (natural filter)
+
+    Parameters
+    ----------
+    category : str
+        The task category value (e.g. "implementation", "debug", "strategy").
+    requires_code : bool
+        Whether the task requires code execution.
+    max_backtest_trials : int
+        Maximum backtest trial budget (0 means no trial system).
+
+    Returns
+    -------
+    PromptSegments
+        Populated segment container with empty strings for filtered-out prompts.
+    """
+    is_iex = category in _IEX_CATEGORIES
+    segments = PromptSegments(max_backtest_trials=max_backtest_trials)
+
+    # A: wait override — I/E/X + requires_code (only meaningful in docs context)
+    if is_iex and requires_code:
+        segments.a_wait_override = _PROMPT_A_WAIT_OVERRIDE
+
+    # B: code task execution — any requires_code task (broader than I/E/X)
+    if requires_code:
+        segments.b_code_task_execution = _PROMPT_B_CODE_TASK_EXECUTION
+
+    # C: move beyond snippets — I/E/X + requires_code
+    if is_iex and requires_code:
+        segments.c_beyond_snippets = _PROMPT_C_BEYOND_SNIPPETS
+
+    # D: implementation tracking — I/E/X + requires_code (simulator side)
+    if is_iex and requires_code:
+        segments.d_implementation_tracking = _PROMPT_D_IMPLEMENTATION_TRACKING
+        segments.d_abstract_push = _PROMPT_D_ABSTRACT_PUSH
+
+    # E: backtest trial system — natural filter on trial budget
+    if max_backtest_trials > 0:
+        segments.e_backtest_trial_system = _PROMPT_E_BACKTEST_TRIAL_SYSTEM
+
+    return segments
+
+
+def _get_max_bt(task: QuantTutorTask) -> int:
+    """Extract max_backtest_trials from a task, defaulting to 0."""
+    if task.environment and hasattr(task.environment, "max_backtest_trials"):
+        return task.environment.max_backtest_trials or 0
+    return 0
 
 
 # ── Agent System Prompts ──────────────────────────────────────
@@ -176,6 +345,13 @@ def build_tutor_context(
     context the evaluation judge receives, minus scoring rubrics and
     ground-truth answers.
     """
+    # Compute category-filtered prompt segments once for this task.
+    segments = get_filtered_prompt_segments(
+        task.category.value,
+        task.requires_code,
+        _get_max_bt(task),
+    )
+
     parts = [
         "=== SESSION CONTEXT ===",
         # Topic and difficulty omitted to avoid leaking task-specific answers.
@@ -234,6 +410,9 @@ def build_tutor_context(
             "- BAD: Read docs → download data → save CSV → compute "
             "returns → generate chart → then finally respond."
         )
+        # Prompt A: relax "wait" rule for I/E/X coding tasks
+        if segments.a_wait_override:
+            parts.append(segments.a_wait_override)
 
     # Only inject TOOL USAGE DIRECTIVE when the task expects tool usage.
     # Adversarial tasks (expected_mcp_tools=[]) should NOT push the agent
@@ -322,6 +501,19 @@ def build_tutor_context(
             "total return of 45%. Let me explain what these mean...'\n"
             "- BAD: 'Output:\\nSharpe Ratio: 1.3\\nTotal Return: 0.45'"
         )
+        # Prompt B: code task execution for all requires_code tasks
+        if segments.b_code_task_execution:
+            parts.append(segments.b_code_task_execution)
+
+    # Prompt E: backtest trial system (natural filter on max_backtest_trials > 0)
+    if segments.e_backtest_trial_system:
+        max_bt = segments.max_backtest_trials
+        parts.append("")
+        parts.append("=== BACKTEST TRIAL SYSTEM ===")
+        parts.append(
+            f"You have a trial budget of {max_bt} backtest attempts for this task. "
+            + segments.e_backtest_trial_system
+        )
 
     # Inject code teaching guidance based on requires_code
     parts.append("")
@@ -333,7 +525,9 @@ def build_tutor_context(
             "Break code into small, digestible chunks — never dump an "
             "entire script at once. For each chunk, explain WHY this step "
             "matters, not just WHAT it does.\n"
-            "Adjust code complexity to the student's level:\n"
+            # Prompt C: move beyond snippets for I/E/X coding tasks
+            + (segments.c_beyond_snippets if segments.c_beyond_snippets else "")
+            + "Adjust code complexity to the student's level:\n"
             "- Beginners: simple variable names, print statements, one "
             "new concept at a time, line-by-line explanation.\n"
             "- Intermediate: focus on quant-specific patterns (rolling "
@@ -572,5 +766,17 @@ def build_scenario(task: QuantTutorTask, persona_id: str) -> str:
                 f"to the next one rather than asking further refinement "
                 f"questions on the same topic."
             )
+            # Prompt D: implementation tracking for I/E/X coding tasks
+            segments = get_filtered_prompt_segments(
+                task.category.value,
+                task.requires_code,
+                _get_max_bt(task),
+            )
+            if segments.d_implementation_tracking:
+                parts.append("")
+                parts.append(segments.d_implementation_tracking)
+            if segments.d_abstract_push:
+                parts.append("")
+                parts.append(segments.d_abstract_push)
 
     return "\n".join(parts)

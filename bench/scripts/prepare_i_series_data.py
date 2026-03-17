@@ -34,7 +34,9 @@ FLAT_UNIVERSE_PATH = DATA_DIR / "lean_universe.json"
 DEFAULT_REPO_ID = "Varsity-Tech/quant-tutor-bench-data"
 
 
-def phase_download(workers: int, include_funding: bool, universe: Path | None = None) -> bool:
+def phase_download(
+    workers: int, include_funding: bool, universe: Path | None = None
+) -> bool:
     """Phase 1: Download raw Binance data."""
     print("\n" + "=" * 60)
     print("Phase 1: Download raw Binance klines")
@@ -44,10 +46,14 @@ def phase_download(workers: int, include_funding: bool, universe: Path | None = 
     cmd = [
         sys.executable,
         str(SCRIPTS_DIR / "download_binance_full_universe.py"),
-        "--tier", "all",
-        "--universe", str(uni),
-        "--output-dir", str(RAW_DIR),
-        "--workers", str(workers),
+        "--tier",
+        "all",
+        "--universe",
+        str(uni),
+        "--output-dir",
+        str(RAW_DIR),
+        "--workers",
+        str(workers),
     ]
     if include_funding:
         cmd.append("--include-funding")
@@ -71,8 +77,10 @@ def phase_convert() -> bool:
     cmd = [
         sys.executable,
         str(SCRIPTS_DIR / "convert_binance_to_lean.py"),
-        "--input-dir", str(RAW_DIR),
-        "--output-dir", str(LEAN_DIR),
+        "--input-dir",
+        str(RAW_DIR),
+        "--output-dir",
+        str(LEAN_DIR),
     ]
 
     print(f"Running: {' '.join(cmd)}")
@@ -98,9 +106,10 @@ def phase_flat_universe(universe: Path | None = None) -> bool:
 
     # Import and run inline to avoid subprocess overhead
     sys.path.insert(0, str(SCRIPTS_DIR))
+    import json
+
     from generate_flat_universe import generate_flat_universe
 
-    import json
     symbols = generate_flat_universe(uni)
 
     # Write to default location
@@ -128,9 +137,12 @@ def phase_upload(repo_id: str) -> bool:
     cmd = [
         sys.executable,
         str(SCRIPTS_DIR / "upload_lean_to_hf.py"),
-        "--lean-dir", str(LEAN_DIR),
-        "--universe", str(FLAT_UNIVERSE_PATH),
-        "--repo-id", repo_id,
+        "--lean-dir",
+        str(LEAN_DIR),
+        "--universe",
+        str(FLAT_UNIVERSE_PATH),
+        "--repo-id",
+        repo_id,
     ]
 
     print(f"Running: {' '.join(cmd)}")
@@ -152,7 +164,8 @@ def phase_verify() -> bool:
     try:
         sys.path.insert(0, str(BENCH_ROOT))
         from scripts.data_manager import ensure_data
-        paths = ensure_data(series="i")
+
+        paths = ensure_data(series="lean")
         print(f"  lean_data: {paths.lean_data}")
         print(f"  universe:  {paths.universe}")
 
@@ -169,6 +182,7 @@ def phase_verify() -> bool:
         lean_universe = lean_path / "universe.json"
         if lean_universe.exists():
             import json
+
             with open(lean_universe) as f:
                 symbols = json.load(f)
             print(f"  lean/universe.json: {len(symbols)} symbols")
@@ -193,35 +207,45 @@ def main() -> int:
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument(
-        "--skip-download", action="store_true",
+        "--skip-download",
+        action="store_true",
         help="Skip Phase 1 (download).",
     )
     parser.add_argument(
-        "--skip-convert", action="store_true",
+        "--skip-convert",
+        action="store_true",
         help="Skip Phase 2 (convert).",
     )
     parser.add_argument(
-        "--include-funding", action="store_true",
+        "--include-funding",
+        action="store_true",
         help="Include funding rate downloads in Phase 1.",
     )
     parser.add_argument(
-        "--upload", action="store_true",
+        "--upload",
+        action="store_true",
         help="Run Phase 4 (upload to HuggingFace).",
     )
     parser.add_argument(
-        "--verify", action="store_true",
+        "--verify",
+        action="store_true",
         help="Run Phase 5 (verify data_manager roundtrip).",
     )
     parser.add_argument(
-        "--repo-id", default=DEFAULT_REPO_ID,
+        "--repo-id",
+        default=DEFAULT_REPO_ID,
         help="HuggingFace repo ID for upload (default: %(default)s).",
     )
     parser.add_argument(
-        "--universe", type=Path, default=None,
+        "--universe",
+        type=Path,
+        default=None,
         help="Path to universe.json (default: bench/data/universe.json).",
     )
     parser.add_argument(
-        "--workers", type=int, default=8,
+        "--workers",
+        type=int,
+        default=8,
         help="Number of parallel download workers (default: 8).",
     )
     args = parser.parse_args()

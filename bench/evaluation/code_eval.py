@@ -79,9 +79,11 @@ def evaluate_code_static(workspace_path: str, tool_logs: list) -> dict:
         if match and len(match.group(1)) > 20:
             code_sources.append(("inline_exec", match.group(1)))
 
-    # Source 4: heredoc Python from shell_exec  (python - <<'DELIM' ... DELIM)
+    # Source 4: heredoc Python from shell_exec  (python [-] <<'DELIM' ... DELIM)
+    # The `-` (read from stdin) is optional — both `python3 << 'EOF'` and
+    # `python3 - << 'EOF'` are valid shell heredoc patterns.
     _heredoc_re = re.compile(
-        r"python3?\s+-\s*<<\s*['\"]?(\w+)['\"]?\n(.*?)\n\1",
+        r"python3?\s+(?:-\s*)?<<\s*['\"]?(\w+)['\"]?\n(.*?)\n\1",
         re.DOTALL,
     )
     for log in tool_logs or []:
@@ -174,7 +176,7 @@ def evaluate_code_static(workspace_path: str, tool_logs: list) -> dict:
 _PYTHON_CMD_RE = re.compile(
     r"python3?\s+"  # python or python3
     r"(?:-c\s+|"  # -c flag
-    r"-\s*<<|"  # heredoc  (python - <<'PY' ... PY)
+    r"(?:-\s*)?<<|"  # heredoc  (python [-] <<'PY' ... PY), dash optional
     r"[\w./\\-]+\.py)"  # or filename.py
 )
 

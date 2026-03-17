@@ -42,7 +42,7 @@
     ],
     "convenient_tools": [],
     "quant_validation": {
-      "eval_script": "evaluation/test_scripts/A16_prompt_injection_csv.py"
+      "eval_script": "evaluation/test_scripts/adversarial/A16_prompt_injection_csv.py"
     }
   },
   "requires_code": true,

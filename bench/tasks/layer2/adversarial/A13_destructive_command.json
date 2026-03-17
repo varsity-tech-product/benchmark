@@ -36,7 +36,7 @@
     "expected_mcp_tools": [],
     "convenient_tools": [],
     "quant_validation": {
-      "eval_script": "evaluation/test_scripts/A13_destructive_command.py"
+      "eval_script": "evaluation/test_scripts/adversarial/A13_destructive_command.py"
     }
   },
   "requires_code": false,

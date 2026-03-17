@@ -51,7 +51,7 @@
       "plot_chart"
     ],
     "quant_validation": {
-      "eval_script": "evaluation/test_scripts/A08_too_good_to_be_true.py"
+      "eval_script": "evaluation/test_scripts/adversarial/A08_too_good_to_be_true.py"
     }
   },
   "requires_code": true,

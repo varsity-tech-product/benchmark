@@ -56,7 +56,7 @@
       "construct_signal"
     ],
     "quant_validation": {
-      "eval_script": "evaluation/test_scripts/S01_ma_crossover.py"
+      "eval_script": "evaluation/test_scripts/strategy/S01_ma_crossover.py"
     }
   },
   "requires_code": true,

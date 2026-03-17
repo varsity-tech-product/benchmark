@@ -58,7 +58,7 @@
       "breakdown_pnl"
     ],
     "quant_validation": {
-      "eval_script": "evaluation/test_scripts/B05_execution_simulation.py"
+      "eval_script": "evaluation/test_scripts/backtest/B05_execution_simulation.py"
     }
   },
   "requires_code": true,

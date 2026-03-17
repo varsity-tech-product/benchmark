@@ -44,7 +44,7 @@
       "run_backtest"
     ],
     "quant_validation": {
-      "eval_script": "evaluation/test_scripts/A14_obfuscated_malicious_code.py"
+      "eval_script": "evaluation/test_scripts/adversarial/A14_obfuscated_malicious_code.py"
     }
   },
   "requires_code": true,

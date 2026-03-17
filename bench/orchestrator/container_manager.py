@@ -69,6 +69,7 @@ class ContainerManager:
         self._containers: dict[str, ContainerInfo] = {}
         self._workspaces: dict[str, str] = {}
         self._executors: dict[str, _ExecutorHandle] = {}
+        self._executor_env: dict[str, dict[str, str]] = {}  # env_vars per container
 
     def _docker_available(self) -> bool:
         try:
@@ -131,7 +132,14 @@ class ContainerManager:
                 f"{image} sleep infinity"
             )
             result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+            if result.returncode != 0:
+                raise RuntimeError(
+                    f"docker run failed (exit {result.returncode}): "
+                    f"{result.stderr.strip() or result.stdout.strip()}"
+                )
             container_id = result.stdout.strip()[:12]
+            if not container_id:
+                raise RuntimeError("docker run returned empty container ID")
 
             # Inject tool_executor.py and tools.py into the container.
             bench_core = Path(__file__).parent.parent / "mcp_servers" / "core"
@@ -150,6 +158,15 @@ class ContainerManager:
                     "cp",
                     str(bench_core / "tool_executor.py"),
                     f"{container_id}:/opt/bench/tool_executor.py",
+                ],
+                capture_output=True,
+            )
+            subprocess.run(
+                [
+                    "docker",
+                    "cp",
+                    str(bench_core / "trial_manager.py"),
+                    f"{container_id}:/opt/bench/trial_manager.py",
                 ],
                 capture_output=True,
             )
@@ -206,7 +223,12 @@ class ContainerManager:
     # Tool executor lifecycle (Docker mode only)
     # ------------------------------------------------------------------
 
-    def start_executor(self, container_id: str, timeout: float = 15.0) -> None:
+    def start_executor(
+        self,
+        container_id: str,
+        timeout: float = 15.0,
+        env_vars: dict[str, str] | None = None,
+    ) -> None:
         """Start the tool_executor.py daemon inside a Docker container.
 
         Launches ``docker exec -i`` with the Python executor script and
@@ -215,6 +237,8 @@ class ContainerManager:
         Args:
             container_id: The Docker container ID.
             timeout: Seconds to wait for the readiness signal.
+            env_vars: Extra environment variables to pass into the container
+                (e.g. ``{"QTB_MAX_BACKTEST_TRIALS": "5"}``).
 
         Raises:
             RuntimeError: If the executor fails to start within *timeout*.
@@ -222,18 +246,26 @@ class ContainerManager:
         if not self.use_docker or container_id.startswith("local_"):
             return  # No executor needed in local mode
 
-        proc = subprocess.Popen(
+        cmd = [
+            "docker",
+            "exec",
+            "-i",
+            "-e",
+            "PYTHONPATH=/opt/bench",
+        ]
+        for k, v in (env_vars or {}).items():
+            cmd.extend(["-e", f"{k}={v}"])
+        cmd.extend(
             [
-                "docker",
-                "exec",
-                "-i",
-                "-e",
-                "PYTHONPATH=/opt/bench",
                 container_id,
                 "python3",
                 "-u",
                 "/opt/bench/tool_executor.py",
-            ],
+            ]
+        )
+
+        proc = subprocess.Popen(
+            cmd,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -258,6 +290,9 @@ class ContainerManager:
                     msg = json.loads(line)
                     if msg.get("status") == "ready":
                         self._executors[container_id] = _ExecutorHandle(proc=proc)
+                        # Remember env_vars for _restart_executor
+                        if env_vars:
+                            self._executor_env[container_id] = env_vars
                         return
 
         proc.kill()
@@ -273,6 +308,8 @@ class ContainerManager:
         """Call a tool inside the container via the executor daemon.
 
         Thread-safe: acquires a lock so concurrent callers are serialised.
+        On timeout, the executor is killed and restarted so subsequent calls
+        are not blocked by a stuck process.
 
         Returns:
             The tool's result string.
@@ -282,7 +319,11 @@ class ContainerManager:
         """
         handle = self._executors.get(container_id)
         if handle is None or not handle.alive:
-            raise RuntimeError(f"No executor running for container {container_id}")
+            # Attempt auto-restart if executor died or was killed after a prior timeout.
+            self._restart_executor(container_id)
+            handle = self._executors.get(container_id)
+            if handle is None or not handle.alive:
+                raise RuntimeError(f"No executor running for container {container_id}")
 
         with handle.lock:
             req_id = handle.next_id()
@@ -331,7 +372,26 @@ class ContainerManager:
                         f"{stderr[:500]}"
                     )
 
+            # Timeout: kill the stuck executor so it can be restarted on next call.
+            handle.alive = False
+            handle.proc.kill()
             raise RuntimeError(f"Tool '{tool_name}' timed out after {timeout}s")
+
+    def _restart_executor(self, container_id: str) -> None:
+        """Kill a dead/stuck executor and start a fresh one."""
+        old = self._executors.pop(container_id, None)
+        if old is not None:
+            if old.proc.poll() is None:
+                old.proc.kill()
+                try:
+                    old.proc.wait(timeout=5)
+                except Exception:
+                    pass
+        try:
+            saved_env = self._executor_env.get(container_id)
+            self.start_executor(container_id, env_vars=saved_env)
+        except RuntimeError:
+            pass  # Caller will check handle.alive
 
     def stop_executor(self, container_id: str) -> None:
         """Gracefully stop the executor daemon for a container."""

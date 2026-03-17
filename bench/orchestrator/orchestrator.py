@@ -42,7 +42,7 @@ from orchestrator.schemas import (
     StudentPersona,
     TaskResult,
 )
-from orchestrator.simulator_config import (
+from orchestrator.simulation import (
     run_conversation_simulation,
 )
 
@@ -201,12 +201,12 @@ class BenchmarkOrchestrator:
         sandbox_img = task.environment.sandbox_image if task.environment else ""
         if sandbox_img and "lean" in sandbox_img:
             if self._paths_i is None:
-                self._paths_i = ensure_data(series="i", revision=DATASET_REVISION)
+                self._paths_i = ensure_data(series="lean", revision=DATASET_REVISION)
             return self._paths_i
         else:
             if self._paths_non_i is None:
                 self._paths_non_i = ensure_data(
-                    series="non_i", revision=DATASET_REVISION
+                    series="normal", revision=DATASET_REVISION
                 )
             return self._paths_non_i
 
@@ -246,6 +246,7 @@ class BenchmarkOrchestrator:
 
         staged_temp_dirs: list[str] = []
         container = None
+        simulator_cost = None
 
         try:
             # === PHASE 1: RESET ===
@@ -265,18 +266,10 @@ class BenchmarkOrchestrator:
             # LEAN data mount (I-series only)
             lean_data_dir = paths.lean_data
 
-            # Student code for debug tasks
+            # Student code for debug tasks (from current series' paths)
             student_code_dir = None
             if task.category.value == "debug":
-                non_i = self._paths_non_i
-                if non_i is None:
-                    from config.benchmark_config import DATASET_REVISION
-
-                    from scripts.data_manager import ensure_data
-
-                    non_i = ensure_data(series="non_i", revision=DATASET_REVISION)
-                    self._paths_non_i = non_i
-                student_code_dir = non_i.student_code
+                student_code_dir = paths.student_code
 
             # 1b. Create sandbox container (Docker or local fallback)
             container = self.container_manager.create_container(
@@ -295,8 +288,13 @@ class BenchmarkOrchestrator:
 
             # 1b.5. Start tool executor daemon inside the container (Docker only).
             # All core tools will be routed through this persistent process.
+            # Pass QTB_MAX_BACKTEST_TRIALS so run_backtest.sh can enforce budget.
+            max_bt = task.environment.max_backtest_trials if task.environment else 0
             if self.container_manager.use_docker:
-                self.container_manager.start_executor(container.container_id)
+                self.container_manager.start_executor(
+                    container.container_id,
+                    env_vars={"QTB_MAX_BACKTEST_TRIALS": str(max_bt)},
+                )
 
             # 1c. Set environment vars for tool implementations (lazy reads in tools.py)
             # In Docker mode these are unused (container uses default /data etc.);
@@ -305,6 +303,7 @@ class BenchmarkOrchestrator:
             os.environ["QTB_DOCS_DIR"] = staged_docs_dir
             os.environ["QTB_WORKSPACE_DIR"] = container.workspace_path
             os.environ["QTB_STUDENT_CODE_DIR"] = student_code_dir or ""
+            os.environ["QTB_MAX_BACKTEST_TRIALS"] = str(max_bt)
 
             # 1d. Configure MCP proxy with task-specific tools + container info
             proxy = create_proxy_for_task(
@@ -458,6 +457,32 @@ class BenchmarkOrchestrator:
                 )
                 result.overall_score = score_breakdown["overall_score"]
 
+            # === PHASE 3.25: TRIAL FINALIZATION ===
+            # Check for either manifest (tool-invoked runs) or JSONL log
+            # (shell_exec-invoked runs). Both paths are now unified.
+            if max_bt > 0 and container.workspace_path:
+                manifest_path = os.path.join(
+                    container.workspace_path, ".trials", "manifest.json"
+                )
+                jsonl_path = os.path.join(
+                    container.workspace_path, ".backtest_runs.jsonl"
+                )
+                if os.path.exists(manifest_path) or os.path.exists(jsonl_path):
+                    try:
+                        from mcp_servers.core.trial_manager import TrialManager
+
+                        tm = TrialManager(container.workspace_path, max_trials=max_bt)
+                        status = tm.get_status()
+                        if not status.get("selected_trial") and status["trials"]:
+                            selected = tm.auto_select()
+                            print(
+                                f"  [Trials] Auto-selected trial {selected} "
+                                f"(agent did not call select_submission)"
+                            )
+                        result.trial_metadata = tm.get_status()
+                    except Exception as e:
+                        print(f"  [Trials] Warning: finalization failed: {e}")
+
             # === PHASE 5: TEARDOWN ===
             self.container_manager.destroy_container(container.container_id)
 
@@ -479,7 +504,9 @@ class BenchmarkOrchestrator:
         result.duration_seconds = time.time() - start_time
 
         # §6.5: Aggregate cost from actual token tracking
+        # Harvest then clear so records reflect only THIS task (not prior ones).
         agent_records = agent.get_token_records()
+        agent._token_records.clear()
         agent_input = sum(r.input_tokens for r in agent_records)
         agent_output = sum(r.output_tokens for r in agent_records)
         agent_cost = sum(r.cost_usd for r in agent_records)
@@ -661,6 +688,10 @@ class BenchmarkOrchestrator:
             proxy: The MCPProxy instance with tool call logs.
             conversation: List of {"role", "content"} dicts.
         """
+        from orchestrator.live_monitor import emit
+
+        _eval_id = {"task_id": task.task_id, "persona_id": persona.persona_id}
+
         results = {
             "quant_result": 0.0,
             "quant_process": 0.0,
@@ -669,6 +700,7 @@ class BenchmarkOrchestrator:
         }
 
         # ── Step 2: Quant Result Score (custom eval scripts) ──
+        emit("eval_step", {**_eval_id, "step": "quant_result", "status": "running"})
         print("  Evaluating Quant Result...")
         if task.ground_truth.quant_validation:
             eval_script = (
@@ -701,12 +733,25 @@ class BenchmarkOrchestrator:
                 except Exception as e:
                     results["quant_result_error"] = str(e)
 
+        emit(
+            "eval_step",
+            {
+                **_eval_id,
+                "step": "quant_result",
+                "status": "done",
+                "score": (
+                    round(results["quant_result"], 4) if results["quant_result"] else 0
+                ),
+            },
+        )
+
         # ── Step 2b: Code Execution QR (Phase 1) ──
+        emit("eval_step", {**_eval_id, "step": "code_eval", "status": "running"})
         print("  Evaluating Code Execution QR...")
         reference = None  # loaded here, also used by Step 2c + Step 3b
         try:
             from evaluation.code_eval import evaluate_code_combined
-            from reference.reference_store import ReferenceStore
+            from reference.script.reference_store import ReferenceStore
 
             ref_store = ReferenceStore()
             reference = ref_store.load(task.task_id, persona.persona_id)
@@ -721,7 +766,18 @@ class BenchmarkOrchestrator:
         except Exception as e:
             results["code_eval_error"] = str(e)
 
+        emit(
+            "eval_step",
+            {
+                **_eval_id,
+                "step": "code_eval",
+                "status": "done",
+                "score": round(results.get("code_eval", {}).get("score", 0), 4),
+            },
+        )
+
         # ── Step 2c (pre): Tool Usage (mathematical, no LLM — needed by QP) ──
+        emit("eval_step", {**_eval_id, "step": "tool_usage", "status": "running"})
         tool_usage_result = None
         try:
             from evaluation.deepeval_metrics.tool_usage import evaluate_tool_usage
@@ -740,6 +796,20 @@ class BenchmarkOrchestrator:
             results["tool_usage"] = tool_usage_result
         except Exception as e:
             results["tool_usage_error"] = str(e)
+
+        emit(
+            "eval_step",
+            {
+                **_eval_id,
+                "step": "tool_usage",
+                "status": "done",
+                "score": (
+                    round(tool_usage_result.get("score", 0), 4)
+                    if tool_usage_result
+                    else 0
+                ),
+            },
+        )
 
         # ── Steps 2c/3/4: Parallel LLM evaluation (RJ + QP + Tutor) ──
         # These three evaluators have no cross-dependencies. Each maintains
@@ -864,6 +934,9 @@ class BenchmarkOrchestrator:
             return out
 
         print("  Running RJ / QP / Tutor in parallel...")
+        emit("eval_step", {**_eval_id, "step": "result_judge", "status": "running"})
+        emit("eval_step", {**_eval_id, "step": "process_metrics", "status": "running"})
+        emit("eval_step", {**_eval_id, "step": "tutor_7d", "status": "running"})
         _t_parallel = time.time()
         _thread_errors: list[Exception] = []
         with concurrent.futures.ThreadPoolExecutor(max_workers=3) as pool:
@@ -873,7 +946,43 @@ class BenchmarkOrchestrator:
 
             for fut in concurrent.futures.as_completed([fut_rj, fut_qp, fut_tutor]):
                 try:
-                    results.update(fut.result())
+                    fut_result = fut.result()
+                    results.update(fut_result)
+                    if fut is fut_rj:
+                        rj_s = fut_result.get("result_judge", {}).get("score", 0)
+                        emit(
+                            "eval_step",
+                            {
+                                **_eval_id,
+                                "step": "result_judge",
+                                "status": "done",
+                                "score": round(rj_s, 4),
+                            },
+                        )
+                    elif fut is fut_qp:
+                        qp_s = fut_result.get("quant_process", 0)
+                        emit(
+                            "eval_step",
+                            {
+                                **_eval_id,
+                                "step": "process_metrics",
+                                "status": "done",
+                                "score": round(qp_s, 4),
+                            },
+                        )
+                    elif fut is fut_tutor:
+                        ts = fut_result.get("tutor_scores", {})
+                        t_vals = [v for v in ts.values() if isinstance(v, (int, float))]
+                        t_avg = sum(t_vals) / len(t_vals) if t_vals else 0
+                        emit(
+                            "eval_step",
+                            {
+                                **_eval_id,
+                                "step": "tutor_7d",
+                                "status": "done",
+                                "score": round(t_avg, 4),
+                            },
+                        )
                 except Exception as e:
                     if fut is fut_tutor:
                         # Tutor is independent — graceful degradation
@@ -898,6 +1007,7 @@ class BenchmarkOrchestrator:
         )
 
         # ── Step 2d: Combine QR components (30/30/40 blend) ──
+        emit("eval_step", {**_eval_id, "step": "qr_blend", "status": "running"})
         # Must run after RJ completes (needs result_judge score).
         programmatic_score = results["quant_result"]
         code_eval_score = results.get("code_eval", {}).get("score", 0.0)
@@ -929,6 +1039,15 @@ class BenchmarkOrchestrator:
             if isinstance(rj, dict):
                 rj["_eval_script_score"] = None
                 rj["_dampening_factor"] = None
+            emit(
+                "eval_step",
+                {
+                    **_eval_id,
+                    "step": "qr_blend",
+                    "status": "done",
+                    "score": round(results["quant_result"], 4),
+                },
+            )
             return results
 
         # Continuous divergence dampening: smoothly reduce programmatic
@@ -975,6 +1094,16 @@ class BenchmarkOrchestrator:
         if isinstance(rj, dict):
             rj["_eval_script_score"] = programmatic_score
             rj["_dampening_factor"] = round(dampening_factor, 4)
+
+        emit(
+            "eval_step",
+            {
+                **_eval_id,
+                "step": "qr_blend",
+                "status": "done",
+                "score": round(results["quant_result"], 4),
+            },
+        )
 
         return results
 

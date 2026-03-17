@@ -18,6 +18,9 @@ DeepEval API (v3.8+):
 
 import asyncio
 import json
+import logging as _logging
+
+_log = _logging.getLogger(__name__)
 import random
 import threading
 from pathlib import Path
@@ -167,7 +170,13 @@ _TRIM_PATCHED = False
 
 
 def _patch_trim_and_load_json():
-    """Patch trimAndLoadJson to save raw response on the metric before raising."""
+    """Patch trimAndLoadJson to save raw response on the metric before raising.
+
+    Also patches ``a_generate_with_schema_and_extract`` so that a missing
+    ``reason`` key in the LLM JSON (valid JSON but ``{"score": N}`` without
+    ``"reason"``) does not raise ``KeyError`` — instead a default reason is
+    injected.
+    """
     global _TRIM_PATCHED
     if _TRIM_PATCHED:
         return
@@ -189,6 +198,29 @@ def _patch_trim_and_load_json():
 
     _du.trimAndLoadJson = _patched
     _cge.trimAndLoadJson = _patched
+
+    # ── Patch extract_json lambda to tolerate missing 'reason' ──
+    _orig_extract = _du.a_generate_with_schema_and_extract
+
+    async def _safe_extract(
+        metric, prompt, schema_cls, *, extract_schema, extract_json
+    ):
+        def _safe_json(data):
+            if isinstance(data, dict) and "reason" not in data:
+                data["reason"] = data.get("reason", "No reason provided by judge")
+            return extract_json(data)
+
+        return await _orig_extract(
+            metric,
+            prompt,
+            schema_cls,
+            extract_schema=extract_schema,
+            extract_json=_safe_json,
+        )
+
+    _du.a_generate_with_schema_and_extract = _safe_extract
+    _cge.a_generate_with_schema_and_extract = _safe_extract
+
     _TRIM_PATCHED = True
 
 
@@ -811,6 +843,7 @@ def evaluate_tutor_dimensions(
     _abort = abort_event if abort_event is not None else threading.Event()
     _first_error: list[Exception] = []
     _fallback_count = [0]  # mutable counter for nonlocal capture
+    _fallback_details: list[dict] = []  # per-fallback diagnostic info
 
     async def _run_all():
         sem = asyncio.Semaphore(_CONCURRENCY)
@@ -838,6 +871,14 @@ def evaluate_tutor_dimensions(
                             await asyncio.sleep(1)
                             continue
                         # ── Retries exhausted: try fallback ──
+                        _dim = getattr(metric, "name", "?")
+                        _key = f"[{model_name}] {_dim}"
+                        _log.warning(
+                            "Tutor fallback triggered for %s — exc: %s | raw_text[:300]: %s",
+                            _key,
+                            last_exc,
+                            (raw_text or "")[:300],
+                        )
                         # Layer 1: extract score from raw prose
                         if raw_text:
                             extracted = _extract_score_from_prose(raw_text)
@@ -847,6 +888,16 @@ def evaluate_tutor_dimensions(
                                 metric.reason = f"[FALLBACK-EXTRACT] {reason}"
                                 metric.evaluation_cost = 0.0
                                 _fallback_count[0] += 1
+                                _fallback_details.append(
+                                    {
+                                        "dim": _dim,
+                                        "model": model_name,
+                                        "layer": "EXTRACT",
+                                        "score": score,
+                                        "exc": str(last_exc)[:200],
+                                        "raw_snippet": (raw_text or "")[:300],
+                                    }
+                                )
                                 return score / 10.0
                         # Layer 2: direct GPTModel call with robust parser
                         try:
@@ -857,6 +908,16 @@ def evaluate_tutor_dimensions(
                             metric.reason = f"[FALLBACK-DIRECT] {reason}"
                             metric.evaluation_cost = 0.0
                             _fallback_count[0] += 1
+                            _fallback_details.append(
+                                {
+                                    "dim": _dim,
+                                    "model": model_name,
+                                    "layer": "DIRECT",
+                                    "score": score,
+                                    "exc": str(last_exc)[:200],
+                                    "raw_snippet": (raw_text or "")[:300],
+                                }
+                            )
                             return score / 10.0
                         except Exception:
                             pass
@@ -942,6 +1003,8 @@ def evaluate_tutor_dimensions(
         final_scores["_per_model"] = per_model
 
     final_scores["_fallback_count"] = _fallback_count[0]
+    if _fallback_details:
+        final_scores["_fallback_details"] = _fallback_details
 
     return final_scores
 

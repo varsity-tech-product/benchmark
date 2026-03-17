@@ -52,7 +52,7 @@
       "plot_chart"
     ],
     "quant_validation": {
-      "eval_script": "evaluation/test_scripts/D04_ohlcv_summary_statistics.py"
+      "eval_script": "evaluation/test_scripts/data_analysis/D04_ohlcv_summary_statistics.py"
     }
   },
   "requires_code": true,

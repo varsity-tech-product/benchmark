@@ -50,7 +50,7 @@
       "plot_chart"
     ],
     "quant_validation": {
-      "eval_script": "evaluation/test_scripts/D05_return_computation.py"
+      "eval_script": "evaluation/test_scripts/data_analysis/D05_return_computation.py"
     }
   },
   "requires_code": true,
