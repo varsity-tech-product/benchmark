@@ -356,21 +356,53 @@ class OpenAIAgentAdapter(BaseAgentAdapter):
             else:
                 log.warning("Direct API: max_turns (%d) reached", self.max_turns)
                 # When max_turns exhausted with no text captured, make one
-                # more call WITHOUT tools to force a text-only summary.
+                # more call WITH tools so GPT can properly structure any
+                # remaining tool-call intent (omitting tools= causes GPT
+                # to leak raw JSON fragments into the text content).
                 if not text_parts:
-                    log.info("Direct API: forcing text-only call after tool loop")
+                    log.info("Direct API: forcing summary call after tool loop")
                     try:
-                        force_resp = client.chat.completions.create(
+                        force_kwargs: dict = dict(
                             model=self.model,
                             messages=api_messages,
                             max_tokens=4096,
                         )
+                        if tools:
+                            force_kwargs["tools"] = tools
+                        force_resp = client.chat.completions.create(
+                            **force_kwargs
+                        )
                         force_msg = force_resp.choices[0].message
                         if force_msg.content:
                             text_parts.append(self._ensure_str(force_msg.content))
-                        api_messages.append(
-                            force_msg.model_dump(exclude_none=True)
-                        )
+                        # Process any final tool calls from the forced response
+                        if force_msg.tool_calls and tool_callback:
+                            api_messages.append(
+                                force_msg.model_dump(exclude_none=True)
+                            )
+                            for tc in force_msg.tool_calls:
+                                args = (
+                                    json.loads(tc.function.arguments)
+                                    if tc.function.arguments
+                                    else {}
+                                )
+                                try:
+                                    result = tool_callback(
+                                        tc.function.name, **args
+                                    )
+                                    api_messages.append(
+                                        {
+                                            "tool_call_id": tc.id,
+                                            "role": "tool",
+                                            "content": str(result),
+                                        }
+                                    )
+                                except Exception:
+                                    pass
+                        else:
+                            api_messages.append(
+                                force_msg.model_dump(exclude_none=True)
+                            )
                         usage = getattr(force_resp, "usage", None)
                         if usage:
                             inp = getattr(usage, "prompt_tokens", 0) or 0

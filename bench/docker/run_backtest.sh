@@ -107,6 +107,17 @@ if ! dotnet build QuantConnect.Lean.sln -c Debug --no-restore 2>&1; then
 fi
 echo "  -> Build succeeded"
 
+# Copy the compiled DLL to the Launcher directory where LEAN expects it.
+# dotnet build outputs to Algorithm.CSharp/bin/Debug/ but LEAN's JobQueue
+# loads from Launcher/QuantConnect.Algorithm.CSharp.dll.
+ALGO_DLL="${LEAN_ALGO_DIR}/bin/Debug/QuantConnect.Algorithm.CSharp.dll"
+if [ -f "$ALGO_DLL" ]; then
+    cp "$ALGO_DLL" "${LEAN_LAUNCHER}/QuantConnect.Algorithm.CSharp.dll"
+    echo "  -> Copied DLL to Launcher directory"
+else
+    echo "WARNING: Compiled DLL not found at $ALGO_DLL"
+fi
+
 # ── Step 2b: Reset and inject parameters into config.json ─────────────
 echo "[2b/4] Preparing config.json parameters..."
 python3 -c "
