@@ -59,7 +59,7 @@
       "plot_chart"
     ],
     "quant_validation": {
-      "eval_script": "evaluation/test_scripts/implementation/I03_mean_reversion.py"
+      "eval_script": "evaluation/test_scripts/I03_mean_reversion.py"
     }
   },
   "requires_code": true,

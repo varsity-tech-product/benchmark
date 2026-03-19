@@ -61,7 +61,7 @@
       "plot_chart"
     ],
     "quant_validation": {
-      "eval_script": "evaluation/test_scripts/implementation/I06_multi_signal_sweep.py"
+      "eval_script": "evaluation/test_scripts/I06_multi_signal_sweep.py"
     }
   },
   "requires_code": true,

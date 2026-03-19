@@ -394,7 +394,7 @@ def build_tutor_context(
     if has_docs:
         parts.append("")
         parts.append("=== AVAILABLE DOCUMENTATION ===")
-        parts.append(
+        docs_guidance = (
             "Reference documentation is available for this session. "
             "Use get_environment_info to discover available docs and "
             "file_read to consult them — this helps ensure your "
@@ -424,7 +424,7 @@ def build_tutor_context(
     if has_expected_tools:
         parts.append("")
         parts.append("=== TOOL USAGE DIRECTIVE ===")
-        parts.append(
+        tool_guidance = (
             "You have access to tools for this tutoring session. Use them "
             "to make your teaching concrete and verifiable — when a "
             "student asks about a concept, demonstrate it with real data "

@@ -60,7 +60,7 @@
       "analyze_backtest_results"
     ],
     "quant_validation": {
-      "eval_script": "evaluation/test_scripts/implementation/I08_multi_alpha.py"
+      "eval_script": "evaluation/test_scripts/I08_multi_alpha.py"
     }
   },
   "requires_code": true,

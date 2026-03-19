@@ -5,22 +5,21 @@
 #
 # Workflow:
 #   1. Copies Algorithm.cs into the LEAN project structure
-#   2. Auto-detects the algorithm class name (inheriting QCAlgorithm)
-#   3. Builds the C# project via dotnet build
-#   4. Runs the LEAN engine via the compiled Launcher DLL
-#   5. Extracts results to /workspace/results/:
+#   2. Builds the C# project via dotnet build
+#   3. Runs the LEAN engine
+#   4. Extracts results to /workspace/results/:
 #      - trades.json    (closed trades from the backtest)
 #      - summary.json   (performance metrics / statistics)
 #      - orders.json    (all order events)
 #      - log.txt        (algorithm log output)
 #
 # Exit codes:
-#   0  — backtest completed successfully
-#   1  — usage error or missing file
-#   2  — build failure
-#   3  — LEAN engine runtime failure
-#   4  — results extraction failure
-#   5  — backtest budget exhausted (no compute consumed)
+#   0    — backtest completed successfully
+#   1    — usage error or missing file
+#   2    — build failure
+#   3    — LEAN engine runtime failure
+#   4    — results extraction failure
+#   124  — timeout killed the LEAN process
 
 set -euo pipefail
 
@@ -30,11 +29,11 @@ LEAN_LAUNCHER="${LEAN_ROOT}/Launcher"
 LEAN_ALGO_DIR="${LEAN_ROOT}/Algorithm.CSharp"
 LEAN_CONFIG="${LEAN_LAUNCHER}/config.json"
 RESULTS_DIR="/workspace/results"
+LEAN_OUTPUT_DIR="${LEAN_LAUNCHER}/bin/Debug"
 
-# Per-backtest timeout in seconds (default 2 min, overridable via env var).
-# Exit code 124 = timeout killed.  With close-automatically=true the engine
-# exits promptly; 120s is enough for .NET cold build + backtest.
-LEAN_RUN_TIMEOUT="${LEAN_RUN_TIMEOUT:-120}"
+# Per-backtest timeout in seconds (default 5 min, overridable via env var).
+# Exit code 124 = timeout killed.
+LEAN_RUN_TIMEOUT="${LEAN_RUN_TIMEOUT:-300}"
 
 # ── Usage check ────────────────────────────────────────────────────────
 if [ $# -lt 1 ]; then
@@ -61,7 +60,6 @@ while [ $# -gt 0 ]; do
             shift 2
             ;;
         *)
-            echo "WARNING: Unknown argument ignored: $1"
             shift
             ;;
     esac
@@ -77,68 +75,9 @@ if [ -n "$RUN_ID" ]; then
     RESULTS_DIR="/workspace/results/${RUN_ID}"
 fi
 
-# ── Budget enforcement (environment-level) ────────────────────────────
-# Every invocation of run_backtest (whether via run_lean_backtest tool or
-# shell_exec) passes through this single script. Budget is enforced here
-# so it cannot be bypassed.
-RUNS_LOG="/workspace/.backtest_runs.jsonl"
-MAX_RUNS="${QTB_MAX_BACKTEST_TRIALS:-5}"
-RUNS_DONE=$(wc -l < "$RUNS_LOG" 2>/dev/null || echo "0")
-RUNS_DONE="${RUNS_DONE// /}"
-
-if [ "$RUNS_DONE" -ge "$MAX_RUNS" ]; then
-    echo "ERROR: Backtest budget exhausted ($RUNS_DONE/$MAX_RUNS runs used)."
-    echo "No further backtest runs allowed."
-    echo "Review existing results and select your best version."
-    echo "Use get_trial_status() to see all recorded runs."
-    # Exit 5 = budget exhausted. Do NOT register (no compute consumed).
-    exit 5
-fi
-
-# ── Self-registration via EXIT trap ───────────────────────────────────
-# Records every run (success or failure) to .backtest_runs.jsonl so that
-# evaluation can see ALL runs regardless of invocation path.
-_register_run() {
-    local rc=$?
-    python3 -c "
-import json, time, os
-rc = $rc
-record = {
-    'run': int('${RUNS_DONE}') + 1,
-    'ts': time.time(),
-    'algo': '${ALGO_FILE}',
-    'run_id': '${RUN_ID}',
-    'exit_code': rc,
-    'results_dir': '${RESULTS_DIR}',
-    'metrics': {},
-}
-# Only read metrics on success (exit 0). On compile_error/runtime_error
-# the summary.json may be stale from a previous run — force empty metrics.
-if rc == 0:
-    summary = '${RESULTS_DIR}/summary.json'
-    if os.path.exists(summary):
-        try:
-            with open(summary) as f:
-                d = json.load(f)
-            s = d.get('statistics', d)
-            record['metrics'] = {
-                'sharpe': s.get('Sharpe Ratio', ''),
-                'trades': s.get('Total Trades', s.get('Total Orders', '')),
-                'net_profit': s.get('Net Profit', ''),
-            }
-        except Exception:
-            pass
-with open('/workspace/.backtest_runs.jsonl', 'a') as f:
-    f.write(json.dumps(record) + chr(10))
-" 2>/dev/null || true
-    return $rc
-}
-trap '_register_run' EXIT
-
 echo "=== LEAN Backtest Runner ==="
 echo "  Algorithm: $ALGO_FILE"
 echo "  LEAN root: $LEAN_ROOT"
-echo "  Budget: run $((RUNS_DONE + 1))/$MAX_RUNS"
 if [ -n "$PARAMS_JSON" ]; then
     echo "  Parameters: $PARAMS_JSON"
 fi
@@ -150,153 +89,78 @@ echo ""
 
 # ── Step 1: Copy algorithm into LEAN project ──────────────────────────
 echo "[1/4] Copying algorithm into LEAN project..."
-# Remove ALL existing .cs files first to prevent "multiple QCAlgorithm types"
-# errors when LEAN tries to resolve the algorithm class. The container is
-# ephemeral so this is safe; only the new Algorithm.cs should be compiled.
-find "${LEAN_ALGO_DIR}" -name "*.cs" -delete 2>/dev/null || true
 cp "$ALGO_FILE" "${LEAN_ALGO_DIR}/Algorithm.cs"
-echo "  -> Copied to ${LEAN_ALGO_DIR}/Algorithm.cs (cleaned old .cs files)"
-
-# ── Step 1b: Auto-detect algorithm class name ──────────────────────────
-# Look for "class <Name> : QCAlgorithm" (handles various spacings)
-ALGO_CLASS=$(grep -oP 'class\s+\K\w+(?=\s*:\s*QCAlgorithm)' "$ALGO_FILE" | head -1 || true)
-if [ -z "$ALGO_CLASS" ]; then
-    # Fallback: look for any public class
-    ALGO_CLASS=$(grep -oP 'public\s+class\s+\K\w+' "$ALGO_FILE" | head -1 || true)
-fi
-if [ -z "$ALGO_CLASS" ]; then
-    ALGO_CLASS="Algorithm"
-fi
-echo "  -> Detected algorithm class: $ALGO_CLASS"
-
-# Update config.json with the detected class name, close-automatically,
-# and results-destination-folder (synced to RESULTS_DIR for --run-id support).
-python3 -c "
-import json
-with open('$LEAN_CONFIG') as f:
-    cfg = json.load(f)
-cfg['algorithm-type-name'] = '$ALGO_CLASS'
-cfg['close-automatically'] = True
-cfg['results-destination-folder'] = '$RESULTS_DIR'
-with open('$LEAN_CONFIG', 'w') as f:
-    json.dump(cfg, f, indent=2)
-print('  -> Updated config: algorithm-type-name=$ALGO_CLASS, close-automatically=true, results-destination-folder=$RESULTS_DIR')
-" 2>&1
+echo "  -> Copied to ${LEAN_ALGO_DIR}/Algorithm.cs"
 
 # ── Step 2: Build the C# project ──────────────────────────────────────
 echo "[2/4] Building LEAN project..."
 cd "$LEAN_ROOT"
 
-# Build only Algorithm.CSharp (not the whole solution) — the rest was
-# pre-built in the Docker image. This is faster and avoids needing write
-# permissions to every project's obj/ directory.
-#
-# stdout/stderr are redirected to build_log.txt to avoid flooding the
-# pipe with ~600 KB of compiler warnings (which can deadlock the
-# container executor's 64 KB pipe buffer).
-mkdir -p "$RESULTS_DIR"
-BUILD_LOG="$RESULTS_DIR/build_log.txt"
-if ! dotnet build Algorithm.CSharp/QuantConnect.Algorithm.CSharp.csproj -c Debug --no-restore > "$BUILD_LOG" 2>&1; then
+if ! dotnet build QuantConnect.Lean.sln -c Debug --no-restore 2>&1; then
     echo ""
-    echo "ERROR: Build failed. Errors from build log:"
-    # Show only error lines (skip the hundreds of warnings)
-    grep -i "error" "$BUILD_LOG" | grep -v "warning" | tail -30
-    echo ""
-    echo "Full build log saved to: $BUILD_LOG"
+    echo "ERROR: Build failed. Check the C# code for compilation errors."
+    echo "Common issues:"
+    echo "  - Missing 'using' statements"
+    echo "  - Incorrect LEAN API usage"
+    echo "  - C# syntax errors"
     exit 2
 fi
-# Copy the freshly built DLL to the Launcher output directory so LEAN
-# loads the updated algorithm (the solution-wide build already placed
-# other dependencies there during Docker image creation).
-cp "${LEAN_ALGO_DIR}/bin/Debug/QuantConnect.Algorithm.CSharp.dll" \
-   "${LEAN_LAUNCHER}/bin/Debug/QuantConnect.Algorithm.CSharp.dll"
-WARN_COUNT=$(grep -c "warning CS" "$BUILD_LOG" 2>/dev/null || echo "0")
-echo "  -> Build succeeded ($WARN_COUNT warnings, see $BUILD_LOG for details)"
+echo "  -> Build succeeded"
 
-# ── Step 2b: Inject parameters into config.json (if --params provided) ──
-if [ -n "$PARAMS_JSON" ]; then
-    echo "[2b/4] Injecting parameters into config.json..."
-    python3 -c "
-import json, sys
+# ── Step 2b: Reset and inject parameters into config.json ─────────────
+echo "[2b/4] Preparing config.json parameters..."
+python3 -c "
+import json
+
 with open('$LEAN_CONFIG') as f:
     cfg = json.load(f)
-params = json.loads('$PARAMS_JSON')
-cfg.setdefault('parameters', {}).update(params)
+
+params = json.loads('''$PARAMS_JSON''') if '$PARAMS_JSON' else {}
+cfg['parameters'] = params
+
 with open('$LEAN_CONFIG', 'w') as f:
     json.dump(cfg, f, indent=2)
-print(f'  -> Injected {len(params)} parameter(s)')
+
+print(f'  -> Set {len(params)} parameter(s)')
 " 2>&1
-fi
 
 # ── Step 3: Run the LEAN engine ───────────────────────────────────────
 echo "[3/4] Running LEAN engine..."
 
-# Clean previous results (preserve build_log.txt from Step 2)
-if [ -f "$RESULTS_DIR/build_log.txt" ]; then
-    BUILD_LOG_BAK=$(mktemp)
-    cp "$RESULTS_DIR/build_log.txt" "$BUILD_LOG_BAK"
-fi
+# Clean previous results
 rm -rf "$RESULTS_DIR"
 mkdir -p "$RESULTS_DIR"
-if [ -n "${BUILD_LOG_BAK:-}" ] && [ -f "$BUILD_LOG_BAK" ]; then
-    mv "$BUILD_LOG_BAK" "$RESULTS_DIR/build_log.txt"
-fi
 
-# Find the Launcher DLL (handles any TFM directory like net10.0)
-LAUNCHER_DLL=$(find "$LEAN_LAUNCHER/bin/Debug" -name "QuantConnect.Lean.Launcher.dll" -type f 2>/dev/null | head -1)
-
-if [ -z "$LAUNCHER_DLL" ]; then
-    echo "ERROR: Could not find QuantConnect.Lean.Launcher.dll"
-    echo "  Searched in: $LEAN_LAUNCHER/bin/Debug/"
-    echo "  Available files:"
-    find "$LEAN_LAUNCHER/bin/Debug" -name "*.dll" -type f 2>/dev/null | head -10
-    exit 3
-fi
-echo "  -> Using Launcher DLL: $LAUNCHER_DLL"
-
-# LEAN reads config.json from AppDomain.BaseDirectory (= DLL directory).
-# Copy our config (with any injected params / class name updates) there.
-LAUNCHER_BIN_DIR=$(dirname "$LAUNCHER_DLL")
-cp "$LEAN_CONFIG" "$LAUNCHER_BIN_DIR/config.json"
-
-# Run from the DLL directory so all relative paths resolve correctly.
-cd "$LAUNCHER_BIN_DIR"
+cd "$LEAN_LAUNCHER"
 
 RUN_EXIT=0
-# Redirect LEAN engine output to log.txt instead of tee-ing to stdout.
-# The full engine log can be 30+ KB of TRACE lines; the agent can read
-# it later via file_read if needed.
-timeout "$LEAN_RUN_TIMEOUT" dotnet "$LAUNCHER_DLL" > "$RESULTS_DIR/log.txt" 2>&1 || RUN_EXIT=$?
+timeout "$LEAN_RUN_TIMEOUT" dotnet run --no-build -c Debug 2>&1 | tee "$RESULTS_DIR/log.txt" || RUN_EXIT=${PIPESTATUS[0]}
 
 if [ "$RUN_EXIT" -eq 124 ]; then
     echo ""
     echo "ERROR: LEAN engine timed out after ${LEAN_RUN_TIMEOUT}s."
     echo "Increase LEAN_RUN_TIMEOUT env var if the algorithm needs more time."
-    # Show tail of log for debugging
-    echo "Last 10 lines of log:"
-    tail -10 "$RESULTS_DIR/log.txt" 2>/dev/null || true
     exit 124
 elif [ "$RUN_EXIT" -ne 0 ]; then
     echo ""
     echo "ERROR: LEAN engine failed at runtime (exit code $RUN_EXIT)."
     echo "Check $RESULTS_DIR/log.txt for details."
-    # Show ERROR lines from the log to help the agent fix the issue
-    echo "Errors from log:"
-    grep -i "ERROR" "$RESULTS_DIR/log.txt" | tail -15
+    echo "Common issues:"
+    echo "  - Data not found for requested symbols/dates"
+    echo "  - Algorithm runtime exceptions"
+    echo "  - Incorrect date ranges"
     exit 3
 fi
-echo "  -> LEAN engine completed (full log: $RESULTS_DIR/log.txt)"
+echo "  -> LEAN engine completed"
 
 # ── Step 4: Extract results ───────────────────────────────────────────
 echo "[4/4] Extracting results..."
 
-# LEAN writes results to the configured results-destination-folder
-# (synced to $RESULTS_DIR in Step 1b) or to the Launcher output directory.
-# Also check /workspace/results as a fallback for --run-id runs.
+# LEAN writes results to the configured results-destination-folder or
+# to the Launcher output directory. Check both locations.
 LEAN_RESULTS_SEARCH_DIRS=(
     "$RESULTS_DIR"
-    "/workspace/results"
-    "$LAUNCHER_BIN_DIR"
+    "$LEAN_OUTPUT_DIR"
     "${LEAN_LAUNCHER}"
 )
 
@@ -319,76 +183,51 @@ copy_result() {
     return 0
 }
 
-# Extract key result files.
-# LEAN names vary by version: older uses *-statistics.json / *-trades.json,
-# newer uses *-summary.json and embeds trades in the main *.json result.
-# Try both patterns for each file type.
+# Extract key result files
+copy_result "*-trades.json" "trades.json"
 copy_result "*-order-events.json" "orders.json"
 copy_result "*-statistics.json" "summary.json"
-if [ ! -f "$RESULTS_DIR/summary.json" ]; then
-    copy_result "*-summary.json" "summary.json"
-fi
-
-# Trades: try dedicated file first, then extract from main result JSON.
-copy_result "*-trades.json" "trades.json"
-if [ ! -f "$RESULTS_DIR/trades.json" ]; then
-    # LEAN may embed trades in {AlgoName}.json under .ClosedTrades
-    MAIN_RESULT=$(find "$RESULTS_DIR" -maxdepth 1 -name "*.json" \
-        ! -name "summary.json" ! -name "orders.json" ! -name "trades.json" \
-        ! -name "*-order-events.json" ! -name "*-summary.json" ! -name "*-statistics.json" \
-        ! -name "*-log*" ! -name "build_log.txt" ! -name "data-monitor-*" \
-        ! -name "failed-data-*" ! -name "succeeded-data-*" \
-        -type f 2>/dev/null | head -1)
-    if [ -n "$MAIN_RESULT" ]; then
-        python3 -c "
-import json, sys
-with open('$MAIN_RESULT') as f:
-    data = json.load(f)
-trades = data.get('ClosedTrades', data.get('trades', []))
-if trades:
-    with open('$RESULTS_DIR/trades.json', 'w') as f:
-        json.dump(trades, f, indent=2)
-    print(f'  -> trades.json (extracted {len(trades)} trades from {\"$MAIN_RESULT\".split(\"/\")[-1]})')
-else:
-    print('  -> trades.json (no trades in result)')
-" 2>&1
-    fi
-fi
 
 # The log was already captured by tee above
 if [ -f "$RESULTS_DIR/log.txt" ]; then
     echo "  -> log.txt (captured during run)"
 fi
 
+if [ ! -f "$RESULTS_DIR/summary.json" ]; then
+    echo ""
+    echo "ERROR: LEAN run finished but summary.json could not be extracted."
+    echo "Check $RESULTS_DIR/log.txt and the LEAN output directories for details."
+    exit 4
+fi
+
 # ── Summary ───────────────────────────────────────────────────────────
 echo ""
 echo "=== Backtest Complete ==="
 echo "Results directory: $RESULTS_DIR"
-echo "Files: $(ls "$RESULTS_DIR/" 2>/dev/null | tr '\n' ', ')"
 echo ""
 
-# Print key metrics from summary.json (the only output the agent typically needs)
+# List result files with sizes
+if [ -d "$RESULTS_DIR" ]; then
+    ls -lh "$RESULTS_DIR/" 2>/dev/null || true
+fi
+
+# Quick summary if statistics file exists
 if [ -f "$RESULTS_DIR/summary.json" ]; then
+    echo ""
     echo "--- Performance Summary ---"
+    # Print key metrics if python3 is available
     python3 -c "
 import json, sys
 try:
     with open('$RESULTS_DIR/summary.json') as f:
-        data = json.load(f)
-    stats = data.get('statistics', data)
-    for key in ['Total Orders', 'Total Trades', 'Net Profit', 'Sharpe Ratio',
-                'Sortino Ratio', 'Win Rate', 'Average Win', 'Average Loss',
-                'Compounding Annual Return', 'Drawdown', 'Start Equity', 'End Equity',
-                'Expectancy', 'Profit-Loss Ratio']:
+        stats = json.load(f)
+    for key in ['Total Trades', 'Net Profit', 'Sharpe Ratio', 'Win Rate',
+                'Average Win', 'Average Loss', 'Compounding Annual Return']:
         if key in stats:
             print(f'  {key}: {stats[key]}')
-except Exception as e:
-    print(f'  (could not parse summary: {e})')
+except Exception:
+    pass
 " 2>/dev/null || true
-    echo ""
-    echo "Use file_read('results/summary.json') for full statistics."
-    echo "Use file_read('results/log.txt') for engine log."
-    echo "Use file_read('results/orders.json') for order details."
 fi
 
 exit 0

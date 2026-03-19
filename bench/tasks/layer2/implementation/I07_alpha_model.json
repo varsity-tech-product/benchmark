@@ -59,7 +59,7 @@
       "analyze_backtest_results"
     ],
     "quant_validation": {
-      "eval_script": "evaluation/test_scripts/implementation/I07_alpha_model.py"
+      "eval_script": "evaluation/test_scripts/I07_alpha_model.py"
     }
   },
   "requires_code": true,

@@ -40,7 +40,6 @@
   },
   "ground_truth": {
     "expected_outcome": "Student produces a working LEAN C# algorithm that (1) subscribes to BTCUSDT daily futures via AddCryptoFuture, (2) creates an SMA(20) indicator, (3) goes long when price > SMA and flattens when price < SMA, (4) handles warm-up correctly with SetWarmUp, (5) runs to completion, and (6) produces a trade log with entry/exit records.",
-    "termination_criteria": "A working LEAN C# algorithm for BTCUSDT has been written covering data subscription (AddCryptoFuture), SMA indicator creation, price-vs-SMA entry/exit logic, and warm-up handling (SetWarmUp). The algorithm has been compiled and executed as a backtest producing trades. Backtest performance metrics (Sharpe ratio, trade count, net return) have been presented and discussed in the conversation.",
     "required_capabilities": [
       "Write a LEAN C# algorithm inheriting QCAlgorithm",
       "Subscribe to a single crypto future with AddCryptoFuture",
@@ -59,12 +58,12 @@
       "plot_chart"
     ],
     "quant_validation": {
-      "eval_script": "evaluation/test_scripts/implementation/I01_implement_sma.py"
+      "eval_script": "evaluation/test_scripts/I01_implement_sma.py"
     }
   },
   "requires_code": true,
   "sample_code": null,
-  "max_turns": 10,
+  "max_turns": 24,
   "agent_max_steps": 10,
   "timeout_minutes": 15
 }

@@ -59,7 +59,7 @@
       "analyze_backtest_results"
     ],
     "quant_validation": {
-      "eval_script": "evaluation/test_scripts/implementation/I09_risk_management.py"
+      "eval_script": "evaluation/test_scripts/I09_risk_management.py"
     }
   },
   "requires_code": true,

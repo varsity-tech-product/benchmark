@@ -39,8 +39,7 @@
     "max_backtest_trials": 5
   },
   "ground_truth": {
-    "expected_outcome": "Student produces a working LEAN C# algorithm that (1) reads universe.json or iterates over available symbols to subscribe to ~100 futures via AddCryptoFuture, (2) creates SMA indicators per symbol, (3) implements crossover entry/exit independently per symbol, (4) manages equal-weight portfolio allocation across active positions, (5) runs to completion across the full universe, and (6) produces per-symbol trade logs and an aggregated universe summary.",
-    "termination_criteria": "A working LEAN C# algorithm implementing a dual moving average crossover across the crypto futures universe has been written, covering dynamic symbol subscription from universe.json, per-symbol indicator management, crossover detection logic, and equal-weight position sizing. The algorithm has been compiled and executed as a multi-symbol backtest producing trades. Universe-level backtest performance metrics have been presented and discussed in the conversation.",
+    "expected_outcome": "Student produces a working LEAN C# algorithm that (1) reads universe.json or iterates over available symbols to subscribe to ~100 futures via AddCryptoFuture, (2) creates SMA indicators per symbol, (3) implements crossover entry/exit independently per symbol, (4) manages equal-weight portfolio allocation across active positions, (5) runs to completion across the full universe, and (6) produces per-symbol trade logs and an aggregated universe summary. The per-symbol trade logs for a sample of 10 reference symbols should match the ground-truth.",
     "required_capabilities": [
       "Write a LEAN C# algorithm that dynamically subscribes to many symbols",
       "Manage per-symbol indicator state (Dictionary of SMA pairs keyed by Symbol)",
@@ -59,12 +58,12 @@
       "plot_chart"
     ],
     "quant_validation": {
-      "eval_script": "evaluation/test_scripts/implementation/I02_trend_following.py"
+      "eval_script": "evaluation/test_scripts/I02_trend_following.py"
     }
   },
   "requires_code": true,
   "sample_code": null,
-  "max_turns": 12,
+  "max_turns": 30,
   "agent_max_steps": 12,
   "timeout_minutes": 20
 }

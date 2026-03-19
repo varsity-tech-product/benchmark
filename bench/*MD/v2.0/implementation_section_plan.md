@@ -1,6 +1,6 @@
 # Implementation Section (I-Series) Design Plan
 
-> Version: v2.4 | Status: In Progress — I01–I10 reference data complete, multi-layer behavioral eval with multi-run support, three known issues fixed (I08 PCM, I06 Sharpe overflow, multi-run summaries) | Section: Strategy Implementation on LEAN Engine
+> Version: v2.5 | Status: In Progress — I01–I10 reference data complete, multi-layer behavioral eval with multi-run support, trial-manager workflow integrated, and the section is now operationally usable for live runs (OpenRouter default; native OpenAI mainly for single-task debugging due to quota/TPM limits) | Section: Strategy Implementation on LEAN Engine
 
 ---
 
@@ -108,6 +108,17 @@ The agent does **NOT** need to:
 - Set up the C# build environment
 
 A reference document (`lean_algorithm_guide.md`, see §6) will be provided to teach the LEAN C# API basics.
+
+### 1.5 Current Operational Status (2026-03-13)
+
+I-series is now **operationally usable**. The benchmark can run end-to-end, save artifacts, and evaluate live agent behavior on LEAN tasks. The main blockers encountered during live validation were infrastructure/runtime issues rather than task-definition issues:
+
+1. **Sandbox/network**: Native OpenAI runs previously failed with `APIConnectionError` when executed under restricted network conditions. This was an environment problem, not an I-series task problem.
+2. **DeepEval telemetry writes**: Parallel runs initially failed on `.deepeval/.deepeval_telemetry.txt` permissions. The runner now opts out of DeepEval telemetry and uses a writable cache directory.
+3. **OpenAI SDK tracing**: OpenRouter runs produced non-fatal OpenAI tracing `401`s, and native `gpt-5.2` runs hit an OpenAI Agents SDK tracing `RecursionError`. The benchmark now uses provider-aware tracing: OpenRouter disables SDK tracing entirely, while native OpenAI keeps tracing enabled but omits sensitive trace payloads to avoid the recursion bug.
+4. **Provider limits**: Full native OpenAI suite runs remain constrained by account TPM/quota. In practice, OpenRouter is the better default for full-suite live validation, while native OpenAI is best used for targeted single-task debugging.
+
+The consequence is important: **I-series can work today**, but raw benchmark quality is still model-dependent. The current remaining problem is not “can I-series run?” but “does the agent actually use the LEAN/trial workflow to achieve strong QR?”
 
 ---
 
@@ -358,7 +369,7 @@ huggingface.co/datasets/Varsity-Tech/quant-tutor-bench-data/
                ▼
 ┌─────────────────────────────────────┐
 │     Docker Container                 │
-│     quant-tutor-env:v2.0-lean        │
+│     quant-tutor-env:v2.2-lean        │
 │     (LEAN engine + .NET SDK only,    │
 │      NO data baked in — ~3GB)        │
 │                                      │
@@ -619,7 +630,7 @@ For I-series tasks, the Docker container sees:
 
 **What's IN the Docker image** (baked in, ~3GB):
 - LEAN engine (C# build)
-- .NET SDK 8.0
+- .NET SDK 10.0
 - `run_backtest` wrapper script
 - LEAN config.json (pre-configured for Binance futures)
 - No data
@@ -775,14 +786,14 @@ Unlike the classic approach (where everything is manually wired in `OnData()`), 
 | **Portfolio Construction Models** | | |
 | `SetPortfolioConstruction(IPortfolioConstructionModel)` | Register portfolio model | I07, I08, I09 |
 | `EqualWeightingPortfolioConstructionModel` | Equal allocation across active insights | I07, I09 |
-| `InsightWeightingPortfolioConstructionModel` | Weight by insight confidence/magnitude | I08 |
+| `InsightWeightingPortfolioConstructionModel` | Weight by `Insight.Weight` on the last active insight per symbol | I08 |
 | `MeanVarianceOptimizationPortfolioConstructionModel` | Mean-variance optimization | I08 |
 | `BlackLittermanOptimizationPortfolioConstructionModel` | Black-Litterman model | I08 |
 | `PortfolioTarget` | Position target (symbol + quantity) | I08, I09 |
 | **Risk Management Models** | | |
 | `SetRiskManagement(IRiskManagementModel)` | Register risk model | I09 |
 | `AddRiskManagement(IRiskManagementModel)` | Register additional risk model | I09 |
-| `MaximumDrawdownPerSecurity(maxDrawdown)` | Cap per-symbol drawdown | I09 |
+| `MaximumDrawdownPercentPerSecurity(maxDrawdown)` | Cap per-symbol drawdown | I09 |
 | `TrailingStopRiskManagementModel(maxTrailingStop)` | Trailing stop on positions | I09 |
 | `MaximumSectorExposureRiskManagementModel` | Limit sector/group exposure | I09 |
 | `class MyRisk : RiskManagementModel` | Custom risk model base class | I09 |
@@ -931,7 +942,7 @@ Output required:
   "data_files": ["universe.json"],
   "core_mcp_tools": ["shell_exec", "file_write", "file_read", "file_list", "get_environment_info", "search_docs"],
   "docs_available": ["lean_algorithm_guide.md", "moving_averages.md"],
-  "sandbox_image": "quant-tutor-env:v2.0-lean",
+  "sandbox_image": "quant-tutor-env:v2.2-lean",
   "network_enabled": false
 }
 ```
@@ -1018,7 +1029,7 @@ Output required:
   "data_files": ["universe.json"],
   "core_mcp_tools": ["shell_exec", "file_write", "file_read", "file_list", "get_environment_info", "search_docs"],
   "docs_available": ["lean_algorithm_guide.md", "moving_averages.md"],
-  "sandbox_image": "quant-tutor-env:v2.0-lean",
+  "sandbox_image": "quant-tutor-env:v2.2-lean",
   "network_enabled": false
 }
 ```
@@ -1100,7 +1111,7 @@ Output required:
   "data_files": ["universe.json"],
   "core_mcp_tools": ["shell_exec", "file_write", "file_read", "file_list", "get_environment_info", "search_docs"],
   "docs_available": ["lean_algorithm_guide.md", "moving_averages.md"],
-  "sandbox_image": "quant-tutor-env:v2.0-lean",
+  "sandbox_image": "quant-tutor-env:v2.2-lean",
   "network_enabled": false
 }
 ```
@@ -1190,7 +1201,7 @@ Output required:
   "data_files": ["universe.json"],
   "core_mcp_tools": ["shell_exec", "file_write", "file_read", "file_list", "get_environment_info", "search_docs"],
   "docs_available": ["lean_algorithm_guide.md", "statistical_tests.md"],
-  "sandbox_image": "quant-tutor-env:v2.0-lean",
+  "sandbox_image": "quant-tutor-env:v2.2-lean",
   "network_enabled": false
 }
 ```
@@ -1286,7 +1297,7 @@ Output required:
   "data_files": ["universe.json"],
   "core_mcp_tools": ["shell_exec", "file_write", "file_read", "file_list", "get_environment_info", "search_docs"],
   "docs_available": ["lean_algorithm_guide.md", "moving_averages.md", "risk_metrics.md"],
-  "sandbox_image": "quant-tutor-env:v2.0-lean",
+  "sandbox_image": "quant-tutor-env:v2.2-lean",
   "network_enabled": false
 }
 ```
@@ -1379,7 +1390,7 @@ Output required:
   "data_files": ["universe.json"],
   "core_mcp_tools": ["shell_exec", "file_write", "file_read", "file_list", "get_environment_info"],
   "docs_available": ["lean_algorithm_guide.md", "algorithm_framework_guide.md", "moving_averages.md"],
-  "sandbox_image": "quant-tutor-env:v2.0-lean",
+  "sandbox_image": "quant-tutor-env:v2.2-lean",
   "network_enabled": false
 }
 ```
@@ -1434,7 +1445,7 @@ Alpha Model 3 — MomentumAlpha (custom):
 
 Portfolio Construction: Compare two models
   Run 1: InsightWeightingPortfolioConstructionModel
-    - Weights positions by insight confidence × magnitude
+    - Weights positions from explicit `Insight.Weight` values
   Run 2: EqualWeightingPortfolioConstructionModel
     - Equal allocation across active insights
 
@@ -1460,7 +1471,7 @@ Output required:
 - Strategy spec: embedded in task description
 - Reference doc: `lean_algorithm_guide.md`, `algorithm_framework_guide.md`
 
-**Description**: Guide a student to build a multi-alpha strategy on LEAN that runs three independent alpha models simultaneously (trend, mean-reversion, momentum), each emitting insights with different magnitudes, confidences, and durations. The student must then compare two portfolio construction models — `InsightWeightingPortfolioConstructionModel` (weights by confidence × magnitude) and `EqualWeightingPortfolioConstructionModel` — to see how signal aggregation affects portfolio performance. This tests the most powerful feature of LEAN's framework: composable, independent signal generators feeding into interchangeable portfolio optimizers.
+**Description**: Guide a student to build a multi-alpha strategy on LEAN that runs three independent alpha models simultaneously (trend, mean-reversion, momentum), each emitting insights with different magnitudes, confidences, durations, and explicit weights. The student must then compare two portfolio construction models — `InsightWeightingPortfolioConstructionModel` (weights by `Insight.Weight`) and `EqualWeightingPortfolioConstructionModel` — to see how signal aggregation affects portfolio performance. This tests the most powerful feature of LEAN's framework: composable, independent signal generators feeding into interchangeable portfolio optimizers.
 
 **Expected outcome**: Student produces (1) three custom alpha model classes, each inheriting `AlphaModel`, (2) a main algorithm that registers all three via `AddAlpha()`, (3) two separate runs using different `PortfolioConstructionModel` implementations, (4) per-alpha insight statistics, (5) per-symbol trade logs for both runs, and (6) a comparison of the two portfolio construction approaches.
 
@@ -1468,7 +1479,7 @@ Output required:
 1. Write three independent `AlphaModel` classes with different indicator logic and insight parameters
 2. Register multiple alphas via `AddAlpha()` (not `SetAlpha()` which replaces)
 3. Understand how LEAN aggregates insights from multiple alpha models (insight collection, conflict resolution)
-4. Configure and use `InsightWeightingPortfolioConstructionModel` (understands confidence × magnitude weighting)
+4. Configure and use `InsightWeightingPortfolioConstructionModel` with explicit `Insight.Weight` values
 5. Run two separate backtests with different portfolio construction models and compare results
 6. Track per-alpha contribution metrics (insight counts, directional accuracy)
 
@@ -1483,7 +1494,7 @@ Output required:
   "data_files": ["universe.json"],
   "core_mcp_tools": ["shell_exec", "file_write", "file_read", "file_list", "get_environment_info"],
   "docs_available": ["lean_algorithm_guide.md", "algorithm_framework_guide.md", "moving_averages.md", "risk_metrics.md"],
-  "sandbox_image": "quant-tutor-env:v2.0-lean",
+  "sandbox_image": "quant-tutor-env:v2.2-lean",
   "network_enabled": false
 }
 ```
@@ -1494,7 +1505,7 @@ Output required:
 - **Multi-alpha architecture**: Code contains ≥ 3 classes inheriting `AlphaModel`, registered via `AddAlpha()`.
 - **Insight emission**: Each alpha emits insights with distinct magnitude/confidence values matching the spec.
 - **Portfolio model comparison**: Two separate backtest runs exist with different portfolio construction models.
-- **Trade log comparison**: For reference symbols under `EqualWeighting` (primary run), trades broadly match reference (±2 bars, since framework timing differs). **Note**: `InsightWeightingPortfolioConstructionModel` produces 0 trades even with `Resolution.Daily` rebalancing — conflicting insights from 3 alpha models cancel out under insight-weighted aggregation. EqualWeighting is the primary behavioral eval target.
+- **Trade log comparison**: For reference symbols under `EqualWeighting` (primary run), trades broadly match reference (±2 bars, since framework timing differs). **Note**: under current LEAN, `InsightWeightingPortfolioConstructionModel` requires explicit `Insight.Weight` values and acts on the last active insight per symbol. Reference generation should use explicit weights when comparing the two portfolio models.
 - **Comparison output**: A structured comparison of Sharpe/return/drawdown/turnover between the two runs.
 - **Universe coverage**: Algorithm subscribed to ≥ 80 symbols.
 
@@ -1534,7 +1545,7 @@ Risk Management — Three configurations to compare:
     - Baseline performance
 
   Run 2 (Built-in Risk Models):
-    - MaximumDrawdownPerSecurity(0.05m)
+    - MaximumDrawdownPercentPerSecurity(0.05m)
       → Liquidate any position that draws down > 5% from peak
     - TrailingStopRiskManagementModel(0.03m)
       → 3% trailing stop on all positions
@@ -1560,13 +1571,13 @@ Output required:
 - Strategy spec: embedded in task description
 - Reference doc: `lean_algorithm_guide.md`, `algorithm_framework_guide.md`
 
-**Description**: Guide a student to add LEAN's risk management layer to a framework-based strategy. The student must understand that risk models intercept portfolio targets *after* portfolio construction but *before* execution — they can modify position sizes, liquidate positions, or block new entries based on risk limits. The student runs three configurations: no risk management, built-in risk models (`MaximumDrawdownPerSecurity` + `TrailingStopRiskManagementModel`), and a custom risk model (group exposure limits). Comparing the three reveals how risk management trades return for drawdown reduction.
+**Description**: Guide a student to add LEAN's risk management layer to a framework-based strategy. The student must understand that risk models intercept portfolio targets *after* portfolio construction but *before* execution — they can modify position sizes, liquidate positions, or block new entries based on risk limits. The student runs three configurations: no risk management, built-in risk models (`MaximumDrawdownPercentPerSecurity` + `TrailingStopRiskManagementModel`), and a custom risk model (group exposure limits). Comparing the three reveals how risk management trades return for drawdown reduction.
 
 **Expected outcome**: Student produces (1) a framework algorithm with `SetAlpha()`, `SetPortfolioConstruction()`, `SetExecution()`, and `SetRiskManagement()` / `AddRiskManagement()`, (2) three separate backtest runs with different risk configurations, (3) a custom `MaxGroupExposureRiskManagementModel` class inheriting `RiskManagementModel`, (4) a comparison table showing how risk models affect drawdown, Sharpe, and return, and (5) a risk event log showing when and why each risk model triggered.
 
 **Required capabilities**:
 1. Use `SetRiskManagement()` and `AddRiskManagement()` to register risk models in the framework
-2. Configure built-in risk models: `MaximumDrawdownPerSecurity`, `TrailingStopRiskManagementModel`
+2. Configure built-in risk models: `MaximumDrawdownPercentPerSecurity`, `TrailingStopRiskManagementModel`
 3. Write a custom `RiskManagementModel` class with `ManageRisk()` method that returns adjusted `PortfolioTarget` list
 4. Understand that risk models receive the portfolio construction targets and can modify them before execution
 5. Stack multiple risk models via `AddRiskManagement()` (they apply sequentially)
@@ -1576,7 +1587,7 @@ Output required:
 **Student openings**:
 - **beginner_no_finance**: "My trading strategy makes money but sometimes has scary drops. I heard LEAN has built-in risk management that can automatically cut losses. How do I add stop-losses and drawdown limits without changing my strategy logic?"
 - **intermediate_developer**: "I want to add risk management to my LEAN framework strategy — trailing stops, max drawdown per symbol, and a custom exposure limit model. How do I write and register risk management models in the framework?"
-- **advanced_quant**: "I'm adding a risk management layer to my framework strategy on LEAN. I need to compare no-risk vs `MaximumDrawdownPerSecurity` + `TrailingStopRiskManagementModel` vs a custom group-exposure model. How do I structure the comparison?"
+- **advanced_quant**: "I'm adding a risk management layer to my framework strategy on LEAN. I need to compare no-risk vs `MaximumDrawdownPercentPerSecurity` + `TrailingStopRiskManagementModel` vs a custom group-exposure model. How do I structure the comparison?"
 
 **Environment**:
 ```json
@@ -1584,7 +1595,7 @@ Output required:
   "data_files": ["universe.json"],
   "core_mcp_tools": ["shell_exec", "file_write", "file_read", "file_list", "get_environment_info"],
   "docs_available": ["lean_algorithm_guide.md", "algorithm_framework_guide.md", "risk_metrics.md"],
-  "sandbox_image": "quant-tutor-env:v2.0-lean",
+  "sandbox_image": "quant-tutor-env:v2.2-lean",
   "network_enabled": false
 }
 ```
@@ -1593,7 +1604,7 @@ Output required:
 
 **Eval strategy**:
 - **Risk model registration**: Code contains `SetRiskManagement(` or `AddRiskManagement(` with valid risk model classes.
-- **Built-in models used**: `MaximumDrawdownPerSecurity` and `TrailingStopRiskManagementModel` appear in code.
+- **Built-in models used**: `MaximumDrawdownPercentPerSecurity` and `TrailingStopRiskManagementModel` appear in code.
 - **Custom risk model**: A class inheriting `RiskManagementModel` with `ManageRisk()` method implementing group exposure logic.
 - **Three-run comparison**: Three separate backtest runs with different risk configurations exist.
 - **Drawdown improvement**: Run 2 and Run 3 should show lower max drawdown than Run 1.
@@ -1689,7 +1700,7 @@ Output required:
   "data_files": ["universe.json"],
   "core_mcp_tools": ["shell_exec", "file_write", "file_read", "file_list", "get_environment_info"],
   "docs_available": ["lean_algorithm_guide.md", "algorithm_framework_guide.md", "risk_metrics.md"],
-  "sandbox_image": "quant-tutor-env:v2.0-lean",
+  "sandbox_image": "quant-tutor-env:v2.2-lean",
   "network_enabled": false
 }
 ```
@@ -1914,7 +1925,7 @@ Suggested structure:
 ## 4. Risk Management Models
 - IRiskManagementModel interface
 - Built-in models:
-  - MaximumDrawdownPerSecurity
+  - MaximumDrawdownPercentPerSecurity
   - TrailingStopRiskManagementModel
   - MaximumSectorExposureRiskManagementModel
 - Risk models intercept targets AFTER portfolio construction, BEFORE execution
@@ -2251,7 +2262,7 @@ Score caps for missing critical artifacts:
 
 ---
 
-## 8. Docker Sandbox: `quant-tutor-env:v2.0-lean`
+## 8. Docker Sandbox: `quant-tutor-env:v2.2-lean`
 
 ### 8.1 Sandbox Requirements
 
@@ -2526,8 +2537,17 @@ Each reference signal file must be validated:
 - [x] Test: I-series task container sees data at `/lean/Data/` *(validated via I07-I10 LEAN backtest runs)
 - [x] Verify: S/B-series tasks unaffected — LEAN mount only triggers when `"lean" in sandbox_image`
 
+**Live-run hardening (runtime reliability):**
+- [x] Opt out of DeepEval telemetry and force writable `DEEPEVAL_CACHE_FOLDER`
+- [x] Add provider/network preflight to fail fast when required APIs are unreachable
+- [x] Add provider-aware OpenAI Agents tracing:
+  - [x] OpenRouter path disables SDK tracing entirely
+  - [x] Native OpenAI keeps tracing enabled but omits sensitive trace payloads to avoid SDK recursion on `gpt-5.2`
+- [x] Validate that native OpenAI single-task runs work with unrestricted network access
+- [x] Validate that OpenRouter-routed suite runs are the practical default for full live suites
+
 **Docker / LEAN environment (engine only, no data):**
-- [x] Build Docker image `quant-tutor-env:v2.0-lean` with LEAN engine + .NET SDK (NO data, ~3GB) — `docker/Dockerfile.lean`
+- [x] Build Docker image `quant-tutor-env:v2.2-lean` with LEAN engine + .NET SDK (NO data, ~3GB) — `docker/Dockerfile.lean`
 - [x] Write and test `run_backtest` wrapper script — `docker/run_backtest.sh`
 - [x] Pre-configure LEAN `config.json` for Binance futures — `docker/lean-config.json`
 - [x] Test that LEAN loads and processes mounted Tier 1 data correctly (100 symbols) *(validated via I08 backtest: 100 symbols daily)
@@ -2587,6 +2607,12 @@ Each reference signal file must be validated:
 - [x] I08_multi_alpha.json
 - [x] I09_risk_management.json
 - [x] I10_parameter_optimization.json
+- [x] Add `max_backtest_trials` to I01–I10 environment configs
+- [x] Add trial tools to I-series task environments:
+  - [x] `run_lean_backtest`
+  - [x] `submit_trial`
+  - [x] `select_submission`
+  - [x] `get_trial_status`
 
 ### Phase 4: Eval Scripts (bench/evaluation/test_scripts/)
 
@@ -2610,6 +2636,21 @@ Each reference signal file must be validated:
 - [x] I09_risk_management.py — risk model registration + 3-way comparison checks
 - [x] I10_parameter_optimization.py — GetParameter() usage + grid completeness checks
 - [x] Extend `_implementation_check.py` with framework-specific helpers (insight log parsing, multi-run comparison)
+- [x] Add `compute_trial_efficiency()` helper to `_implementation_check.py`
+- [x] Add `trial_efficiency` scoring at 5% weight to all I01–I10 eval scripts
+
+### Phase 4b: Trial System Integration
+
+- [x] Add `TrialManager` with file-locked manifest persistence
+- [x] Add trial MCP tools:
+  - [x] `run_lean_backtest`
+  - [x] `submit_trial`
+  - [x] `select_submission`
+  - [x] `get_trial_status`
+- [x] Register long timeouts for LEAN/trial tools
+- [x] Add orchestrator Phase 3.25 trial finalization before evaluation
+- [x] Add `trial_metadata` to `TaskResult`
+- [x] Inject `=== BACKTEST TRIAL SYSTEM ===` prompt guidance when `max_backtest_trials > 0`
 
 ### Phase 5: Scoring Integration
 
@@ -2622,7 +2663,8 @@ Each reference signal file must be validated:
 
 - [ ] Generate reference executions for all 30 instances (10 tasks × 3 personas)
 - [ ] Validate reference `key_results` and `step_count` baselines
-- [ ] End-to-end integration test: run full benchmark on I-series tasks
+- [x] End-to-end operational smoke test: I-series can run live end-to-end on LEAN tasks
+- [ ] End-to-end benchmark-quality validation: require full-suite runs to complete without provider quota/rate failures and treat internal benchmark errors as script failures
 
 ---
 
@@ -2737,3 +2779,5 @@ I06 Manual param sweep         ──►   I10 Parameter Optimization (hard)
 14. ~~**Multi-run eval architecture**: I08 (2 portfolio models), I09 (3 risk configurations), and I10 (~180 grid search) require multiple backtest runs per task. The eval scripts need to handle multi-run output directories.~~ **Resolved**: Multi-run tasks use `TASK_RUN_CONFIGS` dict in `generate_lean_reference.py` with `run_id` per config. Reference files follow `{task_id}_reference_trades_{run_id}.json` naming. `MULTI_RUN_PRIMARY` dict in `generate_reference_signals.py` maps each task to its primary run for summary/behavioral eval. `compute_behavioral_score()` accepts `run_id` parameter; I08 uses `"equal_weighting"`, I09 uses `"builtin"`.
 15. **Custom risk model testability**: I09's custom `MaxGroupExposureRiskManagementModel` requires group/tier assignments from `universe.json`. Need to verify that the framework risk model can access algorithm state (universe metadata) during `ManageRisk()`.
 16. **Optuna in Docker**: I10's optional Bayesian optimization requires Optuna (Python). The LEAN Docker image is C#-focused. Need to decide: (a) pre-install Optuna in the Docker image, (b) have the agent install it at runtime, or (c) provide a Python-C# bridge script that calls LEAN per Optuna trial.
+17. **Provider budget realism**: Full native OpenAI suite runs on `gpt-5.2` are currently constrained by org TPM/quota. Need a documented default provider strategy (OpenRouter for suites, native OpenAI for isolated debugging) and a recommended concurrency policy.
+18. **Suite-level result classification**: `scripts/test_i_series_live.sh` still treats `run-single` process exit `0` as PASS even when the saved benchmark result contains `error` or `eval_aborted`. Need to classify those cases as failures at the shell-script layer.

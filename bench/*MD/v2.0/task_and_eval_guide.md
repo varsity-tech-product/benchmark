@@ -25,7 +25,7 @@ bench/tasks/layer2/
   └── debug/             X01
 ```
 
-> **I-series note**: All I-series tasks (I01-I06) are LEAN engine C# tasks using `sandbox_image: "quant-tutor-env:v2.0-lean"` and require Binance futures data mounted at `/lean/Data`. I01 is a single-symbol entry-level task; I02-I06 scale to multi-symbol universe strategies.
+> **I-series note**: All I-series tasks (I01-I10) are LEAN engine C# tasks using `sandbox_image: "quant-tutor-env:v2.2-lean"` and require Binance futures data mounted at `/lean/Data`. I01 is a single-symbol entry-level task; I02-I06 scale to multi-symbol universe strategies and I07-I10 use the Algorithm Framework.
 
 ### 1.2 Complete Field Reference
 
@@ -133,7 +133,7 @@ BAD (beginner):
 - `core_mcp_tools`: Recommended minimum set is `["shell_exec", "file_write", "file_read", "file_list", "get_environment_info"]`. Add more as needed per task.
 - `convenient_tools`: Must not overlap with `core_mcp_tools`.
 - `expected_mcp_tools`: Tools the agent should call to complete the task.
-- `sandbox_image`: Use `"quant-tutor-env:v2.2"` for Python tasks. Use `"quant-tutor-env:v2.0-lean"` for LEAN C# tasks (I02-I06).
+- `sandbox_image`: Use `"quant-tutor-env:v2.2"` for Python tasks. Use `"quant-tutor-env:v2.2-lean"` for LEAN C# tasks (I01-I10, X07-X10, and LEAN-based end-to-end tasks).
 - `network_enabled`: `false` for most tasks; `true` for tasks requiring external API access.
 - `requires_code`: Affects QR blending formula (code tasks include the code_eval dimension) and QP gating for adversarial tasks (see §1.5 table).
 - `sample_code`: Only used for debug-category tasks; points to the student's buggy code.

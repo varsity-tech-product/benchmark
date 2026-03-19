@@ -17,9 +17,11 @@ Install (SDK mode): pip install openai-agents
 Install (direct mode): pip install openai
 """
 
+import asyncio
 import json
 import logging
 import os
+import threading
 from pathlib import Path
 from typing import Optional
 
@@ -42,7 +44,7 @@ log = logging.getLogger(__name__)
 
 # --- OpenAI Agents SDK imports (SDK mode only) ---
 try:
-    from agents import Agent, MaxTurnsExceeded, Runner
+    from agents import Agent, MaxTurnsExceeded, Runner, RunConfig
     from agents.model_settings import ModelSettings
     from agents.tool import FunctionTool
 
@@ -104,6 +106,8 @@ class OpenAIAgentAdapter(BaseAgentAdapter):
         self._input_history: list = []
         self._tool_callback = None
         self._direct_client = None  # lazy-init OpenAI client for Direct API mode
+        self._model_obj = None
+        self._async_client = None
 
         if base_url:
             self.api_key = (
@@ -170,6 +174,63 @@ class OpenAIAgentAdapter(BaseAgentAdapter):
             return self._generate_direct(messages, available_tools, tool_callback)
         else:
             return self._generate_sdk(messages, available_tools, tool_callback)
+
+    # ==================================================================
+    # SDK model management
+    # ==================================================================
+
+    def _get_or_create_model(self):
+        """Lazy-init SDK model with an adapter-owned AsyncOpenAI client.
+
+        Use an explicit AsyncOpenAI client even for native OpenAI so the
+        adapter owns the resource lifecycle and can close it deterministically
+        after each benchmark task.
+        """
+        if self._model_obj is None:
+            from agents.models.openai_chatcompletions import (
+                OpenAIChatCompletionsModel,
+            )
+            from openai import AsyncOpenAI
+
+            client_kwargs = {"api_key": self.api_key}
+            if self.base_url:
+                client_kwargs["base_url"] = self.base_url
+            self._async_client = AsyncOpenAI(**client_kwargs)
+            self._model_obj = OpenAIChatCompletionsModel(
+                model=self.model,
+                openai_client=self._async_client,
+            )
+        return self._model_obj
+
+    def close(self):
+        """Release async client resources used by the Agents SDK."""
+        self._agent = None
+        self._input_history = []
+        self._tool_callback = None
+        self._task_context = ""
+        self._model_obj = None
+
+        client = self._async_client
+        self._async_client = None
+        if client is None:
+            return
+
+        try:
+            asyncio.run(client.close())
+        except RuntimeError:
+            close_error: list[Exception] = []
+
+            def _close_in_thread():
+                try:
+                    asyncio.run(client.close())
+                except Exception as exc:  # pragma: no cover - defensive cleanup
+                    close_error.append(exc)
+
+            thread = threading.Thread(target=_close_in_thread, daemon=True)
+            thread.start()
+            thread.join()
+            if close_error:
+                raise close_error[0]
 
     # ==================================================================
     # Direct API mode: Chat Completions with tool_calls loop
@@ -397,6 +458,10 @@ class OpenAIAgentAdapter(BaseAgentAdapter):
                 agent,
                 self._input_history,
                 max_turns=self.max_turns,
+                run_config=RunConfig(
+                    tracing_disabled=bool(self.base_url),
+                    trace_include_sensitive_data=False,
+                ),
             )
 
             self._input_history = result.to_input_list()

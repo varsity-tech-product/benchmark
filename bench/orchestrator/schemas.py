@@ -60,6 +60,8 @@ class EnvironmentConfig(BaseModel):
     # Whether this task requires outbound internet access inside the sandbox.
     # Default is False for reproducibility/safety.
     network_enabled: bool = False
+    # Maximum backtest trials for I-series tasks (0 = no trial system).
+    max_backtest_trials: int = 0
 
 
 class QuantTutorTask(BaseModel):

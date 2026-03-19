@@ -59,7 +59,7 @@
       "analyze_backtest_results"
     ],
     "quant_validation": {
-      "eval_script": "evaluation/test_scripts/implementation/I10_parameter_optimization.py"
+      "eval_script": "evaluation/test_scripts/I10_parameter_optimization.py"
     }
   },
   "requires_code": true,

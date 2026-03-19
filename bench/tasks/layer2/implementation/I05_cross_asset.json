@@ -60,7 +60,7 @@
       "plot_chart"
     ],
     "quant_validation": {
-      "eval_script": "evaluation/test_scripts/implementation/I05_cross_asset.py"
+      "eval_script": "evaluation/test_scripts/I05_cross_asset.py"
     }
   },
   "requires_code": true,

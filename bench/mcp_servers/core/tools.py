@@ -4151,3 +4151,290 @@ CORE_TOOLS["get_trial_status"] = {
     ),
     "params": {},
 }
+
+
+# ── Trial management tools (I-series LEAN tasks) ──────────────
+
+# Lazy singleton accessor keyed by workspace path
+_trial_managers: dict[str, "TrialManager"] = {}
+
+
+def _get_trial_manager() -> "TrialManager":
+    """Return a TrialManager for the current workspace (lazy init)."""
+    from mcp_servers.core.trial_manager import TrialManager
+
+    workspace = _workspace_dir()
+    if workspace not in _trial_managers:
+        max_trials = int(os.environ.get("QTB_MAX_BACKTEST_TRIALS", "5"))
+        _trial_managers[workspace] = TrialManager(workspace, max_trials=max_trials)
+    return _trial_managers[workspace]
+
+
+def run_lean_backtest(
+    algorithm_path: str, params_json: str = "", run_id: str = ""
+) -> str:
+    """Compile and run a LEAN backtest, automatically recording the result as a trial.
+
+    Combines shell_exec("run_backtest ...") with trial tracking. Each call
+    consumes one trial from the budget (default 5). Returns structured
+    status: trial_id, status, trade count, Sharpe, return, remaining budget.
+    """
+    tm = _get_trial_manager()
+    if not tm.can_run():
+        status = tm.get_status()
+        return (
+            f"Error: Trial budget exhausted ({status['trials_used']}/{status['max_trials']} used). "
+            f"Use select_submission to pick a trial, or get_trial_status to review results."
+        )
+
+    trial_id = tm.next_trial_id()
+
+    # Build the run_backtest command
+    cmd = f"run_backtest {algorithm_path}"
+    if params_json:
+        cmd += f" --params '{params_json}'"
+    if run_id:
+        cmd += f" --run-id {run_id}"
+
+    # Execute via shell_exec (reuses existing bash script inside container)
+    output = shell_exec(cmd, timeout=300)
+
+    # Determine status from results
+    workspace = _workspace_dir()
+    summary_path = os.path.join(workspace, "results", "summary.json")
+    trades_path = os.path.join(workspace, "results", "trades.json")
+
+    if "error" in output.lower() and "compile" in output.lower():
+        status = "compile_error"
+    elif "error" in output.lower() and "runtime" in output.lower():
+        status = "runtime_error"
+    elif os.path.exists(summary_path):
+        # Check for empty trades
+        trade_count = 0
+        if os.path.exists(trades_path):
+            try:
+                with open(trades_path) as f:
+                    tdata = json.load(f)
+                if isinstance(tdata, list):
+                    trade_count = len(tdata)
+                else:
+                    trade_count = len(tdata.get("trades", tdata.get("ClosedTrades", [])))
+            except (json.JSONDecodeError, IOError):
+                pass
+        status = "success" if trade_count > 0 else "empty_trades"
+    else:
+        status = "runtime_error"
+
+    # Record the trial
+    meta = tm.snapshot_and_record(trial_id, status, algorithm_path)
+    metrics = meta.get("metrics", {})
+    remaining = tm.max_trials - tm.trials_used()
+
+    # Build structured response
+    parts = [
+        f"=== Trial {trial_id} Result ===",
+        f"Status: {status}",
+    ]
+    if metrics:
+        parts.append(f"Trades: {metrics.get('total_trades', 'N/A')}")
+        parts.append(f"Sharpe: {metrics.get('sharpe_ratio', 'N/A')}")
+        parts.append(f"Return: {metrics.get('total_return_pct', 'N/A')}%")
+    parts.append(f"Remaining trials: {remaining}/{tm.max_trials}")
+    parts.append("")
+    parts.append("--- Backtest Output ---")
+    # Truncate very long output to keep response manageable
+    if len(output) > 4000:
+        parts.append(output[:2000] + "\n...(truncated)...\n" + output[-1500:])
+    else:
+        parts.append(output)
+
+    return "\n".join(parts)
+
+
+def submit_trial(notes: str = "") -> str:
+    """Snapshot the current workspace state as a trial (no backtest run).
+
+    Use this for I10 grid search or manual checkpointing — each call
+    consumes one trial from the budget.
+    """
+    tm = _get_trial_manager()
+    if not tm.can_run():
+        status = tm.get_status()
+        return (
+            f"Error: Trial budget exhausted ({status['trials_used']}/{status['max_trials']} used). "
+            f"Use select_submission to pick a trial, or get_trial_status to review results."
+        )
+
+    trial_id = tm.next_trial_id()
+
+    # Determine status from current results
+    workspace = _workspace_dir()
+    summary_path = os.path.join(workspace, "results", "summary.json")
+    trades_path = os.path.join(workspace, "results", "trades.json")
+
+    if os.path.exists(summary_path):
+        trade_count = 0
+        if os.path.exists(trades_path):
+            try:
+                with open(trades_path) as f:
+                    tdata = json.load(f)
+                if isinstance(tdata, list):
+                    trade_count = len(tdata)
+                else:
+                    trade_count = len(tdata.get("trades", tdata.get("ClosedTrades", [])))
+            except (json.JSONDecodeError, IOError):
+                pass
+        status = "success" if trade_count > 0 else "empty_trades"
+    else:
+        status = "no_results"
+
+    meta = tm.snapshot_and_record(trial_id, status)
+    metrics = meta.get("metrics", {})
+    remaining = tm.max_trials - tm.trials_used()
+
+    parts = [
+        f"=== Trial {trial_id} Submitted ===",
+        f"Status: {status}",
+    ]
+    if notes:
+        parts.append(f"Notes: {notes}")
+    if metrics:
+        parts.append(f"Trades: {metrics.get('total_trades', 'N/A')}")
+        parts.append(f"Sharpe: {metrics.get('sharpe_ratio', 'N/A')}")
+        parts.append(f"Return: {metrics.get('total_return_pct', 'N/A')}%")
+    parts.append(f"Remaining trials: {remaining}/{tm.max_trials}")
+
+    return "\n".join(parts)
+
+
+def select_submission(trial_id: int) -> str:
+    """Select which trial to use for final evaluation.
+
+    Copies the selected trial's results and code back to /workspace/ so
+    existing evaluation scripts read the chosen version.
+    """
+    tm = _get_trial_manager()
+    result = tm.select(int(trial_id))
+
+    if result.startswith("Error"):
+        return result
+
+    # Return confirmation with metrics
+    status = tm.get_status()
+    trial_meta = status["trials"].get(str(trial_id), {})
+    metrics = trial_meta.get("metrics", {})
+
+    parts = [result]
+    if metrics:
+        parts.append(f"Trades: {metrics.get('total_trades', 'N/A')}")
+        parts.append(f"Sharpe: {metrics.get('sharpe_ratio', 'N/A')}")
+        parts.append(f"Return: {metrics.get('total_return_pct', 'N/A')}%")
+
+    return "\n".join(parts)
+
+
+def get_trial_status() -> str:
+    """View all trials, their metrics, remaining budget, and current selection."""
+    tm = _get_trial_manager()
+    status = tm.get_status()
+
+    parts = [
+        f"=== Trial Status ===",
+        f"Budget: {status['trials_used']}/{status['max_trials']} used, "
+        f"{status['trials_remaining']} remaining",
+    ]
+
+    if status["selected_trial"]:
+        parts.append(f"Selected for evaluation: Trial {status['selected_trial']}")
+    else:
+        parts.append("No trial selected yet (auto-select will pick best on evaluation)")
+
+    if status["trials"]:
+        parts.append("")
+        for tid_str in sorted(status["trials"], key=int):
+            meta = status["trials"][tid_str]
+            metrics = meta.get("metrics", {})
+            line = f"  Trial {tid_str}: {meta.get('status', 'unknown')}"
+            if metrics.get("total_trades"):
+                line += f" | {metrics['total_trades']} trades"
+            if metrics.get("sharpe_ratio") is not None:
+                line += f" | Sharpe={metrics['sharpe_ratio']}"
+            if metrics.get("total_return_pct") is not None:
+                line += f" | Return={metrics['total_return_pct']}%"
+            if status["selected_trial"] == int(tid_str):
+                line += "  <-- SELECTED"
+            parts.append(line)
+    else:
+        parts.append("\nNo trials recorded yet.")
+
+    return "\n".join(parts)
+
+
+# Register trial tools in CORE_TOOLS
+CORE_TOOLS["run_lean_backtest"] = {
+    "func": run_lean_backtest,
+    "description": (
+        "Compile and run a LEAN C# backtest, automatically recording the result as a trial. "
+        "Each call uses one trial from the budget (default 5). Returns trial status, "
+        "trade count, Sharpe ratio, and remaining budget. Use this instead of "
+        "shell_exec('run_backtest ...') for tracked iteration."
+    ),
+    "params": {
+        "algorithm_path": {
+            "type": "string",
+            "description": "Path to the .cs algorithm file relative to workspace, e.g. 'Main.cs'",
+            "required": True,
+        },
+        "params_json": {
+            "type": "string",
+            "description": "JSON string of algorithm parameters, e.g. '{\"fast\": 10, \"slow\": 30}'. Optional.",
+            "required": False,
+        },
+        "run_id": {
+            "type": "string",
+            "description": "Run identifier for multi-run tasks. Optional.",
+            "required": False,
+        },
+    },
+}
+
+CORE_TOOLS["submit_trial"] = {
+    "func": submit_trial,
+    "description": (
+        "Snapshot the current workspace state as a trial without running a backtest. "
+        "Use for grid search checkpointing or manual saves. Each call uses one trial "
+        "from the budget."
+    ),
+    "params": {
+        "notes": {
+            "type": "string",
+            "description": "Optional notes describing this trial, e.g. 'grid search complete, 180 combos'",
+            "required": False,
+        },
+    },
+}
+
+CORE_TOOLS["select_submission"] = {
+    "func": select_submission,
+    "description": (
+        "Select which trial to submit for final evaluation. Copies the selected "
+        "trial's results and code back to /workspace/ for scoring. Call get_trial_status "
+        "first to review all trials."
+    ),
+    "params": {
+        "trial_id": {
+            "type": "integer",
+            "description": "Trial number to select (1-based), e.g. 3",
+            "required": True,
+        },
+    },
+}
+
+CORE_TOOLS["get_trial_status"] = {
+    "func": get_trial_status,
+    "description": (
+        "View all recorded trials with their status, metrics (trades, Sharpe, return), "
+        "remaining trial budget, and which trial is currently selected for evaluation."
+    ),
+    "params": {},
+}
