@@ -280,7 +280,7 @@ class OpenAIAgentAdapter(BaseAgentAdapter):
         api_messages = [{"role": "system", "content": self._get_full_system_prompt()}]
         api_messages.extend(self._input_history)
 
-        result_text = ""
+        text_parts: list[str] = []
         turns = 0
         last_prompt_tokens = 0
 
@@ -316,8 +316,11 @@ class OpenAIAgentAdapter(BaseAgentAdapter):
 
                 message = response.choices[0].message
 
+                # Accumulate text fragments across tool-call iterations.
+                # Models like GPT-5.2 often return content=None during tool
+                # rounds and only produce text in the final response.
                 if message.content:
-                    result_text = self._ensure_str(message.content)
+                    text_parts.append(self._ensure_str(message.content))
 
                 # Append ALL assistant messages (intermediate + final)
                 api_messages.append(message.model_dump(exclude_none=True))
@@ -352,6 +355,40 @@ class OpenAIAgentAdapter(BaseAgentAdapter):
                         )
             else:
                 log.warning("Direct API: max_turns (%d) reached", self.max_turns)
+                # When max_turns exhausted with no text captured, make one
+                # more call WITHOUT tools to force a text-only summary.
+                if not text_parts:
+                    log.info("Direct API: forcing text-only call after tool loop")
+                    try:
+                        force_resp = client.chat.completions.create(
+                            model=self.model,
+                            messages=api_messages,
+                            max_tokens=4096,
+                        )
+                        force_msg = force_resp.choices[0].message
+                        if force_msg.content:
+                            text_parts.append(self._ensure_str(force_msg.content))
+                        api_messages.append(
+                            force_msg.model_dump(exclude_none=True)
+                        )
+                        usage = getattr(force_resp, "usage", None)
+                        if usage:
+                            inp = getattr(usage, "prompt_tokens", 0) or 0
+                            out = getattr(usage, "completion_tokens", 0) or 0
+                            self._token_records.append(
+                                TokenRecord(
+                                    model=self.model,
+                                    input_tokens=inp,
+                                    output_tokens=out,
+                                    cost_usd=estimate_cost(
+                                        self.model, inp, out
+                                    ),
+                                )
+                            )
+                    except Exception as exc:
+                        log.warning(
+                            "Direct API: forced text call failed: %s", exc
+                        )
 
             # --- History compaction (mirrors Anthropic BetaToolRunner) ---
             # When context grows too large, summarize and replace history
@@ -362,6 +399,7 @@ class OpenAIAgentAdapter(BaseAgentAdapter):
             # Persist full history (skip system message)
             self._input_history = api_messages[1:]
 
+            result_text = "\n\n".join(text_parts)
             return result_text if result_text else "[No response from OpenAI API]"
 
         except Exception as e:
