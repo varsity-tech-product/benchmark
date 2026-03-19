@@ -497,107 +497,6 @@ def _save_group_summary(results: list, label: str, result_base_dir: Path):
 
 
 # ---------------------------------------------------------------------------
-# Network preflight — fail fast when required API endpoints are unreachable
-# ---------------------------------------------------------------------------
-
-
-def _add_endpoint(
-    endpoints: list[tuple[str, str]], seen: set[str], label: str, host: str
-):
-    if host not in seen:
-        endpoints.append((label, host))
-        seen.add(host)
-
-
-def _deepeval_host_for_model(model_name: str | None) -> tuple[str, str]:
-    if os.environ.get("OPENROUTER_API_KEY"):
-        return ("OpenRouter (DeepEval)", "openrouter.ai")
-
-    name = (model_name or "").strip().lower()
-    if name.startswith("anthropic/") or "claude" in name:
-        return ("Anthropic (DeepEval)", "api.anthropic.com")
-    if name.startswith("google/") or "gemini" in name:
-        return ("Google (DeepEval)", "generativelanguage.googleapis.com")
-    return ("OpenAI (DeepEval)", "api.openai.com")
-
-
-def _collect_remote_endpoints(args) -> list[tuple[str, str]]:
-    endpoints: list[tuple[str, str]] = []
-    seen: set[str] = set()
-
-    if args.command in {"run", "run-single", "test-e2e"}:
-        agent_type = getattr(args, "agent", "generic")
-        if agent_type in {"openai", "generic"}:
-            if os.environ.get("OPENROUTER_API_KEY"):
-                _add_endpoint(endpoints, seen, "OpenRouter (agent)", "openrouter.ai")
-            else:
-                _add_endpoint(endpoints, seen, "OpenAI (agent)", "api.openai.com")
-        elif agent_type == "anthropic":
-            _add_endpoint(endpoints, seen, "Anthropic (agent)", "api.anthropic.com")
-        elif agent_type == "google":
-            _add_endpoint(
-                endpoints,
-                seen,
-                "Google (agent)",
-                "generativelanguage.googleapis.com",
-            )
-
-    if args.command == "run-single":
-        for model_name in (
-            getattr(args, "eval_model", None),
-            getattr(args, "simulator_model", None),
-        ):
-            label, host = _deepeval_host_for_model(model_name)
-            _add_endpoint(endpoints, seen, label, host)
-    elif args.command == "run":
-        if getattr(args, "layer", "all") in {"all", "1"} and not getattr(
-            args, "no_deepeval", False
-        ):
-            label, host = _deepeval_host_for_model(getattr(args, "eval_model", None))
-            _add_endpoint(endpoints, seen, label, host)
-        if getattr(args, "layer", "all") in {"all", "2"}:
-            for model_name in (
-                getattr(args, "eval_model", None),
-                getattr(args, "simulator_model", None),
-            ):
-                label, host = _deepeval_host_for_model(model_name)
-                _add_endpoint(endpoints, seen, label, host)
-    elif args.command == "run-layer1" and not getattr(args, "no_deepeval", False):
-        label, host = _deepeval_host_for_model(getattr(args, "eval_model", None))
-        _add_endpoint(endpoints, seen, label, host)
-    elif args.command == "test-e2e":
-        label, host = _deepeval_host_for_model(getattr(args, "eval_model", None))
-        _add_endpoint(endpoints, seen, label, host)
-
-    return endpoints
-
-
-def _preflight_remote_endpoints(args):
-    if os.environ.get("QTB_SKIP_NETWORK_PREFLIGHT") == "1":
-        return
-
-    if args.command not in {"run", "run-single", "run-layer1", "test-e2e"}:
-        return
-
-    failures = []
-    for label, host in _collect_remote_endpoints(args):
-        try:
-            with socket.create_connection((host, 443), timeout=5):
-                pass
-        except OSError as exc:
-            failures.append(f"{label}: {host}: {exc}")
-
-    if failures:
-        joined = "\n".join(f"  - {item}" for item in failures)
-        raise SystemExit(
-            "Network preflight failed. Required providers are unreachable:\n"
-            f"{joined}\n\n"
-            "If this is a sandboxed environment, rerun with unrestricted network "
-            "access or set QTB_SKIP_NETWORK_PREFLIGHT=1 to bypass this check."
-        )
-
-
-# ---------------------------------------------------------------------------
 # Agent creation (used by cmd_run and cmd_run_layer1)
 # ---------------------------------------------------------------------------
 
@@ -1586,7 +1485,7 @@ def _add_common_args(parser):
     parser.add_argument(
         "--agent",
         default="generic",
-        choices=["generic", "openai", "anthropic", "google"],
+        choices=["generic", "openai", "anthropic", "google", "claude-code"],
         help="Agent SDK / model family",
     )
     parser.add_argument(
@@ -1754,18 +1653,6 @@ def main():
         "--persona",
         default=None,
         help="Persona ID (omit to run all personas in parallel)",
-    )
-    single_parser.add_argument(
-        "--agent",
-        default="generic",
-        choices=["generic", "openai", "anthropic", "google", "claude-code"],
-        help="Agent SDK / model family",
-    )
-    single_parser.add_argument(
-        "--condition",
-        default="agent",
-        choices=CONDITION_NAMES,
-        help="Test condition (2x2 matrix cell)",
     )
     _add_common_args(single_parser)
 
