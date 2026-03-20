@@ -77,16 +77,29 @@ class TrialManager:
         for f in self.workspace.glob("*.cs"):
             shutil.copy2(f, snapshot_dir / f.name)
 
-        # Snapshot results/ if present
+        # Snapshot results/ if present — copy files from workspace/results/
+        # and also from any run-id subdirectory (run_lean_backtest uses --run-id).
         ws_results = self.workspace / "results"
         if ws_results.is_dir():
-            for f in ws_results.iterdir():
-                if f.is_file():
-                    shutil.copy2(f, results_dir / f.name)
+            for item in ws_results.iterdir():
+                if item.is_file():
+                    shutil.copy2(item, results_dir / item.name)
+                elif item.is_dir():
+                    # Copy files from run-id subdirs (e.g. results/sma_universe_v2/)
+                    for f in item.iterdir():
+                        if f.is_file():
+                            shutil.copy2(f, results_dir / f.name)
 
         # Extract metrics from summary.json if not provided
         if metrics is None:
             metrics = self._read_summary(results_dir)
+            # Fallback: try *-summary.json (LEAN names it Algorithm-summary.json)
+            if not metrics:
+                for f in results_dir.iterdir():
+                    if f.name.endswith("-summary.json"):
+                        metrics = self._read_summary_from(f)
+                        if metrics:
+                            break
 
         trial_meta = {
             "trial_id": trial_id,
@@ -227,6 +240,10 @@ class TrialManager:
     def _read_summary(self, results_dir: Path) -> dict:
         """Extract key metrics from summary.json in a results directory."""
         summary_path = results_dir / "summary.json"
+        return self._read_summary_from(summary_path)
+
+    def _read_summary_from(self, summary_path: Path) -> dict:
+        """Extract key metrics from a specific summary JSON file."""
         if not summary_path.exists():
             return {}
 
