@@ -2264,7 +2264,9 @@ def get_environment_info() -> str:
             f"This environment has LEAN Engine (QuantConnect) with "
             f".NET {lean_info.get('dotnet_version', 'unknown')}. "
             f"To run a C# backtest: "
-            f"1) Write your .cs file to {workspace}/Algorithm.cs using file_write, "
+            f"1) Write your .cs file to {workspace}/Algorithm.cs using file_write "
+            f"(IMPORTANT: the class must be named 'Algorithm' in namespace "
+            f"'QuantConnect.Algorithm.CSharp' — any other class name will fail), "
             f"2) Run 'run_backtest {workspace}/Algorithm.cs' using shell_exec "
             f"(set timeout=600 as compilation + engine run may take a few minutes). "
             f"The stdout output shows a performance summary; "
@@ -2272,7 +2274,8 @@ def get_environment_info() -> str:
             f"summary.json (key metrics), log.txt (engine log), "
             f"orders.json (order details), build_log.txt (compilation output). "
             f"Use file_read() to inspect these files. "
-            f"LEAN market data is pre-loaded at /lean/Data/. "
+            f"LEAN market data is pre-loaded at /lean/Data/ "
+            f"(Binance USDT-M futures, 2022-01-01 to 2025-12-31). "
             f"Python is also available for analysis. "
             f"Workspace for saving outputs: {workspace}."
         )
@@ -3916,9 +3919,9 @@ def run_lean_backtest(
         "error" in output.lower() and "build failed" in output.lower()
     ):
         status = "compile_error"
-    elif _exit_code in (3, 124):
-        status = "runtime_error"
     elif os.path.exists(summary_path):
+        # Check results first — LEAN may complete with trades even if the
+        # wrapper script reports a non-zero exit (timeout race, extraction issue).
         trade_count = 0
         try:
             with open(summary_path) as f:
@@ -3931,6 +3934,8 @@ def run_lean_backtest(
         except (json.JSONDecodeError, IOError, ValueError):
             pass
         status = "success" if trade_count > 0 else "empty_trades"
+    elif _exit_code in (3, 4, 124):
+        status = "runtime_error"
     else:
         status = "runtime_error"
 
@@ -4094,7 +4099,7 @@ CORE_TOOLS["run_lean_backtest"] = {
     "params": {
         "algorithm_path": {
             "type": "string",
-            "description": "Path to the .cs algorithm file relative to workspace, e.g. 'Main.cs'",
+            "description": "Path to the .cs algorithm file relative to workspace, e.g. 'Algorithm.cs'. The class inside must be named 'Algorithm'.",
             "required": True,
         },
         "params_json": {

@@ -11,7 +11,7 @@ Every LEAN algorithm inherits from `QCAlgorithm`. The engine calls two primary m
 - **`Initialize()`** -- called once at startup. Set dates, cash, subscriptions, indicators, and parameters here.
 - **`OnData(Slice data)`** -- called on every new data point (bar or tick). This is where trading logic lives.
 
-The algorithm class must be `public` and reside in the `QuantConnect.Algorithm.CSharp` namespace.
+The algorithm class **must** be named `Algorithm`, be `public`, and reside in the `QuantConnect.Algorithm.CSharp` namespace. The LEAN engine is configured to look for exactly this class name — using any other name (e.g. `MyStrategy`, `SmaAlgorithm`) will cause a runtime error: *"Algorithm type name not found"*.
 
 To compile and run your algorithm, use the `run_backtest` command:
 
@@ -40,8 +40,8 @@ namespace QuantConnect.Algorithm.CSharp
     {
         public override void Initialize()
         {
-            SetStartDate(2023, 1, 1);
-            SetEndDate(2024, 1, 1);
+            SetStartDate(2022, 1, 1);
+            SetEndDate(2025, 12, 31);
             SetAccountCurrency("USDT");
             SetCash(100000);
 
@@ -60,6 +60,8 @@ namespace QuantConnect.Algorithm.CSharp
 ```
 
 **Note**: The `using` directives above cover the most common needs (indicators, orders, JSON loading, LINQ). Add framework-specific usings for Algorithm Framework tasks (see the Algorithm Framework Guide).
+
+**Data availability**: The pre-loaded dataset contains Binance USDT-margined perpetual futures from **2022-01-01 to 2025-12-31**. Use `SetStartDate(2022, 1, 1)` and `SetEndDate(2025, 12, 31)` to backtest over the full available range. Using a narrower window will produce fewer trades and miss market regimes.
 
 ### Lifecycle overview
 
@@ -357,8 +359,8 @@ private List<Symbol> _symbols = new List<Symbol>();
 
 public override void Initialize()
 {
-    SetStartDate(2023, 1, 1);
-    SetEndDate(2024, 1, 1);
+    SetStartDate(2022, 1, 1);
+    SetEndDate(2025, 12, 31);
     SetAccountCurrency("USDT");
     SetCash(100000);
 

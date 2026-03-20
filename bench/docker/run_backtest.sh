@@ -129,10 +129,14 @@ with open('$LEAN_CONFIG') as f:
 params = json.loads('''$PARAMS_JSON''') if '$PARAMS_JSON' else {}
 cfg['parameters'] = params
 
+# Point LEAN results to the run-specific directory
+cfg['results-destination-folder'] = '$RESULTS_DIR'
+
 with open('$LEAN_CONFIG', 'w') as f:
     json.dump(cfg, f, indent=2)
 
 print(f'  -> Set {len(params)} parameter(s)')
+print(f'  -> Results folder: $RESULTS_DIR')
 " 2>&1
 
 # ── Step 3: Run the LEAN engine ───────────────────────────────────────

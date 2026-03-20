@@ -88,7 +88,8 @@ _PROMPT_D_ABSTRACT_PUSH = (
 _PROMPT_E_BACKTEST_TRIAL_SYSTEM = (
     "Use the trial tools to iterate efficiently:\n\n"
     "WORKFLOW:\n"
-    "1. Write your C# algorithm file\n"
+    "1. Write your C# algorithm file (class must be named 'Algorithm' in "
+    "namespace 'QuantConnect.Algorithm.CSharp')\n"
     "2. Call run_lean_backtest(algorithm_path) to compile + run + record a trial\n"
     "3. Review the result (compile errors, empty trades, metrics)\n"
     "4. Fix issues and run again (each run uses 1 trial)\n"
