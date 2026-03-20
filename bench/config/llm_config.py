@@ -29,7 +29,7 @@ OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 
 # --- OAuth direct (Claude Max) ---
 # Anthropic eval models use OAuth → Anthropic API, falling back to OpenRouter.
-EVAL_USE_OAUTH = True
+EVAL_USE_OAUTH = False
 OAUTH_BETA_HEADER = "oauth-2025-04-20"
 
 # --- Anthropic agent transport ---

@@ -3934,12 +3934,11 @@ def run_lean_backtest(
     else:
         status = "runtime_error"
 
-    # Get trial_id from JSONL count (the run was already registered by
-    # run_backtest.sh EXIT trap before we reach here)
-    trial_id = tm.count_all_runs()
+    # Allocate a trial_id (increments the counter atomically)
+    trial_id = tm.next_trial_id()
 
     # Record structured metadata (snapshot + manifest entry)
-    meta = tm.snapshot_and_record(trial_id, status, algorithm_path)
+    meta = tm.snapshot_and_record(trial_id, status, algo_path=algorithm_path)
     metrics = meta.get("metrics", {})
     remaining = tm.max_trials - tm.trials_used()
 
@@ -3976,7 +3975,7 @@ def submit_trial(notes: str = "") -> str:
     # Allocate a trial_id that doesn't conflict with JSONL-tracked runs.
     # Use max(existing manifest IDs, JSONL count) + 1.
     manifest_ids = [int(k) for k in tm.get_status()["trials"].keys()] or [0]
-    trial_id = max(max(manifest_ids), tm.count_all_runs()) + 1
+    trial_id = max(max(manifest_ids), tm.trials_used()) + 1
 
     # Determine status from current results
     workspace = _workspace_dir()

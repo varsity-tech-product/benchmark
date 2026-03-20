@@ -53,7 +53,7 @@ except ImportError:
     OPENAI_AGENTS_AVAILABLE = False
 
 # Max LLM invocations per generate_response() call.
-DEFAULT_AGENT_MAX_TURNS = 8
+DEFAULT_AGENT_MAX_TURNS = 16
 
 # --- Direct API: history compaction ---
 # Mirrors Anthropic BetaToolRunner's compaction_control.
@@ -362,13 +362,25 @@ class OpenAIAgentAdapter(BaseAgentAdapter):
                 if not text_parts:
                     log.info("Direct API: forcing summary call after tool loop")
                     try:
+                        # Append a nudge so the model produces a text summary
+                        # instead of requesting more tool calls.
+                        summary_messages = list(api_messages) + [
+                            {
+                                "role": "user",
+                                "content": (
+                                    "[SYSTEM: You have used all available tool-call rounds. "
+                                    "Please respond to the student NOW with a helpful text "
+                                    "message summarizing what you accomplished and any "
+                                    "guidance. Do NOT call any more tools.]"
+                                ),
+                            }
+                        ]
                         force_kwargs: dict = dict(
                             model=self.model,
-                            messages=api_messages,
+                            messages=summary_messages,
                             max_tokens=4096,
                         )
-                        if tools:
-                            force_kwargs["tools"] = tools
+                        # Omit tools to guarantee a text response.
                         force_resp = client.chat.completions.create(
                             **force_kwargs
                         )
