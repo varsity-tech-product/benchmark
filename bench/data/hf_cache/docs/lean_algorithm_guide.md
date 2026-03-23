@@ -412,6 +412,8 @@ private List<string> LoadUniverse()
 }
 ```
 
+**Universe notes**: `universe.json` contains ~670 Binance USDT-M perpetual symbols. All symbols have **daily** data for 2022-2025. Only the first ~100 symbols (tier2) also have hourly data. For multi-symbol strategies, use `Resolution.Daily` unless hourly is specifically required. It is safe to subscribe to all symbols — LEAN will skip those with no data in the date range.
+
 Then use it in `Initialize()`:
 
 ```csharp
