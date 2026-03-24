@@ -179,22 +179,194 @@ def _normalize_trade(trade: dict) -> dict:
 def load_agent_trades(workspace_path: str) -> list[dict]:
     """Parse agent's trade log from workspace results.
 
+    Searches multiple locations (in priority order) because LEAN output
+    naming varies across builds and ``run_backtest.sh`` may fail to
+    extract a standalone ``trades.json``.
+
     Normalizes LEAN PascalCase fields to the snake_case schema
     expected by match_trades().
     """
-    trades_path = os.path.join(workspace_path, "results", "trades.json")
-    if not os.path.exists(trades_path):
+    import glob as _glob
+
+    results_dir = os.path.join(workspace_path, "results")
+    if not os.path.isdir(results_dir):
         return []
+
+    # 1. Standard extracted name (run_backtest.sh copy_result output)
+    raw_trades = _try_load_trades_file(os.path.join(results_dir, "trades.json"))
+    if raw_trades is not None:
+        return [_normalize_trade(t) for t in raw_trades]
+
+    # 2. LEAN-native pattern (*-trades.json)
+    for f in _glob.glob(os.path.join(results_dir, "*-trades.json")):
+        raw_trades = _try_load_trades_file(f)
+        if raw_trades is not None:
+            return [_normalize_trade(t) for t in raw_trades]
+
+    # 3. Extract closedTrades from summary.json
+    for candidate in [os.path.join(results_dir, "summary.json")] + \
+            _glob.glob(os.path.join(results_dir, "*-summary.json")):
+        ct = _extract_closed_trades(candidate)
+        if ct:
+            return [_normalize_trade(t) for t in ct]
+
+    # 4. Extract closedTrades from the main LEAN JSON (largest file)
+    ct = _extract_closed_trades_from_main_json(results_dir)
+    if ct:
+        return [_normalize_trade(t) for t in ct]
+
+    # 5. Pair round-trips from order events (lowest confidence)
+    paired = _pair_trades_from_orders(results_dir)
+    if paired:
+        return paired
+
+    return []
+
+
+def _try_load_trades_file(path: str) -> list | None:
+    """Load a trades JSON file, returning the raw trade list or None."""
+    if not os.path.exists(path):
+        return None
     try:
-        with open(trades_path) as f:
+        with open(path) as f:
             data = json.load(f)
         if isinstance(data, list):
-            raw_trades = data
-        else:
-            raw_trades = data.get("trades", data.get("ClosedTrades", []))
-        return [_normalize_trade(t) for t in raw_trades]
+            return data
+        return data.get("trades", data.get("ClosedTrades", []))
+    except (json.JSONDecodeError, IOError):
+        return None
+
+
+def _extract_closed_trades(path: str) -> list:
+    """Extract totalPerformance.closedTrades from a LEAN JSON file."""
+    if not os.path.exists(path):
+        return []
+    try:
+        with open(path) as f:
+            data = json.load(f)
+        return data.get("totalPerformance", {}).get("closedTrades", [])
     except (json.JSONDecodeError, IOError):
         return []
+
+
+def _extract_closed_trades_from_main_json(results_dir: str) -> list:
+    """Find the main LEAN output JSON (largest, excluding known suffixes)."""
+    import glob as _glob
+
+    _SKIP_SUFFIXES = ("-summary.json", "-order-events.json", "-log.txt")
+    _SKIP_PREFIXES = ("data-monitor", "succeeded-data", "failed-data")
+    best, best_size = None, 0
+    for f in _glob.glob(os.path.join(results_dir, "*.json")):
+        name = os.path.basename(f)
+        if any(name.endswith(s) for s in _SKIP_SUFFIXES):
+            continue
+        if any(name.startswith(p) for p in _SKIP_PREFIXES):
+            continue
+        if name in ("trades.json", "orders.json", "summary.json", "result.json"):
+            continue
+        sz = os.path.getsize(f)
+        if sz > best_size:
+            best, best_size = f, sz
+
+    if best and best_size > 10000:
+        return _extract_closed_trades(best)
+    return []
+
+
+def _pair_trades_from_orders(results_dir: str) -> list[dict]:
+    """FIFO pair filled orders into round-trip trades (lowest-confidence fallback).
+
+    Uses the same order parsing as load_agent_orders() but pairs entries
+    with exits per symbol.  Marks results with ``_source: "order_pairing"``
+    so downstream scoring can treat them as lower-confidence.
+    """
+    import glob as _glob
+    from collections import defaultdict
+
+    orders_path = os.path.join(results_dir, "orders.json")
+    if not os.path.exists(orders_path):
+        # Try LEAN-native name
+        candidates = _glob.glob(os.path.join(results_dir, "*-order-events.json"))
+        if not candidates:
+            return []
+        orders_path = candidates[0]
+
+    try:
+        with open(orders_path) as f:
+            data = json.load(f)
+    except (json.JSONDecodeError, IOError):
+        return []
+
+    # Parse filled orders (reuse logic from load_agent_orders)
+    if isinstance(data, dict):
+        if "Orders" in data or "orders" in data:
+            data = data.get("Orders", data.get("orders", {}))
+        if isinstance(data, dict):
+            raw_orders = list(data.values())
+        else:
+            raw_orders = data
+    else:
+        raw_orders = data
+
+    by_symbol = defaultdict(list)
+    for o in raw_orders:
+        status = _ci_get_trade(o, "Status", "status", default=0)
+        if isinstance(status, int) and status != 3:
+            continue
+        if isinstance(status, str) and status.lower() not in ("filled", "3"):
+            continue
+        sym = _ci_get_trade(o, "Symbol", "symbol", default="")
+        if isinstance(sym, dict):
+            sym = sym.get("Value", sym.get("value", str(sym)))
+        raw_dir = _ci_get_trade(o, "Direction", "direction", default=0)
+        if isinstance(raw_dir, int):
+            direction = "Buy" if raw_dir == 0 else "Sell"
+        else:
+            d = str(raw_dir).lower()
+            direction = "Buy" if d in ("long", "buy", "0") else "Sell"
+        by_symbol[str(sym)].append({
+            "direction": direction,
+            "quantity": abs(float(
+                _ci_get_trade(o, "Quantity", "quantity", default=0)
+            )),
+            "fill_price": float(
+                _ci_get_trade(o, "Price", "fill_price", "price", default=0)
+            ),
+            "time": str(_ci_get_trade(o, "Time", "time", default="")),
+        })
+
+    # Simple FIFO pairing: first order = entry, opposite direction = exit
+    trades = []
+    for sym, sym_orders in by_symbol.items():
+        sym_orders.sort(key=lambda x: x["time"])
+        pending = None
+        for o in sym_orders:
+            if pending is None:
+                pending = o
+            elif o["direction"] != pending["direction"]:
+                pnl = (
+                    (o["fill_price"] - pending["fill_price"]) * pending["quantity"]
+                )
+                if pending["direction"] == "Sell":
+                    pnl = -pnl
+                trades.append({
+                    "symbol": sym,
+                    "direction": pending["direction"],
+                    "quantity": pending["quantity"],
+                    "entry_time": pending["time"],
+                    "entry_price": pending["fill_price"],
+                    "exit_time": o["time"],
+                    "exit_price": o["fill_price"],
+                    "gross_pnl": pnl,
+                    "net_pnl": pnl,
+                    "_source": "order_pairing",
+                })
+                pending = None
+            else:
+                # Same direction — accumulation, skip simple pairing
+                pending = o
+
+    return trades
 
 
 def _parse_time(t: str | int | float) -> float:
@@ -391,15 +563,33 @@ def check_csharp_patterns(workspace_path: str, patterns: list[str]) -> dict[str,
 
 
 def collect_lean_results(workspace_path: str) -> dict | None:
-    """Parse LEAN output from /workspace/results/summary.json."""
-    summary_path = os.path.join(workspace_path, "results", "summary.json")
-    if not os.path.exists(summary_path):
+    """Parse LEAN statistics from workspace results.
+
+    Searches multiple file patterns because ``run_backtest.sh`` may fail
+    to copy the summary to the standard name, and LEAN naming varies
+    across builds (``*-summary.json`` vs ``*-statistics.json``).
+    """
+    import glob as _glob
+
+    results_dir = os.path.join(workspace_path, "results")
+    if not os.path.isdir(results_dir):
         return None
-    try:
-        with open(summary_path) as f:
-            return json.load(f)
-    except (json.JSONDecodeError, IOError):
-        return None
+
+    # Try in priority order: standard name, LEAN summary, legacy statistics
+    candidates = [os.path.join(results_dir, "summary.json")]
+    candidates += sorted(_glob.glob(os.path.join(results_dir, "*-summary.json")))
+    candidates += sorted(_glob.glob(os.path.join(results_dir, "*-statistics.json")))
+
+    for path in candidates:
+        if not os.path.exists(path):
+            continue
+        try:
+            with open(path) as f:
+                return json.load(f)
+        except (json.JSONDecodeError, IOError):
+            continue
+
+    return None
 
 
 # ════════════════════════════════════════════════════════════════════

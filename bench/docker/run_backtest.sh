@@ -199,9 +199,46 @@ copy_result() {
 }
 
 # Extract key result files
+# LEAN names files after the algorithm-type-name.  Common suffixes:
+#   -order-events.json, -summary.json (newer LEAN), -statistics.json (older LEAN)
 copy_result "*-trades.json" "trades.json"
 copy_result "*-order-events.json" "orders.json"
-copy_result "*-statistics.json" "summary.json"
+# Try -summary.json first (current LEAN), fallback to -statistics.json (legacy)
+copy_result "*-summary.json" "summary.json"
+if [ ! -f "$RESULTS_DIR/summary.json" ]; then
+    copy_result "*-statistics.json" "summary.json"
+fi
+
+# Copy the main LEAN output JSON (contains Orders, closedTrades, charts)
+# to a deterministic name.  This is the largest JSON that isn't a sidecar.
+for search_dir in "${LEAN_RESULTS_SEARCH_DIRS[@]}"; do
+    found=$(find "$search_dir" -maxdepth 1 -name "*.json" \
+        ! -name "*-summary.json" ! -name "*-order-events.json" \
+        ! -name "*-log*" ! -name "data-monitor*" ! -name "*data-requests*" \
+        ! -name "summary.json" ! -name "orders.json" ! -name "trades.json" \
+        -size +100k -type f 2>/dev/null | head -1)
+    if [ -n "$found" ] && [ "$found" != "$RESULTS_DIR/result.json" ]; then
+        cp "$found" "$RESULTS_DIR/result.json"
+        echo "  -> result.json (from $found)"
+        break
+    fi
+done
+
+# Extract closedTrades to trades.json (only when LEAN actually provides them)
+if [ ! -f "$RESULTS_DIR/trades.json" ] && [ -f "$RESULTS_DIR/result.json" ]; then
+    python3 -c "
+import json
+with open('$RESULTS_DIR/result.json') as f:
+    data = json.load(f)
+ct = data.get('totalPerformance', {}).get('closedTrades', [])
+if ct:
+    with open('$RESULTS_DIR/trades.json', 'w') as f:
+        json.dump(ct, f)
+    print(f'  -> trades.json ({len(ct)} closed trades extracted)')
+else:
+    print('  -> trades.json (no closedTrades in LEAN output)')
+" 2>/dev/null || true
+fi
 
 # The log was already captured by tee above
 if [ -f "$RESULTS_DIR/log.txt" ]; then

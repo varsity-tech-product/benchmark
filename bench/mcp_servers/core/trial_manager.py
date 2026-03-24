@@ -271,16 +271,26 @@ class TrialManager:
             sharpe = 0.0
 
         total_return = stats.get("Net Profit", stats.get("total_return", "0%"))
+
+        # Separate closed trades from order count — they are not the same.
+        # LEAN TradeBuilder may report 0 closed trades for multi-symbol
+        # CryptoFuture strategies while orders are filled correctly.
         total_trades_str = stats.get(
-            "Total Trades", stats.get("Total Orders", stats.get("total_trades", "0"))
+            "Total Trades", stats.get("total_trades", "0")
         )
+        total_orders_str = stats.get("Total Orders", "0")
         try:
             total_trades = int(total_trades_str)
         except (ValueError, TypeError):
             total_trades = 0
+        try:
+            total_orders = int(total_orders_str)
+        except (ValueError, TypeError):
+            total_orders = 0
 
         return {
             "sharpe_ratio": sharpe,
             "total_return_pct": _pct(total_return),
             "total_trades": total_trades,
+            "total_orders": total_orders,
         }

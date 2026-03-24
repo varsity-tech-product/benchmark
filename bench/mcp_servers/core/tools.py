@@ -3923,17 +3923,19 @@ def run_lean_backtest(
         # Check results first — LEAN may complete with trades even if the
         # wrapper script reports a non-zero exit (timeout race, extraction issue).
         trade_count = 0
+        order_count = 0
         try:
             with open(summary_path) as f:
                 sdata = json.load(f)
             perf = sdata.get("totalPerformance", {}).get("tradeStatistics", {})
             trade_count = perf.get("totalNumberOfTrades", 0)
-            if trade_count == 0:
-                stats = sdata.get("statistics", {})
-                trade_count = int(stats.get("Total Orders", "0"))
+            stats = sdata.get("statistics", {})
+            order_count = int(stats.get("Total Orders", "0"))
         except (json.JSONDecodeError, IOError, ValueError):
             pass
-        status = "success" if trade_count > 0 else "empty_trades"
+        # Success if closed trades exist OR orders were filled (TradeBuilder
+        # may report 0 closed trades for multi-symbol CryptoFuture strategies)
+        status = "success" if (trade_count > 0 or order_count > 0) else "empty_trades"
     elif _exit_code in (3, 4, 124):
         status = "runtime_error"
     else:
