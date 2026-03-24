@@ -216,7 +216,7 @@ for search_dir in "${LEAN_RESULTS_SEARCH_DIRS[@]}"; do
         ! -name "*-summary.json" ! -name "*-order-events.json" \
         ! -name "*-log*" ! -name "data-monitor*" ! -name "*data-requests*" \
         ! -name "summary.json" ! -name "orders.json" ! -name "trades.json" \
-        -size +100k -type f 2>/dev/null | head -1)
+        -size +100k -type f -printf '%s %p\n' 2>/dev/null | sort -rn | head -1 | cut -d' ' -f2-)
     if [ -n "$found" ] && [ "$found" != "$RESULTS_DIR/result.json" ]; then
         cp "$found" "$RESULTS_DIR/result.json"
         echo "  -> result.json (from $found)"

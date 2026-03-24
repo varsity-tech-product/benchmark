@@ -304,9 +304,14 @@ def _pair_trades_from_orders(results_dir: str) -> list[dict]:
             continue
         if isinstance(status, str) and status.lower() not in ("filled", "3"):
             continue
-        sym = _ci_get_trade(o, "Symbol", "symbol", default="")
-        if isinstance(sym, dict):
-            sym = sym.get("Value", sym.get("value", str(sym)))
+        # Symbol: prefer symbolValue (clean ticker), fall back to symbol
+        # with LEAN suffix stripped (e.g., "ADAUSDT 18R" → "ADAUSDT")
+        sym = _ci_get_trade(o, "symbolValue", "SymbolValue", default="")
+        if not sym:
+            sym = _ci_get_trade(o, "Symbol", "symbol", default="")
+            if isinstance(sym, dict):
+                sym = sym.get("Value", sym.get("value", str(sym)))
+            sym = str(sym).split()[0]  # strip LEAN suffix like " 18R"
         raw_dir = _ci_get_trade(o, "Direction", "direction", default=0)
         if isinstance(raw_dir, int):
             direction = "Buy" if raw_dir == 0 else "Sell"
@@ -315,8 +320,12 @@ def _pair_trades_from_orders(results_dir: str) -> list[dict]:
             direction = "Buy" if d in ("long", "buy", "0") else "Sell"
         by_symbol[str(sym)].append({
             "direction": direction,
-            "quantity": abs(float(_ci_get_trade(o, "Quantity", "quantity", default=0))),
-            "fill_price": float(_ci_get_trade(o, "Price", "fill_price", "price", default=0)),
+            "quantity": abs(float(_ci_get_trade(
+                o, "Quantity", "fillQuantity", "quantity", default=0
+            ))),
+            "fill_price": float(_ci_get_trade(
+                o, "Price", "fillPrice", "fill_price", "price", default=0
+            )),
             "time": str(_ci_get_trade(o, "Time", "time", default="")),
         })
 
@@ -420,12 +429,18 @@ def match_trades(
     for ref_trade in ref_trades:
         ref_entry = _parse_time(ref_trade.get("entry_time", 0))
         ref_dir = ref_trade.get("direction", "").lower()
+        # Normalize symbol for comparison (strip LEAN suffixes like " 18R")
+        ref_sym = ref_trade.get("symbol", "").split()[0].upper()
 
         best_idx = None
         best_delta = float("inf")
 
         for i, agent_trade in enumerate(agent_trades):
             if i in used_agent_indices:
+                continue
+            # Symbol check: if both trades have symbols, they must match
+            agent_sym = agent_trade.get("symbol", "").split()[0].upper()
+            if ref_sym and agent_sym and ref_sym != agent_sym:
                 continue
             agent_entry = _parse_time(agent_trade.get("entry_time", 0))
             delta = abs(agent_entry - ref_entry)
@@ -672,9 +687,14 @@ def load_agent_orders(workspace_path: str) -> list[dict]:
         if isinstance(status, str) and status.lower() not in ("filled", "3"):
             continue
 
-        sym = _ci_get_trade(o, "Symbol", "symbol", default="")
-        if isinstance(sym, dict):
-            sym = sym.get("Value", sym.get("value", str(sym)))
+        # Symbol: prefer symbolValue (clean ticker), fall back to symbol
+        # with LEAN suffix stripped (e.g., "ADAUSDT 18R" → "ADAUSDT")
+        sym = _ci_get_trade(o, "symbolValue", "SymbolValue", default="")
+        if not sym:
+            sym = _ci_get_trade(o, "Symbol", "symbol", default="")
+            if isinstance(sym, dict):
+                sym = sym.get("Value", sym.get("value", str(sym)))
+            sym = str(sym).split()[0]  # strip LEAN suffix
 
         raw_dir = _ci_get_trade(o, "Direction", "direction", default=0)
         if isinstance(raw_dir, int):
@@ -686,8 +706,12 @@ def load_agent_orders(workspace_path: str) -> list[dict]:
         orders.append({
             "symbol": str(sym),
             "direction": direction,
-            "quantity": abs(float(_ci_get_trade(o, "Quantity", "quantity", default=0))),
-            "fill_price": float(_ci_get_trade(o, "Price", "fill_price", "price", default=0)),
+            "quantity": abs(float(_ci_get_trade(
+                o, "Quantity", "fillQuantity", "quantity", default=0
+            ))),
+            "fill_price": float(_ci_get_trade(
+                o, "Price", "fillPrice", "fill_price", "price", default=0
+            )),
             "time": str(_ci_get_trade(o, "Time", "time", default="")),
         })
 
