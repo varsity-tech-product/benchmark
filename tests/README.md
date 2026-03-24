@@ -31,11 +31,23 @@ exercise the file-discovery and fallback logic used by the I-series scoring code
 - `result.json` is sufficient when `trades.json` is missing
 - Order-pairing fallback uses clean symbols, real `fillPrice`, and numeric timestamps
 - I02/I05 order-paired trades fully match the reference trade counts and timings
+- Native LEAN `closedTrades` keep clean symbol values
+- `_implementation_check.py` remains behaviorally identical to the shared common helper
+
+### `test_lean_golden_eval.py` — Golden Score Sanity
+
+Fast sanity tests over the saved `tests/results/I01-I07` workspaces.
+
+**What it tests:**
+- Golden workspaces achieve strong behavioral scores through the real eval stack
+- Expected layers are available for each task
+- The benchmark does not regress back into “files readable but scores meaningless”
 
 **Run:**
 ```bash
 pytest tests/test_lean_eval_helpers.py -q
-pytest tests/test_lean_backtest.py tests/test_lean_eval_helpers.py -q   # full validation
+pytest tests/test_lean_golden_eval.py -q
+pytest tests/test_lean_backtest.py tests/test_lean_eval_helpers.py tests/test_lean_golden_eval.py -q   # full validation
 ```
 
 **Prerequisites:**
@@ -58,8 +70,8 @@ pytest tests/test_lean_backtest.py tests/test_lean_eval_helpers.py -q   # full v
 
 **Latest full validation:**
 ```bash
-pytest tests/test_lean_backtest.py tests/test_lean_eval_helpers.py -q
-# 12 passed in 982.56s (0:16:22)
+pytest tests/test_lean_backtest.py tests/test_lean_eval_helpers.py tests/test_lean_golden_eval.py -q
+# 15 passed in 1013.87s (0:16:53)
 ```
 
 \* LEAN's `TradeBuilder` reports 0 closed trades for multi-symbol CryptoFuture strategies in this build.
@@ -82,6 +94,12 @@ pytest tests/test_lean_backtest.py tests/test_lean_eval_helpers.py -q
 7. **Trade matching hardened** — `match_trades()` now requires symbol equality, preventing cross-symbol false matches.
 
 8. **`result.json` fallback completed** — Eval helpers now prefer deterministic `result.json` when reconstructing closed trades and recover I02/I05 performance metrics from `runtimeStatistics` + equity/drawdown charts when `summary.json` is empty.
+
+9. **Single helper source of truth** — `_implementation_check.py` is now a compatibility wrapper over `common/implementation_check.py`, eliminating drift between the two copies.
+
+10. **Golden performance references added** — I01 / I03 / I04 / I07 now have reference summary files, so performance is scored for all saved I-series goldens.
+
+11. **Golden sanity suite added** — `test_lean_golden_eval.py` now locks the current behavioral-score baseline into CI-friendly regression tests.
 
 **Known remaining issues:**
 
@@ -125,6 +143,8 @@ I02 and I05 deserve special note:
 - Current saved goldens score through the real eval helpers:
   I02 composite `0.597`
   I05 composite `0.971`
+
+I01 / I03 / I04 / I07 now also have reference summary baselines, so their performance layers are scored rather than treated as unavailable.
 
 Each task directory contains:
 ```

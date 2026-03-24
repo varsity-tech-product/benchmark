@@ -7,12 +7,14 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from bench.evaluation.test_scripts import _implementation_check as wrapper_impl
 from bench.evaluation.test_scripts._implementation_check import (
     load_agent_orders,
     load_agent_trades,
     load_reference_trades,
     match_trades,
 )
+from bench.evaluation.test_scripts.common import implementation_check as common_impl
 
 
 def test_load_agent_trades_reads_result_json_fallback(tmp_path: Path):
@@ -77,3 +79,24 @@ def test_order_paired_trades_match_reference_counts_and_timing():
         assert match.entry_match_rate == 1.0, f"{task}: entry timing should fully match"
         assert match.direction_match_rate == 1.0, f"{task}: directions should fully match"
         assert match.exit_match_rate == 1.0, f"{task}: exit timing should fully match"
+
+
+def test_native_closed_trades_keep_symbol_for_single_and_framework_tasks():
+    """Native LEAN closedTrades should normalize ``symbols`` into clean tickers."""
+    for task in ("I01", "I03", "I04", "I07"):
+        trades = load_agent_trades(f"tests/results/{task}")
+        assert trades, f"{task}: expected native trades to load"
+        assert all(str(t.get("symbol", "")).strip() for t in trades), (
+            f"{task}: native closedTrades should not lose symbol information"
+        )
+        assert all(" " not in t["symbol"] for t in trades[:10]), (
+            f"{task}: native symbols should already be normalized"
+        )
+
+
+def test_wrapper_module_reexports_common_helper_behavior():
+    """Legacy wrapper and common helper should return identical trade parsing."""
+    for task in ("I01", "I02", "I05", "I07"):
+        wrapper = wrapper_impl.load_agent_trades(f"tests/results/{task}")
+        common = common_impl.load_agent_trades(f"tests/results/{task}")
+        assert wrapper == common, f"{task}: wrapper helper drifted from common helper"

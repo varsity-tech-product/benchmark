@@ -130,6 +130,41 @@ def _ci_get_trade(d: dict, *keys, default=None):
     return default
 
 
+def _normalize_symbol_value(raw_sym, raw_symbols=None) -> str:
+    """Normalize a LEAN symbol field into a clean comparable ticker.
+
+    Handles:
+    - ``Symbol`` / ``symbol`` as string or ``{"Value": ...}``
+    - ``symbols`` arrays used by LEAN closedTrades
+    - LEAN suffixes like ``"ADAUSDT 18R"``
+    """
+    symbol = ""
+    if isinstance(raw_sym, dict):
+        symbol = raw_sym.get("Value", raw_sym.get("value", str(raw_sym)))
+    elif raw_sym is not None:
+        symbol = str(raw_sym)
+
+    if not symbol and isinstance(raw_symbols, list):
+        values = []
+        for entry in raw_symbols:
+            if isinstance(entry, dict):
+                val = entry.get("value", entry.get("Value", ""))
+            else:
+                val = str(entry)
+            val = str(val).strip()
+            if val:
+                values.append(val)
+        if len(values) == 1:
+            symbol = values[0]
+        elif values:
+            symbol = " + ".join(values)
+
+    symbol = str(symbol).strip()
+    if not symbol:
+        return ""
+    return symbol.split()[0]
+
+
 def _normalize_trade(trade: dict) -> dict:
     """Normalize a trade dict to the snake_case schema expected by match_trades().
 
@@ -151,10 +186,8 @@ def _normalize_trade(trade: dict) -> dict:
 
     # Symbol: might be a string or an object with Value
     raw_sym = _ci_get_trade(trade, "Symbol", "symbol", default="")
-    if isinstance(raw_sym, dict):
-        symbol = raw_sym.get("Value", raw_sym.get("value", str(raw_sym)))
-    else:
-        symbol = str(raw_sym)
+    raw_symbols = _ci_get_trade(trade, "Symbols", "symbols", default=None)
+    symbol = _normalize_symbol_value(raw_sym, raw_symbols)
 
     profit_loss = float(
         _ci_get_trade(trade, "ProfitLoss", "gross_pnl", "net_pnl", default=0)
@@ -192,28 +225,28 @@ def load_agent_trades(workspace_path: str) -> list[dict]:
     if not os.path.isdir(results_dir):
         return []
 
-    # 1. Standard extracted name (run_backtest.sh copy_result output)
+    # 1. LEAN-native closedTrades from main result JSON
+    ct = _extract_closed_trades_from_main_json(results_dir)
+    if ct:
+        return [_normalize_trade(t) for t in ct]
+
+    # 2. Standard extracted name (run_backtest.sh copy_result output)
     raw_trades = _try_load_trades_file(os.path.join(results_dir, "trades.json"))
     if raw_trades is not None:
         return [_normalize_trade(t) for t in raw_trades]
 
-    # 2. LEAN-native pattern (*-trades.json)
+    # 3. LEAN-native pattern (*-trades.json)
     for f in _glob.glob(os.path.join(results_dir, "*-trades.json")):
         raw_trades = _try_load_trades_file(f)
         if raw_trades is not None:
             return [_normalize_trade(t) for t in raw_trades]
 
-    # 3. Extract closedTrades from summary.json
+    # 4. Extract closedTrades from summary.json
     for candidate in [os.path.join(results_dir, "summary.json")] + \
             _glob.glob(os.path.join(results_dir, "*-summary.json")):
         ct = _extract_closed_trades(candidate)
         if ct:
             return [_normalize_trade(t) for t in ct]
-
-    # 4. Extract closedTrades from the main LEAN JSON (largest file)
-    ct = _extract_closed_trades_from_main_json(results_dir)
-    if ct:
-        return [_normalize_trade(t) for t in ct]
 
     # 5. Pair round-trips from order events (lowest confidence)
     paired = _pair_trades_from_orders(results_dir)
@@ -253,11 +286,9 @@ def _extract_closed_trades_from_main_json(results_dir: str) -> list:
     """Find the main LEAN output JSON (prefer result.json, else largest JSON)."""
     import glob as _glob
 
-    # Prefer the deterministic name written by run_backtest.sh.
+    # Prefer LEAN main JSONs first, then the deterministic result.json.
+    native_candidates = []
     result_json = os.path.join(results_dir, "result.json")
-    ct = _extract_closed_trades(result_json)
-    if ct:
-        return ct
 
     _SKIP_SUFFIXES = ("-summary.json", "-order-events.json", "-log.txt")
     _SKIP_PREFIXES = ("data-monitor", "succeeded-data", "failed-data")
@@ -275,16 +306,23 @@ def _extract_closed_trades_from_main_json(results_dir: str) -> list:
             best, best_size = f, sz
 
     if best and best_size > 10000:
-        return _extract_closed_trades(best)
+        native_candidates.append(best)
+    if os.path.exists(result_json):
+        native_candidates.append(result_json)
+
+    for path in native_candidates:
+        ct = _extract_closed_trades(path)
+        if ct:
+            return ct
     return []
 
 
 def _pair_trades_from_orders(results_dir: str) -> list[dict]:
-    """FIFO pair filled orders into round-trip trades (lowest-confidence fallback).
+    """Pair filled orders into round-trip trades using reference-compatible FIFO logic.
 
-    Uses the same order parsing as load_agent_orders() but pairs entries
-    with exits per symbol.  Marks results with ``_source: "order_pairing"``
-    so downstream scoring can treat them as lower-confidence.
+    This intentionally mirrors the simplified pairing approach used by the
+    reference-trade generator so that fallback agent trades remain comparable
+    to the benchmark's reference trade files.
     """
     import glob as _glob
     from collections import defaultdict
@@ -321,14 +359,13 @@ def _pair_trades_from_orders(results_dir: str) -> list[dict]:
             continue
         if isinstance(status, str) and status.lower() not in ("filled", "3"):
             continue
-        # Symbol: prefer symbolValue (clean ticker), fall back to symbol
-        # with LEAN suffix stripped (e.g., "ADAUSDT 18R" → "ADAUSDT")
-        sym = _ci_get_trade(o, "symbolValue", "SymbolValue", default="")
-        if not sym:
-            sym = _ci_get_trade(o, "Symbol", "symbol", default="")
-            if isinstance(sym, dict):
-                sym = sym.get("Value", sym.get("value", str(sym)))
-            sym = str(sym).split()[0]  # strip LEAN suffix
+        sym = _normalize_symbol_value(
+            _ci_get_trade(o, "Symbol", "symbol", default=""),
+            _ci_get_trade(o, "Symbols", "symbols", default=None),
+        ) or _normalize_symbol_value(
+            _ci_get_trade(o, "symbolValue", "SymbolValue", default=""),
+            None,
+        )
         raw_dir = _ci_get_trade(o, "Direction", "direction", default=0)
         if isinstance(raw_dir, int):
             direction = "Buy" if raw_dir == 0 else "Sell"
@@ -348,36 +385,37 @@ def _pair_trades_from_orders(results_dir: str) -> list[dict]:
             "time": _ci_get_trade(o, "Time", "time", default=""),
         })
 
-    # Simple FIFO pairing: first order = entry, opposite direction = exit
     trades = []
     for sym, sym_orders in by_symbol.items():
-        sym_orders.sort(key=lambda x: x["time"])
+        sym_orders.sort(key=lambda x: _parse_time(x["time"]))
         pending = None
-        for o in sym_orders:
+        for order in sym_orders:
             if pending is None:
-                pending = o
-            elif o["direction"] != pending["direction"]:
-                pnl = (
-                    (o["fill_price"] - pending["fill_price"]) * pending["quantity"]
-                )
+                pending = order
+                continue
+
+            if order["direction"] != pending["direction"]:
+                matched_qty = min(float(pending["quantity"]), float(order["quantity"]))
+                pnl = (order["fill_price"] - pending["fill_price"]) * matched_qty
                 if pending["direction"] == "Sell":
                     pnl = -pnl
                 trades.append({
                     "symbol": sym,
                     "direction": pending["direction"],
-                    "quantity": pending["quantity"],
+                    "quantity": matched_qty,
                     "entry_time": pending["time"],
                     "entry_price": pending["fill_price"],
-                    "exit_time": o["time"],
-                    "exit_price": o["fill_price"],
+                    "exit_time": order["time"],
+                    "exit_price": order["fill_price"],
                     "gross_pnl": pnl,
                     "net_pnl": pnl,
                     "_source": "order_pairing",
                 })
                 pending = None
             else:
-                # Same direction — accumulation, skip simple pairing
-                pending = o
+                # Same direction again: treat as updated entry, mirroring
+                # generate_lean_reference.py's simplified pairing.
+                pending = order
 
     return trades
 
@@ -458,7 +496,8 @@ def match_trades(
         ref_entry = _parse_time(ref_trade.get("entry_time", 0))
         ref_dir = ref_trade.get("direction", "").lower()
         # Normalize symbol for comparison (strip LEAN suffixes like " 18R")
-        ref_sym = ref_trade.get("symbol", "").split()[0].upper()
+        ref_sym_raw = str(ref_trade.get("symbol", "")).strip()
+        ref_sym = ref_sym_raw.split()[0].upper() if ref_sym_raw else ""
 
         best_idx = None
         best_delta = float("inf")
@@ -467,7 +506,8 @@ def match_trades(
             if i in used_agent_indices:
                 continue
             # Symbol check: if both trades have symbols, they must match
-            agent_sym = agent_trade.get("symbol", "").split()[0].upper()
+            agent_sym_raw = str(agent_trade.get("symbol", "")).strip()
+            agent_sym = agent_sym_raw.split()[0].upper() if agent_sym_raw else ""
             if ref_sym and agent_sym and ref_sym != agent_sym:
                 continue
             agent_entry = _parse_time(agent_trade.get("entry_time", 0))
