@@ -1,0 +1,664 @@
+20260324 08:42:26.709 TRACE:: Composer(): Loading Assemblies from /lean/Launcher/bin/Debug/
+20260324 08:42:26.744 TRACE:: Python for .NET Assembly: Python.Runtime, Version=2.0.53.0, Culture=neutral, PublicKeyToken=5000fea6cba702dd
+Engine.Main(): Analysis Complete.
+Engine.Main(): Press any key to continue.
+ ENGINE v2.5.0.0 Mode: DEBUG (64bit) Host: d26b057768df
+2026-03-24T08:42:29.7056138Z TRACE:: Engine.Main(): Started 08:42
+2026-03-24T08:42:29.7224565Z TRACE:: JobQueue.NextJob(): Selected QuantConnect.Algorithm.CSharp.dll
+2026-03-24T08:42:29.7653009Z TRACE:: AlgorithmManager.CreateTokenBucket(): Initializing LeakyBucket: Capacity: 120 RefillAmount: 18 TimeInterval: 1440
+2026-03-24T08:42:29.7701917Z TRACE:: Engine.Run(): Resource limits '0' CPUs. 2147483647 MB RAM.
+2026-03-24T08:42:29.7705753Z TRACE:: TextSubscriptionDataSourceReader.SetCacheSize(): Setting cache size to 71582788 items
+2026-03-24T08:42:30.3392109Z TRACE:: Loader.TryCreateILAlgorithm(): Loading only the algorithm assembly
+2026-03-24T08:42:30.4607215Z TRACE:: Loader.TryCreateILAlgorithm(): Loaded I07AlphaModel
+2026-03-24T08:42:30.4619508Z TRACE:: LocalObjectStore.Initialize(): Storage Root: /lean/Launcher/storage. StorageFileCount 10000. StorageLimit 10240MB. StoragePermissions Read=True Write=True Delete=True
+2026-03-24T08:42:30.4725357Z TRACE:: HistoryProviderManager.Initialize(): history providers [SubscriptionDataReaderHistoryProvider]
+2026-03-24T08:42:30.4750987Z TRACE:: BaseSetupHandler.Setup(LocalPlatform): UID: 0, PID: 0, Version: 2.5.0.0, Source: WebIDE
+2026-03-24T08:42:30.4808937Z TRACE:: SecurityPortfolioManager.SetAccountCurrency(): setting account currency to USDT
+2026-03-24T08:42:30.5218638Z TRACE:: Extensions.IsDirectoryEmpty(): directory '/lean/Data/equity/usa/map_files' not found or empty
+2026-03-24T08:42:30.5220097Z ERROR:: LocalDiskMapFileProvider.GetMapFileResolver(usa): The specified directory does not exist: /lean/Data/equity/usa/map_files
+2026-03-24T08:42:30.5650477Z TRACE:: WeightedWorkScheduler(): will use 2 workers and MaxWorkWeight is 400
+2026-03-24T08:42:30.5995281Z TRACE:: Cash.EnsureCurrencyDataFeed(): Adding BTCUSDT coinbase for cash BTC currency feed
+2026-03-24T08:42:30.6074996Z TRACE:: Cash.EnsureCurrencyDataFeed(): Adding ETHUSDT coinbase for cash ETH currency feed
+2026-03-24T08:42:30.6138809Z ERROR:: No tradeable pair was found for currency BNB, conversion rate to account currency (USDT) will be set to zero. Markets: [Forex:oanda,Cfd:oanda,Crypto:coinbase]
+2026-03-24T08:42:30.6228756Z TRACE:: Cash.EnsureCurrencyDataFeed(): Adding SOLUSDT coinbase for cash SOL currency feed
+2026-03-24T08:42:30.6319429Z TRACE:: Cash.EnsureCurrencyDataFeed(): Adding XRPUSDT coinbase for cash XRP currency feed
+2026-03-24T08:42:30.6381954Z TRACE:: Cash.EnsureCurrencyDataFeed(): Adding ADAUSDT coinbase for cash ADA currency feed
+2026-03-24T08:42:30.6452672Z TRACE:: Cash.EnsureCurrencyDataFeed(): Adding DOGEUSDT coinbase for cash DOGE currency feed
+2026-03-24T08:42:30.6532972Z TRACE:: Cash.EnsureCurrencyDataFeed(): Adding LINKUSDT coinbase for cash LINK currency feed
+2026-03-24T08:42:30.6596700Z TRACE:: Cash.EnsureCurrencyDataFeed(): Adding AVAXUSDT coinbase for cash AVAX currency feed
+2026-03-24T08:42:30.6664802Z TRACE:: Cash.EnsureCurrencyDataFeed(): Adding DOTUSDT coinbase for cash DOT currency feed
+2026-03-24T08:42:30.6745133Z TRACE:: Cash.EnsureCurrencyDataFeed(): Adding MATICUSDT coinbase for cash MATIC currency feed
+2026-03-24T08:42:30.6847160Z TRACE:: Cash.EnsureCurrencyDataFeed(): Adding UNIBTC coinbase for cash UNI currency feed
+2026-03-24T08:42:30.6947157Z TRACE:: Cash.EnsureCurrencyDataFeed(): Adding LTCBTC coinbase for cash LTC currency feed
+2026-03-24T08:42:30.7011199Z TRACE:: Cash.EnsureCurrencyDataFeed(): Adding ATOMUSDT coinbase for cash ATOM currency feed
+2026-03-24T08:42:30.7096749Z TRACE:: Cash.EnsureCurrencyDataFeed(): Adding NEARUSDT coinbase for cash NEAR currency feed
+2026-03-24T08:42:30.7229355Z TRACE:: Cash.EnsureCurrencyDataFeed(): Adding ARBUSD coinbase for cash ARB currency feed
+2026-03-24T08:42:30.7230497Z TRACE:: Cash.EnsureCurrencyDataFeed(): Adding USDTUSD coinbase for cash ARB currency feed
+2026-03-24T08:42:30.7317055Z TRACE:: Cash.EnsureCurrencyDataFeed(): Adding OPUSDT coinbase for cash OP currency feed
+2026-03-24T08:42:30.7413316Z TRACE:: Cash.EnsureCurrencyDataFeed(): Adding AAVEBTC coinbase for cash AAVE currency feed
+2026-03-24T08:42:30.7520011Z TRACE:: Cash.EnsureCurrencyDataFeed(): Adding MKRBTC coinbase for cash MKR currency feed
+2026-03-24T08:42:30.7589755Z TRACE:: Cash.EnsureCurrencyDataFeed(): Adding APTUSDT coinbase for cash APT currency feed
+2026-03-24T08:42:30.8546562Z TRACE:: BaseSetupHandler.SetupCurrencyConversions():
+Account Type: Margin
+
+Symbol      Quantity    Conversion = Value in USDT
+USDT: ₮      100000.00 @       1.00 = ₮100000
+BTC: ₿           0.00 @       0.00 = ₮0
+ETH: Ξ           0.00 @       0.00 = ₮0
+BNB: BNB           0.00 @       0.00 = ₮0
+SOL: ◎           0.00 @       0.00 = ₮0
+XRP: ✕           0.00 @       0.00 = ₮0
+ADA: ₳           0.00 @       0.00 = ₮0
+DOGE: Ð           0.00 @       0.00 = ₮0
+LINK: LINK           0.00 @       0.00 = ₮0
+AVAX: AVAX           0.00 @       0.00 = ₮0
+DOT: ●           0.00 @       0.00 = ₮0
+MATIC: MATIC           0.00 @       0.00 = ₮0
+UNI: UNI           0.00 @       0.00 = ₮0
+LTC: Ł           0.00 @       0.00 = ₮0
+ATOM: ATOM           0.00 @       0.00 = ₮0
+NEAR: NEAR           0.00 @       0.00 = ₮0
+ARB: ARB           0.00 @       0.00 = ₮0
+OP: OP           0.00 @       0.00 = ₮0
+AAVE: AAVE           0.00 @       0.00 = ₮0
+MKR: Μ           0.00 @       0.00 = ₮0
+APT: APT           0.00 @       0.00 = ₮0
+USD: $           0.00 @       1.00 = ₮0
+-------------------------------------------------
+CashBook Total Value:                ₮100000
+
+2026-03-24T08:42:30.8572509Z TRACE:: Total margin information: TotalMarginUsed: 0.00, MarginRemaining: 100000.00
+2026-03-24T08:42:30.8576929Z TRACE:: SetUp Backtesting: User: 0 ProjectId: 0 AlgoId: QuantTutorBench.I07AlphaModel
+2026-03-24T08:42:30.8580556Z TRACE:: Dates: Start: 01/01/2022 End: 12/31/2025 Cash: ¤100,000.00 MaximumRuntime: 100.00:00:00 MaxOrders: 2147483647
+2026-03-24T08:42:30.8646277Z TRACE:: BacktestingResultHandler(): Sample Period Set: 525.96
+2026-03-24T08:42:30.8652970Z TRACE:: JOB HANDLERS:
+         DataFeed:             QuantConnect.Lean.Engine.DataFeeds.FileSystemDataFeed
+         Setup:                QuantConnect.Lean.Engine.Setup.ConsoleSetupHandler
+         RealTime:             QuantConnect.Lean.Engine.RealTime.BacktestingRealTimeHandler
+         Results:              QuantConnect.Lean.Engine.Results.BacktestingResultHandler
+         Transactions:         QuantConnect.Lean.Engine.TransactionHandlers.BacktestingTransactionHandler
+         Object Store:         QuantConnect.Lean.Engine.Storage.LocalObjectStore
+         History Provider:     QuantConnect.Lean.Engine.HistoricalData.HistoryProviderManager
+         Brokerage:            QuantConnect.Brokerages.Backtesting.BacktestingBrokerage
+         Data Provider:        QuantConnect.Lean.Engine.DataFeeds.DefaultDataProvider
+
+2026-03-24T08:42:30.8855438Z TRACE:: Event Name "Daily Sampling", scheduled to run.
+2026-03-24T08:42:30.8856912Z TRACE:: AlgorithmManager.Run(): Begin DataStream - Start: 01/01/2022 00:00:00 Stop: 12/31/2025 23:59:59 Time: 12/01/2021 19:00:00 Warmup: True
+2026-03-24T08:42:30.9132831Z TRACE:: Debug: Launching analysis for QuantTutorBench.I07AlphaModel with LEAN Engine v2.5.0.0
+2026-03-24T08:42:31.2882288Z TRACE:: UniverseSelection.AddPendingInternalDataFeeds(): Adding internal benchmark data feed SPY,#0,SPY,Hour,TradeBar,Trade,Adjusted,OpenInterest,Internal
+2026-03-24T08:42:31.2889894Z TRACE:: Extensions.IsDirectoryEmpty(): directory '/lean/Data/equity/usa/factor_files' not found or empty
+2026-03-24T08:42:31.3991770Z TRACE:: AlgorithmManager.Stream(): Subscriptions count before warm up: 60
+2026-03-24T08:42:31.5180671Z TRACE:: Debug: 2022-01-01 00:00:00 Changing account currency from USD to USDT...
+2026-03-24T08:42:31.5181025Z TRACE:: Debug: 2021-12-01 19:00:00 Algorithm starting warm up...
+2026-03-24T08:42:31.5182545Z TRACE:: Log: 2022-01-01 00:00:00 Loaded 671 symbols from /lean/Data/universe.json
+2026-03-24T08:42:31.5182714Z TRACE:: Log: 2022-01-01 00:00:00 I07 initialized with 20 symbols (of 671 in universe), EMA(10/30) AlphaModel → EqualWeighting → ImmediateExecution
+2026-03-24T08:42:31.6323194Z TRACE:: AlgorithmManager.Stream(): Subscriptions count after warm up: 60
+2026-03-24T08:42:31.6686417Z TRACE:: Log: 2022-01-01 19:00:00 TRADE: BTCUSDT | Direction=Sell | Qty=-0.123 | Price=47704.35 | Tag=
+2026-03-24T08:42:31.6686841Z TRACE:: Log: 2022-01-01 19:00:00 TRADE: XRPUSDT | Direction=Buy | Qty=6897.4 | Price=0.8507 | Tag=
+2026-03-24T08:42:31.6686930Z TRACE:: Log: 2022-01-01 19:00:00 TRADE: LTCUSDT | Direction=Sell | Qty=-38.925 | Price=150.74 | Tag=
+2026-03-24T08:42:31.6686997Z TRACE:: Log: 2022-01-01 19:00:00 TRADE: DOGEUSDT | Direction=Sell | Qty=-33885 | Price=0.17316 | Tag=
+2026-03-24T08:42:31.6687057Z TRACE:: Log: 2022-01-01 19:00:00 TRADE: SOLUSDT | Direction=Sell | Qty=-32.77 | Price=179.05 | Tag=
+2026-03-24T08:42:31.6687124Z TRACE:: Log: 2022-01-01 19:00:00 TRADE: LINKUSDT | Direction=Buy | Qty=282.96 | Price=20.736 | Tag=
+2026-03-24T08:42:31.6687184Z TRACE:: Log: 2022-01-01 19:00:00 TRADE: ATOMUSDT | Direction=Buy | Qty=161.55 | Price=36.319 | Tag=
+2026-03-24T08:42:31.6687242Z TRACE:: Log: 2022-01-01 19:00:00 TRADE: DOTUSDT | Direction=Sell | Qty=-205.3 | Price=28.579 | Tag=
+2026-03-24T08:42:31.6687302Z TRACE:: Log: 2022-01-01 19:00:00 TRADE: UNIUSDT | Direction=Buy | Qty=336 | Price=17.462 | Tag=
+2026-03-24T08:42:31.6687358Z TRACE:: Log: 2022-01-01 19:00:00 TRADE: ETHUSDT | Direction=Sell | Qty=-1.559 | Price=3763.06 | Tag=
+2026-03-24T08:42:31.6687531Z TRACE:: Log: 2022-01-01 19:00:00 TRADE: ADAUSDT | Direction=Buy | Qty=4257 | Price=1.3781 | Tag=
+2026-03-24T08:42:31.6687644Z TRACE:: Log: 2022-01-01 19:00:00 TRADE: MKRUSDT | Direction=Sell | Qty=-2.424 | Price=2420.1 | Tag=
+2026-03-24T08:42:31.6687700Z TRACE:: Log: 2022-01-01 19:00:00 TRADE: MATICUSDT | Direction=Buy | Qty=2282 | Price=2.5705 | Tag=
+2026-03-24T08:42:31.6687758Z TRACE:: Log: 2022-01-01 19:00:00 TRADE: BNBUSDT | Direction=Sell | Qty=-11.12 | Price=527.34 | Tag=
+2026-03-24T08:42:31.6687815Z TRACE:: Log: 2022-01-01 19:00:00 TRADE: AAVEUSDT | Direction=Buy | Qty=22 | Price=266.26 | Tag=
+2026-03-24T08:42:31.6687871Z TRACE:: Log: 2022-01-01 19:00:00 TRADE: NEARUSDT | Direction=Buy | Qty=386 | Price=15.169 | Tag=
+2026-03-24T08:42:31.6687927Z TRACE:: Log: 2022-01-01 19:00:00 TRADE: AVAXUSDT | Direction=Buy | Qty=51 | Price=114.107 | Tag=
+2026-03-24T08:42:31.6687989Z TRACE:: Debug: 2022-01-01 19:00:00 Algorithm finished warming up.
+2026-03-24T08:42:31.6688069Z TRACE:: Debug: 2022-01-02 19:00:00 Warning: Portfolio rebalance result ignored as it resulted in a single share trade recommendation which can generate high fees. To disable minimum order size checks please set Settings.MinimumOrderMarginPortfolioPercentage = 0.
+2026-03-24T08:42:31.6688155Z TRACE:: Log: 2022-01-02 19:00:00 TRADE: XRPUSDT | Direction=Sell | Qty=-13715.3 | Price=0.8583 | Tag=
+2026-03-24T08:42:31.6688218Z TRACE:: Log: 2022-01-04 19:00:00 TRADE: ADAUSDT | Direction=Sell | Qty=-8827 | Price=1.3093 | Tag=
+2026-03-24T08:42:31.6688277Z TRACE:: Log: 2022-01-07 19:00:00 TRADE: AVAXUSDT | Direction=Sell | Qty=-122 | Price=86.685 | Tag=
+2026-03-24T08:42:31.6688353Z TRACE:: Log: 2022-01-08 19:00:00 TRADE: UNIUSDT | Direction=Sell | Qty=-748 | Price=14.92 | Tag=
+2026-03-24T08:42:31.6688413Z TRACE:: Log: 2022-01-08 19:00:00 TRADE: MATICUSDT | Direction=Sell | Qty=-5381 | Price=1.9833 | Tag=
+2026-03-24T08:42:31.7189444Z TRACE:: Log: 2022-01-20 19:00:00 TRADE: AAVEUSDT | Direction=Sell | Qty=-53.2 | Price=198.27 | Tag=
+2026-03-24T08:42:31.7189959Z TRACE:: Log: 2022-01-21 19:00:00 TRADE: LINKUSDT | Direction=Sell | Qty=-660.6 | Price=17.414 | Tag=
+2026-03-24T08:42:31.7190053Z TRACE:: Log: 2022-01-21 19:00:00 TRADE: SOLUSDT | Direction=Sell | Qty=-25.84 | Price=112.2 | Tag=
+2026-03-24T08:42:31.7190115Z TRACE:: Log: 2022-01-22 19:00:00 TRADE: DOTUSDT | Direction=Sell | Qty=-169.1 | Price=18.253 | Tag=
+2026-03-24T08:42:31.7190336Z TRACE:: Log: 2022-01-22 19:00:00 TRADE: ETHUSDT | Direction=Sell | Qty=-1.275 | Price=2410.96 | Tag=
+2026-03-24T08:42:31.7190409Z TRACE:: Log: 2022-01-24 19:00:00 TRADE: NEARUSDT | Direction=Sell | Qty=-1024 | Price=10.704 | Tag=
+2026-03-24T08:42:31.7190471Z TRACE:: Log: 2022-01-27 19:00:00 TRADE: ATOMUSDT | Direction=Sell | Qty=-388.51 | Price=30.045 | Tag=
+2026-03-24T08:42:31.7190531Z TRACE:: Log: 2022-02-06 19:00:00 TRADE: ETHUSDT | Direction=Buy | Qty=0.895 | Price=3054.26 | Tag=
+2026-03-24T08:42:31.7190586Z TRACE:: Log: 2022-02-06 19:00:00 TRADE: NEARUSDT | Direction=Buy | Qty=199 | Price=13.484 | Tag=
+2026-03-24T08:42:31.7190643Z TRACE:: Log: 2022-02-07 19:00:00 TRADE: DOTUSDT | Direction=Buy | Qty=122.3 | Price=22.346 | Tag=
+2026-03-24T08:42:31.7691609Z TRACE:: Log: 2022-02-20 19:00:00 TRADE: UNIUSDT | Direction=Sell | Qty=-312 | Price=9.347 | Tag=
+2026-03-24T08:42:31.7692075Z TRACE:: Log: 2022-02-21 19:00:00 TRADE: NEARUSDT | Direction=Sell | Qty=-394 | Price=8.536 | Tag=
+2026-03-24T08:42:31.7692164Z TRACE:: Log: 2022-02-21 19:00:00 TRADE: ADAUSDT | Direction=Sell | Qty=-3736 | Price=0.8563 | Tag=
+2026-03-24T08:42:31.7692284Z TRACE:: Log: 2022-02-21 19:00:00 TRADE: BNBUSDT | Direction=Sell | Qty=-8.83 | Price=356.35 | Tag=
+2026-03-24T08:42:31.7692351Z TRACE:: Log: 2022-02-21 19:00:00 TRADE: LTCUSDT | Direction=Sell | Qty=-30.352 | Price=102.67 | Tag=
+2026-03-24T08:42:31.7692484Z TRACE:: Log: 2022-02-21 19:00:00 TRADE: AAVEUSDT | Direction=Sell | Qty=-24.1 | Price=128.55 | Tag=
+2026-03-24T08:42:31.7692550Z TRACE:: Log: 2022-02-21 19:00:00 TRADE: MKRUSDT | Direction=Sell | Qty=-1.851 | Price=1663.6 | Tag=
+2026-03-24T08:42:31.7692609Z TRACE:: Log: 2022-02-21 19:00:00 TRADE: DOTUSDT | Direction=Sell | Qty=-187.9 | Price=16.163 | Tag=
+2026-03-24T08:42:31.8193561Z TRACE:: Log: 2022-03-01 19:00:00 TRADE: NEARUSDT | Direction=Buy | Qty=318 | Price=11.805 | Tag=
+2026-03-24T08:42:31.8194024Z TRACE:: Log: 2022-03-07 19:00:00 TRADE: DOGEUSDT | Direction=Sell | Qty=-26435 | Price=0.11664 | Tag=
+2026-03-24T08:42:31.8695420Z TRACE:: Log: 2022-03-19 20:00:00 TRADE: MKRUSDT | Direction=Buy | Qty=7.26 | Price=2059.3 | Tag=
+2026-03-24T08:42:31.8695921Z TRACE:: Log: 2022-03-22 20:00:00 TRADE: DOTUSDT | Direction=Buy | Qty=742.1 | Price=20.203 | Tag=
+2026-03-24T08:42:31.8696014Z TRACE:: Log: 2022-03-23 20:00:00 TRADE: ADAUSDT | Direction=Buy | Qty=13634 | Price=1.1064 | Tag=
+2026-03-24T08:42:31.8696080Z TRACE:: Log: 2022-03-23 20:00:00 TRADE: AAVEUSDT | Direction=Buy | Qty=93.1 | Price=155.9 | Tag=
+2026-03-24T08:42:31.8696145Z TRACE:: Log: 2022-03-23 20:00:00 TRADE: LTCUSDT | Direction=Buy | Qty=117.457 | Price=122.37 | Tag=
+2026-03-24T08:42:31.8696212Z TRACE:: Log: 2022-03-24 20:00:00 TRADE: BNBUSDT | Direction=Buy | Qty=33.92 | Price=414.08 | Tag=
+2026-03-24T08:42:31.8696272Z TRACE:: Log: 2022-03-27 20:00:00 TRADE: DOGEUSDT | Direction=Buy | Qty=99609 | Price=0.14471 | Tag=
+2026-03-24T08:42:31.8696380Z TRACE:: Log: 2022-03-27 20:00:00 TRADE: UNIUSDT | Direction=Buy | Qty=1222 | Price=11.4 | Tag=
+2026-03-24T08:42:31.8696453Z TRACE:: Log: 2022-03-29 20:00:00 TRADE: AAVEUSDT | Direction=Sell | Qty=-12.1 | Price=222.73 | Tag=
+2026-03-24T08:42:31.9197459Z TRACE:: Log: 2022-04-03 20:00:00 TRADE: NEARUSDT | Direction=Buy | Qty=848 | Price=16.802 | Tag=
+2026-03-24T08:42:31.9197965Z TRACE:: Log: 2022-04-03 20:00:00 TRADE: SOLUSDT | Direction=Buy | Qty=99.56 | Price=136.85 | Tag=
+2026-03-24T08:42:31.9198046Z TRACE:: Log: 2022-04-09 20:00:00 TRADE: LTCUSDT | Direction=Sell | Qty=-97.185 | Price=112.62 | Tag=
+2026-03-24T08:42:31.9198105Z TRACE:: Log: 2022-04-11 20:00:00 TRADE: DOTUSDT | Direction=Sell | Qty=-619.9 | Price=17.191 | Tag=
+2026-03-24T08:42:31.9198158Z TRACE:: Log: 2022-04-11 20:00:00 TRADE: UNIUSDT | Direction=Sell | Qty=-1106 | Price=8.979 | Tag=
+2026-03-24T08:42:31.9198212Z TRACE:: Log: 2022-04-12 20:00:00 TRADE: MKRUSDT | Direction=Sell | Qty=-5.93 | Price=1851.1 | Tag=
+2026-03-24T08:42:31.9198262Z TRACE:: Log: 2022-04-12 20:00:00 TRADE: ADAUSDT | Direction=Sell | Qty=-11043 | Price=0.9538 | Tag=
+2026-03-24T08:42:31.9198487Z TRACE:: Log: 2022-04-15 20:00:00 TRADE: SOLUSDT | Direction=Sell | Qty=-94.05 | Price=101.33 | Tag=
+2026-03-24T08:42:31.9198550Z TRACE:: Log: 2022-04-16 20:00:00 TRADE: AAVEUSDT | Direction=Sell | Qty=-56.8 | Price=172.15 | Tag=
+2026-03-24T08:42:31.9699436Z TRACE:: Log: 2022-04-21 20:00:00 TRADE: BNBUSDT | Direction=Sell | Qty=-27.55 | Price=404.67 | Tag=
+2026-03-24T08:42:31.9699841Z TRACE:: Log: 2022-04-23 20:00:00 TRADE: DOGEUSDT | Direction=Sell | Qty=-80660 | Price=0.13383 | Tag=
+2026-03-24T08:42:31.9699914Z TRACE:: Log: 2022-04-27 20:00:00 TRADE: NEARUSDT | Direction=Sell | Qty=-774 | Price=12.873 | Tag=
+2026-03-24T08:42:31.9699968Z TRACE:: Log: 2022-04-30 20:00:00 TRADE: MATICUSDT | Direction=Sell | Qty=-3011 | Price=1.0317 | Tag=
+2026-03-24T08:42:31.9700020Z TRACE:: Log: 2022-05-08 20:00:00 TRADE: MKRUSDT | Direction=Sell | Qty=-2.585 | Price=1190.2 | Tag=
+2026-03-24T08:42:31.9700069Z TRACE:: Log: 2022-05-08 20:00:00 TRADE: ATOMUSDT | Direction=Sell | Qty=-192.64 | Price=15.686 | Tag=
+2026-03-24T08:42:31.9700118Z TRACE:: Log: 2022-05-08 20:00:00 TRADE: AVAXUSDT | Direction=Sell | Qty=-56 | Price=51.59 | Tag=
+2026-03-24T08:42:31.9700164Z TRACE:: Log: 2022-05-08 20:00:00 TRADE: LINKUSDT | Direction=Sell | Qty=-281.21 | Price=9.99 | Tag=
+2026-03-24T08:42:31.9700214Z TRACE:: Log: 2022-05-09 20:00:00 TRADE: AAVEUSDT | Direction=Sell | Qty=-43.9 | Price=99.1 | Tag=
+2026-03-24T08:42:31.9700262Z TRACE:: Log: 2022-05-09 20:00:00 TRADE: SOLUSDT | Direction=Sell | Qty=-66.7 | Price=62.08 | Tag=
+2026-03-24T08:42:31.9700308Z TRACE:: Log: 2022-05-09 20:00:00 TRADE: XRPUSDT | Direction=Sell | Qty=-8460.2 | Price=0.4868 | Tag=
+2026-03-24T08:42:31.9700354Z TRACE:: Log: 2022-05-09 20:00:00 TRADE: DOTUSDT | Direction=Sell | Qty=-382.9 | Price=10.613 | Tag=
+2026-03-24T08:42:31.9700399Z TRACE:: Log: 2022-05-09 20:00:00 TRADE: ADAUSDT | Direction=Sell | Qty=-6655 | Price=0.6012 | Tag=
+2026-03-24T08:42:31.9700444Z TRACE:: Log: 2022-05-09 20:00:00 TRADE: UNIUSDT | Direction=Sell | Qty=-644 | Price=5.937 | Tag=
+2026-03-24T08:42:31.9700490Z TRACE:: Log: 2022-05-09 20:00:00 TRADE: BTCUSDT | Direction=Sell | Qty=-0.124 | Price=30056.6 | Tag=
+2026-03-24T08:42:31.9700560Z TRACE:: Log: 2022-05-09 20:00:00 TRADE: LTCUSDT | Direction=Sell | Qty=-48.791 | Price=76.05 | Tag=
+2026-03-24T08:42:31.9700609Z TRACE:: Log: 2022-05-09 20:00:00 TRADE: BNBUSDT | Direction=Sell | Qty=-11.58 | Price=295.5 | Tag=
+2026-03-24T08:42:31.9700681Z TRACE:: Log: 2022-05-09 20:00:00 TRADE: NEARUSDT | Direction=Sell | Qty=-351 | Price=9.383 | Tag=
+2026-03-24T08:42:31.9700735Z TRACE:: Log: 2022-05-09 20:00:00 TRADE: DOGEUSDT | Direction=Sell | Qty=-31774 | Price=0.10168 | Tag=
+2026-03-24T08:42:31.9700790Z TRACE:: Log: 2022-05-11 20:00:00 TRADE: AVAXUSDT | Direction=Sell | Qty=-141 | Price=31.1 | Tag=
+2026-03-24T08:42:31.9700839Z TRACE:: Log: 2022-05-11 20:00:00 TRADE: ETHUSDT | Direction=Sell | Qty=-2.073 | Price=2083.98 | Tag=
+2026-03-24T08:42:31.9701001Z TRACE:: Log: 2022-05-11 20:00:00 TRADE: MATICUSDT | Direction=Sell | Qty=-6297 | Price=0.674 | Tag=
+2026-03-24T08:42:31.9701073Z TRACE:: Log: 2022-05-11 20:00:00 TRADE: ATOMUSDT | Direction=Sell | Qty=-357.39 | Price=10.763 | Tag=
+2026-03-24T08:42:31.9701125Z TRACE:: Log: 2022-05-11 20:00:00 TRADE: LINKUSDT | Direction=Sell | Qty=-546.86 | Price=6.936 | Tag=
+2026-03-24T08:42:31.9701177Z TRACE:: Log: 2022-05-18 20:00:00 TRADE: NEARUSDT | Direction=Sell | Qty=-633 | Price=5.918 | Tag=
+2026-03-24T08:42:32.0202415Z TRACE:: Log: 2022-05-27 20:00:00 TRADE: SOLUSDT | Direction=Sell | Qty=-99.18 | Price=41.15 | Tag=
+2026-03-24T08:42:32.0202766Z TRACE:: Log: 2022-06-11 20:00:00 TRADE: LTCUSDT | Direction=Sell | Qty=-85.937 | Price=52.14 | Tag=
+2026-03-24T08:42:32.0202839Z TRACE:: Log: 2022-06-11 20:00:00 TRADE: DOGEUSDT | Direction=Sell | Qty=-63984 | Price=0.06986 | Tag=
+2026-03-24T08:42:32.0202892Z TRACE:: Log: 2022-06-11 20:00:00 TRADE: AVAXUSDT | Direction=Sell | Qty=-213 | Price=19.89 | Tag=
+2026-03-24T08:42:32.0202986Z TRACE:: Log: 2022-06-11 20:00:00 TRADE: MKRUSDT | Direction=Sell | Qty=-4.168 | Price=987.8 | Tag=
+2026-03-24T08:42:32.0203184Z TRACE:: Log: 2022-06-11 20:00:00 TRADE: UNIUSDT | Direction=Sell | Qty=-932 | Price=4.386 | Tag=
+2026-03-24T08:42:32.0203240Z TRACE:: Log: 2022-06-11 20:00:00 TRADE: XRPUSDT | Direction=Sell | Qty=-11362.2 | Price=0.3596 | Tag=
+2026-03-24T08:42:32.0203300Z TRACE:: Log: 2022-06-12 20:00:00 TRADE: DOTUSDT | Direction=Sell | Qty=-682.9 | Price=7.391 | Tag=
+2026-03-24T08:42:32.0203352Z TRACE:: Log: 2022-06-12 20:00:00 TRADE: NEARUSDT | Direction=Sell | Qty=-1346 | Price=3.69 | Tag=
+2026-03-24T08:42:32.0203404Z TRACE:: Log: 2022-06-12 20:00:00 TRADE: AAVEUSDT | Direction=Sell | Qty=-70.5 | Price=70.25 | Tag=
+2026-03-24T08:42:32.0203454Z TRACE:: Log: 2022-06-12 20:00:00 TRADE: ATOMUSDT | Direction=Sell | Qty=-671.27 | Price=7.061 | Tag=
+2026-03-24T08:42:32.0203507Z TRACE:: Log: 2022-06-12 20:00:00 TRADE: ETHUSDT | Direction=Sell | Qty=-3.117 | Price=1434.35 | Tag=
+2026-03-24T08:42:32.0203560Z TRACE:: Log: 2022-06-13 20:00:00 TRADE: MATICUSDT | Direction=Sell | Qty=-13349 | Price=0.43 | Tag=
+2026-03-24T08:42:32.0203610Z TRACE:: Log: 2022-06-13 20:00:00 TRADE: BTCUSDT | Direction=Sell | Qty=-0.245 | Price=22471.5 | Tag=
+2026-03-24T08:42:32.0203660Z TRACE:: Log: 2022-06-13 20:00:00 TRADE: BNBUSDT | Direction=Sell | Qty=-24.53 | Price=222.84 | Tag=
+2026-03-24T08:42:32.0203709Z TRACE:: Log: 2022-06-13 20:00:00 TRADE: ADAUSDT | Direction=Sell | Qty=-11509 | Price=0.4638 | Tag=
+2026-03-24T08:42:32.0203760Z TRACE:: Log: 2022-06-13 20:00:00 TRADE: SOLUSDT | Direction=Sell | Qty=-168.53 | Price=28.58 | Tag=
+2026-03-24T08:42:32.0203815Z TRACE:: Log: 2022-06-23 20:00:00 TRADE: SOLUSDT | Direction=Buy | Qty=134.39 | Price=38.15 | Tag=
+2026-03-24T08:42:32.0203887Z TRACE:: Log: 2022-06-23 20:00:00 TRADE: MATICUSDT | Direction=Buy | Qty=8565 | Price=0.5617 | Tag=
+2026-03-24T08:42:32.0203967Z TRACE:: Log: 2022-06-30 20:00:00 TRADE: OPUSDT | Direction=Sell | Qty=-17934.9 | Price=0.5461 | Tag=
+2026-03-24T08:42:32.0705170Z TRACE:: Log: 2022-07-07 20:00:00 TRADE: ATOMUSDT | Direction=Buy | Qty=2391.01 | Price=9.358 | Tag=
+2026-03-24T08:42:32.0705634Z TRACE:: Log: 2022-07-09 20:00:00 TRADE: UNIUSDT | Direction=Buy | Qty=3518 | Price=6.45 | Tag=
+2026-03-24T08:42:32.0705716Z TRACE:: Log: 2022-07-12 20:00:00 TRADE: ATOMUSDT | Direction=Sell | Qty=-2182.86 | Price=7.806 | Tag=
+2026-03-24T08:42:32.0705776Z TRACE:: Log: 2022-07-14 20:00:00 TRADE: AAVEUSDT | Direction=Buy | Qty=241.6 | Price=91.13 | Tag=
+2026-03-24T08:42:32.0705830Z TRACE:: Log: 2022-07-16 20:00:00 TRADE: MATICUSDT | Direction=Buy | Qty=28624 | Price=0.7285 | Tag=
+2026-03-24T08:42:32.0705878Z TRACE:: Log: 2022-07-16 20:00:00 TRADE: BNBUSDT | Direction=Buy | Qty=16.34 | Price=249.75 | Tag=
+2026-03-24T08:42:32.0705929Z TRACE:: Log: 2022-07-18 20:00:00 TRADE: ATOMUSDT | Direction=Buy | Qty=2034.37 | Price=9.566 | Tag=
+2026-03-24T08:42:32.0705979Z TRACE:: Log: 2022-07-18 20:00:00 TRADE: AVAXUSDT | Direction=Buy | Qty=798 | Price=23.96 | Tag=
+2026-03-24T08:42:32.0706026Z TRACE:: Log: 2022-07-18 20:00:00 TRADE: ETHUSDT | Direction=Buy | Qty=11.937 | Price=1580.12 | Tag=
+2026-03-24T08:42:32.0706076Z TRACE:: Log: 2022-07-18 20:00:00 TRADE: OPUSDT | Direction=Buy | Qty=8618.1 | Price=0.8155 | Tag=
+2026-03-24T08:42:32.0706125Z TRACE:: Log: 2022-07-18 20:00:00 TRADE: ADAUSDT | Direction=Buy | Qty=8374 | Price=0.49 | Tag=
+2026-03-24T08:42:32.0706174Z TRACE:: Log: 2022-07-18 20:00:00 TRADE: NEARUSDT | Direction=Buy | Qty=900 | Price=4.059 | Tag=
+2026-03-24T08:42:32.0706223Z TRACE:: Log: 2022-07-18 20:00:00 TRADE: BTCUSDT | Direction=Buy | Qty=0.154 | Price=22423.9 | Tag=
+2026-03-24T08:42:32.0706330Z TRACE:: Log: 2022-07-19 20:00:00 TRADE: SOLUSDT | Direction=Buy | Qty=420.83 | Price=44.86 | Tag=
+2026-03-24T08:42:32.0706388Z TRACE:: Log: 2022-07-27 20:00:00 TRADE: LTCUSDT | Direction=Buy | Qty=309.943 | Price=58.98 | Tag=
+2026-03-24T08:42:32.0706445Z TRACE:: Log: 2022-07-28 20:00:00 TRADE: OPUSDT | Direction=Buy | Qty=14375.1 | Price=1.4477 | Tag=
+2026-03-24T08:42:32.0706497Z TRACE:: Log: 2022-07-28 20:00:00 TRADE: MKRUSDT | Direction=Buy | Qty=16.272 | Price=1113.8 | Tag=
+2026-03-24T08:42:32.0706759Z TRACE:: Log: 2022-07-28 20:00:00 TRADE: UNIUSDT | Direction=Sell | Qty=-545 | Price=9.278 | Tag=
+2026-03-24T08:42:32.0706822Z TRACE:: Log: 2022-07-28 20:00:00 TRADE: DOTUSDT | Direction=Buy | Qty=450.8 | Price=7.85 | Tag=
+2026-03-24T08:42:32.0706874Z TRACE:: Log: 2022-07-28 20:00:00 TRADE: MATICUSDT | Direction=Sell | Qty=-3592 | Price=0.9339 | Tag=
+2026-03-24T08:42:32.0706926Z TRACE:: Log: 2022-08-05 20:00:00 TRADE: BNBUSDT | Direction=Buy | Qty=56.15 | Price=315.7 | Tag=
+2026-03-24T08:42:32.0706978Z TRACE:: Log: 2022-08-09 20:00:00 TRADE: LINKUSDT | Direction=Buy | Qty=2007.52 | Price=8.738 | Tag=
+2026-03-24T08:42:32.0707049Z TRACE:: Log: 2022-08-10 20:00:00 TRADE: NEARUSDT | Direction=Buy | Qty=3078 | Price=5.902 | Tag=
+2026-03-24T08:42:32.0707105Z TRACE:: Log: 2022-08-10 20:00:00 TRADE: AAVEUSDT | Direction=Sell | Qty=-32 | Price=111.04 | Tag=
+2026-03-24T08:42:32.0707158Z TRACE:: Log: 2022-08-14 20:00:00 TRADE: DOGEUSDT | Direction=Buy | Qty=222333 | Price=0.08163 | Tag=
+2026-03-24T08:42:32.0707210Z TRACE:: Log: 2022-08-15 20:00:00 TRADE: XRPUSDT | Direction=Buy | Qty=44983.8 | Price=0.375 | Tag=
+2026-03-24T08:42:32.1207653Z TRACE:: Log: 2022-08-17 20:00:00 TRADE: MKRUSDT | Direction=Sell | Qty=-13.709 | Price=929.8 | Tag=
+2026-03-24T08:42:32.1208028Z TRACE:: Log: 2022-08-20 20:00:00 TRADE: LTCUSDT | Direction=Sell | Qty=-239.642 | Price=54.07 | Tag=
+2026-03-24T08:42:32.1208062Z TRACE:: Log: 2022-08-20 20:00:00 TRADE: XRPUSDT | Direction=Sell | Qty=-36575.6 | Price=0.3364 | Tag=
+2026-03-24T08:42:32.1208079Z TRACE:: Log: 2022-08-20 20:00:00 TRADE: SOLUSDT | Direction=Sell | Qty=-341.7 | Price=35.25 | Tag=
+2026-03-24T08:42:32.1208095Z TRACE:: Log: 2022-08-20 20:00:00 TRADE: UNIUSDT | Direction=Sell | Qty=-1665 | Price=6.994 | Tag=
+2026-03-24T08:42:32.1208116Z TRACE:: Log: 2022-08-21 20:00:00 TRADE: AVAXUSDT | Direction=Sell | Qty=-586 | Price=22.95 | Tag=
+2026-03-24T08:42:32.1208131Z TRACE:: Log: 2022-08-21 20:00:00 TRADE: OPUSDT | Direction=Sell | Qty=-10310.6 | Price=1.1759 | Tag=
+2026-03-24T08:42:32.1208148Z TRACE:: Log: 2022-08-21 20:00:00 TRADE: LINKUSDT | Direction=Sell | Qty=-1674.65 | Price=7.076 | Tag=
+2026-03-24T08:42:32.1208166Z TRACE:: Log: 2022-08-21 20:00:00 TRADE: AAVEUSDT | Direction=Sell | Qty=-136 | Price=85.88 | Tag=
+2026-03-24T08:42:32.1208184Z TRACE:: Log: 2022-08-22 20:00:00 TRADE: MATICUSDT | Direction=Sell | Qty=-15497 | Price=0.8093 | Tag=
+2026-03-24T08:42:32.1208202Z TRACE:: Log: 2022-08-22 20:00:00 TRADE: NEARUSDT | Direction=Sell | Qty=-2712 | Price=4.117 | Tag=
+2026-03-24T08:42:32.1208220Z TRACE:: Log: 2022-08-23 20:00:00 TRADE: ATOMUSDT | Direction=Sell | Qty=-289.74 | Price=12.124 | Tag=
+2026-03-24T08:42:32.1208237Z TRACE:: Log: 2022-08-25 20:00:00 TRADE: DOGEUSDT | Direction=Sell | Qty=-175355 | Price=0.06892 | Tag=
+2026-03-24T08:42:32.1208255Z TRACE:: Log: 2022-08-26 20:00:00 TRADE: ETHUSDT | Direction=Sell | Qty=-9.163 | Price=1507.23 | Tag=
+2026-03-24T08:42:32.1208272Z TRACE:: Log: 2022-08-27 20:00:00 TRADE: BNBUSDT | Direction=Sell | Qty=-46.35 | Price=277.66 | Tag=
+2026-03-24T08:42:32.1709245Z TRACE:: Log: 2022-09-30 20:00:00 TRADE: ATOMUSDT | Direction=Sell | Qty=-1012.37 | Price=13.018 | Tag=
+2026-03-24T08:42:32.1711512Z TRACE:: Log: 2022-10-09 20:00:00 TRADE: XRPUSDT | Direction=Buy | Qty=30372.9 | Price=0.5324 | Tag=
+2026-03-24T08:42:32.2212749Z TRACE:: Log: 2022-10-15 20:00:00 TRADE: OPUSDT | Direction=Sell | Qty=-4763.1 | Price=0.6856 | Tag=
+2026-03-24T08:42:32.2213155Z TRACE:: Log: 2022-10-25 20:00:00 TRADE: OPUSDT | Direction=Buy | Qty=3510.7 | Price=0.9734 | Tag=
+2026-03-24T08:42:32.2213232Z TRACE:: Log: 2022-10-29 20:00:00 TRADE: DOGEUSDT | Direction=Buy | Qty=137301 | Price=0.12171 | Tag=
+2026-03-24T08:42:32.2213284Z TRACE:: Log: 2022-11-03 20:00:00 TRADE: XRPUSDT | Direction=Sell | Qty=-24859.8 | Price=0.4546 | Tag=
+2026-03-24T08:42:32.2213333Z TRACE:: Log: 2022-11-04 20:00:00 TRADE: MATICUSDT | Direction=Buy | Qty=12050 | Price=1.1686 | Tag=
+2026-03-24T08:42:32.2213384Z TRACE:: Log: 2022-11-04 20:00:00 TRADE: OPUSDT | Direction=Buy | Qty=10273.9 | Price=1.3625 | Tag=
+2026-03-24T08:42:32.2213559Z TRACE:: Log: 2022-11-04 20:00:00 TRADE: BNBUSDT | Direction=Buy | Qty=38.04 | Price=354.36 | Tag=
+2026-03-24T08:42:32.2213617Z TRACE:: Log: 2022-11-04 20:00:00 TRADE: LTCUSDT | Direction=Buy | Qty=189.457 | Price=67.55 | Tag=
+2026-03-24T08:42:32.2213663Z TRACE:: Log: 2022-11-04 20:00:00 TRADE: ATOMUSDT | Direction=Buy | Qty=849.71 | Price=15.022 | Tag=
+2026-03-24T08:42:32.2213710Z TRACE:: Log: 2022-11-04 20:00:00 TRADE: LINKUSDT | Direction=Buy | Qty=1462.31 | Price=8.712 | Tag=
+2026-03-24T08:42:32.2714677Z TRACE:: Log: 2022-11-09 19:00:00 TRADE: ATOMUSDT | Direction=Sell | Qty=-933.47 | Price=9.777 | Tag=
+2026-03-24T08:42:32.2715091Z TRACE:: Log: 2022-11-09 19:00:00 TRADE: SOLUSDT | Direction=Sell | Qty=-320.38 | Price=11.7 | Tag=
+2026-03-24T08:42:32.2715169Z TRACE:: Log: 2022-11-09 19:00:00 TRADE: OPUSDT | Direction=Buy | Qty=3640.7 | Price=0.7806 | Tag=
+2026-03-24T08:42:32.2715224Z TRACE:: Log: 2022-11-09 19:00:00 TRADE: NEARUSDT | Direction=Sell | Qty=-1352 | Price=2.024 | Tag=
+2026-03-24T08:42:32.2715282Z TRACE:: Log: 2022-11-10 19:00:00 TRADE: SOLUSDT | Direction=Buy | Qty=186.38 | Price=17.615 | Tag=
+2026-03-24T08:42:32.2715332Z TRACE:: Log: 2022-11-12 19:00:00 TRADE: LINKUSDT | Direction=Sell | Qty=-1490.15 | Price=6.278 | Tag=
+2026-03-24T08:42:32.2715385Z TRACE:: Log: 2022-11-14 19:00:00 TRADE: BNBUSDT | Direction=Sell | Qty=-34.69 | Price=278.85 | Tag=
+2026-03-24T08:42:32.2715435Z TRACE:: Log: 2022-11-15 19:00:00 TRADE: OPUSDT | Direction=Sell | Qty=-13372.3 | Price=0.9367 | Tag=
+2026-03-24T08:42:32.2715487Z TRACE:: Log: 2022-11-17 19:00:00 TRADE: APTUSDT | Direction=Sell | Qty=-1177.1 | Price=4.6575 | Tag=
+2026-03-24T08:42:32.2715535Z TRACE:: Log: 2022-11-18 19:00:00 TRADE: DOGEUSDT | Direction=Sell | Qty=-111710 | Price=0.08469 | Tag=
+2026-03-24T08:42:32.2715581Z TRACE:: Log: 2022-11-18 19:00:00 TRADE: MATICUSDT | Direction=Sell | Qty=-10612 | Price=0.8793 | Tag=
+2026-03-24T08:42:32.3717926Z TRACE:: Log: 2022-12-18 19:00:00 TRADE: LTCUSDT | Direction=Sell | Qty=-167.922 | Price=64.37 | Tag=
+2026-03-24T08:42:32.3718336Z TRACE:: Log: 2022-12-19 19:00:00 TRADE: AVAXUSDT | Direction=Sell | Qty=-267 | Price=11.383 | Tag=
+2026-03-24T08:42:32.4219328Z TRACE:: Log: 2022-12-28 19:00:00 TRADE: SOLUSDT | Direction=Sell | Qty=-322.27 | Price=9.749 | Tag=
+2026-03-24T08:42:32.4219790Z TRACE:: Log: 2023-01-04 19:00:00 TRADE: SOLUSDT | Direction=Buy | Qty=206.1 | Price=13.405 | Tag=
+2026-03-24T08:42:32.4720778Z TRACE:: Log: 2023-01-11 19:00:00 TRADE: AVAXUSDT | Direction=Buy | Qty=844 | Price=15.838 | Tag=
+2026-03-24T08:42:32.4721204Z TRACE:: Log: 2023-01-11 19:00:00 TRADE: LTCUSDT | Direction=Buy | Qty=150.023 | Price=84.09 | Tag=
+2026-03-24T08:42:32.4721274Z TRACE:: Log: 2023-01-11 19:00:00 TRADE: OPUSDT | Direction=Buy | Qty=9780.4 | Price=1.2802 | Tag=
+2026-03-24T08:42:32.4721362Z TRACE:: Log: 2023-01-12 19:00:00 TRADE: APTUSDT | Direction=Buy | Qty=1910.7 | Price=6.4495 | Tag=
+2026-03-24T08:42:32.4721407Z TRACE:: Log: 2023-01-12 19:00:00 TRADE: ATOMUSDT | Direction=Buy | Qty=977.69 | Price=12.255 | Tag=
+2026-03-24T08:42:32.4721453Z TRACE:: Log: 2023-01-12 19:00:00 TRADE: SOLUSDT | Direction=Buy | Qty=709.46 | Price=16.584 | Tag=
+2026-03-24T08:42:32.4721503Z TRACE:: Log: 2023-01-14 19:00:00 TRADE: BTCUSDT | Direction=Buy | Qty=0.559 | Price=20962.8 | Tag=
+2026-03-24T08:42:32.4721546Z TRACE:: Log: 2023-01-14 19:00:00 TRADE: SOLUSDT | Direction=Sell | Qty=-94.38 | Price=24.283 | Tag=
+2026-03-24T08:42:32.4721593Z TRACE:: Log: 2023-01-15 19:00:00 TRADE: OPUSDT | Direction=Sell | Qty=-1256.8 | Price=1.8229 | Tag=
+2026-03-24T08:42:32.4721639Z TRACE:: Log: 2023-01-20 19:00:00 TRADE: ETHUSDT | Direction=Buy | Qty=7.212 | Price=1659.01 | Tag=
+2026-03-24T08:42:32.4721685Z TRACE:: Log: 2023-01-20 19:00:00 TRADE: APTUSDT | Direction=Sell | Qty=-300.8 | Price=10.9529 | Tag=
+2026-03-24T08:42:32.4721731Z TRACE:: Log: 2023-01-23 19:00:00 TRADE: NEARUSDT | Direction=Buy | Qty=4713 | Price=2.545 | Tag=
+2026-03-24T08:42:32.4721780Z TRACE:: Log: 2023-01-25 19:00:00 TRADE: APTUSDT | Direction=Sell | Qty=-163.3 | Price=18.3093 | Tag=
+2026-03-24T08:42:32.4721972Z TRACE:: Log: 2023-01-27 19:00:00 TRADE: MATICUSDT | Direction=Buy | Qty=10397 | Price=1.1593 | Tag=
+2026-03-24T08:42:32.4722079Z TRACE:: Log: 2023-02-03 19:00:00 TRADE: OPUSDT | Direction=Sell | Qty=-968.3 | Price=3.0996 | Tag=
+2026-03-24T08:42:32.5222938Z TRACE:: Log: 2023-02-19 19:00:00 TRADE: LINKUSDT | Direction=Buy | Qty=1507.35 | Price=8.017 | Tag=
+2026-03-24T08:42:32.5223397Z TRACE:: Log: 2023-02-25 19:00:00 TRADE: APTUSDT | Direction=Sell | Qty=-663.8 | Price=12.238 | Tag=
+2026-03-24T08:42:32.5223473Z TRACE:: Log: 2023-02-26 19:00:00 TRADE: ATOMUSDT | Direction=Sell | Qty=-759.2 | Price=12.95 | Tag=
+2026-03-24T08:42:32.5223525Z TRACE:: Log: 2023-02-28 19:00:00 TRADE: AVAXUSDT | Direction=Sell | Qty=-589 | Price=17.08 | Tag=
+2026-03-24T08:42:32.5223571Z TRACE:: Log: 2023-03-02 19:00:00 TRADE: NEARUSDT | Direction=Sell | Qty=-3963 | Price=2.258 | Tag=
+2026-03-24T08:42:32.5223618Z TRACE:: Log: 2023-03-03 19:00:00 TRADE: SOLUSDT | Direction=Sell | Qty=-415.39 | Price=21.404 | Tag=
+2026-03-24T08:42:32.5223666Z TRACE:: Log: 2023-03-04 19:00:00 TRADE: LTCUSDT | Direction=Sell | Qty=-112.441 | Price=89.29 | Tag=
+2026-03-24T08:42:32.5223714Z TRACE:: Log: 2023-03-04 19:00:00 TRADE: MATICUSDT | Direction=Sell | Qty=-8481 | Price=1.1271 | Tag=
+2026-03-24T08:42:32.5223761Z TRACE:: Log: 2023-03-05 19:00:00 TRADE: LINKUSDT | Direction=Sell | Qty=-1300.63 | Price=6.943 | Tag=
+2026-03-24T08:42:32.5223808Z TRACE:: Log: 2023-03-06 19:00:00 TRADE: BTCUSDT | Direction=Sell | Qty=-0.437 | Price=22397.1 | Tag=
+2026-03-24T08:42:32.5223855Z TRACE:: Log: 2023-03-06 19:00:00 TRADE: ETHUSDT | Direction=Sell | Qty=-5.952 | Price=1565.17 | Tag=
+2026-03-24T08:42:32.5223964Z TRACE:: Log: 2023-03-08 19:00:00 TRADE: OPUSDT | Direction=Sell | Qty=-3855.7 | Price=2.2328 | Tag=
+2026-03-24T08:42:32.5724820Z TRACE:: Log: 2023-03-17 20:00:00 TRADE: BNBUSDT | Direction=Buy | Qty=33.39 | Price=338.63 | Tag=
+2026-03-24T08:42:32.5725273Z TRACE:: Log: 2023-03-29 20:00:00 TRADE: XRPUSDT | Direction=Buy | Qty=21118.5 | Price=0.5421 | Tag=
+2026-03-24T08:42:32.5725348Z TRACE:: Log: 2023-04-08 20:00:00 TRADE: BNBUSDT | Direction=Sell | Qty=-27.85 | Price=310.37 | Tag=
+2026-03-24T08:42:32.5725397Z TRACE:: Log: 2023-04-11 20:00:00 TRADE: BTCUSDT | Direction=Buy | Qty=0.36 | Price=30185.1 | Tag=
+2026-03-24T08:42:32.5725446Z TRACE:: Log: 2023-04-13 20:00:00 TRADE: ADAUSDT | Direction=Buy | Qty=25293 | Price=0.4251 | Tag=
+2026-03-24T08:42:32.5725493Z TRACE:: Log: 2023-04-13 20:00:00 TRADE: ETHUSDT | Direction=Buy | Qty=5.163 | Price=2011.8 | Tag=
+2026-03-24T08:42:32.5725537Z TRACE:: Log: 2023-04-13 20:00:00 TRADE: DOTUSDT | Direction=Buy | Qty=1559.9 | Price=6.635 | Tag=
+2026-03-24T08:42:32.5725583Z TRACE:: Log: 2023-04-15 20:00:00 TRADE: OPUSDT | Direction=Buy | Qty=3762.7 | Price=2.7106 | Tag=
+2026-03-24T08:42:32.5725629Z TRACE:: Log: 2023-04-16 20:00:00 TRADE: AAVEUSDT | Direction=Buy | Qty=119.6 | Price=83.4 | Tag=
+2026-03-24T08:42:32.5725673Z TRACE:: Log: 2023-04-17 20:00:00 TRADE: DOGEUSDT | Direction=Buy | Qty=108195 | Price=0.09141 | Tag=
+2026-03-24T08:42:32.5725718Z TRACE:: Log: 2023-04-18 20:00:00 TRADE: LINKUSDT | Direction=Buy | Qty=1155.49 | Price=8.584 | Tag=
+2026-03-24T08:42:32.5725759Z TRACE:: Log: 2023-04-18 20:00:00 TRADE: AVAXUSDT | Direction=Buy | Qty=467 | Price=21.211 | Tag=
+2026-03-24T08:42:32.5725802Z TRACE:: Log: 2023-04-21 20:00:00 TRADE: AAVEUSDT | Direction=Sell | Qty=-102.5 | Price=69.07 | Tag=
+2026-03-24T08:42:32.5725843Z TRACE:: Log: 2023-04-21 20:00:00 TRADE: ARBUSDT | Direction=Buy | Qty=2574.9 | Price=1.4709 | Tag=
+2026-03-24T08:42:32.5725886Z TRACE:: Log: 2023-04-22 20:00:00 TRADE: DOTUSDT | Direction=Sell | Qty=-1263 | Price=5.942 | Tag=
+2026-03-24T08:42:32.5725952Z TRACE:: Log: 2023-04-23 20:00:00 TRADE: OPUSDT | Direction=Sell | Qty=-3210.2 | Price=2.2012 | Tag=
+2026-03-24T08:42:32.5726004Z TRACE:: Log: 2023-04-24 20:00:00 TRADE: XRPUSDT | Direction=Sell | Qty=-16574.1 | Price=0.4606 | Tag=
+2026-03-24T08:42:32.5726050Z TRACE:: Log: 2023-04-24 20:00:00 TRADE: DOGEUSDT | Direction=Sell | Qty=-91483 | Price=0.07869 | Tag=
+2026-03-24T08:42:32.5726274Z TRACE:: Log: 2023-04-24 20:00:00 TRADE: AVAXUSDT | Direction=Sell | Qty=-408 | Price=16.913 | Tag=
+2026-03-24T08:42:32.5726364Z TRACE:: Log: 2023-04-25 20:00:00 TRADE: LINKUSDT | Direction=Sell | Qty=-973.39 | Price=7.271 | Tag=
+2026-03-24T08:42:32.6227772Z TRACE:: Log: 2023-05-02 20:00:00 TRADE: ETHUSDT | Direction=Sell | Qty=-4.105 | Price=1869.2 | Tag=
+2026-03-24T08:42:32.6228458Z TRACE:: Log: 2023-05-04 20:00:00 TRADE: ADAUSDT | Direction=Sell | Qty=-19676 | Price=0.387 | Tag=
+2026-03-24T08:42:32.6228573Z TRACE:: Log: 2023-05-06 20:00:00 TRADE: ARBUSDT | Direction=Sell | Qty=-5707.4 | Price=1.2389 | Tag=
+2026-03-24T08:42:32.6228634Z TRACE:: Log: 2023-05-09 20:00:00 TRADE: BTCUSDT | Direction=Sell | Qty=-0.292 | Price=27610.2 | Tag=
+2026-03-24T08:42:32.6729678Z TRACE:: Log: 2023-06-10 20:00:00 TRADE: OPUSDT | Direction=Sell | Qty=-2620.9 | Price=1.0907 | Tag=
+2026-03-24T08:42:32.6730064Z TRACE:: Log: 2023-06-14 20:00:00 TRADE: APTUSDT | Direction=Sell | Qty=-399.2 | Price=6.019 | Tag=
+2026-03-24T08:42:32.7231165Z TRACE:: Log: 2023-07-02 20:00:00 TRADE: LTCUSDT | Direction=Buy | Qty=89.791 | Price=113.63 | Tag=
+2026-03-24T08:42:32.7231562Z TRACE:: Log: 2023-07-02 20:00:00 TRADE: MKRUSDT | Direction=Buy | Qty=11.825 | Price=859.4 | Tag=
+2026-03-24T08:42:32.7231633Z TRACE:: Log: 2023-07-04 20:00:00 TRADE: APTUSDT | Direction=Buy | Qty=267.3 | Price=7.672 | Tag=
+2026-03-24T08:42:32.7732501Z TRACE:: Log: 2023-07-13 20:00:00 TRADE: XRPUSDT | Direction=Buy | Qty=12617.6 | Price=0.8154 | Tag=
+2026-03-24T08:42:32.7732903Z TRACE:: Log: 2023-07-13 20:00:00 TRADE: SOLUSDT | Direction=Buy | Qty=363.71 | Price=26.018 | Tag=
+2026-03-24T08:42:32.7732973Z TRACE:: Log: 2023-07-13 20:00:00 TRADE: OPUSDT | Direction=Buy | Qty=1690.3 | Price=1.3718 | Tag=
+2026-03-24T08:42:32.7733025Z TRACE:: Log: 2023-07-22 20:00:00 TRADE: LTCUSDT | Direction=Sell | Qty=-75.658 | Price=92.05 | Tag=
+2026-03-24T08:42:32.7733076Z TRACE:: Log: 2023-07-29 20:00:00 TRADE: MKRUSDT | Direction=Sell | Qty=-1.775 | Price=1281.7 | Tag=
+2026-03-24T08:42:32.7733122Z TRACE:: Log: 2023-07-31 20:00:00 TRADE: UNIUSDT | Direction=Buy | Qty=1453 | Price=6.524 | Tag=
+2026-03-24T08:42:32.7733214Z TRACE:: Log: 2023-08-09 20:00:00 TRADE: XRPUSDT | Direction=Sell | Qty=-10309.4 | Price=0.6431 | Tag=
+2026-03-24T08:42:32.7733263Z TRACE:: Log: 2023-08-17 20:00:00 TRADE: UNIUSDT | Direction=Sell | Qty=-1415 | Price=4.985 | Tag=
+2026-03-24T08:42:32.7733308Z TRACE:: Log: 2023-08-18 20:00:00 TRADE: SOLUSDT | Direction=Sell | Qty=-333.58 | Price=21.336 | Tag=
+2026-03-24T08:42:32.7733354Z TRACE:: Log: 2023-08-21 20:00:00 TRADE: MKRUSDT | Direction=Sell | Qty=-6.716 | Price=1092.6 | Tag=
+2026-03-24T08:42:32.8234592Z TRACE:: Log: 2023-09-10 20:00:00 TRADE: AVAXUSDT | Direction=Sell | Qty=-239 | Price=9.457 | Tag=
+2026-03-24T08:42:32.8235061Z TRACE:: Log: 2023-09-11 20:00:00 TRADE: MATICUSDT | Direction=Sell | Qty=-4562 | Price=0.5032 | Tag=
+2026-03-24T08:42:32.8235143Z TRACE:: Log: 2023-10-12 20:00:00 TRADE: NEARUSDT | Direction=Sell | Qty=-2172 | Price=1.011 | Tag=
+2026-03-24T08:42:32.8739855Z TRACE:: Log: 2023-10-23 20:00:00 TRADE: SOLUSDT | Direction=Buy | Qty=308.72 | Price=31.902 | Tag=
+2026-03-24T08:42:32.8740332Z TRACE:: Log: 2023-10-23 20:00:00 TRADE: MKRUSDT | Direction=Buy | Qty=6.13 | Price=1566.4 | Tag=
+2026-03-24T08:42:32.8740413Z TRACE:: Log: 2023-10-23 20:00:00 TRADE: MATICUSDT | Direction=Buy | Qty=14592 | Price=0.637 | Tag=
+2026-03-24T08:42:32.8740472Z TRACE:: Log: 2023-10-25 20:00:00 TRADE: LINKUSDT | Direction=Buy | Qty=835.75 | Price=11.057 | Tag=
+2026-03-24T08:42:32.8740522Z TRACE:: Log: 2023-10-29 20:00:00 TRADE: NEARUSDT | Direction=Buy | Qty=7032 | Price=1.278 | Tag=
+2026-03-24T08:42:32.8740569Z TRACE:: Log: 2023-10-30 20:00:00 TRADE: AVAXUSDT | Direction=Buy | Qty=765 | Price=11.469 | Tag=
+2026-03-24T08:42:32.8740647Z TRACE:: Log: 2023-11-01 20:00:00 TRADE: BTCUSDT | Direction=Buy | Qty=0.246 | Price=35437.4 | Tag=
+2026-03-24T08:42:32.8740858Z TRACE:: Log: 2023-11-02 20:00:00 TRADE: MKRUSDT | Direction=Sell | Qty=-4.996 | Price=1308.5 | Tag=
+2026-03-24T08:42:32.8740966Z TRACE:: Log: 2023-11-06 19:00:00 TRADE: AAVEUSDT | Direction=Buy | Qty=88 | Price=100.33 | Tag=
+2026-03-24T08:42:32.8741016Z TRACE:: Log: 2023-11-09 19:00:00 TRADE: SOLUSDT | Direction=Sell | Qty=-40.42 | Price=45.305 | Tag=
+2026-03-24T08:42:32.8741066Z TRACE:: Log: 2023-11-11 19:00:00 TRADE: LINKUSDT | Direction=Sell | Qty=-114.1 | Price=16.484 | Tag=
+2026-03-24T08:42:32.8741145Z TRACE:: Log: 2023-11-12 19:00:00 TRADE: AVAXUSDT | Direction=Sell | Qty=-120 | Price=18.98 | Tag=
+2026-03-24T08:42:32.8741203Z TRACE:: Log: 2023-11-19 19:00:00 TRADE: NEARUSDT | Direction=Sell | Qty=-931 | Price=1.987 | Tag=
+2026-03-24T08:42:32.8741254Z TRACE:: Log: 2023-11-23 19:00:00 TRADE: UNIUSDT | Direction=Buy | Qty=1394 | Price=6.331 | Tag=
+2026-03-24T08:42:32.9242153Z TRACE:: Log: 2023-12-07 19:00:00 TRADE: OPUSDT | Direction=Buy | Qty=4231.3 | Price=2.1741 | Tag=
+2026-03-24T08:42:32.9242703Z TRACE:: Log: 2023-12-08 19:00:00 TRADE: ADAUSDT | Direction=Buy | Qty=16204 | Price=0.546 | Tag=
+2026-03-24T08:42:32.9242788Z TRACE:: Log: 2023-12-08 19:00:00 TRADE: AVAXUSDT | Direction=Sell | Qty=-71 | Price=30.466 | Tag=
+2026-03-24T08:42:32.9242839Z TRACE:: Log: 2023-12-08 19:00:00 TRADE: SOLUSDT | Direction=Sell | Qty=-27.97 | Price=74.98 | Tag=
+2026-03-24T08:42:32.9242888Z TRACE:: Log: 2023-12-08 19:00:00 TRADE: MATICUSDT | Direction=Sell | Qty=-1925 | Price=0.9067 | Tag=
+2026-03-24T08:42:32.9242936Z TRACE:: Log: 2023-12-20 19:00:00 TRADE: LINKUSDT | Direction=Sell | Qty=-464.06 | Price=14.262 | Tag=
+2026-03-24T08:42:32.9242986Z TRACE:: Log: 2023-12-21 19:00:00 TRADE: NEARUSDT | Direction=Sell | Qty=-788 | Price=3.541 | Tag=
+2026-03-24T08:42:32.9243033Z TRACE:: Log: 2023-12-22 19:00:00 TRADE: OPUSDT | Direction=Sell | Qty=-531.5 | Price=3.4705 | Tag=
+2026-03-24T08:42:32.9243082Z TRACE:: Log: 2023-12-25 19:00:00 TRADE: DOTUSDT | Direction=Buy | Qty=1042.2 | Price=9.202 | Tag=
+2026-03-24T08:42:32.9243133Z TRACE:: Log: 2023-12-26 19:00:00 TRADE: APTUSDT | Direction=Buy | Qty=872.4 | Price=10.756 | Tag=
+2026-03-24T08:42:32.9243179Z TRACE:: Log: 2024-01-01 19:00:00 TRADE: ARBUSDT | Direction=Buy | Qty=5209 | Price=1.7363 | Tag=
+2026-03-24T08:42:32.9243231Z TRACE:: Log: 2024-01-08 19:00:00 TRADE: ADAUSDT | Direction=Sell | Qty=-12659 | Price=0.541 | Tag=
+2026-03-24T08:42:32.9243280Z TRACE:: Log: 2024-01-08 19:00:00 TRADE: AAVEUSDT | Direction=Sell | Qty=-67.8 | Price=99.01 | Tag=
+2026-03-24T08:42:32.9243388Z TRACE:: Log: 2024-01-08 19:00:00 TRADE: MATICUSDT | Direction=Sell | Qty=-7880 | Price=0.8415 | Tag=
+2026-03-24T08:42:32.9243438Z TRACE:: Log: 2024-01-09 19:00:00 TRADE: AVAXUSDT | Direction=Sell | Qty=-212 | Price=34.64 | Tag=
+2026-03-24T08:42:32.9243504Z TRACE:: Log: 2024-01-09 19:00:00 TRADE: UNIUSDT | Direction=Sell | Qty=-1128 | Price=6.009 | Tag=
+2026-03-24T08:42:32.9243555Z TRACE:: Log: 2024-01-10 19:00:00 TRADE: MKRUSDT | Direction=Buy | Qty=4.312 | Price=2039 | Tag=
+2026-03-24T08:42:32.9243600Z TRACE:: Log: 2024-01-10 19:00:00 TRADE: ETHUSDT | Direction=Buy | Qty=3.334 | Price=2585.82 | Tag=
+2026-03-24T08:42:32.9745151Z TRACE:: Log: 2024-01-18 19:00:00 TRADE: BTCUSDT | Direction=Sell | Qty=-0.178 | Price=41323.1 | Tag=
+2026-03-24T08:42:32.9745542Z TRACE:: Log: 2024-01-18 19:00:00 TRADE: DOTUSDT | Direction=Sell | Qty=-878.5 | Price=7.017 | Tag=
+2026-03-24T08:42:32.9745620Z TRACE:: Log: 2024-01-19 19:00:00 TRADE: NEARUSDT | Direction=Sell | Qty=-2125 | Price=3.009 | Tag=
+2026-03-24T08:42:32.9745674Z TRACE:: Log: 2024-01-20 19:00:00 TRADE: APTUSDT | Direction=Sell | Qty=-724.1 | Price=8.571 | Tag=
+2026-03-24T08:42:32.9745725Z TRACE:: Log: 2024-01-22 19:00:00 TRADE: SOLUSDT | Direction=Sell | Qty=-86.01 | Price=83.883 | Tag=
+2026-03-24T08:42:32.9745775Z TRACE:: Log: 2024-01-23 19:00:00 TRADE: OPUSDT | Direction=Sell | Qty=-2250 | Price=2.8198 | Tag=
+2026-03-24T08:42:33.0246648Z TRACE:: Log: 2024-01-25 19:00:00 TRADE: ETHUSDT | Direction=Sell | Qty=-2.823 | Price=2218.02 | Tag=
+2026-03-24T08:42:33.0247058Z TRACE:: Log: 2024-02-05 19:00:00 TRADE: LINKUSDT | Direction=Buy | Qty=421.36 | Price=19.156 | Tag=
+2026-03-24T08:42:33.0247250Z TRACE:: Log: 2024-02-05 19:00:00 TRADE: ARBUSDT | Direction=Sell | Qty=-3922 | Price=1.7344 | Tag=
+2026-03-24T08:42:33.0747734Z TRACE:: Log: 2024-02-08 19:00:00 TRADE: BNBUSDT | Direction=Buy | Qty=24.21 | Price=318.54 | Tag=
+2026-03-24T08:42:33.0748178Z TRACE:: Log: 2024-02-12 19:00:00 TRADE: OPUSDT | Direction=Buy | Qty=1934.6 | Price=3.8206 | Tag=
+2026-03-24T08:42:33.0748261Z TRACE:: Log: 2024-02-12 19:00:00 TRADE: SOLUSDT | Direction=Buy | Qty=65.44 | Price=111.737 | Tag=
+2026-03-24T08:42:33.0748381Z TRACE:: Log: 2024-02-14 19:00:00 TRADE: ETHUSDT | Direction=Buy | Qty=2.532 | Price=2776.14 | Tag=
+2026-03-24T08:42:33.0748437Z TRACE:: Log: 2024-02-15 19:00:00 TRADE: UNIUSDT | Direction=Buy | Qty=938 | Price=7.512 | Tag=
+2026-03-24T08:42:33.0748486Z TRACE:: Log: 2024-02-15 19:00:00 TRADE: BTCUSDT | Direction=Buy | Qty=0.132 | Price=51898.5 | Tag=
+2026-03-24T08:42:33.0748537Z TRACE:: Log: 2024-02-19 19:00:00 TRADE: DOGEUSDT | Direction=Buy | Qty=78095 | Price=0.08949 | Tag=
+2026-03-24T08:42:33.0748585Z TRACE:: Log: 2024-02-19 19:00:00 TRADE: MATICUSDT | Direction=Buy | Qty=6789 | Price=0.9978 | Tag=
+2026-03-24T08:42:33.1249459Z TRACE:: Log: 2024-02-24 19:00:00 TRADE: NEARUSDT | Direction=Buy | Qty=1812 | Price=3.868 | Tag=
+2026-03-24T08:42:33.1249836Z TRACE:: Log: 2024-02-27 19:00:00 TRADE: ATOMUSDT | Direction=Buy | Qty=620.07 | Price=11.221 | Tag=
+2026-03-24T08:42:33.1249905Z TRACE:: Log: 2024-02-28 19:00:00 TRADE: APTUSDT | Direction=Buy | Qty=603.9 | Price=12.388 | Tag=
+2026-03-24T08:42:33.1249955Z TRACE:: Log: 2024-02-29 19:00:00 TRADE: ADAUSDT | Direction=Buy | Qty=10539 | Price=0.6554 | Tag=
+2026-03-24T08:42:33.1250001Z TRACE:: Log: 2024-03-01 19:00:00 TRADE: AVAXUSDT | Direction=Buy | Qty=164 | Price=42.727 | Tag=
+2026-03-24T08:42:33.1250044Z TRACE:: Log: 2024-03-01 19:00:00 TRADE: UNIUSDT | Direction=Sell | Qty=-125 | Price=11.577 | Tag=
+2026-03-24T08:42:33.1250086Z TRACE:: Log: 2024-03-01 19:00:00 TRADE: DOGEUSDT | Direction=Sell | Qty=-10186 | Price=0.13953 | Tag=
+2026-03-24T08:42:33.1250130Z TRACE:: Log: 2024-03-02 19:00:00 TRADE: DOTUSDT | Direction=Buy | Qty=770.1 | Price=9.476 | Tag=
+2026-03-24T08:42:33.1250173Z TRACE:: Log: 2024-03-07 19:00:00 TRADE: AAVEUSDT | Direction=Buy | Qty=57.1 | Price=134.11 | Tag=
+2026-03-24T08:42:33.1250254Z TRACE:: Log: 2024-03-08 19:00:00 TRADE: BNBUSDT | Direction=Sell | Qty=-3.32 | Price=485.29 | Tag=
+2026-03-24T08:42:33.1751150Z TRACE:: Log: 2024-03-11 20:00:00 TRADE: NEARUSDT | Direction=Sell | Qty=-246 | Price=6.689 | Tag=
+2026-03-24T08:42:33.1751571Z TRACE:: Log: 2024-03-16 20:00:00 TRADE: MKRUSDT | Direction=Sell | Qty=-0.565 | Price=2853.2 | Tag=
+2026-03-24T08:42:33.1751642Z TRACE:: Log: 2024-03-16 20:00:00 TRADE: SOLUSDT | Direction=Sell | Qty=-8.51 | Price=182.184 | Tag=
+2026-03-24T08:42:33.1751689Z TRACE:: Log: 2024-03-18 20:00:00 TRADE: OPUSDT | Direction=Sell | Qty=-1692.6 | Price=3.3053 | Tag=
+2026-03-24T08:42:33.1751731Z TRACE:: Log: 2024-03-19 20:00:00 TRADE: LINKUSDT | Direction=Sell | Qty=-341.85 | Price=16.816 | Tag=
+2026-03-24T08:42:33.1751772Z TRACE:: Log: 2024-03-21 20:00:00 TRADE: ADAUSDT | Direction=Sell | Qty=-9040 | Price=0.6323 | Tag=
+2026-03-24T08:42:33.1751817Z TRACE:: Log: 2024-03-22 20:00:00 TRADE: MATICUSDT | Direction=Sell | Qty=-5844 | Price=0.9741 | Tag=
+2026-03-24T08:42:33.1751859Z TRACE:: Log: 2024-03-23 20:00:00 TRADE: ATOMUSDT | Direction=Sell | Qty=-515.76 | Price=11.347 | Tag=
+2026-03-24T08:42:33.2252986Z TRACE:: Log: 2024-04-02 20:00:00 TRADE: DOTUSDT | Direction=Sell | Qty=-655.9 | Price=8.588 | Tag=
+2026-03-24T08:42:33.2253302Z TRACE:: Log: 2024-04-03 20:00:00 TRADE: ETHUSDT | Direction=Sell | Qty=-1.943 | Price=3313.29 | Tag=
+2026-03-24T08:42:33.2253360Z TRACE:: Log: 2024-04-04 20:00:00 TRADE: UNIUSDT | Direction=Sell | Qty=-525 | Price=10.985 | Tag=
+2026-03-24T08:42:33.2253399Z TRACE:: Log: 2024-04-05 20:00:00 TRADE: AVAXUSDT | Direction=Sell | Qty=-133 | Price=45.337 | Tag=
+2026-03-24T08:42:33.2253550Z TRACE:: Log: 2024-04-05 20:00:00 TRADE: AAVEUSDT | Direction=Sell | Qty=-49.9 | Price=113.76 | Tag=
+2026-03-24T08:42:33.2253596Z TRACE:: Log: 2024-04-07 20:00:00 TRADE: APTUSDT | Direction=Sell | Qty=-449.7 | Price=13.642 | Tag=
+2026-03-24T08:42:33.2754906Z TRACE:: Log: 2024-04-13 20:00:00 TRADE: NEARUSDT | Direction=Sell | Qty=-1143 | Price=5.215 | Tag=
+2026-03-24T08:42:33.2755283Z TRACE:: Log: 2024-04-13 20:00:00 TRADE: SOLUSDT | Direction=Sell | Qty=-42.08 | Price=138.467 | Tag=
+2026-03-24T08:42:33.2755347Z TRACE:: Log: 2024-04-15 20:00:00 TRADE: MKRUSDT | Direction=Sell | Qty=-2.2 | Price=3070.8 | Tag=
+2026-03-24T08:42:33.2755384Z TRACE:: Log: 2024-04-15 20:00:00 TRADE: BTCUSDT | Direction=Sell | Qty=-0.106 | Price=63392.7 | Tag=
+2026-03-24T08:42:33.2755420Z TRACE:: Log: 2024-04-16 20:00:00 TRADE: DOGEUSDT | Direction=Sell | Qty=-41939 | Price=0.15594 | Tag=
+2026-03-24T08:42:33.3256294Z TRACE:: Log: 2024-05-05 20:00:00 TRADE: NEARUSDT | Direction=Buy | Qty=1104 | Price=7.487 | Tag=
+2026-03-24T08:42:33.3256659Z TRACE:: Log: 2024-05-14 20:00:00 TRADE: ARBUSDT | Direction=Sell | Qty=-1871.6 | Price=0.9349 | Tag=
+2026-03-24T08:42:33.3256781Z TRACE:: Log: 2024-05-19 20:00:00 TRADE: BNBUSDT | Direction=Sell | Qty=-12 | Price=574.31 | Tag=
+2026-03-24T08:42:33.3256826Z TRACE:: Log: 2024-05-20 20:00:00 TRADE: SOLUSDT | Direction=Buy | Qty=41.41 | Price=186.701 | Tag=
+2026-03-24T08:42:33.3757685Z TRACE:: Log: 2024-05-27 20:00:00 TRADE: ARBUSDT | Direction=Buy | Qty=6141 | Price=1.2308 | Tag=
+2026-03-24T08:42:33.3758060Z TRACE:: Log: 2024-06-06 20:00:00 TRADE: ARBUSDT | Direction=Sell | Qty=-5188.1 | Price=1.0891 | Tag=
+2026-03-24T08:42:33.3758124Z TRACE:: Log: 2024-06-07 20:00:00 TRADE: NEARUSDT | Direction=Sell | Qty=-892 | Price=6.871 | Tag=
+2026-03-24T08:42:33.3758167Z TRACE:: Log: 2024-06-11 20:00:00 TRADE: SOLUSDT | Direction=Sell | Qty=-38.45 | Price=149.245 | Tag=
+2026-03-24T08:42:33.3758204Z TRACE:: Log: 2024-06-17 20:00:00 TRADE: APTUSDT | Direction=Sell | Qty=-231.7 | Price=7.436 | Tag=
+2026-03-24T08:42:33.3758243Z TRACE:: Log: 2024-06-18 20:00:00 TRADE: OPUSDT | Direction=Sell | Qty=-970.3 | Price=1.8277 | Tag=
+2026-03-24T08:42:33.3758329Z TRACE:: Log: 2024-06-18 20:00:00 TRADE: MATICUSDT | Direction=Sell | Qty=-3166 | Price=0.557 | Tag=
+2026-03-24T08:42:33.3758425Z TRACE:: Log: 2024-06-23 20:00:00 TRADE: AVAXUSDT | Direction=Sell | Qty=-73 | Price=25.069 | Tag=
+2026-03-24T08:42:33.4259303Z TRACE:: Log: 2024-07-03 20:00:00 TRADE: ATOMUSDT | Direction=Sell | Qty=-292.23 | Price=6.377 | Tag=
+2026-03-24T08:42:33.4259633Z TRACE:: Log: 2024-07-04 20:00:00 TRADE: ADAUSDT | Direction=Sell | Qty=-5667 | Price=0.3621 | Tag=
+2026-03-24T08:42:33.4259690Z TRACE:: Log: 2024-07-04 20:00:00 TRADE: ARBUSDT | Direction=Sell | Qty=-2842.8 | Price=0.6788 | Tag=
+2026-03-24T08:42:33.4259729Z TRACE:: Log: 2024-08-02 20:00:00 TRADE: DOTUSDT | Direction=Sell | Qty=-372.8 | Price=5.12 | Tag=
+2026-03-24T08:42:33.4259767Z TRACE:: Log: 2024-08-03 20:00:00 TRADE: UNIUSDT | Direction=Sell | Qty=-293 | Price=6.623 | Tag=
+2026-03-24T08:42:33.4259804Z TRACE:: Log: 2024-08-04 20:00:00 TRADE: NEARUSDT | Direction=Sell | Qty=-509 | Price=4.131 | Tag=
+2026-03-24T08:42:33.4259836Z TRACE:: Log: 2024-08-04 20:00:00 TRADE: LINKUSDT | Direction=Sell | Qty=-191.86 | Price=10.881 | Tag=
+2026-03-24T08:42:33.4259908Z TRACE:: Log: 2024-08-05 20:00:00 TRADE: DOGEUSDT | Direction=Sell | Qty=-23465 | Price=0.0943 | Tag=
+2026-03-24T08:42:33.4259942Z TRACE:: Log: 2024-08-05 20:00:00 TRADE: MKRUSDT | Direction=Sell | Qty=-1.13 | Price=1900.2 | Tag=
+2026-03-24T08:42:33.4761122Z TRACE:: Log: 2024-09-06 20:00:00 TRADE: ATOMUSDT | Direction=Sell | Qty=-577.5 | Price=3.713 | Tag=
+2026-03-24T08:42:33.4761462Z TRACE:: Log: 2024-09-06 20:00:00 TRADE: ETHUSDT | Direction=Sell | Qty=-0.964 | Price=2223.7 | Tag=
+2026-03-24T08:42:33.4761518Z TRACE:: Log: 2024-09-24 20:00:00 TRADE: ATOMUSDT | Direction=Buy | Qty=1866.26 | Price=4.813 | Tag=
+2026-03-24T08:42:33.4761672Z TRACE:: Log: 2024-09-26 20:00:00 TRADE: DOGEUSDT | Direction=Buy | Qty=74439 | Price=0.11813 | Tag=
+2026-03-24T08:42:33.4761833Z TRACE:: Log: 2024-09-26 20:00:00 TRADE: NEARUSDT | Direction=Buy | Qty=1584 | Price=5.544 | Tag=
+2026-03-24T08:42:33.4761879Z TRACE:: Log: 2024-09-27 20:00:00 TRADE: ETHUSDT | Direction=Buy | Qty=3.145 | Price=2693.53 | Tag=
+2026-03-24T08:42:33.4761921Z TRACE:: Log: 2024-10-03 20:00:00 TRADE: ETHUSDT | Direction=Sell | Qty=-2.796 | Price=2348.74 | Tag=
+2026-03-24T08:42:33.4761958Z TRACE:: Log: 2024-10-08 20:00:00 TRADE: ATOMUSDT | Direction=Sell | Qty=-1546.91 | Price=4.347 | Tag=
+2026-03-24T08:42:33.5262791Z TRACE:: Log: 2024-10-24 20:00:00 TRADE: NEARUSDT | Direction=Sell | Qty=-1351 | Price=4.717 | Tag=
+2026-03-24T08:42:33.5764320Z TRACE:: Log: 2024-11-06 19:00:00 TRADE: UNIUSDT | Direction=Buy | Qty=945 | Price=9.292 | Tag=
+2026-03-24T08:42:33.5764609Z TRACE:: Log: 2024-11-06 19:00:00 TRADE: DOGEUSDT | Direction=Sell | Qty=-11646 | Price=0.19646 | Tag=
+2026-03-24T08:42:33.5764665Z TRACE:: Log: 2024-11-07 19:00:00 TRADE: AAVEUSDT | Direction=Buy | Qty=45.4 | Price=183.55 | Tag=
+2026-03-24T08:42:33.5764701Z TRACE:: Log: 2024-11-08 19:00:00 TRADE: LINKUSDT | Direction=Buy | Qty=603.08 | Price=13.696 | Tag=
+2026-03-24T08:42:33.5764732Z TRACE:: Log: 2024-11-09 19:00:00 TRADE: ADAUSDT | Direction=Buy | Qty=16853 | Price=0.497 | Tag=
+2026-03-24T08:42:33.5764762Z TRACE:: Log: 2024-11-09 19:00:00 TRADE: ETHUSDT | Direction=Buy | Qty=2.56 | Price=3127.03 | Tag=
+2026-03-24T08:42:33.5764792Z TRACE:: Log: 2024-11-09 19:00:00 TRADE: APTUSDT | Direction=Buy | Qty=757.2 | Price=10.4428 | Tag=
+2026-03-24T08:42:33.5764826Z TRACE:: Log: 2024-11-10 19:00:00 TRADE: DOGEUSDT | Direction=Sell | Qty=-6107 | Price=0.27794 | Tag=
+2026-03-24T08:42:33.5764858Z TRACE:: Log: 2024-11-11 19:00:00 TRADE: AVAXUSDT | Direction=Buy | Qty=227 | Price=35.748 | Tag=
+2026-03-24T08:42:33.5764887Z TRACE:: Log: 2024-11-11 19:00:00 TRADE: SOLUSDT | Direction=Buy | Qty=36.05 | Price=222.33 | Tag=
+2026-03-24T08:42:33.5764916Z TRACE:: Log: 2024-11-11 19:00:00 TRADE: BTCUSDT | Direction=Buy | Qty=0.088 | Price=88728.9 | Tag=
+2026-03-24T08:42:33.5764944Z TRACE:: Log: 2024-11-11 19:00:00 TRADE: ATOMUSDT | Direction=Buy | Qty=1362.71 | Price=5.662 | Tag=
+2026-03-24T08:42:33.5764975Z TRACE:: Log: 2024-11-14 19:00:00 TRADE: XRPUSDT | Direction=Buy | Qty=9695 | Price=0.7741 | Tag=
+2026-03-24T08:42:33.5765007Z TRACE:: Log: 2024-11-16 19:00:00 TRADE: ADAUSDT | Direction=Sell | Qty=-2235 | Price=0.742 | Tag=
+2026-03-24T08:42:33.5765078Z TRACE:: Log: 2024-11-21 19:00:00 TRADE: XRPUSDT | Direction=Sell | Qty=-1327.1 | Price=1.2477 | Tag=
+2026-03-24T08:42:33.5765112Z TRACE:: Log: 2024-11-23 19:00:00 TRADE: DOTUSDT | Direction=Buy | Qty=1105.6 | Price=8.523 | Tag=
+2026-03-24T08:42:33.5765146Z TRACE:: Log: 2024-11-23 19:00:00 TRADE: ARBUSDT | Direction=Buy | Qty=9339.1 | Price=0.856 | Tag=
+2026-03-24T08:42:33.5765177Z TRACE:: Log: 2024-11-23 19:00:00 TRADE: DOGEUSDT | Direction=Sell | Qty=-3922 | Price=0.43049 | Tag=
+2026-03-24T08:42:33.5765207Z TRACE:: Log: 2024-11-24 19:00:00 TRADE: NEARUSDT | Direction=Buy | Qty=1193 | Price=6.881 | Tag=
+2026-03-24T08:42:33.5765239Z TRACE:: Log: 2024-11-27 19:00:00 TRADE: UNIUSDT | Direction=Sell | Qty=-130 | Price=13.542 | Tag=
+2026-03-24T08:42:33.5765270Z TRACE:: Log: 2024-12-01 19:00:00 TRADE: XRPUSDT | Direction=Sell | Qty=-1025.4 | Price=2.2942 | Tag=
+2026-03-24T08:42:33.5765303Z TRACE:: Log: 2024-12-02 19:00:00 TRADE: LINKUSDT | Direction=Sell | Qty=-95.42 | Price=25.241 | Tag=
+2026-03-24T08:42:33.5765332Z TRACE:: Log: 2024-12-03 19:00:00 TRADE: LTCUSDT | Direction=Buy | Qty=66.861 | Price=131.03 | Tag=
+2026-03-24T08:42:33.5765362Z TRACE:: Log: 2024-12-04 19:00:00 TRADE: ATOMUSDT | Direction=Sell | Qty=-183.6 | Price=9.939 | Tag=
+2026-03-24T08:42:33.5765393Z TRACE:: Log: 2024-12-11 19:00:00 TRADE: AAVEUSDT | Direction=Sell | Qty=-6.4 | Price=302.76 | Tag=
+2026-03-24T08:42:33.5765423Z TRACE:: Log: 2024-12-16 19:00:00 TRADE: SOLUSDT | Direction=Sell | Qty=-30.51 | Price=216.08 | Tag=
+2026-03-24T08:42:33.5765452Z TRACE:: Log: 2024-12-19 19:00:00 TRADE: NEARUSDT | Direction=Sell | Qty=-1079 | Price=5.198 | Tag=
+2026-03-24T08:42:33.5765617Z TRACE:: Log: 2024-12-20 19:00:00 TRADE: APTUSDT | Direction=Sell | Qty=-601.7 | Price=10.8655 | Tag=
+2026-03-24T08:42:33.5765669Z TRACE:: Log: 2024-12-20 19:00:00 TRADE: ARBUSDT | Direction=Sell | Qty=-7825.9 | Price=0.796 | Tag=
+2026-03-24T08:42:33.5765704Z TRACE:: Log: 2024-12-20 19:00:00 TRADE: ATOMUSDT | Direction=Sell | Qty=-831.23 | Price=6.914 | Tag=
+2026-03-24T08:42:33.5765735Z TRACE:: Log: 2024-12-20 19:00:00 TRADE: DOGEUSDT | Direction=Sell | Qty=-17675 | Price=0.31779 | Tag=
+2026-03-24T08:42:33.5765788Z TRACE:: Log: 2024-12-21 19:00:00 TRADE: AVAXUSDT | Direction=Sell | Qty=-173 | Price=37.408 | Tag=
+2026-03-24T08:42:33.5765837Z TRACE:: Log: 2024-12-21 19:00:00 TRADE: DOTUSDT | Direction=Sell | Qty=-845 | Price=6.97 | Tag=
+2026-03-24T08:42:33.5765871Z TRACE:: Log: 2024-12-22 19:00:00 TRADE: ADAUSDT | Direction=Sell | Qty=-7850 | Price=0.883 | Tag=
+2026-03-24T08:42:33.5765898Z TRACE:: Log: 2024-12-22 19:00:00 TRADE: ETHUSDT | Direction=Sell | Qty=-2.015 | Price=3280.8 | Tag=
+2026-03-24T08:42:33.5765928Z TRACE:: Log: 2024-12-22 19:00:00 TRADE: LTCUSDT | Direction=Sell | Qty=-59.819 | Price=99.74 | Tag=
+2026-03-24T08:42:33.6267065Z TRACE:: Log: 2024-12-27 19:00:00 TRADE: UNIUSDT | Direction=Sell | Qty=-482 | Price=13.346 | Tag=
+2026-03-24T08:42:33.6267504Z TRACE:: Log: 2024-12-29 19:00:00 TRADE: BTCUSDT | Direction=Sell | Qty=-0.069 | Price=93700 | Tag=
+2026-03-24T08:42:33.6267584Z TRACE:: Log: 2024-12-30 19:00:00 TRADE: LINKUSDT | Direction=Sell | Qty=-300.11 | Price=20.569 | Tag=
+2026-03-24T08:42:33.6267630Z TRACE:: Log: 2025-01-10 19:00:00 TRADE: AAVEUSDT | Direction=Sell | Qty=-22.9 | Price=285.58 | Tag=
+2026-03-24T08:42:33.6267668Z TRACE:: Log: 2025-01-15 19:00:00 TRADE: XRPUSDT | Direction=Sell | Qty=-494.5 | Price=3.1411 | Tag=
+2026-03-24T08:42:33.6267705Z TRACE:: Log: 2025-01-17 19:00:00 TRADE: LTCUSDT | Direction=Buy | Qty=54.423 | Price=137.02 | Tag=
+2026-03-24T08:42:33.6267740Z TRACE:: Log: 2025-02-02 19:00:00 TRADE: APTUSDT | Direction=Sell | Qty=-301.6 | Price=6.1531 | Tag=
+2026-03-24T08:42:33.6267821Z TRACE:: Log: 2025-02-04 19:00:00 TRADE: LTCUSDT | Direction=Sell | Qty=-58.576 | Price=101.01 | Tag=
+2026-03-24T08:42:33.6267858Z TRACE:: Log: 2025-02-05 19:00:00 TRADE: XRPUSDT | Direction=Sell | Qty=-2576.3 | Price=2.3799 | Tag=
+2026-03-24T08:42:33.6267892Z TRACE:: Log: 2025-02-06 19:00:00 TRADE: ARBUSDT | Direction=Sell | Qty=-4624.1 | Price=0.4452 | Tag=
+2026-03-24T08:42:33.6768726Z TRACE:: Log: 2025-02-24 19:00:00 TRADE: NEARUSDT | Direction=Sell | Qty=-678 | Price=3.063 | Tag=
+2026-03-24T08:42:33.6769077Z TRACE:: Log: 2025-02-24 19:00:00 TRADE: AVAXUSDT | Direction=Sell | Qty=-94 | Price=21.866 | Tag=
+2026-03-24T08:42:33.6769129Z TRACE:: Log: 2025-02-24 19:00:00 TRADE: OPUSDT | Direction=Sell | Qty=-2042.9 | Price=1.0024 | Tag=
+2026-03-24T08:42:33.6769164Z TRACE:: Log: 2025-02-24 19:00:00 TRADE: UNIUSDT | Direction=Sell | Qty=-254 | Price=7.973 | Tag=
+2026-03-24T08:42:33.6769199Z TRACE:: Log: 2025-03-03 19:00:00 TRADE: ATOMUSDT | Direction=Sell | Qty=-486.47 | Price=4.221 | Tag=
+2026-03-24T08:42:33.6769231Z TRACE:: Log: 2025-03-08 19:00:00 TRADE: DOGEUSDT | Direction=Sell | Qty=-11000 | Price=0.1922 | Tag=
+2026-03-24T08:42:33.6769263Z TRACE:: Log: 2025-03-08 19:00:00 TRADE: DOTUSDT | Direction=Sell | Qty=-482.7 | Price=4.287 | Tag=
+2026-03-24T08:42:33.6769294Z TRACE:: Log: 2025-03-09 20:00:00 TRADE: AAVEUSDT | Direction=Sell | Qty=-13.2 | Price=178.49 | Tag=
+2026-03-24T08:42:33.6769325Z TRACE:: Log: 2025-03-09 20:00:00 TRADE: ETHUSDT | Direction=Sell | Qty=-1.159 | Price=2019.2 | Tag=
+2026-03-24T08:42:33.6769354Z TRACE:: Log: 2025-03-09 20:00:00 TRADE: SOLUSDT | Direction=Sell | Qty=-17.92 | Price=126.42 | Tag=
+2026-03-24T08:42:33.6769384Z TRACE:: Log: 2025-03-10 20:00:00 TRADE: LINKUSDT | Direction=Sell | Qty=-202.43 | Price=12.653 | Tag=
+2026-03-24T08:42:33.7270162Z TRACE:: Log: 2025-04-06 20:00:00 TRADE: ADAUSDT | Direction=Sell | Qty=-4723 | Price=0.5731 | Tag=
+2026-03-24T08:42:33.7270497Z TRACE:: Log: 2025-04-06 20:00:00 TRADE: ARBUSDT | Direction=Sell | Qty=-9393.7 | Price=0.2679 | Tag=
+2026-03-24T08:42:33.7270712Z TRACE:: Log: 2025-04-06 20:00:00 TRADE: OPUSDT | Direction=Sell | Qty=-4124.5 | Price=0.6 | Tag=
+2026-03-24T08:42:33.7270764Z TRACE:: Log: 2025-04-08 20:00:00 TRADE: UNIUSDT | Direction=Sell | Qty=-540 | Price=4.772 | Tag=
+2026-03-24T08:42:33.7270848Z TRACE:: Log: 2025-04-08 20:00:00 TRADE: MATICUSDT | Direction=Sell | Qty=-6584 | Price=0.3846 | Tag=Warning: fill at stale price (09/12/2024 00:00:00 UTC)
+2026-03-24T08:42:33.7270888Z TRACE:: Log: 2025-04-08 20:00:00 TRADE: NEARUSDT | Direction=Sell | Qty=-1304 | Price=1.905 | Tag=
+2026-03-24T08:42:33.7270924Z TRACE:: Log: 2025-04-23 20:00:00 TRADE: NEARUSDT | Direction=Buy | Qty=950 | Price=2.469 | Tag=
+2026-03-24T08:42:33.7270963Z TRACE:: Log: 2025-04-23 20:00:00 TRADE: UNIUSDT | Direction=Buy | Qty=363 | Price=6.032 | Tag=
+2026-03-24T08:42:33.7271005Z TRACE:: Log: 2025-04-23 20:00:00 TRADE: OPUSDT | Direction=Buy | Qty=2800.9 | Price=0.7708 | Tag=
+2026-03-24T08:42:33.7271042Z TRACE:: Log: 2025-04-23 20:00:00 TRADE: ARBUSDT | Direction=Buy | Qty=6089.2 | Price=0.3389 | Tag=
+2026-03-24T08:42:33.7271080Z TRACE:: Log: 2025-04-24 20:00:00 TRADE: ADAUSDT | Direction=Buy | Qty=14053 | Price=0.7215 | Tag=
+2026-03-24T08:42:33.7271118Z TRACE:: Log: 2025-05-08 20:00:00 TRADE: LINKUSDT | Direction=Buy | Qty=600.91 | Price=15.883 | Tag=
+2026-03-24T08:42:33.7271156Z TRACE:: Log: 2025-05-09 20:00:00 TRADE: SOLUSDT | Direction=Buy | Qty=55.66 | Price=172.74 | Tag=
+2026-03-24T08:42:33.7271192Z TRACE:: Log: 2025-05-10 20:00:00 TRADE: ARBUSDT | Direction=Buy | Qty=18810.3 | Price=0.4841 | Tag=
+2026-03-24T08:42:33.7271226Z TRACE:: Log: 2025-05-10 20:00:00 TRADE: ETHUSDT | Direction=Buy | Qty=3.438 | Price=2581.91 | Tag=
+2026-03-24T08:42:33.7271262Z TRACE:: Log: 2025-05-10 20:00:00 TRADE: AAVEUSDT | Direction=Buy | Qty=38.8 | Price=228.45 | Tag=
+2026-03-24T08:42:33.7271296Z TRACE:: Log: 2025-05-10 20:00:00 TRADE: NEARUSDT | Direction=Buy | Qty=2631 | Price=3.348 | Tag=
+2026-03-24T08:42:33.7271331Z TRACE:: Log: 2025-05-10 20:00:00 TRADE: DOGEUSDT | Direction=Buy | Qty=34368 | Price=0.25057 | Tag=
+2026-03-24T08:42:33.7271386Z TRACE:: Log: 2025-05-10 20:00:00 TRADE: ATOMUSDT | Direction=Buy | Qty=1568.68 | Price=5.379 | Tag=
+2026-03-24T08:42:33.7271421Z TRACE:: Log: 2025-05-10 20:00:00 TRADE: UNIUSDT | Direction=Buy | Qty=1109 | Price=7.555 | Tag=
+2026-03-24T08:42:33.7271456Z TRACE:: Log: 2025-05-10 20:00:00 TRADE: DOTUSDT | Direction=Buy | Qty=1572.2 | Price=5.306 | Tag=
+2026-03-24T08:42:33.7271492Z TRACE:: Log: 2025-05-10 20:00:00 TRADE: MATICUSDT | Direction=Buy | Qty=4338 | Price=0.3846 | Tag=Warning: fill at stale price (09/12/2024 00:00:00 UTC)
+2026-03-24T08:42:33.7271531Z TRACE:: Log: 2025-05-30 20:00:00 TRADE: LINKUSDT | Direction=Sell | Qty=-471.8 | Price=13.878 | Tag=
+2026-03-24T08:42:33.7271568Z TRACE:: Log: 2025-05-30 20:00:00 TRADE: ATOMUSDT | Direction=Sell | Qty=-1363.2 | Price=4.287 | Tag=
+2026-03-24T08:42:33.7271604Z TRACE:: Log: 2025-05-30 20:00:00 TRADE: DOTUSDT | Direction=Sell | Qty=-1416.2 | Price=4.047 | Tag=
+2026-03-24T08:42:33.7271640Z TRACE:: Log: 2025-05-31 20:00:00 TRADE: ADAUSDT | Direction=Sell | Qty=-10247 | Price=0.6856 | Tag=
+2026-03-24T08:42:33.7271675Z TRACE:: Log: 2025-05-31 20:00:00 TRADE: NEARUSDT | Direction=Sell | Qty=-2301 | Price=2.419 | Tag=
+2026-03-24T08:42:33.7271738Z TRACE:: Log: 2025-05-31 20:00:00 TRADE: ARBUSDT | Direction=Sell | Qty=-16202.5 | Price=0.3394 | Tag=
+2026-03-24T08:42:33.7772852Z TRACE:: Log: 2025-06-02 20:00:00 TRADE: DOGEUSDT | Direction=Sell | Qty=-29279 | Price=0.19498 | Tag=
+2026-03-24T08:42:33.7773186Z TRACE:: Log: 2025-06-03 20:00:00 TRADE: SOLUSDT | Direction=Sell | Qty=-41.36 | Price=155.08 | Tag=
+2026-03-24T08:42:33.7773249Z TRACE:: Log: 2025-06-10 20:00:00 TRADE: MKRUSDT | Direction=Buy | Qty=3.676 | Price=2144.4 | Tag=
+2026-03-24T08:42:33.7773292Z TRACE:: Log: 2025-06-21 20:00:00 TRADE: ETHUSDT | Direction=Sell | Qty=-2.767 | Price=2294.63 | Tag=
+2026-03-24T08:42:33.7773389Z TRACE:: Log: 2025-06-22 20:00:00 TRADE: AAVEUSDT | Direction=Sell | Qty=-29.5 | Price=227.78 | Tag=
+2026-03-24T08:42:33.7773579Z TRACE:: Log: 2025-07-10 20:00:00 TRADE: AAVEUSDT | Direction=Buy | Qty=24.5 | Price=308.68 | Tag=
+2026-03-24T08:42:33.7773626Z TRACE:: Log: 2025-07-10 20:00:00 TRADE: ETHUSDT | Direction=Buy | Qty=2.477 | Price=2950.62 | Tag=
+2026-03-24T08:42:33.7773667Z TRACE:: Log: 2025-07-11 20:00:00 TRADE: XRPUSDT | Direction=Buy | Qty=2639.6 | Price=2.7335 | Tag=
+2026-03-24T08:42:33.7773708Z TRACE:: Log: 2025-07-15 20:00:00 TRADE: MKRUSDT | Direction=Sell | Qty=-2.929 | Price=1869.2 | Tag=
+2026-03-24T08:42:33.7773751Z TRACE:: Log: 2025-07-16 20:00:00 TRADE: ARBUSDT | Direction=Buy | Qty=15673.1 | Price=0.4404 | Tag=
+2026-03-24T08:42:33.7773791Z TRACE:: Log: 2025-07-16 20:00:00 TRADE: BTCUSDT | Direction=Buy | Qty=0.058 | Price=118590.7 | Tag=
+2026-03-24T08:42:33.7773833Z TRACE:: Log: 2025-07-17 20:00:00 TRADE: AVAXUSDT | Direction=Buy | Qty=294 | Price=23.905 | Tag=
+2026-03-24T08:42:33.7773872Z TRACE:: Log: 2025-07-17 20:00:00 TRADE: LINKUSDT | Direction=Buy | Qty=383.11 | Price=17.997 | Tag=
+2026-03-24T08:42:33.7773905Z TRACE:: Log: 2025-07-17 20:00:00 TRADE: BNBUSDT | Direction=Buy | Qty=9.53 | Price=721.11 | Tag=
+2026-03-24T08:42:33.7773938Z TRACE:: Log: 2025-07-18 20:00:00 TRADE: UNIUSDT | Direction=Sell | Qty=-167 | Price=10.134 | Tag=
+2026-03-24T08:42:33.7773971Z TRACE:: Log: 2025-07-19 20:00:00 TRADE: LTCUSDT | Direction=Buy | Qty=60.885 | Price=113.19 | Tag=
+2026-03-24T08:42:33.7774004Z TRACE:: Log: 2025-07-19 20:00:00 TRADE: OPUSDT | Direction=Buy | Qty=8788.5 | Price=0.7624 | Tag=
+2026-03-24T08:42:33.7774036Z TRACE:: Log: 2025-07-20 20:00:00 TRADE: DOGEUSDT | Direction=Buy | Qty=25896 | Price=0.27379 | Tag=
+2026-03-24T08:42:33.7774086Z TRACE:: Log: 2025-07-21 20:00:00 TRADE: ADAUSDT | Direction=Buy | Qty=7633 | Price=0.8891 | Tag=
+2026-03-24T08:42:33.7774124Z TRACE:: Log: 2025-07-21 20:00:00 TRADE: NEARUSDT | Direction=Buy | Qty=2195 | Price=3.021 | Tag=
+2026-03-24T08:42:33.7774156Z TRACE:: Log: 2025-07-21 20:00:00 TRADE: SOLUSDT | Direction=Buy | Qty=33.79 | Price=195.75 | Tag=
+2026-03-24T08:42:33.8275306Z TRACE:: Log: 2025-07-30 20:00:00 TRADE: AAVEUSDT | Direction=Sell | Qty=-18.5 | Price=274.51 | Tag=
+2026-03-24T08:42:33.8275653Z TRACE:: Log: 2025-08-03 20:00:00 TRADE: ARBUSDT | Direction=Sell | Qty=-12682.5 | Price=0.3825 | Tag=
+2026-03-24T08:42:33.8275708Z TRACE:: Log: 2025-08-03 20:00:00 TRADE: NEARUSDT | Direction=Sell | Qty=-1881 | Price=2.442 | Tag=
+2026-03-24T08:42:33.8275749Z TRACE:: Log: 2025-08-05 20:00:00 TRADE: SOLUSDT | Direction=Sell | Qty=-28.7 | Price=163.99 | Tag=
+2026-03-24T08:42:33.8275782Z TRACE:: Log: 2025-08-05 20:00:00 TRADE: DOGEUSDT | Direction=Sell | Qty=-22214 | Price=0.19971 | Tag=
+2026-03-24T08:42:33.8275817Z TRACE:: Log: 2025-08-07 20:00:00 TRADE: ETHUSDT | Direction=Sell | Qty=-0.342 | Price=3908.4 | Tag=
+2026-03-24T08:42:33.8275851Z TRACE:: Log: 2025-08-17 20:00:00 TRADE: LINKUSDT | Direction=Sell | Qty=-51.6 | Price=25.639 | Tag=
+2026-03-24T08:42:33.8275885Z TRACE:: Log: 2025-08-20 20:00:00 TRADE: BTCUSDT | Direction=Sell | Qty=-0.045 | Price=114220.5 | Tag=
+2026-03-24T08:42:33.8275918Z TRACE:: Log: 2025-08-21 20:00:00 TRADE: XRPUSDT | Direction=Sell | Qty=-1939.3 | Price=2.8505 | Tag=
+2026-03-24T08:42:33.8275953Z TRACE:: Log: 2025-08-22 20:00:00 TRADE: ARBUSDT | Direction=Buy | Qty=10679.1 | Price=0.587 | Tag=
+2026-03-24T08:42:33.8275986Z TRACE:: Log: 2025-08-29 20:00:00 TRADE: LTCUSDT | Direction=Sell | Qty=-46.119 | Price=109.86 | Tag=
+2026-03-24T08:42:33.8276016Z TRACE:: Log: 2025-08-29 20:00:00 TRADE: UNIUSDT | Direction=Sell | Qty=-524 | Price=9.629 | Tag=
+2026-03-24T08:42:33.8276100Z TRACE:: Log: 2025-08-29 20:00:00 TRADE: OPUSDT | Direction=Sell | Qty=-7075.4 | Price=0.6927 | Tag=
+2026-03-24T08:42:33.8276139Z TRACE:: Log: 2025-09-04 20:00:00 TRADE: ADAUSDT | Direction=Sell | Qty=-6021 | Price=0.8088 | Tag=
+2026-03-24T08:42:33.8276179Z TRACE:: Log: 2025-09-12 20:00:00 TRADE: SOLUSDT | Direction=Buy | Qty=24.85 | Price=242.07 | Tag=
+2026-03-24T08:42:33.8276214Z TRACE:: Log: 2025-09-12 20:00:00 TRADE: ATOMUSDT | Direction=Buy | Qty=1244.41 | Price=4.747 | Tag=
+2026-03-24T08:42:33.8276373Z TRACE:: Log: 2025-09-13 20:00:00 TRADE: DOGEUSDT | Direction=Buy | Qty=20503 | Price=0.28933 | Tag=
+2026-03-24T08:42:33.8276415Z TRACE:: Log: 2025-09-13 20:00:00 TRADE: DOTUSDT | Direction=Buy | Qty=1313.4 | Price=4.492 | Tag=
+2026-03-24T08:42:33.8276449Z TRACE:: Log: 2025-09-13 20:00:00 TRADE: BNBUSDT | Direction=Sell | Qty=-1.28 | Price=934.21 | Tag=
+2026-03-24T08:42:33.8276484Z TRACE:: Log: 2025-09-17 20:00:00 TRADE: AVAXUSDT | Direction=Sell | Qty=-40 | Price=31.825 | Tag=
+2026-03-24T08:42:33.8777266Z TRACE:: Log: 2025-09-21 20:00:00 TRADE: ATOMUSDT | Direction=Sell | Qty=-1020.87 | Price=4.398 | Tag=
+2026-03-24T08:42:33.8777623Z TRACE:: Log: 2025-09-21 20:00:00 TRADE: ARBUSDT | Direction=Sell | Qty=-9096.8 | Price=0.4803 | Tag=
+2026-03-24T08:42:33.8777681Z TRACE:: Log: 2025-09-23 20:00:00 TRADE: LINKUSDT | Direction=Sell | Qty=-210.13 | Price=21.508 | Tag=
+2026-03-24T08:42:33.8777720Z TRACE:: Log: 2025-09-24 20:00:00 TRADE: ETHUSDT | Direction=Sell | Qty=-1.212 | Price=4150.51 | Tag=
+2026-03-24T08:42:33.8777753Z TRACE:: Log: 2025-09-26 20:00:00 TRADE: DOTUSDT | Direction=Sell | Qty=-1127.4 | Price=3.922 | Tag=
+2026-03-24T08:42:33.8777787Z TRACE:: Log: 2025-09-27 20:00:00 TRADE: SOLUSDT | Direction=Sell | Qty=-21.44 | Price=203.32 | Tag=
+2026-03-24T08:42:33.8777819Z TRACE:: Log: 2025-09-27 20:00:00 TRADE: DOGEUSDT | Direction=Sell | Qty=-18416 | Price=0.23067 | Tag=
+2026-03-24T08:42:33.8777850Z TRACE:: Log: 2025-10-10 20:00:00 TRADE: AVAXUSDT | Direction=Sell | Qty=-203 | Price=20.608 | Tag=
+2026-03-24T08:42:33.9917106Z TRACE:: Synchronizer.GetEnumerator(): Exited thread.
+2026-03-24T08:42:33.9926569Z TRACE:: AlgorithmManager.Run(): Firing On End Of Algorithm...
+2026-03-24T08:42:33.9934737Z TRACE:: Engine.Run(): Exiting Algorithm Manager
+2026-03-24T08:42:33.9959737Z TRACE:: StopSafely(): Waiting for 'Isolator Thread' thread to stop...
+2026-03-24T08:42:33.9962870Z TRACE:: FileSystemDataFeed.Exit(): Start. Setting cancellation token...
+2026-03-24T08:42:33.9980103Z TRACE:: FileSystemDataFeed.Exit(): Exit Finished.
+2026-03-24T08:42:33.9983059Z TRACE:: BacktestingResultHandler.Exit(): starting...
+2026-03-24T08:42:33.9986124Z TRACE:: BacktestingResultHandler.Exit(): Saving logs...
+2026-03-24T08:42:34.0004779Z TRACE:: StopSafely(): Waiting for 'Result Thread' thread to stop...
+2026-03-24T08:42:34.0125003Z ERROR:: InterestRateProvider.FromCsvFile(): no interest rates were loaded, please make sure the file is present '/lean/Data/alternative/interest-rate/usa/interest-rate.csv'
+2026-03-24T08:42:34.3338665Z TRACE:: Log: 2025-11-01 20:00:00 TRADE: BNBUSDT | Direction=Sell | Qty=-4.96 | Price=1094.22 | Tag=
+2026-03-24T08:42:34.3338993Z TRACE:: Log: 2025-11-03 19:00:00 TRADE: OPUSDT | Direction=Sell | Qty=-4719.6 | Price=0.3526 | Tag=
+2026-03-24T08:42:34.3339022Z TRACE:: Log: 2025-11-03 19:00:00 TRADE: ARBUSDT | Direction=Sell | Qty=-6356.7 | Price=0.2611 | Tag=
+2026-03-24T08:42:34.3339038Z TRACE:: Log: 2025-11-03 19:00:00 TRADE: ATOMUSDT | Direction=Sell | Qty=-639.4 | Price=2.503 | Tag=
+2026-03-24T08:42:34.3339052Z TRACE:: Log: 2025-11-03 19:00:00 TRADE: UNIUSDT | Direction=Sell | Qty=-305 | Price=5.195 | Tag=
+2026-03-24T08:42:34.3339080Z TRACE:: Log: 2025-11-10 19:00:00 TRADE: UNIUSDT | Direction=Buy | Qty=835 | Price=9.34 | Tag=
+2026-03-24T08:42:34.3339097Z TRACE:: Log: 2025-11-17 19:00:00 TRADE: ADAUSDT | Direction=Sell | Qty=-3152 | Price=0.4659 | Tag=
+2026-03-24T08:42:34.3339114Z TRACE:: Log: 2025-11-20 19:00:00 TRADE: LINKUSDT | Direction=Sell | Qty=-116.77 | Price=12.932 | Tag=
+2026-03-24T08:42:34.3339129Z TRACE:: Log: 2025-11-21 19:00:00 TRADE: DOTUSDT | Direction=Sell | Qty=-693.4 | Price=2.345 | Tag=
+2026-03-24T08:42:34.3339141Z TRACE:: Log: 2025-11-21 19:00:00 TRADE: APTUSDT | Direction=Sell | Qty=-677.4 | Price=2.3916 | Tag=
+2026-03-24T08:42:34.3339155Z TRACE:: Log: 2025-11-21 19:00:00 TRADE: DOGEUSDT | Direction=Sell | Qty=-11417 | Price=0.14022 | Tag=
+2026-03-24T08:42:34.3339168Z TRACE:: Log: 2025-11-21 19:00:00 TRADE: AAVEUSDT | Direction=Sell | Qty=-10.1 | Price=157.72 | Tag=
+2026-03-24T08:42:34.3339294Z TRACE:: Log: 2025-11-21 19:00:00 TRADE: SOLUSDT | Direction=Sell | Qty=-11.99 | Price=128.61 | Tag=
+2026-03-24T08:42:34.3339311Z TRACE:: Log: 2025-11-23 19:00:00 TRADE: UNIUSDT | Direction=Sell | Qty=-768 | Price=6.132 | Tag=
+2026-03-24T08:42:34.3339327Z TRACE:: Log: 2025-12-15 19:00:00 TRADE: NEARUSDT | Direction=Sell | Qty=-1065 | Price=1.542 | Tag=
+2026-03-24T08:42:34.3339343Z TRACE:: Log: 2025-12-17 19:00:00 TRADE: AVAXUSDT | Direction=Sell | Qty=-146 | Price=11.857 | Tag=
+2026-03-24T08:42:34.3339356Z TRACE:: Log: 2025-12-17 19:00:00 TRADE: ETHUSDT | Direction=Sell | Qty=-0.586 | Price=2832 | Tag=
+2026-03-24T08:42:34.3339372Z TRACE:: Log: 2025-12-18 19:00:00 TRADE: XRPUSDT | Direction=Sell | Qty=-958.2 | Price=1.8067 | Tag=
+2026-03-24T08:42:34.3339389Z TRACE:: Debug: Algorithm Id:(QuantTutorBench.I07AlphaModel) completed in 3.13 seconds at 9k data points per second. Processing total of 28,880 data points.
+2026-03-24T08:42:34.3339411Z TRACE:: Debug: Your log was successfully created and can be retrieved from: /workspace/results/QuantTutorBench.I07AlphaModel-log.txt
+2026-03-24T08:42:34.3339424Z TRACE:: BacktestingResultHandler.Run(): Ending Thread...
+2026-03-24T08:42:35.6663829Z TRACE:: 
+STATISTICS:: Total Orders 502
+STATISTICS:: Average Win 1.41%
+STATISTICS:: Average Loss -1.41%
+STATISTICS:: Compounding Annual Return -9.886%
+STATISTICS:: Drawdown 77.800%
+STATISTICS:: Expectancy -0.164
+STATISTICS:: Start Equity 100000
+STATISTICS:: End Equity 65909.81
+STATISTICS:: Net Profit -34.090%
+STATISTICS:: Sharpe Ratio 0.023
+STATISTICS:: Sortino Ratio 0.034
+STATISTICS:: Probabilistic Sharpe Ratio 1.076%
+STATISTICS:: Loss Rate 58%
+STATISTICS:: Win Rate 42%
+STATISTICS:: Profit-Loss Ratio 1.00
+STATISTICS:: Alpha 0
+STATISTICS:: Beta 0
+STATISTICS:: Annual Standard Deviation 0.429
+STATISTICS:: Annual Variance 0.184
+STATISTICS:: Information Ratio 0.046
+STATISTICS:: Tracking Error 0.429
+STATISTICS:: Treynor Ratio 0
+STATISTICS:: Total Fees ₮0.00
+STATISTICS:: Estimated Strategy Capacity ₮0
+STATISTICS:: Lowest Capacity Asset MATICUSDT 18R
+STATISTICS:: Portfolio Turnover 2.81%
+STATISTICS:: Drawdown Recovery 76
+STATISTICS:: OrderListHash db5b1088dd6b79bf4e355ecc3af18a50
+2026-03-24T08:42:35.6664034Z TRACE:: BacktestingResultHandler.SendAnalysisResult(): Processed final packet
+2026-03-24T08:42:35.6665978Z TRACE:: Engine.Run(): Disconnecting from brokerage...
+2026-03-24T08:42:35.6666296Z TRACE:: Engine.Run(): Disposing of setup handler...
+2026-03-24T08:42:35.6666422Z TRACE:: Engine.Main(): Analysis Completed and Results Posted.
+2026-03-24T08:42:35.6668017Z TRACE:: DataMonitor.Exit(): start...
+2026-03-24T08:42:35.6668155Z TRACE:: StopSafely(): Waiting for '' thread to stop...
+2026-03-24T08:42:35.6676110Z TRACE:: DataMonitor.GenerateReport():
+DATA USAGE:: Total data requests 203
+DATA USAGE:: Succeeded data requests 20
+DATA USAGE:: Failed data requests 183
+DATA USAGE:: Failed data requests percentage 90%
+DATA USAGE:: Total universe data requests 0
+DATA USAGE:: Succeeded universe data requests 0
+DATA USAGE:: Failed universe data requests 0
+DATA USAGE:: Failed universe data requests percentage 0%
+2026-03-24T08:42:35.6703767Z TRACE:: DataMonitor.Exit(): end
+2026-03-24T08:42:35.6708832Z TRACE:: Engine.Main(): Packet removed from queue: QuantTutorBench.I07AlphaModel
+2026-03-24T08:42:35.6709868Z TRACE:: LeanEngineSystemHandlers.Dispose(): start...
+2026-03-24T08:42:35.6714231Z TRACE:: LeanEngineSystemHandlers.Dispose(): Disposed of system handlers.
+2026-03-24T08:42:35.6715410Z TRACE:: LeanEngineAlgorithmHandlers.Dispose(): start...
+2026-03-24T08:42:35.6716440Z TRACE:: LocalObjectStore.Dispose(): start...
+2026-03-24T08:42:35.6716499Z TRACE:: LocalObjectStore.Dispose(): end
+2026-03-24T08:42:35.6717553Z TRACE:: LeanEngineAlgorithmHandlers.Dispose(): Disposed of algorithm handlers.
