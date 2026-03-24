@@ -3,6 +3,8 @@
 
 Reads raw kline CSVs (from download_binance_full_universe.py) and produces
 the LEAN-format directory tree expected by QuantConnect's data readers.
+This pipeline produces trade-bar files only. It does NOT generate quote or
+margin-interest sidecars for the current benchmark contract.
 
 Supports two security types (--security-type flag):
 

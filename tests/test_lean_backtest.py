@@ -19,12 +19,20 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import time
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
+
+ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from bench.scripts.lean_data_audit import audit_lean_data
 
 # ── Paths ───────────────────────────────────────────────────────────────
 BENCH_ROOT = Path(__file__).parent.parent / "bench"
@@ -32,6 +40,8 @@ ALGO_DIR = BENCH_ROOT / "reference" / "Implementation" / "algorithms"
 REF_DIR = BENCH_ROOT / "reference" / "Implementation" / "result"
 LEAN_DATA = BENCH_ROOT / "data" / "hf_cache" / "lean" / "I"
 DOCKER_IMAGE = "quant-tutor-env:v2.2-lean"
+LATEST_LEAN_IMAGE = os.getenv("LATEST_LEAN_IMAGE", "quant-tutor-env:v2.2-lean-latest")
+LEAN_COMMIT_COMPARE_OUTPUT = os.getenv("LEAN_COMMIT_COMPARE_OUTPUT")
 RUN_BACKTEST_SH = BENCH_ROOT / "docker" / "run_backtest.sh"
 
 # ── Reference expectations ──────────────────────────────────────────────
@@ -153,6 +163,7 @@ def run_lean_in_docker(
     workspace: Path,
     timeout: int = 300,
     fqn: str | None = None,
+    docker_image: str = DOCKER_IMAGE,
 ) -> dict:
     """Run a LEAN backtest via Docker and return parsed results.
 
@@ -181,7 +192,7 @@ def run_lean_in_docker(
         "-v", f"{workspace}:/workspace",
         "-v", f"{LEAN_DATA}:/lean/Data:ro",
         "-e", f"LEAN_RUN_TIMEOUT={timeout}",
-        DOCKER_IMAGE,
+        docker_image,
         "sleep", "infinity",
     ]
     start = subprocess.run(start_cmd, capture_output=True, text=True, timeout=30)
@@ -236,6 +247,7 @@ def run_lean_in_docker(
         "stderr": result.stderr,
         "trades": None,
         "summary": None,
+        "main_result": None,
         "trade_count": 0,
     }
 
@@ -281,7 +293,14 @@ def run_lean_in_docker(
     if output["summary"] is None and main_json and main_json.exists():
         try:
             with open(main_json) as f:
-                output["summary"] = json.load(f)
+                output["main_result"] = json.load(f)
+            output["summary"] = output["main_result"]
+        except (json.JSONDecodeError, IOError):
+            pass
+    elif main_json and main_json.exists():
+        try:
+            with open(main_json) as f:
+                output["main_result"] = json.load(f)
         except (json.JSONDecodeError, IOError):
             pass
 
@@ -369,6 +388,53 @@ def _count_trades_from_summary(summary: dict) -> int | None:
                     pass
 
     return None
+
+
+def _count_closed_trades(summary: dict | None) -> int:
+    """Return native LEAN closedTrades length when present."""
+    if not summary:
+        return 0
+    closed_trades = summary.get("totalPerformance", {}).get("closedTrades", [])
+    return len(closed_trades) if isinstance(closed_trades, list) else 0
+
+
+def _image_commit(image: str) -> str | None:
+    """Read the LEAN git SHA baked into an image."""
+    result = subprocess.run(
+        ["docker", "run", "--rm", image, "git", "-C", "/lean", "rev-parse", "HEAD"],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    if result.returncode != 0:
+        return None
+    commit = result.stdout.strip()
+    return commit or None
+
+
+def _diagnose_tradebuilder(images: dict[str, dict]) -> str:
+    """Classify whether the native TradeBuilder gap looks pinned-commit specific."""
+    pinned = images[DOCKER_IMAGE]
+    latest = images[LATEST_LEAN_IMAGE]
+
+    pinned_native = max(pinned["closed_trades"], pinned["total_number_of_trades"] or 0)
+    latest_native = max(latest["closed_trades"], latest["total_number_of_trades"] or 0)
+
+    if latest_native > 0 and pinned_native == 0:
+        return "supports_pinned_commit_hypothesis"
+
+    if latest_native == 0 and pinned_native == 0:
+        if pinned["order_count"] > 0 and latest["order_count"] > 0:
+            return "not_pinned_only_both_builds_show_zero_native_trades"
+        return "insufficient_runtime_activity"
+
+    order_delta = abs((latest["order_count"] or 0) - (pinned["order_count"] or 0))
+    order_baseline = max(latest["order_count"] or 0, pinned["order_count"] or 0, 1)
+    materially_different_orders = order_delta > max(50, int(order_baseline * 0.10))
+    if materially_different_orders:
+        return "commit_changes_behavior_but_not_clean_tradebuilder_isolation"
+
+    return "tradebuilder_behavior_differs_without_full_pinned_only_confirmation"
 
 
 # ── Fixtures ────────────────────────────────────────────────────────────
@@ -507,46 +573,92 @@ def test_lean_data_mounted():
 
 
 def test_dataset_coherence():
-    """Report dataset coherence gaps (informational, not gating).
+    """Run a task-aware audit over the local LEAN cache contract."""
+    result = audit_lean_data()
 
-    Documents the gap between universe.json and available market data
-    so that missing-data failures during backtests are expected.
-    """
-    # Universe vs daily trade data
-    universe = LEAN_DATA / "universe.json"
-    with open(universe) as f:
-        u = json.load(f)
-    universe_count = len(u) if isinstance(u, list) else sum(
-        len(v) if isinstance(v, list) else 1 for v in u.values()
+    print(f"  LEAN-backed tasks audited: {result['summary']['lean_task_count']}")
+    print(f"  Direct missing files:      {result['summary']['direct_missing_count']}")
+    print(f"  Shared runtime gaps:       {result['summary']['shared_runtime_gap_count']}")
+
+    assert result["summary"]["direct_missing_count"] == 0, (
+        f"Declared LEAN contract files missing: {result['direct_missing_files']}"
     )
+    assert result["summary"]["universe_symbol_count"] == 635
 
-    daily_dir = LEAN_DATA / "cryptofuture" / "binance" / "daily"
-    trade_zips = {p.name.replace("_trade.zip", "").upper()
-                  for p in daily_dir.glob("*_trade.zip")}
-    quote_zips = set(daily_dir.glob("*_quote.zip"))
+    inventory = result["resolution_inventory"]
+    assert inventory["daily"]["trade_symbol_count"] == 635
+    assert inventory["daily"]["quote_symbol_count"] == 0
+    assert inventory["hour"]["trade_symbol_count"] == 20
+    assert inventory["4hour"]["trade_symbol_count"] == 20
+    assert inventory["minute"]["trade_symbol_count"] == 5
+    assert inventory["5minute"]["trade_symbol_count"] == 5
 
-    universe_symbols = set(u) if isinstance(u, list) else set()
-    missing_daily = universe_symbols - trade_zips if universe_symbols else set()
+    assert result["summary"]["shared_runtime_gap_count"] == 0
+    assert result["sidecars"]["quote_policy"] == "de_scoped"
+    assert result["sidecars"]["margin_interest_policy"] == "de_scoped"
 
-    print(f"  Universe:        {universe_count} symbols")
-    print(f"  Daily trade.zip: {len(trade_zips)} symbols")
-    print(f"  Daily quote.zip: {len(quote_zips)} files (not in dataset)")
-    print(f"  Missing daily:   {len(missing_daily)} symbols")
-    if missing_daily:
-        print(f"    Examples: {sorted(missing_daily)[:5]}")
 
-    # Hourly data
-    hourly_dir = LEAN_DATA / "cryptofuture" / "binance" / "hour"
-    if hourly_dir.exists():
-        hourly_zips = list(hourly_dir.glob("*_trade.zip"))
-        print(f"  Hourly trade:    {len(hourly_zips)} symbols")
+@pytest.mark.skipif(
+    os.getenv("RUN_LEAN_COMMIT_ISOLATION") != "1",
+    reason="set RUN_LEAN_COMMIT_ISOLATION=1 to run the pinned-vs-latest LEAN comparison",
+)
+def test_i02_i05_tradebuilder_commit_isolation(tmp_path_factory: pytest.TempPathFactory):
+    """Compare native TradeBuilder output across pinned and latest-side LEAN images."""
+    if not _image_exists(LATEST_LEAN_IMAGE):
+        pytest.skip(f"Latest-side image not found: {LATEST_LEAN_IMAGE}")
 
-    # Sidecar databases
-    sym_props = LEAN_DATA / "symbol-properties"
-    mkt_hours = LEAN_DATA / "market-hours"
-    print(f"  Symbol props:    {'present' if sym_props.exists() else 'MISSING'}")
-    print(f"  Market hours:    {'present' if mkt_hours.exists() else 'MISSING'}")
+    comparison = {
+        "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+        "images": {
+            DOCKER_IMAGE: {"lean_commit": _image_commit(DOCKER_IMAGE)},
+            LATEST_LEAN_IMAGE: {"lean_commit": _image_commit(LATEST_LEAN_IMAGE)},
+        },
+        "tasks": {},
+    }
 
-    # These are informational — the gap is known and tolerated
-    assert len(trade_zips) >= 600, "Too few daily trade zips"
-    assert universe_count >= 600, "Universe too small"
+    for task_id in ("I02", "I05"):
+        ref = TASKS[task_id]
+        algo_src = ALGO_DIR / ref.algo_file
+        fqn = _get_fqn(algo_src)
+        comparison["tasks"][task_id] = {"images": {}}
+
+        for image in (DOCKER_IMAGE, LATEST_LEAN_IMAGE):
+            image_slug = image.replace(":", "_").replace("/", "_")
+            workspace = tmp_path_factory.mktemp(f"{task_id.lower()}_{image_slug}")
+            result = run_lean_in_docker(
+                algo_src,
+                workspace,
+                timeout=ref.timeout,
+                fqn=fqn,
+                docker_image=image,
+            )
+            assert result["exit_code"] == 0, (
+                f"{task_id} failed under {image}: {result['stderr'][-500:]}"
+            )
+
+            summary = result["summary"] or {}
+            main_result = result["main_result"] or summary
+            comparison["tasks"][task_id]["images"][image] = {
+                "lean_commit": comparison["images"][image]["lean_commit"],
+                "closed_trades": _count_closed_trades(main_result),
+                "total_number_of_trades": _count_trades_from_summary(main_result),
+                "statistics_present": bool(
+                    main_result.get("statistics") or main_result.get("Statistics")
+                ),
+                "order_count": result.get("order_count", 0),
+                "net_profit": _extract_metric(summary, "Net Profit"),
+                "sharpe_ratio": _extract_metric(summary, "Sharpe Ratio"),
+                "workspace": str(workspace),
+            }
+
+        diagnosis = _diagnose_tradebuilder(comparison["tasks"][task_id]["images"])
+        comparison["tasks"][task_id]["diagnosis"] = diagnosis
+        assert diagnosis != "insufficient_runtime_activity"
+
+    if LEAN_COMMIT_COMPARE_OUTPUT:
+        output_path = Path(LEAN_COMMIT_COMPARE_OUTPUT)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+    else:
+        output_path = tmp_path_factory.mktemp("lean_compare") / "tradebuilder_commit_compare.json"
+    output_path.write_text(json.dumps(comparison, indent=2))
+    print(f"  TradeBuilder comparison saved to: {output_path}")

@@ -17,6 +17,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import json
 import shutil
 import subprocess
 import sys
@@ -30,12 +31,17 @@ RAW_DIR = DATA_DIR / "raw" / "i-series"
 LEAN_DIR = DATA_DIR / "lean"
 UNIVERSE_PATH = DATA_DIR / "universe.json"
 FLAT_UNIVERSE_PATH = DATA_DIR / "lean_universe.json"
+DOWNLOAD_REPORT_PATH = RAW_DIR / "download_report.json"
+COVERAGE_REPORT_PATH = DATA_DIR / "benchmark_universe_coverage.json"
 
 DEFAULT_REPO_ID = "Varsity-Tech/quant-tutor-bench-data"
 
 
 def phase_download(
-    workers: int, include_funding: bool, universe: Path | None = None
+    workers: int,
+    include_funding: bool,
+    universe: Path | None = None,
+    allow_empty: bool = False,
 ) -> bool:
     """Phase 1: Download raw Binance data."""
     print("\n" + "=" * 60)
@@ -54,7 +60,11 @@ def phase_download(
         str(RAW_DIR),
         "--workers",
         str(workers),
+        "--report-path",
+        str(DOWNLOAD_REPORT_PATH),
     ]
+    if allow_empty:
+        cmd.append("--allow-empty")
     if include_funding:
         cmd.append("--include-funding")
 
@@ -94,9 +104,9 @@ def phase_convert() -> bool:
 
 
 def phase_flat_universe(universe: Path | None = None) -> bool:
-    """Phase 3: Generate flat universe.json and copy into LEAN data dir."""
+    """Phase 3: Freeze structured universe and regenerate flat LEAN universe."""
     print("\n" + "=" * 60)
-    print("Phase 3: Generate flat universe.json")
+    print("Phase 3: Freeze benchmark universe")
     print("=" * 60)
 
     uni = universe or UNIVERSE_PATH
@@ -104,21 +114,26 @@ def phase_flat_universe(universe: Path | None = None) -> bool:
         print(f"ERROR: Structured universe.json not found: {uni}")
         return False
 
-    # Import and run inline to avoid subprocess overhead
     sys.path.insert(0, str(SCRIPTS_DIR))
-    import json
+    from freeze_benchmark_universe import freeze_universe_files
 
-    from generate_flat_universe import generate_flat_universe
+    result = freeze_universe_files(
+        input_path=uni,
+        raw_dir=RAW_DIR,
+        lean_dir=LEAN_DIR,
+        output_path=UNIVERSE_PATH,
+        flat_output_path=FLAT_UNIVERSE_PATH,
+        report_path=COVERAGE_REPORT_PATH,
+    )
+    summary = result["report"]["summary"]
+    print(
+        f"Frozen universe counts: "
+        f"tier1={summary['frozen_counts']['tier1']}, "
+        f"tier2={summary['frozen_counts']['tier2']}, "
+        f"tier3={summary['frozen_counts']['tier3']}"
+    )
+    print(f"Dropped contracts: {summary['total_missing_contracts']}")
 
-    symbols = generate_flat_universe(uni)
-
-    # Write to default location
-    FLAT_UNIVERSE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    with open(FLAT_UNIVERSE_PATH, "w") as f:
-        json.dump(symbols, f, indent=2)
-    print(f"Wrote {len(symbols)} symbols to {FLAT_UNIVERSE_PATH}")
-
-    # Also copy into LEAN data directory so algorithms find it
     lean_universe = LEAN_DIR / "universe.json"
     LEAN_DIR.mkdir(parents=True, exist_ok=True)
     shutil.copy2(str(FLAT_UNIVERSE_PATH), str(lean_universe))
@@ -156,44 +171,48 @@ def phase_upload(repo_id: str) -> bool:
 
 
 def phase_verify() -> bool:
-    """Phase 5: Verify data_manager roundtrip."""
+    """Phase 5: Verify the local benchmark data contract."""
     print("\n" + "=" * 60)
-    print("Phase 5: Verify data_manager roundtrip")
+    print("Phase 5: Verify local data contract")
     print("=" * 60)
 
     try:
         sys.path.insert(0, str(BENCH_ROOT))
-        from scripts.data_manager import ensure_data
+        from scripts.freeze_benchmark_universe import build_coverage_report
 
-        paths = ensure_data(series="lean")
-        print(f"  lean_data: {paths.lean_data}")
-        print(f"  universe:  {paths.universe}")
-
-        # Check lean data exists and has content
-        lean_path = Path(paths.lean_data)
-        if not lean_path.is_dir():
-            print(f"ERROR: LEAN data dir does not exist: {lean_path}")
+        if not UNIVERSE_PATH.exists():
+            print(f"ERROR: Structured universe not found: {UNIVERSE_PATH}")
+            return False
+        if not FLAT_UNIVERSE_PATH.exists():
+            print(f"ERROR: Flat universe not found: {FLAT_UNIVERSE_PATH}")
             return False
 
-        zip_count = len(list(lean_path.rglob("*.zip")))
-        print(f"  zip files: {zip_count}")
+        universe = json.loads(UNIVERSE_PATH.read_text())
+        flat_symbols = json.loads(FLAT_UNIVERSE_PATH.read_text())
+        coverage = build_coverage_report(universe, raw_dir=RAW_DIR, lean_dir=LEAN_DIR)
+        missing = coverage["summary"]["total_missing_contracts"]
 
-        # Check universe.json inside LEAN dir
-        lean_universe = lean_path / "universe.json"
-        if lean_universe.exists():
-            import json
+        print(f"  frozen tier1: {coverage['summary']['frozen_counts']['tier1']}")
+        print(f"  frozen tier2: {coverage['summary']['frozen_counts']['tier2']}")
+        print(f"  frozen tier3: {coverage['summary']['frozen_counts']['tier3']}")
+        print(f"  flat universe symbols: {len(flat_symbols)}")
+        print("  sidecars: quote/margin_interest are explicitly de-scoped")
 
-            with open(lean_universe) as f:
-                symbols = json.load(f)
-            print(f"  lean/universe.json: {len(symbols)} symbols")
-        else:
-            print("  WARNING: lean/universe.json not found")
-
-        if zip_count == 0:
-            print("ERROR: No zip files found in LEAN data directory")
+        if missing != 0:
+            print(f"ERROR: Frozen universe still has {missing} missing contracts")
             return False
 
-        print("Phase 5 complete — verification passed.")
+        if not (LEAN_DIR / "market-hours" / "market-hours-database.json").exists():
+            print("ERROR: market-hours database missing from LEAN data")
+            return False
+        if not (LEAN_DIR / "symbol-properties" / "symbol-properties-database.csv").exists():
+            print("ERROR: symbol-properties database missing from LEAN data")
+            return False
+        if not (LEAN_DIR / "universe.json").exists():
+            print("ERROR: lean/universe.json missing")
+            return False
+
+        print("Phase 5 complete — local contract verification passed.")
         return True
 
     except Exception as e:

@@ -21,7 +21,7 @@ import json
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 import requests
@@ -49,6 +49,7 @@ except ImportError:
 DEFAULT_OUTPUT_DIR = Path(__file__).resolve().parent.parent / "data" / "raw" / "i-series"
 DEFAULT_UNIVERSE = Path(__file__).resolve().parent.parent / "data" / "universe.json"
 FULL_UNIVERSE = Path(__file__).resolve().parent.parent / "data" / "universe_full.json"
+DEFAULT_REPORT_PATH = DEFAULT_OUTPUT_DIR / "download_report.json"
 
 # Tier-to-interval mapping (matches implementation_section_plan.md section 2.4)
 TIER_CONFIG = {
@@ -336,6 +337,17 @@ def parse_args() -> argparse.Namespace:
         help="Number of parallel download threads (default: 8)",
     )
     parser.add_argument(
+        "--report-path",
+        type=Path,
+        default=DEFAULT_REPORT_PATH,
+        help="Path to write the structured download report (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--allow-empty",
+        action="store_true",
+        help="Allow required-tier symbols to resolve to empty instead of failing.",
+    )
+    parser.add_argument(
         "--include-funding",
         action="store_true",
         default=False,
@@ -393,12 +405,15 @@ def main() -> int:
     if skipped:
         print(f"  Skipping {skipped} already-downloaded files (resume mode)")
 
+    job_results: list[dict] = []
+
+    ok_count = 0
+    empty_count = 0
+    error_count = 0
+
     if not pending:
         print("All kline files already downloaded.")
     else:
-        ok_count = 0
-        empty_count = 0
-        error_count = 0
 
         with ThreadPoolExecutor(max_workers=args.workers) as executor:
             futures = {
@@ -411,6 +426,16 @@ def main() -> int:
                     job = futures[future]
                     try:
                         _, status = future.result()
+                        job_results.append(
+                            {
+                                "symbol": job.symbol,
+                                "interval": job.interval,
+                                "status": status,
+                                "start_date": job.start_date.isoformat(),
+                                "end_date": job.end_date.isoformat(),
+                                "output_path": str(job.output_path),
+                            }
+                        )
                         if status == "ok":
                             ok_count += 1
                         elif status == "empty":
@@ -419,11 +444,50 @@ def main() -> int:
                             skipped += 1
                     except Exception as exc:
                         error_count += 1
+                        job_results.append(
+                            {
+                                "symbol": job.symbol,
+                                "interval": job.interval,
+                                "status": "error",
+                                "start_date": job.start_date.isoformat(),
+                                "end_date": job.end_date.isoformat(),
+                                "output_path": str(job.output_path),
+                                "error": str(exc),
+                            }
+                        )
                         tqdm.write(f"  ERROR {job.symbol}/{job.interval}: {exc}")
                     pbar.update(1)
 
         print(f"\nKline results: {ok_count} downloaded, {empty_count} empty, "
               f"{error_count} errors, {skipped} skipped")
+
+    report = {
+        "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+        "universe_mode": args.universe_mode,
+        "universe_path": str(args.universe),
+        "tiers": tiers,
+        "allow_empty": args.allow_empty,
+        "output_dir": str(output_dir),
+        "summary": {
+            "job_count": len(jobs),
+            "pending_count": len(pending),
+            "downloaded_count": ok_count,
+            "empty_count": empty_count,
+            "error_count": error_count,
+            "skipped_count": skipped,
+        },
+        "jobs": sorted(job_results, key=lambda item: (item["symbol"], item["interval"])),
+    }
+    args.report_path.parent.mkdir(parents=True, exist_ok=True)
+    args.report_path.write_text(json.dumps(report, indent=2, ensure_ascii=False) + "\n")
+    print(f"  Wrote report: {args.report_path}")
+
+    if not args.allow_empty and empty_count > 0:
+        print("ERROR: Required benchmark contracts resolved to empty downloads.", file=sys.stderr)
+        return 3
+    if error_count > 0:
+        print("ERROR: One or more downloads failed.", file=sys.stderr)
+        return 4
 
     # Funding rates (sequential, API rate-limited)
     if args.include_funding or args.tier in ("all",):

@@ -8,12 +8,12 @@ Validates the Docker-based LEAN backtest infrastructure end-to-end, **without an
 
 **What it tests:**
 - Docker image (`quant-tutor-env:v2.2-lean`) starts and has .NET 10.0
-- LEAN market data (635 daily symbols, 671 universe) is mounted correctly
+- LEAN market data (635 daily symbols, 635 frozen-symbol universe) is mounted correctly
 - C# algorithms compile via `dotnet build` inside the container
 - LEAN engine runs backtests to completion
 - Result files (summary, orders, trades, logs) are produced
 - Trade counts, net profit, and Sharpe match expected values
-- Dataset coherence (universe vs available data, missing file types)
+- Dataset coherence against the frozen trade-data contract
 
 **Run:**
 ```bash
@@ -59,14 +59,14 @@ pytest tests/test_lean_backtest.py tests/test_lean_eval_helpers.py tests/test_le
 | Test | Trades | trades.json | Orders | Net Profit | Status | Notes |
 |------|:---:|:---:|:---:|:---:|:---:|-------|
 | I01 (SMA single symbol) | 85 | 85 | 340 | 32.910% | PASS | exact trade + profit match |
-| I02 (trend following, ~671 symbols) | 0* | - | 9,305 | -** | PASS | eval reconstructs 1,763 trades and performance from `result.json` + order events |
+| I02 (trend following, ~635 symbols) | 0* | - | 9,305 | -** | PASS | eval reconstructs 1,763 trades and performance from `result.json` + order events |
 | I03 (RSI mean reversion) | 662 | 662 | 2,778 | -102.952% | PASS | exact trade + profit match |
 | I04 (multi-timeframe composite) | 4,026 | 4,026 | 16,104 | -17.194% | PASS | exact trade + profit match |
 | I05 (cross-asset correlation) | 0* | - | 9,178 | -** | PASS | eval reconstructs 2,294 trades and performance from `result.json` + order events |
 | I07 (alpha model framework) | 466 | 466 | 1,004 | -34.090% | PASS | profit matches, trades differ across LEAN builds |
 | Docker smoke | - | - | - | - | PASS | .NET 10.0.200 |
-| Data mount check | - | - | - | - | PASS | 635 daily, 671 universe |
-| Dataset coherence | - | - | - | - | PASS | 36 missing daily, 0 quote.zip, sidecar DBs present |
+| Data mount check | - | - | - | - | PASS | 635 daily, 635 frozen universe |
+| Dataset coherence | - | - | - | - | PASS | 0 trade-contract gaps; quote/margin sidecars de-scoped |
 
 **Latest full validation:**
 ```bash
@@ -107,7 +107,7 @@ pytest tests/test_lean_backtest.py tests/test_lean_eval_helpers.py tests/test_le
 
 2. **Sharpe variance across LEAN builds** — Different LEAN commits produce different Sharpe ratios for identical trades. Trade counts and net profit are exact matches. Tests use 0.2 absolute tolerance for Sharpe.
 
-3. **Dataset gap** — Universe has 671 symbols but only 635 have daily trade data. No quote or margin_interest data. 1,342+ quote.zip and 1,342+ margin_interest requests fail per multi-symbol backtest. Handled gracefully by LEAN.
+3. **Sidecar policy** — The benchmark contract now freezes the trade universe at 635 symbols and explicitly de-scopes `quote` / `margin_interest`. LEAN may still request those sidecars internally; they are informational, not contract failures.
 
 ---
 
@@ -130,7 +130,7 @@ results/
   ANALYSIS.md          # Full analysis: per-task findings, reference comparison,
                        # infrastructure issues, Sharpe variance table, fixes applied
   I01/                 # SMA(20) BTCUSDT — 85 trades, exact match
-  I02/                 # Dual SMA 671 symbols — 9,305 orders
+  I02/                 # Dual SMA 635 frozen symbols — 9,305 orders
   I03/                 # RSI(14) mean reversion — 662 trades, exact match
   I04/                 # Multi-timeframe composite — 4,026 trades, exact match
   I05/                 # Cross-asset correlation — 9,178 orders

@@ -13,6 +13,9 @@ HF repo layout produced:
     lean/universe.json
     raw/i-series/universe.json
 
+This dataset revision intentionally publishes trade-bar data only.
+Quote and margin-interest sidecars are not part of the current contract.
+
 Usage:
     python upload_lean_to_hf.py
     python upload_lean_to_hf.py --lean-dir bench/data/lean --universe bench/data/lean_universe.json
