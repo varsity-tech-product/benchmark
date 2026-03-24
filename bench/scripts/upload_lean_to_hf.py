@@ -1,17 +1,14 @@
 #!/usr/bin/env python3
-"""Upload LEAN-format market data and flat universe.json to HuggingFace.
+"""Upload the canonical LEAN benchmark archive and frozen metadata to HuggingFace.
 
-Uploads the LEAN data directory tree and the flat universe.json to the
-quant-tutor-bench HuggingFace dataset repo, matching the layout that
-data_manager.py expects when downloading.
+Uploads the canonical `I.tar.gz` archive consumed by `data_manager.py`, plus
+the frozen universe metadata used to explain the benchmark contract.
 
 HF repo layout produced:
-    lean/cryptofuture/binance/{daily,hour,minute,...}/*.zip
-    lean/symbol-properties/symbol-properties-database.csv
-    lean/symbol-properties/security-database.csv
-    lean/market-hours/market-hours-database.json
-    lean/universe.json
+    I.tar.gz
     raw/i-series/universe.json
+    raw/i-series/universe_structured.json
+    raw/i-series/benchmark_universe_coverage.json
 
 This dataset revision intentionally publishes trade-bar data only.
 Quote and margin-interest sidecars are not part of the current contract.
@@ -25,27 +22,38 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import tarfile
+import tempfile
 from pathlib import Path
 
 DEFAULT_LEAN_DIR = Path(__file__).resolve().parent.parent / "data" / "lean"
 DEFAULT_UNIVERSE = Path(__file__).resolve().parent.parent / "data" / "lean_universe.json"
+DEFAULT_STRUCTURED_UNIVERSE = Path(__file__).resolve().parent.parent / "data" / "universe.json"
+DEFAULT_COVERAGE_REPORT = Path(__file__).resolve().parent.parent / "data" / "benchmark_universe_coverage.json"
 DEFAULT_REPO_ID = "Varsity-Tech/quant-tutor-bench-data"
+
+
+def build_archive(lean_dir: Path, output_path: Path) -> Path:
+    """Create the canonical I.tar.gz archive with top-level I/ members."""
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with tarfile.open(output_path, "w:gz") as tf:
+        for path in sorted(lean_dir.rglob("*")):
+            if not path.is_file():
+                continue
+            arcname = Path("I") / path.relative_to(lean_dir)
+            tf.add(path, arcname=str(arcname))
+    return output_path
 
 
 def upload(
     lean_dir: Path,
     flat_universe: Path,
+    structured_universe: Path,
+    coverage_report: Path,
     repo_id: str = DEFAULT_REPO_ID,
     dry_run: bool = False,
-) -> None:
-    """Upload LEAN data and flat universe to HuggingFace.
-
-    Uses upload_large_folder for the bulk data (which doesn't support
-    path_in_repo), so we create a staging directory with the correct
-    ``lean/`` prefix via symlinks, then upload that.
-    """
-    import shutil
-    import tempfile
+) -> str | None:
+    """Upload the canonical archive and frozen metadata to HuggingFace."""
 
     from huggingface_hub import HfApi
 
@@ -53,6 +61,10 @@ def upload(
         raise FileNotFoundError(f"LEAN data directory not found: {lean_dir}")
     if not flat_universe.is_file():
         raise FileNotFoundError(f"Flat universe file not found: {flat_universe}")
+    if not structured_universe.is_file():
+        raise FileNotFoundError(f"Structured universe file not found: {structured_universe}")
+    if not coverage_report.is_file():
+        raise FileNotFoundError(f"Coverage report not found: {coverage_report}")
 
     # Count files for summary
     zip_files = list(lean_dir.rglob("*.zip"))
@@ -60,37 +72,43 @@ def upload(
     file_count = sum(1 for f in all_files if f.is_file())
     print(f"LEAN directory: {lean_dir} ({len(zip_files)} zip files, {file_count} total files)")
     print(f"Flat universe:  {flat_universe}")
+    print(f"Structured universe: {structured_universe}")
+    print(f"Coverage report: {coverage_report}")
     print(f"HF repo:        {repo_id}")
 
-    if dry_run:
-        print("\nDRY RUN — no files uploaded.")
-        return
+    with tempfile.TemporaryDirectory(prefix="hf_i_archive_") as tmpdir:
+        archive_path = build_archive(lean_dir, Path(tmpdir) / "I.tar.gz")
+        archive_size_mb = archive_path.stat().st_size / (1024 * 1024)
+        print(f"Archive:        {archive_path} ({archive_size_mb:.1f} MiB)")
 
-    api = HfApi()
-    api.create_repo(repo_id=repo_id, repo_type="dataset", exist_ok=True)
+        if dry_run:
+            print("\nDRY RUN — no files uploaded.")
+            return None
 
-    # Build staging dir: lean/ → symlink to data, plus universe files
-    staging = Path(tempfile.mkdtemp(prefix="hf_upload_"))
-    try:
-        lean_link = staging / "lean"
-        lean_link.symlink_to(lean_dir.resolve())
+        api = HfApi()
+        api.create_repo(repo_id=repo_id, repo_type="dataset", exist_ok=True)
 
-        # Copy universe files into staging
-        raw_dir = staging / "raw" / "i-series"
-        raw_dir.mkdir(parents=True)
-        shutil.copy2(str(flat_universe), str(raw_dir / "universe.json"))
+        uploads = [
+            (archive_path, "I.tar.gz"),
+            (flat_universe, "raw/i-series/universe.json"),
+            (structured_universe, "raw/i-series/universe_structured.json"),
+            (coverage_report, "raw/i-series/benchmark_universe_coverage.json"),
+        ]
 
-        print(f"\nStaging directory: {staging}")
-        print("Uploading via upload_large_folder...")
-        api.upload_large_folder(
-            folder_path=str(staging),
-            repo_id=repo_id,
-            repo_type="dataset",
-        )
-    finally:
-        shutil.rmtree(staging, ignore_errors=True)
+        for local_path, remote_path in uploads:
+            print(f"Uploading {local_path} -> {remote_path}")
+            api.upload_file(
+                path_or_fileobj=str(local_path),
+                path_in_repo=remote_path,
+                repo_id=repo_id,
+                repo_type="dataset",
+                commit_message=f"Update LEAN benchmark data: {remote_path}",
+            )
 
-    print("\nUpload complete.")
+        latest = api.list_repo_commits(repo_id, repo_type="dataset")[0].commit_id
+
+    print(f"\nUpload complete. Latest dataset revision: {latest}")
+    return latest
 
 
 def main() -> int:
@@ -107,6 +125,14 @@ def main() -> int:
         help="Path to flat universe JSON file (default: %(default)s)",
     )
     parser.add_argument(
+        "--structured-universe", type=Path, default=DEFAULT_STRUCTURED_UNIVERSE,
+        help="Path to structured frozen universe JSON file (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--coverage-report", type=Path, default=DEFAULT_COVERAGE_REPORT,
+        help="Path to the coverage report JSON file (default: %(default)s)",
+    )
+    parser.add_argument(
         "--repo-id", default=DEFAULT_REPO_ID,
         help="HuggingFace dataset repo ID (default: %(default)s)",
     )
@@ -117,12 +143,16 @@ def main() -> int:
     args = parser.parse_args()
 
     try:
-        upload(
+        revision = upload(
             lean_dir=args.lean_dir,
             flat_universe=args.universe,
+            structured_universe=args.structured_universe,
+            coverage_report=args.coverage_report,
             repo_id=args.repo_id,
             dry_run=args.dry_run,
         )
+        if revision:
+            print(f"REVISION={revision}")
     except Exception as e:
         print(f"ERROR: {e}")
         return 1
