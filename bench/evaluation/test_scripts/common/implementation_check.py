@@ -250,8 +250,14 @@ def _extract_closed_trades(path: str) -> list:
 
 
 def _extract_closed_trades_from_main_json(results_dir: str) -> list:
-    """Find the main LEAN output JSON (largest, excluding known suffixes)."""
+    """Find the main LEAN output JSON (prefer result.json, else largest JSON)."""
     import glob as _glob
+
+    # Prefer the deterministic name written by run_backtest.sh.
+    result_json = os.path.join(results_dir, "result.json")
+    ct = _extract_closed_trades(result_json)
+    if ct:
+        return ct
 
     _SKIP_SUFFIXES = ("-summary.json", "-order-events.json", "-log.txt")
     _SKIP_PREFIXES = ("data-monitor", "succeeded-data", "failed-data")
@@ -339,7 +345,7 @@ def _pair_trades_from_orders(results_dir: str) -> list[dict]:
                     o, "Price", "fillPrice", "fill_price", "price", default=0
                 )
             ),
-            "time": str(_ci_get_trade(o, "Time", "time", default="")),
+            "time": _ci_get_trade(o, "Time", "time", default=""),
         })
 
     # Simple FIFO pairing: first order = entry, opposite direction = exit
@@ -386,6 +392,12 @@ def _parse_time(t: str | int | float) -> float:
 
     # Strip UTC indicators so strptime works with timezone-naive formats
     clean = str(t).strip()
+    # Handle numeric strings emitted by fallback order pairing, e.g. "1641513600.0"
+    try:
+        numeric = float(clean)
+        return numeric / 1000.0 if numeric > 1e12 else numeric
+    except (ValueError, TypeError):
+        pass
     if clean.endswith("Z"):
         clean = clean[:-1]
     if clean.endswith("+00:00"):
@@ -742,7 +754,7 @@ def load_agent_orders(workspace_path: str) -> list[dict]:
                 "fill_price": float(_ci_get_trade(
                     o, "Price", "fillPrice", "fill_price", "price", default=0
                 )),
-                "time": str(_ci_get_trade(o, "Time", "time", default="")),
+                "time": _ci_get_trade(o, "Time", "time", default=""),
             }
         )
 
@@ -849,6 +861,12 @@ def _parse_date(s) -> "date | None":
         ts = s / 1000.0 if s > 1e12 else float(s)
         return datetime.fromtimestamp(ts, tz=timezone.utc).date()
     clean = str(s).strip()
+    try:
+        numeric = float(clean)
+        ts = numeric / 1000.0 if numeric > 1e12 else numeric
+        return datetime.fromtimestamp(ts, tz=timezone.utc).date()
+    except (ValueError, TypeError, OSError):
+        pass
     if clean.endswith("Z"):
         clean = clean[:-1]
     if clean.endswith("+00:00"):
@@ -864,13 +882,23 @@ def _parse_date(s) -> "date | None":
 def load_agent_summary(workspace_path: str) -> dict:
     """Parse summary.json into standardized metrics dict."""
     lean = collect_lean_results(workspace_path)
-    if lean is None:
-        return {}
+    results_dir = os.path.join(workspace_path, "results")
+
+    def _coerce_float(s, default=0.0):
+        import re as _re
+        if isinstance(s, (int, float)):
+            return float(s)
+        text = str(s).strip()
+        if not text:
+            return default
+        text = text.replace(",", "")
+        match = _re.search(r"-?\d+(?:\.\d+)?", text)
+        return float(match.group(0)) if match else default
 
     def _pct(s):
         if isinstance(s, (int, float)):
             return float(s)
-        return float(str(s).replace("%", "").strip() or "0")
+        return _coerce_float(str(s).replace("%", "").strip(), 0.0)
 
     # LEAN summary can have various key formats
     stats = lean if isinstance(lean, dict) else {}
@@ -880,25 +908,68 @@ def load_agent_summary(workspace_path: str) -> dict:
     elif "statistics" in stats:
         stats = stats["statistics"]
 
-    sharpe = stats.get("Sharpe Ratio", stats.get("sharpe_ratio", "0"))
-    total_return = stats.get("Net Profit", stats.get("total_return", "0%"))
-    drawdown = stats.get("Drawdown", stats.get("max_drawdown", "0%"))
-    win_rate = stats.get("Win Rate", stats.get("win_rate", "0%"))
-    total_trades_str = stats.get(
-        "Total Trades", stats.get("Total Orders", stats.get("total_trades", "0"))
-    )
+    sharpe = _coerce_float(stats.get("Sharpe Ratio", stats.get("sharpe_ratio", "0")), 0.0)
+    total_return = _pct(stats.get("Net Profit", stats.get("total_return", "0%")))
+    drawdown = _pct(stats.get("Drawdown", stats.get("max_drawdown", "0%")))
+    win_rate_raw = _pct(stats.get("Win Rate", stats.get("win_rate", "0%")))
+    total_trades = int(_coerce_float(
+        stats.get("Total Trades", stats.get("total_trades", "0")), 0.0
+    ))
 
-    try:
-        total_trades = int(total_trades_str)
-    except (ValueError, TypeError):
-        total_trades = 0
+    # Fallback for LEAN builds where summary.statistics is empty but result.json
+    # still contains runtime stats and full equity/drawdown charts.
+    if (sharpe == 0.0 and total_return == 0.0 and drawdown == 0.0) and os.path.isdir(results_dir):
+        result_path = os.path.join(results_dir, "result.json")
+        if os.path.exists(result_path):
+            try:
+                with open(result_path) as f:
+                    result = json.load(f)
+            except (json.JSONDecodeError, IOError):
+                result = {}
+
+            runtime = result.get("runtimeStatistics", {})
+            total_return = _pct(runtime.get("Return", total_return))
+
+            charts = result.get("charts", {})
+            drawdown_chart = charts.get("Drawdown", {})
+            drawdown_series = drawdown_chart.get("series", drawdown_chart.get("Series", {}))
+            dd_values = drawdown_series.get("Equity Drawdown", {}).get(
+                "values",
+                drawdown_series.get("Equity Drawdown", {}).get("Values", []),
+            )
+            if dd_values:
+                drawdown = abs(min(point[1] for point in dd_values if len(point) >= 2))
+
+            strat_chart = charts.get("Strategy Equity", {})
+            strat_series = strat_chart.get("series", strat_chart.get("Series", {}))
+            equity_values = strat_series.get("Equity", {}).get(
+                "values",
+                strat_series.get("Equity", {}).get("Values", []),
+            )
+            if equity_values and sharpe == 0.0:
+                closes = [float(v[4]) for v in equity_values if len(v) >= 5 and float(v[4]) != 0.0]
+                if len(closes) >= 2:
+                    import math
+                    returns = [(b - a) / abs(a) for a, b in zip(closes, closes[1:]) if a != 0]
+                    if returns:
+                        mean = sum(returns) / len(returns)
+                        if len(returns) > 1:
+                            var = sum((r - mean) ** 2 for r in returns) / (len(returns) - 1)
+                            std = math.sqrt(var)
+                            if std > 0:
+                                sharpe = (mean / std) * math.sqrt(365)
+
+    if total_trades == 0:
+        total_trades = len(load_agent_trades(workspace_path))
+
+    win_rate = win_rate_raw / 100.0 if win_rate_raw > 1 else win_rate_raw
 
     return {
-        "total_return_pct": _pct(total_return),
-        "sharpe_ratio": float(sharpe or "0"),
-        "max_drawdown_pct": _pct(drawdown),
+        "total_return_pct": total_return,
+        "sharpe_ratio": float(sharpe or 0.0),
+        "max_drawdown_pct": drawdown,
         "total_trades": total_trades,
-        "win_rate": _pct(win_rate) / 100.0 if _pct(win_rate) > 1 else _pct(win_rate),
+        "win_rate": win_rate,
     }
 
 

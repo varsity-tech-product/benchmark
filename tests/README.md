@@ -22,25 +22,48 @@ pytest tests/test_lean_backtest.py -v -s -k I01       # single task (~3 min)
 pytest tests/test_lean_backtest.py -v -s -k "smoke"   # Docker check only
 ```
 
+### `test_lean_eval_helpers.py` — Eval Fallback Regressions
+
+Regression tests for the LEAN eval-helper layer. These are fast, local tests that
+exercise the file-discovery and fallback logic used by the I-series scoring code.
+
+**What it tests:**
+- `result.json` is sufficient when `trades.json` is missing
+- Order-pairing fallback uses clean symbols, real `fillPrice`, and numeric timestamps
+- I02/I05 order-paired trades fully match the reference trade counts and timings
+
+**Run:**
+```bash
+pytest tests/test_lean_eval_helpers.py -q
+pytest tests/test_lean_backtest.py tests/test_lean_eval_helpers.py -q   # full validation
+```
+
 **Prerequisites:**
 - Docker running with `quant-tutor-env:v2.2-lean` image built
 - LEAN data cached at `bench/data/hf_cache/lean/I/` (run `ensure_data(series="lean")` first)
 
-**Results (2026-03-24, post coherence fixes):**
+**Results (2026-03-24, post coherence fixes + fallback repairs):**
 
 | Test | Trades | trades.json | Orders | Net Profit | Status | Notes |
 |------|:---:|:---:|:---:|:---:|:---:|-------|
 | I01 (SMA single symbol) | 85 | 85 | 340 | 32.910% | PASS | exact trade + profit match |
-| I02 (trend following, ~671 symbols) | 0* | - | 9,305 | -** | PASS | eval uses order-pairing fallback (1,763 trades) |
+| I02 (trend following, ~671 symbols) | 0* | - | 9,305 | -** | PASS | eval reconstructs 1,763 trades and performance from `result.json` + order events |
 | I03 (RSI mean reversion) | 662 | 662 | 2,778 | -102.952% | PASS | exact trade + profit match |
 | I04 (multi-timeframe composite) | 4,026 | 4,026 | 16,104 | -17.194% | PASS | exact trade + profit match |
-| I05 (cross-asset correlation) | 0* | - | 9,178 | -** | PASS | eval uses order-pairing fallback |
+| I05 (cross-asset correlation) | 0* | - | 9,178 | -** | PASS | eval reconstructs 2,294 trades and performance from `result.json` + order events |
 | I07 (alpha model framework) | 466 | 466 | 1,004 | -34.090% | PASS | profit matches, trades differ across LEAN builds |
 | Docker smoke | - | - | - | - | PASS | .NET 10.0.200 |
 | Data mount check | - | - | - | - | PASS | 635 daily, 671 universe |
 | Dataset coherence | - | - | - | - | PASS | 36 missing daily, 0 quote.zip, sidecar DBs present |
 
-\* LEAN's `TradeBuilder` reports 0 closed trades for multi-symbol CryptoFuture strategies in this build. The eval readers fall back to FIFO order-pairing.
+**Latest full validation:**
+```bash
+pytest tests/test_lean_backtest.py tests/test_lean_eval_helpers.py -q
+# 12 passed in 982.56s (0:16:22)
+```
+
+\* LEAN's `TradeBuilder` reports 0 closed trades for multi-symbol CryptoFuture strategies in this build.
+\** Top-level `summary.json` statistics are empty for those runs; the eval layer recovers trades from order events and performance from `result.json`.
 
 **Coherence fixes applied (this session):**
 
@@ -54,9 +77,15 @@ pytest tests/test_lean_backtest.py -v -s -k "smoke"   # Docker check only
 
 5. **Test assertions tightened** — Net profit asserted (was print-only), exit-code override narrowed to code 4 only (was 3+4), `Total Orders` removed from trade-count fallback.
 
+6. **Order-pairing repaired** — I02/I05 fallback trades now use `symbolValue`/`fillPrice`, strip LEAN suffixes (e.g. `ADAUSDT 18R` → `ADAUSDT`), and keep numeric timestamps instead of stringifying epoch values.
+
+7. **Trade matching hardened** — `match_trades()` now requires symbol equality, preventing cross-symbol false matches.
+
+8. **`result.json` fallback completed** — Eval helpers now prefer deterministic `result.json` when reconstructing closed trades and recover I02/I05 performance metrics from `runtimeStatistics` + equity/drawdown charts when `summary.json` is empty.
+
 **Known remaining issues:**
 
-1. **LEAN TradeBuilder quirk** — Multi-symbol CryptoFuture strategies (I02, I05) report `totalNumberOfTrades: 0`. The eval reader now handles this via order-pairing fallback.
+1. **LEAN TradeBuilder quirk** — Multi-symbol CryptoFuture strategies (I02, I05) report `totalNumberOfTrades: 0`. The eval layer now handles this via order-pairing fallback and reconstructs performance from `result.json`.
 
 2. **Sharpe variance across LEAN builds** — Different LEAN commits produce different Sharpe ratios for identical trades. Trade counts and net profit are exact matches. Tests use 0.2 absolute tolerance for Sharpe.
 
@@ -89,6 +118,13 @@ results/
   I05/                 # Cross-asset correlation — 9,178 orders
   I07/                 # Alpha model framework — 466 trades, profit matches
 ```
+
+I02 and I05 deserve special note:
+- `trades.json` is still absent because LEAN emitted `0` closed trades
+- The eval layer now reconstructs the trade list from `orders.json` and performance from `result.json`
+- Current saved goldens score through the real eval helpers:
+  I02 composite `0.597`
+  I05 composite `0.971`
 
 Each task directory contains:
 ```

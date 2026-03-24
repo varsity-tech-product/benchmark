@@ -1,9 +1,13 @@
 # LEAN Backtest Infrastructure — Test Results & Analysis
 
-**Date:** 2026-03-24 (v2 — post coherence fixes)
+**Date:** 2026-03-24 (v3 — post coherence fixes + fallback repairs)
 **Docker Image:** `quant-tutor-env:v2.2-lean` (rebuilt with fixed `run_backtest.sh`)
 **LEAN Data:** 635 daily symbols, 671 universe (2022-01-01 to 2025-12-31)
 **Reference generated with:** `quantconnect/lean:latest` (27.5GB, different LEAN commit)
+
+**Latest full validation:**
+`pytest tests/test_lean_backtest.py tests/test_lean_eval_helpers.py -q`
+→ `12 passed in 982.56s (0:16:22)`
 
 ## Fixes Applied This Session
 
@@ -12,6 +16,9 @@
 3. **Docker image rebuilt**: all fixes baked in, no runtime patching required.
 4. **Trade/order semantics separated** in `tools.py` and `trial_manager.py`: `total_trades` and `total_orders` are now distinct fields.
 5. **Test assertions tightened**: return metric now asserted, exit-code override narrowed to code 4 only, order/trade conflation removed, dataset coherence preflight added.
+6. **Order-pairing repaired**: fallback trades now use `symbolValue`/`fillPrice`, strip LEAN suffixes, and keep numeric timestamps.
+7. **Trade matching hardened**: `match_trades()` now requires symbol equality, preventing cross-symbol false matches.
+8. **Performance fallback repaired**: when `summary.json` is empty for multi-symbol CryptoFuture runs, eval now recovers return/drawdown/sharpe from `result.json` (`runtimeStatistics` + `Strategy Equity` / `Drawdown` charts).
 
 ---
 
@@ -28,17 +35,17 @@
 
 \* LEAN TradeBuilder quirk (see below)
 \** Statistics dict empty when TradeBuilder reports 0 closed trades
-\- No trades.json produced (0 closedTrades); eval uses order-pairing fallback
+\- No trades.json produced (0 closedTrades); eval reconstructs trade/performance layers from `orders.json` + `result.json`
 
 ## Reference Comparison
 
 | Task | Ref Trades | Actual Trades | Ref Sharpe | Actual Sharpe | Ref Net Profit | Actual Net Profit | Verdict |
 |------|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
 | I01 | 85 | **85** | 0.168 | 0.293 | 32.910% | 32.910% | EXACT trades + profit |
-| I02 | 1,763 | 0* (9,305 orders) | - | - | - | - | orders confirm activity |
+| I02 | 1,763 | 0* (9,305 orders) | - | - | - | - | eval reconstructs 1,763 trades, composite 0.597 |
 | I03 | 662 | **662** | -0.335 | -0.338 | -102.952% | -102.952% | EXACT trades + profit |
 | I04 | 4,026 | **4,026** | -0.07 | 0.037 | -17.194% | -17.194% | EXACT trades + profit |
-| I05 | 2,294 | 0* (9,178 orders) | - | - | - | - | orders confirm activity |
+| I05 | 2,294 | 0* (9,178 orders) | - | - | - | - | eval reconstructs 2,294 trades, composite 0.971 |
 | I07 | 179 | 466 | -0.059 | 0.023 | -34.090% | -34.090% | trades differ, profit matches |
 
 ---
@@ -59,9 +66,10 @@ The simplest strategy: long BTCUSDT when price > SMA(20), flatten when below.
 Multi-symbol trend strategy: SMA(10) crosses above SMA(30) → long, below → flatten. Applied to the full universe.
 
 - **0 closed trades but 9,305 order events** — The TradeBuilder in this LEAN build does not correctly pair CryptoFuture entries/exits into round-trip "closed trades" for multi-symbol portfolios. This is a known LEAN version issue, not an infrastructure problem.
+- **Eval fallback now works end-to-end** — `load_agent_trades()` reconstructs 1,763 round-trips from order events, and `load_agent_summary()` reconstructs return/drawdown/sharpe from `result.json`. Current saved golden scores: trade similarity `0.954`, composite `0.597`.
 - **Algo log confirms active trading** — TRADE entries throughout 2022-2025 across hundreds of symbols (BTCUSDT, ETHUSDT, SOLUSDT, etc.).
 - **86% failed data requests** — Expected. The universe has 671 symbols but only 635 have daily data. The 36 missing symbols fail gracefully (no crash).
-- **Verdict:** Infrastructure works. The algo trades actively. The 0-trade count is a LEAN TradeBuilder limitation.
+- **Verdict:** Infrastructure works. The algo trades actively. The 0-trade count is a LEAN TradeBuilder limitation, but the eval layer now recovers usable trade and performance data.
 
 ### I03 — RSI Mean Reversion (PASS)
 
@@ -86,8 +94,9 @@ Composite signal: EMA(20) on 4-hour bars + RSI(14) on 1-hour bars, applied to 20
 Multi-asset correlation/z-score strategy across 50 symbols.
 
 - **0 closed trades but 9,178 order events** — Same TradeBuilder quirk as I02. Multi-symbol CryptoFuture strategies hit this LEAN bug.
+- **Eval fallback now works end-to-end** — `load_agent_trades()` reconstructs 2,294 round-trips from order events, and `load_agent_summary()` reconstructs return/drawdown/sharpe from `result.json`. Current saved golden scores: trade similarity `1.000`, composite `0.971`.
 - **Algo log confirms trading activity** across many symbols throughout the backtest window.
-- **Verdict:** Infrastructure works. Same TradeBuilder issue as I02.
+- **Verdict:** Infrastructure works. Same TradeBuilder issue as I02, but the eval layer now recovers usable trade and performance data.
 
 ### I07 — Alpha Model Framework (PASS)
 
@@ -119,7 +128,7 @@ For multi-symbol CryptoFuture strategies (I02, I05), `totalPerformance.tradeStat
 
 This appears to be a LEAN bug/limitation in the pinned commit where `TradeBuilder` doesn't pair CryptoFuture entries/exits into round-trip trades when many symbols are active simultaneously.
 
-**Impact on eval:** The behavioral scoring in `compute_behavioral_score()` should use order events as a fallback signal when closed trades are unavailable.
+**Impact on eval:** The behavioral scoring in `compute_behavioral_score()` now uses order events as a trade fallback and `result.json` as a performance fallback when top-level LEAN statistics are unavailable.
 
 ### 3. Sharpe Ratio Variance Across LEAN Builds
 
