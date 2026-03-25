@@ -87,8 +87,8 @@ TASK_ALGO_MAP = {
     "E05": "E05_momentum_topn.cs",
 }
 
-# Import canonical config
-sys.path.insert(0, str(BENCH_ROOT))
+# Import canonical config — config/ is one level above BENCH_ROOT (bench/reference/)
+sys.path.insert(0, str(BENCH_ROOT.parent))
 from config.benchmark_config import DATASET_REVISION, LEAN_IMAGE  # noqa: E402
 from config.benchmark_dates import BENCH_END, BENCH_START  # noqa: E402
 
@@ -615,6 +615,26 @@ def run_lean_backtest(
                 str(flat_universe), os.path.join(algo_mount_dir, "universe.json")
             )
 
+        # Copy supplementary data files (e.g. I05_candidate_pairs.json)
+        _SUPPLEMENTARY_DATA = {
+            "I05": "I05_candidate_pairs.json",
+        }
+        supp_filename = _SUPPLEMENTARY_DATA.get(task_id)
+        if supp_filename:
+            # Search in: bench/data/reference/, bench/reference/<series>/result/
+            for supp_dir in [
+                BENCH_ROOT.parent / "data" / "reference",
+                _result_dir_for_task(task_id),
+            ]:
+                supp_src = supp_dir / supp_filename
+                if supp_src.exists():
+                    shutil.copy2(
+                        str(supp_src),
+                        os.path.join(algo_mount_dir, supp_filename),
+                    )
+                    print(f"  Copied {supp_filename} to algo mount dir")
+                    break
+
         # Write LEAN config — point to compiled DLL
         dll_path = "/CustomAlgo/bin/Debug/net10.0/CustomAlgo.dll"
         config = _build_lean_config(class_name, algo_file.name, start_date, end_date)
@@ -745,6 +765,11 @@ def run_lean_backtest(
             json.dump(output, f, indent=2)
 
         print(f"  Saved {len(trades)} trades to {output_path}")
+
+        # Mirror trades to bench/data/reference/ (consumed by eval and signal scripts)
+        eval_ref_dir = BENCH_ROOT.parent / "data" / "reference"
+        eval_ref_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(str(output_path), str(eval_ref_dir / output_path.name))
 
         # Also generate reference positions and summary for behavioral eval
         try:

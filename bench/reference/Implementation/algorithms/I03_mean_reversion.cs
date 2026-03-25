@@ -9,8 +9,9 @@
  *       - Long exit:   RSI > 50
  *       - Short entry: RSI > 70
  *       - Short exit:  RSI < 50
- *   - Stop-loss: 5% trailing from entry
- *   - Sizing: 2% of portfolio per position (max ~50 positions)
+ *   - Stop-loss: 5% fixed from entry price
+ *   - Sizing: 5% of portfolio per position (raised from 2% to avoid
+ *     LEAN's MinimumOrderMarginPortfolioPercentage silent rejection)
  *   - Direction: Long + Short
  *
  * LEAN API: QCAlgorithm, AddCryptoFuture, Market.Binance

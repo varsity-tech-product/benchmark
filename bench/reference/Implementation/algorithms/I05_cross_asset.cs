@@ -2,14 +2,13 @@
  * I05 — Cross-Asset Pairs / Statistical Arbitrage
  *
  * Strategy:
- *   - Universe: ~100 crypto-futures from universe.json
- *   - Pairs selection: C(N,2) pairwise correlation over 20-day lookback
- *       - Select pairs with correlation > 0.80
- *   - Signal: Z-score of the spread (price ratio log-return diff)
+ *   - Universe: Symbols extracted from I05_candidate_pairs.json (tier2 subset)
+ *   - Pairs: 10 pre-computed correlated pairs loaded from I05_candidate_pairs.json
+ *   - Signal: Z-score of the rolling spread (log-return difference)
  *       - Z > +2.0 → short spread (short asset A, long asset B)
  *       - Z < -2.0 → long spread (long asset A, short asset B)
  *       - |Z| < 0.5 → close spread position
- *   - Sizing: Equal notional per leg, max 10 active pairs
+ *   - Sizing: Equal notional per leg (5% per leg), max 10 active pairs
  *   - Rebalance: Daily
  *
  * LEAN API: QCAlgorithm, AddCryptoFuture, Market.Binance
@@ -20,6 +19,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using QuantConnect;
 using QuantConnect.Algorithm;
 using QuantConnect.Data;
@@ -33,25 +33,30 @@ namespace QuantTutorBench
     {
         // ── Configuration ──
         private const int LookbackPeriod = 20;
-        private const decimal CorrelationThreshold = 0.80m;
         private const decimal ZScoreEntry = 2.0m;
         private const decimal ZScoreExit = 0.5m;
         private const int MaxActivePairs = 10;
         private const decimal PerLegWeight = 0.05m;  // 5% per leg
-        private const int MaxSymbols = 50;  // Cap for O(n²) pair computation
         private const decimal InitialCash = 100_000m;
 
         // ── State ──
-        private readonly List<Symbol> _symbols = new();
         private readonly Dictionary<Symbol, RollingWindow<decimal>> _priceHistory = new();
+        private readonly Dictionary<string, Symbol> _tickerToSymbol = new();
 
-        private class PairState
+        private class PairDef
         {
             public Symbol SymbolA;
             public Symbol SymbolB;
+            public int Rank;
+        }
+
+        private class PairState
+        {
+            public PairDef Pair;
             public int Direction;  // +1 = long spread, -1 = short spread, 0 = flat
         }
 
+        private readonly List<PairDef> _candidatePairs = new();
         private readonly List<PairState> _activePairs = new();
         private DateTime _lastRebalance = DateTime.MinValue;
 
@@ -62,27 +67,21 @@ namespace QuantTutorBench
             SetAccountCurrency("USDT");
             SetCash(InitialCash);
 
-            var tickers = LoadUniverse().Take(MaxSymbols).ToList();
-
-            foreach (var ticker in tickers)
-            {
-                var symbol = AddCryptoFuture(ticker, Resolution.Daily, Market.Binance).Symbol;
-                _symbols.Add(symbol);
-                _priceHistory[symbol] = new RollingWindow<decimal>(LookbackPeriod);
-            }
+            // Load candidate pairs and subscribe to their symbols
+            LoadCandidatePairs();
 
             SetWarmUp(LookbackPeriod + 1, Resolution.Daily);
 
-            Log($"I05 initialized with {_symbols.Count} symbols, " +
-                $"lookback={LookbackPeriod}, corr_thresh={CorrelationThreshold}, " +
-                $"z_entry={ZScoreEntry}, z_exit={ZScoreExit}");
+            Log($"I05 initialized with {_tickerToSymbol.Count} symbols from {_candidatePairs.Count} candidate pairs, " +
+                $"lookback={LookbackPeriod}, z_entry={ZScoreEntry}, z_exit={ZScoreExit}");
         }
 
         public override void OnData(Slice data)
         {
             // Update price history
-            foreach (var symbol in _symbols)
+            foreach (var kvp in _tickerToSymbol)
             {
+                var symbol = kvp.Value;
                 if (data.ContainsKey(symbol))
                 {
                     _priceHistory[symbol].Add(data[symbol].Close);
@@ -95,86 +94,55 @@ namespace QuantTutorBench
             if (Time.Date == _lastRebalance) return;
             _lastRebalance = Time.Date;
 
-            // Check all symbols have enough history
-            var readySymbols = _symbols
-                .Where(s => _priceHistory[s].IsReady)
-                .ToList();
-
-            if (readySymbols.Count < 2) return;
-
-            // ── Scan for correlated pairs ──
-            var eligiblePairs = new List<(Symbol a, Symbol b, decimal corr, decimal zScore)>();
-
-            for (int i = 0; i < readySymbols.Count; i++)
-            {
-                for (int j = i + 1; j < readySymbols.Count; j++)
-                {
-                    var symA = readySymbols[i];
-                    var symB = readySymbols[j];
-
-                    var returnsA = ComputeLogReturns(_priceHistory[symA]);
-                    var returnsB = ComputeLogReturns(_priceHistory[symB]);
-
-                    if (returnsA == null || returnsB == null) continue;
-
-                    var corr = ComputeCorrelation(returnsA, returnsB);
-                    if (Math.Abs(corr) < CorrelationThreshold) continue;
-
-                    // Compute spread z-score
-                    var spread = ComputeSpread(returnsA, returnsB);
-                    var zScore = ComputeZScore(spread);
-
-                    eligiblePairs.Add((symA, symB, corr, zScore));
-                }
-            }
-
-            // ── Manage existing pairs ──
+            // ── Manage existing pairs: close if z-score reverts ──
             var pairsToRemove = new List<PairState>();
-            foreach (var pair in _activePairs)
+            foreach (var ps in _activePairs)
             {
-                var zScore = GetCurrentZScore(pair.SymbolA, pair.SymbolB);
+                var zScore = GetCurrentZScore(ps.Pair.SymbolA, ps.Pair.SymbolB);
                 if (!zScore.HasValue || Math.Abs(zScore.Value) < ZScoreExit)
                 {
-                    // Close the spread
-                    if (Portfolio[pair.SymbolA].Invested)
-                        Liquidate(pair.SymbolA, $"Pair exit z={zScore?.ToString("F2") ?? "N/A"}");
-                    if (Portfolio[pair.SymbolB].Invested)
-                        Liquidate(pair.SymbolB, $"Pair exit z={zScore?.ToString("F2") ?? "N/A"}");
-                    pairsToRemove.Add(pair);
+                    if (Portfolio[ps.Pair.SymbolA].Invested)
+                        Liquidate(ps.Pair.SymbolA, $"Pair exit z={zScore?.ToString("F2") ?? "N/A"}");
+                    if (Portfolio[ps.Pair.SymbolB].Invested)
+                        Liquidate(ps.Pair.SymbolB, $"Pair exit z={zScore?.ToString("F2") ?? "N/A"}");
+                    pairsToRemove.Add(ps);
                 }
             }
             foreach (var p in pairsToRemove)
                 _activePairs.Remove(p);
 
-            // ── Enter new pairs ──
-            var sortedPairs = eligiblePairs
-                .Where(p => Math.Abs(p.zScore) >= ZScoreEntry)
-                .OrderByDescending(p => Math.Abs(p.zScore))
-                .ToList();
-
-            foreach (var (symA, symB, corr, zScore) in sortedPairs)
+            // ── Enter new pairs from candidates ──
+            foreach (var pair in _candidatePairs)
             {
                 if (_activePairs.Count >= MaxActivePairs) break;
 
-                // Skip if either symbol is already in an active pair
-                if (_activePairs.Any(p =>
-                    p.SymbolA == symA || p.SymbolA == symB ||
-                    p.SymbolB == symA || p.SymbolB == symB))
+                // Skip if this pair is already active
+                if (_activePairs.Any(ps =>
+                    (ps.Pair.SymbolA == pair.SymbolA && ps.Pair.SymbolB == pair.SymbolB)))
                     continue;
 
+                // Skip if either symbol is already in an active pair
+                if (_activePairs.Any(ps =>
+                    ps.Pair.SymbolA == pair.SymbolA || ps.Pair.SymbolA == pair.SymbolB ||
+                    ps.Pair.SymbolB == pair.SymbolA || ps.Pair.SymbolB == pair.SymbolB))
+                    continue;
+
+                var zScore = GetCurrentZScore(pair.SymbolA, pair.SymbolB);
+                if (!zScore.HasValue) continue;
+
                 int direction;
-                if (zScore > ZScoreEntry)
+                if (zScore.Value > ZScoreEntry)
                 {
                     // Spread is high → short spread (short A, long B)
-                    SetHoldings(symA, -PerLegWeight);
-                    SetHoldings(symB, PerLegWeight);
+                    SetHoldings(pair.SymbolA, -PerLegWeight);
+                    SetHoldings(pair.SymbolB, PerLegWeight);
                     direction = -1;
                 }
-                else if (zScore < -ZScoreEntry)
+                else if (zScore.Value < -ZScoreEntry)
                 {
                     // Spread is low → long spread (long A, short B)
-                    SetHoldings(symA, PerLegWeight);
-                    SetHoldings(symB, -PerLegWeight);
+                    SetHoldings(pair.SymbolA, PerLegWeight);
+                    SetHoldings(pair.SymbolB, -PerLegWeight);
                     direction = 1;
                 }
                 else
@@ -184,12 +152,11 @@ namespace QuantTutorBench
 
                 _activePairs.Add(new PairState
                 {
-                    SymbolA = symA,
-                    SymbolB = symB,
+                    Pair = pair,
                     Direction = direction,
                 });
 
-                Log($"PAIR OPENED: {symA}/{symB} | dir={direction} | z={zScore:F2} | corr={corr:F3}");
+                Log($"PAIR OPENED: {pair.SymbolA}/{pair.SymbolB} (rank={pair.Rank}) | dir={direction} | z={zScore.Value:F2}");
             }
         }
 
@@ -207,6 +174,19 @@ namespace QuantTutorBench
 
         // ── Helpers ──
 
+        private decimal? GetCurrentZScore(Symbol symA, Symbol symB)
+        {
+            if (!_priceHistory.ContainsKey(symA) || !_priceHistory.ContainsKey(symB))
+                return null;
+            if (!_priceHistory[symA].IsReady || !_priceHistory[symB].IsReady)
+                return null;
+            var rA = ComputeLogReturns(_priceHistory[symA]);
+            var rB = ComputeLogReturns(_priceHistory[symB]);
+            if (rA == null || rB == null) return null;
+            var spread = ComputeSpread(rA, rB);
+            return ComputeZScore(spread);
+        }
+
         private decimal[] ComputeLogReturns(RollingWindow<decimal> prices)
         {
             if (prices.Count < 2) return null;
@@ -219,28 +199,6 @@ namespace QuantTutorBench
                 returns[i] = (decimal)Math.Log((double)(p1 / p0));
             }
             return returns;
-        }
-
-        private decimal ComputeCorrelation(decimal[] a, decimal[] b)
-        {
-            int n = Math.Min(a.Length, b.Length);
-            if (n < 3) return 0m;
-
-            var meanA = a.Take(n).Average();
-            var meanB = b.Take(n).Average();
-
-            decimal cov = 0, varA = 0, varB = 0;
-            for (int i = 0; i < n; i++)
-            {
-                var dA = a[i] - meanA;
-                var dB = b[i] - meanB;
-                cov += dA * dB;
-                varA += dA * dA;
-                varB += dB * dB;
-            }
-
-            if (varA == 0 || varB == 0) return 0m;
-            return cov / (decimal)Math.Sqrt((double)(varA * varB));
         }
 
         private decimal[] ComputeSpread(decimal[] returnsA, decimal[] returnsB)
@@ -262,43 +220,79 @@ namespace QuantTutorBench
             return (spread[0] - mean) / std;
         }
 
-        private decimal? GetCurrentZScore(Symbol symA, Symbol symB)
+        private void LoadCandidatePairs()
         {
-            if (!_priceHistory[symA].IsReady || !_priceHistory[symB].IsReady)
-                return null;
-            var rA = ComputeLogReturns(_priceHistory[symA]);
-            var rB = ComputeLogReturns(_priceHistory[symB]);
-            if (rA == null || rB == null) return null;
-            var spread = ComputeSpread(rA, rB);
-            return ComputeZScore(spread);
-        }
-
-        private List<string> LoadUniverse()
-        {
+            // Try multiple paths where I05_candidate_pairs.json may be staged
             var paths = new[]
             {
-                Path.Combine(Globals.DataFolder, "universe.json"),
-                "/data/universe.json",
-                "/lean/Data/universe.json"
+                Path.Combine(Globals.DataFolder, "I05_candidate_pairs.json"),
+                "/CustomAlgo/I05_candidate_pairs.json",
+                "/data/I05_candidate_pairs.json",
+                "/lean/Data/I05_candidate_pairs.json"
             };
 
+            string json = null;
             foreach (var path in paths)
             {
                 if (File.Exists(path))
                 {
-                    var json = File.ReadAllText(path);
-                    var symbols = JsonConvert.DeserializeObject<List<string>>(json);
-                    Log($"Loaded {symbols.Count} symbols from {path}");
-                    return symbols;
+                    json = File.ReadAllText(path);
+                    Log($"Loaded candidate pairs from {path}");
+                    break;
                 }
             }
 
-            Log("WARNING: universe.json not found, using default 10-symbol universe");
-            return new List<string>
+            if (json == null)
             {
-                "BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "XRPUSDT",
-                "ADAUSDT", "DOGEUSDT", "AVAXUSDT", "DOTUSDT", "MATICUSDT"
-            };
+                Log("WARNING: I05_candidate_pairs.json not found, using default pairs");
+                // Fallback: hardcode the top-3 pairs from tier2
+                SubscribeAndAddPair("BTCUSDT", "ETHUSDT", 1);
+                SubscribeAndAddPair("ADAUSDT", "DOTUSDT", 2);
+                SubscribeAndAddPair("ATOMUSDT", "DOTUSDT", 3);
+                return;
+            }
+
+            var doc = JObject.Parse(json);
+            var pairsArray = doc["candidate_pairs"] as JArray;
+            if (pairsArray == null)
+            {
+                Log("ERROR: candidate_pairs array not found in JSON");
+                return;
+            }
+
+            foreach (var item in pairsArray)
+            {
+                var pairTickers = item["pair"].ToObject<List<string>>();
+                var rank = item["rank"].Value<int>();
+                if (pairTickers.Count >= 2)
+                {
+                    SubscribeAndAddPair(pairTickers[0], pairTickers[1], rank);
+                }
+            }
+        }
+
+        private void SubscribeAndAddPair(string tickerA, string tickerB, int rank)
+        {
+            var symA = EnsureSubscribed(tickerA);
+            var symB = EnsureSubscribed(tickerB);
+
+            _candidatePairs.Add(new PairDef
+            {
+                SymbolA = symA,
+                SymbolB = symB,
+                Rank = rank,
+            });
+        }
+
+        private Symbol EnsureSubscribed(string ticker)
+        {
+            if (_tickerToSymbol.ContainsKey(ticker))
+                return _tickerToSymbol[ticker];
+
+            var symbol = AddCryptoFuture(ticker, Resolution.Daily, Market.Binance).Symbol;
+            _tickerToSymbol[ticker] = symbol;
+            _priceHistory[symbol] = new RollingWindow<decimal>(LookbackPeriod);
+            return symbol;
         }
     }
 }
