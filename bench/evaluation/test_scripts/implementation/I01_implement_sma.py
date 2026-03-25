@@ -95,7 +95,7 @@ def evaluate(
         },
         {
             "item": "behavioral_score",
-            "weight": 0.55,
+            "weight": 0.65,
             "score": behavioral.composite_score,
         },
         {"item": "code_patterns", "weight": 0.10, "passed": results["code_patterns"]},
