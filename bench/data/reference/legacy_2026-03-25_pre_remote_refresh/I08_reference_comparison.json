@@ -1,0 +1,41 @@
+{
+  "task_id": "I08",
+  "type": "comparison",
+  "generated_at": "2026-03-12T07:58:21.403680+00:00",
+  "runs": [
+    {
+      "run_id": "insight_weighting",
+      "parameters": {
+        "portfolio_model": "InsightWeighting"
+      },
+      "metrics": {
+        "total_trades": 723,
+        "sharpe_ratio": "-3.6781",
+        "sharpe_source": "computed_from_trades",
+        "total_return": "-131.978%",
+        "max_drawdown": "151.035%",
+        "metrics_source": "computed_from_trades"
+      },
+      "trade_count": 723,
+      "status": "success"
+    },
+    {
+      "run_id": "equal_weighting",
+      "parameters": {
+        "portfolio_model": "EqualWeighting"
+      },
+      "metrics": {
+        "total_orders": 165,
+        "sharpe_ratio": "-0.003",
+        "total_return": "2.492%",
+        "max_drawdown": "53.000%",
+        "win_rate": "27%",
+        "profit_loss_ratio": "0.92",
+        "annual_return": "0.616%",
+        "total_trades": 69
+      },
+      "trade_count": 69,
+      "status": "success"
+    }
+  ]
+}

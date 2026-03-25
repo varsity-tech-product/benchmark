@@ -4,8 +4,8 @@
   "algorithm_file": "I03_mean_reversion.cs",
   "start_date": "2022-01-01",
   "end_date": "2025-12-31",
-  "lean_image": "quantconnect/lean:latest",
-  "generated_at": "2026-03-12T05:46:44.709209+00:00",
+  "lean_image": "quant-tutor-env:v2.2-lean",
+  "generated_at": "2026-03-25T07:16:52.690030+00:00",
   "status": "success",
   "metrics": {
     "total_orders": 1454,
@@ -29,7 +29,7 @@
       "gross_pnl": -399.6011999999995,
       "net_pnl": -399.6011999999995,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-8.01%)"
+      "exit_tag": "Stop-loss hit (-8.01 %)"
     },
     {
       "symbol": "ATOMUSDT",
@@ -55,7 +55,7 @@
       "gross_pnl": -787.3444800000003,
       "net_pnl": -787.3444800000003,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-12.15%)"
+      "exit_tag": "Stop-loss hit (-12.15 %)"
     },
     {
       "symbol": "ATOMUSDT",
@@ -68,7 +68,7 @@
       "gross_pnl": -620.3568000000008,
       "net_pnl": -620.3568000000008,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-8.64%)"
+      "exit_tag": "Stop-loss hit (-8.64 %)"
     },
     {
       "symbol": "ATOMUSDT",
@@ -81,7 +81,7 @@
       "gross_pnl": -1217.52436,
       "net_pnl": -1217.52436,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-20.42%)"
+      "exit_tag": "Stop-loss hit (-20.42 %)"
     },
     {
       "symbol": "ATOMUSDT",
@@ -120,7 +120,7 @@
       "gross_pnl": -474.1200000000004,
       "net_pnl": -474.1200000000004,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-9.85%)"
+      "exit_tag": "Stop-loss hit (-9.85 %)"
     },
     {
       "symbol": "AAVEUSDT",
@@ -172,7 +172,7 @@
       "gross_pnl": -157.71250000000003,
       "net_pnl": -157.71250000000003,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-5.77%)"
+      "exit_tag": "Stop-loss hit (-5.77 %)"
     },
     {
       "symbol": "CELOUSDT",
@@ -198,7 +198,7 @@
       "gross_pnl": -1041.4634999999994,
       "net_pnl": -1041.4634999999994,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-27.92%)"
+      "exit_tag": "Stop-loss hit (-27.92 %)"
     },
     {
       "symbol": "CRVUSDT",
@@ -224,7 +224,7 @@
       "gross_pnl": -550.0403999999999,
       "net_pnl": -550.0403999999999,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-11.03%)"
+      "exit_tag": "Stop-loss hit (-11.03 %)"
     },
     {
       "symbol": "FTMUSDT",
@@ -237,7 +237,7 @@
       "gross_pnl": -745.0182000000005,
       "net_pnl": -745.0182000000005,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-14.82%)"
+      "exit_tag": "Stop-loss hit (-14.82 %)"
     },
     {
       "symbol": "FTMUSDT",
@@ -250,7 +250,7 @@
       "gross_pnl": -1147.5804999999996,
       "net_pnl": -1147.5804999999996,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-18.07%)"
+      "exit_tag": "Stop-loss hit (-18.07 %)"
     },
     {
       "symbol": "FTMUSDT",
@@ -263,7 +263,7 @@
       "gross_pnl": -617.4,
       "net_pnl": -617.4,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-9.12%)"
+      "exit_tag": "Stop-loss hit (-9.12 %)"
     },
     {
       "symbol": "FTMUSDT",
@@ -302,7 +302,7 @@
       "gross_pnl": -220.7199999999999,
       "net_pnl": -220.7199999999999,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-8.08%)"
+      "exit_tag": "Stop-loss hit (-8.08 %)"
     },
     {
       "symbol": "SUSHIUSDT",
@@ -315,7 +315,7 @@
       "gross_pnl": -183.04000000000016,
       "net_pnl": -183.04000000000016,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-5.39%)"
+      "exit_tag": "Stop-loss hit (-5.39 %)"
     },
     {
       "symbol": "SUSHIUSDT",
@@ -328,7 +328,7 @@
       "gross_pnl": -396.85700000000014,
       "net_pnl": -396.85700000000014,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-7.01%)"
+      "exit_tag": "Stop-loss hit (-7.01 %)"
     },
     {
       "symbol": "SUSHIUSDT",
@@ -354,7 +354,7 @@
       "gross_pnl": -420.66999999999945,
       "net_pnl": -420.66999999999945,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-6.75%)"
+      "exit_tag": "Stop-loss hit (-6.75 %)"
     },
     {
       "symbol": "SUSHIUSDT",
@@ -393,7 +393,7 @@
       "gross_pnl": -533.8859999999996,
       "net_pnl": -533.8859999999996,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-13.59%)"
+      "exit_tag": "Stop-loss hit (-13.59 %)"
     },
     {
       "symbol": "MASKUSDT",
@@ -406,7 +406,7 @@
       "gross_pnl": -321.3099999999999,
       "net_pnl": -321.3099999999999,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-10.78%)"
+      "exit_tag": "Stop-loss hit (-10.78 %)"
     },
     {
       "symbol": "MASKUSDT",
@@ -432,7 +432,7 @@
       "gross_pnl": -508.5730000000003,
       "net_pnl": -508.5730000000003,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-8.98%)"
+      "exit_tag": "Stop-loss hit (-8.98 %)"
     },
     {
       "symbol": "MASKUSDT",
@@ -471,7 +471,7 @@
       "gross_pnl": -681.7908000000001,
       "net_pnl": -681.7908000000001,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-16.39%)"
+      "exit_tag": "Stop-loss hit (-16.39 %)"
     },
     {
       "symbol": "SNXUSDT",
@@ -497,7 +497,7 @@
       "gross_pnl": -346.3200000000005,
       "net_pnl": -346.3200000000005,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-6.92%)"
+      "exit_tag": "Stop-loss hit (-6.92 %)"
     },
     {
       "symbol": "ICPUSDT",
@@ -510,7 +510,7 @@
       "gross_pnl": -1260.02,
       "net_pnl": -1260.02,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-20.24%)"
+      "exit_tag": "Stop-loss hit (-20.24 %)"
     },
     {
       "symbol": "RVNUSDT",
@@ -562,7 +562,7 @@
       "gross_pnl": -476.9338799999998,
       "net_pnl": -476.9338799999998,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-9.18%)"
+      "exit_tag": "Stop-loss hit (-9.18 %)"
     },
     {
       "symbol": "LINKUSDT",
@@ -601,7 +601,7 @@
       "gross_pnl": -424.34718000000026,
       "net_pnl": -424.34718000000026,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-6.81%)"
+      "exit_tag": "Stop-loss hit (-6.81 %)"
     },
     {
       "symbol": "LINKUSDT",
@@ -614,7 +614,7 @@
       "gross_pnl": -1139.3866500000004,
       "net_pnl": -1139.3866500000004,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-19.11%)"
+      "exit_tag": "Stop-loss hit (-19.11 %)"
     },
     {
       "symbol": "LINKUSDT",
@@ -666,7 +666,7 @@
       "gross_pnl": -216.50080000000037,
       "net_pnl": -216.50080000000037,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-5.63%)"
+      "exit_tag": "Stop-loss hit (-5.63 %)"
     },
     {
       "symbol": "BANDUSDT",
@@ -692,7 +692,7 @@
       "gross_pnl": -427.43700000000007,
       "net_pnl": -427.43700000000007,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-8.24%)"
+      "exit_tag": "Stop-loss hit (-8.24 %)"
     },
     {
       "symbol": "EGLDUSDT",
@@ -705,7 +705,7 @@
       "gross_pnl": -323.7359999999997,
       "net_pnl": -323.7359999999997,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-6.03%)"
+      "exit_tag": "Stop-loss hit (-6.03 %)"
     },
     {
       "symbol": "EGLDUSDT",
@@ -718,7 +718,7 @@
       "gross_pnl": -1000.3500000000006,
       "net_pnl": -1000.3500000000006,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-20.26%)"
+      "exit_tag": "Stop-loss hit (-20.26 %)"
     },
     {
       "symbol": "EGLDUSDT",
@@ -757,7 +757,7 @@
       "gross_pnl": -421.19000000000017,
       "net_pnl": -421.19000000000017,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-6.23%)"
+      "exit_tag": "Stop-loss hit (-6.23 %)"
     },
     {
       "symbol": "EGLDUSDT",
@@ -783,7 +783,7 @@
       "gross_pnl": -418.0919600000002,
       "net_pnl": -418.0919600000002,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-8.05%)"
+      "exit_tag": "Stop-loss hit (-8.05 %)"
     },
     {
       "symbol": "TRXUSDT",
@@ -796,7 +796,7 @@
       "gross_pnl": -413.20482000000027,
       "net_pnl": -413.20482000000027,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-7.73%)"
+      "exit_tag": "Stop-loss hit (-7.73 %)"
     },
     {
       "symbol": "TRXUSDT",
@@ -822,7 +822,7 @@
       "gross_pnl": -322.3533600000008,
       "net_pnl": -322.3533600000008,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-6.40%)"
+      "exit_tag": "Stop-loss hit (-6.40 %)"
     },
     {
       "symbol": "TRXUSDT",
@@ -861,7 +861,7 @@
       "gross_pnl": -328.81551999999976,
       "net_pnl": -328.81551999999976,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-6.15%)"
+      "exit_tag": "Stop-loss hit (-6.15 %)"
     },
     {
       "symbol": "ETHUSDT",
@@ -874,7 +874,7 @@
       "gross_pnl": -238.6034999999997,
       "net_pnl": -238.6034999999997,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-6.08%)"
+      "exit_tag": "Stop-loss hit (-6.08 %)"
     },
     {
       "symbol": "ETHUSDT",
@@ -900,7 +900,7 @@
       "gross_pnl": -345.17175,
       "net_pnl": -345.17175,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-6.85%)"
+      "exit_tag": "Stop-loss hit (-6.85 %)"
     },
     {
       "symbol": "ETHUSDT",
@@ -939,7 +939,7 @@
       "gross_pnl": -281.0708,
       "net_pnl": -281.0708,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-5.26%)"
+      "exit_tag": "Stop-loss hit (-5.26 %)"
     },
     {
       "symbol": "BNBUSDT",
@@ -952,7 +952,7 @@
       "gross_pnl": -258.3552000000002,
       "net_pnl": -258.3552000000002,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-6.58%)"
+      "exit_tag": "Stop-loss hit (-6.58 %)"
     },
     {
       "symbol": "BNBUSDT",
@@ -978,7 +978,7 @@
       "gross_pnl": -351.83640000000014,
       "net_pnl": -351.83640000000014,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-6.58%)"
+      "exit_tag": "Stop-loss hit (-6.58 %)"
     },
     {
       "symbol": "SOLUSDT",
@@ -991,7 +991,7 @@
       "gross_pnl": -621.0774000000002,
       "net_pnl": -621.0774000000002,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-15.81%)"
+      "exit_tag": "Stop-loss hit (-15.81 %)"
     },
     {
       "symbol": "SOLUSDT",
@@ -1004,7 +1004,7 @@
       "gross_pnl": -234.0526000000002,
       "net_pnl": -234.0526000000002,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-7.85%)"
+      "exit_tag": "Stop-loss hit (-7.85 %)"
     },
     {
       "symbol": "SOLUSDT",
@@ -1017,7 +1017,7 @@
       "gross_pnl": -136.4881,
       "net_pnl": -136.4881,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-5.41%)"
+      "exit_tag": "Stop-loss hit (-5.41 %)"
     },
     {
       "symbol": "SOLUSDT",
@@ -1043,7 +1043,7 @@
       "gross_pnl": -471.00240000000025,
       "net_pnl": -471.00240000000025,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-11.32%)"
+      "exit_tag": "Stop-loss hit (-11.32 %)"
     },
     {
       "symbol": "SOLUSDT",
@@ -1082,7 +1082,7 @@
       "gross_pnl": -375.11999999999955,
       "net_pnl": -375.11999999999955,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-7.09%)"
+      "exit_tag": "Stop-loss hit (-7.09 %)"
     },
     {
       "symbol": "AXSUSDT",
@@ -1095,7 +1095,7 @@
       "gross_pnl": -547.3899999999996,
       "net_pnl": -547.3899999999996,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-14.03%)"
+      "exit_tag": "Stop-loss hit (-14.03 %)"
     },
     {
       "symbol": "AXSUSDT",
@@ -1108,7 +1108,7 @@
       "gross_pnl": -173.7000000000003,
       "net_pnl": -173.7000000000003,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-7.56%)"
+      "exit_tag": "Stop-loss hit (-7.56 %)"
     },
     {
       "symbol": "AXSUSDT",
@@ -1147,7 +1147,7 @@
       "gross_pnl": -733.1300000000001,
       "net_pnl": -733.1300000000001,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-11.35%)"
+      "exit_tag": "Stop-loss hit (-11.35 %)"
     },
     {
       "symbol": "AXSUSDT",
@@ -1160,7 +1160,7 @@
       "gross_pnl": -911.5999999999997,
       "net_pnl": -911.5999999999997,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-14.64%)"
+      "exit_tag": "Stop-loss hit (-14.64 %)"
     },
     {
       "symbol": "AXSUSDT",
@@ -1186,7 +1186,7 @@
       "gross_pnl": -411.78479999999985,
       "net_pnl": -411.78479999999985,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-7.71%)"
+      "exit_tag": "Stop-loss hit (-7.71 %)"
     },
     {
       "symbol": "ENSUSDT",
@@ -1199,7 +1199,7 @@
       "gross_pnl": -505.54569999999995,
       "net_pnl": -505.54569999999995,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-9.46%)"
+      "exit_tag": "Stop-loss hit (-9.46 %)"
     },
     {
       "symbol": "ENSUSDT",
@@ -1212,7 +1212,7 @@
       "gross_pnl": -488.81299999999976,
       "net_pnl": -488.81299999999976,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-9.23%)"
+      "exit_tag": "Stop-loss hit (-9.23 %)"
     },
     {
       "symbol": "ENSUSDT",
@@ -1225,7 +1225,7 @@
       "gross_pnl": -268.64249999999953,
       "net_pnl": -268.64249999999953,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-5.24%)"
+      "exit_tag": "Stop-loss hit (-5.24 %)"
     },
     {
       "symbol": "ENSUSDT",
@@ -1238,7 +1238,7 @@
       "gross_pnl": -706.2139,
       "net_pnl": -706.2139,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-15.37%)"
+      "exit_tag": "Stop-loss hit (-15.37 %)"
     },
     {
       "symbol": "ENSUSDT",
@@ -1251,7 +1251,7 @@
       "gross_pnl": -143.90350000000012,
       "net_pnl": -143.90350000000012,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-5.27%)"
+      "exit_tag": "Stop-loss hit (-5.27 %)"
     },
     {
       "symbol": "ENSUSDT",
@@ -1264,7 +1264,7 @@
       "gross_pnl": -521.0234000000002,
       "net_pnl": -521.0234000000002,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-7.26%)"
+      "exit_tag": "Stop-loss hit (-7.26 %)"
     },
     {
       "symbol": "HOTUSDT",
@@ -1277,7 +1277,7 @@
       "gross_pnl": -292.2130190000004,
       "net_pnl": -292.2130190000004,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-5.47%)"
+      "exit_tag": "Stop-loss hit (-5.47 %)"
     },
     {
       "symbol": "HOTUSDT",
@@ -1290,7 +1290,7 @@
       "gross_pnl": -306.1102140000001,
       "net_pnl": -306.1102140000001,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-5.73%)"
+      "exit_tag": "Stop-loss hit (-5.73 %)"
     },
     {
       "symbol": "HOTUSDT",
@@ -1303,7 +1303,7 @@
       "gross_pnl": -232.71448200000057,
       "net_pnl": -232.71448200000057,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-5.92%)"
+      "exit_tag": "Stop-loss hit (-5.92 %)"
     },
     {
       "symbol": "HOTUSDT",
@@ -1316,7 +1316,7 @@
       "gross_pnl": -158.23439999999985,
       "net_pnl": -158.23439999999985,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-5.30%)"
+      "exit_tag": "Stop-loss hit (-5.30 %)"
     },
     {
       "symbol": "HOTUSDT",
@@ -1355,7 +1355,7 @@
       "gross_pnl": -314.61884999999995,
       "net_pnl": -314.61884999999995,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-5.89%)"
+      "exit_tag": "Stop-loss hit (-5.89 %)"
     },
     {
       "symbol": "PEOPLEUSDT",
@@ -1368,7 +1368,7 @@
       "gross_pnl": -761.1073199999997,
       "net_pnl": -761.1073199999997,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-14.24%)"
+      "exit_tag": "Stop-loss hit (-14.24 %)"
     },
     {
       "symbol": "PEOPLEUSDT",
@@ -1381,7 +1381,7 @@
       "gross_pnl": -650.9867400000004,
       "net_pnl": -650.9867400000004,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-12.29%)"
+      "exit_tag": "Stop-loss hit (-12.29 %)"
     },
     {
       "symbol": "PEOPLEUSDT",
@@ -1394,7 +1394,7 @@
       "gross_pnl": -456.93972,
       "net_pnl": -456.93972,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-8.91%)"
+      "exit_tag": "Stop-loss hit (-8.91 %)"
     },
     {
       "symbol": "PEOPLEUSDT",
@@ -1407,7 +1407,7 @@
       "gross_pnl": -975.8595,
       "net_pnl": -975.8595,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-21.23%)"
+      "exit_tag": "Stop-loss hit (-21.23 %)"
     },
     {
       "symbol": "PEOPLEUSDT",
@@ -1433,7 +1433,7 @@
       "gross_pnl": -1842.8160799999998,
       "net_pnl": -1842.8160799999998,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-29.58%)"
+      "exit_tag": "Stop-loss hit (-29.58 %)"
     },
     {
       "symbol": "ETCUSDT",
@@ -1472,7 +1472,7 @@
       "gross_pnl": -1075.437,
       "net_pnl": -1075.437,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-20.03%)"
+      "exit_tag": "Stop-loss hit (-20.03 %)"
     },
     {
       "symbol": "ETCUSDT",
@@ -1485,7 +1485,7 @@
       "gross_pnl": -399.30624000000034,
       "net_pnl": -399.30624000000034,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-7.52%)"
+      "exit_tag": "Stop-loss hit (-7.52 %)"
     },
     {
       "symbol": "ETCUSDT",
@@ -1511,7 +1511,7 @@
       "gross_pnl": -762.9865499999997,
       "net_pnl": -762.9865499999997,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-12.25%)"
+      "exit_tag": "Stop-loss hit (-12.25 %)"
     },
     {
       "symbol": "DOGEUSDT",
@@ -1550,7 +1550,7 @@
       "gross_pnl": -787.8111000000001,
       "net_pnl": -787.8111000000001,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-15.09%)"
+      "exit_tag": "Stop-loss hit (-15.09 %)"
     },
     {
       "symbol": "QTUMUSDT",
@@ -1576,7 +1576,7 @@
       "gross_pnl": -276.5450000000001,
       "net_pnl": -276.5450000000001,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-5.21%)"
+      "exit_tag": "Stop-loss hit (-5.21 %)"
     },
     {
       "symbol": "QTUMUSDT",
@@ -1589,7 +1589,7 @@
       "gross_pnl": -410.87999999999965,
       "net_pnl": -410.87999999999965,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-7.80%)"
+      "exit_tag": "Stop-loss hit (-7.80 %)"
     },
     {
       "symbol": "QTUMUSDT",
@@ -1641,7 +1641,7 @@
       "gross_pnl": -567.4230000000005,
       "net_pnl": -567.4230000000005,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-9.11%)"
+      "exit_tag": "Stop-loss hit (-9.11 %)"
     },
     {
       "symbol": "ANTUSDT",
@@ -1654,7 +1654,7 @@
       "gross_pnl": -509.9095999999999,
       "net_pnl": -509.9095999999999,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-9.44%)"
+      "exit_tag": "Stop-loss hit (-9.44 %)"
     },
     {
       "symbol": "ANTUSDT",
@@ -1667,7 +1667,7 @@
       "gross_pnl": -499.1414999999999,
       "net_pnl": -499.1414999999999,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-9.73%)"
+      "exit_tag": "Stop-loss hit (-9.73 %)"
     },
     {
       "symbol": "ANTUSDT",
@@ -1680,7 +1680,7 @@
       "gross_pnl": -965.3754999999996,
       "net_pnl": -965.3754999999996,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-21.01%)"
+      "exit_tag": "Stop-loss hit (-21.01 %)"
     },
     {
       "symbol": "ANTUSDT",
@@ -1706,7 +1706,7 @@
       "gross_pnl": -374.60830000000055,
       "net_pnl": -374.60830000000055,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-6.01%)"
+      "exit_tag": "Stop-loss hit (-6.01 %)"
     },
     {
       "symbol": "ANTUSDT",
@@ -1745,7 +1745,7 @@
       "gross_pnl": -377.294592,
       "net_pnl": -377.294592,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-6.98%)"
+      "exit_tag": "Stop-loss hit (-6.98 %)"
     },
     {
       "symbol": "LINAUSDT",
@@ -1758,7 +1758,7 @@
       "gross_pnl": -473.1923699999998,
       "net_pnl": -473.1923699999998,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-9.23%)"
+      "exit_tag": "Stop-loss hit (-9.23 %)"
     },
     {
       "symbol": "LINAUSDT",
@@ -1771,7 +1771,7 @@
       "gross_pnl": -356.60855999999995,
       "net_pnl": -356.60855999999995,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-9.08%)"
+      "exit_tag": "Stop-loss hit (-9.08 %)"
     },
     {
       "symbol": "LINAUSDT",
@@ -1784,7 +1784,7 @@
       "gross_pnl": -254.27906400000003,
       "net_pnl": -254.27906400000003,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-8.52%)"
+      "exit_tag": "Stop-loss hit (-8.52 %)"
     },
     {
       "symbol": "LINAUSDT",
@@ -1823,7 +1823,7 @@
       "gross_pnl": -729.1140999999997,
       "net_pnl": -729.1140999999997,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-13.50%)"
+      "exit_tag": "Stop-loss hit (-13.50 %)"
     },
     {
       "symbol": "LRCUSDT",
@@ -1836,7 +1836,7 @@
       "gross_pnl": -425.8774000000003,
       "net_pnl": -425.8774000000003,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-8.30%)"
+      "exit_tag": "Stop-loss hit (-8.30 %)"
     },
     {
       "symbol": "LRCUSDT",
@@ -1849,7 +1849,7 @@
       "gross_pnl": -587.8655999999997,
       "net_pnl": -587.8655999999997,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-14.96%)"
+      "exit_tag": "Stop-loss hit (-14.96 %)"
     },
     {
       "symbol": "LRCUSDT",
@@ -1862,7 +1862,7 @@
       "gross_pnl": -166.20059999999984,
       "net_pnl": -166.20059999999984,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-5.57%)"
+      "exit_tag": "Stop-loss hit (-5.57 %)"
     },
     {
       "symbol": "LRCUSDT",
@@ -1875,7 +1875,7 @@
       "gross_pnl": -523.5772999999998,
       "net_pnl": -523.5772999999998,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-9.86%)"
+      "exit_tag": "Stop-loss hit (-9.86 %)"
     },
     {
       "symbol": "LRCUSDT",
@@ -1901,7 +1901,7 @@
       "gross_pnl": -296.5776000000005,
       "net_pnl": -296.5776000000005,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-5.49%)"
+      "exit_tag": "Stop-loss hit (-5.49 %)"
     },
     {
       "symbol": "NKNUSDT",
@@ -1914,7 +1914,7 @@
       "gross_pnl": -549.7295499999998,
       "net_pnl": -549.7295499999998,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-10.72%)"
+      "exit_tag": "Stop-loss hit (-10.72 %)"
     },
     {
       "symbol": "NKNUSDT",
@@ -1927,7 +1927,7 @@
       "gross_pnl": -406.77608000000004,
       "net_pnl": -406.77608000000004,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-10.35%)"
+      "exit_tag": "Stop-loss hit (-10.35 %)"
     },
     {
       "symbol": "NKNUSDT",
@@ -1953,7 +1953,7 @@
       "gross_pnl": -333.6728200000005,
       "net_pnl": -333.6728200000005,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-6.93%)"
+      "exit_tag": "Stop-loss hit (-6.93 %)"
     },
     {
       "symbol": "NKNUSDT",
@@ -1992,7 +1992,7 @@
       "gross_pnl": -287.2801819999999,
       "net_pnl": -287.2801819999999,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-5.32%)"
+      "exit_tag": "Stop-loss hit (-5.32 %)"
     },
     {
       "symbol": "REEFUSDT",
@@ -2005,7 +2005,7 @@
       "gross_pnl": -364.773983,
       "net_pnl": -364.773983,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-7.11%)"
+      "exit_tag": "Stop-loss hit (-7.11 %)"
     },
     {
       "symbol": "REEFUSDT",
@@ -2018,7 +2018,7 @@
       "gross_pnl": -295.46262299999984,
       "net_pnl": -295.46262299999984,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-7.52%)"
+      "exit_tag": "Stop-loss hit (-7.52 %)"
     },
     {
       "symbol": "REEFUSDT",
@@ -2044,7 +2044,7 @@
       "gross_pnl": -483.47044199999965,
       "net_pnl": -483.47044199999965,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-7.76%)"
+      "exit_tag": "Stop-loss hit (-7.76 %)"
     },
     {
       "symbol": "REEFUSDT",
@@ -2070,7 +2070,7 @@
       "gross_pnl": -464.9757000000001,
       "net_pnl": -464.9757000000001,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-8.61%)"
+      "exit_tag": "Stop-loss hit (-8.61 %)"
     },
     {
       "symbol": "SFPUSDT",
@@ -2083,7 +2083,7 @@
       "gross_pnl": -460.3482,
       "net_pnl": -460.3482,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-8.98%)"
+      "exit_tag": "Stop-loss hit (-8.98 %)"
     },
     {
       "symbol": "SFPUSDT",
@@ -2096,7 +2096,7 @@
       "gross_pnl": -407.1003999999999,
       "net_pnl": -407.1003999999999,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-10.36%)"
+      "exit_tag": "Stop-loss hit (-10.36 %)"
     },
     {
       "symbol": "SFPUSDT",
@@ -2109,7 +2109,7 @@
       "gross_pnl": -427.2793,
       "net_pnl": -427.2793,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-14.32%)"
+      "exit_tag": "Stop-loss hit (-14.32 %)"
     },
     {
       "symbol": "SFPUSDT",
@@ -2148,7 +2148,7 @@
       "gross_pnl": -434.0335999999999,
       "net_pnl": -434.0335999999999,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-8.03%)"
+      "exit_tag": "Stop-loss hit (-8.03 %)"
     },
     {
       "symbol": "TOMOUSDT",
@@ -2161,7 +2161,7 @@
       "gross_pnl": -477.6491999999999,
       "net_pnl": -477.6491999999999,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-10.39%)"
+      "exit_tag": "Stop-loss hit (-10.39 %)"
     },
     {
       "symbol": "TOMOUSDT",
@@ -2226,7 +2226,7 @@
       "gross_pnl": -423.7749999999999,
       "net_pnl": -423.7749999999999,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-7.94%)"
+      "exit_tag": "Stop-loss hit (-7.94 %)"
     },
     {
       "symbol": "BCHUSDT",
@@ -2239,7 +2239,7 @@
       "gross_pnl": -287.66400000000016,
       "net_pnl": -287.66400000000016,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-7.32%)"
+      "exit_tag": "Stop-loss hit (-7.32 %)"
     },
     {
       "symbol": "BCHUSDT",
@@ -2252,7 +2252,7 @@
       "gross_pnl": -174.86095999999972,
       "net_pnl": -174.86095999999972,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-5.86%)"
+      "exit_tag": "Stop-loss hit (-5.86 %)"
     },
     {
       "symbol": "BCHUSDT",
@@ -2304,7 +2304,7 @@
       "gross_pnl": -334.92059000000046,
       "net_pnl": -334.92059000000046,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-6.51%)"
+      "exit_tag": "Stop-loss hit (-6.51 %)"
     },
     {
       "symbol": "DGBUSDT",
@@ -2317,7 +2317,7 @@
       "gross_pnl": -197.7242400000002,
       "net_pnl": -197.7242400000002,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-5.03%)"
+      "exit_tag": "Stop-loss hit (-5.03 %)"
     },
     {
       "symbol": "DGBUSDT",
@@ -2369,7 +2369,7 @@
       "gross_pnl": -389.14199999999965,
       "net_pnl": -389.14199999999965,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-7.56%)"
+      "exit_tag": "Stop-loss hit (-7.56 %)"
     },
     {
       "symbol": "RAYUSDT",
@@ -2382,7 +2382,7 @@
       "gross_pnl": -514.1519999999997,
       "net_pnl": -514.1519999999997,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-13.09%)"
+      "exit_tag": "Stop-loss hit (-13.09 %)"
     },
     {
       "symbol": "RAYUSDT",
@@ -2395,7 +2395,7 @@
       "gross_pnl": -279.74700000000036,
       "net_pnl": -279.74700000000036,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-9.38%)"
+      "exit_tag": "Stop-loss hit (-9.38 %)"
     },
     {
       "symbol": "RAYUSDT",
@@ -2408,7 +2408,7 @@
       "gross_pnl": -127.38600000000012,
       "net_pnl": -127.38600000000012,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-5.04%)"
+      "exit_tag": "Stop-loss hit (-5.04 %)"
     },
     {
       "symbol": "RAYUSDT",
@@ -2421,7 +2421,7 @@
       "gross_pnl": -419.6790000000006,
       "net_pnl": -419.6790000000006,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-7.37%)"
+      "exit_tag": "Stop-loss hit (-7.37 %)"
     },
     {
       "symbol": "RAYUSDT",
@@ -2434,7 +2434,7 @@
       "gross_pnl": -305.5129999999998,
       "net_pnl": -305.5129999999998,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-5.16%)"
+      "exit_tag": "Stop-loss hit (-5.16 %)"
     },
     {
       "symbol": "RAYUSDT",
@@ -2447,7 +2447,7 @@
       "gross_pnl": -373.21799999999985,
       "net_pnl": -373.21799999999985,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-6.67%)"
+      "exit_tag": "Stop-loss hit (-6.67 %)"
     },
     {
       "symbol": "RAYUSDT",
@@ -2473,7 +2473,7 @@
       "gross_pnl": -429.08580000000006,
       "net_pnl": -429.08580000000006,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-6.89%)"
+      "exit_tag": "Stop-loss hit (-6.89 %)"
     },
     {
       "symbol": "RAYUSDT",
@@ -2486,7 +2486,7 @@
       "gross_pnl": -914.5935000000004,
       "net_pnl": -914.5935000000004,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-15.34%)"
+      "exit_tag": "Stop-loss hit (-15.34 %)"
     },
     {
       "symbol": "RAYUSDT",
@@ -2512,7 +2512,7 @@
       "gross_pnl": -281.2263999999999,
       "net_pnl": -281.2263999999999,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-5.47%)"
+      "exit_tag": "Stop-loss hit (-5.47 %)"
     },
     {
       "symbol": "SXPUSDT",
@@ -2525,7 +2525,7 @@
       "gross_pnl": -273.1845899999995,
       "net_pnl": -273.1845899999995,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-5.94%)"
+      "exit_tag": "Stop-loss hit (-5.94 %)"
     },
     {
       "symbol": "SXPUSDT",
@@ -2538,7 +2538,7 @@
       "gross_pnl": -237.12308000000002,
       "net_pnl": -237.12308000000002,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-8.67%)"
+      "exit_tag": "Stop-loss hit (-8.67 %)"
     },
     {
       "symbol": "SXPUSDT",
@@ -2551,7 +2551,7 @@
       "gross_pnl": -552.7447999999999,
       "net_pnl": -552.7447999999999,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-8.87%)"
+      "exit_tag": "Stop-loss hit (-8.87 %)"
     },
     {
       "symbol": "SXPUSDT",
@@ -2577,7 +2577,7 @@
       "gross_pnl": -431.1215999999996,
       "net_pnl": -431.1215999999996,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-8.41%)"
+      "exit_tag": "Stop-loss hit (-8.41 %)"
     },
     {
       "symbol": "BAKEUSDT",
@@ -2590,7 +2590,7 @@
       "gross_pnl": -513.0395999999998,
       "net_pnl": -513.0395999999998,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-13.06%)"
+      "exit_tag": "Stop-loss hit (-13.06 %)"
     },
     {
       "symbol": "BAKEUSDT",
@@ -2603,7 +2603,7 @@
       "gross_pnl": -155.3640000000001,
       "net_pnl": -155.3640000000001,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-5.21%)"
+      "exit_tag": "Stop-loss hit (-5.21 %)"
     },
     {
       "symbol": "BAKEUSDT",
@@ -2642,7 +2642,7 @@
       "gross_pnl": -566.1343999999999,
       "net_pnl": -566.1343999999999,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-11.75%)"
+      "exit_tag": "Stop-loss hit (-11.75 %)"
     },
     {
       "symbol": "BAKEUSDT",
@@ -2681,7 +2681,7 @@
       "gross_pnl": -429.1232000000002,
       "net_pnl": -429.1232000000002,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-8.37%)"
+      "exit_tag": "Stop-loss hit (-8.37 %)"
     },
     {
       "symbol": "ICXUSDT",
@@ -2694,7 +2694,7 @@
       "gross_pnl": -371.9008000000002,
       "net_pnl": -371.9008000000002,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-9.47%)"
+      "exit_tag": "Stop-loss hit (-9.47 %)"
     },
     {
       "symbol": "ICXUSDT",
@@ -2707,7 +2707,7 @@
       "gross_pnl": -158.83779999999996,
       "net_pnl": -158.83779999999996,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-5.32%)"
+      "exit_tag": "Stop-loss hit (-5.32 %)"
     },
     {
       "symbol": "ICXUSDT",
@@ -2733,7 +2733,7 @@
       "gross_pnl": -304.1458000000002,
       "net_pnl": -304.1458000000002,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-7.31%)"
+      "exit_tag": "Stop-loss hit (-7.31 %)"
     },
     {
       "symbol": "RENUSDT",
@@ -2746,7 +2746,7 @@
       "gross_pnl": -303.18289999999945,
       "net_pnl": -303.18289999999945,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-5.91%)"
+      "exit_tag": "Stop-loss hit (-5.91 %)"
     },
     {
       "symbol": "RENUSDT",
@@ -2759,7 +2759,7 @@
       "gross_pnl": -620.6343999999998,
       "net_pnl": -620.6343999999998,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-15.80%)"
+      "exit_tag": "Stop-loss hit (-15.80 %)"
     },
     {
       "symbol": "RENUSDT",
@@ -2772,7 +2772,7 @@
       "gross_pnl": -176.59250000000014,
       "net_pnl": -176.59250000000014,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-5.92%)"
+      "exit_tag": "Stop-loss hit (-5.92 %)"
     },
     {
       "symbol": "RENUSDT",
@@ -2824,7 +2824,7 @@
       "gross_pnl": -350.75999999999993,
       "net_pnl": -350.75999999999993,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-6.84%)"
+      "exit_tag": "Stop-loss hit (-6.84 %)"
     },
     {
       "symbol": "TLMUSDT",
@@ -2837,7 +2837,7 @@
       "gross_pnl": -516.7777999999996,
       "net_pnl": -516.7777999999996,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-13.15%)"
+      "exit_tag": "Stop-loss hit (-13.15 %)"
     },
     {
       "symbol": "TLMUSDT",
@@ -2850,7 +2850,7 @@
       "gross_pnl": -165.62400000000014,
       "net_pnl": -165.62400000000014,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-5.55%)"
+      "exit_tag": "Stop-loss hit (-5.55 %)"
     },
     {
       "symbol": "TLMUSDT",
@@ -2876,7 +2876,7 @@
       "gross_pnl": -405.1583999999999,
       "net_pnl": -405.1583999999999,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-6.50%)"
+      "exit_tag": "Stop-loss hit (-6.50 %)"
     },
     {
       "symbol": "TLMUSDT",
@@ -2902,7 +2902,7 @@
       "gross_pnl": -505.66186000000016,
       "net_pnl": -505.66186000000016,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-9.86%)"
+      "exit_tag": "Stop-loss hit (-9.86 %)"
     },
     {
       "symbol": "ZECUSDT",
@@ -2915,7 +2915,7 @@
       "gross_pnl": -296.91891999999996,
       "net_pnl": -296.91891999999996,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-7.56%)"
+      "exit_tag": "Stop-loss hit (-7.56 %)"
     },
     {
       "symbol": "ZECUSDT",
@@ -2928,7 +2928,7 @@
       "gross_pnl": -215.44138000000004,
       "net_pnl": -215.44138000000004,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-7.22%)"
+      "exit_tag": "Stop-loss hit (-7.22 %)"
     },
     {
       "symbol": "ZECUSDT",
@@ -2954,7 +2954,7 @@
       "gross_pnl": -391.7399100000004,
       "net_pnl": -391.7399100000004,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-7.29%)"
+      "exit_tag": "Stop-loss hit (-7.29 %)"
     },
     {
       "symbol": "ZECUSDT",
@@ -2967,7 +2967,7 @@
       "gross_pnl": -406.4673200000005,
       "net_pnl": -406.4673200000005,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-7.67%)"
+      "exit_tag": "Stop-loss hit (-7.67 %)"
     },
     {
       "symbol": "AKROUSDT",
@@ -2980,7 +2980,7 @@
       "gross_pnl": -930.7685199999999,
       "net_pnl": -930.7685199999999,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-18.84%)"
+      "exit_tag": "Stop-loss hit (-18.84 %)"
     },
     {
       "symbol": "AKROUSDT",
@@ -3019,7 +3019,7 @@
       "gross_pnl": -1531.93012,
       "net_pnl": -1531.93012,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-24.59%)"
+      "exit_tag": "Stop-loss hit (-24.59 %)"
     },
     {
       "symbol": "AKROUSDT",
@@ -3045,7 +3045,7 @@
       "gross_pnl": -881.7085999999995,
       "net_pnl": -881.7085999999995,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-17.85%)"
+      "exit_tag": "Stop-loss hit (-17.85 %)"
     },
     {
       "symbol": "ALPHAUSDT",
@@ -3058,7 +3058,7 @@
       "gross_pnl": -172.50000000000014,
       "net_pnl": -172.50000000000014,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-6.31%)"
+      "exit_tag": "Stop-loss hit (-6.31 %)"
     },
     {
       "symbol": "ALPHAUSDT",
@@ -3071,7 +3071,7 @@
       "gross_pnl": -177.7571999999999,
       "net_pnl": -177.7571999999999,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-5.78%)"
+      "exit_tag": "Stop-loss hit (-5.78 %)"
     },
     {
       "symbol": "ALPHAUSDT",
@@ -3084,7 +3084,7 @@
       "gross_pnl": -484.3040999999996,
       "net_pnl": -484.3040999999996,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-8.55%)"
+      "exit_tag": "Stop-loss hit (-8.55 %)"
     },
     {
       "symbol": "ALPHAUSDT",
@@ -3097,7 +3097,7 @@
       "gross_pnl": -427.90760000000023,
       "net_pnl": -427.90760000000023,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-8.49%)"
+      "exit_tag": "Stop-loss hit (-8.49 %)"
     },
     {
       "symbol": "ALPHAUSDT",
@@ -3110,7 +3110,7 @@
       "gross_pnl": -1545.0839999999994,
       "net_pnl": -1545.0839999999994,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-35.81%)"
+      "exit_tag": "Stop-loss hit (-35.81 %)"
     },
     {
       "symbol": "ALPHAUSDT",
@@ -3149,7 +3149,7 @@
       "gross_pnl": -248.4465200000003,
       "net_pnl": -248.4465200000003,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-5.03%)"
+      "exit_tag": "Stop-loss hit (-5.03 %)"
     },
     {
       "symbol": "ARPAUSDT",
@@ -3162,7 +3162,7 @@
       "gross_pnl": -473.0649599999997,
       "net_pnl": -473.0649599999997,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-12.04%)"
+      "exit_tag": "Stop-loss hit (-12.04 %)"
     },
     {
       "symbol": "ARPAUSDT",
@@ -3201,7 +3201,7 @@
       "gross_pnl": -350.7939799999996,
       "net_pnl": -350.7939799999996,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-5.63%)"
+      "exit_tag": "Stop-loss hit (-5.63 %)"
     },
     {
       "symbol": "ARPAUSDT",
@@ -3227,7 +3227,7 @@
       "gross_pnl": -258.8572000000003,
       "net_pnl": -258.8572000000003,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-5.24%)"
+      "exit_tag": "Stop-loss hit (-5.24 %)"
     },
     {
       "symbol": "AUDIOUSDT",
@@ -3240,7 +3240,7 @@
       "gross_pnl": -442.85580000000016,
       "net_pnl": -442.85580000000016,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-11.27%)"
+      "exit_tag": "Stop-loss hit (-11.27 %)"
     },
     {
       "symbol": "AUDIOUSDT",
@@ -3253,7 +3253,7 @@
       "gross_pnl": -293.74919999999986,
       "net_pnl": -293.74919999999986,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-9.84%)"
+      "exit_tag": "Stop-loss hit (-9.84 %)"
     },
     {
       "symbol": "AUDIOUSDT",
@@ -3279,7 +3279,7 @@
       "gross_pnl": -390.3625999999994,
       "net_pnl": -390.3625999999994,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-7.27%)"
+      "exit_tag": "Stop-loss hit (-7.27 %)"
     },
     {
       "symbol": "AUDIOUSDT",
@@ -3292,7 +3292,7 @@
       "gross_pnl": -746.9087999999999,
       "net_pnl": -746.9087999999999,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-20.03%)"
+      "exit_tag": "Stop-loss hit (-20.03 %)"
     },
     {
       "symbol": "AUDIOUSDT",
@@ -3318,7 +3318,7 @@
       "gross_pnl": -760.8453300000001,
       "net_pnl": -760.8453300000001,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-15.40%)"
+      "exit_tag": "Stop-loss hit (-15.40 %)"
     },
     {
       "symbol": "BATUSDT",
@@ -3357,7 +3357,7 @@
       "gross_pnl": -1412.16395,
       "net_pnl": -1412.16395,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-22.67%)"
+      "exit_tag": "Stop-loss hit (-22.67 %)"
     },
     {
       "symbol": "NUUSDT",
@@ -3370,7 +3370,7 @@
       "gross_pnl": -707.3154000000003,
       "net_pnl": -707.3154000000003,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-14.32%)"
+      "exit_tag": "Stop-loss hit (-14.32 %)"
     },
     {
       "symbol": "NUUSDT",
@@ -3396,7 +3396,7 @@
       "gross_pnl": -444.9146000000002,
       "net_pnl": -444.9146000000002,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-9.01%)"
+      "exit_tag": "Stop-loss hit (-9.01 %)"
     },
     {
       "symbol": "OGNUSDT",
@@ -3409,7 +3409,7 @@
       "gross_pnl": -357.66279999999983,
       "net_pnl": -357.66279999999983,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-9.10%)"
+      "exit_tag": "Stop-loss hit (-9.10 %)"
     },
     {
       "symbol": "OGNUSDT",
@@ -3422,7 +3422,7 @@
       "gross_pnl": -166.37280000000024,
       "net_pnl": -166.37280000000024,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-5.58%)"
+      "exit_tag": "Stop-loss hit (-5.58 %)"
     },
     {
       "symbol": "OGNUSDT",
@@ -3448,7 +3448,7 @@
       "gross_pnl": -1868.1110999999994,
       "net_pnl": -1868.1110999999994,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-34.93%)"
+      "exit_tag": "Stop-loss hit (-34.93 %)"
     },
     {
       "symbol": "OGNUSDT",
@@ -3461,7 +3461,7 @@
       "gross_pnl": -889.6576000000002,
       "net_pnl": -889.6576000000002,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-16.56%)"
+      "exit_tag": "Stop-loss hit (-16.56 %)"
     },
     {
       "symbol": "OGNUSDT",
@@ -3500,7 +3500,7 @@
       "gross_pnl": -754.1099999999997,
       "net_pnl": -754.1099999999997,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-15.28%)"
+      "exit_tag": "Stop-loss hit (-15.28 %)"
     },
     {
       "symbol": "SRMUSDT",
@@ -3539,7 +3539,7 @@
       "gross_pnl": -901.2879999999999,
       "net_pnl": -901.2879999999999,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-16.78%)"
+      "exit_tag": "Stop-loss hit (-16.78 %)"
     },
     {
       "symbol": "SRMUSDT",
@@ -3552,7 +3552,7 @@
       "gross_pnl": -513.4540000000001,
       "net_pnl": -513.4540000000001,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-9.68%)"
+      "exit_tag": "Stop-loss hit (-9.68 %)"
     },
     {
       "symbol": "SRMUSDT",
@@ -3578,7 +3578,7 @@
       "gross_pnl": -329.66400000000027,
       "net_pnl": -329.66400000000027,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-5.29%)"
+      "exit_tag": "Stop-loss hit (-5.29 %)"
     },
     {
       "symbol": "SRMUSDT",
@@ -3604,7 +3604,7 @@
       "gross_pnl": -890.6439999999998,
       "net_pnl": -890.6439999999998,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-18.03%)"
+      "exit_tag": "Stop-loss hit (-18.03 %)"
     },
     {
       "symbol": "STMXUSDT",
@@ -3630,7 +3630,7 @@
       "gross_pnl": -789.0067200000005,
       "net_pnl": -789.0067200000005,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-14.98%)"
+      "exit_tag": "Stop-loss hit (-14.98 %)"
     },
     {
       "symbol": "STMXUSDT",
@@ -3643,7 +3643,7 @@
       "gross_pnl": -329.83364999999986,
       "net_pnl": -329.83364999999986,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-6.44%)"
+      "exit_tag": "Stop-loss hit (-6.44 %)"
     },
     {
       "symbol": "STMXUSDT",
@@ -3656,7 +3656,7 @@
       "gross_pnl": -246.6744399999996,
       "net_pnl": -246.6744399999996,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-5.72%)"
+      "exit_tag": "Stop-loss hit (-5.72 %)"
     },
     {
       "symbol": "STMXUSDT",
@@ -3669,7 +3669,7 @@
       "gross_pnl": -221.02209999999985,
       "net_pnl": -221.02209999999985,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-5.53%)"
+      "exit_tag": "Stop-loss hit (-5.53 %)"
     },
     {
       "symbol": "STMXUSDT",
@@ -3695,7 +3695,7 @@
       "gross_pnl": -323.8739999999995,
       "net_pnl": -323.8739999999995,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-6.56%)"
+      "exit_tag": "Stop-loss hit (-6.56 %)"
     },
     {
       "symbol": "TRBUSDT",
@@ -3708,7 +3708,7 @@
       "gross_pnl": -423.3959999999995,
       "net_pnl": -423.3959999999995,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-10.78%)"
+      "exit_tag": "Stop-loss hit (-10.78 %)"
     },
     {
       "symbol": "TRBUSDT",
@@ -3747,7 +3747,7 @@
       "gross_pnl": -395.8500000000001,
       "net_pnl": -395.8500000000001,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-6.35%)"
+      "exit_tag": "Stop-loss hit (-6.35 %)"
     },
     {
       "symbol": "ALICEUSDT",
@@ -3760,7 +3760,7 @@
       "gross_pnl": -776.1647999999999,
       "net_pnl": -776.1647999999999,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-16.89%)"
+      "exit_tag": "Stop-loss hit (-16.89 %)"
     },
     {
       "symbol": "ALICEUSDT",
@@ -3773,7 +3773,7 @@
       "gross_pnl": -150.74599999999995,
       "net_pnl": -150.74599999999995,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-5.51%)"
+      "exit_tag": "Stop-loss hit (-5.51 %)"
     },
     {
       "symbol": "ALICEUSDT",
@@ -3812,7 +3812,7 @@
       "gross_pnl": -608.9369999999998,
       "net_pnl": -608.9369999999998,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-13.25%)"
+      "exit_tag": "Stop-loss hit (-13.25 %)"
     },
     {
       "symbol": "ATAUSDT",
@@ -3838,7 +3838,7 @@
       "gross_pnl": -296.5912000000002,
       "net_pnl": -296.5912000000002,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-7.13%)"
+      "exit_tag": "Stop-loss hit (-7.13 %)"
     },
     {
       "symbol": "ATAUSDT",
@@ -3864,7 +3864,7 @@
       "gross_pnl": -1356.3423999999995,
       "net_pnl": -1356.3423999999995,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-21.77%)"
+      "exit_tag": "Stop-loss hit (-21.77 %)"
     },
     {
       "symbol": "DEFIUSDT",
@@ -3877,7 +3877,7 @@
       "gross_pnl": -623.0527999999995,
       "net_pnl": -623.0527999999995,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-13.56%)"
+      "exit_tag": "Stop-loss hit (-13.56 %)"
     },
     {
       "symbol": "DEFIUSDT",
@@ -3890,7 +3890,7 @@
       "gross_pnl": -181.44699999999992,
       "net_pnl": -181.44699999999992,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-6.64%)"
+      "exit_tag": "Stop-loss hit (-6.64 %)"
     },
     {
       "symbol": "DEFIUSDT",
@@ -3903,7 +3903,7 @@
       "gross_pnl": -265.5493999999996,
       "net_pnl": -265.5493999999996,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-5.51%)"
+      "exit_tag": "Stop-loss hit (-5.51 %)"
     },
     {
       "symbol": "DEFIUSDT",
@@ -3942,7 +3942,7 @@
       "gross_pnl": -626.1734,
       "net_pnl": -626.1734,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-13.63%)"
+      "exit_tag": "Stop-loss hit (-13.63 %)"
     },
     {
       "symbol": "FLMUSDT",
@@ -3994,7 +3994,7 @@
       "gross_pnl": -636.6502999999999,
       "net_pnl": -636.6502999999999,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-13.86%)"
+      "exit_tag": "Stop-loss hit (-13.86 %)"
     },
     {
       "symbol": "MTLUSDT",
@@ -4020,7 +4020,7 @@
       "gross_pnl": -399.5901000000002,
       "net_pnl": -399.5901000000002,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-7.93%)"
+      "exit_tag": "Stop-loss hit (-7.93 %)"
     },
     {
       "symbol": "MTLUSDT",
@@ -4059,7 +4059,7 @@
       "gross_pnl": -669.01625,
       "net_pnl": -669.01625,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-14.56%)"
+      "exit_tag": "Stop-loss hit (-14.56 %)"
     },
     {
       "symbol": "RLCUSDT",
@@ -4085,7 +4085,7 @@
       "gross_pnl": -227.8598400000001,
       "net_pnl": -227.8598400000001,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-5.48%)"
+      "exit_tag": "Stop-loss hit (-5.48 %)"
     },
     {
       "symbol": "RLCUSDT",
@@ -4111,7 +4111,7 @@
       "gross_pnl": -662.096568,
       "net_pnl": -662.096568,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-14.41%)"
+      "exit_tag": "Stop-loss hit (-14.41 %)"
     },
     {
       "symbol": "SCUSDT",
@@ -4137,7 +4137,7 @@
       "gross_pnl": -469.0206720000001,
       "net_pnl": -469.0206720000001,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-9.30%)"
+      "exit_tag": "Stop-loss hit (-9.30 %)"
     },
     {
       "symbol": "SCUSDT",
@@ -4176,7 +4176,7 @@
       "gross_pnl": -240.5,
       "net_pnl": -240.5,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-10.16%)"
+      "exit_tag": "Stop-loss hit (-10.16 %)"
     },
     {
       "symbol": "YFIIUSDT",
@@ -4241,7 +4241,7 @@
       "gross_pnl": -248.1747000000001,
       "net_pnl": -248.1747000000001,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-6.32%)"
+      "exit_tag": "Stop-loss hit (-6.32 %)"
     },
     {
       "symbol": "XRPUSDT",
@@ -4254,7 +4254,7 @@
       "gross_pnl": -324.0070399999997,
       "net_pnl": -324.0070399999997,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-5.39%)"
+      "exit_tag": "Stop-loss hit (-5.39 %)"
     },
     {
       "symbol": "XRPUSDT",
@@ -4280,7 +4280,7 @@
       "gross_pnl": -320.03971999999936,
       "net_pnl": -320.03971999999936,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-5.04%)"
+      "exit_tag": "Stop-loss hit (-5.04 %)"
     },
     {
       "symbol": "XRPUSDT",
@@ -4306,7 +4306,7 @@
       "gross_pnl": -301.4035200000001,
       "net_pnl": -301.4035200000001,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-7.67%)"
+      "exit_tag": "Stop-loss hit (-7.67 %)"
     },
     {
       "symbol": "1000SHIBUSDT",
@@ -4345,7 +4345,7 @@
       "gross_pnl": -562.3163999999997,
       "net_pnl": -562.3163999999997,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-14.31%)"
+      "exit_tag": "Stop-loss hit (-14.31 %)"
     },
     {
       "symbol": "1000XECUSDT",
@@ -4358,7 +4358,7 @@
       "gross_pnl": -182.3042399999998,
       "net_pnl": -182.3042399999998,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-6.11%)"
+      "exit_tag": "Stop-loss hit (-6.11 %)"
     },
     {
       "symbol": "1000XECUSDT",
@@ -4371,7 +4371,7 @@
       "gross_pnl": -1569.18867,
       "net_pnl": -1569.18867,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-31.13%)"
+      "exit_tag": "Stop-loss hit (-31.13 %)"
     },
     {
       "symbol": "1000XECUSDT",
@@ -4384,7 +4384,7 @@
       "gross_pnl": -1328.9308500000004,
       "net_pnl": -1328.9308500000004,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-21.33%)"
+      "exit_tag": "Stop-loss hit (-21.33 %)"
     },
     {
       "symbol": "ANKRUSDT",
@@ -4397,7 +4397,7 @@
       "gross_pnl": -547.7348800000002,
       "net_pnl": -547.7348800000002,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-13.94%)"
+      "exit_tag": "Stop-loss hit (-13.94 %)"
     },
     {
       "symbol": "ANKRUSDT",
@@ -4436,7 +4436,7 @@
       "gross_pnl": -216.17700000000022,
       "net_pnl": -216.17700000000022,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-5.20%)"
+      "exit_tag": "Stop-loss hit (-5.20 %)"
     },
     {
       "symbol": "ANKRUSDT",
@@ -4462,7 +4462,7 @@
       "gross_pnl": -456.6284999999998,
       "net_pnl": -456.6284999999998,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-11.62%)"
+      "exit_tag": "Stop-loss hit (-11.62 %)"
     },
     {
       "symbol": "BELUSDT",
@@ -4475,7 +4475,7 @@
       "gross_pnl": -206.39009999999985,
       "net_pnl": -206.39009999999985,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-6.92%)"
+      "exit_tag": "Stop-loss hit (-6.92 %)"
     },
     {
       "symbol": "BELUSDT",
@@ -4527,7 +4527,7 @@
       "gross_pnl": -482.97330000000017,
       "net_pnl": -482.97330000000017,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-12.29%)"
+      "exit_tag": "Stop-loss hit (-12.29 %)"
     },
     {
       "symbol": "BLZUSDT",
@@ -4579,7 +4579,7 @@
       "gross_pnl": -212.77130999999991,
       "net_pnl": -212.77130999999991,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-5.42%)"
+      "exit_tag": "Stop-loss hit (-5.42 %)"
     },
     {
       "symbol": "BTSUSDT",
@@ -4605,7 +4605,7 @@
       "gross_pnl": -269.46777000000014,
       "net_pnl": -269.46777000000014,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-5.35%)"
+      "exit_tag": "Stop-loss hit (-5.35 %)"
     },
     {
       "symbol": "BTSUSDT",
@@ -4631,7 +4631,7 @@
       "gross_pnl": -427.2694999999998,
       "net_pnl": -427.2694999999998,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-10.88%)"
+      "exit_tag": "Stop-loss hit (-10.88 %)"
     },
     {
       "symbol": "CHZUSDT",
@@ -4644,7 +4644,7 @@
       "gross_pnl": -159.55537000000015,
       "net_pnl": -159.55537000000015,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-5.35%)"
+      "exit_tag": "Stop-loss hit (-5.35 %)"
     },
     {
       "symbol": "CHZUSDT",
@@ -4670,7 +4670,7 @@
       "gross_pnl": -465.2417000000007,
       "net_pnl": -465.2417000000007,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-9.23%)"
+      "exit_tag": "Stop-loss hit (-9.23 %)"
     },
     {
       "symbol": "CHZUSDT",
@@ -4709,7 +4709,7 @@
       "gross_pnl": -458.5322699999994,
       "net_pnl": -458.5322699999994,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-11.67%)"
+      "exit_tag": "Stop-loss hit (-11.67 %)"
     },
     {
       "symbol": "COMPUSDT",
@@ -4722,7 +4722,7 @@
       "gross_pnl": -247.72965000000013,
       "net_pnl": -247.72965000000013,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-8.30%)"
+      "exit_tag": "Stop-loss hit (-8.30 %)"
     },
     {
       "symbol": "COMPUSDT",
@@ -4735,7 +4735,7 @@
       "gross_pnl": -353.2924200000001,
       "net_pnl": -353.2924200000001,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-7.33%)"
+      "exit_tag": "Stop-loss hit (-7.33 %)"
     },
     {
       "symbol": "COMPUSDT",
@@ -4748,7 +4748,7 @@
       "gross_pnl": -310.76826000000034,
       "net_pnl": -310.76826000000034,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-8.08%)"
+      "exit_tag": "Stop-loss hit (-8.08 %)"
     },
     {
       "symbol": "COMPUSDT",
@@ -4774,7 +4774,7 @@
       "gross_pnl": -350.75039999999996,
       "net_pnl": -350.75039999999996,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-8.93%)"
+      "exit_tag": "Stop-loss hit (-8.93 %)"
     },
     {
       "symbol": "CTSIUSDT",
@@ -4787,7 +4787,7 @@
       "gross_pnl": -194.8617,
       "net_pnl": -194.8617,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-6.53%)"
+      "exit_tag": "Stop-loss hit (-6.53 %)"
     },
     {
       "symbol": "CTSIUSDT",
@@ -4839,7 +4839,7 @@
       "gross_pnl": -370.6567699999997,
       "net_pnl": -370.6567699999997,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-9.43%)"
+      "exit_tag": "Stop-loss hit (-9.43 %)"
     },
     {
       "symbol": "CVCUSDT",
@@ -4852,7 +4852,7 @@
       "gross_pnl": -169.7360900000003,
       "net_pnl": -169.7360900000003,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-5.69%)"
+      "exit_tag": "Stop-loss hit (-5.69 %)"
     },
     {
       "symbol": "CVCUSDT",
@@ -4904,7 +4904,7 @@
       "gross_pnl": -385.93427200000013,
       "net_pnl": -385.93427200000013,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-9.82%)"
+      "exit_tag": "Stop-loss hit (-9.82 %)"
     },
     {
       "symbol": "DENTUSDT",
@@ -4930,7 +4930,7 @@
       "gross_pnl": -322.8427399999996,
       "net_pnl": -322.8427399999996,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-6.40%)"
+      "exit_tag": "Stop-loss hit (-6.40 %)"
     },
     {
       "symbol": "DENTUSDT",
@@ -4956,7 +4956,7 @@
       "gross_pnl": -449.79200000000037,
       "net_pnl": -449.79200000000037,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-11.45%)"
+      "exit_tag": "Stop-loss hit (-11.45 %)"
     },
     {
       "symbol": "DODOUSDT",
@@ -4969,7 +4969,7 @@
       "gross_pnl": -176.55000000000015,
       "net_pnl": -176.55000000000015,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-5.92%)"
+      "exit_tag": "Stop-loss hit (-5.92 %)"
     },
     {
       "symbol": "DODOUSDT",
@@ -4982,7 +4982,7 @@
       "gross_pnl": -181.79999999999987,
       "net_pnl": -181.79999999999987,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-7.20%)"
+      "exit_tag": "Stop-loss hit (-7.20 %)"
     },
     {
       "symbol": "DODOUSDT",
@@ -5008,7 +5008,7 @@
       "gross_pnl": -1259.0729999999992,
       "net_pnl": -1259.0729999999992,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-20.21%)"
+      "exit_tag": "Stop-loss hit (-20.21 %)"
     },
     {
       "symbol": "ENJUSDT",
@@ -5021,7 +5021,7 @@
       "gross_pnl": -510.74789999999973,
       "net_pnl": -510.74789999999973,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-13.00%)"
+      "exit_tag": "Stop-loss hit (-13.00 %)"
     },
     {
       "symbol": "ENJUSDT",
@@ -5034,7 +5034,7 @@
       "gross_pnl": -203.5691999999998,
       "net_pnl": -203.5691999999998,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-6.82%)"
+      "exit_tag": "Stop-loss hit (-6.82 %)"
     },
     {
       "symbol": "ENJUSDT",
@@ -5060,7 +5060,7 @@
       "gross_pnl": -362.0758000000001,
       "net_pnl": -362.0758000000001,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-5.81%)"
+      "exit_tag": "Stop-loss hit (-5.81 %)"
     },
     {
       "symbol": "ENJUSDT",
@@ -5073,7 +5073,7 @@
       "gross_pnl": -1203.2060999999997,
       "net_pnl": -1203.2060999999997,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-20.18%)"
+      "exit_tag": "Stop-loss hit (-20.18 %)"
     },
     {
       "symbol": "ENJUSDT",
@@ -5099,7 +5099,7 @@
       "gross_pnl": -245.54679999999948,
       "net_pnl": -245.54679999999948,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-6.25%)"
+      "exit_tag": "Stop-loss hit (-6.25 %)"
     },
     {
       "symbol": "EOSUSDT",
@@ -5125,7 +5125,7 @@
       "gross_pnl": -652.9755999999999,
       "net_pnl": -652.9755999999999,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-12.20%)"
+      "exit_tag": "Stop-loss hit (-12.20 %)"
     },
     {
       "symbol": "EOSUSDT",
@@ -5164,7 +5164,7 @@
       "gross_pnl": -529.8400000000001,
       "net_pnl": -529.8400000000001,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-13.49%)"
+      "exit_tag": "Stop-loss hit (-13.49 %)"
     },
     {
       "symbol": "FILUSDT",
@@ -5177,7 +5177,7 @@
       "gross_pnl": -164.68999999999988,
       "net_pnl": -164.68999999999988,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-5.52%)"
+      "exit_tag": "Stop-loss hit (-5.52 %)"
     },
     {
       "symbol": "FILUSDT",
@@ -5203,7 +5203,7 @@
       "gross_pnl": -347.1264000000003,
       "net_pnl": -347.1264000000003,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-6.89%)"
+      "exit_tag": "Stop-loss hit (-6.89 %)"
     },
     {
       "symbol": "FILUSDT",
@@ -5242,7 +5242,7 @@
       "gross_pnl": -625.5849599999998,
       "net_pnl": -625.5849599999998,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-15.92%)"
+      "exit_tag": "Stop-loss hit (-15.92 %)"
     },
     {
       "symbol": "GALAUSDT",
@@ -5255,7 +5255,7 @@
       "gross_pnl": -169.42086,
       "net_pnl": -169.42086,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-5.68%)"
+      "exit_tag": "Stop-loss hit (-5.68 %)"
     },
     {
       "symbol": "GALAUSDT",
@@ -5281,7 +5281,7 @@
       "gross_pnl": -356.8720800000008,
       "net_pnl": -356.8720800000008,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-5.51%)"
+      "exit_tag": "Stop-loss hit (-5.51 %)"
     },
     {
       "symbol": "GALAUSDT",
@@ -5294,7 +5294,7 @@
       "gross_pnl": -1353.23496,
       "net_pnl": -1353.23496,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-21.72%)"
+      "exit_tag": "Stop-loss hit (-21.72 %)"
     },
     {
       "symbol": "GRTUSDT",
@@ -5307,7 +5307,7 @@
       "gross_pnl": -394.64048000000014,
       "net_pnl": -394.64048000000014,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-10.05%)"
+      "exit_tag": "Stop-loss hit (-10.05 %)"
     },
     {
       "symbol": "GRTUSDT",
@@ -5346,7 +5346,7 @@
       "gross_pnl": -271.5120000000003,
       "net_pnl": -271.5120000000003,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-6.93%)"
+      "exit_tag": "Stop-loss hit (-6.93 %)"
     },
     {
       "symbol": "HNTUSDT",
@@ -5372,7 +5372,7 @@
       "gross_pnl": -534.0879999999996,
       "net_pnl": -534.0879999999996,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-8.25%)"
+      "exit_tag": "Stop-loss hit (-8.25 %)"
     },
     {
       "symbol": "HNTUSDT",
@@ -5385,7 +5385,7 @@
       "gross_pnl": -629.6940000000004,
       "net_pnl": -629.6940000000004,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-10.12%)"
+      "exit_tag": "Stop-loss hit (-10.12 %)"
     },
     {
       "symbol": "IOTAUSDT",
@@ -5398,7 +5398,7 @@
       "gross_pnl": -352.99406999999985,
       "net_pnl": -352.99406999999985,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-8.98%)"
+      "exit_tag": "Stop-loss hit (-8.98 %)"
     },
     {
       "symbol": "IOTAUSDT",
@@ -5424,7 +5424,7 @@
       "gross_pnl": -321.6567899999999,
       "net_pnl": -321.6567899999999,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-5.16%)"
+      "exit_tag": "Stop-loss hit (-5.16 %)"
     },
     {
       "symbol": "IOTAUSDT",
@@ -5437,7 +5437,7 @@
       "gross_pnl": -981.3762200000001,
       "net_pnl": -981.3762200000001,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-16.46%)"
+      "exit_tag": "Stop-loss hit (-16.46 %)"
     },
     {
       "symbol": "IOTAUSDT",
@@ -5463,7 +5463,7 @@
       "gross_pnl": -565.5975499999998,
       "net_pnl": -565.5975499999998,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-14.40%)"
+      "exit_tag": "Stop-loss hit (-14.40 %)"
     },
     {
       "symbol": "IOTXUSDT",
@@ -5476,7 +5476,7 @@
       "gross_pnl": -217.26099999999965,
       "net_pnl": -217.26099999999965,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-7.28%)"
+      "exit_tag": "Stop-loss hit (-7.28 %)"
     },
     {
       "symbol": "IOTXUSDT",
@@ -5502,7 +5502,7 @@
       "gross_pnl": -570.4492499999998,
       "net_pnl": -570.4492499999998,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-9.16%)"
+      "exit_tag": "Stop-loss hit (-9.16 %)"
     },
     {
       "symbol": "IOTXUSDT",
@@ -5528,7 +5528,7 @@
       "gross_pnl": -435.5910000000004,
       "net_pnl": -435.5910000000004,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-11.09%)"
+      "exit_tag": "Stop-loss hit (-11.09 %)"
     },
     {
       "symbol": "KEEPUSDT",
@@ -5541,7 +5541,7 @@
       "gross_pnl": -242.91520000000006,
       "net_pnl": -242.91520000000006,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-8.14%)"
+      "exit_tag": "Stop-loss hit (-8.14 %)"
     },
     {
       "symbol": "KEEPUSDT",
@@ -5580,7 +5580,7 @@
       "gross_pnl": -509.6597999999998,
       "net_pnl": -509.6597999999998,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-12.97%)"
+      "exit_tag": "Stop-loss hit (-12.97 %)"
     },
     {
       "symbol": "LITUSDT",
@@ -5593,7 +5593,7 @@
       "gross_pnl": -281.57310000000007,
       "net_pnl": -281.57310000000007,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-9.44%)"
+      "exit_tag": "Stop-loss hit (-9.44 %)"
     },
     {
       "symbol": "LITUSDT",
@@ -5606,7 +5606,7 @@
       "gross_pnl": -149.82299999999978,
       "net_pnl": -149.82299999999978,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-5.93%)"
+      "exit_tag": "Stop-loss hit (-5.93 %)"
     },
     {
       "symbol": "LITUSDT",
@@ -5619,7 +5619,7 @@
       "gross_pnl": -206.40519999999972,
       "net_pnl": -206.40519999999972,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-6.71%)"
+      "exit_tag": "Stop-loss hit (-6.71 %)"
     },
     {
       "symbol": "LITUSDT",
@@ -5632,7 +5632,7 @@
       "gross_pnl": -271.3490000000003,
       "net_pnl": -271.3490000000003,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-7.05%)"
+      "exit_tag": "Stop-loss hit (-7.05 %)"
     },
     {
       "symbol": "LITUSDT",
@@ -5671,7 +5671,7 @@
       "gross_pnl": -363.48800000000017,
       "net_pnl": -363.48800000000017,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-9.25%)"
+      "exit_tag": "Stop-loss hit (-9.25 %)"
     },
     {
       "symbol": "OCEANUSDT",
@@ -5684,7 +5684,7 @@
       "gross_pnl": -230.4324,
       "net_pnl": -230.4324,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-9.13%)"
+      "exit_tag": "Stop-loss hit (-9.13 %)"
     },
     {
       "symbol": "OCEANUSDT",
@@ -5697,7 +5697,7 @@
       "gross_pnl": -268.57559999999995,
       "net_pnl": -268.57559999999995,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-8.32%)"
+      "exit_tag": "Stop-loss hit (-8.32 %)"
     },
     {
       "symbol": "OCEANUSDT",
@@ -5736,7 +5736,7 @@
       "gross_pnl": -327.47183000000007,
       "net_pnl": -327.47183000000007,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-8.34%)"
+      "exit_tag": "Stop-loss hit (-8.34 %)"
     },
     {
       "symbol": "ONTUSDT",
@@ -5749,7 +5749,7 @@
       "gross_pnl": -156.85241,
       "net_pnl": -156.85241,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-5.26%)"
+      "exit_tag": "Stop-loss hit (-5.26 %)"
     },
     {
       "symbol": "ONTUSDT",
@@ -5775,7 +5775,7 @@
       "gross_pnl": -371.1456999999998,
       "net_pnl": -371.1456999999998,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-7.36%)"
+      "exit_tag": "Stop-loss hit (-7.36 %)"
     },
     {
       "symbol": "ONTUSDT",
@@ -5814,7 +5814,7 @@
       "gross_pnl": -381.2656499999997,
       "net_pnl": -381.2656499999997,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-9.70%)"
+      "exit_tag": "Stop-loss hit (-9.70 %)"
     },
     {
       "symbol": "RSRUSDT",
@@ -5827,7 +5827,7 @@
       "gross_pnl": -192.5746669999998,
       "net_pnl": -192.5746669999998,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-6.45%)"
+      "exit_tag": "Stop-loss hit (-6.45 %)"
     },
     {
       "symbol": "RSRUSDT",
@@ -5853,7 +5853,7 @@
       "gross_pnl": -458.70357299999984,
       "net_pnl": -458.70357299999984,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-8.10%)"
+      "exit_tag": "Stop-loss hit (-8.10 %)"
     },
     {
       "symbol": "RSRUSDT",
@@ -5879,7 +5879,7 @@
       "gross_pnl": -485.3742179999996,
       "net_pnl": -485.3742179999996,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-7.79%)"
+      "exit_tag": "Stop-loss hit (-7.79 %)"
     },
     {
       "symbol": "RSRUSDT",
@@ -5905,7 +5905,7 @@
       "gross_pnl": -400.0751999999998,
       "net_pnl": -400.0751999999998,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-10.19%)"
+      "exit_tag": "Stop-loss hit (-10.19 %)"
     },
     {
       "symbol": "SANDUSDT",
@@ -5931,7 +5931,7 @@
       "gross_pnl": -854.2952999999998,
       "net_pnl": -854.2952999999998,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-13.72%)"
+      "exit_tag": "Stop-loss hit (-13.72 %)"
     },
     {
       "symbol": "SKLUSDT",
@@ -5944,7 +5944,7 @@
       "gross_pnl": -239.57026,
       "net_pnl": -239.57026,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-6.10%)"
+      "exit_tag": "Stop-loss hit (-6.10 %)"
     },
     {
       "symbol": "SKLUSDT",
@@ -5970,7 +5970,7 @@
       "gross_pnl": -1269.4976099999997,
       "net_pnl": -1269.4976099999997,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-24.10%)"
+      "exit_tag": "Stop-loss hit (-24.10 %)"
     },
     {
       "symbol": "SKLUSDT",
@@ -5983,7 +5983,7 @@
       "gross_pnl": -366.3436000000001,
       "net_pnl": -366.3436000000001,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-8.80%)"
+      "exit_tag": "Stop-loss hit (-8.80 %)"
     },
     {
       "symbol": "SKLUSDT",
@@ -6009,7 +6009,7 @@
       "gross_pnl": -482.4150000000001,
       "net_pnl": -482.4150000000001,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-12.28%)"
+      "exit_tag": "Stop-loss hit (-12.28 %)"
     },
     {
       "symbol": "STORJUSDT",
@@ -6022,7 +6022,7 @@
       "gross_pnl": -201.52530000000021,
       "net_pnl": -201.52530000000021,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-6.76%)"
+      "exit_tag": "Stop-loss hit (-6.76 %)"
     },
     {
       "symbol": "STORJUSDT",
@@ -6061,7 +6061,7 @@
       "gross_pnl": -317.3934000000002,
       "net_pnl": -317.3934000000002,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-6.30%)"
+      "exit_tag": "Stop-loss hit (-6.30 %)"
     },
     {
       "symbol": "STORJUSDT",
@@ -6100,7 +6100,7 @@
       "gross_pnl": -475.34100000000024,
       "net_pnl": -475.34100000000024,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-12.10%)"
+      "exit_tag": "Stop-loss hit (-12.10 %)"
     },
     {
       "symbol": "UNFIUSDT",
@@ -6113,7 +6113,7 @@
       "gross_pnl": -266.95649999999995,
       "net_pnl": -266.95649999999995,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-8.95%)"
+      "exit_tag": "Stop-loss hit (-8.95 %)"
     },
     {
       "symbol": "UNFIUSDT",
@@ -6152,7 +6152,7 @@
       "gross_pnl": -400.2745500000001,
       "net_pnl": -400.2745500000001,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-10.19%)"
+      "exit_tag": "Stop-loss hit (-10.19 %)"
     },
     {
       "symbol": "VETUSDT",
@@ -6178,7 +6178,7 @@
       "gross_pnl": -848.5045099999992,
       "net_pnl": -848.5045099999992,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-16.10%)"
+      "exit_tag": "Stop-loss hit (-16.10 %)"
     },
     {
       "symbol": "VETUSDT",
@@ -6191,7 +6191,7 @@
       "gross_pnl": -1034.3680599999998,
       "net_pnl": -1034.3680599999998,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-20.20%)"
+      "exit_tag": "Stop-loss hit (-20.20 %)"
     },
     {
       "symbol": "VETUSDT",
@@ -6217,7 +6217,7 @@
       "gross_pnl": -634.7999999999998,
       "net_pnl": -634.7999999999998,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-16.16%)"
+      "exit_tag": "Stop-loss hit (-16.16 %)"
     },
     {
       "symbol": "WAVESUSDT",
@@ -6230,7 +6230,7 @@
       "gross_pnl": -222.98080000000022,
       "net_pnl": -222.98080000000022,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-7.47%)"
+      "exit_tag": "Stop-loss hit (-7.47 %)"
     },
     {
       "symbol": "WAVESUSDT",
@@ -6256,7 +6256,7 @@
       "gross_pnl": -467.27720000000056,
       "net_pnl": -467.27720000000056,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-7.36%)"
+      "exit_tag": "Stop-loss hit (-7.36 %)"
     },
     {
       "symbol": "WAVESUSDT",
@@ -6269,7 +6269,7 @@
       "gross_pnl": -1618.9419999999996,
       "net_pnl": -1618.9419999999996,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-25.79%)"
+      "exit_tag": "Stop-loss hit (-25.79 %)"
     },
     {
       "symbol": "WAVESUSDT",
@@ -6282,7 +6282,7 @@
       "gross_pnl": -1495.2128000000002,
       "net_pnl": -1495.2128000000002,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-27.28%)"
+      "exit_tag": "Stop-loss hit (-27.28 %)"
     },
     {
       "symbol": "WAVESUSDT",
@@ -6295,7 +6295,7 @@
       "gross_pnl": -1084.4582000000007,
       "net_pnl": -1084.4582000000007,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-19.79%)"
+      "exit_tag": "Stop-loss hit (-19.79 %)"
     },
     {
       "symbol": "WAVESUSDT",
@@ -6308,7 +6308,7 @@
       "gross_pnl": -1755.3431999999996,
       "net_pnl": -1755.3431999999996,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-32.69%)"
+      "exit_tag": "Stop-loss hit (-32.69 %)"
     },
     {
       "symbol": "WAVESUSDT",
@@ -6321,7 +6321,7 @@
       "gross_pnl": -381.7135,
       "net_pnl": -381.7135,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-7.93%)"
+      "exit_tag": "Stop-loss hit (-7.93 %)"
     },
     {
       "symbol": "WAVESUSDT",
@@ -6347,7 +6347,7 @@
       "gross_pnl": -457.8380000000002,
       "net_pnl": -457.8380000000002,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-7.07%)"
+      "exit_tag": "Stop-loss hit (-7.07 %)"
     },
     {
       "symbol": "WAVESUSDT",
@@ -6360,7 +6360,7 @@
       "gross_pnl": -343.9079999999999,
       "net_pnl": -343.9079999999999,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-5.52%)"
+      "exit_tag": "Stop-loss hit (-5.52 %)"
     },
     {
       "symbol": "XEMUSDT",
@@ -6399,7 +6399,7 @@
       "gross_pnl": -204.91001999999992,
       "net_pnl": -204.91001999999992,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-5.22%)"
+      "exit_tag": "Stop-loss hit (-5.22 %)"
     },
     {
       "symbol": "XLMUSDT",
@@ -6451,7 +6451,7 @@
       "gross_pnl": -473.28528,
       "net_pnl": -473.28528,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-12.05%)"
+      "exit_tag": "Stop-loss hit (-12.05 %)"
     },
     {
       "symbol": "XMRUSDT",
@@ -6464,7 +6464,7 @@
       "gross_pnl": -189.75792000000015,
       "net_pnl": -189.75792000000015,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-6.36%)"
+      "exit_tag": "Stop-loss hit (-6.36 %)"
     },
     {
       "symbol": "XMRUSDT",
@@ -6490,7 +6490,7 @@
       "gross_pnl": -362.89299999999963,
       "net_pnl": -362.89299999999963,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-9.25%)"
+      "exit_tag": "Stop-loss hit (-9.25 %)"
     },
     {
       "symbol": "ZENUSDT",
@@ -6529,7 +6529,7 @@
       "gross_pnl": -277.5138999999999,
       "net_pnl": -277.5138999999999,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-7.06%)"
+      "exit_tag": "Stop-loss hit (-7.06 %)"
     },
     {
       "symbol": "ZRXUSDT",
@@ -6555,7 +6555,7 @@
       "gross_pnl": -641.5337500000002,
       "net_pnl": -641.5337500000002,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-12.73%)"
+      "exit_tag": "Stop-loss hit (-12.73 %)"
     },
     {
       "symbol": "ZRXUSDT",
@@ -6568,7 +6568,7 @@
       "gross_pnl": -230.90849999999995,
       "net_pnl": -230.90849999999995,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-5.35%)"
+      "exit_tag": "Stop-loss hit (-5.35 %)"
     },
     {
       "symbol": "ZRXUSDT",
@@ -6581,7 +6581,7 @@
       "gross_pnl": -292.6978599999996,
       "net_pnl": -292.6978599999996,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-7.33%)"
+      "exit_tag": "Stop-loss hit (-7.33 %)"
     },
     {
       "symbol": "ZRXUSDT",
@@ -6633,7 +6633,7 @@
       "gross_pnl": -579.8799999999992,
       "net_pnl": -579.8799999999992,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-9.35%)"
+      "exit_tag": "Stop-loss hit (-9.35 %)"
     },
     {
       "symbol": "AVAXUSDT",
@@ -6711,7 +6711,7 @@
       "gross_pnl": -602.4240000000005,
       "net_pnl": -602.4240000000005,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-9.67%)"
+      "exit_tag": "Stop-loss hit (-9.67 %)"
     },
     {
       "symbol": "ALGOUSDT",
@@ -6724,7 +6724,7 @@
       "gross_pnl": -156.26996999999972,
       "net_pnl": -156.26996999999972,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-5.72%)"
+      "exit_tag": "Stop-loss hit (-5.72 %)"
     },
     {
       "symbol": "ALGOUSDT",
@@ -6763,7 +6763,7 @@
       "gross_pnl": -688.3106999999994,
       "net_pnl": -688.3106999999994,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-11.05%)"
+      "exit_tag": "Stop-loss hit (-11.05 %)"
     },
     {
       "symbol": "ARUSDT",
@@ -6776,7 +6776,7 @@
       "gross_pnl": -835.3572999999998,
       "net_pnl": -835.3572999999998,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-14.01%)"
+      "exit_tag": "Stop-loss hit (-14.01 %)"
     },
     {
       "symbol": "ARUSDT",
@@ -6815,7 +6815,7 @@
       "gross_pnl": -619.2542000000008,
       "net_pnl": -619.2542000000008,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-14.88%)"
+      "exit_tag": "Stop-loss hit (-14.88 %)"
     },
     {
       "symbol": "BALUSDT",
@@ -6841,7 +6841,7 @@
       "gross_pnl": -141.1272000000001,
       "net_pnl": -141.1272000000001,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-5.16%)"
+      "exit_tag": "Stop-loss hit (-5.16 %)"
     },
     {
       "symbol": "BTCDOMUSDT",
@@ -6906,7 +6906,7 @@
       "gross_pnl": -232.8480000000002,
       "net_pnl": -232.8480000000002,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-8.52%)"
+      "exit_tag": "Stop-loss hit (-8.52 %)"
     },
     {
       "symbol": "CHRUSDT",
@@ -6919,7 +6919,7 @@
       "gross_pnl": -140.2959999999999,
       "net_pnl": -140.2959999999999,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-5.56%)"
+      "exit_tag": "Stop-loss hit (-5.56 %)"
     },
     {
       "symbol": "CHRUSDT",
@@ -6932,7 +6932,7 @@
       "gross_pnl": -375.0944000000002,
       "net_pnl": -375.0944000000002,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-6.62%)"
+      "exit_tag": "Stop-loss hit (-6.62 %)"
     },
     {
       "symbol": "CHRUSDT",
@@ -6945,7 +6945,7 @@
       "gross_pnl": -323.3059999999993,
       "net_pnl": -323.3059999999993,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-6.71%)"
+      "exit_tag": "Stop-loss hit (-6.71 %)"
     },
     {
       "symbol": "CHRUSDT",
@@ -6958,7 +6958,7 @@
       "gross_pnl": -192.7360000000004,
       "net_pnl": -192.7360000000004,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-5.17%)"
+      "exit_tag": "Stop-loss hit (-5.17 %)"
     },
     {
       "symbol": "CTKUSDT",
@@ -6984,7 +6984,7 @@
       "gross_pnl": -185.2937099999998,
       "net_pnl": -185.2937099999998,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-6.78%)"
+      "exit_tag": "Stop-loss hit (-6.78 %)"
     },
     {
       "symbol": "DASHUSDT",
@@ -7023,7 +7023,7 @@
       "gross_pnl": -1100.5442500000001,
       "net_pnl": -1100.5442500000001,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-17.67%)"
+      "exit_tag": "Stop-loss hit (-17.67 %)"
     },
     {
       "symbol": "IOSTUSDT",
@@ -7049,7 +7049,7 @@
       "gross_pnl": -325.111261,
       "net_pnl": -325.111261,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-6.17%)"
+      "exit_tag": "Stop-loss hit (-6.17 %)"
     },
     {
       "symbol": "IOSTUSDT",
@@ -7075,7 +7075,7 @@
       "gross_pnl": -220.22000000000008,
       "net_pnl": -220.22000000000008,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-8.10%)"
+      "exit_tag": "Stop-loss hit (-8.10 %)"
     },
     {
       "symbol": "KSMUSDT",
@@ -7088,7 +7088,7 @@
       "gross_pnl": -130.5,
       "net_pnl": -130.5,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-5.19%)"
+      "exit_tag": "Stop-loss hit (-5.19 %)"
     },
     {
       "symbol": "KSMUSDT",
@@ -7101,7 +7101,7 @@
       "gross_pnl": -171.26199999999994,
       "net_pnl": -171.26199999999994,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-5.58%)"
+      "exit_tag": "Stop-loss hit (-5.58 %)"
     },
     {
       "symbol": "KSMUSDT",
@@ -7114,7 +7114,7 @@
       "gross_pnl": -359.5500000000004,
       "net_pnl": -359.5500000000004,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-6.36%)"
+      "exit_tag": "Stop-loss hit (-6.36 %)"
     },
     {
       "symbol": "KSMUSDT",
@@ -7140,7 +7140,7 @@
       "gross_pnl": -289.867,
       "net_pnl": -289.867,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-5.77%)"
+      "exit_tag": "Stop-loss hit (-5.77 %)"
     },
     {
       "symbol": "KSMUSDT",
@@ -7153,7 +7153,7 @@
       "gross_pnl": -294.1400000000001,
       "net_pnl": -294.1400000000001,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-7.09%)"
+      "exit_tag": "Stop-loss hit (-7.09 %)"
     },
     {
       "symbol": "KSMUSDT",
@@ -7179,7 +7179,7 @@
       "gross_pnl": -953.3440000000002,
       "net_pnl": -953.3440000000002,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-15.99%)"
+      "exit_tag": "Stop-loss hit (-15.99 %)"
     },
     {
       "symbol": "KSMUSDT",
@@ -7218,7 +7218,7 @@
       "gross_pnl": -498.45400000000006,
       "net_pnl": -498.45400000000006,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-7.69%)"
+      "exit_tag": "Stop-loss hit (-7.69 %)"
     },
     {
       "symbol": "MANAUSDT",
@@ -7231,7 +7231,7 @@
       "gross_pnl": -436.8064999999993,
       "net_pnl": -436.8064999999993,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-7.01%)"
+      "exit_tag": "Stop-loss hit (-7.01 %)"
     },
     {
       "symbol": "MANAUSDT",
@@ -7309,7 +7309,7 @@
       "gross_pnl": -451.29959999999977,
       "net_pnl": -451.29959999999977,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-8.95%)"
+      "exit_tag": "Stop-loss hit (-8.95 %)"
     },
     {
       "symbol": "OMGUSDT",
@@ -7335,7 +7335,7 @@
       "gross_pnl": -1213.3368,
       "net_pnl": -1213.3368,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-19.48%)"
+      "exit_tag": "Stop-loss hit (-19.48 %)"
     },
     {
       "symbol": "RUNEUSDT",
@@ -7361,7 +7361,7 @@
       "gross_pnl": -312.3820000000002,
       "net_pnl": -312.3820000000002,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-5.81%)"
+      "exit_tag": "Stop-loss hit (-5.81 %)"
     },
     {
       "symbol": "RUNEUSDT",
@@ -7374,7 +7374,7 @@
       "gross_pnl": -630.2080000000003,
       "net_pnl": -630.2080000000003,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-11.60%)"
+      "exit_tag": "Stop-loss hit (-11.60 %)"
     },
     {
       "symbol": "RUNEUSDT",
@@ -7387,7 +7387,7 @@
       "gross_pnl": -428.82999999999964,
       "net_pnl": -428.82999999999964,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-7.99%)"
+      "exit_tag": "Stop-loss hit (-7.99 %)"
     },
     {
       "symbol": "RUNEUSDT",
@@ -7400,7 +7400,7 @@
       "gross_pnl": -617.7600000000006,
       "net_pnl": -617.7600000000006,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-11.75%)"
+      "exit_tag": "Stop-loss hit (-11.75 %)"
     },
     {
       "symbol": "RUNEUSDT",
@@ -7426,7 +7426,7 @@
       "gross_pnl": -162.6879999999997,
       "net_pnl": -162.6879999999997,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-5.95%)"
+      "exit_tag": "Stop-loss hit (-5.95 %)"
     },
     {
       "symbol": "THETAUSDT",
@@ -7452,7 +7452,7 @@
       "gross_pnl": -374.2958999999999,
       "net_pnl": -374.2958999999999,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-7.77%)"
+      "exit_tag": "Stop-loss hit (-7.77 %)"
     },
     {
       "symbol": "THETAUSDT",
@@ -7478,7 +7478,7 @@
       "gross_pnl": -341.6798,
       "net_pnl": -341.6798,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-5.49%)"
+      "exit_tag": "Stop-loss hit (-5.49 %)"
     },
     {
       "symbol": "THETAUSDT",
@@ -7543,7 +7543,7 @@
       "gross_pnl": -933.9359999999992,
       "net_pnl": -933.9359999999992,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-17.73%)"
+      "exit_tag": "Stop-loss hit (-17.73 %)"
     },
     {
       "symbol": "ZILUSDT",
@@ -7556,7 +7556,7 @@
       "gross_pnl": -4165.96014,
       "net_pnl": -4165.96014,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-81.35%)"
+      "exit_tag": "Stop-loss hit (-81.35 %)"
     },
     {
       "symbol": "ZILUSDT",
@@ -7582,7 +7582,7 @@
       "gross_pnl": -247.84300000000013,
       "net_pnl": -247.84300000000013,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-8.07%)"
+      "exit_tag": "Stop-loss hit (-8.07 %)"
     },
     {
       "symbol": "LUNAUSDT",
@@ -7595,7 +7595,7 @@
       "gross_pnl": -1007.1520000000007,
       "net_pnl": -1007.1520000000007,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-16.98%)"
+      "exit_tag": "Stop-loss hit (-16.98 %)"
     },
     {
       "symbol": "LUNAUSDT",
@@ -7608,7 +7608,7 @@
       "gross_pnl": -677.3399999999995,
       "net_pnl": -677.3399999999995,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-10.65%)"
+      "exit_tag": "Stop-loss hit (-10.65 %)"
     },
     {
       "symbol": "LUNAUSDT",
@@ -7621,7 +7621,7 @@
       "gross_pnl": -1814.5440000000003,
       "net_pnl": -1814.5440000000003,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-41.86%)"
+      "exit_tag": "Stop-loss hit (-41.86 %)"
     },
     {
       "symbol": "KNCUSDT",
@@ -7634,7 +7634,7 @@
       "gross_pnl": -245.3880000000004,
       "net_pnl": -245.3880000000004,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-7.04%)"
+      "exit_tag": "Stop-loss hit (-7.04 %)"
     },
     {
       "symbol": "KNCUSDT",
@@ -7647,7 +7647,7 @@
       "gross_pnl": -497.8980000000007,
       "net_pnl": -497.8980000000007,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-7.74%)"
+      "exit_tag": "Stop-loss hit (-7.74 %)"
     },
     {
       "symbol": "KNCUSDT",
@@ -7660,7 +7660,7 @@
       "gross_pnl": -621.0150000000003,
       "net_pnl": -621.0150000000003,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-10.27%)"
+      "exit_tag": "Stop-loss hit (-10.27 %)"
     },
     {
       "symbol": "KNCUSDT",
@@ -7673,7 +7673,7 @@
       "gross_pnl": -506.5699999999999,
       "net_pnl": -506.5699999999999,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-9.12%)"
+      "exit_tag": "Stop-loss hit (-9.12 %)"
     },
     {
       "symbol": "KNCUSDT",
@@ -7686,7 +7686,7 @@
       "gross_pnl": -910.7199999999996,
       "net_pnl": -910.7199999999996,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-13.94%)"
+      "exit_tag": "Stop-loss hit (-13.94 %)"
     },
     {
       "symbol": "KNCUSDT",
@@ -7712,7 +7712,7 @@
       "gross_pnl": -863.683,
       "net_pnl": -863.683,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-14.49%)"
+      "exit_tag": "Stop-loss hit (-14.49 %)"
     },
     {
       "symbol": "KNCUSDT",
@@ -7738,7 +7738,7 @@
       "gross_pnl": -303.6135399999999,
       "net_pnl": -303.6135399999999,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-5.36%)"
+      "exit_tag": "Stop-loss hit (-5.36 %)"
     },
     {
       "symbol": "COTIUSDT",
@@ -7751,7 +7751,7 @@
       "gross_pnl": -247.7620799999995,
       "net_pnl": -247.7620799999995,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-5.14%)"
+      "exit_tag": "Stop-loss hit (-5.14 %)"
     },
     {
       "symbol": "COTIUSDT",
@@ -7777,7 +7777,7 @@
       "gross_pnl": -394.9463499999991,
       "net_pnl": -394.9463499999991,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-6.97%)"
+      "exit_tag": "Stop-loss hit (-6.97 %)"
     },
     {
       "symbol": "ONEUSDT",
@@ -7790,7 +7790,7 @@
       "gross_pnl": -1107.2582000000004,
       "net_pnl": -1107.2582000000004,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-17.43%)"
+      "exit_tag": "Stop-loss hit (-17.43 %)"
     },
     {
       "symbol": "ONEUSDT",
@@ -7803,7 +7803,7 @@
       "gross_pnl": -650.6453200000007,
       "net_pnl": -650.6453200000007,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-9.41%)"
+      "exit_tag": "Stop-loss hit (-9.41 %)"
     },
     {
       "symbol": "ONEUSDT",
@@ -7816,7 +7816,7 @@
       "gross_pnl": -1002.5227399999994,
       "net_pnl": -1002.5227399999994,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-16.81%)"
+      "exit_tag": "Stop-loss hit (-16.81 %)"
     },
     {
       "symbol": "ONEUSDT",
@@ -7842,7 +7842,7 @@
       "gross_pnl": -351.2914,
       "net_pnl": -351.2914,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-6.20%)"
+      "exit_tag": "Stop-loss hit (-6.20 %)"
     },
     {
       "symbol": "ROSEUSDT",
@@ -7894,7 +7894,7 @@
       "gross_pnl": -1461.7814999999998,
       "net_pnl": -1461.7814999999998,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-23.47%)"
+      "exit_tag": "Stop-loss hit (-23.47 %)"
     },
     {
       "symbol": "IMXUSDT",
@@ -7907,7 +7907,7 @@
       "gross_pnl": -489.0060000000004,
       "net_pnl": -489.0060000000004,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-8.21%)"
+      "exit_tag": "Stop-loss hit (-8.21 %)"
     },
     {
       "symbol": "IMXUSDT",
@@ -7920,7 +7920,7 @@
       "gross_pnl": -389.18759999999963,
       "net_pnl": -389.18759999999963,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-6.13%)"
+      "exit_tag": "Stop-loss hit (-6.13 %)"
     },
     {
       "symbol": "IMXUSDT",
@@ -7933,7 +7933,7 @@
       "gross_pnl": -561.4949999999999,
       "net_pnl": -561.4949999999999,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-9.29%)"
+      "exit_tag": "Stop-loss hit (-9.29 %)"
     },
     {
       "symbol": "IMXUSDT",
@@ -7946,7 +7946,7 @@
       "gross_pnl": -603.8381999999996,
       "net_pnl": -603.8381999999996,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-10.30%)"
+      "exit_tag": "Stop-loss hit (-10.30 %)"
     },
     {
       "symbol": "ADAUSDT",
@@ -7959,7 +7959,7 @@
       "gross_pnl": -368.2366999999999,
       "net_pnl": -368.2366999999999,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-6.93%)"
+      "exit_tag": "Stop-loss hit (-6.93 %)"
     },
     {
       "symbol": "ADAUSDT",
@@ -8024,7 +8024,7 @@
       "gross_pnl": -496.39500000000004,
       "net_pnl": -496.39500000000004,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-7.82%)"
+      "exit_tag": "Stop-loss hit (-7.82 %)"
     },
     {
       "symbol": "ANCUSDT",
@@ -8037,7 +8037,7 @@
       "gross_pnl": -1812.7230000000004,
       "net_pnl": -1812.7230000000004,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-41.81%)"
+      "exit_tag": "Stop-loss hit (-41.81 %)"
     },
     {
       "symbol": "CELRUSDT",
@@ -8050,7 +8050,7 @@
       "gross_pnl": -1628.4187499999996,
       "net_pnl": -1628.4187499999996,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-32.31%)"
+      "exit_tag": "Stop-loss hit (-32.31 %)"
     },
     {
       "symbol": "CELRUSDT",
@@ -8089,7 +8089,7 @@
       "gross_pnl": -361.9012800000002,
       "net_pnl": -361.9012800000002,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-7.18%)"
+      "exit_tag": "Stop-loss hit (-7.18 %)"
     },
     {
       "symbol": "KAVAUSDT",
@@ -8102,7 +8102,7 @@
       "gross_pnl": -252.49864000000005,
       "net_pnl": -252.49864000000005,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-5.24%)"
+      "exit_tag": "Stop-loss hit (-5.24 %)"
     },
     {
       "symbol": "KAVAUSDT",
@@ -8141,7 +8141,7 @@
       "gross_pnl": -1008.8925700000005,
       "net_pnl": -1008.8925700000005,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-20.95%)"
+      "exit_tag": "Stop-loss hit (-20.95 %)"
     },
     {
       "symbol": "GMTUSDT",
@@ -8154,7 +8154,7 @@
       "gross_pnl": -358.50305000000014,
       "net_pnl": -358.50305000000014,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-8.31%)"
+      "exit_tag": "Stop-loss hit (-8.31 %)"
     },
     {
       "symbol": "GMTUSDT",
@@ -8167,7 +8167,7 @@
       "gross_pnl": -234.36055999999954,
       "net_pnl": -234.36055999999954,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-5.87%)"
+      "exit_tag": "Stop-loss hit (-5.87 %)"
     },
     {
       "symbol": "GMTUSDT",
@@ -8180,7 +8180,7 @@
       "gross_pnl": -2348.86253,
       "net_pnl": -2348.86253,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-37.12%)"
+      "exit_tag": "Stop-loss hit (-37.12 %)"
     },
     {
       "symbol": "GMTUSDT",
@@ -8219,7 +8219,7 @@
       "gross_pnl": -1600.45492,
       "net_pnl": -1600.45492,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-25.69%)"
+      "exit_tag": "Stop-loss hit (-25.69 %)"
     },
     {
       "symbol": "DUSKUSDT",
@@ -8271,7 +8271,7 @@
       "gross_pnl": -347.3736000000002,
       "net_pnl": -347.3736000000002,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-5.58%)"
+      "exit_tag": "Stop-loss hit (-5.58 %)"
     },
     {
       "symbol": "MKRUSDT",
@@ -8284,7 +8284,7 @@
       "gross_pnl": -359.9375999999998,
       "net_pnl": -359.9375999999998,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-5.91%)"
+      "exit_tag": "Stop-loss hit (-5.91 %)"
     },
     {
       "symbol": "MKRUSDT",
@@ -8310,7 +8310,7 @@
       "gross_pnl": -1010.4570000000002,
       "net_pnl": -1010.4570000000002,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-15.62%)"
+      "exit_tag": "Stop-loss hit (-15.62 %)"
     },
     {
       "symbol": "APEUSDT",
@@ -8336,7 +8336,7 @@
       "gross_pnl": -664.8636000000005,
       "net_pnl": -664.8636000000005,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-10.06%)"
+      "exit_tag": "Stop-loss hit (-10.06 %)"
     },
     {
       "symbol": "KLAYUSDT",
@@ -8349,7 +8349,7 @@
       "gross_pnl": -791.1425999999999,
       "net_pnl": -791.1425999999999,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-12.23%)"
+      "exit_tag": "Stop-loss hit (-12.23 %)"
     },
     {
       "symbol": "KLAYUSDT",
@@ -8362,7 +8362,7 @@
       "gross_pnl": -416.5916700000003,
       "net_pnl": -416.5916700000003,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-5.80%)"
+      "exit_tag": "Stop-loss hit (-5.80 %)"
     },
     {
       "symbol": "KLAYUSDT",
@@ -8375,7 +8375,7 @@
       "gross_pnl": -402.02877,
       "net_pnl": -402.02877,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-5.94%)"
+      "exit_tag": "Stop-loss hit (-5.94 %)"
     },
     {
       "symbol": "KLAYUSDT",
@@ -8388,7 +8388,7 @@
       "gross_pnl": -1134.9205300000003,
       "net_pnl": -1134.9205300000003,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-19.03%)"
+      "exit_tag": "Stop-loss hit (-19.03 %)"
     },
     {
       "symbol": "KLAYUSDT",
@@ -8414,7 +8414,7 @@
       "gross_pnl": -330.1621800000004,
       "net_pnl": -330.1621800000004,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-5.10%)"
+      "exit_tag": "Stop-loss hit (-5.10 %)"
     },
     {
       "symbol": "HBARUSDT",
@@ -8427,7 +8427,7 @@
       "gross_pnl": -324.5539499999998,
       "net_pnl": -324.5539499999998,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-5.21%)"
+      "exit_tag": "Stop-loss hit (-5.21 %)"
     },
     {
       "symbol": "HBARUSDT",
@@ -8440,7 +8440,7 @@
       "gross_pnl": -1126.4037900000003,
       "net_pnl": -1126.4037900000003,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-18.50%)"
+      "exit_tag": "Stop-loss hit (-18.50 %)"
     },
     {
       "symbol": "HBARUSDT",
@@ -8466,7 +8466,7 @@
       "gross_pnl": -605.3503000000001,
       "net_pnl": -605.3503000000001,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-9.53%)"
+      "exit_tag": "Stop-loss hit (-9.53 %)"
     },
     {
       "symbol": "MATICUSDT",
@@ -8492,7 +8492,7 @@
       "gross_pnl": -633.9933000000004,
       "net_pnl": -633.9933000000004,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-9.98%)"
+      "exit_tag": "Stop-loss hit (-9.98 %)"
     },
     {
       "symbol": "WOOUSDT",
@@ -8505,7 +8505,7 @@
       "gross_pnl": -573.9422700000002,
       "net_pnl": -573.9422700000002,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-8.00%)"
+      "exit_tag": "Stop-loss hit (-8.00 %)"
     },
     {
       "symbol": "WOOUSDT",
@@ -8518,7 +8518,7 @@
       "gross_pnl": -468.57270000000005,
       "net_pnl": -468.57270000000005,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-6.92%)"
+      "exit_tag": "Stop-loss hit (-6.92 %)"
     },
     {
       "symbol": "WOOUSDT",
@@ -8544,7 +8544,7 @@
       "gross_pnl": -319.2083999999996,
       "net_pnl": -319.2083999999996,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-5.12%)"
+      "exit_tag": "Stop-loss hit (-5.12 %)"
     },
     {
       "symbol": "DOTUSDT",
@@ -8570,7 +8570,7 @@
       "gross_pnl": -748.553,
       "net_pnl": -748.553,
       "entry_tag": "",
-      "exit_tag": "Stop-loss hit (-12.02%)"
+      "exit_tag": "Stop-loss hit (-12.02 %)"
     },
     {
       "symbol": "API3USDT",

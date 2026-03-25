@@ -1,249 +1,181 @@
-# I-Series Remote Data Refresh And Validation — 2026-03-25
+# I-Series Current Baseline And Legacy Archive — 2026-03-25
 
-## Summary
+## Scope
 
-This document records the end-to-end refresh of the LEAN I-series dataset on HuggingFace, the resulting benchmark-universe contract change, and the validation runs executed against the new remote data.
+This document describes the **current active I-series baseline** only.
 
-This is intended to be handed to another agent or engineer for independent verification.
+It does not treat the older pre-refresh reference files as active benchmark inputs.
+Those files have been moved into a legacy subdirectory so they do not confuse future reviews.
 
-## What Changed
+## Current Source Of Truth
 
-### Code changes
+### Remote dataset
 
-- Commit [`d215d47`](../bench/config/benchmark_config.py): `Freeze LEAN benchmark universe by coverage`
-  - Added [freeze_benchmark_universe.py](/home/rick/Desktop/benchmark/bench/scripts/freeze_benchmark_universe.py)
-  - Added [lean_data_audit.py](/home/rick/Desktop/benchmark/bench/scripts/lean_data_audit.py)
-  - Changed downloader failure semantics in [download_binance_full_universe.py](/home/rick/Desktop/benchmark/bench/scripts/download_binance_full_universe.py)
-  - Changed preflight verification in [prepare_i_series_data.py](/home/rick/Desktop/benchmark/bench/scripts/prepare_i_series_data.py)
-  - Updated LEAN coherence tests in [test_lean_backtest.py](/home/rick/Desktop/benchmark/tests/test_lean_backtest.py)
-  - Updated [tests/README.md](/home/rick/Desktop/benchmark/tests/README.md)
+- HuggingFace dataset: `Varsity-Tech/quant-tutor-bench-data`
+- Current pinned revision: `67c0df0b9d85afa7c1a33e7ea5ed8be143bf3297`
+- Canonical consumer path:
+  - `I.tar.gz`
 
-- Commit [`813a45a`](../bench/scripts/upload_lean_to_hf.py): `Publish frozen LEAN archive to HuggingFace`
-  - Changed [upload_lean_to_hf.py](/home/rick/Desktop/benchmark/bench/scripts/upload_lean_to_hf.py) to publish the canonical `I.tar.gz` archive that `data_manager.ensure_data(series="lean")` actually consumes
-  - Added frozen-universe metadata upload:
-    - `raw/i-series/universe.json`
-    - `raw/i-series/universe_structured.json`
-    - `raw/i-series/benchmark_universe_coverage.json`
-  - Updated [benchmark_config.py](/home/rick/Desktop/benchmark/bench/config/benchmark_config.py) to pin the final validated revision
+### Local code pin
 
-### Data-contract changes
+- [benchmark_config.py](/home/rick/Desktop/benchmark/bench/config/benchmark_config.py)
+  - `DATASET_REVISION = "67c0df0b9d85afa7c1a33e7ea5ed8be143bf3297"`
 
-- Tier 1 universe was frozen by actual trade-data coverage:
-  - old tier1 size: `671`
-  - new tier1 size: `635`
-- Tier 2 and tier 3 remained unchanged:
-  - tier2: `20`
-  - tier3: `5`
-- `quote` and `margin_interest` were explicitly de-scoped from the benchmark contract.
+### Active benchmark reference directory
 
-### Final pinned HuggingFace revision
+- [bench/data/reference](/home/rick/Desktop/benchmark/bench/data/reference)
 
-- Final validated dataset revision:
-  - `c97f2cc969216d0dc85c55c8b4de62ef5715ba9d`
+This is the directory the evaluation stack actually reads via:
 
-### Final remote dataset shape checked
+- [implementation_check.py](/home/rick/Desktop/benchmark/bench/evaluation/test_scripts/common/implementation_check.py)
 
-Verified on `Varsity-Tech/quant-tutor-bench-data` at revision `67c0df0b9d85afa7c1a33e7ea5ed8be143bf3297`:
+## Legacy Archive
 
-- `I.tar.gz`: present
-- `raw/i-series/universe.json`: present
-- `raw/i-series/universe_structured.json`: present
-- `raw/i-series/benchmark_universe_coverage.json`: present
-Important note:
+The older pre-refresh active reference files were moved out of the way to:
 
-- The canonical consumer path for future LEAN runs is `I.tar.gz` via `data_manager.ensure_data(series="lean")`.
-- The legacy exploded `lean/` tree was deleted from the remote dataset in the final cleanup pass.
+- [legacy_2026-03-25_pre_remote_refresh](/home/rick/Desktop/benchmark/bench/data/reference/legacy_2026-03-25_pre_remote_refresh)
 
-## What Was Verified
+That folder currently contains `39` legacy I-series reference artifacts that should be treated as historical provenance only.
 
-### 1. Local contract / pipeline checks
+## Active Reference Inventory
 
-Commands run:
+The active top-level [bench/data/reference](/home/rick/Desktop/benchmark/bench/data/reference) now contains:
 
-```bash
-python3 bench/scripts/freeze_benchmark_universe.py --input bench/data/universe.json --raw-dir bench/data/raw/i-series --lean-dir bench/data/lean --output bench/data/universe.json --flat-output bench/data/lean_universe.json --report-output bench/data/benchmark_universe_coverage.json
-python3 bench/scripts/lean_data_audit.py
-python3 bench/scripts/prepare_i_series_data.py --skip-download --skip-convert --verify
-pytest tests/test_lean_backtest.py -q -k "dataset_coherence or lean_data_mounted or docker_lean_smoke"
-pytest tests/test_lean_backtest.py -q -k "test_lean_backtest and (I02 or I05)"
-```
-
-Observed:
-
-- `lean_data_audit.py`:
-  - `direct_missing_count = 0`
-  - `shared_runtime_gap_count = 0`
-  - `daily_trade_symbols = 635`
-- `prepare_i_series_data.py --verify` passed
-- Fast LEAN tests passed
-- Real `I02` and `I05` LEAN backtests passed against the frozen local contract
-
-### 2. Fresh remote archive sanity check
-
-A clean-cache verification was performed by downloading and extracting `I.tar.gz` into a fresh workspace-local temporary directory, not the existing local HF cache.
-
-Verified from the extracted archive:
-
-- `I/universe.json` contains `635` symbols
-- `I/I05_candidate_pairs.json` exists
-- `E/BTC_UTC.csv` exists
-- `E/E04_compound_bug.cs` exists
-- `X/warmup_bug.cs` exists
-- `X/order_type_bug.cs` exists
-- `X/alpha_conflict.cs` exists
-- `X/universe_stale.cs` exists
-- `I/cryptofuture/binance/daily` contains `635` `*_trade.zip` files
-
-Fresh remote extract used for reruns:
-
-- [tmp_remote_verify2](/home/rick/Desktop/benchmark/bench/data/tmp_remote_verify2)
-
-### 3. Fresh remote I-series reruns
-
-All reruns below were forced onto the fresh remote extract at:
-
-- [extract/I](/home/rick/Desktop/benchmark/bench/data/tmp_remote_verify2/extract/I)
-
-They did not rely on the pre-existing local HF cache.
-
-## Results
-
-### Core I-series rerun summary
-
-Source:
-
-- [i_series_rerun_summary.json](/home/rick/Desktop/benchmark/bench/data/tmp_remote_verify2/i_series_rerun_summary.json)
-
-Results:
-
-| Task | Exit | Orders | Trades | Net Profit |
-| --- | ---: | ---: | ---: | ---: |
-| I01 | 0 | 340 | 85 | 32.91 |
-| I02 | 0 | 9305 | 0 | null |
-| I03 | 0 | 2778 | 662 | -102.952 |
-| I04 | 0 | 16104 | 4026 | -17.194 |
-| I05 | 0 | 9362 | 0 | null |
-| I07 | 0 | 1004 | 466 | -34.09 |
-
-Notes:
-
-- `I02` and `I05` still produce `0` native LEAN closed trades in this build. This remained true across the earlier pinned-vs-latest LEAN comparison.
-- `I05` now reproducibly yields `9362` orders on the refreshed remote dataset, not the previously observed `9178`. The old baseline should therefore not be treated as authoritative.
-
-### I06 / I08 / I09 rerun summary
-
-Source:
-
-- [i_series_extended_rerun_summary.json](/home/rick/Desktop/benchmark/bench/data/tmp_remote_verify2/i_series_extended_rerun_summary.json)
-- [I06_reference_sweep_results.json](/home/rick/Desktop/benchmark/bench/reference/Implementation/result/I06_reference_sweep_results.json)
-- [I08_reference_comparison.json](/home/rick/Desktop/benchmark/bench/reference/Implementation/result/I08_reference_comparison.json)
-- [I09_reference_comparison.json](/home/rick/Desktop/benchmark/bench/reference/Implementation/result/I09_reference_comparison.json)
-
-Results:
-
+- `I01-I07`
+  - `*_reference_trades.json`
+  - `*_reference_summary.json`
+  - `*_reference_signals.json`
 - `I06`
-  - runs: `19/19 success`
-  - best configuration: `t02_r05_c03`
-  - best metrics:
-    - `total_trades = 14565`
-    - `sharpe_ratio = 0.3793`
-    - `total_return = 24037.488%`
-    - `max_drawdown = 39.100%`
-    - `win_rate = 26%`
-
+  - default `I06_reference_trades.json`
+  - sweep result file
+  - per-config trade files
 - `I08`
-  - runs: `2`
-  - `insight_weighting`: `no_trades`
-  - `equal_weighting`: `success`, `63 trades`, `7.967% total_return`
-
+  - comparison file
+  - per-config trade files
+  - summary + signals
 - `I09`
-  - runs: `3/3 success`
-  - `norisk`: `395 trades`, `-76.644% total_return`
-  - `builtin`: `24797 trades`, `49.510% total_return`
-  - `custom`: `33970 trades`, `118.399% total_return`
+  - comparison file
+  - per-config trade files
+  - summary + signals
+- `I10`
+  - grid result file
+  - per-config trade files
+  - summary + signals
 
-### I10 rerun summary
+## Current Active Baseline Results
 
-Sources:
+### Single-run tasks
 
-- [i10_rerun_summary.json](/home/rick/Desktop/benchmark/bench/data/tmp_remote_verify2/i10_rerun_summary.json)
-- [I10_reference_grid_results.json](/home/rick/Desktop/benchmark/bench/reference/Implementation/result/I10_reference_grid_results.json)
+These are the current active trade references in [bench/data/reference](/home/rick/Desktop/benchmark/bench/data/reference):
 
-Results:
+| Task | `generated_at` | `lean_image` | trade_count |
+| --- | --- | --- | ---: |
+| I01 | `2026-03-25T07:16:42.060227+00:00` | `quant-tutor-env:v2.2-lean` | 85 |
+| I02 | `2026-03-25T07:17:08.925785+00:00` | `quant-tutor-env:v2.2-lean` | 1763 |
+| I03 | `2026-03-25T07:16:52.690030+00:00` | `quant-tutor-env:v2.2-lean` | 662 |
+| I04 | `2026-03-25T07:17:02.308076+00:00` | `quant-tutor-env:v2.2-lean` | 4026 |
+| I05 | `2026-03-25T07:17:16.135631+00:00` | `quant-tutor-env:v2.2-lean` | 2340 |
+| I06 | `2026-03-25T07:17:42.618675+00:00` | `quant-tutor-env:v2.2-lean` | 13719 |
+| I07 | `2026-03-25T07:17:23.301186+00:00` | `quant-tutor-env:v2.2-lean` | 179 |
 
-- total configurations attempted: `250`
-- total configurations tested: `250`
-- status counts:
-  - `success = 250`
-- nonzero-trade runs: `250`
+### Current summary metrics
 
-Best configuration:
+These are the current active summary metrics in [bench/data/reference](/home/rick/Desktop/benchmark/bench/data/reference):
 
-- `run_id = f15_s20_t0005`
-- parameters:
+| Task | total_return_pct | sharpe_ratio | total_trades |
+| --- | ---: | ---: | ---: |
+| I01 | 32.91 | 0.168 | 85 |
+| I02 | 20980.082 | 0.6076 | 1763 |
+| I03 | -102.952 | -0.335 | 662 |
+| I04 | -17.194 | -0.07 | 4026 |
+| I05 | -309669.019 | -0.6031 | 2340 |
+| I06 | 27604.073 | 0.2776 | 13719 |
+| I07 | -34.09 | -0.059 | 179 |
+| I08 | 7.967 | 0.02 | 63 |
+| I09 | 49.51 | 0.307 | 24797 |
+| I10 | 148.564 | 0.553 | 4611 |
+
+## Multi-run Task Outcomes
+
+### I06
+
+- sweep result file:
+  - [I06_reference_sweep_results.json](/home/rick/Desktop/benchmark/bench/data/reference/I06_reference_sweep_results.json)
+- best configuration:
+  - `run_id = t02_r05_c03`
+  - `trend_weight = 0.2`
+  - `reversion_weight = 0.5`
+  - `carry_weight = 0.3`
+  - `total_trades = 14565`
+  - `sharpe_ratio = 0.3793`
+  - `total_return = 24037.488%`
+
+### I08
+
+- comparison file:
+  - [I08_reference_comparison.json](/home/rick/Desktop/benchmark/bench/data/reference/I08_reference_comparison.json)
+- runs:
+  - `insight_weighting`: `no_trades`
+  - `equal_weighting`: `63 trades`, `7.967% total_return`
+
+### I09
+
+- comparison file:
+  - [I09_reference_comparison.json](/home/rick/Desktop/benchmark/bench/data/reference/I09_reference_comparison.json)
+- runs:
+  - `norisk`: `395 trades`, `-76.644%`
+  - `builtin`: `24797 trades`, `49.510%`
+  - `custom`: `33970 trades`, `118.399%`
+
+### I10
+
+- grid file:
+  - [I10_reference_grid_results.json](/home/rick/Desktop/benchmark/bench/data/reference/I10_reference_grid_results.json)
+- total configurations tested:
+  - `250`
+- best configuration:
+  - `run_id = f15_s20_t0005`
   - `fast_period = 15`
   - `slow_period = 20`
   - `signal_threshold = 0.005`
-- metrics:
   - `total_trades = 4611`
   - `sharpe_ratio = 0.553`
   - `total_return = 148.564%`
   - `max_drawdown = 34.500%`
-  - `win_rate = 40%`
 
-## Current Assessment
+## Data Contract Status
 
-### What is confirmed
+- frozen trade universe:
+  - `635` daily symbols
+- hourly coverage:
+  - `20`
+- 4hour coverage:
+  - `20`
+- minute coverage:
+  - `5`
+- 5minute coverage:
+  - `5`
+- `quote` / `margin_interest`:
+  - de-scoped from the contract
 
-- The new remote HF revision is consumable by a clean-cache client.
-- The canonical `I.tar.gz` path now contains the frozen `635`-symbol trade-data universe.
-- The archive also contains the extra clean-cache task files required by `I05`, `E`, and `X`.
-- `I01` through `I10` were rerun against fresh remote data, with:
-  - core tasks rerun directly and summarized
-  - `I06`, `I08`, `I09`, and `I10` multi-run outputs regenerated successfully
+Coverage report:
 
-### What is not yet claimed
+- [benchmark_universe_coverage.json](/home/rick/Desktop/benchmark/bench/data/benchmark_universe_coverage.json)
 
-- This document does **not** claim that all refreshed results are semantically identical to the previously stored baselines.
-- In particular, `I05` changed from the older `9178`-order world to a reproducible `9362`-order world under the refreshed remote dataset.
-- The old stored baselines should therefore be treated as historical artifacts, not ground truth.
+## Validation Notes
 
-### Recommended next validation pass for Claude Code
+- The remote exploded `lean/` tree was deleted. Future clean-cache consumers should rely on `I.tar.gz` only.
+- The active benchmark path is now the refreshed [bench/data/reference](/home/rick/Desktop/benchmark/bench/data/reference) root, not the legacy subdirectory.
+- Any review should ignore the legacy folder unless it is explicitly doing provenance / drift analysis.
+- `I05` and `I07` still need semantic scrutiny, but their active artifacts are now clearly separated from the pre-refresh ones.
 
-Ask Claude Code to verify:
+## Files To Hand To Claude Code
 
-1. The remote revision `67c0df0b9d85afa7c1a33e7ea5ed8be143bf3297` is the revision pinned in [benchmark_config.py](/home/rick/Desktop/benchmark/bench/config/benchmark_config.py).
-2. A clean-cache download of `I.tar.gz` yields:
-   - `635` symbols in `I/universe.json`
-   - `I/I05_candidate_pairs.json`
-   - `E/` and `X/` files listed above
-3. `bench/scripts/lean_data_audit.py` reports zero contract gaps against the refreshed local contract.
-4. The rerun summaries listed above exist and match the values in this document.
-5. `I05`’s changed order count (`9362`) is reflected in the fresh remote rerun and is no longer judged against the old `9178` baseline.
-
-## File Index
-
-- Contract / metadata
+- Active baseline:
+  - [bench/data/reference](/home/rick/Desktop/benchmark/bench/data/reference)
+- Legacy baseline:
+  - [legacy_2026-03-25_pre_remote_refresh](/home/rick/Desktop/benchmark/bench/data/reference/legacy_2026-03-25_pre_remote_refresh)
+- Remote pin:
   - [benchmark_config.py](/home/rick/Desktop/benchmark/bench/config/benchmark_config.py)
-  - [universe.json](/home/rick/Desktop/benchmark/bench/data/universe.json)
-  - [lean_universe.json](/home/rick/Desktop/benchmark/bench/data/lean_universe.json)
-  - [benchmark_universe_coverage.json](/home/rick/Desktop/benchmark/bench/data/benchmark_universe_coverage.json)
-
-- Scripts changed
-  - [freeze_benchmark_universe.py](/home/rick/Desktop/benchmark/bench/scripts/freeze_benchmark_universe.py)
-  - [lean_data_audit.py](/home/rick/Desktop/benchmark/bench/scripts/lean_data_audit.py)
-  - [download_binance_full_universe.py](/home/rick/Desktop/benchmark/bench/scripts/download_binance_full_universe.py)
-  - [prepare_i_series_data.py](/home/rick/Desktop/benchmark/bench/scripts/prepare_i_series_data.py)
+- Upload/publish path:
   - [upload_lean_to_hf.py](/home/rick/Desktop/benchmark/bench/scripts/upload_lean_to_hf.py)
-
-- Test / validation
-  - [test_lean_backtest.py](/home/rick/Desktop/benchmark/tests/test_lean_backtest.py)
-  - [tests/README.md](/home/rick/Desktop/benchmark/tests/README.md)
-
-- Fresh remote rerun summaries
-  - [i_series_rerun_summary.json](/home/rick/Desktop/benchmark/bench/data/tmp_remote_verify2/i_series_rerun_summary.json)
-  - [i_series_extended_rerun_summary.json](/home/rick/Desktop/benchmark/bench/data/tmp_remote_verify2/i_series_extended_rerun_summary.json)
-  - [i10_rerun_summary.json](/home/rick/Desktop/benchmark/bench/data/tmp_remote_verify2/i10_rerun_summary.json)
-
-- Generated reference outputs
-  - [Implementation/result](/home/rick/Desktop/benchmark/bench/reference/Implementation/result)
