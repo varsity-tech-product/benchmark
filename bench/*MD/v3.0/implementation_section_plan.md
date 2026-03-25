@@ -1,6 +1,6 @@
 # Implementation Section (I-Series) Design Plan
 
-> Version: v2.5 | Status: In Progress — I01–I10 reference data complete, multi-layer behavioral eval with multi-run support, trial-manager workflow integrated, and the section is now operationally usable for live runs (OpenRouter default; native OpenAI mainly for single-task debugging due to quota/TPM limits) | Section: Strategy Implementation on LEAN Engine
+> Version: v2.6 | Status: **Complete** — I01–I10 reference data regenerated on updated dataset (2026-03-25), multi-layer behavioral eval with multi-run support, trial-manager workflow integrated, all reference results (trades + signals + summaries) synced across both directories | Section: Strategy Implementation on LEAN Engine
 
 ---
 
@@ -109,16 +109,15 @@ The agent does **NOT** need to:
 
 A reference document (`lean_algorithm_guide.md`, see §6) will be provided to teach the LEAN C# API basics.
 
-### 1.5 Current Operational Status (2026-03-13)
+### 1.5 Current Operational Status (2026-03-25)
 
-I-series is now **operationally usable**. The benchmark can run end-to-end, save artifacts, and evaluate live agent behavior on LEAN tasks. The main blockers encountered during live validation were infrastructure/runtime issues rather than task-definition issues:
+I-series is now **fully complete**. All I01-I10 reference data has been regenerated on the updated dataset. The benchmark can run end-to-end, save artifacts, and evaluate live agent behavior on LEAN tasks.
 
-1. **Sandbox/network**: Native OpenAI runs previously failed with `APIConnectionError` when executed under restricted network conditions. This was an environment problem, not an I-series task problem.
-2. **DeepEval telemetry writes**: Parallel runs initially failed on `.deepeval/.deepeval_telemetry.txt` permissions. The runner now opts out of DeepEval telemetry and uses a writable cache directory.
-3. **OpenAI SDK tracing**: OpenRouter runs produced non-fatal OpenAI tracing `401`s, and native `gpt-5.2` runs hit an OpenAI Agents SDK tracing `RecursionError`. The benchmark now uses provider-aware tracing: OpenRouter disables SDK tracing entirely, while native OpenAI keeps tracing enabled but omits sensitive trace payloads to avoid the recursion bug.
-4. **Provider limits**: Full native OpenAI suite runs remain constrained by account TPM/quota. In practice, OpenRouter is the better default for full-suite live validation, while native OpenAI is best used for targeted single-task debugging.
+1. **Reference data**: All 280+ backtest runs regenerated (2026-03-25). I01-I06 classic + I07-I10 framework algorithms, including I06 (19 sweep configs), I08 (2 portfolio models), I09 (3 risk configs), I10 (250 grid search configs). All trades, signals, and summaries synced across `Implementation/result/` and `data/reference/`.
+2. **Behavioral scoring**: Full 4-layer scoring operational for all 10 tasks. Signal generators produce deterministic Python-based signals independent of LEAN.
+3. **Infrastructure**: OpenRouter is the recommended provider for full-suite live validation. Native OpenAI is best for targeted single-task debugging due to quota/TPM limits.
 
-The consequence is important: **I-series can work today**, but raw benchmark quality is still model-dependent. The current remaining problem is not “can I-series run?” but “does the agent actually use the LEAN/trial workflow to achieve strong QR?”
+The current bottleneck is model quality rather than benchmark infrastructure — “does the agent actually use the LEAN/trial workflow to achieve strong QR?”
 
 ---
 

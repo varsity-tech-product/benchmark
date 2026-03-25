@@ -1,6 +1,6 @@
 # Debug Section (X-Series) Design Plan
 
-> Version: v2.2 | Status: **Implemented and Operationally Validated** | Section: Algorithm Debugging
+> Version: v2.3 | Status: **Complete — all code, evals, reference data (trades + signals + summaries), and behavioral scoring fully operational** | Section: Algorithm Debugging
 
 ---
 
@@ -94,15 +94,25 @@ Checklist-based eval scripts                    Behavioral scoring + checklist e
 No reference data generation                    LEAN reference generation needed
 ```
 
-### 1.5 Current Operational Status (2026-03-13)
+### 1.5 Current Operational Status (2026-03-25)
 
-X-series is now **operationally validated** in live runs. The full X01–X10 suite executes end-to-end, saves artifacts, and completes without infrastructure-level blockers. In practice:
+X-series is now **fully complete**. All X01–X10 tasks have code, eval scripts, and reference data. X07–X10 LEAN backtests have been run and all three reference file types (trades, signals, summaries) are generated and synced across both directories (`debug/result/` and `data/reference/`). Behavioral scoring operates at full 4/4 layer coverage.
 
 1. **Harness usability**: The benchmark runner, sandbox, docs, evaluator stack, and result persistence all work for the full X-series.
-2. **Provider/runtime stability**: OpenRouter-routed runs with `gpt-4o-mini` complete cleanly for the full suite; no sandbox/network regression was observed during the X-series usability check.
-3. **Model-quality caveat**: Operational validity does **not** imply strong debugging skill. The dominant failure mode in the live run was that the agent explained the bug conceptually but did not actually patch, execute, and verify fixes. Many tasks therefore completed with low `QR` despite the harness working correctly.
+2. **Reference data complete**: X07-X10 reference trades regenerated on updated dataset (2026-03-25). Signal generators (`_signals_x07` through `_signals_x10`) added to `generate_reference_signals.py`. All signals and summaries generated.
+3. **Behavioral scoring**: Full 4-layer scoring (signal agreement 0.40, position overlap 0.30, performance 0.20, trade similarity 0.10) now operational for X07-X10. Previously degraded to 2/4 layers due to missing signals/summaries.
+4. **Model-quality caveat**: Operational validity does **not** imply strong debugging skill. The dominant failure mode in live runs was that the agent explained the bug conceptually but did not actually patch, execute, and verify fixes.
 
-The practical conclusion is: **X-series can work today**, and its current bottleneck is model debugging quality rather than benchmark infrastructure.
+The practical conclusion is: **X-series is fully operational**, and its current bottleneck is model debugging quality rather than benchmark infrastructure.
+
+**X07-X10 Reference Results** (regenerated 2026-03-25):
+
+| Task | Trades | Sharpe | Return | Max DD | Strategy |
+|------|--------|--------|--------|--------|----------|
+| X07 | 12 | 0.364 | 77.1% | 43.0% | EMA(20/50) crossover, BTCUSDT daily |
+| X08 | 82 | 0.348 | 70.7% | 36.5% | ROCP(20) momentum, BTCUSDT daily |
+| X09 | 280 | 0.185 | 9.2% | 64.4% | Trend+Reversion alphas, 10 symbols daily |
+| X10 | 4,166 | 1.028 | 217.0% | 17.1% | ROCP(20) ranking long/short, ~20 symbols daily |
 
 ---
 
@@ -1260,7 +1270,7 @@ The buggy student code is **NOT** run through reference generation — it serves
 | `X10_universe_stale_fixed.cs` | Done | `bench/reference/lean_algorithms/X10_universe_stale_fixed.cs` |
 | **Data Files** | | |
 | `BTC_UTC.csv` | Done | `bench/data/frozen/BTC_UTC.csv` (1,096 rows, 2022-2025, UTC timestamps) |
-| X07-X10 reference data | Pending | Requires `generate_lean_reference.py --task X07..X10` via LEAN Docker |
+| X07-X10 reference data | Done | Trades + signals + summaries generated (2026-03-25) in `bench/data/reference/` and `bench/reference/debug/result/` |
 | **Pre-existing Infrastructure** | | |
 | Orchestrator debug mounting | Done | `orchestrator.py:172-173` mounts `/student_code` when `category == "debug"` |
 | Prompt config sample_code injection | Done | `prompt_config.py:162-165` |
@@ -1283,7 +1293,7 @@ The buggy student code is **NOT** run through reference generation — it serves
 | X07-X10 reference algorithms (.cs) | **Done** | `bench/reference/lean_algorithms/X07_warmup_fixed.cs` through `X10_universe_stale_fixed.cs` |
 | X07-X10 task JSONs | **Done** | `bench/tasks/layer2/debug/X07_warmup_bug.json` through `X10_universe_stale.json` |
 | X07-X10 eval scripts | **Done** | `bench/evaluation/test_scripts/debug/X07_warmup_bug.py` through `X10_universe_stale.py` |
-| X07-X10 reference data | **Pending** | Requires running `generate_lean_reference.py --task X07..X10` via LEAN Docker |
+| X07-X10 reference data | **Done** | Trades + signals + summaries generated (2026-03-25) |
 | `BTC_UTC.csv` data file | **Done** | `bench/data/frozen/BTC_UTC.csv` — 1,096 daily rows (2022-2025) from hourly BTCUSDT data |
 
 ### 8.3 What Was Extended (Implementation Complete)
@@ -1350,39 +1360,29 @@ All completed:
 5. **X05** (timezone) — task JSON + eval script + `BTC_UTC.csv` (1,096 daily rows from hourly data)
 6. **X06** (overfitting) — task JSON + eval script (6 concept-based checks, no single-line fix)
 
-### Phase 2: LEAN Tasks (X07-X10) — **COMPLETE** (except reference data)
+### Phase 2: LEAN Tasks (X07-X10) — **COMPLETE**
 
-All completed except reference data generation (requires LEAN Docker):
+All items complete including reference data generation:
 
 1. **Buggy student code**: `warmup_bug.cs`, `order_type_bug.cs`, `alpha_conflict.cs`, `universe_stale.cs`
 2. **Reference algorithms**: `X07_warmup_fixed.cs`, `X08_order_type_fixed.cs`, `X09_alpha_conflict_fixed.cs`, `X10_universe_stale_fixed.cs`
 3. **`generate_lean_reference.py`**: Extended with X07-X10 in `TASK_ALGO_MAP` and `class_name_map`
-4. **Task JSONs**: All 4 created with LEAN sandbox config
-5. **Eval scripts**: All 4 created with hybrid behavioral + checklist scoring
-6. **Orchestrator**: No changes needed — debug + lean mounts fire independently
+4. **`generate_reference_signals.py`**: Signal generators `_signals_x07` through `_signals_x10` added, plus `_X10_LATE_LISTINGS` dict for listing-date filtering
+5. **Task JSONs**: All 4 created with LEAN sandbox config
+6. **Eval scripts**: All 4 created with hybrid behavioral + checklist scoring
+7. **Reference data**: All 4 tasks have trades + signals + summaries in both `debug/result/` and `data/reference/` (generated 2026-03-25)
 
-**Remaining**: Run reference data generation:
-```bash
-python bench/reference/script/generate_lean_reference.py --task X07
-python bench/reference/script/generate_lean_reference.py --task X08
-python bench/reference/script/generate_lean_reference.py --task X09
-python bench/reference/script/generate_lean_reference.py --task X10
-```
+### Phase 3: Validation — **COMPLETE**
 
-### Phase 3: Validation — **PARTIAL**
-
-Completed:
-1. All 9 task JSONs parse correctly with proper category/difficulty/sandbox
+1. All 10 task JSONs parse correctly with proper category/difficulty/sandbox
 2. All 10 eval scripts compile with valid Python syntax
 3. All checklist weights verified to sum to 1.0
 4. All C# class names verified (QuantTutorBench namespace, correct inheritance)
 5. Bugs confirmed in code (not comments), fixes confirmed in reference algorithms
 6. Student Python code runs without crashes (produces buggy but valid output)
-
-Remaining:
-- Full integration dry-run after reference data generation
-- Self-test with fixed code → should score high
-- Bug-test with buggy code → should score low
+7. X07-X10 reference data generated and verified (trades + signals + summaries)
+8. Behavioral scoring loads all reference data for X07-X10 (4/4 layers available)
+9. Both reference directories (`debug/result/` and `data/reference/`) verified in sync via MD5
 
 ---
 

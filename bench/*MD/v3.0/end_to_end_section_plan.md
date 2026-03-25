@@ -1,6 +1,6 @@
 # End-to-End Section (E-Series) Design Plan
 
-> Version: v2.2 | Status: **Complete and Operationally Validated** — all code, evals, and reference data generated; live suite runs complete end-to-end | Section: Workflow Orchestration
+> Version: v2.3 | Status: **Complete and Operationally Validated** — all code, evals, reference data (trades + signals + summaries) regenerated on updated dataset (2026-03-25); both directories synced | Section: Workflow Orchestration
 
 ---
 
@@ -581,15 +581,17 @@ The existing orchestrator handles E-series tasks without modification:
 
 ### 7.3 Generated Files (from reference generation)
 
+All reference files regenerated on updated dataset (2026-03-25). Files exist in both `bench/data/reference/` (eval reads from here) and `bench/reference/end_to_end/result/` (authoritative generation target), verified in sync via MD5.
+
 | File | Source | Status |
 |------|--------|--------|
-| `bench/data/reference/E02_reference_trades.json` | LEAN backtest | ✅ 26 trades, +24.9% return |
+| `bench/data/reference/E02_reference_trades.json` | LEAN backtest | ✅ 26 trades, +24.9% return, Sharpe 0.108 |
 | `bench/data/reference/E02_reference_signals.json` | Signal extraction | ✅ 1,442 signals |
 | `bench/data/reference/E02_reference_summary.json` | Performance summary | ✅ |
-| `bench/data/reference/E04_reference_trades.json` | LEAN backtest | ✅ 12 trades, +77.1% return |
+| `bench/data/reference/E04_reference_trades.json` | LEAN backtest | ✅ 12 trades, +77.1% return, Sharpe 0.364 |
 | `bench/data/reference/E04_reference_signals.json` | Signal extraction | ✅ 1,461 signals |
 | `bench/data/reference/E04_reference_summary.json` | Performance summary | ✅ |
-| `bench/data/reference/E05_reference_trades.json` | LEAN backtest | ✅ 1,159 trades, +104.8% return |
+| `bench/data/reference/E05_reference_trades.json` | LEAN backtest | ✅ 1,159 trades, +104.8% return, Sharpe 0.539 |
 | `bench/data/reference/E05_reference_signals.json` | Signal extraction | ✅ 27,455 signals |
 | `bench/data/reference/E05_reference_summary.json` | Performance summary | ✅ |
 
@@ -620,13 +622,13 @@ The existing orchestrator handles E-series tasks without modification:
 
 ### 9.3 Reference Data Results
 
-Reference data generated successfully for all three LEAN-backed tasks:
+Reference data regenerated on updated dataset (2026-03-25) for all three LEAN-backed tasks. All reference files (trades, signals, summaries) are synced across both `end_to_end/result/` and `data/reference/` directories.
 
-| Task | Trades | Return | Sharpe | Signals | Strategy |
-|------|--------|--------|--------|---------|----------|
-| E02 | 26 | +24.9% | — | 1,442 | BB(20,2) mean-reversion, BTCUSDT daily |
-| E04 | 12 | +77.1% | — | 1,461 | EMA(20/50) crossover (fixed), BTCUSDT daily |
-| E05 | 1,159 | +104.8% | — | 27,455 | ROCP(20) top-5 momentum, 20 tier2 symbols daily |
+| Task | Trades | Return | Sharpe | Max DD | Signals | Strategy |
+|------|--------|--------|--------|--------|---------|----------|
+| E02 | 26 | +24.9% | 0.108 | 44.1% | 1,442 | BB(20,2) mean-reversion, BTCUSDT daily |
+| E04 | 12 | +77.1% | 0.364 | 43.0% | 1,461 | EMA(20/50) crossover (fixed), BTCUSDT daily |
+| E05 | 1,159 | +104.8% | 0.539 | 68.6% | 27,455 | ROCP(20) top-5 momentum, 20 tier2 symbols daily |
 
 Trade counts are consistent with strategy design:
 - E02/E04: Single-symbol daily strategies → low trade counts expected
