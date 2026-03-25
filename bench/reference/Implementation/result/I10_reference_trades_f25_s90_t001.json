@@ -5,7 +5,7 @@
   "start_date": "2022-01-01",
   "end_date": "2025-12-31",
   "lean_image": "quant-tutor-env:v2.2-lean",
-  "generated_at": "2026-03-25T05:51:48.430593+00:00",
+  "generated_at": "2026-03-25T09:10:22.202117+00:00",
   "status": "success",
   "metrics": {
     "total_orders": 10126,
