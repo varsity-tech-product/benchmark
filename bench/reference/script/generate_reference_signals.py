@@ -24,7 +24,7 @@ import pandas as pd
 
 # ── Paths ──
 SCRIPT_DIR = Path(__file__).parent
-BENCH_ROOT = SCRIPT_DIR.parent
+BENCH_ROOT = SCRIPT_DIR.parent.parent  # bench/reference/script/ -> bench/
 RAW_DATA_DIR = BENCH_ROOT / "data" / "raw" / "i-series"
 REFERENCE_DIR = BENCH_ROOT / "data" / "reference"
 

@@ -1,7 +1,7 @@
 {
   "task_id": "I06",
   "type": "parameter_sweep",
-  "generated_at": "2026-03-25T05:29:35.067038+00:00",
+  "generated_at": "2026-03-25T08:44:45.344694+00:00",
   "total_configurations_tested": 19,
   "total_configurations_attempted": 19,
   "best_configuration": {
@@ -12,11 +12,11 @@
       "carry_weight": "0.3"
     },
     "metrics": {
-      "total_trades": 14565,
-      "sharpe_ratio": "0.3793",
-      "total_return": "24037.488%",
-      "max_drawdown": "39.100%",
-      "win_rate": "26%"
+      "total_trades": 14871,
+      "sharpe_ratio": "-0.654",
+      "total_return": "-45.380%",
+      "max_drawdown": "50.200%",
+      "win_rate": "25%"
     }
   },
   "sweep_results": [
@@ -28,26 +28,11 @@
         "carry_weight": "0.3"
       },
       "metrics": {
-        "total_trades": 14565,
-        "sharpe_ratio": "0.3793",
-        "total_return": "24037.488%",
-        "max_drawdown": "39.100%",
-        "win_rate": "26%"
-      }
-    },
-    {
-      "run_id": "t05_r03_c02",
-      "parameters": {
-        "trend_weight": "0.5",
-        "reversion_weight": "0.3",
-        "carry_weight": "0.2"
-      },
-      "metrics": {
-        "total_trades": 13008,
-        "sharpe_ratio": "0.3502",
-        "total_return": "14421.083%",
-        "max_drawdown": "50.400%",
-        "win_rate": "22%"
+        "total_trades": 14871,
+        "sharpe_ratio": "-0.654",
+        "total_return": "-45.380%",
+        "max_drawdown": "50.200%",
+        "win_rate": "25%"
       }
     },
     {
@@ -58,26 +43,11 @@
         "carry_weight": "0.3"
       },
       "metrics": {
-        "total_trades": 14048,
-        "sharpe_ratio": "0.3468",
-        "total_return": "32919.531%",
-        "max_drawdown": "89.943%",
-        "win_rate": "0%"
-      }
-    },
-    {
-      "run_id": "t02_r04_c04",
-      "parameters": {
-        "trend_weight": "0.2",
-        "reversion_weight": "0.4",
-        "carry_weight": "0.4"
-      },
-      "metrics": {
-        "total_trades": 14687,
-        "sharpe_ratio": "0.3467",
-        "total_return": "26957.463%",
-        "max_drawdown": "54.591%",
-        "win_rate": "0%"
+        "total_trades": 14482,
+        "sharpe_ratio": "-0.672",
+        "total_return": "-46.308%",
+        "max_drawdown": "46.900%",
+        "win_rate": "24%"
       }
     },
     {
@@ -88,161 +58,26 @@
         "carry_weight": "0.5"
       },
       "metrics": {
-        "total_trades": 14704,
-        "sharpe_ratio": "0.3228",
-        "total_return": "28165.469%",
-        "max_drawdown": "70.393%",
-        "win_rate": "0%"
-      }
-    },
-    {
-      "run_id": "t04_r04_c02",
-      "parameters": {
-        "trend_weight": "0.4",
-        "reversion_weight": "0.4",
-        "carry_weight": "0.2"
-      },
-      "metrics": {
-        "total_trades": 12780,
-        "sharpe_ratio": "0.3163",
-        "total_return": "14009.367%",
-        "max_drawdown": "46.100%",
-        "win_rate": "23%"
-      }
-    },
-    {
-      "run_id": "t03_r03_c04",
-      "parameters": {
-        "trend_weight": "0.3",
-        "reversion_weight": "0.3",
-        "carry_weight": "0.4"
-      },
-      "metrics": {
-        "total_trades": 14523,
-        "sharpe_ratio": "0.3101",
-        "total_return": "26176.724%",
-        "max_drawdown": "91.318%",
-        "win_rate": "0%"
-      }
-    },
-    {
-      "run_id": "t05_r04_c01",
-      "parameters": {
-        "trend_weight": "0.5",
-        "reversion_weight": "0.4",
-        "carry_weight": "0.1"
-      },
-      "metrics": {
-        "total_trades": 10018,
-        "sharpe_ratio": "0.3081",
-        "total_return": "35119.046%",
-        "max_drawdown": "53.741%",
-        "win_rate": "0%"
-      }
-    },
-    {
-      "run_id": "t03_r02_c05",
-      "parameters": {
-        "trend_weight": "0.3",
-        "reversion_weight": "0.2",
-        "carry_weight": "0.5"
-      },
-      "metrics": {
-        "total_trades": 14541,
-        "sharpe_ratio": "0.3071",
-        "total_return": "29303.332%",
-        "max_drawdown": "93.614%",
-        "win_rate": "0%"
-      }
-    },
-    {
-      "run_id": "t04_r05_c01",
-      "parameters": {
-        "trend_weight": "0.4",
-        "reversion_weight": "0.5",
-        "carry_weight": "0.1"
-      },
-      "metrics": {
-        "total_trades": 9438,
-        "sharpe_ratio": "0.3066",
-        "total_return": "22026.312%",
-        "max_drawdown": "45.636%",
-        "win_rate": "0%"
-      }
-    },
-    {
-      "run_id": "t06_r03_c01",
-      "parameters": {
-        "trend_weight": "0.6",
-        "reversion_weight": "0.3",
-        "carry_weight": "0.1"
-      },
-      "metrics": {
-        "total_trades": 10642,
-        "sharpe_ratio": "0.3036",
-        "total_return": "30916.563%",
-        "max_drawdown": "68.627%",
-        "win_rate": "0%"
-      }
-    },
-    {
-      "run_id": "t03_r05_c02",
-      "parameters": {
-        "trend_weight": "0.3",
-        "reversion_weight": "0.5",
-        "carry_weight": "0.2"
-      },
-      "metrics": {
-        "total_trades": 12926,
-        "sharpe_ratio": "0.3029",
-        "total_return": "10377.758%",
-        "max_drawdown": "45.300%",
+        "total_trades": 15012,
+        "sharpe_ratio": "-0.674",
+        "total_return": "-42.780%",
+        "max_drawdown": "43.800%",
         "win_rate": "24%"
       }
     },
     {
-      "run_id": "t06_r02_c02",
+      "run_id": "t02_r04_c04",
       "parameters": {
-        "trend_weight": "0.6",
-        "reversion_weight": "0.2",
-        "carry_weight": "0.2"
+        "trend_weight": "0.2",
+        "reversion_weight": "0.4",
+        "carry_weight": "0.4"
       },
       "metrics": {
-        "total_trades": 12588,
-        "sharpe_ratio": "0.2938",
-        "total_return": "35433.299%",
-        "max_drawdown": "83.085%",
-        "win_rate": "0%"
-      }
-    },
-    {
-      "run_id": "t05_r02_c03",
-      "parameters": {
-        "trend_weight": "0.5",
-        "reversion_weight": "0.2",
-        "carry_weight": "0.3"
-      },
-      "metrics": {
-        "total_trades": 13530,
-        "sharpe_ratio": "0.2922",
-        "total_return": "32060.574%",
-        "max_drawdown": "874.402%",
-        "win_rate": "0%"
-      }
-    },
-    {
-      "run_id": "t04_r01_c05",
-      "parameters": {
-        "trend_weight": "0.4",
-        "reversion_weight": "0.1",
-        "carry_weight": "0.5"
-      },
-      "metrics": {
-        "total_trades": 14366,
-        "sharpe_ratio": "0.2888",
-        "total_return": "26361.033%",
-        "max_drawdown": "118.548%",
-        "win_rate": "0%"
+        "total_trades": 15039,
+        "sharpe_ratio": "-0.675",
+        "total_return": "-44.973%",
+        "max_drawdown": "48.000%",
+        "win_rate": "25%"
       }
     },
     {
@@ -253,11 +88,11 @@
         "carry_weight": "0.3"
       },
       "metrics": {
-        "total_trades": 13546,
-        "sharpe_ratio": "0.2829",
-        "total_return": "14414.483%",
-        "max_drawdown": "38.500%",
-        "win_rate": "21%"
+        "total_trades": 13560,
+        "sharpe_ratio": "-0.676",
+        "total_return": "-47.516%",
+        "max_drawdown": "51.600%",
+        "win_rate": "22%"
       }
     },
     {
@@ -268,26 +103,101 @@
         "carry_weight": "0.4"
       },
       "metrics": {
-        "total_trades": 13905,
-        "sharpe_ratio": "0.281",
-        "total_return": "33674.934%",
-        "max_drawdown": "1270.962%",
-        "win_rate": "0%"
+        "total_trades": 14348,
+        "sharpe_ratio": "-0.677",
+        "total_return": "-53.756%",
+        "max_drawdown": "54.500%",
+        "win_rate": "22%"
       }
     },
     {
-      "run_id": "t04_r03_c03",
+      "run_id": "t05_r02_c03",
       "parameters": {
-        "trend_weight": "0.4",
-        "reversion_weight": "0.3",
+        "trend_weight": "0.5",
+        "reversion_weight": "0.2",
         "carry_weight": "0.3"
       },
       "metrics": {
-        "total_trades": 13719,
-        "sharpe_ratio": "0.2776",
-        "total_return": "27604.073%",
-        "max_drawdown": "878.327%",
-        "win_rate": "0%"
+        "total_trades": 13971,
+        "sharpe_ratio": "-0.703",
+        "total_return": "-51.774%",
+        "max_drawdown": "52.400%",
+        "win_rate": "23%"
+      }
+    },
+    {
+      "run_id": "t05_r04_c01",
+      "parameters": {
+        "trend_weight": "0.5",
+        "reversion_weight": "0.4",
+        "carry_weight": "0.1"
+      },
+      "metrics": {
+        "total_trades": 10452,
+        "sharpe_ratio": "-0.72",
+        "total_return": "-46.523%",
+        "max_drawdown": "53.800%",
+        "win_rate": "21%"
+      }
+    },
+    {
+      "run_id": "t03_r02_c05",
+      "parameters": {
+        "trend_weight": "0.3",
+        "reversion_weight": "0.2",
+        "carry_weight": "0.5"
+      },
+      "metrics": {
+        "total_trades": 14941,
+        "sharpe_ratio": "-0.729",
+        "total_return": "-49.719%",
+        "max_drawdown": "51.100%",
+        "win_rate": "23%"
+      }
+    },
+    {
+      "run_id": "t06_r02_c02",
+      "parameters": {
+        "trend_weight": "0.6",
+        "reversion_weight": "0.2",
+        "carry_weight": "0.2"
+      },
+      "metrics": {
+        "total_trades": 13037,
+        "sharpe_ratio": "-0.759",
+        "total_return": "-50.582%",
+        "max_drawdown": "53.900%",
+        "win_rate": "21%"
+      }
+    },
+    {
+      "run_id": "t04_r01_c05",
+      "parameters": {
+        "trend_weight": "0.4",
+        "reversion_weight": "0.1",
+        "carry_weight": "0.5"
+      },
+      "metrics": {
+        "total_trades": 14793,
+        "sharpe_ratio": "-0.78",
+        "total_return": "-57.924%",
+        "max_drawdown": "58.100%",
+        "win_rate": "22%"
+      }
+    },
+    {
+      "run_id": "t03_r03_c04",
+      "parameters": {
+        "trend_weight": "0.3",
+        "reversion_weight": "0.3",
+        "carry_weight": "0.4"
+      },
+      "metrics": {
+        "total_trades": 14947,
+        "sharpe_ratio": "-0.796",
+        "total_return": "-55.235%",
+        "max_drawdown": "56.000%",
+        "win_rate": "24%"
       }
     },
     {
@@ -298,11 +208,101 @@
         "carry_weight": "0.4"
       },
       "metrics": {
-        "total_trades": 14427,
-        "sharpe_ratio": "-0.5214",
-        "total_return": "-8391.923%",
-        "max_drawdown": "1311.931%",
-        "win_rate": "0%"
+        "total_trades": 14860,
+        "sharpe_ratio": "-0.81",
+        "total_return": "-60.138%",
+        "max_drawdown": "60.400%",
+        "win_rate": "23%"
+      }
+    },
+    {
+      "run_id": "t04_r04_c02",
+      "parameters": {
+        "trend_weight": "0.4",
+        "reversion_weight": "0.4",
+        "carry_weight": "0.2"
+      },
+      "metrics": {
+        "total_trades": 12789,
+        "sharpe_ratio": "-0.814",
+        "total_return": "-54.341%",
+        "max_drawdown": "56.500%",
+        "win_rate": "23%"
+      }
+    },
+    {
+      "run_id": "t06_r03_c01",
+      "parameters": {
+        "trend_weight": "0.6",
+        "reversion_weight": "0.3",
+        "carry_weight": "0.1"
+      },
+      "metrics": {
+        "total_trades": 11068,
+        "sharpe_ratio": "-0.815",
+        "total_return": "-50.340%",
+        "max_drawdown": "58.000%",
+        "win_rate": "21%"
+      }
+    },
+    {
+      "run_id": "t04_r03_c03",
+      "parameters": {
+        "trend_weight": "0.4",
+        "reversion_weight": "0.3",
+        "carry_weight": "0.3"
+      },
+      "metrics": {
+        "total_trades": 14174,
+        "sharpe_ratio": "-0.832",
+        "total_return": "-59.103%",
+        "max_drawdown": "60.200%",
+        "win_rate": "23%"
+      }
+    },
+    {
+      "run_id": "t05_r03_c02",
+      "parameters": {
+        "trend_weight": "0.5",
+        "reversion_weight": "0.3",
+        "carry_weight": "0.2"
+      },
+      "metrics": {
+        "total_trades": 13009,
+        "sharpe_ratio": "-0.835",
+        "total_return": "-56.685%",
+        "max_drawdown": "58.000%",
+        "win_rate": "22%"
+      }
+    },
+    {
+      "run_id": "t03_r05_c02",
+      "parameters": {
+        "trend_weight": "0.3",
+        "reversion_weight": "0.5",
+        "carry_weight": "0.2"
+      },
+      "metrics": {
+        "total_trades": 12946,
+        "sharpe_ratio": "-0.848",
+        "total_return": "-57.591%",
+        "max_drawdown": "58.100%",
+        "win_rate": "24%"
+      }
+    },
+    {
+      "run_id": "t04_r05_c01",
+      "parameters": {
+        "trend_weight": "0.4",
+        "reversion_weight": "0.5",
+        "carry_weight": "0.1"
+      },
+      "metrics": {
+        "total_trades": 9856,
+        "sharpe_ratio": "-0.862",
+        "total_return": "-60.375%",
+        "max_drawdown": "63.900%",
+        "win_rate": "21%"
       }
     }
   ]

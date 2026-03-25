@@ -90,6 +90,16 @@ def _ms_from_midnight(dt: datetime) -> int:
     return (dt.hour * 3600 + dt.minute * 60 + dt.second) * 1000
 
 
+def _fmt_price(v: float) -> str:
+    """Format a price as fixed-point decimal, never scientific notation.
+
+    LEAN's CryptoFuture CSV parser does not handle scientific notation
+    (e.g. '6.68e-05'), so all prices must be in fixed-point format.
+    Uses 10 decimal places then strips trailing zeros for readability.
+    """
+    return f"{v:.10f}".rstrip("0").rstrip(".")
+
+
 def format_lean_row(
     dt: datetime,
     open_price: float,
@@ -113,7 +123,11 @@ def format_lean_row(
         # High-res: milliseconds from midnight
         ts = str(_ms_from_midnight(dt))
 
-    return f"{ts},{open_price},{high_price},{low_price},{close_price},{volume}"
+    o = _fmt_price(open_price)
+    h = _fmt_price(high_price)
+    l = _fmt_price(low_price)
+    c = _fmt_price(close_price)
+    return f"{ts},{o},{h},{l},{c},{volume}"
 
 
 def convert_to_lean_lines(df: pd.DataFrame, interval: str) -> list[str]:
@@ -320,9 +334,11 @@ def aggregate_minute_to_daily(
     new_lines = []
     for _, row in new_dates.iterrows():
         date_str = f"{row['date']} 00:00"
-        new_lines.append(
-            f"{date_str},{row['open']},{row['high']},{row['low']},{row['close']},{row['volume']}"
-        )
+        o = _fmt_price(float(row["open"]))
+        h = _fmt_price(float(row["high"]))
+        l = _fmt_price(float(row["low"]))
+        c = _fmt_price(float(row["close"]))
+        new_lines.append(f"{date_str},{o},{h},{l},{c},{row['volume']}")
 
     all_lines = sorted(existing_lines + new_lines)
 
