@@ -1034,6 +1034,295 @@ def _build_summary(task_id: str) -> dict:
 
 
 # ────────────────────────────────────────────────────────────────────
+# X-series signal generators (debug tasks — fixed algorithm logic)
+# ────────────────────────────────────────────────────────────────────
+
+
+def _signals_x07(start: str = DEFAULT_START, end: str = DEFAULT_END) -> dict:
+    """X07: EMA(20)/EMA(50) crossover on BTCUSDT daily.
+
+    signal = +1 if price > EMA(20) AND EMA(20) > EMA(50)
+             -1 if EMA(20) < EMA(50)
+              0 otherwise (EMA(20) > EMA(50) but price below fast EMA)
+    """
+    symbol = "BTCUSDT"
+    df = _load_daily_csv(symbol)
+    df = _filter_dates(df, start, end)
+    if df.empty:
+        return _empty_signal_result("X07", "daily", start, end, 50)
+
+    df["ema20"] = df["close"].ewm(span=20, adjust=False).mean()
+    df["ema50"] = df["close"].ewm(span=50, adjust=False).mean()
+    warmup = 50
+
+    signals = []
+    for _, row in df.iterrows():
+        if pd.isna(row["ema20"]) or pd.isna(row["ema50"]):
+            continue
+        if row["close"] > row["ema20"] and row["ema20"] > row["ema50"]:
+            sig = 1
+        elif row["ema20"] < row["ema50"]:
+            sig = -1
+        else:
+            sig = 0
+        signals.append({"date": str(row["date"]), "signal": sig})
+
+    return {
+        "task_id": "X07",
+        "seed": None,
+        "resolution": "daily",
+        "start_date": start,
+        "end_date": end,
+        "warmup_periods": warmup,
+        "signals": {symbol: signals},
+    }
+
+
+def _signals_x08(start: str = DEFAULT_START, end: str = DEFAULT_END) -> dict:
+    """X08: ROCP(20) momentum on BTCUSDT daily.
+
+    signal = +1 if ROCP > 5%, -1 if ROCP < -5%, 0 otherwise.
+    """
+    symbol = "BTCUSDT"
+    df = _load_daily_csv(symbol)
+    df = _filter_dates(df, start, end)
+    if df.empty:
+        return _empty_signal_result("X08", "daily", start, end, 20)
+
+    df["rocp"] = df["close"].pct_change(20)
+    warmup = 20
+
+    signals = []
+    for _, row in df.iterrows():
+        if pd.isna(row["rocp"]):
+            continue
+        if row["rocp"] > 0.05:
+            sig = 1
+        elif row["rocp"] < -0.05:
+            sig = -1
+        else:
+            sig = 0
+        signals.append({"date": str(row["date"]), "signal": sig})
+
+    return {
+        "task_id": "X08",
+        "seed": None,
+        "resolution": "daily",
+        "start_date": start,
+        "end_date": end,
+        "warmup_periods": warmup,
+        "signals": {symbol: signals},
+    }
+
+
+def _signals_x09(start: str = DEFAULT_START, end: str = DEFAULT_END) -> dict:
+    """X09: Trend + Reversion alpha conflict on first 10 symbols, daily.
+
+    Trend: EMA(10)/EMA(30) → direction, weight=0.65, confidence=0.8
+    Reversion: RSI(14) extremes → direction, weight=0.25, confidence=0.4
+    Net signal: sign of (trend_dir * 0.52 + reversion_dir * 0.10)
+    """
+    # X09 loads from flat universe.json (first 10 symbols)
+    flat_paths = [
+        BENCH_ROOT / "data" / "lean" / "universe.json",
+        BENCH_ROOT / "data" / "lean_universe.json",
+    ]
+    symbols = None
+    for p in flat_paths:
+        if p.exists():
+            with open(p) as f:
+                all_syms = json.load(f)
+            symbols = all_syms[:10]
+            break
+    if symbols is None:
+        symbols = [
+            "BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "XRPUSDT",
+            "ADAUSDT", "DOGEUSDT", "LINKUSDT", "AVAXUSDT", "DOTUSDT",
+        ]
+
+    all_signals: dict[str, list] = {}
+    warmup = 30
+
+    for sym in symbols:
+        df = _load_daily_csv(sym)
+        df = _filter_dates(df, start, end)
+        if df.empty or len(df) < warmup:
+            continue
+
+        # Trend: EMA(10)/EMA(30)
+        df["ema10"] = df["close"].ewm(span=10, adjust=False).mean()
+        df["ema30"] = df["close"].ewm(span=30, adjust=False).mean()
+
+        # Reversion: RSI(14)
+        delta = df["close"].diff()
+        gain = delta.clip(lower=0)
+        loss = -delta.clip(upper=0)
+        avg_gain = gain.rolling(14).mean()
+        avg_loss = loss.rolling(14).mean()
+        rs = avg_gain / avg_loss.replace(0, np.nan)
+        df["rsi"] = 100 - (100 / (1 + rs))
+
+        signals = []
+        for _, row in df.iterrows():
+            if pd.isna(row["ema10"]) or pd.isna(row["ema30"]) or pd.isna(row["rsi"]):
+                continue
+
+            # Trend direction (always fires)
+            trend_dir = 1 if row["ema10"] > row["ema30"] else -1
+
+            # Reversion direction (only fires at RSI extremes)
+            if row["rsi"] > 70:
+                rev_dir = -1
+            elif row["rsi"] < 30:
+                rev_dir = 1
+            else:
+                rev_dir = 0
+
+            # Weighted composite: trend*0.65*0.8 + rev*0.25*0.4
+            composite = trend_dir * 0.52 + rev_dir * 0.10
+
+            if composite > 0:
+                sig = 1
+            elif composite < 0:
+                sig = -1
+            else:
+                sig = 0
+            signals.append({"date": str(row["date"]), "signal": sig})
+
+        if signals:
+            all_signals[sym] = signals
+
+    return {
+        "task_id": "X09",
+        "seed": None,
+        "resolution": "daily",
+        "start_date": start,
+        "end_date": end,
+        "warmup_periods": warmup,
+        "signals": all_signals,
+    }
+
+
+# Listing dates for symbols listed after 2022-01-01 (used by X10)
+_X10_LATE_LISTINGS = {
+    "APTUSDT": "2022-10-19",
+    "ARBUSDT": "2023-03-23",
+    "OPUSDT": "2022-05-31",
+    "0GUSDT": "2024-06-27",
+    "1000000BOBUSDT": "2024-11-15",
+    "1000000MOGUSDT": "2024-08-29",
+    "1000BONKUSDT": "2023-11-22",
+    "1000CATUSDT": "2024-12-16",
+    "1000CHEEMSUSDT": "2024-11-29",
+    "1000PEPEUSDT": "2023-05-05",
+    "1000RATSUSDT": "2024-03-05",
+    "1000SATSUSDT": "2023-12-13",
+    "1000WHYUSDT": "2024-08-20",
+}
+
+
+def _signals_x10(start: str = DEFAULT_START, end: str = DEFAULT_END) -> dict:
+    """X10: Momentum ranking (ROCP 20) on first 30 symbols after listing filter.
+
+    Long top-5 → +1, short bottom-5 → -1, rest → 0.
+    """
+    start_date = pd.Timestamp(start).date()
+
+    # X10 loads from flat universe.json (first 30, minus late-listed)
+    flat_paths = [
+        BENCH_ROOT / "data" / "lean" / "universe.json",
+        BENCH_ROOT / "data" / "lean_universe.json",
+    ]
+    candidates = None
+    for p in flat_paths:
+        if p.exists():
+            with open(p) as f:
+                all_syms = json.load(f)
+            candidates = all_syms[:30]
+            break
+    if candidates is None:
+        candidates = [
+            "BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT", "XRPUSDT",
+            "ADAUSDT", "DOGEUSDT", "LINKUSDT", "AVAXUSDT", "DOTUSDT",
+        ]
+
+    # Filter out late-listed symbols
+    symbols = []
+    for sym in candidates:
+        listing = _X10_LATE_LISTINGS.get(sym)
+        if listing and pd.Timestamp(listing).date() > start_date:
+            continue
+        symbols.append(sym)
+
+    warmup = 25
+    top_n = 5
+    bottom_n = 5
+
+    # Load daily data
+    sym_data: dict[str, pd.DataFrame] = {}
+    for sym in symbols:
+        df = _load_daily_csv(sym)
+        df = _filter_dates(df, start, end)
+        if df.empty or len(df) < warmup:
+            continue
+        df["rocp"] = df["close"].pct_change(20)
+        sym_data[sym] = df
+
+    if not sym_data:
+        return _empty_signal_result("X10", "daily", start, end, warmup)
+
+    # Collect all dates where at least top_n + bottom_n symbols have ROCP
+    all_dates: set = set()
+    for df in sym_data.values():
+        for _, row in df.iterrows():
+            if not pd.isna(row["rocp"]):
+                all_dates.add(row["date"])
+
+    all_signals: dict[str, list] = {sym: [] for sym in sym_data}
+
+    for date in sorted(all_dates):
+        # Collect ROCP values for this date
+        rankings = []
+        for sym, df in sym_data.items():
+            row = df[df["date"] == date]
+            if row.empty or pd.isna(row.iloc[0]["rocp"]):
+                continue
+            rankings.append((sym, float(row.iloc[0]["rocp"])))
+
+        if len(rankings) < top_n + bottom_n:
+            continue
+
+        # Rank by momentum
+        rankings.sort(key=lambda x: x[1], reverse=True)
+        long_syms = {sym for sym, _ in rankings[:top_n]}
+        short_syms = {sym for sym, _ in rankings[-bottom_n:]}
+
+        for sym in sym_data:
+            row = sym_data[sym][sym_data[sym]["date"] == date]
+            if row.empty or pd.isna(row.iloc[0]["rocp"]):
+                continue
+            if sym in long_syms:
+                sig = 1
+            elif sym in short_syms:
+                sig = -1
+            else:
+                sig = 0
+            all_signals[sym].append({"date": str(date), "signal": sig})
+
+    all_signals = {sym: sigs for sym, sigs in all_signals.items() if sigs}
+
+    return {
+        "task_id": "X10",
+        "seed": None,
+        "resolution": "daily",
+        "start_date": start,
+        "end_date": end,
+        "warmup_periods": warmup,
+        "signals": all_signals,
+    }
+
+
+# ────────────────────────────────────────────────────────────────────
 # Dispatch and main
 # ────────────────────────────────────────────────────────────────────
 
@@ -1051,6 +1340,10 @@ SIGNAL_GENERATORS = {
     "E02": _signals_e02,
     "E04": _signals_e04,
     "E05": _signals_e05,
+    "X07": _signals_x07,
+    "X08": _signals_x08,
+    "X09": _signals_x09,
+    "X10": _signals_x10,
 }
 
 

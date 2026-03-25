@@ -1,0 +1,10 @@
+{
+  "task_id": "X09",
+  "metrics": {
+    "total_return_pct": 9.195,
+    "sharpe_ratio": 0.185,
+    "max_drawdown_pct": 64.4,
+    "total_trades": 280,
+    "win_rate": 0.1179
+  }
+}
