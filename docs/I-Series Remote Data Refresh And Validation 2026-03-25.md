@@ -31,11 +31,10 @@ This is the directory the evaluation stack actually reads via:
 
 ## Legacy Archive
 
-The older pre-refresh active reference files were moved out of the way to:
-
-- [legacy_2026-03-25_pre_remote_refresh](/home/rick/Desktop/benchmark/bench/data/reference/legacy_2026-03-25_pre_remote_refresh)
-
-That folder currently contains `39` legacy I-series reference artifacts that should be treated as historical provenance only.
+The older pre-refresh reference files have been **deleted**. They were previously
+in `bench/data/reference/legacy_2026-03-25_pre_remote_refresh/` (39 files) but
+are no longer needed — the active references have been fully regenerated against
+the fixed dataset.
 
 ## Data Quality Fix — Scientific Notation (2026-03-25)
 
@@ -210,7 +209,7 @@ Coverage report:
 
 - The remote exploded `lean/` tree was deleted. Future clean-cache consumers should rely on `I.tar.gz` only.
 - The active benchmark path is now the refreshed [bench/data/reference](/home/rick/Desktop/benchmark/bench/data/reference) root, not the legacy subdirectory.
-- Any review should ignore the legacy folder unless it is explicitly doing provenance / drift analysis.
+- Legacy folder has been deleted (no longer needed for provenance).
 - All CSV data files verified: 0 scientific notation lines across all 635 daily files.
 - All reference signals now populated (previously empty due to path bug).
 
@@ -219,7 +218,7 @@ Coverage report:
 - Active baseline:
   - [bench/data/reference](/home/rick/Desktop/benchmark/bench/data/reference)
 - Legacy baseline:
-  - [legacy_2026-03-25_pre_remote_refresh](/home/rick/Desktop/benchmark/bench/data/reference/legacy_2026-03-25_pre_remote_refresh)
+  - deleted (was `legacy_2026-03-25_pre_remote_refresh/`)
 - Remote pin:
   - [benchmark_config.py](/home/rick/Desktop/benchmark/bench/config/benchmark_config.py)
 - Upload/publish path:
