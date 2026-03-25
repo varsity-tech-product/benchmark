@@ -4,14 +4,14 @@
   "difficulty": "hard",
   "category": "implementation",
   "task_type": "multi_turn",
-  "description": "Guide a student to implement a composite multi-signal strategy across the full Binance futures universe on LEAN, then run a systematic parameter sweep over signal weights. The student must implement three signal components per symbol, handle the asymmetry where only ~20 symbols have funding data, implement cross-sectional position sizing (not per-symbol independent sizing), and structure a sweep workflow that runs 21 backtests. This is the most complex I-series task, testing everything: multi-signal construction, universe-scale, data asymmetry, portfolio construction, and systematic optimization.",
+  "description": "Guide a student to implement a composite multi-signal strategy across the full Binance futures universe on LEAN, then run a systematic parameter sweep over signal weights. The student must implement three signal components per symbol (trend via SMA crossover, mean-reversion via RSI, and carry via 1-day momentum proxy), implement cross-sectional position sizing (not per-symbol independent sizing), and structure a sweep workflow that runs 19 backtests over weight combinations. This is the most complex I-series task, testing everything: multi-signal construction, universe-scale, portfolio construction, and systematic optimization.",
   "persona_ids": [
     "beginner_no_finance",
     "intermediate_developer",
     "advanced_quant"
   ],
   "student_openings": {
-    "beginner_no_finance": "I want to combine different trading signals and test many parameter combinations across all the crypto futures in my dataset. I also have 'funding rate' data for some of them. How do I set this up on LEAN?",
+    "beginner_no_finance": "I want to combine different trading signals — like trend, mean-reversion, and momentum — and test many parameter combinations across all the crypto futures in my dataset. How do I set this up on LEAN?",
     "intermediate_developer": "I'm implementing a composite signal strategy on LEAN across ~100 crypto futures, combining trend, mean-reversion, and carry signals. I need to run a parameter sweep over the signal weights. How should I structure the universe-wide algorithm and the sweep workflow?",
     "advanced_quant": "I'm building a multi-signal alpha on LEAN across ~100 futures and I need to sweep over parameter combinations to find the best config. What's the architecture?"
   },
@@ -40,12 +40,11 @@
     "max_backtest_trials": 5
   },
   "ground_truth": {
-    "expected_outcome": "Student produces (1) a LEAN C# algorithm that computes all three signals per symbol, handles missing funding data gracefully, and implements cross-sectional position sizing, (2) a parameter sweep mechanism running 21 weight combinations, (3) a sweep results table with Sharpe/drawdown/return/turnover per combination, and (4) detailed results for the best configuration. The equal-weight (0.33/0.33/0.33) trade log for 10 reference symbols should match the ground-truth.",
+    "expected_outcome": "Student produces (1) a LEAN C# algorithm that computes all three signals per symbol (trend via SMA crossover, reversion via RSI deviation, carry via 1-day momentum proxy) and implements cross-sectional position sizing, (2) a parameter sweep mechanism running 19 weight combinations (trend/reversion/carry weights summing to 1.0, each in [0.1, 0.5]), (3) a sweep results table with Sharpe/drawdown/return/turnover per combination, and (4) detailed results for the best configuration. The equal-weight (0.33/0.33/0.33) trade log for 10 reference symbols should match the ground-truth.",
     "required_capabilities": [
-      "Implement three signal components per symbol with proper normalization at universe scale",
-      "Handle data asymmetry (funding data available for only ~20 of ~100 symbols)",
+      "Implement three signal components per symbol (trend, reversion, carry proxy) with proper normalization at universe scale",
       "Implement cross-sectional position sizing (signal strength relative to universe, not independent)",
-      "Combine signals with configurable weights and structure a 21-run parameter sweep",
+      "Combine signals with configurable weights and structure a 19-run parameter sweep",
       "Manage daily rebalancing across ~100 symbols with leverage constraints",
       "Produce structured sweep results and identify optimal configurations"
     ],

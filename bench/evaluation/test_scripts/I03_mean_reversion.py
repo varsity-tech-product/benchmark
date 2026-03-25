@@ -103,7 +103,7 @@ def evaluate(
     _checklist = [
         {"item": "backtest_completed",  "weight": 0.05, "passed": results["backtest_completed"]},
         {"item": "trade_log_produced",  "weight": 0.05, "passed": results["trade_log_produced"]},
-        {"item": "behavioral_score",    "weight": 0.45, "score": behavioral.composite_score},
+        {"item": "behavioral_score",    "weight": 0.60, "score": behavioral.composite_score},
         {"item": "code_patterns",       "weight": 0.05, "passed": results["code_patterns"]},
         {"item": "stop_loss_present",   "weight": 0.08, "passed": results["stop_loss_present"]},
         {"item": "long_short_both",     "weight": 0.07, "passed": results["long_short_both"]},

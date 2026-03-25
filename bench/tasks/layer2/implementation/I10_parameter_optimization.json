@@ -4,7 +4,7 @@
   "difficulty": "hard",
   "category": "implementation",
   "task_type": "multi_turn",
-  "description": "Guide a student to implement a systematic parameter optimization workflow using LEAN's Algorithm Framework. The student must build a parameterized EMA crossover alpha that reads fast_period, slow_period, and signal_threshold from GetParameter(), then run a grid search over ~180 parameter combinations (6 fast × 9 slow × 5 threshold, filtered for fast < slow). Results must be collected in a structured table with Sharpe/return/drawdown per combination, and the top-5 configurations identified. Optionally, the student can implement Bayesian optimization (e.g., Optuna) for faster convergence.",
+  "description": "Guide a student to implement a systematic parameter optimization workflow using LEAN's Algorithm Framework. The student must build a parameterized EMA crossover alpha that reads fast_period, slow_period, and signal_threshold from GetParameter(), then run a grid search over ~250 parameter combinations (6 fast × 9 slow × 5 threshold, filtered for fast < slow → 50 valid pairs × 5 thresholds). Results must be collected in a structured table with Sharpe/return/drawdown per combination, and the top-5 configurations identified. Optionally, the student can implement Bayesian optimization (e.g., Optuna) for faster convergence.",
   "persona_ids": [
     "beginner_no_finance",
     "intermediate_developer",
@@ -12,7 +12,7 @@
   ],
   "student_openings": {
     "beginner_no_finance": "I want to find the best parameters for my EMA crossover strategy — like the best combination of fast period, slow period, and signal threshold. I've heard about grid search and parameter optimization. Can you help me set this up on LEAN?",
-    "intermediate_developer": "I'm implementing parameter optimization for a LEAN Algorithm Framework algorithm. I want to use GetParameter() to make the EMA periods and signal threshold configurable, then run a grid search over ~180 combinations. How should I structure the optimization workflow and results collection?",
+    "intermediate_developer": "I'm implementing parameter optimization for a LEAN Algorithm Framework algorithm. I want to use GetParameter() to make the EMA periods and signal threshold configurable, then run a grid search over ~250 combinations. How should I structure the optimization workflow and results collection?",
     "advanced_quant": "I need a parameter optimization pipeline for a parameterized EMA alpha: grid search over fast_period ∈ {5,10,15,20,25,30}, slow_period ∈ {20..100 step 10}, signal_threshold ∈ {0,0.005,0.01,0.015,0.02}, filtering fast<slow. Collect Sharpe/return/drawdown per combo, rank, optionally add Bayesian optimization. Architecture?"
   },
   "environment": {
@@ -40,7 +40,7 @@
     "max_backtest_trials": 3
   },
   "ground_truth": {
-    "expected_outcome": "Student produces (1) a parameterized LEAN algorithm using GetParameter() for fast_period, slow_period, and signal_threshold, (2) a grid search workflow that runs ~180 parameter combinations (fast < slow filter applied), (3) a structured results table with parameters + Sharpe/return/drawdown per combination, (4) identification of top-5 configurations. Bonus for implementing Bayesian optimization (Optuna) for faster convergence.",
+    "expected_outcome": "Student produces (1) a parameterized LEAN algorithm using GetParameter() for fast_period, slow_period, and signal_threshold, (2) a grid search workflow that runs ~250 parameter combinations (fast < slow filter applied), (3) a structured results table with parameters + Sharpe/return/drawdown per combination, (4) identification of top-5 configurations. Bonus for implementing Bayesian optimization (Optuna) for faster convergence.",
     "required_capabilities": [
       "Use GetParameter() to parameterize algorithm configuration",
       "Structure a grid search over multiple parameter dimensions",

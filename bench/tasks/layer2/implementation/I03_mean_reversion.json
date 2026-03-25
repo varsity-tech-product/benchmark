@@ -45,7 +45,7 @@
       "Implement asymmetric entry/exit logic with per-symbol state machine",
       "Track entry prices per symbol and compute stop-loss conditions",
       "Handle long/short positions without overlap, independently per symbol",
-      "Implement risk-based position sizing (per-symbol cap + total exposure cap)",
+      "Implement risk-based position sizing (5% per symbol via SetHoldings)",
       "Tag exit reasons and produce universe-level aggregated statistics"
     ],
     "expected_mcp_tools": [
