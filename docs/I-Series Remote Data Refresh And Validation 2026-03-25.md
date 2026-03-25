@@ -43,18 +43,16 @@ This is intended to be handed to another agent or engineer for independent verif
 
 ### Final remote dataset shape checked
 
-Verified on `Varsity-Tech/quant-tutor-bench-data` at revision `c97f2cc969216d0dc85c55c8b4de62ef5715ba9d`:
+Verified on `Varsity-Tech/quant-tutor-bench-data` at revision `67c0df0b9d85afa7c1a33e7ea5ed8be143bf3297`:
 
 - `I.tar.gz`: present
 - `raw/i-series/universe.json`: present
 - `raw/i-series/universe_structured.json`: present
 - `raw/i-series/benchmark_universe_coverage.json`: present
-- `lean/universe.json`: still present as a legacy remote path
-
 Important note:
 
 - The canonical consumer path for future LEAN runs is `I.tar.gz` via `data_manager.ensure_data(series="lean")`.
-- The legacy exploded `lean/` tree still exists remotely and was not deleted in this session.
+- The legacy exploded `lean/` tree was deleted from the remote dataset in the final cleanup pass.
 
 ## What Was Verified
 
@@ -214,7 +212,7 @@ Best configuration:
 
 Ask Claude Code to verify:
 
-1. The remote revision `c97f2cc969216d0dc85c55c8b4de62ef5715ba9d` is the revision pinned in [benchmark_config.py](/home/rick/Desktop/benchmark/bench/config/benchmark_config.py).
+1. The remote revision `67c0df0b9d85afa7c1a33e7ea5ed8be143bf3297` is the revision pinned in [benchmark_config.py](/home/rick/Desktop/benchmark/bench/config/benchmark_config.py).
 2. A clean-cache download of `I.tar.gz` yields:
    - `635` symbols in `I/universe.json`
    - `I/I05_candidate_pairs.json`
