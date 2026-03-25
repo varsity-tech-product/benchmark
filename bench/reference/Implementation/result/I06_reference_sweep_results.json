@@ -1,7 +1,7 @@
 {
   "task_id": "I06",
   "type": "parameter_sweep",
-  "generated_at": "2026-03-10T13:17:22.525232+00:00",
+  "generated_at": "2026-03-25T05:29:35.067038+00:00",
   "total_configurations_tested": 19,
   "total_configurations_attempted": 19,
   "best_configuration": {
@@ -60,8 +60,8 @@
       "metrics": {
         "total_trades": 14048,
         "sharpe_ratio": "0.3468",
-        "total_return": "0%",
-        "max_drawdown": "0%",
+        "total_return": "32919.531%",
+        "max_drawdown": "89.943%",
         "win_rate": "0%"
       }
     },
@@ -75,8 +75,8 @@
       "metrics": {
         "total_trades": 14687,
         "sharpe_ratio": "0.3467",
-        "total_return": "0%",
-        "max_drawdown": "0%",
+        "total_return": "26957.463%",
+        "max_drawdown": "54.591%",
         "win_rate": "0%"
       }
     },
@@ -90,8 +90,8 @@
       "metrics": {
         "total_trades": 14704,
         "sharpe_ratio": "0.3228",
-        "total_return": "0%",
-        "max_drawdown": "0%",
+        "total_return": "28165.469%",
+        "max_drawdown": "70.393%",
         "win_rate": "0%"
       }
     },
@@ -120,8 +120,8 @@
       "metrics": {
         "total_trades": 14523,
         "sharpe_ratio": "0.3101",
-        "total_return": "0%",
-        "max_drawdown": "0%",
+        "total_return": "26176.724%",
+        "max_drawdown": "91.318%",
         "win_rate": "0%"
       }
     },
@@ -135,8 +135,8 @@
       "metrics": {
         "total_trades": 10018,
         "sharpe_ratio": "0.3081",
-        "total_return": "0%",
-        "max_drawdown": "0%",
+        "total_return": "35119.046%",
+        "max_drawdown": "53.741%",
         "win_rate": "0%"
       }
     },
@@ -150,8 +150,8 @@
       "metrics": {
         "total_trades": 14541,
         "sharpe_ratio": "0.3071",
-        "total_return": "0%",
-        "max_drawdown": "0%",
+        "total_return": "29303.332%",
+        "max_drawdown": "93.614%",
         "win_rate": "0%"
       }
     },
@@ -165,8 +165,8 @@
       "metrics": {
         "total_trades": 9438,
         "sharpe_ratio": "0.3066",
-        "total_return": "0%",
-        "max_drawdown": "0%",
+        "total_return": "22026.312%",
+        "max_drawdown": "45.636%",
         "win_rate": "0%"
       }
     },
@@ -180,8 +180,8 @@
       "metrics": {
         "total_trades": 10642,
         "sharpe_ratio": "0.3036",
-        "total_return": "0%",
-        "max_drawdown": "0%",
+        "total_return": "30916.563%",
+        "max_drawdown": "68.627%",
         "win_rate": "0%"
       }
     },
@@ -210,8 +210,8 @@
       "metrics": {
         "total_trades": 12588,
         "sharpe_ratio": "0.2938",
-        "total_return": "0%",
-        "max_drawdown": "0%",
+        "total_return": "35433.299%",
+        "max_drawdown": "83.085%",
         "win_rate": "0%"
       }
     },
@@ -225,8 +225,8 @@
       "metrics": {
         "total_trades": 13530,
         "sharpe_ratio": "0.2922",
-        "total_return": "0%",
-        "max_drawdown": "0%",
+        "total_return": "32060.574%",
+        "max_drawdown": "874.402%",
         "win_rate": "0%"
       }
     },
@@ -240,8 +240,8 @@
       "metrics": {
         "total_trades": 14366,
         "sharpe_ratio": "0.2888",
-        "total_return": "0%",
-        "max_drawdown": "0%",
+        "total_return": "26361.033%",
+        "max_drawdown": "118.548%",
         "win_rate": "0%"
       }
     },
@@ -270,8 +270,8 @@
       "metrics": {
         "total_trades": 13905,
         "sharpe_ratio": "0.281",
-        "total_return": "0%",
-        "max_drawdown": "0%",
+        "total_return": "33674.934%",
+        "max_drawdown": "1270.962%",
         "win_rate": "0%"
       }
     },
@@ -285,8 +285,8 @@
       "metrics": {
         "total_trades": 13719,
         "sharpe_ratio": "0.2776",
-        "total_return": "0%",
-        "max_drawdown": "0%",
+        "total_return": "27604.073%",
+        "max_drawdown": "878.327%",
         "win_rate": "0%"
       }
     },
@@ -300,8 +300,8 @@
       "metrics": {
         "total_trades": 14427,
         "sharpe_ratio": "-0.5214",
-        "total_return": "0%",
-        "max_drawdown": "0%",
+        "total_return": "-8391.923%",
+        "max_drawdown": "1311.931%",
         "win_rate": "0%"
       }
     }

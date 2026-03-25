@@ -30,11 +30,20 @@ DEFAULT_LEAN_DIR = Path(__file__).resolve().parent.parent / "data" / "lean"
 DEFAULT_UNIVERSE = Path(__file__).resolve().parent.parent / "data" / "lean_universe.json"
 DEFAULT_STRUCTURED_UNIVERSE = Path(__file__).resolve().parent.parent / "data" / "universe.json"
 DEFAULT_COVERAGE_REPORT = Path(__file__).resolve().parent.parent / "data" / "benchmark_universe_coverage.json"
+DEFAULT_LEAN_E_DIR = Path(__file__).resolve().parent.parent / "data" / "hf_cache" / "lean" / "E"
+DEFAULT_LEAN_X_DIR = Path(__file__).resolve().parent.parent / "data" / "hf_cache" / "lean" / "X"
+DEFAULT_I05_PAIRS = Path(__file__).resolve().parent.parent / "reference" / "Implementation" / "result" / "I05_candidate_pairs.json"
 DEFAULT_REPO_ID = "Varsity-Tech/quant-tutor-bench-data"
 
 
-def build_archive(lean_dir: Path, output_path: Path) -> Path:
-    """Create the canonical I.tar.gz archive with top-level I/ members."""
+def build_archive(
+    lean_dir: Path,
+    output_path: Path,
+    lean_e_dir: Path = DEFAULT_LEAN_E_DIR,
+    lean_x_dir: Path = DEFAULT_LEAN_X_DIR,
+    i05_pairs_path: Path = DEFAULT_I05_PAIRS,
+) -> Path:
+    """Create the canonical I.tar.gz archive with top-level I/E/X members."""
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with tarfile.open(output_path, "w:gz") as tf:
         for path in sorted(lean_dir.rglob("*")):
@@ -42,6 +51,21 @@ def build_archive(lean_dir: Path, output_path: Path) -> Path:
                 continue
             arcname = Path("I") / path.relative_to(lean_dir)
             tf.add(path, arcname=str(arcname))
+
+        if i05_pairs_path.is_file():
+            tf.add(i05_pairs_path, arcname="I/I05_candidate_pairs.json")
+
+        for extra_dir, top_level in (
+            (lean_e_dir, "E"),
+            (lean_x_dir, "X"),
+        ):
+            if not extra_dir.is_dir():
+                continue
+            for path in sorted(extra_dir.rglob("*")):
+                if not path.is_file():
+                    continue
+                arcname = Path(top_level) / path.relative_to(extra_dir)
+                tf.add(path, arcname=str(arcname))
     return output_path
 
 

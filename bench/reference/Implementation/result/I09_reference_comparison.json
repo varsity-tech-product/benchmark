@@ -1,7 +1,7 @@
 {
   "task_id": "I09",
   "type": "comparison",
-  "generated_at": "2026-03-10T11:42:18.415999+00:00",
+  "generated_at": "2026-03-25T05:31:07.731672+00:00",
   "runs": [
     {
       "run_id": "norisk",
@@ -18,7 +18,8 @@
         "annual_return": "-30.464%",
         "total_trades": 395
       },
-      "trade_count": 395
+      "trade_count": 395,
+      "status": "success"
     },
     {
       "run_id": "builtin",
@@ -35,7 +36,8 @@
         "annual_return": "10.570%",
         "total_trades": 24797
       },
-      "trade_count": 24797
+      "trade_count": 24797,
+      "status": "success"
     },
     {
       "run_id": "custom",
@@ -52,7 +54,8 @@
         "annual_return": "21.550%",
         "total_trades": 33970
       },
-      "trade_count": 33970
+      "trade_count": 33970,
+      "status": "success"
     }
   ]
 }

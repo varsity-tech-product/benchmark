@@ -4,18 +4,19 @@
   "algorithm_file": "I10_parameter_optimization.cs",
   "start_date": "2022-01-01",
   "end_date": "2025-12-31",
-  "lean_image": "quantconnect/lean:latest",
-  "generated_at": "2026-03-10T11:59:02.133346+00:00",
+  "lean_image": "quant-tutor-env:v2.2-lean",
+  "generated_at": "2026-03-25T05:34:21.906589+00:00",
   "status": "success",
   "metrics": {
     "total_orders": 10370,
-    "sharpe_ratio": "-0",
+    "sharpe_ratio": "-0.7071",
     "total_return": "-15.801%",
     "max_drawdown": "65.800%",
     "win_rate": "37%",
     "profit_loss_ratio": "1.69",
     "annual_return": "-4.203%",
-    "total_trades": 5148
+    "total_trades": 5148,
+    "sharpe_source": "computed_from_trades"
   },
   "trades": [
     {

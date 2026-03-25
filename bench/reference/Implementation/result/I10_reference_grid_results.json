@@ -1,7 +1,7 @@
 {
   "task_id": "I10",
   "type": "parameter_sweep",
-  "generated_at": "2026-03-10T12:47:18.245301+00:00",
+  "generated_at": "2026-03-25T05:55:46.153641+00:00",
   "total_configurations_tested": 250,
   "total_configurations_attempted": 250,
   "best_configuration": {
@@ -3021,21 +3021,6 @@
       }
     },
     {
-      "run_id": "f5_s60_t001",
-      "parameters": {
-        "fast_period": "5",
-        "slow_period": "60",
-        "signal_threshold": "0.01"
-      },
-      "metrics": {
-        "total_trades": 5148,
-        "sharpe_ratio": "-0",
-        "total_return": "-15.801%",
-        "max_drawdown": "65.800%",
-        "win_rate": "37%"
-      }
-    },
-    {
       "run_id": "f20_s60_t0005",
       "parameters": {
         "fast_period": "20",
@@ -3767,6 +3752,21 @@
         "sharpe_ratio": "-0.106",
         "total_return": "-30.271%",
         "max_drawdown": "72.100%",
+        "win_rate": "37%"
+      }
+    },
+    {
+      "run_id": "f5_s60_t001",
+      "parameters": {
+        "fast_period": "5",
+        "slow_period": "60",
+        "signal_threshold": "0.01"
+      },
+      "metrics": {
+        "total_trades": 5148,
+        "sharpe_ratio": "-0.7071",
+        "total_return": "-15.801%",
+        "max_drawdown": "65.800%",
         "win_rate": "37%"
       }
     }

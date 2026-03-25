@@ -1,7 +1,7 @@
 {
   "task_id": "I08",
   "type": "comparison",
-  "generated_at": "2026-03-10T13:04:24.087433+00:00",
+  "generated_at": "2026-03-25T05:29:51.453805+00:00",
   "runs": [
     {
       "run_id": "insight_weighting",
@@ -27,16 +27,16 @@
         "portfolio_model": "EqualWeighting"
       },
       "metrics": {
-        "total_orders": 165,
-        "sharpe_ratio": "-0.003",
-        "total_return": "2.492%",
-        "max_drawdown": "53.000%",
-        "win_rate": "27%",
-        "profit_loss_ratio": "0.92",
-        "annual_return": "0.616%",
-        "total_trades": 69
+        "total_orders": 151,
+        "sharpe_ratio": "0.02",
+        "total_return": "7.967%",
+        "max_drawdown": "50.300%",
+        "win_rate": "23%",
+        "profit_loss_ratio": "0.80",
+        "annual_return": "1.932%",
+        "total_trades": 63
       },
-      "trade_count": 69,
+      "trade_count": 63,
       "status": "success"
     }
   ]

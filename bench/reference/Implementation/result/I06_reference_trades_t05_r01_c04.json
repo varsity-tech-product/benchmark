@@ -4,13 +4,16 @@
   "algorithm_file": "I06_multi_signal.cs",
   "start_date": "2022-01-01",
   "end_date": "2025-12-31",
-  "lean_image": "quantconnect/lean:latest",
-  "generated_at": "2026-03-10T13:15:53.464920+00:00",
+  "lean_image": "quant-tutor-env:v2.2-lean",
+  "generated_at": "2026-03-25T05:28:00.925082+00:00",
   "status": "success",
   "metrics": {
     "total_trades": 13905,
     "sharpe_ratio": "0.281",
-    "sharpe_source": "computed_from_trades"
+    "sharpe_source": "computed_from_trades",
+    "total_return": "33674.934%",
+    "max_drawdown": "1270.962%",
+    "metrics_source": "computed_from_trades"
   },
   "trades": [
     {
