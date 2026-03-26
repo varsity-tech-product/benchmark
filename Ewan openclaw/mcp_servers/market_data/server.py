@@ -232,6 +232,117 @@ def get_stock_fundamentals(symbol: str) -> dict:
 
 
 # ============================================================
+# Tool 3b: Extended fundamental data (financial ratios + shareholders + ratings)
+# ============================================================
+
+
+def get_stock_fundamentals_extended(symbol: str) -> dict:
+    """
+    Fetch extended fundamentals: financial ratios, top shareholders,
+    and analyst ratings.
+
+    Supplements get_stock_fundamentals() which only provides PE/PB/market cap.
+    Called once per stock per day for the evening report.
+    """
+    result = {"symbol": symbol}
+
+    # 1. Core financial ratios (Sina source — richest single-call function)
+    try:
+        df = ak.stock_financial_analysis_indicator(symbol=symbol, start_year="2023")
+        if has_data(df):
+            latest = df.iloc[0]  # Most recent period first
+            result["report_period"] = str(latest.get("日期", ""))[:10]
+            result["roe"] = safe_float(latest.get("净资产收益率(%)"))
+            result["roa"] = safe_float(latest.get("总资产收益率(%)"))
+            result["gross_margin"] = safe_float(latest.get("销售毛利率(%)"))
+            result["net_margin"] = safe_float(latest.get("销售净利率(%)"))
+            result["debt_ratio"] = safe_float(latest.get("资产负债率(%)"))
+            result["current_ratio"] = safe_float(latest.get("流动比率"))
+            result["eps"] = safe_float(latest.get("基本每股收益(元)"), decimals=4)
+            result["bps"] = safe_float(latest.get("每股净资产_调整后(元)"))
+            result["ocf_per_share"] = safe_float(latest.get("每股经营性现金流(元)"))
+            result["revenue_growth"] = safe_float(latest.get("主营业务收入增长率(%)"))
+            result["profit_growth"] = safe_float(latest.get("净利润增长率(%)"))
+
+            # Health classification for LLM
+            roe = result.get("roe")
+            result["roe_grade"] = (
+                classify(
+                    roe,
+                    [
+                        (20, "excellent"),
+                        (15, "good"),
+                        (10, "average"),
+                        (5, "below_average"),
+                    ],
+                    default="poor",
+                )
+                if roe is not None
+                else "unknown"
+            )
+
+            debt = result.get("debt_ratio")
+            result["debt_grade"] = (
+                classify(
+                    debt,
+                    [
+                        (70, "high_leverage"),
+                        (50, "moderate"),
+                        (30, "conservative"),
+                    ],
+                    default="very_conservative",
+                )
+                if debt is not None
+                else "unknown"
+            )
+    except Exception as e:
+        logger.warning("Financial ratios failed for %s: %s", symbol, e)
+
+    # 2. Top 5 free-float shareholders (latest quarter, Sina source)
+    try:
+        df = ak.stock_circulate_stock_holder(symbol=symbol)
+        if has_data(df):
+            # Get the latest report date
+            latest_date = df["截止日期"].iloc[0]
+            latest_df = df[df["截止日期"] == latest_date].head(5)
+            holders = []
+            for _, row in latest_df.iterrows():
+                holders.append(
+                    {
+                        "name": str(row.get("股东名称", ""))[:20],
+                        "ratio": safe_float(row.get("占流通股比例")),
+                        "type": str(row.get("股本性质", "")).strip(),
+                    }
+                )
+            result["top_shareholders"] = holders
+            result["shareholder_report_date"] = str(latest_date)[:10]
+    except Exception as e:
+        logger.warning("Shareholders failed for %s: %s", symbol, e)
+
+    # 3. Latest analyst ratings + target price
+    try:
+        df = ak.stock_research_report_em(symbol=symbol)
+        if has_data(df):
+            recent = df.head(3)  # Latest 3 reports
+            ratings = []
+            for _, row in recent.iterrows():
+                ratings.append(
+                    {
+                        "institution": str(row.get("机构", ""))[:10],
+                        "rating": str(row.get("评级", "")).strip(),
+                        "target_price": safe_float(row.get("目标价")),
+                        "date": str(row.get("日期", ""))[:10],
+                    }
+                )
+            result["analyst_ratings"] = ratings
+    except Exception as e:
+        logger.warning("Analyst ratings failed for %s: %s", symbol, e)
+
+    logger.info("Extended fundamentals for %s: %d fields", symbol, len(result))
+    return result
+
+
+# ============================================================
 # Tool 4: All-A market breadth (rising/falling counts)
 # ============================================================
 

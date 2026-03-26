@@ -1,9 +1,10 @@
 """
 MCP-2: News Collection Server
 
-Three-layer news architecture:
+Four-layer news architecture:
+  L0: Company announcements (公告) — most authoritative first-hand disclosures
   L1: Direct news   — stock_news_em + stock_news_main_cx, filtered by stock name
-  L2: Announcements — stock_irm_cninfo (investor Q&A), per-stock
+  L2: Investor Q&A  — stock_irm_cninfo (深市) + stock_sns_sseinfo (沪市)
   L3: Related news  — CLS telegraph + Caixin pool, matched by related_keywords
 
 All data collection is pure code (AKShare + scraping). No LLM calls.
@@ -110,8 +111,11 @@ def get_stock_news(
     else:
         em_result = asyncio.run(_fetch_em_news_async(symbols))
 
-    # ---- L2: Investor Q&A from CNINFO (互动易) ----
+    # ---- L2: Investor Q&A from CNINFO (互动易) + SSE (上证e互动) ----
     irm_result = _fetch_irm_all(symbols)
+
+    # ---- L0: Company announcements (公告) ----
+    notice_result = _fetch_notices(symbols, portfolio_stocks=portfolio_stocks)
 
     # ---- Assemble per-stock results ----
     result = {}
@@ -124,7 +128,15 @@ def get_stock_news(
         related_kws = info["keywords"]
         related_stock_names = info["related_stocks"]
 
-        items = {"L1_direct": [], "L2_irm": [], "L3_related": []}
+        items = {
+            "L0_notices": [],
+            "L1_direct": [],
+            "L2_irm": [],
+            "L3_related": [],
+        }
+
+        # L0: Company announcements
+        items["L0_notices"] = notice_result.get(sym, [])
 
         # L1: Filter EastMoney news by stock name in title
         for item in em_result.get(sym, []):
@@ -192,9 +204,10 @@ def get_stock_news(
         r = result[sym]
         name = stock_info.get(sym, {}).get("name", sym)
         logger.info(
-            "  %s (%s): L1=%d L2=%d L3=%d",
+            "  %s (%s): L0=%d L1=%d L2=%d L3=%d",
             sym,
             name,
+            len(r["L0_notices"]),
             len(r["L1_direct"]),
             len(r["L2_irm"]),
             len(r["L3_related"]),
@@ -317,16 +330,16 @@ def _fetch_caixin_news() -> list[dict]:
 
 
 def _fetch_irm_all(symbols: list[str]) -> dict:
-    """Fetch recent investor Q&A from CNINFO for each stock.
-    Only works for Shenzhen stocks (0xxxxx, 3xxxxx). Shanghai stocks (6xxxxx)
-    use a different platform (上证e互动) not well supported by AKShare."""
+    """Fetch recent investor Q&A for each stock.
+    Shenzhen stocks (0xxxxx, 3xxxxx): CNINFO 互动易.
+    Shanghai stocks (6xxxxx): SSE 上证e互动."""
     result = {}
     today = datetime.now()
 
     for sym in symbols:
-        # Skip Shanghai stocks — CNINFO 互动易 only covers Shenzhen
+        # Shanghai stocks use SSE e-interaction (上证e互动)
         if sym.startswith("6"):
-            result[sym] = []
+            result[sym] = _fetch_sseinfo(sym, today)
             continue
 
         try:
@@ -369,6 +382,126 @@ def _fetch_irm_all(symbols: list[str]) -> dict:
 
         result[sym] = items[:5]  # Top 5 most recent
         logger.info("  IRM %s: %d Q&A items", sym, len(result[sym]))
+
+    return result
+
+
+# ============================================================
+# L2 (Shanghai): SSE e-interaction (上证e互动)
+# ============================================================
+
+
+def _fetch_sseinfo(symbol: str, today: datetime) -> list[dict]:
+    """Fetch investor Q&A from SSE e-interaction for Shanghai stocks."""
+    import signal
+
+    def _timeout_handler(signum, frame):
+        raise TimeoutError("SSE e-interaction timeout")
+
+    try:
+        # SSE API can be slow — enforce 10s timeout
+        old_handler = signal.signal(signal.SIGALRM, _timeout_handler)
+        signal.alarm(10)
+        df = ak.stock_sns_sseinfo(symbol=symbol)
+        signal.alarm(0)
+        signal.signal(signal.SIGALRM, old_handler)
+    except (TimeoutError, Exception) as e:
+        signal.alarm(0)
+        logger.warning("Failed to fetch SSE e-interaction for %s: %s", symbol, e)
+        return []
+
+    if df is None or df.empty:
+        return []
+
+    items = []
+    for _, row in df.iterrows():
+        # Column names vary — try common variants
+        question = str(
+            row.get("问题", row.get("title", row.iloc[0] if len(row) > 0 else ""))
+        ).strip()
+        answer = str(
+            row.get("回答", row.get("answer", row.iloc[1] if len(row) > 1 else ""))
+        ).strip()
+        time_str = str(
+            row.get("时间", row.get("date", row.iloc[-1] if len(row) > 0 else ""))
+        ).strip()
+
+        if not question:
+            continue
+
+        # Only keep recent (last 7 days)
+        try:
+            dt = pd.to_datetime(time_str)
+            if (today - dt).days > 7:
+                continue
+        except Exception:
+            pass
+
+        items.append(
+            {
+                "question": question[:200],
+                "answer": answer[:500] if answer and answer != "nan" else None,
+                "time": time_str,
+                "layer": "L2",
+                "source": "上证e互动",
+            }
+        )
+
+    logger.info("  SSE e-interaction %s: %d Q&A items", symbol, len(items[:5]))
+    return items[:5]
+
+
+# ============================================================
+# L0: Company announcements (公告)
+# ============================================================
+
+
+def _fetch_notices(
+    symbols: list[str],
+    portfolio_stocks: list[dict] | None = None,
+) -> dict:
+    """
+    Fetch recent company announcements from CNInfo (巨潮资讯).
+
+    Returns:
+        dict keyed by symbol with list of announcement items.
+    """
+    result = {}
+    today = datetime.now()
+    start_date = (today - timedelta(days=7)).strftime("%Y%m%d")
+    end_date = today.strftime("%Y%m%d")
+
+    for sym in symbols:
+        items = []
+        try:
+            df = ak.stock_zh_a_disclosure_report_cninfo(
+                symbol=sym,
+                market="沪深京",
+                start_date=start_date,
+                end_date=end_date,
+            )
+            if df is not None and not df.empty:
+                for _, row in df.iterrows():
+                    title = str(row.get("公告标题", "")).strip()
+                    date_str = str(row.get("公告时间", ""))[:10]
+                    url = str(row.get("公告链接", "")).strip()
+
+                    if not title:
+                        continue
+
+                    items.append(
+                        {
+                            "title": title[:100],
+                            "date": date_str,
+                            "url": url if url.startswith("http") else "",
+                            "layer": "L0",
+                        }
+                    )
+        except Exception as e:
+            logger.warning("Failed to fetch notices for %s: %s", sym, e)
+
+        result[sym] = items[:10]
+        logger.info("  Notices %s: %d items", sym, len(result[sym]))
 
     return result
 

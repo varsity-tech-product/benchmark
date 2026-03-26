@@ -29,13 +29,18 @@ PROMPTS_DIR = BASE_DIR / "prompts"
 
 # ---- MCP server imports ----
 sys.path.insert(0, str(BASE_DIR))
-from mcp_servers.macro.server import get_macro_calendar, get_us_market_summary
+from mcp_servers.macro.server import (
+    get_china_macro_snapshot,
+    get_macro_calendar,
+    get_us_market_summary,
+)
 from mcp_servers.market_data.server import (
     get_fund_flow,
     get_market_breadth,
     get_northbound_flow,
     get_sentiment_scores,
     get_stock_fundamentals,
+    get_stock_fundamentals_extended,
     get_stock_indicators,
     get_stock_realtime,
     get_volume_analysis,
@@ -144,6 +149,7 @@ def collect_data(
         "realtime": {},
         "indicators": {},
         "fundamentals": {},
+        "fundamentals_extended": {},
         "breadth": {},
         "volume": {},
         "fund_flow": {},
@@ -153,6 +159,7 @@ def collect_data(
         "stock_news": {},
         "calendar": [],
         "us_market": {},
+        "china_macro": {},
         "is_trading_day": trading_day,
     }
 
@@ -181,6 +188,16 @@ def collect_data(
                 f"Fundamentals({sym})", lambda s=sym: get_stock_fundamentals(s)
             )
         logger.info("  Fundamentals: %d stocks", len(data["fundamentals"]))
+
+        for sym in symbols:
+            data["fundamentals_extended"][sym] = _safe(
+                f"FundamentalsExt({sym})",
+                lambda s=sym: get_stock_fundamentals_extended(s),
+            )
+        logger.info(
+            "  Extended fundamentals: %d stocks",
+            len(data["fundamentals_extended"]),
+        )
 
         data["breadth"] = _safe("Breadth", get_market_breadth)
         logger.info(
@@ -228,6 +245,13 @@ def collect_data(
 
     data["us_market"] = get_us_market_summary()
     logger.info("  US market: %d indices", len(data["us_market"].get("indices", {})))
+
+    portfolio_sectors = [s.get("sector", "") for s in portfolio_stocks]
+    data["china_macro"] = _safe(
+        "ChinaMacro",
+        lambda: get_china_macro_snapshot(portfolio_sectors=portfolio_sectors),
+    )
+    logger.info("  China macro: %d indicators", len(data["china_macro"]))
 
     return data
 
@@ -360,6 +384,9 @@ async def run_phase2(
             "fund_flow": json.dumps(data["fund_flow"], ensure_ascii=False, indent=2),
             "northbound": json.dumps(data["northbound"], ensure_ascii=False, indent=2),
             "sentiment": json.dumps(data["sentiment"], ensure_ascii=False, indent=2),
+            "fundamentals_extended": json.dumps(
+                data["fundamentals_extended"], ensure_ascii=False, indent=2
+            ),
         }
         tasks.append(
             _call_llm(client, config, "technical_analysis", "technical", technical_data)
@@ -379,6 +406,7 @@ async def run_phase2(
     macro_data = {
         "calendar": json.dumps(data["calendar"], ensure_ascii=False, indent=2),
         "us_market": json.dumps(data["us_market"], ensure_ascii=False, indent=2),
+        "china_macro": json.dumps(data["china_macro"], ensure_ascii=False, indent=2),
         "portfolio": portfolio_str,
     }
     tasks.append(_call_llm(client, config, "macro_analysis", "macro", macro_data))

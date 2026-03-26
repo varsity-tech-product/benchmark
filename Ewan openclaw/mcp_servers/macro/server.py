@@ -1,18 +1,20 @@
 """
 MCP-3: Macro Calendar & Global Market Server
 
-Provides 2 tools:
-  1. get_macro_calendar    — upcoming economic data releases (next N days)
-  2. get_us_market_summary — overnight US indices, commodities, FX
+Provides 3 tools:
+  1. get_macro_calendar       — forward-looking economic calendar (today + next N days)
+  2. get_us_market_summary    — overnight US indices, commodities, FX
+  3. get_china_macro_snapshot  — key Chinese macro indicators (PMI, CPI, LPR, etc.)
 
 All data collection is pure code (AKShare). No LLM calls.
 """
 
 import logging
+from datetime import datetime, timedelta
 
 import akshare as ak
 
-from ..utils import safe_float
+from ..utils import classify, has_data, safe_float
 
 logger = logging.getLogger(__name__)
 
@@ -22,52 +24,78 @@ logger = logging.getLogger(__name__)
 # ============================================================
 
 
-def get_macro_calendar(days: int = 7) -> list[dict]:
+def get_macro_calendar(days: int = 3) -> list[dict]:
     """
-    Fetch recent economic event calendar from Baidu Finance.
+    Fetch economic event calendar for today + next N days.
+    Uses news_economic_baidu with specific dates to get forward-looking data.
 
-    Note: AKShare Baidu calendar provides recent historical events rather than
-    a forward-looking schedule. We return the most recent events and let the
-    LLM assess relevance.
-
-    Columns: 日期, 时间, 地区, 事件, 公布, 预期, 前值, 重要性
+    Each event includes a 'status' field: 'released' or 'upcoming'.
     """
     events = []
+    seen = set()  # Deduplicate by (date, event_name)
 
-    try:
-        df = ak.news_economic_baidu()
-        if df is not None and not df.empty:
+    for offset in range(0, days + 1):
+        target_date = datetime.now() + timedelta(days=offset)
+        target_str = target_date.strftime("%Y%m%d")
+
+        try:
+            df = ak.news_economic_baidu(date=target_str)
+            if df is None or df.empty:
+                continue
+
             for _, row in df.iterrows():
                 event_name = str(row.get("事件", "")).strip()
                 if not event_name:
                     continue
 
                 date_val = row.get("日期", "")
-                date_str = str(date_val)[:10] if date_val else ""
+                date_str = (
+                    str(date_val)[:10] if date_val else target_date.strftime("%Y-%m-%d")
+                )
 
                 importance = row.get("重要性", "")
-                # Only keep importance >= 2 to reduce noise
                 try:
                     if int(importance) < 2:
                         continue
                 except (ValueError, TypeError):
                     pass
 
+                dedup_key = (date_str, event_name)
+                if dedup_key in seen:
+                    continue
+                seen.add(dedup_key)
+
+                actual_raw = row.get("公布", "")
+                actual = str(actual_raw).strip()
+                # NaN / nan / -- / empty all mean "not released yet"
+                is_released = bool(
+                    actual
+                    and actual not in ("--", "nan", "NaN", "")
+                    and actual != "None"
+                )
                 event = {
                     "date": date_str,
                     "time": str(row.get("时间", "")).strip(),
                     "event": event_name,
                     "country": str(row.get("地区", "")).strip(),
                     "importance": str(importance).strip(),
-                    "actual": str(row.get("公布", "")).strip(),
+                    "actual": actual if is_released else "",
                     "forecast": str(row.get("预期", "")).strip(),
                     "previous": str(row.get("前值", "")).strip(),
+                    "status": "released" if is_released else "upcoming",
                 }
                 events.append(event)
-    except Exception as e:
-        logger.warning("Failed to fetch macro calendar: %s", e)
 
-    logger.info("Macro calendar: %d events collected", len(events))
+        except Exception as e:
+            logger.warning("Failed to fetch calendar for %s: %s", target_str, e)
+
+    # Sort: upcoming first, then by date
+    events.sort(key=lambda e: (e["status"] != "upcoming", e["date"]))
+    logger.info(
+        "Macro calendar: %d events (%d upcoming)",
+        len(events),
+        sum(1 for e in events if e["status"] == "upcoming"),
+    )
     return events
 
 
@@ -162,4 +190,150 @@ def get_us_market_summary() -> dict:
         len(result["commodities"]),
         len(result["fx"]),
     )
+    return result
+
+
+# ============================================================
+# Tool 3: China macro indicator snapshot
+# ============================================================
+
+
+def get_china_macro_snapshot(
+    portfolio_sectors: list[str] | None = None,
+) -> dict:
+    """
+    Fetch key Chinese macro indicators relevant to A-share analysis.
+    These update monthly/quarterly, so data is not real-time.
+
+    Returns latest available values for: PMI, CPI, PPI, social financing,
+    LPR, Shibor, and sector-specific indices (SOX for semiconductor).
+    """
+    result = {}
+
+    # 1. PMI — manufacturing activity (monthly, ~1st of month)
+    # Note: macro_china_pmi() returns newest-first order
+    try:
+        df = ak.macro_china_pmi()
+        if has_data(df):
+            latest = df.iloc[0]  # Newest first
+            result["pmi"] = {
+                "date": str(latest.get("月份", ""))[:10],
+                "manufacturing": safe_float(latest.get("制造业-指数")),
+                "non_manufacturing": safe_float(latest.get("非制造业-指数")),
+            }
+            pmi_val = result["pmi"].get("manufacturing")
+            result["pmi"]["assessment"] = (
+                classify(
+                    pmi_val,
+                    [
+                        (52, "strong_expansion"),
+                        (50, "expansion"),
+                        (48, "mild_contraction"),
+                    ],
+                    default="contraction",
+                )
+                if pmi_val is not None
+                else "unknown"
+            )
+    except Exception as e:
+        logger.warning("PMI fetch failed: %s", e)
+
+    # 2. CPI — inflation (monthly, ~10th)
+    # Note: macro_china_cpi() returns newest-first order
+    try:
+        df = ak.macro_china_cpi()
+        if has_data(df):
+            latest = df.iloc[0]
+            result["cpi"] = {
+                "date": str(latest.get("月份", ""))[:10],
+                "yoy": safe_float(latest.get("全国-同比增长")),
+            }
+    except Exception as e:
+        logger.warning("CPI fetch failed: %s", e)
+
+    # 3. PPI — producer prices (monthly, ~10th)
+    # Note: macro_china_ppi() returns newest-first order
+    try:
+        df = ak.macro_china_ppi()
+        if has_data(df):
+            latest = df.iloc[0]
+            result["ppi"] = {
+                "date": str(latest.get("月份", ""))[:10],
+                "yoy": safe_float(latest.get("当月同比增长")),
+            }
+    except Exception as e:
+        logger.warning("PPI fetch failed: %s", e)
+
+    # 4. Social financing — credit impulse (monthly, ~10th-15th)
+    # Note: macro_china_shrzgm() returns oldest-first order
+    try:
+        df = ak.macro_china_shrzgm()
+        if has_data(df):
+            latest = df.iloc[-1]  # Oldest first, so last = newest
+            result["social_financing"] = {
+                "date": str(latest.get("月份", ""))[:10],
+                "value_billion": safe_float(latest.get("社会融资规模增量")),
+            }
+    except Exception as e:
+        logger.warning("Social financing fetch failed: %s", e)
+
+    # 5. LPR — interest rate anchor (monthly, 20th)
+    # Note: oldest-first, cols = TRADE_DATE, LPR1Y, LPR5Y
+    try:
+        df = ak.macro_china_lpr()
+        if has_data(df):
+            latest = df.iloc[-1]
+            result["lpr"] = {
+                "date": str(latest.get("TRADE_DATE", ""))[:10],
+                "lpr_1y": safe_float(latest.get("LPR1Y")),
+                "lpr_5y": safe_float(latest.get("LPR5Y")),
+            }
+    except Exception as e:
+        logger.warning("LPR fetch failed: %s", e)
+
+    # 6. Shibor — overnight interbank rate (daily)
+    # Note: oldest-first, cols = 日期, O/N-定价, 1W-定价, ...
+    try:
+        df = ak.macro_china_shibor_all()
+        if has_data(df):
+            latest = df.iloc[-1]
+            result["shibor"] = {
+                "date": str(latest.get("日期", ""))[:10],
+                "overnight": safe_float(
+                    latest.get("O/N-定价"),
+                    decimals=4,
+                ),
+                "1w": safe_float(
+                    latest.get("1W-定价"),
+                    decimals=4,
+                ),
+            }
+    except Exception as e:
+        logger.warning("Shibor fetch failed: %s", e)
+
+    # 7. Philadelphia Semiconductor Index (daily) — for semiconductor holdings
+    sectors = set(portfolio_sectors or [])
+    if not sectors or "semiconductor" in sectors or "it_services" in sectors:
+        try:
+            df = ak.macro_global_sox_index()
+            if has_data(df):
+                latest = df.iloc[-1]
+                prev = df.iloc[-2] if len(df) >= 2 else None
+                price = safe_float(latest.iloc[-1] if len(latest) > 0 else None)
+                prev_price = safe_float(
+                    prev.iloc[-1] if prev is not None and len(prev) > 0 else None
+                )
+                change_pct = (
+                    round((price - prev_price) / prev_price * 100, 2)
+                    if price and prev_price
+                    else None
+                )
+                result["sox_index"] = {
+                    "price": price,
+                    "change_pct": change_pct,
+                }
+        except Exception as e:
+            logger.warning("SOX index fetch failed: %s", e)
+
+    logger.info("China macro snapshot: %d indicators", len(result))
     return result

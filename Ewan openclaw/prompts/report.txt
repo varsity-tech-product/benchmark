@@ -21,15 +21,18 @@ a header noting "今日非交易日" at the top.
 - Today's quote: open, high, low, close, change %, volume, turnover_rate
 - Technical: key MA levels, support/resistance (MUST include exact price numbers),
   MACD/RSI/KDJ signals
-- News: key news items with [source](url) links for each (do NOT embed full text,
-  give concise summary + clickable link)
+- Fundamentals: ROE grade + debt level + earnings growth direction + analyst consensus
+  (1 sentence, only highlight if abnormal or noteworthy)
+- News: Start with L0 announcements (prefix "【公告】"), then key L1/L2/L3 items
+  with [source](url) links. For L0 items, highlight category (业绩预告/增减持/etc).
 - Recommendation: add / hold / reduce / watch (with reasoning)
 - Risk warning: current primary risk for this stock
 
-### 3. Macro Calendar & Global Markets
+### 3. Macro & Global Markets
+- China macro: PMI trend (expansion/contraction), liquidity (LPR/Shibor),
+  inflation (CPI/PPI), SOX semiconductor index if relevant — 1-2 sentences
 - Overnight US indices + commodities + FX
-- Upcoming 3-day economic events with potential portfolio impact
-- Sector-level macro risk assessment
+- Upcoming economic events (mark "upcoming" vs "released") with portfolio impact
 
 ### 4. Comprehensive Judgment
 - Overall market assessment (1-2 sentences)

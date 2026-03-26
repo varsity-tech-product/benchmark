@@ -10,9 +10,12 @@ logger = logging.getLogger(__name__)
 
 
 def safe_float(val, decimals: int = 2) -> float | None:
-    """Safely convert a value to float, rounded to N decimals."""
+    """Safely convert a value to float, rounded to N decimals. Returns None for NaN."""
+    import math
+
     try:
-        return round(float(val), decimals)
+        result = round(float(val), decimals)
+        return None if math.isnan(result) else result
     except (TypeError, ValueError):
         return None
 
