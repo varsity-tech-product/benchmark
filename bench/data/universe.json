@@ -3,6 +3,7 @@
   "freeze_date": "2026-03-24",
   "hf_repo": "Varsity-Tech/quant-tutor-bench-data",
   "hf_revision": null,
+  "listing_dates_file": "symbol_dates.json",
   "tiers": {
     "tier1": {
       "description": "ALL USDT-M perpetual futures from Binance Data Vision (no cherry-picking)",

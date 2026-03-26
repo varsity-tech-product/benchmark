@@ -1,87 +1,89 @@
 {
   "task_id": "I05",
   "universe": "tier2",
-  "selection_method": "60-day rolling correlation of log returns, ranked",
-  "period": "2022-01-01 to 2025-12-31",
+  "selection_method": "60-day rolling correlation of log returns, ranked by avg |corr| > 0.7",
+  "selection_period": "2020-01-01 to 2021-12-31",
+  "backtest_period": "2022-01-01 to 2025-12-31",
+  "point_in_time": true,
   "candidate_pairs": [
+    {
+      "pair": [
+        "ETHUSDT",
+        "LINKUSDT"
+      ],
+      "avg_correlation": 0.7915,
+      "rank": 1
+    },
+    {
+      "pair": [
+        "ETHUSDT",
+        "LTCUSDT"
+      ],
+      "avg_correlation": 0.7872,
+      "rank": 2
+    },
+    {
+      "pair": [
+        "BTCUSDT",
+        "LTCUSDT"
+      ],
+      "avg_correlation": 0.7842,
+      "rank": 3
+    },
     {
       "pair": [
         "BTCUSDT",
         "ETHUSDT"
       ],
-      "avg_correlation": 0.8129,
-      "rank": 1
-    },
-    {
-      "pair": [
-        "ADAUSDT",
-        "DOTUSDT"
-      ],
-      "avg_correlation": 0.8069,
-      "rank": 2
-    },
-    {
-      "pair": [
-        "ATOMUSDT",
-        "DOTUSDT"
-      ],
-      "avg_correlation": 0.7956,
-      "rank": 3
-    },
-    {
-      "pair": [
-        "DOTUSDT",
-        "MATICUSDT"
-      ],
-      "avg_correlation": 0.7755,
+      "avg_correlation": 0.7741,
       "rank": 4
     },
     {
       "pair": [
-        "ADAUSDT",
-        "MATICUSDT"
+        "AAVEUSDT",
+        "UNIUSDT"
       ],
-      "avg_correlation": 0.7723,
+      "avg_correlation": 0.7581,
       "rank": 5
     },
     {
       "pair": [
-        "AVAXUSDT",
-        "DOTUSDT"
+        "LINKUSDT",
+        "LTCUSDT"
       ],
-      "avg_correlation": 0.7641,
+      "avg_correlation": 0.7564,
       "rank": 6
     },
     {
       "pair": [
-        "ARBUSDT",
+        "AAVEUSDT",
         "ETHUSDT"
       ],
-      "avg_correlation": 0.7612,
+      "avg_correlation": 0.7377,
       "rank": 7
     },
     {
       "pair": [
-        "ATOMUSDT",
-        "MATICUSDT"
+        "ETHUSDT",
+        "MKRUSDT"
       ],
-      "avg_correlation": 0.7543,
+      "avg_correlation": 0.73,
       "rank": 8
     },
     {
       "pair": [
-        "ADAUSDT",
-        "ATOMUSDT"
+        "DOTUSDT",
+        "ETHUSDT"
       ],
-      "avg_correlation": 0.7439,
+      "avg_correlation": 0.7208,
       "rank": 9
     },
     {
       "pair": [
-        "AVAXUSDT",
-        "SOLUSDT"
+        "ETHUSDT",
+        "UNIUSDT"
       ],
-      "avg_correlation": 0.7387,
+      "avg_correlation": 0.7155,
       "rank": 10
     }
   ]

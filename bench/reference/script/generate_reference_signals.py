@@ -30,7 +30,12 @@ REFERENCE_DIR = BENCH_ROOT / "data" / "reference"
 
 # Import canonical date window
 sys.path.insert(0, str(BENCH_ROOT))
-from config.benchmark_dates import BENCH_END, BENCH_START  # noqa: E402
+from config.benchmark_dates import (  # noqa: E402
+    BENCH_END,
+    BENCH_START,
+    PAIR_SELECTION_END,
+    PAIR_SELECTION_START,
+)
 
 DEFAULT_START = BENCH_START
 DEFAULT_END = BENCH_END
@@ -130,6 +135,43 @@ def _filter_dates(
         pd.Timestamp(end).date() if date_col == "date" else pd.Timestamp(end, tz="UTC")
     )
     return df[(df[date_col] >= start_d) & (df[date_col] <= end_d)].copy()
+
+
+# ── Point-in-time listing dates ──────────────────────────────────────
+
+_SYMBOL_DATES: dict[str, dict] | None = None
+
+
+def _load_symbol_dates() -> dict[str, dict]:
+    """Load per-symbol listing/delisting dates from symbol_dates.json.
+
+    Returns a dict mapping symbol -> {"listing_date": ..., "last_data_date": ...}.
+    Falls back to empty dict if file not found (backward compatible).
+    """
+    global _SYMBOL_DATES
+    if _SYMBOL_DATES is not None:
+        return _SYMBOL_DATES
+
+    dates_path = BENCH_ROOT / "data" / "symbol_dates.json"
+    if dates_path.exists():
+        with open(dates_path) as f:
+            data = json.load(f)
+        _SYMBOL_DATES = data.get("symbols", {})
+    else:
+        _SYMBOL_DATES = {}
+    return _SYMBOL_DATES
+
+
+def _symbol_listed_before(symbol: str, date_str: str) -> bool:
+    """Return True if symbol was listed on or before the given date.
+
+    Returns True (permissive) if listing date is unknown.
+    """
+    dates = _load_symbol_dates()
+    info = dates.get(symbol)
+    if info is None:
+        return True  # unknown listing date → assume listed
+    return info["listing_date"] <= date_str
 
 
 # ────────────────────────────────────────────────────────────────────
@@ -901,20 +943,28 @@ def _compute_candidate_pairs(
 ) -> dict:
     """Pre-compute pairwise correlations for all Tier 2 symbols.
 
+    Uses PRE-PERIOD data (before the backtest window) to avoid look-ahead
+    bias.  Only symbols with sufficient data in the pre-period are
+    eligible, which naturally excludes symbols listed after the backtest
+    start date.
+
     Returns a JSON-serializable dict with the top-10 pairs ranked by
     average 60-day rolling correlation of log returns.
     """
+    sel_start = PAIR_SELECTION_START
+    sel_end = PAIR_SELECTION_END
+
     # Load universe to get Tier 2 symbols
     universe_path = BENCH_ROOT / "data" / "universe.json"
     with open(universe_path) as f:
         universe = json.load(f)
     symbols = universe["tiers"]["tier2"]["symbols"]
 
-    # Load daily close prices for each symbol
+    # Load daily close prices from pre-period window
     closes: dict[str, pd.Series] = {}
     for sym in symbols:
         df = _load_daily_csv(sym)
-        df = _filter_dates(df, start, end)
+        df = _filter_dates(df, sel_start, sel_end)
         if df.empty or len(df) < 60:
             continue
         closes[sym] = df.set_index("date")["close"]
@@ -956,8 +1006,10 @@ def _compute_candidate_pairs(
     return {
         "task_id": "I05",
         "universe": "tier2",
-        "selection_method": "60-day rolling correlation of log returns, ranked",
-        "period": f"{start} to {end}",
+        "selection_method": "60-day rolling correlation of log returns, ranked by avg |corr| > 0.7",
+        "selection_period": f"{sel_start} to {sel_end}",
+        "backtest_period": f"{start} to {end}",
+        "point_in_time": True,
         "candidate_pairs": top_pairs,
     }
 

@@ -1,0 +1,2558 @@
+{
+  "version": "1.0",
+  "generated_date": "2026-03-26",
+  "bench_window": [
+    "2022-01-01",
+    "2025-12-31"
+  ],
+  "source": "bench/data/raw/i-series/tier1_daily/*_1d.csv (first/last row timestamps)",
+  "symbols": {
+    "0GUSDT": {
+      "listing_date": "2025-09-17",
+      "last_data_date": "2025-12-31"
+    },
+    "1000000BOBUSDT": {
+      "listing_date": "2025-06-05",
+      "last_data_date": "2025-12-31"
+    },
+    "1000000MOGUSDT": {
+      "listing_date": "2024-11-07",
+      "last_data_date": "2025-12-31"
+    },
+    "1000BONKUSDT": {
+      "listing_date": "2023-11-22",
+      "last_data_date": "2025-12-31"
+    },
+    "1000BTTCUSDT": {
+      "listing_date": "2022-01-26",
+      "last_data_date": "2022-04-11"
+    },
+    "1000CATUSDT": {
+      "listing_date": "2024-10-21",
+      "last_data_date": "2025-12-31"
+    },
+    "1000CHEEMSUSDT": {
+      "listing_date": "2024-11-25",
+      "last_data_date": "2025-12-31"
+    },
+    "1000FLOKIUSDT": {
+      "listing_date": "2023-06-01",
+      "last_data_date": "2025-12-31"
+    },
+    "1000LUNCUSDT": {
+      "listing_date": "2022-09-09",
+      "last_data_date": "2025-12-31"
+    },
+    "1000PEPEUSDT": {
+      "listing_date": "2023-05-05",
+      "last_data_date": "2025-12-31"
+    },
+    "1000RATSUSDT": {
+      "listing_date": "2023-12-15",
+      "last_data_date": "2025-12-31"
+    },
+    "1000SATSUSDT": {
+      "listing_date": "2023-12-12",
+      "last_data_date": "2025-12-31"
+    },
+    "1000SHIBUSDT": {
+      "listing_date": "2021-05-10",
+      "last_data_date": "2025-12-31"
+    },
+    "1000WHYUSDT": {
+      "listing_date": "2024-11-25",
+      "last_data_date": "2025-12-31"
+    },
+    "1000XECUSDT": {
+      "listing_date": "2022-01-01",
+      "last_data_date": "2025-12-31"
+    },
+    "1000XUSDT": {
+      "listing_date": "2024-11-13",
+      "last_data_date": "2025-12-31"
+    },
+    "1INCHUSDT": {
+      "listing_date": "2021-01-25",
+      "last_data_date": "2025-12-31"
+    },
+    "1MBABYDOGEUSDT": {
+      "listing_date": "2024-09-16",
+      "last_data_date": "2025-12-31"
+    },
+    "2ZUSDT": {
+      "listing_date": "2025-10-02",
+      "last_data_date": "2025-12-31"
+    },
+    "42USDT": {
+      "listing_date": "2025-10-27",
+      "last_data_date": "2025-12-31"
+    },
+    "4USDT": {
+      "listing_date": "2025-10-08",
+      "last_data_date": "2025-12-31"
+    },
+    "A2ZUSDT": {
+      "listing_date": "2025-07-30",
+      "last_data_date": "2025-12-31"
+    },
+    "AAVEUSDT": {
+      "listing_date": "2020-10-16",
+      "last_data_date": "2025-12-31"
+    },
+    "ACEUSDT": {
+      "listing_date": "2023-12-18",
+      "last_data_date": "2025-12-31"
+    },
+    "ACHUSDT": {
+      "listing_date": "2023-02-22",
+      "last_data_date": "2025-12-31"
+    },
+    "ACTUSDT": {
+      "listing_date": "2024-11-11",
+      "last_data_date": "2025-12-31"
+    },
+    "ACXUSDT": {
+      "listing_date": "2024-12-06",
+      "last_data_date": "2025-12-31"
+    },
+    "ADAUSDT": {
+      "listing_date": "2020-04-10",
+      "last_data_date": "2025-12-31"
+    },
+    "AERGOUSDT": {
+      "listing_date": "2024-09-10",
+      "last_data_date": "2025-12-31"
+    },
+    "AEROUSDT": {
+      "listing_date": "2024-12-04",
+      "last_data_date": "2025-12-31"
+    },
+    "AEVOUSDT": {
+      "listing_date": "2024-03-13",
+      "last_data_date": "2025-12-31"
+    },
+    "AGIXUSDT": {
+      "listing_date": "2023-02-16",
+      "last_data_date": "2025-12-31"
+    },
+    "AGLDUSDT": {
+      "listing_date": "2023-07-29",
+      "last_data_date": "2025-12-31"
+    },
+    "AGTUSDT": {
+      "listing_date": "2025-05-20",
+      "last_data_date": "2025-12-31"
+    },
+    "AI16ZUSDT": {
+      "listing_date": "2025-01-02",
+      "last_data_date": "2025-12-31"
+    },
+    "AIAUSDT": {
+      "listing_date": "2025-09-18",
+      "last_data_date": "2025-12-31"
+    },
+    "AINUSDT": {
+      "listing_date": "2025-07-10",
+      "last_data_date": "2025-12-31"
+    },
+    "AIOTUSDT": {
+      "listing_date": "2025-04-30",
+      "last_data_date": "2025-12-31"
+    },
+    "AIOUSDT": {
+      "listing_date": "2025-08-13",
+      "last_data_date": "2025-12-31"
+    },
+    "AIUSDT": {
+      "listing_date": "2024-01-08",
+      "last_data_date": "2025-12-31"
+    },
+    "AIXBTUSDT": {
+      "listing_date": "2024-12-20",
+      "last_data_date": "2025-12-31"
+    },
+    "AKEUSDT": {
+      "listing_date": "2025-09-26",
+      "last_data_date": "2025-12-31"
+    },
+    "AKROUSDT": {
+      "listing_date": "2022-01-01",
+      "last_data_date": "2022-05-27"
+    },
+    "AKTUSDT": {
+      "listing_date": "2024-11-18",
+      "last_data_date": "2025-12-31"
+    },
+    "ALCHUSDT": {
+      "listing_date": "2025-01-07",
+      "last_data_date": "2025-12-31"
+    },
+    "ALGOUSDT": {
+      "listing_date": "2020-08-26",
+      "last_data_date": "2025-12-31"
+    },
+    "ALICEUSDT": {
+      "listing_date": "2022-01-01",
+      "last_data_date": "2025-12-31"
+    },
+    "ALLOUSDT": {
+      "listing_date": "2025-11-11",
+      "last_data_date": "2025-12-31"
+    },
+    "ALLUSDT": {
+      "listing_date": "2025-08-06",
+      "last_data_date": "2025-12-31"
+    },
+    "ALPACAUSDT": {
+      "listing_date": "2024-08-22",
+      "last_data_date": "2025-12-31"
+    },
+    "ALPHAUSDT": {
+      "listing_date": "2022-01-01",
+      "last_data_date": "2025-12-31"
+    },
+    "ALPINEUSDT": {
+      "listing_date": "2025-05-06",
+      "last_data_date": "2025-12-31"
+    },
+    "ALTUSDT": {
+      "listing_date": "2024-01-25",
+      "last_data_date": "2025-12-31"
+    },
+    "AMBUSDT": {
+      "listing_date": "2023-03-30",
+      "last_data_date": "2025-12-31"
+    },
+    "ANCUSDT": {
+      "listing_date": "2022-03-08",
+      "last_data_date": "2022-05-13"
+    },
+    "ANIMEUSDT": {
+      "listing_date": "2025-01-23",
+      "last_data_date": "2025-12-31"
+    },
+    "ANKRUSDT": {
+      "listing_date": "2022-01-01",
+      "last_data_date": "2025-12-31"
+    },
+    "ANTUSDT": {
+      "listing_date": "2022-01-01",
+      "last_data_date": "2024-05-28"
+    },
+    "APEUSDT": {
+      "listing_date": "2022-03-17",
+      "last_data_date": "2025-12-31"
+    },
+    "API3USDT": {
+      "listing_date": "2022-02-22",
+      "last_data_date": "2025-12-31"
+    },
+    "APRUSDT": {
+      "listing_date": "2025-10-23",
+      "last_data_date": "2025-12-31"
+    },
+    "APTUSDT": {
+      "listing_date": "2022-10-19",
+      "last_data_date": "2025-12-31"
+    },
+    "ARBUSDT": {
+      "listing_date": "2023-03-23",
+      "last_data_date": "2025-12-31"
+    },
+    "ARCUSDT": {
+      "listing_date": "2025-01-17",
+      "last_data_date": "2025-12-31"
+    },
+    "ARIAUSDT": {
+      "listing_date": "2025-09-03",
+      "last_data_date": "2025-12-31"
+    },
+    "ARKMUSDT": {
+      "listing_date": "2023-07-28",
+      "last_data_date": "2025-12-31"
+    },
+    "ARKUSDT": {
+      "listing_date": "2023-09-19",
+      "last_data_date": "2025-12-31"
+    },
+    "ARPAUSDT": {
+      "listing_date": "2022-01-01",
+      "last_data_date": "2025-12-31"
+    },
+    "ARUSDT": {
+      "listing_date": "2021-09-28",
+      "last_data_date": "2025-12-31"
+    },
+    "ASRUSDT": {
+      "listing_date": "2025-05-06",
+      "last_data_date": "2025-12-31"
+    },
+    "ASTERUSDT": {
+      "listing_date": "2025-09-19",
+      "last_data_date": "2025-12-31"
+    },
+    "ASTRUSDT": {
+      "listing_date": "2023-02-14",
+      "last_data_date": "2025-12-31"
+    },
+    "ATAUSDT": {
+      "listing_date": "2022-01-01",
+      "last_data_date": "2025-12-31"
+    },
+    "ATHUSDT": {
+      "listing_date": "2025-04-02",
+      "last_data_date": "2025-12-31"
+    },
+    "ATOMUSDT": {
+      "listing_date": "2020-03-13",
+      "last_data_date": "2025-12-31"
+    },
+    "ATUSDT": {
+      "listing_date": "2025-10-29",
+      "last_data_date": "2025-12-31"
+    },
+    "AUCTIONUSDT": {
+      "listing_date": "2023-12-15",
+      "last_data_date": "2025-12-31"
+    },
+    "AUDIOUSDT": {
+      "listing_date": "2022-01-01",
+      "last_data_date": "2024-05-28"
+    },
+    "AUSDT": {
+      "listing_date": "2025-05-28",
+      "last_data_date": "2025-12-31"
+    },
+    "AVAAIUSDT": {
+      "listing_date": "2025-01-17",
+      "last_data_date": "2025-12-31"
+    },
+    "AVAUSDT": {
+      "listing_date": "2024-12-13",
+      "last_data_date": "2025-12-31"
+    },
+    "AVAXUSDT": {
+      "listing_date": "2020-09-23",
+      "last_data_date": "2025-12-31"
+    },
+    "AVNTUSDT": {
+      "listing_date": "2025-09-09",
+      "last_data_date": "2025-12-31"
+    },
+    "AWEUSDT": {
+      "listing_date": "2025-05-21",
+      "last_data_date": "2025-12-31"
+    },
+    "AXLUSDT": {
+      "listing_date": "2024-03-01",
+      "last_data_date": "2025-12-31"
+    },
+    "AXSUSDT": {
+      "listing_date": "2021-06-16",
+      "last_data_date": "2025-12-31"
+    },
+    "B2USDT": {
+      "listing_date": "2025-05-06",
+      "last_data_date": "2025-12-31"
+    },
+    "B3USDT": {
+      "listing_date": "2025-02-13",
+      "last_data_date": "2025-12-31"
+    },
+    "BABYUSDT": {
+      "listing_date": "2025-04-05",
+      "last_data_date": "2025-12-31"
+    },
+    "BADGERUSDT": {
+      "listing_date": "2023-11-09",
+      "last_data_date": "2025-12-31"
+    },
+    "BAKEUSDT": {
+      "listing_date": "2022-01-01",
+      "last_data_date": "2025-12-31"
+    },
+    "BALUSDT": {
+      "listing_date": "2020-09-01",
+      "last_data_date": "2025-12-31"
+    },
+    "BANANAS31USDT": {
+      "listing_date": "2025-03-22",
+      "last_data_date": "2025-12-31"
+    },
+    "BANANAUSDT": {
+      "listing_date": "2024-08-15",
+      "last_data_date": "2025-12-31"
+    },
+    "BANDUSDT": {
+      "listing_date": "2020-08-10",
+      "last_data_date": "2025-12-31"
+    },
+    "BANKUSDT": {
+      "listing_date": "2025-04-18",
+      "last_data_date": "2025-12-31"
+    },
+    "BANUSDT": {
+      "listing_date": "2024-11-18",
+      "last_data_date": "2025-12-31"
+    },
+    "BARDUSDT": {
+      "listing_date": "2025-09-18",
+      "last_data_date": "2025-12-31"
+    },
+    "BASUSDT": {
+      "listing_date": "2025-08-26",
+      "last_data_date": "2025-12-31"
+    },
+    "BATUSDT": {
+      "listing_date": "2022-01-01",
+      "last_data_date": "2025-12-31"
+    },
+    "BBUSDT": {
+      "listing_date": "2024-05-13",
+      "last_data_date": "2025-12-31"
+    },
+    "BCHUSDT": {
+      "listing_date": "2022-01-01",
+      "last_data_date": "2025-12-31"
+    },
+    "BDXNUSDT": {
+      "listing_date": "2025-06-03",
+      "last_data_date": "2025-12-31"
+    },
+    "BEAMXUSDT": {
+      "listing_date": "2023-11-17",
+      "last_data_date": "2025-12-31"
+    },
+    "BEATUSDT": {
+      "listing_date": "2025-11-12",
+      "last_data_date": "2025-12-31"
+    },
+    "BELUSDT": {
+      "listing_date": "2020-11-18",
+      "last_data_date": "2025-12-31"
+    },
+    "BERAUSDT": {
+      "listing_date": "2025-02-06",
+      "last_data_date": "2025-12-31"
+    },
+    "BICOUSDT": {
+      "listing_date": "2023-09-28",
+      "last_data_date": "2025-12-31"
+    },
+    "BIDUSDT": {
+      "listing_date": "2025-03-20",
+      "last_data_date": "2025-12-31"
+    },
+    "BIGTIMEUSDT": {
+      "listing_date": "2023-10-12",
+      "last_data_date": "2025-12-31"
+    },
+    "BIOUSDT": {
+      "listing_date": "2025-01-03",
+      "last_data_date": "2025-12-31"
+    },
+    "BLESSUSDT": {
+      "listing_date": "2025-09-23",
+      "last_data_date": "2025-12-31"
+    },
+    "BLUAIUSDT": {
+      "listing_date": "2025-10-21",
+      "last_data_date": "2025-12-31"
+    },
+    "BLUEBIRDUSDT": {
+      "listing_date": "2022-11-02",
+      "last_data_date": "2024-05-28"
+    },
+    "BLURUSDT": {
+      "listing_date": "2023-04-28",
+      "last_data_date": "2025-12-31"
+    },
+    "BLZUSDT": {
+      "listing_date": "2020-12-17",
+      "last_data_date": "2025-12-31"
+    },
+    "BMTUSDT": {
+      "listing_date": "2025-03-17",
+      "last_data_date": "2025-12-31"
+    },
+    "BNBUSDT": {
+      "listing_date": "2020-02-10",
+      "last_data_date": "2025-12-31"
+    },
+    "BNTUSDT": {
+      "listing_date": "2023-08-10",
+      "last_data_date": "2025-12-31"
+    },
+    "BNXUSDT": {
+      "listing_date": "2022-04-01",
+      "last_data_date": "2025-12-31"
+    },
+    "BOBUSDT": {
+      "listing_date": "2025-11-21",
+      "last_data_date": "2025-12-31"
+    },
+    "BOMEUSDT": {
+      "listing_date": "2024-03-16",
+      "last_data_date": "2025-12-31"
+    },
+    "BONDUSDT": {
+      "listing_date": "2023-10-15",
+      "last_data_date": "2025-12-31"
+    },
+    "BRETTUSDT": {
+      "listing_date": "2024-08-20",
+      "last_data_date": "2025-12-31"
+    },
+    "BREVUSDT": {
+      "listing_date": "2025-12-30",
+      "last_data_date": "2025-12-31"
+    },
+    "BROCCOLI714USDT": {
+      "listing_date": "2025-03-21",
+      "last_data_date": "2025-12-31"
+    },
+    "BROCCOLIF3BUSDT": {
+      "listing_date": "2025-03-21",
+      "last_data_date": "2025-12-31"
+    },
+    "BRUSDT": {
+      "listing_date": "2025-03-21",
+      "last_data_date": "2025-12-31"
+    },
+    "BSVUSDT": {
+      "listing_date": "2023-10-20",
+      "last_data_date": "2025-12-31"
+    },
+    "BSWUSDT": {
+      "listing_date": "2024-09-05",
+      "last_data_date": "2025-12-31"
+    },
+    "BTCDOMUSDT": {
+      "listing_date": "2022-01-01",
+      "last_data_date": "2025-12-31"
+    },
+    "BTCSTUSDT": {
+      "listing_date": "2022-01-01",
+      "last_data_date": "2025-12-31"
+    },
+    "BTCUSDT": {
+      "listing_date": "2019-12-31",
+      "last_data_date": "2025-12-31"
+    },
+    "BTRUSDT": {
+      "listing_date": "2025-08-27",
+      "last_data_date": "2025-12-31"
+    },
+    "BTSUSDT": {
+      "listing_date": "2022-01-01",
+      "last_data_date": "2024-05-28"
+    },
+    "BTTUSDT": {
+      "listing_date": "2022-01-01",
+      "last_data_date": "2022-01-26"
+    },
+    "BULLAUSDT": {
+      "listing_date": "2025-07-04",
+      "last_data_date": "2025-12-31"
+    },
+    "BUSDT": {
+      "listing_date": "2025-05-22",
+      "last_data_date": "2025-12-31"
+    },
+    "C98USDT": {
+      "listing_date": "2022-01-01",
+      "last_data_date": "2025-12-31"
+    },
+    "CAKEUSDT": {
+      "listing_date": "2023-11-02",
+      "last_data_date": "2025-12-31"
+    },
+    "CARVUSDT": {
+      "listing_date": "2025-08-07",
+      "last_data_date": "2025-12-31"
+    },
+    "CATIUSDT": {
+      "listing_date": "2024-09-20",
+      "last_data_date": "2025-12-31"
+    },
+    "CCUSDT": {
+      "listing_date": "2025-10-31",
+      "last_data_date": "2025-12-31"
+    },
+    "CELOUSDT": {
+      "listing_date": "2021-09-27",
+      "last_data_date": "2025-12-31"
+    },
+    "CELRUSDT": {
+      "listing_date": "2022-01-01",
+      "last_data_date": "2025-12-31"
+    },
+    "CETUSUSDT": {
+      "listing_date": "2024-11-06",
+      "last_data_date": "2025-12-31"
+    },
+    "CFXUSDT": {
+      "listing_date": "2023-02-21",
+      "last_data_date": "2025-12-31"
+    },
+    "CGPTUSDT": {
+      "listing_date": "2024-12-20",
+      "last_data_date": "2025-12-31"
+    },
+    "CHESSUSDT": {
+      "listing_date": "2024-08-29",
+      "last_data_date": "2025-12-31"
+    },
+    "CHILLGUYUSDT": {
+      "listing_date": "2024-11-27",
+      "last_data_date": "2025-12-31"
+    },
+    "CHRUSDT": {
+      "listing_date": "2022-01-01",
+      "last_data_date": "2025-12-31"
+    },
+    "CHZUSDT": {
+      "listing_date": "2021-01-21",
+      "last_data_date": "2025-12-31"
+    },
+    "CKBUSDT": {
+      "listing_date": "2023-02-28",
+      "last_data_date": "2025-12-31"
+    },
+    "CLANKERUSDT": {
+      "listing_date": "2025-11-12",
+      "last_data_date": "2025-12-31"
+    },
+    "CLOUSDT": {
+      "listing_date": "2025-10-14",
+      "last_data_date": "2025-12-31"
+    },
+    "COAIUSDT": {
+      "listing_date": "2025-09-25",
+      "last_data_date": "2025-12-31"
+    },
+    "COCOSUSDT": {
+      "listing_date": "2023-02-21",
+      "last_data_date": "2024-05-28"
+    },
+    "COLLECTUSDT": {
+      "listing_date": "2025-12-31",
+      "last_data_date": "2025-12-31"
+    },
+    "COMBOUSDT": {
+      "listing_date": "2023-06-02",
+      "last_data_date": "2025-12-31"
+    },
+    "COMMONUSDT": {
+      "listing_date": "2025-10-27",
+      "last_data_date": "2025-12-31"
+    },
+    "COMPUSDT": {
+      "listing_date": "2020-09-01",
+      "last_data_date": "2025-12-31"
+    },
+    "COOKIEUSDT": {
+      "listing_date": "2025-01-07",
+      "last_data_date": "2025-12-31"
+    },
+    "COSUSDT": {
+      "listing_date": "2024-09-30",
+      "last_data_date": "2025-12-31"
+    },
+    "COTIUSDT": {
+      "listing_date": "2022-01-01",
+      "last_data_date": "2025-12-31"
+    },
+    "COWUSDT": {
+      "listing_date": "2024-11-06",
+      "last_data_date": "2025-12-31"
+    },
+    "CROSSUSDT": {
+      "listing_date": "2025-07-10",
+      "last_data_date": "2025-12-31"
+    },
+    "CRVUSDT": {
+      "listing_date": "2020-09-01",
+      "last_data_date": "2025-12-31"
+    },
+    "CTKUSDT": {
+      "listing_date": "2020-11-19",
+      "last_data_date": "2025-12-31"
+    },
+    "CTSIUSDT": {
+      "listing_date": "2022-01-01",
+      "last_data_date": "2025-12-31"
+    },
+    "CUDISUSDT": {
+      "listing_date": "2025-08-20",
+      "last_data_date": "2025-12-31"
+    },
+    "CUSDT": {
+      "listing_date": "2025-07-15",
+      "last_data_date": "2025-12-31"
+    },
+    "CVCUSDT": {
+      "listing_date": "2022-01-01",
+      "last_data_date": "2025-12-31"
+    },
+    "CVXUSDT": {
+      "listing_date": "2022-09-22",
+      "last_data_date": "2025-12-31"
+    },
+    "CYBERUSDT": {
+      "listing_date": "2023-08-21",
+      "last_data_date": "2025-12-31"
+    },
+    "CYSUSDT": {
+      "listing_date": "2025-12-12",
+      "last_data_date": "2025-12-31"
+    },
+    "DAMUSDT": {
+      "listing_date": "2025-08-18",
+      "last_data_date": "2025-12-31"
+    },
+    "DARUSDT": {
+      "listing_date": "2022-04-29",
+      "last_data_date": "2025-12-31"
+    },
+    "DASHUSDT": {
+      "listing_date": "2022-01-01",
+      "last_data_date": "2025-12-31"
+    },
+    "DEEPUSDT": {
+      "listing_date": "2025-04-22",
+      "last_data_date": "2025-12-31"
+    },
+    "DEFIUSDT": {
+      "listing_date": "2022-01-01",
+      "last_data_date": "2025-12-31"
+    },
+    "DEGENUSDT": {
+      "listing_date": "2024-11-15",
+      "last_data_date": "2025-12-31"
+    },
+    "DEGOUSDT": {
+      "listing_date": "2024-12-13",
+      "last_data_date": "2025-12-31"
+    },
+    "DENTUSDT": {
+      "listing_date": "2022-01-01",
+      "last_data_date": "2025-12-31"
+    },
+    "DEXEUSDT": {
+      "listing_date": "2024-12-24",
+      "last_data_date": "2025-12-31"
+    },
+    "DFUSDT": {
+      "listing_date": "2024-12-30",
+      "last_data_date": "2025-12-31"
+    },
+    "DGBUSDT": {
+      "listing_date": "2022-01-01",
+      "last_data_date": "2025-12-31"
+    },
+    "DIAUSDT": {
+      "listing_date": "2024-10-02",
+      "last_data_date": "2025-12-31"
+    },
+    "DMCUSDT": {
+      "listing_date": "2025-06-24",
+      "last_data_date": "2025-12-31"
+    },
+    "DODOUSDT": {
+      "listing_date": "2022-01-01",
+      "last_data_date": "2022-05-27"
+    },
+    "DODOXUSDT": {
+      "listing_date": "2023-08-08",
+      "last_data_date": "2025-12-31"
+    },
+    "DOGEUSDT": {
+      "listing_date": "2020-07-10",
+      "last_data_date": "2025-12-31"
+    },
+    "DOGSUSDT": {
+      "listing_date": "2024-08-26",
+      "last_data_date": "2025-12-31"
+    },
+    "DOLOUSDT": {
+      "listing_date": "2025-05-01",
+      "last_data_date": "2025-12-31"
+    },
+    "DOODUSDT": {
+      "listing_date": "2025-05-09",
+      "last_data_date": "2025-12-31"
+    },
+    "DOTUSDT": {
+      "listing_date": "2020-08-22",
+      "last_data_date": "2025-12-31"
+    },
+    "DRIFTUSDT": {
+      "listing_date": "2024-11-08",
+      "last_data_date": "2025-12-31"
+    },
+    "DUSDT": {
+      "listing_date": "2025-01-09",
+      "last_data_date": "2025-12-31"
+    },
+    "DUSKUSDT": {
+      "listing_date": "2022-01-07",
+      "last_data_date": "2025-12-31"
+    },
+    "DYDXUSDT": {
+      "listing_date": "2021-09-27",
+      "last_data_date": "2025-12-31"
+    },
+    "DYMUSDT": {
+      "listing_date": "2024-02-07",
+      "last_data_date": "2025-12-31"
+    },
+    "EDENUSDT": {
+      "listing_date": "2025-09-30",
+      "last_data_date": "2025-12-31"
+    },
+    "EDUUSDT": {
+      "listing_date": "2023-04-30",
+      "last_data_date": "2025-12-31"
+    },
+    "EGLDUSDT": {
+      "listing_date": "2020-09-15",
+      "last_data_date": "2025-12-31"
+    },
+    "EIGENUSDT": {
+      "listing_date": "2024-10-01",
+      "last_data_date": "2025-12-31"
+    },
+    "ENAUSDT": {
+      "listing_date": "2024-04-02",
+      "last_data_date": "2025-12-31"
+    },
+    "ENJUSDT": {
+      "listing_date": "2022-01-01",
+      "last_data_date": "2025-12-31"
+    },
+    "ENSOUSDT": {
+      "listing_date": "2025-10-14",
+      "last_data_date": "2025-12-31"
+    },
+    "ENSUSDT": {
+      "listing_date": "2021-11-30",
+      "last_data_date": "2025-12-31"
+    },
+    "EOSUSDT": {
+      "listing_date": "2020-04-27",
+      "last_data_date": "2025-05-21"
+    },
+    "EPICUSDT": {
+      "listing_date": "2025-03-13",
+      "last_data_date": "2025-12-31"
+    },
+    "EPTUSDT": {
+      "listing_date": "2025-04-21",
+      "last_data_date": "2025-12-31"
+    },
+    "ERAUSDT": {
+      "listing_date": "2025-07-17",
+      "last_data_date": "2025-12-31"
+    },
+    "ESPORTSUSDT": {
+      "listing_date": "2025-07-29",
+      "last_data_date": "2025-12-31"
+    },
+    "ETCUSDT": {
+      "listing_date": "2020-07-27",
+      "last_data_date": "2025-12-31"
+    },
+    "ETHFIUSDT": {
+      "listing_date": "2024-03-18",
+      "last_data_date": "2025-12-31"
+    },
+    "ETHUSDT": {
+      "listing_date": "2019-12-31",
+      "last_data_date": "2025-12-31"
+    },
+    "ETHWUSDT": {
+      "listing_date": "2023-11-28",
+      "last_data_date": "2025-12-31"
+    },
+    "EULUSDT": {
+      "listing_date": "2025-10-13",
+      "last_data_date": "2025-12-31"
+    },
+    "EVAAUSDT": {
+      "listing_date": "2025-10-03",
+      "last_data_date": "2025-12-31"
+    },
+    "FARTCOINUSDT": {
+      "listing_date": "2024-12-20",
+      "last_data_date": "2025-12-31"
+    },
+    "FETUSDT": {
+      "listing_date": "2023-02-17",
+      "last_data_date": "2025-12-31"
+    },
+    "FFUSDT": {
+      "listing_date": "2025-09-29",
+      "last_data_date": "2025-12-31"
+    },
+    "FHEUSDT": {
+      "listing_date": "2025-04-12",
+      "last_data_date": "2025-12-31"
+    },
+    "FIDAUSDT": {
+      "listing_date": "2024-09-19",
+      "last_data_date": "2025-12-31"
+    },
+    "FILUSDT": {
+      "listing_date": "2020-10-16",
+      "last_data_date": "2025-12-31"
+    },
+    "FIOUSDT": {
+      "listing_date": "2024-09-20",
+      "last_data_date": "2025-12-31"
+    },
+    "FISUSDT": {
+      "listing_date": "2025-04-25",
+      "last_data_date": "2025-12-31"
+    },
+    "FLMUSDT": {
+      "listing_date": "2022-01-01",
+      "last_data_date": "2025-12-31"
+    },
+    "FLOCKUSDT": {
+      "listing_date": "2025-09-09",
+      "last_data_date": "2025-12-31"
+    },
+    "FLOWUSDT": {
+      "listing_date": "2022-02-10",
+      "last_data_date": "2025-12-31"
+    },
+    "FLUIDUSDT": {
+      "listing_date": "2025-09-24",
+      "last_data_date": "2025-12-31"
+    },
+    "FLUXUSDT": {
+      "listing_date": "2024-09-03",
+      "last_data_date": "2025-12-31"
+    },
+    "FOLKSUSDT": {
+      "listing_date": "2025-11-06",
+      "last_data_date": "2025-12-31"
+    },
+    "FOOTBALLUSDT": {
+      "listing_date": "2022-09-01",
+      "last_data_date": "2024-05-28"
+    },
+    "FORMUSDT": {
+      "listing_date": "2025-03-19",
+      "last_data_date": "2025-12-31"
+    },
+    "FORTHUSDT": {
+      "listing_date": "2025-04-08",
+      "last_data_date": "2025-12-31"
+    },
+    "FRONTUSDT": {
+      "listing_date": "2023-09-22",
+      "last_data_date": "2024-09-11"
+    },
+    "FTMUSDT": {
+      "listing_date": "2020-10-22",
+      "last_data_date": "2025-12-31"
+    },
+    "FTTUSDT": {
+      "listing_date": "2022-04-15",
+      "last_data_date": "2025-12-31"
+    },
+    "FUNUSDT": {
+      "listing_date": "2025-03-31",
+      "last_data_date": "2025-12-31"
+    },
+    "FUSDT": {
+      "listing_date": "2025-06-18",
+      "last_data_date": "2025-12-31"
+    },
+    "FXSUSDT": {
+      "listing_date": "2023-01-20",
+      "last_data_date": "2025-12-31"
+    },
+    "GALAUSDT": {
+      "listing_date": "2021-09-23",
+      "last_data_date": "2025-12-31"
+    },
+    "GALUSDT": {
+      "listing_date": "2022-05-05",
+      "last_data_date": "2024-07-30"
+    },
+    "GASUSDT": {
+      "listing_date": "2023-10-25",
+      "last_data_date": "2025-12-31"
+    },
+    "GHSTUSDT": {
+      "listing_date": "2024-09-23",
+      "last_data_date": "2025-12-31"
+    },
+    "GIGGLEUSDT": {
+      "listing_date": "2025-10-09",
+      "last_data_date": "2025-12-31"
+    },
+    "GLMRUSDT": {
+      "listing_date": "2023-09-26",
+      "last_data_date": "2025-12-31"
+    },
+    "GLMUSDT": {
+      "listing_date": "2024-02-22",
+      "last_data_date": "2025-12-31"
+    },
+    "GMTUSDT": {
+      "listing_date": "2022-03-15",
+      "last_data_date": "2025-12-31"
+    },
+    "GMXUSDT": {
+      "listing_date": "2023-02-17",
+      "last_data_date": "2025-12-31"
+    },
+    "GOATUSDT": {
+      "listing_date": "2024-10-24",
+      "last_data_date": "2025-12-31"
+    },
+    "GPSUSDT": {
+      "listing_date": "2025-02-17",
+      "last_data_date": "2025-12-31"
+    },
+    "GRASSUSDT": {
+      "listing_date": "2024-11-08",
+      "last_data_date": "2025-12-31"
+    },
+    "GRIFFAINUSDT": {
+      "listing_date": "2025-01-02",
+      "last_data_date": "2025-12-31"
+    },
+    "GRTUSDT": {
+      "listing_date": "2020-12-19",
+      "last_data_date": "2025-12-31"
+    },
+    "GTCUSDT": {
+      "listing_date": "2022-01-01",
+      "last_data_date": "2025-12-31"
+    },
+    "GUAUSDT": {
+      "listing_date": "2025-12-21",
+      "last_data_date": "2025-12-31"
+    },
+    "GUNUSDT": {
+      "listing_date": "2025-03-31",
+      "last_data_date": "2025-12-31"
+    },
+    "GUSDT": {
+      "listing_date": "2024-08-15",
+      "last_data_date": "2025-12-31"
+    },
+    "HAEDALUSDT": {
+      "listing_date": "2025-05-01",
+      "last_data_date": "2025-12-31"
+    },
+    "HANAUSDT": {
+      "listing_date": "2025-09-26",
+      "last_data_date": "2025-12-31"
+    },
+    "HBARUSDT": {
+      "listing_date": "2021-03-17",
+      "last_data_date": "2025-12-31"
+    },
+    "HEIUSDT": {
+      "listing_date": "2025-02-13",
+      "last_data_date": "2025-12-31"
+    },
+    "HEMIUSDT": {
+      "listing_date": "2025-08-29",
+      "last_data_date": "2025-12-31"
+    },
+    "HFTUSDT": {
+      "listing_date": "2023-04-06",
+      "last_data_date": "2025-12-31"
+    },
+    "HIFIUSDT": {
+      "listing_date": "2023-09-16",
+      "last_data_date": "2025-12-31"
+    },
+    "HIGHUSDT": {
+      "listing_date": "2023-02-07",
+      "last_data_date": "2025-12-31"
+    },
+    "HIPPOUSDT": {
+      "listing_date": "2024-11-13",
+      "last_data_date": "2025-12-31"
+    },
+    "HIVEUSDT": {
+      "listing_date": "2024-12-23",
+      "last_data_date": "2025-12-31"
+    },
+    "HMSTRUSDT": {
+      "listing_date": "2024-09-26",
+      "last_data_date": "2025-12-31"
+    },
+    "HNTUSDT": {
+      "listing_date": "2022-01-01",
+      "last_data_date": "2024-05-28"
+    },
+    "HOLOUSDT": {
+      "listing_date": "2025-09-11",
+      "last_data_date": "2025-12-31"
+    },
+    "HOMEUSDT": {
+      "listing_date": "2025-06-10",
+      "last_data_date": "2025-12-31"
+    },
+    "HOOKUSDT": {
+      "listing_date": "2023-01-23",
+      "last_data_date": "2025-12-31"
+    },
+    "HOTUSDT": {
+      "listing_date": "2021-03-30",
+      "last_data_date": "2025-12-31"
+    },
+    "HUMAUSDT": {
+      "listing_date": "2025-05-26",
+      "last_data_date": "2025-12-31"
+    },
+    "HUSDT": {
+      "listing_date": "2025-06-25",
+      "last_data_date": "2025-12-31"
+    },
+    "HYPERUSDT": {
+      "listing_date": "2025-04-22",
+      "last_data_date": "2025-12-31"
+    },
+    "HYPEUSDT": {
+      "listing_date": "2025-05-30",
+      "last_data_date": "2025-12-31"
+    },
+    "ICNTUSDT": {
+      "listing_date": "2025-07-03",
+      "last_data_date": "2025-12-31"
+    },
+    "ICPUSDT": {
+      "listing_date": "2021-05-11",
+      "last_data_date": "2025-12-31"
+    },
+    "ICXUSDT": {
+      "listing_date": "2022-01-01",
+      "last_data_date": "2025-12-31"
+    },
+    "IDEXUSDT": {
+      "listing_date": "2023-05-03",
+      "last_data_date": "2025-12-31"
+    },
+    "IDOLUSDT": {
+      "listing_date": "2025-07-04",
+      "last_data_date": "2025-12-31"
+    },
+    "IDUSDT": {
+      "listing_date": "2023-03-23",
+      "last_data_date": "2025-12-31"
+    },
+    "ILVUSDT": {
+      "listing_date": "2023-11-10",
+      "last_data_date": "2025-12-31"
+    },
+    "IMXUSDT": {
+      "listing_date": "2022-02-11",
+      "last_data_date": "2025-12-31"
+    },
+    "INITUSDT": {
+      "listing_date": "2025-04-16",
+      "last_data_date": "2025-12-31"
+    },
+    "INJUSDT": {
+      "listing_date": "2022-08-17",
+      "last_data_date": "2025-12-31"
+    },
+    "INUSDT": {
+      "listing_date": "2025-08-07",
+      "last_data_date": "2025-12-31"
+    },
+    "IOSTUSDT": {
+      "listing_date": "2021-01-05",
+      "last_data_date": "2025-12-31"
+    },
+    "IOTAUSDT": {
+      "listing_date": "2020-06-24",
+      "last_data_date": "2025-12-31"
+    },
+    "IOTXUSDT": {
+      "listing_date": "2022-01-01",
+      "last_data_date": "2025-12-31"
+    },
+    "IOUSDT": {
+      "listing_date": "2024-06-11",
+      "last_data_date": "2025-12-31"
+    },
+    "IPUSDT": {
+      "listing_date": "2025-02-13",
+      "last_data_date": "2025-12-31"
+    },
+    "IRUSDT": {
+      "listing_date": "2025-12-21",
+      "last_data_date": "2025-12-31"
+    },
+    "IRYSUSDT": {
+      "listing_date": "2025-11-26",
+      "last_data_date": "2025-12-31"
+    },
+    "JASMYUSDT": {
+      "listing_date": "2023-07-25",
+      "last_data_date": "2025-12-31"
+    },
+    "JCTUSDT": {
+      "listing_date": "2025-11-10",
+      "last_data_date": "2025-12-31"
+    },
+    "JELLYJELLYUSDT": {
+      "listing_date": "2025-03-26",
+      "last_data_date": "2025-12-31"
+    },
+    "JOEUSDT": {
+      "listing_date": "2023-03-29",
+      "last_data_date": "2025-12-31"
+    },
+    "JSTUSDT": {
+      "listing_date": "2025-04-28",
+      "last_data_date": "2025-12-31"
+    },
+    "JTOUSDT": {
+      "listing_date": "2023-12-08",
+      "last_data_date": "2025-12-31"
+    },
+    "JUPUSDT": {
+      "listing_date": "2024-01-31",
+      "last_data_date": "2025-12-31"
+    },
+    "KAIAUSDT": {
+      "listing_date": "2024-12-04",
+      "last_data_date": "2025-12-31"
+    },
+    "KAITOUSDT": {
+      "listing_date": "2025-02-20",
+      "last_data_date": "2025-12-31"
+    },
+    "KASUSDT": {
+      "listing_date": "2023-11-17",
+      "last_data_date": "2025-12-31"
+    },
+    "KAVAUSDT": {
+      "listing_date": "2020-08-31",
+      "last_data_date": "2025-12-31"
+    },
+    "KDAUSDT": {
+      "listing_date": "2024-09-18",
+      "last_data_date": "2025-12-31"
+    },
+    "KEEPUSDT": {
+      "listing_date": "2022-01-01",
+      "last_data_date": "2022-02-15"
+    },
+    "KERNELUSDT": {
+      "listing_date": "2025-04-14",
+      "last_data_date": "2025-12-31"
+    },
+    "KEYUSDT": {
+      "listing_date": "2023-05-24",
+      "last_data_date": "2025-12-31"
+    },
+    "KGENUSDT": {
+      "listing_date": "2025-10-07",
+      "last_data_date": "2025-12-31"
+    },
+    "KITEUSDT": {
+      "listing_date": "2025-10-29",
+      "last_data_date": "2025-12-31"
+    },
+    "KLAYUSDT": {
+      "listing_date": "2022-01-01",
+      "last_data_date": "2025-12-31"
+    },
+    "KMNOUSDT": {
+      "listing_date": "2024-12-20",
+      "last_data_date": "2025-12-31"
+    },
+    "KNCUSDT": {
+      "listing_date": "2022-01-01",
+      "last_data_date": "2025-12-31"
+    },
+    "KOMAUSDT": {
+      "listing_date": "2024-12-10",
+      "last_data_date": "2025-12-31"
+    },
+    "KSMUSDT": {
+      "listing_date": "2021-01-04",
+      "last_data_date": "2025-12-31"
+    },
+    "LABUSDT": {
+      "listing_date": "2025-10-17",
+      "last_data_date": "2025-12-31"
+    },
+    "LAUSDT": {
+      "listing_date": "2025-06-05",
+      "last_data_date": "2025-12-31"
+    },
+    "LAYERUSDT": {
+      "listing_date": "2025-02-11",
+      "last_data_date": "2025-12-31"
+    },
+    "LDOUSDT": {
+      "listing_date": "2022-09-22",
+      "last_data_date": "2025-12-31"
+    },
+    "LEVERUSDT": {
+      "listing_date": "2023-03-30",
+      "last_data_date": "2025-12-31"
+    },
+    "LIGHTUSDT": {
+      "listing_date": "2025-09-27",
+      "last_data_date": "2025-12-31"
+    },
+    "LINAUSDT": {
+      "listing_date": "2022-01-01",
+      "last_data_date": "2025-12-31"
+    },
+    "LINEAUSDT": {
+      "listing_date": "2025-09-01",
+      "last_data_date": "2025-12-31"
+    },
+    "LINKUSDT": {
+      "listing_date": "2020-01-17",
+      "last_data_date": "2025-12-31"
+    },
+    "LISTAUSDT": {
+      "listing_date": "2024-06-20",
+      "last_data_date": "2025-12-31"
+    },
+    "LITUSDT": {
+      "listing_date": "2021-02-18",
+      "last_data_date": "2025-12-31"
+    },
+    "LOKAUSDT": {
+      "listing_date": "2024-09-24",
+      "last_data_date": "2025-12-31"
+    },
+    "LOOMUSDT": {
+      "listing_date": "2023-10-11",
+      "last_data_date": "2025-12-31"
+    },
+    "LPTUSDT": {
+      "listing_date": "2022-06-27",
+      "last_data_date": "2025-12-31"
+    },
+    "LQTYUSDT": {
+      "listing_date": "2023-03-10",
+      "last_data_date": "2025-12-31"
+    },
+    "LRCUSDT": {
+      "listing_date": "2022-01-01",
+      "last_data_date": "2025-12-31"
+    },
+    "LSKUSDT": {
+      "listing_date": "2024-01-25",
+      "last_data_date": "2025-12-31"
+    },
+    "LTCUSDT": {
+      "listing_date": "2020-01-09",
+      "last_data_date": "2025-12-31"
+    },
+    "LUMIAUSDT": {
+      "listing_date": "2024-12-18",
+      "last_data_date": "2025-12-31"
+    },
+    "LUNA2USDT": {
+      "listing_date": "2022-09-10",
+      "last_data_date": "2025-12-31"
+    },
+    "LUNAUSDT": {
+      "listing_date": "2022-01-01",
+      "last_data_date": "2022-05-13"
+    },
+    "LYNUSDT": {
+      "listing_date": "2025-10-06",
+      "last_data_date": "2025-12-31"
+    },
+    "MAGICUSDT": {
+      "listing_date": "2023-01-25",
+      "last_data_date": "2025-12-31"
+    },
+    "MAGMAUSDT": {
+      "listing_date": "2025-12-31",
+      "last_data_date": "2025-12-31"
+    },
+    "MANAUSDT": {
+      "listing_date": "2021-03-15",
+      "last_data_date": "2025-12-31"
+    },
+    "MANTAUSDT": {
+      "listing_date": "2024-01-18",
+      "last_data_date": "2025-12-31"
+    },
+    "MASKUSDT": {
+      "listing_date": "2021-08-27",
+      "last_data_date": "2025-12-31"
+    },
+    "MATICUSDT": {
+      "listing_date": "2020-10-22",
+      "last_data_date": "2024-09-11"
+    },
+    "MAVIAUSDT": {
+      "listing_date": "2024-02-21",
+      "last_data_date": "2025-12-31"
+    },
+    "MAVUSDT": {
+      "listing_date": "2023-06-29",
+      "last_data_date": "2025-12-31"
+    },
+    "MBLUSDT": {
+      "listing_date": "2023-11-14",
+      "last_data_date": "2024-05-28"
+    },
+    "MBOXUSDT": {
+      "listing_date": "2024-08-28",
+      "last_data_date": "2025-12-31"
+    },
+    "MDTUSDT": {
+      "listing_date": "2023-06-30",
+      "last_data_date": "2025-12-31"
+    },
+    "MELANIAUSDT": {
+      "listing_date": "2025-01-20",
+      "last_data_date": "2025-12-31"
+    },
+    "MEMEFIUSDT": {
+      "listing_date": "2025-04-25",
+      "last_data_date": "2025-12-31"
+    },
+    "MEMEUSDT": {
+      "listing_date": "2023-11-03",
+      "last_data_date": "2025-12-31"
+    },
+    "MERLUSDT": {
+      "listing_date": "2025-05-29",
+      "last_data_date": "2025-12-31"
+    },
+    "METISUSDT": {
+      "listing_date": "2024-03-12",
+      "last_data_date": "2025-12-31"
+    },
+    "METUSDT": {
+      "listing_date": "2025-10-11",
+      "last_data_date": "2025-12-31"
+    },
+    "MEUSDT": {
+      "listing_date": "2024-12-10",
+      "last_data_date": "2025-12-31"
+    },
+    "MEWUSDT": {
+      "listing_date": "2024-06-17",
+      "last_data_date": "2025-12-31"
+    },
+    "MILKUSDT": {
+      "listing_date": "2025-05-06",
+      "last_data_date": "2025-12-31"
+    },
+    "MINAUSDT": {
+      "listing_date": "2023-04-18",
+      "last_data_date": "2025-12-31"
+    },
+    "MIRAUSDT": {
+      "listing_date": "2025-09-26",
+      "last_data_date": "2025-12-31"
+    },
+    "MITOUSDT": {
+      "listing_date": "2025-08-28",
+      "last_data_date": "2025-12-31"
+    },
+    "MKRUSDT": {
+      "listing_date": "2020-08-13",
+      "last_data_date": "2025-12-31"
+    },
+    "MLNUSDT": {
+      "listing_date": "2025-03-31",
+      "last_data_date": "2025-12-31"
+    },
+    "MMTUSDT": {
+      "listing_date": "2025-11-04",
+      "last_data_date": "2025-12-31"
+    },
+    "MOCAUSDT": {
+      "listing_date": "2024-12-16",
+      "last_data_date": "2025-12-31"
+    },
+    "MONUSDT": {
+      "listing_date": "2025-10-10",
+      "last_data_date": "2025-12-31"
+    },
+    "MOODENGUSDT": {
+      "listing_date": "2024-10-25",
+      "last_data_date": "2025-12-31"
+    },
+    "MORPHOUSDT": {
+      "listing_date": "2024-11-27",
+      "last_data_date": "2025-12-31"
+    },
+    "MOVEUSDT": {
+      "listing_date": "2024-12-09",
+      "last_data_date": "2025-12-31"
+    },
+    "MOVRUSDT": {
+      "listing_date": "2023-12-26",
+      "last_data_date": "2025-12-31"
+    },
+    "MTLUSDT": {
+      "listing_date": "2022-01-01",
+      "last_data_date": "2025-12-31"
+    },
+    "MUBARAKUSDT": {
+      "listing_date": "2025-03-17",
+      "last_data_date": "2025-12-31"
+    },
+    "MUSDT": {
+      "listing_date": "2025-07-07",
+      "last_data_date": "2025-12-31"
+    },
+    "MYROUSDT": {
+      "listing_date": "2024-03-05",
+      "last_data_date": "2025-12-31"
+    },
+    "MYXUSDT": {
+      "listing_date": "2025-06-18",
+      "last_data_date": "2025-12-31"
+    },
+    "NAORISUSDT": {
+      "listing_date": "2025-07-31",
+      "last_data_date": "2025-12-31"
+    },
+    "NEARUSDT": {
+      "listing_date": "2020-10-15",
+      "last_data_date": "2025-12-31"
+    },
+    "NEIROETHUSDT": {
+      "listing_date": "2024-09-06",
+      "last_data_date": "2025-12-31"
+    },
+    "NEIROUSDT": {
+      "listing_date": "2024-09-16",
+      "last_data_date": "2025-12-31"
+    },
+    "NEOUSDT": {
+      "listing_date": "2020-06-24",
+      "last_data_date": "2025-12-31"
+    },
+    "NEWTUSDT": {
+      "listing_date": "2025-06-19",
+      "last_data_date": "2025-12-31"
+    },
+    "NFPUSDT": {
+      "listing_date": "2023-12-27",
+      "last_data_date": "2025-12-31"
+    },
+    "NIGHTUSDT": {
+      "listing_date": "2025-12-10",
+      "last_data_date": "2025-12-31"
+    },
+    "NILUSDT": {
+      "listing_date": "2025-03-24",
+      "last_data_date": "2025-12-31"
+    },
+    "NKNUSDT": {
+      "listing_date": "2022-01-01",
+      "last_data_date": "2025-12-31"
+    },
+    "NMRUSDT": {
+      "listing_date": "2023-06-22",
+      "last_data_date": "2025-12-31"
+    },
+    "NOMUSDT": {
+      "listing_date": "2025-10-01",
+      "last_data_date": "2025-12-31"
+    },
+    "NOTUSDT": {
+      "listing_date": "2024-05-16",
+      "last_data_date": "2025-12-31"
+    },
+    "NTRNUSDT": {
+      "listing_date": "2023-11-14",
+      "last_data_date": "2025-12-31"
+    },
+    "NULSUSDT": {
+      "listing_date": "2024-08-26",
+      "last_data_date": "2025-12-31"
+    },
+    "NUUSDT": {
+      "listing_date": "2022-01-01",
+      "last_data_date": "2022-02-15"
+    },
+    "NXPCUSDT": {
+      "listing_date": "2025-05-15",
+      "last_data_date": "2025-12-31"
+    },
+    "OBOLUSDT": {
+      "listing_date": "2025-05-07",
+      "last_data_date": "2025-12-31"
+    },
+    "OCEANUSDT": {
+      "listing_date": "2022-01-01",
+      "last_data_date": "2025-12-31"
+    },
+    "OGNUSDT": {
+      "listing_date": "2022-01-01",
+      "last_data_date": "2025-12-31"
+    },
+    "OGUSDT": {
+      "listing_date": "2025-05-12",
+      "last_data_date": "2025-12-31"
+    },
+    "OLUSDT": {
+      "listing_date": "2025-06-25",
+      "last_data_date": "2025-12-31"
+    },
+    "OMGUSDT": {
+      "listing_date": "2022-01-01",
+      "last_data_date": "2025-12-31"
+    },
+    "OMNIUSDT": {
+      "listing_date": "2024-04-17",
+      "last_data_date": "2025-12-31"
+    },
+    "OMUSDT": {
+      "listing_date": "2024-02-13",
+      "last_data_date": "2025-12-31"
+    },
+    "ONDOUSDT": {
+      "listing_date": "2024-01-20",
+      "last_data_date": "2025-12-31"
+    },
+    "ONEUSDT": {
+      "listing_date": "2022-01-01",
+      "last_data_date": "2025-12-31"
+    },
+    "ONGUSDT": {
+      "listing_date": "2023-11-27",
+      "last_data_date": "2025-12-31"
+    },
+    "ONTUSDT": {
+      "listing_date": "2020-06-24",
+      "last_data_date": "2025-12-31"
+    },
+    "ONUSDT": {
+      "listing_date": "2025-10-24",
+      "last_data_date": "2025-12-31"
+    },
+    "OPENUSDT": {
+      "listing_date": "2025-09-08",
+      "last_data_date": "2025-12-31"
+    },
+    "OPUSDT": {
+      "listing_date": "2022-06-01",
+      "last_data_date": "2025-12-31"
+    },
+    "ORBSUSDT": {
+      "listing_date": "2023-10-17",
+      "last_data_date": "2025-12-31"
+    },
+    "ORCAUSDT": {
+      "listing_date": "2024-12-06",
+      "last_data_date": "2025-12-31"
+    },
+    "ORDERUSDT": {
+      "listing_date": "2025-09-26",
+      "last_data_date": "2025-12-31"
+    },
+    "ORDIUSDT": {
+      "listing_date": "2023-11-07",
+      "last_data_date": "2025-12-31"
+    },
+    "OXTUSDT": {
+      "listing_date": "2023-08-11",
+      "last_data_date": "2025-12-31"
+    },
+    "PARTIUSDT": {
+      "listing_date": "2025-03-25",
+      "last_data_date": "2025-12-31"
+    },
+    "PAXGUSDT": {
+      "listing_date": "2025-03-27",
+      "last_data_date": "2025-12-31"
+    },
+    "PENDLEUSDT": {
+      "listing_date": "2023-07-28",
+      "last_data_date": "2025-12-31"
+    },
+    "PENGUUSDT": {
+      "listing_date": "2024-12-17",
+      "last_data_date": "2025-12-31"
+    },
+    "PEOPLEUSDT": {
+      "listing_date": "2021-12-24",
+      "last_data_date": "2025-12-31"
+    },
+    "PERPUSDT": {
+      "listing_date": "2023-03-06",
+      "last_data_date": "2025-12-31"
+    },
+    "PHAUSDT": {
+      "listing_date": "2024-12-30",
+      "last_data_date": "2025-12-31"
+    },
+    "PHBUSDT": {
+      "listing_date": "2023-02-16",
+      "last_data_date": "2025-12-31"
+    },
+    "PIEVERSEUSDT": {
+      "listing_date": "2025-11-14",
+      "last_data_date": "2025-12-31"
+    },
+    "PIPPINUSDT": {
+      "listing_date": "2025-01-24",
+      "last_data_date": "2025-12-31"
+    },
+    "PIXELUSDT": {
+      "listing_date": "2024-02-19",
+      "last_data_date": "2025-12-31"
+    },
+    "PLAYUSDT": {
+      "listing_date": "2025-07-31",
+      "last_data_date": "2025-12-31"
+    },
+    "PLUMEUSDT": {
+      "listing_date": "2025-03-21",
+      "last_data_date": "2025-12-31"
+    },
+    "PNUTUSDT": {
+      "listing_date": "2024-11-11",
+      "last_data_date": "2025-12-31"
+    },
+    "POLUSDT": {
+      "listing_date": "2024-09-13",
+      "last_data_date": "2025-12-31"
+    },
+    "POLYXUSDT": {
+      "listing_date": "2023-10-25",
+      "last_data_date": "2025-12-31"
+    },
+    "PONKEUSDT": {
+      "listing_date": "2024-11-04",
+      "last_data_date": "2025-12-31"
+    },
+    "POPCATUSDT": {
+      "listing_date": "2024-08-22",
+      "last_data_date": "2025-12-31"
+    },
+    "PORT3USDT": {
+      "listing_date": "2025-06-04",
+      "last_data_date": "2025-12-31"
+    },
+    "PORTALUSDT": {
+      "listing_date": "2024-02-29",
+      "last_data_date": "2025-12-31"
+    },
+    "POWERUSDT": {
+      "listing_date": "2025-12-06",
+      "last_data_date": "2025-12-31"
+    },
+    "POWRUSDT": {
+      "listing_date": "2023-10-27",
+      "last_data_date": "2025-12-31"
+    },
+    "PROMPTUSDT": {
+      "listing_date": "2025-04-11",
+      "last_data_date": "2025-12-31"
+    },
+    "PROMUSDT": {
+      "listing_date": "2025-01-15",
+      "last_data_date": "2025-12-31"
+    },
+    "PROVEUSDT": {
+      "listing_date": "2025-08-05",
+      "last_data_date": "2025-12-31"
+    },
+    "PTBUSDT": {
+      "listing_date": "2025-09-03",
+      "last_data_date": "2025-12-31"
+    },
+    "PUFFERUSDT": {
+      "listing_date": "2025-06-04",
+      "last_data_date": "2025-12-31"
+    },
+    "PUMPBTCUSDT": {
+      "listing_date": "2025-06-13",
+      "last_data_date": "2025-12-31"
+    },
+    "PUMPUSDT": {
+      "listing_date": "2025-04-12",
+      "last_data_date": "2025-12-31"
+    },
+    "PUNDIXUSDT": {
+      "listing_date": "2025-04-30",
+      "last_data_date": "2025-12-31"
+    },
+    "PYTHUSDT": {
+      "listing_date": "2023-11-22",
+      "last_data_date": "2025-12-31"
+    },
+    "QNTUSDT": {
+      "listing_date": "2022-10-20",
+      "last_data_date": "2025-12-31"
+    },
+    "QTUMUSDT": {
+      "listing_date": "2020-12-17",
+      "last_data_date": "2025-12-31"
+    },
+    "QUICKUSDT": {
+      "listing_date": "2024-09-06",
+      "last_data_date": "2025-12-31"
+    },
+    "QUSDT": {
+      "listing_date": "2025-09-02",
+      "last_data_date": "2025-12-31"
+    },
+    "RADUSDT": {
+      "listing_date": "2023-05-10",
+      "last_data_date": "2025-12-31"
+    },
+    "RAREUSDT": {
+      "listing_date": "2024-08-15",
+      "last_data_date": "2025-12-31"
+    },
+    "RAVEUSDT": {
+      "listing_date": "2025-12-14",
+      "last_data_date": "2025-12-31"
+    },
+    "RAYSOLUSDT": {
+      "listing_date": "2024-12-10",
+      "last_data_date": "2025-12-31"
+    },
+    "RAYUSDT": {
+      "listing_date": "2022-01-01",
+      "last_data_date": "2025-12-31"
+    },
+    "RDNTUSDT": {
+      "listing_date": "2023-04-05",
+      "last_data_date": "2025-12-31"
+    },
+    "RECALLUSDT": {
+      "listing_date": "2025-10-15",
+      "last_data_date": "2025-12-31"
+    },
+    "REDUSDT": {
+      "listing_date": "2025-03-06",
+      "last_data_date": "2025-12-31"
+    },
+    "REEFUSDT": {
+      "listing_date": "2022-01-01",
+      "last_data_date": "2025-12-31"
+    },
+    "REIUSDT": {
+      "listing_date": "2024-09-27",
+      "last_data_date": "2025-12-31"
+    },
+    "RENDERUSDT": {
+      "listing_date": "2024-07-26",
+      "last_data_date": "2025-12-31"
+    },
+    "RENUSDT": {
+      "listing_date": "2022-01-01",
+      "last_data_date": "2025-12-31"
+    },
+    "RESOLVUSDT": {
+      "listing_date": "2025-06-10",
+      "last_data_date": "2025-12-31"
+    },
+    "REZUSDT": {
+      "listing_date": "2024-04-30",
+      "last_data_date": "2025-12-31"
+    },
+    "RIFUSDT": {
+      "listing_date": "2023-10-21",
+      "last_data_date": "2025-12-31"
+    },
+    "RIVERUSDT": {
+      "listing_date": "2025-10-17",
+      "last_data_date": "2025-12-31"
+    },
+    "RLCUSDT": {
+      "listing_date": "2022-01-01",
+      "last_data_date": "2025-12-31"
+    },
+    "RLSUSDT": {
+      "listing_date": "2025-12-02",
+      "last_data_date": "2025-12-31"
+    },
+    "RNDRUSDT": {
+      "listing_date": "2023-06-27",
+      "last_data_date": "2024-07-30"
+    },
+    "RONINUSDT": {
+      "listing_date": "2024-02-06",
+      "last_data_date": "2025-12-31"
+    },
+    "ROSEUSDT": {
+      "listing_date": "2022-01-01",
+      "last_data_date": "2025-12-31"
+    },
+    "RPLUSDT": {
+      "listing_date": "2024-09-09",
+      "last_data_date": "2025-12-31"
+    },
+    "RSRUSDT": {
+      "listing_date": "2022-01-01",
+      "last_data_date": "2025-12-31"
+    },
+    "RUNEUSDT": {
+      "listing_date": "2021-04-26",
+      "last_data_date": "2025-12-31"
+    },
+    "RVNUSDT": {
+      "listing_date": "2021-06-17",
+      "last_data_date": "2025-12-31"
+    },
+    "RVVUSDT": {
+      "listing_date": "2025-10-18",
+      "last_data_date": "2025-12-31"
+    },
+    "SAFEUSDT": {
+      "listing_date": "2024-10-25",
+      "last_data_date": "2025-12-31"
+    },
+    "SAGAUSDT": {
+      "listing_date": "2024-04-09",
+      "last_data_date": "2025-12-31"
+    },
+    "SAHARAUSDT": {
+      "listing_date": "2025-06-26",
+      "last_data_date": "2025-12-31"
+    },
+    "SANDUSDT": {
+      "listing_date": "2021-01-25",
+      "last_data_date": "2025-12-31"
+    },
+    "SANTOSUSDT": {
+      "listing_date": "2024-10-28",
+      "last_data_date": "2025-12-31"
+    },
+    "SAPIENUSDT": {
+      "listing_date": "2025-08-20",
+      "last_data_date": "2025-12-31"
+    },
+    "SCRTUSDT": {
+      "listing_date": "2024-11-21",
+      "last_data_date": "2025-12-31"
+    },
+    "SCRUSDT": {
+      "listing_date": "2024-10-22",
+      "last_data_date": "2025-12-31"
+    },
+    "SCUSDT": {
+      "listing_date": "2022-01-01",
+      "last_data_date": "2025-12-31"
+    },
+    "SEIUSDT": {
+      "listing_date": "2023-08-17",
+      "last_data_date": "2025-12-31"
+    },
+    "SENTUSDT": {
+      "listing_date": "2025-11-14",
+      "last_data_date": "2025-12-31"
+    },
+    "SFPUSDT": {
+      "listing_date": "2022-01-01",
+      "last_data_date": "2025-12-31"
+    },
+    "SHELLUSDT": {
+      "listing_date": "2025-02-17",
+      "last_data_date": "2025-12-31"
+    },
+    "SIGNUSDT": {
+      "listing_date": "2025-04-28",
+      "last_data_date": "2025-12-31"
+    },
+    "SIRENUSDT": {
+      "listing_date": "2025-03-22",
+      "last_data_date": "2025-12-31"
+    },
+    "SKATEUSDT": {
+      "listing_date": "2025-06-09",
+      "last_data_date": "2025-12-31"
+    },
+    "SKLUSDT": {
+      "listing_date": "2020-12-08",
+      "last_data_date": "2025-12-31"
+    },
+    "SKYAIUSDT": {
+      "listing_date": "2025-05-13",
+      "last_data_date": "2025-12-31"
+    },
+    "SKYUSDT": {
+      "listing_date": "2025-09-09",
+      "last_data_date": "2025-12-31"
+    },
+    "SLERFUSDT": {
+      "listing_date": "2024-11-21",
+      "last_data_date": "2025-12-31"
+    },
+    "SLPUSDT": {
+      "listing_date": "2023-10-31",
+      "last_data_date": "2025-12-31"
+    },
+    "SNTUSDT": {
+      "listing_date": "2023-11-02",
+      "last_data_date": "2025-12-31"
+    },
+    "SNXUSDT": {
+      "listing_date": "2020-08-14",
+      "last_data_date": "2025-12-31"
+    },
+    "SOLUSDT": {
+      "listing_date": "2020-09-14",
+      "last_data_date": "2025-12-31"
+    },
+    "SOLVUSDT": {
+      "listing_date": "2025-01-17",
+      "last_data_date": "2025-12-31"
+    },
+    "SOMIUSDT": {
+      "listing_date": "2025-08-25",
+      "last_data_date": "2025-12-31"
+    },
+    "SONICUSDT": {
+      "listing_date": "2025-01-08",
+      "last_data_date": "2025-12-31"
+    },
+    "SOONUSDT": {
+      "listing_date": "2025-05-23",
+      "last_data_date": "2025-12-31"
+    },
+    "SOPHUSDT": {
+      "listing_date": "2025-05-28",
+      "last_data_date": "2025-12-31"
+    },
+    "SPELLUSDT": {
+      "listing_date": "2022-09-06",
+      "last_data_date": "2025-12-31"
+    },
+    "SPKUSDT": {
+      "listing_date": "2025-06-17",
+      "last_data_date": "2025-12-31"
+    },
+    "SPXUSDT": {
+      "listing_date": "2024-12-10",
+      "last_data_date": "2025-12-31"
+    },
+    "SQDUSDT": {
+      "listing_date": "2025-06-11",
+      "last_data_date": "2025-12-31"
+    },
+    "SRMUSDT": {
+      "listing_date": "2022-01-01",
+      "last_data_date": "2024-05-28"
+    },
+    "SSVUSDT": {
+      "listing_date": "2023-02-24",
+      "last_data_date": "2025-12-31"
+    },
+    "STABLEUSDT": {
+      "listing_date": "2025-11-06",
+      "last_data_date": "2025-12-31"
+    },
+    "STBLUSDT": {
+      "listing_date": "2025-09-17",
+      "last_data_date": "2025-12-31"
+    },
+    "STEEMUSDT": {
+      "listing_date": "2023-11-08",
+      "last_data_date": "2025-12-31"
+    },
+    "STGUSDT": {
+      "listing_date": "2022-08-25",
+      "last_data_date": "2025-12-31"
+    },
+    "STMXUSDT": {
+      "listing_date": "2022-01-01",
+      "last_data_date": "2025-12-31"
+    },
+    "STORJUSDT": {
+      "listing_date": "2022-01-01",
+      "last_data_date": "2025-12-31"
+    },
+    "STOUSDT": {
+      "listing_date": "2025-04-12",
+      "last_data_date": "2025-12-31"
+    },
+    "STPTUSDT": {
+      "listing_date": "2023-10-18",
+      "last_data_date": "2025-12-31"
+    },
+    "STRAXUSDT": {
+      "listing_date": "2023-10-11",
+      "last_data_date": "2025-12-31"
+    },
+    "STRKUSDT": {
+      "listing_date": "2024-02-20",
+      "last_data_date": "2025-12-31"
+    },
+    "STXUSDT": {
+      "listing_date": "2023-07-18",
+      "last_data_date": "2025-12-31"
+    },
+    "SUIUSDT": {
+      "listing_date": "2023-05-03",
+      "last_data_date": "2025-12-31"
+    },
+    "SUNUSDT": {
+      "listing_date": "2024-08-22",
+      "last_data_date": "2025-12-31"
+    },
+    "SUPERUSDT": {
+      "listing_date": "2023-11-26",
+      "last_data_date": "2025-12-31"
+    },
+    "SUSDT": {
+      "listing_date": "2025-01-16",
+      "last_data_date": "2025-12-31"
+    },
+    "SUSHIUSDT": {
+      "listing_date": "2020-09-04",
+      "last_data_date": "2025-12-31"
+    },
+    "SWARMSUSDT": {
+      "listing_date": "2025-01-07",
+      "last_data_date": "2025-12-31"
+    },
+    "SWELLUSDT": {
+      "listing_date": "2024-11-08",
+      "last_data_date": "2025-12-31"
+    },
+    "SXPUSDT": {
+      "listing_date": "2022-01-01",
+      "last_data_date": "2025-12-31"
+    },
+    "SXTUSDT": {
+      "listing_date": "2025-05-02",
+      "last_data_date": "2025-12-31"
+    },
+    "SYNUSDT": {
+      "listing_date": "2024-08-16",
+      "last_data_date": "2025-12-31"
+    },
+    "SYRUPUSDT": {
+      "listing_date": "2025-05-07",
+      "last_data_date": "2025-12-31"
+    },
+    "SYSUSDT": {
+      "listing_date": "2024-08-19",
+      "last_data_date": "2025-12-31"
+    },
+    "TACUSDT": {
+      "listing_date": "2025-07-15",
+      "last_data_date": "2025-12-31"
+    },
+    "TAGUSDT": {
+      "listing_date": "2025-07-25",
+      "last_data_date": "2025-12-31"
+    },
+    "TAIKOUSDT": {
+      "listing_date": "2025-06-11",
+      "last_data_date": "2025-12-31"
+    },
+    "TAKEUSDT": {
+      "listing_date": "2025-09-03",
+      "last_data_date": "2025-12-31"
+    },
+    "TANSSIUSDT": {
+      "listing_date": "2025-07-09",
+      "last_data_date": "2025-12-31"
+    },
+    "TAOUSDT": {
+      "listing_date": "2024-04-11",
+      "last_data_date": "2025-12-31"
+    },
+    "TAUSDT": {
+      "listing_date": "2025-07-21",
+      "last_data_date": "2025-12-31"
+    },
+    "THETAUSDT": {
+      "listing_date": "2020-06-24",
+      "last_data_date": "2025-12-31"
+    },
+    "THEUSDT": {
+      "listing_date": "2024-11-27",
+      "last_data_date": "2025-12-31"
+    },
+    "TIAUSDT": {
+      "listing_date": "2023-10-31",
+      "last_data_date": "2025-12-31"
+    },
+    "TLMUSDT": {
+      "listing_date": "2022-01-01",
+      "last_data_date": "2025-12-31"
+    },
+    "TNSRUSDT": {
+      "listing_date": "2024-04-08",
+      "last_data_date": "2025-12-31"
+    },
+    "TOKENUSDT": {
+      "listing_date": "2023-11-03",
+      "last_data_date": "2025-12-31"
+    },
+    "TOMOUSDT": {
+      "listing_date": "2022-01-01",
+      "last_data_date": "2024-05-28"
+    },
+    "TONUSDT": {
+      "listing_date": "2024-03-01",
+      "last_data_date": "2025-12-31"
+    },
+    "TOSHIUSDT": {
+      "listing_date": "2025-09-17",
+      "last_data_date": "2025-12-31"
+    },
+    "TOWNSUSDT": {
+      "listing_date": "2025-08-05",
+      "last_data_date": "2025-12-31"
+    },
+    "TRADOORUSDT": {
+      "listing_date": "2025-09-19",
+      "last_data_date": "2025-12-31"
+    },
+    "TRBUSDT": {
+      "listing_date": "2022-01-01",
+      "last_data_date": "2025-12-31"
+    },
+    "TREEUSDT": {
+      "listing_date": "2025-07-29",
+      "last_data_date": "2025-12-31"
+    },
+    "TROYUSDT": {
+      "listing_date": "2024-10-31",
+      "last_data_date": "2025-12-31"
+    },
+    "TRUMPUSDT": {
+      "listing_date": "2025-01-18",
+      "last_data_date": "2025-12-31"
+    },
+    "TRUSTUSDT": {
+      "listing_date": "2025-11-05",
+      "last_data_date": "2025-12-31"
+    },
+    "TRUTHUSDT": {
+      "listing_date": "2025-10-01",
+      "last_data_date": "2025-12-31"
+    },
+    "TRUUSDT": {
+      "listing_date": "2023-03-07",
+      "last_data_date": "2025-12-31"
+    },
+    "TRXUSDT": {
+      "listing_date": "2020-06-24",
+      "last_data_date": "2025-12-31"
+    },
+    "TSTUSDT": {
+      "listing_date": "2025-02-09",
+      "last_data_date": "2025-12-31"
+    },
+    "TURBOUSDT": {
+      "listing_date": "2024-05-30",
+      "last_data_date": "2025-12-31"
+    },
+    "TURTLEUSDT": {
+      "listing_date": "2025-10-22",
+      "last_data_date": "2025-12-31"
+    },
+    "TUSDT": {
+      "listing_date": "2023-02-01",
+      "last_data_date": "2025-12-31"
+    },
+    "TUTUSDT": {
+      "listing_date": "2025-03-20",
+      "last_data_date": "2025-12-31"
+    },
+    "TWTUSDT": {
+      "listing_date": "2023-11-03",
+      "last_data_date": "2025-12-31"
+    },
+    "UAIUSDT": {
+      "listing_date": "2025-11-06",
+      "last_data_date": "2025-12-31"
+    },
+    "UBUSDT": {
+      "listing_date": "2025-09-12",
+      "last_data_date": "2025-12-31"
+    },
+    "UMAUSDT": {
+      "listing_date": "2023-05-10",
+      "last_data_date": "2025-12-31"
+    },
+    "UNFIUSDT": {
+      "listing_date": "2022-01-01",
+      "last_data_date": "2025-12-31"
+    },
+    "UNIUSDT": {
+      "listing_date": "2020-09-18",
+      "last_data_date": "2025-12-31"
+    },
+    "USDCUSDT": {
+      "listing_date": "2023-03-12",
+      "last_data_date": "2025-12-31"
+    },
+    "USELESSUSDT": {
+      "listing_date": "2025-08-15",
+      "last_data_date": "2025-12-31"
+    },
+    "USTCUSDT": {
+      "listing_date": "2023-11-27",
+      "last_data_date": "2025-12-31"
+    },
+    "USUALUSDT": {
+      "listing_date": "2024-12-18",
+      "last_data_date": "2025-12-31"
+    },
+    "USUSDT": {
+      "listing_date": "2025-12-12",
+      "last_data_date": "2025-12-31"
+    },
+    "UXLINKUSDT": {
+      "listing_date": "2024-09-15",
+      "last_data_date": "2025-12-31"
+    },
+    "VANAUSDT": {
+      "listing_date": "2024-12-16",
+      "last_data_date": "2025-12-31"
+    },
+    "VANRYUSDT": {
+      "listing_date": "2024-03-13",
+      "last_data_date": "2025-12-31"
+    },
+    "VELODROMEUSDT": {
+      "listing_date": "2024-12-13",
+      "last_data_date": "2025-12-31"
+    },
+    "VELVETUSDT": {
+      "listing_date": "2025-07-15",
+      "last_data_date": "2025-12-31"
+    },
+    "VETUSDT": {
+      "listing_date": "2020-12-24",
+      "last_data_date": "2025-12-31"
+    },
+    "VFYUSDT": {
+      "listing_date": "2025-09-30",
+      "last_data_date": "2025-12-31"
+    },
+    "VICUSDT": {
+      "listing_date": "2025-03-12",
+      "last_data_date": "2025-12-31"
+    },
+    "VIDTUSDT": {
+      "listing_date": "2024-08-23",
+      "last_data_date": "2025-12-31"
+    },
+    "VINEUSDT": {
+      "listing_date": "2025-01-24",
+      "last_data_date": "2025-12-31"
+    },
+    "VIRTUALUSDT": {
+      "listing_date": "2024-12-10",
+      "last_data_date": "2025-12-31"
+    },
+    "VOXELUSDT": {
+      "listing_date": "2024-08-20",
+      "last_data_date": "2025-12-31"
+    },
+    "VTHOUSDT": {
+      "listing_date": "2025-01-22",
+      "last_data_date": "2025-12-31"
+    },
+    "VVVUSDT": {
+      "listing_date": "2025-01-29",
+      "last_data_date": "2025-12-31"
+    },
+    "WALUSDT": {
+      "listing_date": "2025-03-27",
+      "last_data_date": "2025-12-31"
+    },
+    "WAVESUSDT": {
+      "listing_date": "2022-01-01",
+      "last_data_date": "2025-12-31"
+    },
+    "WAXPUSDT": {
+      "listing_date": "2023-10-18",
+      "last_data_date": "2025-12-31"
+    },
+    "WCTUSDT": {
+      "listing_date": "2025-04-15",
+      "last_data_date": "2025-12-31"
+    },
+    "WETUSDT": {
+      "listing_date": "2025-12-10",
+      "last_data_date": "2025-12-31"
+    },
+    "WIFUSDT": {
+      "listing_date": "2024-03-05",
+      "last_data_date": "2025-12-31"
+    },
+    "WLDUSDT": {
+      "listing_date": "2023-07-24",
+      "last_data_date": "2025-12-31"
+    },
+    "WLFIUSDT": {
+      "listing_date": "2025-08-23",
+      "last_data_date": "2025-12-31"
+    },
+    "WOOUSDT": {
+      "listing_date": "2022-04-08",
+      "last_data_date": "2025-12-31"
+    },
+    "WUSDT": {
+      "listing_date": "2024-04-03",
+      "last_data_date": "2025-12-31"
+    },
+    "XAIUSDT": {
+      "listing_date": "2024-01-09",
+      "last_data_date": "2025-12-31"
+    },
+    "XANUSDT": {
+      "listing_date": "2025-09-29",
+      "last_data_date": "2025-12-31"
+    },
+    "XAUUSDT": {
+      "listing_date": "2025-12-11",
+      "last_data_date": "2025-12-31"
+    },
+    "XCNUSDT": {
+      "listing_date": "2025-04-11",
+      "last_data_date": "2025-12-31"
+    },
+    "XEMUSDT": {
+      "listing_date": "2022-01-01",
+      "last_data_date": "2025-12-31"
+    },
+    "XLMUSDT": {
+      "listing_date": "2020-10-20",
+      "last_data_date": "2025-12-31"
+    },
+    "XMRUSDT": {
+      "listing_date": "2022-01-01",
+      "last_data_date": "2025-12-31"
+    },
+    "XNYUSDT": {
+      "listing_date": "2025-08-13",
+      "last_data_date": "2025-12-31"
+    },
+    "XPINUSDT": {
+      "listing_date": "2025-09-12",
+      "last_data_date": "2025-12-31"
+    },
+    "XPLUSDT": {
+      "listing_date": "2025-08-22",
+      "last_data_date": "2025-12-31"
+    },
+    "XRPUSDT": {
+      "listing_date": "2020-01-06",
+      "last_data_date": "2025-12-31"
+    },
+    "XTZUSDT": {
+      "listing_date": "2020-10-20",
+      "last_data_date": "2025-12-31"
+    },
+    "XVGUSDT": {
+      "listing_date": "2023-07-05",
+      "last_data_date": "2025-12-31"
+    },
+    "XVSUSDT": {
+      "listing_date": "2023-04-13",
+      "last_data_date": "2025-12-31"
+    },
+    "YALAUSDT": {
+      "listing_date": "2025-08-07",
+      "last_data_date": "2025-12-31"
+    },
+    "YBUSDT": {
+      "listing_date": "2025-10-10",
+      "last_data_date": "2025-12-31"
+    },
+    "YFIIUSDT": {
+      "listing_date": "2022-01-01",
+      "last_data_date": "2022-04-12"
+    },
+    "YFIUSDT": {
+      "listing_date": "2020-08-31",
+      "last_data_date": "2025-12-31"
+    },
+    "YGGUSDT": {
+      "listing_date": "2023-08-05",
+      "last_data_date": "2025-12-31"
+    },
+    "ZBTUSDT": {
+      "listing_date": "2025-10-17",
+      "last_data_date": "2025-12-31"
+    },
+    "ZECUSDT": {
+      "listing_date": "2022-01-01",
+      "last_data_date": "2025-12-31"
+    },
+    "ZENUSDT": {
+      "listing_date": "2020-12-17",
+      "last_data_date": "2025-12-31"
+    },
+    "ZEREBROUSDT": {
+      "listing_date": "2025-01-02",
+      "last_data_date": "2025-12-31"
+    },
+    "ZETAUSDT": {
+      "listing_date": "2024-02-02",
+      "last_data_date": "2025-12-31"
+    },
+    "ZILUSDT": {
+      "listing_date": "2020-12-17",
+      "last_data_date": "2025-12-31"
+    },
+    "ZKCUSDT": {
+      "listing_date": "2025-09-15",
+      "last_data_date": "2025-12-31"
+    },
+    "ZKJUSDT": {
+      "listing_date": "2025-05-13",
+      "last_data_date": "2025-12-31"
+    },
+    "ZKPUSDT": {
+      "listing_date": "2025-12-21",
+      "last_data_date": "2025-12-31"
+    },
+    "ZKUSDT": {
+      "listing_date": "2024-06-17",
+      "last_data_date": "2025-12-31"
+    },
+    "ZORAUSDT": {
+      "listing_date": "2025-07-25",
+      "last_data_date": "2025-12-31"
+    },
+    "ZRCUSDT": {
+      "listing_date": "2025-07-29",
+      "last_data_date": "2025-12-31"
+    },
+    "ZROUSDT": {
+      "listing_date": "2024-06-20",
+      "last_data_date": "2025-12-31"
+    },
+    "ZRXUSDT": {
+      "listing_date": "2020-12-17",
+      "last_data_date": "2025-12-31"
+    },
+    "\u5e01\u5b89\u4eba\u751fUSDT": {
+      "listing_date": "2025-10-20",
+      "last_data_date": "2025-12-31"
+    }
+  },
+  "stats": {
+    "total_symbols": 635,
+    "listed_before_bench_start": 136,
+    "listed_during_bench_window": 499,
+    "delisted_before_bench_end": 24,
+    "parse_errors": 0
+  }
+}

@@ -9,6 +9,7 @@ data/
 !bench/data/
 bench/data/*
 !bench/data/universe.json
+!bench/data/symbol_dates.json
 !bench/data/reference/
 *.7z
 *.xml
