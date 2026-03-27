@@ -112,7 +112,7 @@ The practical conclusion is: **X-series is fully operational**, and its current 
 | X07 | 12 | 0.364 | 77.1% | 43.0% | EMA(20/50) crossover, BTCUSDT daily |
 | X08 | 82 | 0.348 | 70.7% | 36.5% | ROCP(20) momentum, BTCUSDT daily |
 | X09 | 280 | 0.185 | 9.2% | 64.4% | Trend+Reversion alphas, 10 symbols daily |
-| X10 | 4,166 | 1.028 | 217.0% | 17.1% | ROCP(20) ranking long/short, ~20 symbols daily |
+| X10 | 4,166 | 1.028 | 217.0% | 17.1% | ROCP(20) ranking long/short, 20 symbols daily |
 
 ---
 

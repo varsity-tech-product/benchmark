@@ -179,19 +179,19 @@ Purpose: Universe-wide daily strategies (I02 trend-following, I03 mean-reversion
 
 The symbol list is auto-discovered by querying the S3 listing at `data.binance.vision` and filtering to perpetual USDT-margined contracts (no delivery contracts like `BTCUSDT_250627`). See `bench/scripts/discover_binance_universe.py`.
 
-#### Tier 2: Core Liquid — Hourly + 4-Hourly
+#### Tier 2: Full Universe — Hourly + 4-Hourly
 
-**Top ~20 most liquid pairs**, at 1h and 4h resolution.
+**All 635 symbols** at 1h and 4h resolution (same as Tier 1). First 20 are the legacy core liquid subset (BTCUSDT, ETHUSDT, BNBUSDT, ..., APTUSDT) used by most tasks.
 
-Purpose: Multi-asset swing strategies (I05 cross-asset), multi-timeframe strategies (I04).
+Purpose: Multi-asset swing strategies (I05 cross-asset), multi-timeframe strategies (I04, I09).
 
 | Property | Value |
 |----------|-------|
-| Symbols | ~20 (BTCUSDT, ETHUSDT, BNBUSDT, SOLUSDT, XRPUSDT, ADAUSDT, DOGEUSDT, LINKUSDT, AVAXUSDT, DOTUSDT, MATICUSDT, UNIUSDT, LTCUSDT, ATOMUSDT, NEARUSDT, ARBUSDT, OPUSDT, AAVEUSDT, MKRUSDT, APTUSDT) |
+| Symbols | 635 (full universe; first 20 are legacy core liquid) |
 | Timeframes | 1h, 4h |
 | Period | 2022-01-01 → 2025-12-31 (4 years) |
-| Rows (approx) | 20 × 26,280 (1h) + 20 × 6,570 (4h) = **~657K rows** |
-| Size (approx) | **~80 MB** compressed |
+| Rows (approx) | 635 × 35,064 (1h) + 635 × 8,766 (4h) = **~27.8M rows** |
+| Size (approx) | **~400 MB** compressed |
 
 #### Tier 3: Majors — 5-Minute + 1-Minute
 
@@ -203,31 +203,31 @@ Purpose: High-frequency / microstructure strategies, execution quality analysis,
 |----------|-------|
 | Symbols | 5 (BTCUSDT, ETHUSDT, BNBUSDT, SOLUSDT, XRPUSDT) |
 | Timeframes | 5m, 1m |
-| Period | 2024-01-01 → 2025-12-31 (2 years) |
-| Rows (approx) | 5 × 105,120 (5m) + 5 × 525,600 (1m) = **~3.15M rows** |
+| Period | 2022-01-01 → 2025-12-31 (4 years) |
+| Rows (approx) | 5 × 210,240 (5m) + 5 × 1,051,200 (1m) = **~6.3M rows** |
 | Size (approx) | **~400 MB** compressed |
 
 #### Funding Rate Data
 
-Funding rates for the top 20 symbols (Tier 2), for carry signal construction in I06.
+Funding rates for all 635 symbols (full universe), for real carry signal construction in I06.
 
 | Property | Value |
 |----------|-------|
-| Symbols | ~20 (same as Tier 2) |
+| Symbols | 635 (full universe, same as Tier 1) |
 | Interval | 8h (3 per day) |
 | Period | Listing date → 2025-12-31 |
-| Rows (approx) | 20 × ~3,000 = **~60K rows** |
+| Rows (approx) | 635 × ~3,000 = **~1.9M rows** |
 | Source | Binance REST API (`/fapi/v1/fundingRate`) |
 
 #### Summary: Total I-Series Data
 
 | Tier | Symbols | Timeframes | Rows | Size | I-Tasks |
 |------|---------|------------|------|------|---------|
-| Tier 1 (Full Universe) | ~100 | 1d | ~150K | ~15 MB | I02, I03, I06 |
-| Tier 2 (Core Liquid) | ~20 | 1h, 4h | ~657K | ~80 MB | I04, I05 |
-| Tier 3 (Majors) | ~5 | 5m, 1m | ~3.15M | ~400 MB | I04 (stress test) |
-| Funding | ~20 | 8h | ~60K | ~5 MB | I06 |
-| **Total** | | | **~4M rows** | **~500 MB** | |
+| Tier 1 (Full Universe) | 635 | 1d | ~928K | ~15 MB | I01-I03, I06-I08, I10 |
+| Tier 2 (All, Hourly) | 635 | 1h, 4h | ~27.8M | ~400 MB | I04, I09 |
+| Tier 3 (Majors) | 5 | 5m, 1m | ~6.3M | ~400 MB | Future HF tasks |
+| Funding | 635 | 8h | ~1.9M | ~50 MB | I06 |
+| **Total** | | | **~37M rows** | **~865 MB** | |
 
 This is orders of magnitude larger than S/B-series data (~40K rows) but well within LEAN's capacity and HuggingFace storage limits.
 
@@ -314,7 +314,7 @@ huggingface.co/datasets/Varsity-Tech/quant-tutor-bench-data/
 │       │   ├── BTCUSDT_1d.csv
 │       │   ├── ETHUSDT_1d.csv
 │       │   └── ...
-│       ├── tier2_hourly/             # ~20 symbols, 1h + 4h
+│       ├── tier2_hourly/             # 635 symbols, 1h + 4h
 │       │   ├── BTCUSDT_1h.csv
 │       │   ├── BTCUSDT_4h.csv
 │       │   └── ...
@@ -322,7 +322,7 @@ huggingface.co/datasets/Varsity-Tech/quant-tutor-bench-data/
 │       │   ├── BTCUSDT_5m_2024.csv
 │       │   ├── BTCUSDT_1m_2024.csv
 │       │   └── ...
-│       ├── funding/                  # ~20 symbols, 8h
+│       ├── funding/                  # 635 symbols, 8h
 │       │   ├── BTCUSDT_funding.csv
 │       │   └── ...
 │       └── universe.json             # Symbol list, listing dates, tier assignments
@@ -330,7 +330,7 @@ huggingface.co/datasets/Varsity-Tech/quant-tutor-bench-data/
     └── crypto/
         └── binance/
             ├── daily/                # Tier 1: ~100 zips
-            ├── hour/                 # Tier 2: ~20 zips
+            ├── hour/                 # All symbols: 635 zips
             ├── minute/              # Tier 3: daily zip files per symbol
             └── ...
 ```
@@ -615,7 +615,7 @@ For I-series tasks, the Docker container sees:
         │   ├── btcusdt.zip
         │   ├── ethusdt.zip
         │   └── ... (100 zips)
-        ├── hour/                 # Tier 2: ~20 symbols
+        ├── hour/                 # All symbols: 635 zips
         ├── minute/              # Tier 3: ~5 symbols (daily zip files)
         └── ...
 /lean/Launcher/                   # LEAN launcher (baked into image)
@@ -1052,12 +1052,12 @@ Output required:
 **Category**: implementation
 **Pairs with**: S04 (volume/microstructure alpha)
 
-**Core idea**: Given a strategy that uses 4h bars for trend direction and 1h bars for entry timing, implement it on LEAN across the **Tier 2 universe (~20 symbols)** using data consolidators. This tests the agent's ability to work with multiple data resolutions simultaneously across multiple symbols — a common production requirement.
+**Core idea**: Given a strategy that uses 4h bars for trend direction and 1h bars for entry timing, implement it on LEAN across the **Tier 2 universe (first 20 of 635 symbols)** using data consolidators. This tests the agent's ability to work with multiple data resolutions simultaneously across multiple symbols — a common production requirement.
 
 **Strategy specification**:
 ```
 Strategy: Multi-Timeframe Trend Entry — Multi-Asset
-Assets:   All symbols in universe.json Tier 2 (~20 core liquid futures)
+Assets:   All symbols in universe.json Tier 2 (first 20 of 635 symbols; all have daily+hourly data)
 Resolution: Subscribe at 1h, consolidate to 4h
 Period:   2022-01-01 to 2025-12-31
 
@@ -1082,14 +1082,14 @@ Output required:
 ```
 
 **Materials provided**:
-- Data: Tier 2 universe (~20 symbols, 1h + 4h) pre-loaded in LEAN format
+- Data: Tier 2 universe (first 20 of 635 symbols, 1h + 4h) pre-loaded in LEAN format
 - `universe.json` with symbol list
 - Strategy spec: embedded in task description
 - Reference doc: `lean_algorithm_guide.md`
 
-**Description**: Guide a student to implement a multi-timeframe strategy on LEAN that uses 4h bars for trend direction and 1h bars for precise entry timing, applied across ~20 liquid crypto futures. The student must learn to use LEAN's `Consolidate()` to build 4h bars from 1h data, manage per-symbol dual-timeframe indicator state, and ensure 4h indicators only update on 4h bar completion. Running this at scale across 20 symbols with 3 years of hourly data tests both correctness and performance.
+**Description**: Guide a student to implement a multi-timeframe strategy on LEAN that uses 4h bars for trend direction and 1h bars for precise entry timing, applied across 20 liquid crypto futures. The student must learn to use LEAN's `Consolidate()` to build 4h bars from 1h data, manage per-symbol dual-timeframe indicator state, and ensure 4h indicators only update on 4h bar completion. Running this at scale across 20 symbols with 3 years of hourly data tests both correctness and performance.
 
-**Expected outcome**: Student produces a LEAN C# algorithm that (1) subscribes to ~20 symbols at hourly resolution and consolidates to 4h bars per symbol, (2) computes 20-period EMA on 4h bars and RSI on 1h bars per symbol, (3) implements multi-timeframe entry/exit logic independently per symbol, (4) ensures 4h indicators update only on 4h bar completion, (5) manages per-symbol position state, and (6) produces per-symbol trade logs and universe summary. Trade logs for 5 reference symbols should match the ground-truth.
+**Expected outcome**: Student produces a LEAN C# algorithm that (1) subscribes to 20 symbols at hourly resolution and consolidates to 4h bars per symbol, (2) computes 20-period EMA on 4h bars and RSI on 1h bars per symbol, (3) implements multi-timeframe entry/exit logic independently per symbol, (4) ensures 4h indicators update only on 4h bar completion, (5) manages per-symbol position state, and (6) produces per-symbol trade logs and universe summary. Trade logs for 5 reference symbols should match the ground-truth.
 
 **Required capabilities**:
 1. Subscribe to multiple symbols at hourly resolution and use `Consolidate()` to create 4h bars per symbol
@@ -1101,7 +1101,7 @@ Output required:
 
 **Student openings**:
 - **beginner_no_finance**: "I heard professional traders use multiple timeframes. I have hourly data for 20 crypto futures and I want to use a 4-hour trend to guide my hourly entries. How do I set this up on LEAN?"
-- **intermediate_developer**: "I need to implement a multi-timeframe strategy on LEAN across ~20 symbols: 4h EMA for trend, 1h RSI for entries. How do I set up consolidators for multiple symbols simultaneously?"
+- **intermediate_developer**: "I need to implement a multi-timeframe strategy on LEAN across 20 symbols: 4h EMA for trend, 1h RSI for entries. How do I set up consolidators for multiple symbols simultaneously?"
 - **advanced_quant**: "I'm implementing a multi-timeframe multi-asset alpha on LEAN: 4h EMA slope as regime filter, 1h RSI for entries, across 20 futures. I need per-symbol consolidators and dual-resolution indicator state. What's the right architecture?"
 
 **Environment**:
@@ -1134,12 +1134,12 @@ Output required:
 **Category**: implementation
 **Pairs with**: S05 (cross-asset alpha)
 
-**Core idea**: Given a pairs/spread trading strategy specification, implement it on LEAN across **all possible pairs within the Tier 2 universe (~20 symbols)**, automatically scanning for the best cointegrated pairs and trading them. This tests the agent's ability to handle combinatorial cross-asset analysis, dynamic pair selection, and multi-leg hedged positions at scale.
+**Core idea**: Given a pairs/spread trading strategy specification, implement it on LEAN across **all possible pairs within the Tier 2 universe (first 20 of 635 symbols)**, automatically scanning for the best cointegrated pairs and trading them. This tests the agent's ability to handle combinatorial cross-asset analysis, dynamic pair selection, and multi-leg hedged positions at scale.
 
 **Strategy specification**:
 ```
 Strategy: Universe Pairs Scanner + Spread Trading
-Assets:   All symbols in universe.json Tier 2 (~20 core liquid futures, daily resolution)
+Assets:   All symbols in universe.json Tier 2 (first 20 of 635 symbols, daily resolution)
 Period:   2022-01-01 to 2025-12-31
 
 Phase 1 — Pair Selection (provided via I05_candidate_pairs.json):
@@ -1171,9 +1171,9 @@ Output required:
 ```
 
 **Materials provided**:
-- Data: Tier 2 universe (~20 symbols, daily) pre-loaded in LEAN format
+- Data: Tier 2 universe (first 20 of 635 symbols, daily) pre-loaded in LEAN format
 - `universe.json` with symbol list
-- `I05_candidate_pairs.json` — pre-computed top-10 correlated pairs (60-day rolling correlation of log returns, ranked). Generated by `generate_reference_signals.py --task I05`. Eliminates the C(20,2)=190 pair brute-force scan so the task focuses on spread trading implementation.
+- `I05_candidate_pairs.json` — pre-computed top-10 correlated pairs using point-in-time pre-period data (2020-2021), ranked by 60-day rolling correlation of log returns. Generated by `generate_reference_signals.py --task I05`. Only includes symbols listed before 2022-01-01. Eliminates brute-force pair scan so the task focuses on spread trading implementation.
 - Strategy spec: embedded in task description
 - Reference doc: `lean_algorithm_guide.md`
 
@@ -1191,7 +1191,7 @@ Output required:
 
 **Student openings**:
 - **beginner_no_finance**: "I have price data for 20 crypto futures and I heard you can trade pairs that move together. How do I find the best pairs and trade them automatically on LEAN?"
-- **intermediate_developer**: "I need to implement a pairs trading scanner on LEAN that screens all pair combinations across 20 symbols, selects the best ones, and trades spread mean-reversion. How do I structure the pair selection and multi-leg position management?"
+- **intermediate_developer**: "I need to implement a pairs trading strategy on LEAN using pre-computed correlated pairs from a JSON file and trade spread mean-reversion. How do I structure the pair loading and multi-leg position management?"
 - **advanced_quant**: "I'm implementing a universe stat-arb strategy on LEAN: screen C(20,2) pairs for correlation, select top-10, trade z-score mean-reversion with atomic spread entries. I need proper multi-pair portfolio management with exposure caps. What's the architecture?"
 
 **Environment**:
@@ -1230,7 +1230,7 @@ Output required:
 ```
 Strategy: Composite Signal with Parameter Sweep — Universe-Wide
 Assets:   All symbols in universe.json Tier 1 (~100 USDT-M perpetual futures, daily)
-          Funding rate data for Tier 2 subset (~20 symbols)
+          Funding rate data for all 635 symbols
 Period:   Each symbol from its listing date → 2025-12-31
 
 Signals (computed per symbol, each normalized to [-1, +1]):
@@ -1268,18 +1268,18 @@ Output required:
 ```
 
 **Materials provided**:
-- Data: Tier 1 universe (~100 symbols, daily) + Tier 2 funding rates (~20 symbols) pre-loaded in LEAN format
+- Data: Full universe (635 symbols, daily) + funding rates (635 symbols) pre-loaded in LEAN format
 - `universe.json` with symbol list and tier assignments
 - Strategy spec: embedded in task description
 - Reference doc: `lean_algorithm_guide.md`
 
-**Description**: Guide a student to implement a composite multi-signal strategy across the full Binance futures universe on LEAN, then run a systematic parameter sweep over signal weights. The student must implement three signal components per symbol, handle the asymmetry where only ~20 symbols have funding data, implement cross-sectional position sizing (not per-symbol independent sizing), and structure a sweep workflow that runs 21 backtests. This is the most complex I-series task, testing everything: multi-signal construction, universe-scale, data asymmetry, portfolio construction, and systematic optimization.
+**Description**: Guide a student to implement a composite multi-signal strategy across the full Binance futures universe on LEAN, then run a systematic parameter sweep over signal weights. The student must implement three signal components per symbol, use real funding rate data (available for all 635 symbols), implement cross-sectional position sizing (not per-symbol independent sizing), and structure a sweep workflow that runs 21 backtests. This is the most complex I-series task, testing everything: multi-signal construction, universe-scale, data asymmetry, portfolio construction, and systematic optimization.
 
 **Expected outcome**: Student produces (1) a LEAN C# algorithm that computes all three signals per symbol, handles missing funding data gracefully, and implements cross-sectional position sizing, (2) a parameter sweep mechanism running 21 weight combinations, (3) a sweep results table with Sharpe/drawdown/return/turnover per combination, and (4) detailed results for the best configuration. The equal-weight (0.33/0.33/0.33) trade log for 10 reference symbols should match the ground-truth.
 
 **Required capabilities**:
 1. Implement three signal components per symbol with proper normalization at universe scale
-2. Handle data asymmetry (funding data available for only ~20 of ~100 symbols)
+2. Use real funding rate data for carry signal (available for all 635 symbols)
 3. Implement cross-sectional position sizing (signal strength relative to universe, not independent)
 4. Combine signals with configurable weights and structure a 21-run parameter sweep
 5. Manage daily rebalancing across ~100 symbols with leverage constraints
@@ -1288,7 +1288,7 @@ Output required:
 **Student openings**:
 - **beginner_no_finance**: "I want to combine different trading signals and test many parameter combinations across all the crypto futures in my dataset. I also have 'funding rate' data for some of them. How do I set this up on LEAN?"
 - **intermediate_developer**: "I'm implementing a composite signal strategy on LEAN across ~100 crypto futures, combining trend, mean-reversion, and carry signals. I need to run a parameter sweep over the signal weights. How should I structure the universe-wide algorithm and the sweep workflow?"
-- **advanced_quant**: "I'm building a universe-wide multi-signal alpha on LEAN: trend, reversion, and carry across ~100 futures with cross-sectional sizing and leverage constraints. Funding data is only available for 20 symbols. I need a grid search over signal weights. What's the architecture?"
+- **advanced_quant**: "I'm building a universe-wide multi-signal alpha on LEAN: trend, reversion, and carry across ~100 futures with cross-sectional sizing and leverage constraints. Funding data is available for all 635 symbols. I need a grid search over signal weights. What's the architecture?"
 
 **Environment**:
 ```json
@@ -1327,7 +1327,7 @@ Output required:
 **Strategy specification**:
 ```
 Strategy: EMA Crossover via Algorithm Framework — Multi-Asset
-Assets:   All symbols in universe.json Tier 2 (~20 core liquid futures)
+Assets:   All symbols in universe.json Tier 2 (first 20 of 635 symbols; all have daily+hourly data)
 Resolution: Daily
 Period:   2022-01-01 to 2025-12-31
 
@@ -1361,7 +1361,7 @@ Output required:
 ```
 
 **Materials provided**:
-- Data: Tier 2 universe (~20 symbols, daily) pre-loaded in LEAN format
+- Data: Tier 2 universe (first 20 of 635 symbols, daily) pre-loaded in LEAN format
 - `universe.json` with symbol list
 - Strategy spec: embedded in task description
 - Reference doc: `lean_algorithm_guide.md`, `algorithm_framework_guide.md`
@@ -1522,7 +1522,7 @@ Output required:
 **Strategy specification**:
 ```
 Strategy: Framework Strategy with Risk Management — Multi-Asset
-Assets:   All symbols in universe.json Tier 2 (~20 core liquid futures)
+Assets:   All symbols in universe.json Tier 2 (first 20 of 635 symbols; all have daily+hourly data)
 Resolution: Hourly (1h) — more granular data for intraday risk events
 Period:   2022-01-01 to 2025-12-31
 
@@ -1565,7 +1565,7 @@ Output required:
 ```
 
 **Materials provided**:
-- Data: Tier 2 universe (~20 symbols, hourly) pre-loaded in LEAN format
+- Data: Tier 2 universe (first 20 of 635 symbols, hourly) pre-loaded in LEAN format
 - `universe.json` with symbol list and market cap tier assignments
 - Strategy spec: embedded in task description
 - Reference doc: `lean_algorithm_guide.md`, `algorithm_framework_guide.md`
@@ -1624,7 +1624,7 @@ Output required:
 **Strategy specification**:
 ```
 Strategy: Parameterized Trend Strategy with Optimization — Multi-Asset
-Assets:   All symbols in universe.json Tier 2 (~20 core liquid futures)
+Assets:   All symbols in universe.json Tier 2 (first 20 of 635 symbols; all have daily+hourly data)
 Resolution: Daily
 Period:   2022-01-01 to 2025-12-31
 
@@ -1671,7 +1671,7 @@ Output required:
 ```
 
 **Materials provided**:
-- Data: Tier 2 universe (~20 symbols, daily) pre-loaded in LEAN format
+- Data: Tier 2 universe (first 20 of 635 symbols, daily) pre-loaded in LEAN format
 - `universe.json` with symbol list
 - Strategy spec: embedded in task description
 - Reference doc: `lean_algorithm_guide.md`, `algorithm_framework_guide.md`
@@ -1737,16 +1737,16 @@ I03  Universe Mean-Reversion          medium    RSI + stop-loss across ~100 symb
  │                                               (per-symbol state machines, risk-based sizing,
  │                                                tagged exit reasons)
  ▼
-I04  Multi-Timeframe Multi-Asset      hard      1h + 4h across ~20 symbols
+I04  Multi-Timeframe Multi-Asset      hard      1h + 4h across first 20 symbols
  │                                               (per-symbol consolidators, dual-resolution indicators,
  │                                                Tier 2 data scale)
  ▼
-I05  Universe Pairs Scanner           hard      Pair selection + spread trading across ~20 symbols
+I05  Universe Pairs Scanner           hard      PIT-correct pair trading (10 pre-computed pairs)
  │                                               (C(20,2) pair screening, multi-leg positions,
  │                                                exposure management)
  ▼
 I06  Universe Multi-Signal + Sweep    hard      3 signals × ~100 symbols × 21 param configs
-                                                 (cross-sectional sizing, funding data asymmetry,
+                                                 (cross-sectional sizing, real funding carry signal,
                                                   systematic parameter optimization)
 ```
 
@@ -1761,7 +1761,7 @@ I08  Multi-Alpha Portfolio Construct.  hard      3 alpha models × ~100 symbols
  │                                               (composable alpha models, insight aggregation,
  │                                                InsightWeighting vs EqualWeighting comparison)
  ▼
-I09  Risk Management Models           hard      Framework strategy + risk layer × ~20 symbols
+I09  Risk Management Models           hard      Framework strategy + risk layer × first 20 symbols
  │                                               (built-in risk models, custom RiskManagementModel,
  │                                                3-way comparison: no risk vs built-in vs custom)
  ▼
@@ -1789,9 +1789,9 @@ I06  Multi-signal + sweep (hard)       ──►  I10  LEAN optimizer engine (ha
 - I01: Hello-world — single symbol, single indicator on LEAN
 - I02: Scale to universe — per-symbol indicators and portfolio allocation across ~100 symbols
 - I03: Complex per-symbol logic at scale — state machines, stop-loss, risk budgets × 100 symbols
-- I04: Multi-resolution data at scale — consolidators and dual-TF indicators × 20 symbols
-- I05: Cross-asset combinatorial analysis — pairwise screening, multi-leg hedged positions
-- I06: Everything combined — multi-signal, universe-wide, data asymmetry, parameter optimization
+- I04: Multi-resolution data at scale — consolidators and dual-TF indicators × 20 symbols (all 635 have hourly data)
+- I05: Cross-asset pairs — PIT-correct pre-computed pairs, multi-leg hedged positions
+- I06: Everything combined — multi-signal, universe-wide, real funding carry, parameter optimization
 
 **Concept progression (I07–I10)**:
 - I07: Framework introduction — refactor classic strategy into Alpha→Portfolio→Execution pipeline
@@ -1801,7 +1801,7 @@ I06  Multi-signal + sweep (hard)       ──►  I10  LEAN optimizer engine (ha
 
 **Three progression dimensions** (updated):
 1. **Strategy complexity**: simple crossover → asymmetric rules + stop-loss → multi-TF → cross-asset → composite signals
-2. **Data scale**: 1 symbol → 100 symbols (daily) → 20 symbols (hourly) → 190 pairs → 100 symbols × 21 sweeps
+2. **Data scale**: 1 symbol → 635 symbols (daily) → 20 symbols (hourly) → 10 PIT pairs → 635 symbols × 19 sweeps
 3. **Architecture maturity**: manual `OnData()` → modular Alpha/Portfolio/Risk/Execution framework → optimizer integration
 
 The classic series (I01–I06) tests **implementation skill** — can the agent translate a spec into working code. The framework series (I07–I10) tests **architectural comprehension** — can the agent use LEAN's production architecture to compose, manage risk, and optimize strategies.
@@ -2379,18 +2379,18 @@ BAD (beginner, I02):
 | I01 | SMA Trend Filter | easy | Tier 1 | 1 (BTCUSDT) | 1d | Price vs SMA(20) | LEAN hello-world (single symbol) | — |
 | I02 | Universe Trend | medium | Tier 1 | ~100 | 1d | Dual MA crossover | Universe-scale per-symbol indicators | S02 |
 | I03 | Universe Reversion | medium | Tier 1 | ~100 | 1d | RSI + stop-loss | Per-symbol state machines at scale | S03 |
-| I04 | Multi-TF Multi-Asset | hard | Tier 2 | ~20 | 1h → 4h | 4h trend + 1h entry | Per-symbol consolidators | S04 |
-| I05 | Universe Pairs Scan | hard | Tier 2 | ~20 (190 pairs) | 1d | Pair z-score | Combinatorial pair selection + multi-leg | S05 |
+| I04 | Multi-TF Multi-Asset | hard | Tier 2 | 20 | 1h → 4h | 4h trend + 1h entry | Per-symbol consolidators | S04 |
+| I05 | Universe Pairs Scan | hard | Tier 2 | 10 PIT pairs | 1d | Pair z-score | Pre-computed pairs + multi-leg | S05 |
 | I06 | Universe Multi-Signal Sweep | hard | Tier 1 + Funding | ~100 + 20 funding | 1d + 8h | Composite 3-signal | Cross-sectional sizing + 21 param configs | S06 |
 
 ### Algorithm Framework Approach (I07–I10)
 
 | Task | Title | Difficulty | Data Tier | Symbols | Timeframes | Strategy | Key Challenge | Pairs With |
 |------|-------|-----------|-----------|---------|------------|----------|---------------|------------|
-| I07 | Alpha Model Architecture | medium | Tier 2 | ~20 | 1d | EMA crossover via AlphaModel | Framework pipeline: Insight→Target→Order | I02 (framework refactor) |
+| I07 | Alpha Model Architecture | medium | Tier 2 | 20 | 1d | EMA crossover via AlphaModel | Framework pipeline: Insight→Target→Order | I02 (framework refactor) |
 | I08 | Multi-Alpha Portfolio Construction | hard | Tier 1 | ~100 | 1d | 3 alphas (trend+RSI+momentum) | Multi-alpha composition + portfolio model comparison | S06 |
-| I09 | Risk Management Models | hard | Tier 2 | ~20 | 1h | Trend + risk layer | Built-in + custom risk models, 3-way comparison | I03 (framework risk) |
-| I10 | Parameter Optimization Engine | hard | Tier 2 | ~20 | 1d | Parameterized trend | LEAN optimizer + optional Bayesian (Optuna) | I06 (framework optimization) |
+| I09 | Risk Management Models | hard | Tier 2 | 20 | 1h | Trend + risk layer | Built-in + custom risk models, 3-way comparison | I03 (framework risk) |
+| I10 | Parameter Optimization Engine | hard | Tier 2 | 20 | 1d | Parameterized trend | LEAN optimizer + optional Bayesian (Optuna) | I06 (framework optimization) |
 
 **I-series total**: 10 tasks × 3 personas = **30 evaluation instances**
 
@@ -2502,9 +2502,9 @@ Each reference signal file must be validated:
 - [x] Finalize `universe.json` — rank all USDT-M perpetuals by 2024 avg daily volume, select top 100 for Tier 1, top 20 for Tier 2, top 5 for Tier 3
 - [x] Write `bench/scripts/download_binance_full_universe.py` — bulk download with parallelism, resume, checksum verification
 - [x] Download Tier 1: ~100 symbols × 1d (from listing date → 2025-12-31)
-- [x] Download Tier 2: ~20 symbols × 1h + 4h (2022-01-01 → 2025-12-31)
+- [x] Download Tier 2: 635 symbols × 1h + 4h (2022-01-01 → 2025-12-31)
 - [x] Download Tier 3: ~5 symbols × 5m + 1m (2024-01-01 → 2025-12-31)
-- [x] Download funding rates: ~20 symbols (from listing date → 2025-12-31)
+- [x] Download funding rates: 635 symbols (from listing date → 2025-12-31)
 - [x] Write `bench/scripts/convert_binance_to_lean.py` — Binance CSV → LEAN format converter for all tiers/timeframes
 - [x] Convert all tiers to LEAN format and validate
 - [x] Write `bench/scripts/generate_flat_universe.py` — structured universe.json → flat JSON array for C# algorithms
@@ -2754,7 +2754,7 @@ I06 Manual param sweep         ──►   I10 Parameter Optimization (hard)
 - **Data storage**: HuggingFace (raw + LEAN format), decoupled from eval system → confirmed
 - **Data scale**: Full Binance futures universe, not toy datasets → confirmed
 - **Timeframes**: 5 representative (1m, 5m, 1h, 4h, 1d) → confirmed
-- **Symbol tiers**: Tier 1 (~100, daily), Tier 2 (~20, hourly+4h), Tier 3 (~5, minute) → confirmed
+- **Symbol tiers**: Tier 1 (635, daily), Tier 2 (635, hourly+4h), Tier 3 (5, minute 2022-2025), Funding (635, 8h) → confirmed
 - **Evaluation**: Trade log comparison against ground-truth → confirmed
 - **LEAN as black-box**: Agent only writes Algorithm.cs + runs → confirmed
 - **Architecture**: Dataset on HF, Docker image has engine only (~3GB), data mounted at runtime → confirmed
