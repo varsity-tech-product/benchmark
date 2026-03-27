@@ -8,82 +8,82 @@
   "candidate_pairs": [
     {
       "pair": [
-        "ETHUSDT",
-        "LINKUSDT"
+        "ETCUSDT",
+        "NEOUSDT"
       ],
-      "avg_correlation": 0.7915,
+      "avg_correlation": 0.9468,
       "rank": 1
     },
     {
       "pair": [
-        "ETHUSDT",
-        "LTCUSDT"
+        "EOSUSDT",
+        "NEOUSDT"
       ],
-      "avg_correlation": 0.7872,
+      "avg_correlation": 0.9284,
       "rank": 2
     },
     {
       "pair": [
-        "BTCUSDT",
-        "LTCUSDT"
+        "EOSUSDT",
+        "ETCUSDT"
       ],
-      "avg_correlation": 0.7842,
+      "avg_correlation": 0.9273,
       "rank": 3
     },
     {
       "pair": [
-        "BTCUSDT",
-        "ETHUSDT"
+        "KAVAUSDT",
+        "NEOUSDT"
       ],
-      "avg_correlation": 0.7741,
+      "avg_correlation": 0.8795,
       "rank": 4
     },
     {
       "pair": [
-        "AAVEUSDT",
-        "UNIUSDT"
+        "ETCUSDT",
+        "LTCUSDT"
       ],
-      "avg_correlation": 0.7581,
+      "avg_correlation": 0.8738,
       "rank": 5
     },
     {
       "pair": [
-        "LINKUSDT",
-        "LTCUSDT"
+        "NEOUSDT",
+        "ZILUSDT"
       ],
-      "avg_correlation": 0.7564,
+      "avg_correlation": 0.8693,
       "rank": 6
     },
     {
       "pair": [
-        "AAVEUSDT",
-        "ETHUSDT"
+        "KAVAUSDT",
+        "ZILUSDT"
       ],
-      "avg_correlation": 0.7377,
+      "avg_correlation": 0.8656,
       "rank": 7
     },
     {
       "pair": [
-        "ETHUSDT",
-        "MKRUSDT"
+        "ETCUSDT",
+        "XLMUSDT"
       ],
-      "avg_correlation": 0.73,
+      "avg_correlation": 0.863,
       "rank": 8
     },
     {
       "pair": [
-        "DOTUSDT",
-        "ETHUSDT"
+        "IOSTUSDT",
+        "NEOUSDT"
       ],
-      "avg_correlation": 0.7208,
+      "avg_correlation": 0.8574,
       "rank": 9
     },
     {
       "pair": [
-        "ETHUSDT",
-        "UNIUSDT"
+        "COMPUSDT",
+        "SNXUSDT"
       ],
-      "avg_correlation": 0.7155,
+      "avg_correlation": 0.8569,
       "rank": 10
     }
   ]
