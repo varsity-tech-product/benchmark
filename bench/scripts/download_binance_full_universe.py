@@ -65,7 +65,7 @@ TIER_CONFIG = {
     },
     "tier3": {
         "intervals": ["5m", "1m"],
-        "default_start": date(2024, 1, 1),
+        "default_start": date(2022, 1, 1),
         "default_end": date(2025, 12, 31),
     },
 }
