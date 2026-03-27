@@ -199,11 +199,11 @@ Tests interactive tutoring via multi-turn dialogue with tool use in a sandboxed 
 | Data Analysis  | D01    | Load/inspect OHLCV, explain data columns   |
 | Strategy       | S01    | Design MA crossover strategy               |
 | Implementation | I01    | Implement SMA trend filter (LEAN C#, single symbol) |
-| Implementation | I02    | Trend-following strategy (LEAN C#, ~100 symbols) |
+| Implementation | I02    | Trend-following strategy (LEAN C#, 635 symbols) |
 | Implementation | I03    | Mean-reversion strategy (LEAN C#, RSI + stop-loss) |
 | Implementation | I04    | Multi-timeframe strategy (LEAN C#, consolidators) |
 | Implementation | I05    | Cross-asset pairs trading (LEAN C#, correlation) |
-| Implementation | I06    | Multi-signal parameter sweep (LEAN C#, 21 combos) |
+| Implementation | I06    | Multi-signal parameter sweep (LEAN C#, 19 benchmark configs) |
 | Implementation | I07    | Alpha Model Architecture (LEAN Framework, AlphaModel + Insight) |
 | Implementation | I08    | Multi-Alpha Portfolio Composition (3 AlphaModels, AddAlpha, A/B comparison) |
 | Implementation | I09    | Risk Management Models (custom RiskManagementModel, 3 configs) |

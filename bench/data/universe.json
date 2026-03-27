@@ -646,11 +646,11 @@
         "ZRCUSDT",
         "ZROUSDT",
         "ZRXUSDT",
-        "\u5e01\u5b89\u4eba\u751fUSDT"
+        "币安人生USDT"
       ]
     },
     "tier2": {
-      "description": "ALL USDT-M perpetual futures with 1h+4h data (first 20 are legacy core tier2)",
+      "description": "ALL USDT-M perpetual futures with 1h+4h data",
       "timeframes": [
         "1h",
         "4h"
@@ -1291,11 +1291,11 @@
         "ZRCUSDT",
         "ZROUSDT",
         "ZRXUSDT",
-        "\u5e01\u5b89\u4eba\u751fUSDT"
+        "币安人生USDT"
       ]
     },
     "tier3": {
-      "description": "Majors \u2014 5-minute + 1-minute",
+      "description": "Majors — 5-minute + 1-minute",
       "timeframes": [
         "5m",
         "1m"
@@ -1948,7 +1948,7 @@
         "ZRCUSDT",
         "ZROUSDT",
         "ZRXUSDT",
-        "\u5e01\u5b89\u4eba\u751fUSDT"
+        "币安人生USDT"
       ]
     }
   },
@@ -1970,12 +1970,12 @@
   },
   "source_universe_symbol_counts": {
     "tier1": 635,
-    "tier2": 20,
+    "tier2": 635,
     "tier3": 5
   },
   "frozen_universe_symbol_counts": {
     "tier1": 635,
-    "tier2": 20,
+    "tier2": 635,
     "tier3": 5
   }
 }

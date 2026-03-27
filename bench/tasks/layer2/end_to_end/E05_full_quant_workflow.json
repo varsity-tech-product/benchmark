@@ -4,7 +4,7 @@
   "difficulty": "hard",
   "category": "end_to_end",
   "task_type": "multi_turn",
-  "description": "Guide a student through a complete quant research cycle on crypto momentum \u2014 from data exploration, through signal formalization and Python prototyping, to LEAN C# implementation, performance evaluation, and risk discussion. This is the hardest task in the benchmark.",
+  "description": "Guide a student through a complete quant research cycle on crypto momentum — from data exploration, through signal formalization and Python prototyping, to LEAN C# implementation, performance evaluation, and risk discussion. This is the hardest task in the benchmark.",
   "persona_ids": [
     "beginner_no_finance",
     "intermediate_developer",
@@ -13,7 +13,7 @@
   "student_openings": {
     "beginner_no_finance": "I want to do a complete quant research project on crypto. I've got BTC data and want to go from exploring the data all the way to having a working strategy running on the LEAN engine. I know some Python and I'm willing to learn C#. Can you guide me through the whole process?",
     "intermediate_developer": "I want to build a momentum strategy for crypto futures. The full pipeline: explore the BTC data, define a momentum signal, prototype and validate in Python, then implement in LEAN C# for production-grade backtest. I want to do this rigorously with proper methodology.",
-    "advanced_quant": "I'm running a complete quant research cycle on crypto momentum. Pipeline: EDA on BTC, formalize a cross-sectional ROCP signal on ~20 liquid perps, prototype backtest in Python with IS/OOS validation, port to LEAN C# for production execution, and compare backends. Let's architect this end-to-end."
+    "advanced_quant": "I'm running a complete quant research cycle on crypto momentum. Pipeline: EDA on BTC, formalize a cross-sectional ROCP signal on the full 635-symbol futures universe, prototype backtest in Python with IS/OOS validation, port to LEAN C# for production execution, and compare backends. Let's architect this end-to-end."
   },
   "environment": {
     "data_files": [
@@ -38,7 +38,7 @@
     "network_enabled": false
   },
   "ground_truth": {
-    "expected_outcome": "Student explores BTC data, formalizes a momentum/ROCP signal, prototypes and validates in Python with IS/OOS metrics, implements in LEAN C# on ~20 symbols producing a successful backtest, compares Python and LEAN results, and discusses risks.",
+    "expected_outcome": "Student explores BTC data, formalizes a momentum/ROCP signal, prototypes and validates in Python with IS/OOS metrics, implements in LEAN C# on the full 635-symbol universe producing a successful backtest, compares Python and LEAN results, and discusses risks.",
     "required_capabilities": [
       "Explore market data with descriptive statistics",
       "Formalize a momentum signal definition",

@@ -2,7 +2,7 @@
  * I10 — Parameter Optimization (Grid Search)
  *
  * Strategy:
- *   - Universe: ~20 tier2 crypto-futures from universe.json (first 20)
+ *   - Universe: full tier2 crypto-futures universe from universe.json
  *   - Timeframe: Daily bars
  *   - Signal: Parameterized EMA crossover with threshold filter
  *       - EMA(fast) / EMA(slow) crossover

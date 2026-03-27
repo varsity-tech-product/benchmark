@@ -13,7 +13,7 @@
   "student_openings": {
     "beginner_no_finance": "I want to combine multiple trading strategies into one algorithm — like a trend-following signal, a mean-reversion signal, and a momentum signal — and have the system figure out how to size positions based on all of them together. Is that possible in LEAN?",
     "intermediate_developer": "I'm building a multi-alpha system in LEAN's framework where I register three separate AlphaModel classes using AddAlpha(). I want to compare InsightWeighting vs EqualWeighting portfolio construction. How should I structure the alpha models and the comparison workflow?",
-    "advanced_quant": "I need a multi-alpha architecture: TrendAlpha (SMA 20/50), MeanReversionAlpha (RSI 14), MomentumAlpha (ROC 20), composed via AddAlpha() with A/B comparison of InsightWeighting vs EqualWeighting PCM across ~100 futures. What's the implementation?"
+    "advanced_quant": "I need a multi-alpha architecture: TrendAlpha (SMA 20/50), MeanReversionAlpha (RSI 14), MomentumAlpha (ROC 20), composed via AddAlpha() with A/B comparison of InsightWeighting vs EqualWeighting PCM across the full 635-future universe. What's the implementation?"
   },
   "environment": {
     "data_files": [
@@ -47,7 +47,7 @@
       "Compare InsightWeightingPortfolioConstructionModel vs EqualWeightingPortfolioConstructionModel",
       "Set explicit Insight.Weight values for the insight-weighted run",
       "Use GetParameter() to switch portfolio model between runs",
-      "Subscribe ~100 crypto futures and produce structured comparison output"
+      "Subscribe all 635 crypto futures and produce structured comparison output"
     ],
     "expected_mcp_tools": [
       "shell_exec",

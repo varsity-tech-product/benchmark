@@ -529,16 +529,16 @@ def _signals_i06(start: str = DEFAULT_START, end: str = DEFAULT_END) -> dict:
 
 
 def _signals_i07(start: str = DEFAULT_START, end: str = DEFAULT_END) -> dict:
-    """I07: EMA(10)/EMA(30) crossover on ~20 tier2 symbols, daily.
+    """I07: EMA(10)/EMA(30) crossover on full tier2 universe, daily.
 
     signal = +1 if EMA(10) > EMA(30) else -1.
     """
-    # Load universe to get tier2 symbols (first 20)
+    # Load full tier2 universe
     universe_path = BENCH_ROOT / "data" / "universe.json"
     if universe_path.exists():
         with open(universe_path) as f:
             universe = json.load(f)
-        symbols = universe["tiers"]["tier2"]["symbols"][:20]
+        symbols = universe["tiers"]["tier2"]["symbols"]
     else:
         symbols = [
             "BTCUSDT",
@@ -678,16 +678,16 @@ def _signals_i08(start: str = DEFAULT_START, end: str = DEFAULT_END) -> dict:
 
 
 def _signals_i09(start: str = DEFAULT_START, end: str = DEFAULT_END) -> dict:
-    """I09: EMA(24)/EMA(72) on hourly data, resampled to daily, ~20 tier2 symbols.
+    """I09: EMA(24)/EMA(72) on hourly data, resampled to daily, full tier2 universe.
 
     signal = +1 if EMA(24) > EMA(72) else -1, evaluated on last hourly bar of the day.
     """
-    # Load universe to get tier2 symbols (first 20)
+    # Load full tier2 universe
     universe_path = BENCH_ROOT / "data" / "universe.json"
     if universe_path.exists():
         with open(universe_path) as f:
             universe = json.load(f)
-        symbols = universe["tiers"]["tier2"]["symbols"][:20]
+        symbols = universe["tiers"]["tier2"]["symbols"]
     else:
         symbols = [
             "BTCUSDT",
@@ -748,18 +748,18 @@ def _signals_i09(start: str = DEFAULT_START, end: str = DEFAULT_END) -> dict:
 
 
 def _signals_i10(start: str = DEFAULT_START, end: str = DEFAULT_END) -> dict:
-    """I10: EMA(10)/EMA(30) with threshold=0.01 on ~20 tier2 symbols, daily.
+    """I10: EMA(10)/EMA(30) with threshold=0.01 on full tier2 universe, daily.
 
     signal = +1 if EMA(10) > EMA(30) and spread > threshold,
              -1 if EMA(10) < EMA(30) and spread > threshold,
              0 otherwise (below threshold → no signal).
     """
-    # Load universe to get tier2 symbols (first 20)
+    # Load full tier2 universe
     universe_path = BENCH_ROOT / "data" / "universe.json"
     if universe_path.exists():
         with open(universe_path) as f:
             universe = json.load(f)
-        symbols = universe["tiers"]["tier2"]["symbols"][:20]
+        symbols = universe["tiers"]["tier2"]["symbols"]
     else:
         symbols = [
             "BTCUSDT",
@@ -890,7 +890,7 @@ def _signals_e04(start: str = DEFAULT_START, end: str = DEFAULT_END) -> dict:
 
 
 def _signals_e05(start: str = DEFAULT_START, end: str = DEFAULT_END) -> dict:
-    """E05: ROCP(20) on ~20 tier2 symbols, daily.
+    """E05: ROCP(20) on full tier2 universe, daily.
 
     Rank daily by ROCP, top-5 get +1, rest get 0. warmup=20.
     """
@@ -898,7 +898,7 @@ def _signals_e05(start: str = DEFAULT_START, end: str = DEFAULT_END) -> dict:
     if universe_path.exists():
         with open(universe_path) as f:
             universe = json.load(f)
-        symbols = universe["tiers"]["tier2"]["symbols"][:20]
+        symbols = universe["tiers"]["tier2"]["symbols"]
     else:
         symbols = [
             "BTCUSDT",

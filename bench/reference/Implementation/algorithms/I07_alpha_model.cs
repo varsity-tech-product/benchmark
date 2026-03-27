@@ -2,7 +2,7 @@
  * I07 — Alpha Model Architecture (Framework Migration)
  *
  * Strategy:
- *   - Universe: ~20 tier2 crypto-futures from universe.json (first 20)
+ *   - Universe: full tier2 crypto-futures universe from universe.json
  *   - Timeframe: Daily bars
  *   - Signal: EMA(10) / EMA(30) crossover via AlphaModel
  *   - Direction: Long/Short via Insight.Up / Insight.Down

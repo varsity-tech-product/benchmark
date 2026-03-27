@@ -371,7 +371,7 @@ Each stage must build on the previous one. An agent that skips steps or doesn't 
 ```
 1. Explore data: BTC price patterns, volatility, return distributions
 2. Form hypothesis: "Momentum (recent winners keep winning) captures crypto trends"
-3. Formalize signal: ROCP(20) on ~20 symbols, long top-5
+3. Formalize signal: ROCP(20) on the full 635-symbol universe, long top-5
 4. Python prototype backtest → extract Sharpe/return/drawdown
 5. Validation: train/test split or OOS evaluation
 6. LEAN C# implementation → compile & run → extract trade log
@@ -382,7 +382,7 @@ Each stage must build on the previous one. An agent that skips steps or doesn't 
 **Student openings**:
 - **beginner_no_finance**: "I want to do a complete quant research project on crypto. I've got BTC data and want to go from exploring the data all the way to having a working strategy running on the LEAN engine. I know some Python and I'm willing to learn C#. Can you guide me through the whole process?"
 - **intermediate_developer**: "I want to build a momentum strategy for crypto futures. The full pipeline: explore the BTC data, define a momentum signal, prototype and validate in Python, then implement in LEAN C# for production-grade backtest. I want to do this rigorously with proper methodology."
-- **advanced_quant**: "I'm running a complete quant research cycle on crypto momentum. Pipeline: EDA on BTC, formalize a cross-sectional ROCP signal on ~20 liquid perps, prototype backtest in Python with IS/OOS validation, port to LEAN C# for production execution, and compare backends. Let's architect this end-to-end."
+- **advanced_quant**: "I'm running a complete quant research cycle on crypto momentum. Pipeline: EDA on BTC, formalize a cross-sectional ROCP signal on the full 635-symbol futures universe, prototype backtest in Python with IS/OOS validation, port to LEAN C# for production execution, and compare backends. Let's architect this end-to-end."
 
 **Data**: `BTC_UTC.csv`, `universe.json`
 **Docs**: `alpha_research_methodology.md`, `signal_evaluation.md`, `backtesting_101.md`, `lean_algorithm_guide.md`, `risk_metrics.md`
@@ -412,7 +412,7 @@ Each stage must build on the previous one. An agent that skips steps or doesn't 
 
 **Imports**: `_strategy_research_check` (collect_artifact_text, has_signal_definition, has_metric_numbers, conversation_text, has_any, workspace_has_csv_columns), `_implementation_check` (compute_behavioral_score, collect_lean_results, load_agent_trades, check_csharp_patterns), `_data_source_check` (verify_data_source)
 
-**Reference algorithm**: `E05_momentum_topn.cs` — ROCP(20) momentum on ~20 tier2 symbols, long top-5, daily rebalancing, 2022-2025.
+**Reference algorithm**: `E05_momentum_topn.cs` — ROCP(20) momentum on the full 635-symbol universe, long top-5, daily rebalancing, 2022-2025.
 
 ---
 
@@ -510,7 +510,7 @@ This prevents the common failure mode where an agent prototypes strategy A in Py
 - Period: 2022-01-01 to 2025-12-31
 
 **E05 — Momentum Top-N**:
-- Universe: ~20 tier2 symbols from universe.json
+- Universe: full 635-symbol universe from universe.json
 - Parameters: ROCP(20) — 20-day rate of change percentage
 - Signal: rank symbols by ROCP, long top-5
 - Sizing: equal-weight across top-5 positions

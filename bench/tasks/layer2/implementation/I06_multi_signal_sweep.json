@@ -4,16 +4,16 @@
   "difficulty": "hard",
   "category": "implementation",
   "task_type": "multi_turn",
-  "description": "Guide a student to implement a composite multi-signal strategy across the full Binance futures universe on LEAN, then run a systematic parameter sweep over signal weights. The student must implement three signal components per symbol (trend via SMA crossover, mean-reversion via RSI, and carry via 1-day momentum proxy), implement cross-sectional position sizing (not per-symbol independent sizing), and structure a sweep workflow that runs 19 backtests over weight combinations. This is the most complex I-series task, testing everything: multi-signal construction, universe-scale, portfolio construction, and systematic optimization.",
+  "description": "Guide a student to implement a composite multi-signal strategy across the full 635-symbol Binance futures universe on LEAN, then run a systematic parameter sweep over the benchmark's 19 predefined weight combinations. The student must implement three signal components per symbol (trend via SMA crossover, mean-reversion via RSI, and carry via real funding rates), implement cross-sectional position sizing (not per-symbol independent sizing), and structure a sweep workflow that matches the shipped reference configurations. This is the most complex I-series task, testing everything: multi-signal construction, universe-scale, point-in-time-safe carry construction, and systematic optimization.",
   "persona_ids": [
     "beginner_no_finance",
     "intermediate_developer",
     "advanced_quant"
   ],
   "student_openings": {
-    "beginner_no_finance": "I want to combine different trading signals — like trend, mean-reversion, and momentum — and test many parameter combinations across all the crypto futures in my dataset. How do I set this up on LEAN?",
-    "intermediate_developer": "I'm implementing a composite signal strategy on LEAN across ~100 crypto futures, combining trend, mean-reversion, and carry signals. I need to run a parameter sweep over the signal weights. How should I structure the universe-wide algorithm and the sweep workflow?",
-    "advanced_quant": "I'm building a multi-signal alpha on LEAN across ~100 futures and I need to sweep over parameter combinations to find the best config. What's the architecture?"
+    "beginner_no_finance": "I want to combine different trading signals — like trend, mean-reversion, and funding carry — and test many parameter combinations across all 635 crypto futures in my dataset. How do I set this up on LEAN?",
+    "intermediate_developer": "I'm implementing a composite signal strategy on LEAN across 635 crypto futures, combining trend, mean-reversion, and real funding-rate carry signals. I need to run the benchmark weight sweep over those signals. How should I structure the universe-wide algorithm and the sweep workflow?",
+    "advanced_quant": "I'm building a multi-signal alpha on LEAN across the full 635-future universe and I need to sweep the shipped benchmark weight configurations using real funding carry without look-ahead leakage. What's the architecture?"
   },
   "environment": {
     "data_files": [
@@ -40,12 +40,12 @@
     "max_backtest_trials": 5
   },
   "ground_truth": {
-    "expected_outcome": "Student produces (1) a LEAN C# algorithm that computes all three signals per symbol (trend via SMA crossover, reversion via RSI deviation, carry via 1-day momentum proxy) and implements cross-sectional position sizing, (2) a parameter sweep mechanism running 19 weight combinations (trend/reversion/carry weights summing to 1.0, each in [0.1, 0.5]), (3) a sweep results table with Sharpe/drawdown/return/turnover per combination, and (4) detailed results for the best configuration. The equal-weight (0.33/0.33/0.33) trade log for 10 reference symbols should match the ground-truth.",
+    "expected_outcome": "Student produces (1) a LEAN C# algorithm that computes all three signals per symbol (trend via SMA crossover, reversion via RSI deviation, carry via real funding rates) and implements cross-sectional position sizing, (2) a parameter sweep mechanism running the 19 benchmark weight combinations, (3) a sweep results table with Sharpe/drawdown/return/turnover per combination, and (4) detailed results for the best configuration. The default benchmark configuration (0.4/0.3/0.3) trade log for 10 reference symbols should match the ground-truth.",
     "required_capabilities": [
-      "Implement three signal components per symbol (trend, reversion, carry proxy) with proper normalization at universe scale",
+      "Implement three signal components per symbol (trend, reversion, real funding carry) with proper normalization at universe scale",
       "Implement cross-sectional position sizing (signal strength relative to universe, not independent)",
-      "Combine signals with configurable weights and structure a 19-run parameter sweep",
-      "Manage daily rebalancing across ~100 symbols with leverage constraints",
+      "Combine signals with configurable weights and structure the 19-run benchmark parameter sweep",
+      "Manage daily rebalancing across all 635 symbols with leverage constraints",
       "Produce structured sweep results and identify optimal configurations"
     ],
     "expected_mcp_tools": [

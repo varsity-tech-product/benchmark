@@ -4,7 +4,7 @@
   "difficulty": "medium",
   "category": "implementation",
   "task_type": "multi_turn",
-  "description": "Guide a student to migrate from a classic LEAN algorithm (manual OnData + SetHoldings) to the Algorithm Framework pattern. The student must implement a custom AlphaModel class that emits Insight objects based on EMA(10)/EMA(30) crossovers, wire it with EqualWeightingPortfolioConstructionModel and ImmediateExecutionModel via SetAlpha/SetPortfolioConstruction/SetExecution, and subscribe ~20 crypto futures. This tests understanding of the framework pipeline: Alpha → Portfolio Construction → Execution.",
+  "description": "Guide a student to migrate from a classic LEAN algorithm (manual OnData + SetHoldings) to the Algorithm Framework pattern. The student must implement a custom AlphaModel class that emits Insight objects based on EMA(10)/EMA(30) crossovers, wire it with EqualWeightingPortfolioConstructionModel and ImmediateExecutionModel via SetAlpha/SetPortfolioConstruction/SetExecution, and subscribe the full 635-symbol universe. This tests understanding of the framework pipeline: Alpha → Portfolio Construction → Execution at full benchmark scale.",
   "persona_ids": [
     "beginner_no_finance",
     "intermediate_developer",
@@ -40,7 +40,7 @@
     "max_backtest_trials": 5
   },
   "ground_truth": {
-    "expected_outcome": "Student produces a LEAN C# algorithm using the Algorithm Framework pipeline: (1) a custom AlphaModel class inheriting from AlphaModel with Update() method that emits price insights on EMA crossovers (via `Insight.Price(...)` or the `Insight.Up/Down` shortcuts), (2) framework wiring via SetAlpha/SetPortfolioConstruction/SetExecution in Initialize(), (3) OnSecuritiesChanged() for indicator setup. The backtest should run successfully on ~20 symbols with trade output matching the reference EMA(10)/EMA(30) signal pattern.",
+    "expected_outcome": "Student produces a LEAN C# algorithm using the Algorithm Framework pipeline: (1) a custom AlphaModel class inheriting from AlphaModel with Update() method that emits price insights on EMA crossovers (via `Insight.Price(...)` or the `Insight.Up/Down` shortcuts), (2) framework wiring via SetAlpha/SetPortfolioConstruction/SetExecution in Initialize(), (3) OnSecuritiesChanged() for indicator setup. The backtest should run successfully on the full 635-symbol universe with trade output matching the reference EMA(10)/EMA(30) signal pattern.",
     "required_capabilities": [
       "Implement a custom AlphaModel class inheriting from AlphaModel",
       "Emit Insight objects with direction, magnitude, confidence, and duration",

@@ -2,7 +2,7 @@
  * E05 — Momentum Top-N (Reference Algorithm)
  *
  * Strategy:
- *   - Universe: ~20 tier2 crypto-futures from universe.json
+ *   - Universe: full tier2 crypto-futures universe from universe.json
  *   - Timeframe: Daily bars
  *   - Signal: ROCP(20) — 20-day rate of change percentage
  *   - Selection: Rank by ROCP, long top-5 at equal weight (0.20 each)

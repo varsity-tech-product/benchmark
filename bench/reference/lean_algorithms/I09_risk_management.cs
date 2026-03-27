@@ -2,7 +2,7 @@
  * I09 — Risk Management Models
  *
  * Strategy:
- *   - Universe: ~20 tier2 crypto-futures from universe.json (first 20)
+ *   - Universe: full tier2 crypto-futures universe from universe.json
  *   - Timeframe: Hourly bars
  *   - Signal: EMA(24) / EMA(72) crossover via AlphaModel
  *   - Portfolio: EqualWeightingPortfolioConstructionModel
