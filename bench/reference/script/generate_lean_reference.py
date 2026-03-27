@@ -615,6 +615,15 @@ def run_lean_backtest(
                 str(flat_universe), os.path.join(algo_mount_dir, "universe.json")
             )
 
+        # Copy funding data directory for I06 (real carry signal)
+        if task_id == "I06":
+            funding_src = BENCH_ROOT.parent / "data" / "raw" / "i-series" / "funding"
+            if funding_src.is_dir():
+                funding_dst = os.path.join(algo_mount_dir, "funding")
+                if not os.path.exists(funding_dst):
+                    shutil.copytree(str(funding_src), funding_dst)
+                    print(f"  Copied {len(list(funding_src.glob('*.csv')))} funding CSVs to algo mount dir")
+
         # Copy supplementary data files (e.g. I05_candidate_pairs.json)
         _SUPPLEMENTARY_DATA = {
             "I05": "I05_candidate_pairs.json",

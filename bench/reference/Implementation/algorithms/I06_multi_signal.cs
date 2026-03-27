@@ -6,7 +6,7 @@
  *   - Three independent signal components:
  *       1. Trend:     SMA(20) vs SMA(60) crossover → +1 / -1
  *       2. Reversion: RSI(14) z-score from 50 → mean-reversion signal
- *       3. Carry:     Funding rate proxy (1d momentum as carry stand-in) → +1 / -1
+ *       3. Carry:     Real 8h funding rate (daily avg), |rate|>0.01% → ±1
  *   - Composite: weighted sum of signals (0.40 trend + 0.30 reversion + 0.30 carry)
  *   - Cross-sectional sizing: rank composite scores, go long top quintile,
  *     short bottom quintile, size proportional to |composite|
@@ -50,11 +50,13 @@ namespace QuantTutorBench
             public SimpleMovingAverage SmaFast;
             public SimpleMovingAverage SmaSlow;
             public RelativeStrengthIndex Rsi;
-            public RateOfChangePercent Momentum1d;
         }
 
         private readonly Dictionary<Symbol, SymbolData> _data = new();
         private DateTime _lastRebalance = DateTime.MinValue;
+
+        // Funding rate data: symbol ticker → (date → daily avg funding rate)
+        private readonly Dictionary<string, Dictionary<DateTime, decimal>> _fundingRates = new();
 
         public override void Initialize()
         {
@@ -83,16 +85,18 @@ namespace QuantTutorBench
                     SmaFast = SMA(symbol, SmaPeriodFast, Resolution.Daily),
                     SmaSlow = SMA(symbol, SmaPeriodSlow, Resolution.Daily),
                     Rsi = RSI(symbol, RsiPeriod, MovingAverageType.Wilders, Resolution.Daily),
-                    Momentum1d = ROCP(symbol, 1, Resolution.Daily),
                 };
 
                 _data[symbol] = sd;
+
+                // Load funding rate data for this symbol
+                LoadFundingData(ticker);
             }
 
             SetWarmUp(SmaPeriodSlow + 1, Resolution.Daily);
 
             Log($"I06 initialized with {_data.Count} symbols (of {tickers.Count} in universe), " +
-                $"SMA({SmaPeriodFast}/{SmaPeriodSlow}) + RSI({RsiPeriod}) + ROCP(1), " +
+                $"SMA({SmaPeriodFast}/{SmaPeriodSlow}) + RSI({RsiPeriod}) + funding, " +
                 $"weights=({TrendWeight}/{ReversionWeight}/{CarryWeight})");
         }
 
@@ -111,8 +115,7 @@ namespace QuantTutorBench
             {
                 var sd = kvp.Value;
 
-                if (!sd.SmaFast.IsReady || !sd.SmaSlow.IsReady ||
-                    !sd.Rsi.IsReady || !sd.Momentum1d.IsReady)
+                if (!sd.SmaFast.IsReady || !sd.SmaSlow.IsReady || !sd.Rsi.IsReady)
                     continue;
 
                 if (!data.ContainsKey(sd.Symbol))
@@ -124,13 +127,22 @@ namespace QuantTutorBench
                     : -1.0m;
 
                 // Signal 2: Reversion (RSI distance from 50, inverted)
-                // RSI < 50 → positive reversion signal (expect bounce)
-                // RSI > 50 → negative reversion signal (expect pullback)
                 var rsiDeviation = (50m - sd.Rsi.Current.Value) / 50m;
                 decimal reversionSignal = Math.Max(-1m, Math.Min(1m, rsiDeviation * 2m));
 
-                // Signal 3: Carry proxy (1-day momentum as funding rate stand-in)
-                decimal carrySignal = sd.Momentum1d.Current.Value > 0 ? 1.0m : -1.0m;
+                // Signal 3: Carry (real funding rate)
+                // Positive funding → longs pay shorts → short bias (-1)
+                // Negative funding → shorts pay longs → long bias (+1)
+                decimal carrySignal = 0m;
+                var ticker = sd.Symbol.Value.Replace(" ", "");
+                if (_fundingRates.TryGetValue(ticker, out var rates) &&
+                    rates.TryGetValue(Time.Date, out var fundingRate))
+                {
+                    if (fundingRate > 0.0001m)
+                        carrySignal = -1.0m;
+                    else if (fundingRate < -0.0001m)
+                        carrySignal = 1.0m;
+                }
 
                 // Composite weighted sum
                 var composite = TrendWeight * trendSignal
@@ -202,6 +214,50 @@ namespace QuantTutorBench
                     $"Price={orderEvent.FillPrice} | " +
                     $"Tag={orderEvent.Message}");
             }
+        }
+
+        private void LoadFundingData(string ticker)
+        {
+            // Search for funding CSV in multiple locations
+            var paths = new[]
+            {
+                $"/CustomAlgo/funding/{ticker}_funding.csv",
+                $"/data/funding/{ticker}_funding.csv",
+                Path.Combine(Globals.DataFolder, "funding", $"{ticker}_funding.csv"),
+            };
+
+            string csvPath = null;
+            foreach (var p in paths)
+            {
+                if (File.Exists(p)) { csvPath = p; break; }
+            }
+
+            if (csvPath == null) return;
+
+            var dailyRates = new Dictionary<DateTime, List<decimal>>();
+            foreach (var line in File.ReadLines(csvPath).Skip(1))
+            {
+                var parts = line.Split(',');
+                if (parts.Length < 2 || string.IsNullOrWhiteSpace(parts[0])) continue;
+
+                if (!long.TryParse(parts[0].Trim(), out var tsMs)) continue;
+                if (!decimal.TryParse(parts[1].Trim(), System.Globalization.NumberStyles.Float,
+                    System.Globalization.CultureInfo.InvariantCulture, out var rate)) continue;
+
+                var dt = DateTimeOffset.FromUnixTimeMilliseconds(tsMs).UtcDateTime.Date;
+                if (!dailyRates.ContainsKey(dt))
+                    dailyRates[dt] = new List<decimal>();
+                dailyRates[dt].Add(rate);
+            }
+
+            // Average the 8-hour settlements into daily
+            var avgRates = new Dictionary<DateTime, decimal>();
+            foreach (var kvp in dailyRates)
+            {
+                avgRates[kvp.Key] = kvp.Value.Average();
+            }
+
+            _fundingRates[ticker] = avgRates;
         }
 
         private List<string> LoadUniverse()

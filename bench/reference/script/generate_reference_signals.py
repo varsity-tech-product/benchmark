@@ -137,6 +137,34 @@ def _filter_dates(
     return df[(df[date_col] >= start_d) & (df[date_col] <= end_d)].copy()
 
 
+# ── Funding rate data ────────────────────────────────────────────────
+
+
+def _load_funding_csv(symbol: str) -> pd.DataFrame:
+    """Load 8-hour funding rate data and aggregate to daily average.
+
+    Returns a DataFrame with columns ['date', 'funding_rate'] where
+    funding_rate is the mean of the 3 daily 8-hour funding settlements.
+    """
+    funding_path = RAW_DATA_DIR / "funding" / f"{symbol}_funding.csv"
+    if not funding_path.exists():
+        return pd.DataFrame(columns=["date", "funding_rate"])
+
+    df = pd.read_csv(funding_path)
+    df = df.dropna(subset=["timestamp"])
+    df["datetime"] = pd.to_datetime(df["timestamp"], unit="ms", utc=True)
+    df["date"] = df["datetime"].dt.date
+    df["funding_rate"] = pd.to_numeric(df["funding_rate"], errors="coerce")
+
+    # Aggregate to daily mean (3 funding settlements per day)
+    daily = (
+        df.groupby("date")["funding_rate"]
+        .mean()
+        .reset_index()
+    )
+    return daily
+
+
 # ── Point-in-time listing dates ──────────────────────────────────────
 
 _SYMBOL_DATES: dict[str, dict] | None = None
@@ -457,12 +485,18 @@ def _signals_i06(start: str = DEFAULT_START, end: str = DEFAULT_END) -> dict:
     df.loc[df["rsi"] < 30, "reversion_sig"] = 1.0
     df.loc[df["rsi"] > 70, "reversion_sig"] = -1.0
 
-    # Carry/funding proxy: use momentum (close - close[7]) as carry stand-in
-    # (actual funding data is separate, but for signal purposes momentum works)
-    df["momentum"] = df["close"].pct_change(7)
+    # Carry: real funding rate data (daily avg of 8h settlements)
+    # Positive funding → longs pay shorts → short bias (+1 = short carry)
+    # Negative funding → shorts pay longs → long bias (-1 = long carry)
+    funding = _load_funding_csv(symbol)
+    if not funding.empty:
+        df = df.merge(funding, on="date", how="left")
+        df["funding_rate"] = df["funding_rate"].fillna(0.0)
+    else:
+        df["funding_rate"] = 0.0
     df["carry_sig"] = 0.0
-    df.loc[df["momentum"] > 0.02, "carry_sig"] = 1.0
-    df.loc[df["momentum"] < -0.02, "carry_sig"] = -1.0
+    df.loc[df["funding_rate"] > 0.0001, "carry_sig"] = -1.0   # high positive funding → short bias
+    df.loc[df["funding_rate"] < -0.0001, "carry_sig"] = 1.0   # negative funding → long bias
 
     # Composite: 0.4*trend + 0.3*reversion + 0.3*carry
     df["composite"] = (
