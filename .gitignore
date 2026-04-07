@@ -4,12 +4,10 @@
 venv/
 env/
 
-# Data files - never commit datasets
+# Data files - managed via HuggingFace, never commit
 data/
-!bench/data/
-bench/data/*
-!bench/data/universe.json
-bench/data/hf_cache/
+bench/data/
+bench/reference/
 *.7z
 *.xml
 *.jsonl
@@ -62,3 +60,7 @@ bench/results/
 # Checkpoints
 checkpoints/
 *.checkpoint.json
+
+# Separate projects
+ccc/
+Ewan openclaw/
