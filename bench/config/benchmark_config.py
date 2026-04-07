@@ -5,16 +5,17 @@ the benchmark environment, then regenerate references.
 """
 
 # ── LEAN Engine ──
-# Pin by tag; verified image ID sha256:bd1d43f32021f62ddb338da0ef319890d32520ee386dd0d5334fb10a9cd32ba7
-# Note: @sha256: digest notation requires remote registry pull; use tag for local builds.
-# To update: docker pull quantconnect/lean:latest && docker inspect --format '{{.Id}}' quantconnect/lean:latest
-LEAN_IMAGE = "quantconnect/lean:latest"
+# Local LEAN sandbox image built from docker/Dockerfile.lean.
+# Pinned QuantConnect/Lean commit:
+#   0c4a121371be684c7e9e8d0e92816a2f34a185b9
+# To update: rebuild quant-tutor-env:v2.2-lean after changing docker/Dockerfile.lean.
+LEAN_IMAGE = "quant-tutor-env:v2.2-lean"
 
 # ── Dataset ──
 # HuggingFace dataset repo and pinned commit hash.
 # To update: push new data, then update this hash.
 DATASET_REPO_ID = "Varsity-Tech/quant-tutor-bench-data"
-DATASET_REVISION = "8db9ca109ba27c0e80b926c3300353d634c7d959"
+DATASET_REVISION = "bea0c30f85a19b493c5bbff1e2839498d46719e1"
 
 # ── Benchmark Window ──
 # Re-exported from benchmark_dates.py for convenience.

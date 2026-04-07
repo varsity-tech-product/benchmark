@@ -10,6 +10,7 @@ from config.llm_config import (
     AGENT_DEFAULT_MODEL,
     AGENT_MODEL_MAP,
     EVAL_DEFAULT_MODELS,
+    EVAL_JUDGE_TEMPERATURE,
     EVAL_USE_OAUTH,
     OAUTH_BETA_HEADER,
     OPENROUTER_BASE_URL,
@@ -163,7 +164,9 @@ def get_model_for_agent(agent_type: str, use_openrouter: bool = False) -> str:
     return openrouter if use_openrouter else native
 
 
-def resolve_deepeval_model(model=None):
+def resolve_deepeval_model(
+    model=None, *, skip_oauth: bool = False, temperature: float = EVAL_JUDGE_TEMPERATURE
+):
     """Resolve model for DeepEval components (judge, simulator).
 
     Resolution order (when EVAL_USE_OAUTH is True):
@@ -171,7 +174,16 @@ def resolve_deepeval_model(model=None):
       2. Any model → OpenRouter (if key available)
       3. Plain model name string (fallback)
 
-    When EVAL_USE_OAUTH is False, skips step 1 entirely.
+    When EVAL_USE_OAUTH is False or skip_oauth is True, skips step 1.
+
+    Args:
+        skip_oauth: When True, bypass OAuth resolution even if enabled.
+            Used by the TC checker model which needs reliable JSON calls
+            via OpenRouter rather than OAuth.
+        temperature: Sampling temperature for the resolved model.
+            Defaults to EVAL_JUDGE_TEMPERATURE (0.0) for deterministic
+            scoring.  Explicitly passed to GPTModel to avoid relying on
+            DeepEval's implicit default.
     """
     if model is not None and not isinstance(model, (str, list)):
         return model
@@ -182,7 +194,12 @@ def resolve_deepeval_model(model=None):
         model = random.choice(EVAL_DEFAULT_MODELS)
 
     # ── Step 1: OAuth direct for Anthropic models ──
-    if EVAL_USE_OAUTH and isinstance(model, str) and model.startswith("anthropic/"):
+    if (
+        not skip_oauth
+        and EVAL_USE_OAUTH
+        and isinstance(model, str)
+        and model.startswith("anthropic/")
+    ):
         from config.auth import get_oauth_token
 
         oauth_token = get_oauth_token()
@@ -210,10 +227,11 @@ def resolve_deepeval_model(model=None):
                 model=or_model,
                 api_key=openrouter_key,
                 base_url=OPENROUTER_BASE_URL,
+                temperature=temperature,
                 **get_deepeval_cost_kwargs(or_model),
             )
-        except Exception:
-            pass
+        except Exception as e:
+            log.debug("OpenRouter GPTModel creation failed for %s: %s", or_model, e)
 
     # ── Step 3: Fallback ──
     base_url = os.environ.get("OPENAI_BASE_URL", "")

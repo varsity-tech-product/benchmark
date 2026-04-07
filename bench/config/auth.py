@@ -50,7 +50,22 @@ def get_oauth_token() -> str:
     except (subprocess.TimeoutExpired, json.JSONDecodeError, KeyError) as exc:
         log.debug("Keychain read failed: %s", exc)
 
-    # --- 2. Environment variable fallback ---
+    # --- 2. Linux: Claude Code credentials file ---
+    creds_path = os.path.expanduser("~/.claude/.credentials.json")
+    try:
+        with open(creds_path) as f:
+            data = json.load(f)
+        oauth_data = data.get("claudeAiOauth", {})
+        if isinstance(oauth_data, str):
+            oauth_data = json.loads(oauth_data)
+        token = oauth_data.get("accessToken", "")
+        if token:
+            log.debug("OAuth token resolved from %s", creds_path)
+            return token
+    except (FileNotFoundError, json.JSONDecodeError, KeyError) as exc:
+        log.debug("Credentials file read failed: %s", exc)
+
+    # --- 3. Environment variable fallback ---
     token = os.environ.get("CLAUDE_CODE_OAUTH_TOKEN", "")
     if token:
         log.debug("OAuth token resolved from CLAUDE_CODE_OAUTH_TOKEN env var")

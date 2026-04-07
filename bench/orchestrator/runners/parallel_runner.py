@@ -108,6 +108,7 @@ def run_jobs_parallel(
     progress_callback: Optional[Callable] = None,
     create_agent_fn=None,
     job_fn: Optional[Callable] = None,
+    cancel_event=None,
 ) -> list[JobResult]:
     """Run multiple benchmark jobs in parallel.
 
@@ -118,6 +119,7 @@ def run_jobs_parallel(
         create_agent_fn: Optional agent factory, forwarded to run_single_job.
         job_fn: Custom job executor. If provided, called as job_fn(job)
             instead of run_single_job. Used by --evalonly.
+        cancel_event: Optional threading.Event to signal cancellation.
 
     Returns:
         List of JobResult in same order as input jobs.
@@ -126,7 +128,9 @@ def run_jobs_parallel(
         return []
 
     def _default_fn(job):
-        return run_single_job(job, create_agent_fn=create_agent_fn)
+        return run_single_job(
+            job, create_agent_fn=create_agent_fn, cancel_event=cancel_event
+        )
 
     _fn = job_fn or _default_fn
 

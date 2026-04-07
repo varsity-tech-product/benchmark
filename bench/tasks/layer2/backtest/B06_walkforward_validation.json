@@ -58,11 +58,12 @@
     ],
     "quant_validation": {
       "eval_script": "evaluation/test_scripts/backtest/B06_walkforward_validation.py"
-    }
+    },
+    "termination_criteria": "The tutor has completed the following steps with computational evidence (not just verbal discussion): (1) Implemented rolling-window data splitting and a parameter optimization loop that tests multiple configurations per training window, and explained why walk-forward validation prevents overfitting compared to simple train-test splits. (2) Applied best parameters from each training window to out-of-sample test periods and aggregated the OOS results. (3) Reported in-sample versus out-of-sample metrics with specific numerical values showing any overfitting gap. Once all three steps have been computationally demonstrated, the session is complete."
   },
   "requires_code": true,
   "sample_code": null,
-  "max_turns": 35,
+  "max_turns": 12,
   "agent_max_steps": 12,
-  "timeout_minutes": 25
+  "timeout_minutes": 35
 }

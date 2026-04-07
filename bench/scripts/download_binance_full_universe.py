@@ -21,34 +21,35 @@ import json
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 import requests
-from tqdm import tqdm
-
 from download_binance_klines import (
-    DATA_VISION_BASE,
     FUNDING_RATE_URL,
     daterange,
     fetch_daily_kline_archive,
-    normalize_kline_frame,
     validate_kline_frame,
 )
+from tqdm import tqdm
 
 # Import benchmark dates for full-universe mode
 try:
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "config"))
-    from benchmark_dates import BENCH_START, BENCH_END
+    from benchmark_dates import BENCH_END, BENCH_START
+
     FULL_UNIVERSE_START = date.fromisoformat(BENCH_START)
     FULL_UNIVERSE_END = date.fromisoformat(BENCH_END)
 except ImportError:
     FULL_UNIVERSE_START = date(2022, 1, 1)
     FULL_UNIVERSE_END = date(2025, 12, 31)
 
-DEFAULT_OUTPUT_DIR = Path(__file__).resolve().parent.parent / "data" / "raw" / "i-series"
+DEFAULT_OUTPUT_DIR = (
+    Path(__file__).resolve().parent.parent / "data" / "raw" / "i-series"
+)
 DEFAULT_UNIVERSE = Path(__file__).resolve().parent.parent / "data" / "universe.json"
 FULL_UNIVERSE = Path(__file__).resolve().parent.parent / "data" / "universe_full.json"
+DEFAULT_REPORT_PATH = DEFAULT_OUTPUT_DIR / "download_report.json"
 
 # Tier-to-interval mapping (matches implementation_section_plan.md section 2.4)
 TIER_CONFIG = {
@@ -80,6 +81,7 @@ TIER_SUBDIRS = {
 @dataclass(frozen=True)
 class DownloadJob:
     """A single symbol+interval download job."""
+
     symbol: str
     interval: str
     start_date: date
@@ -170,13 +172,15 @@ def build_jobs(
 
             for interval in config["intervals"]:
                 output_path = output_dir / subdir / f"{symbol}_{interval}.csv"
-                jobs.append(DownloadJob(
-                    symbol=symbol,
-                    interval=interval,
-                    start_date=start,
-                    end_date=end,
-                    output_path=output_path,
-                ))
+                jobs.append(
+                    DownloadJob(
+                        symbol=symbol,
+                        interval=interval,
+                        start_date=start,
+                        end_date=end,
+                        output_path=output_path,
+                    )
+                )
 
     return jobs
 
@@ -200,7 +204,10 @@ def download_single_job(job: DownloadJob) -> tuple[DownloadJob, str]:
     for day in days:
         try:
             frame = fetch_daily_kline_archive(
-                session, job.symbol, job.interval, day,
+                session,
+                job.symbol,
+                job.interval,
+                day,
             )
             frames.append(frame)
         except requests.HTTPError as exc:
@@ -213,6 +220,7 @@ def download_single_job(job: DownloadJob) -> tuple[DownloadJob, str]:
         return job, "empty"
 
     import pandas as pd
+
     merged = pd.concat(frames, ignore_index=True)
     merged = (
         merged.sort_values("timestamp")
@@ -258,15 +266,20 @@ def download_funding_for_tier(
         start_ms = int(
             datetime.combine(
                 start_date, datetime.min.time(), tzinfo=timezone.utc
-            ).timestamp() * 1000
+            ).timestamp()
+            * 1000
         )
-        end_ms = int(
-            datetime.combine(
-                end_date + timedelta(days=1),
-                datetime.min.time(),
-                tzinfo=timezone.utc,
-            ).timestamp() * 1000
-        ) - 1
+        end_ms = (
+            int(
+                datetime.combine(
+                    end_date + timedelta(days=1),
+                    datetime.min.time(),
+                    tzinfo=timezone.utc,
+                ).timestamp()
+                * 1000
+            )
+            - 1
+        )
 
         rows: list[dict] = []
         cursor = start_ms
@@ -295,7 +308,9 @@ def download_funding_for_tier(
             continue
 
         df = pd.DataFrame(rows)
-        df["timestamp"] = pd.to_numeric(df["fundingTime"], errors="coerce").astype("Int64")
+        df["timestamp"] = pd.to_numeric(df["fundingTime"], errors="coerce").astype(
+            "Int64"
+        )
         df["funding_rate"] = pd.to_numeric(df["fundingRate"], errors="coerce")
         df["mark_price"] = pd.to_numeric(df["markPrice"], errors="coerce")
         df = df[["timestamp", "funding_rate", "mark_price"]].sort_values("timestamp")
@@ -336,6 +351,17 @@ def parse_args() -> argparse.Namespace:
         help="Number of parallel download threads (default: 8)",
     )
     parser.add_argument(
+        "--report-path",
+        type=Path,
+        default=DEFAULT_REPORT_PATH,
+        help="Path to write the structured download report (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--allow-empty",
+        action="store_true",
+        help="Allow required-tier symbols to resolve to empty instead of failing.",
+    )
+    parser.add_argument(
         "--include-funding",
         action="store_true",
         default=False,
@@ -346,7 +372,7 @@ def parse_args() -> argparse.Namespace:
         choices=["tiered", "full"],
         default="tiered",
         help="'tiered' uses universe.json tiers (default). "
-             "'full' reads universe_full.json and downloads ALL symbols as tier1.",
+        "'full' reads universe_full.json and downloads ALL symbols as tier1.",
     )
     return parser.parse_args()
 
@@ -364,7 +390,9 @@ def main() -> int:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     if args.universe_mode == "full":
-        full_path = FULL_UNIVERSE if args.universe == DEFAULT_UNIVERSE else args.universe
+        full_path = (
+            FULL_UNIVERSE if args.universe == DEFAULT_UNIVERSE else args.universe
+        )
         try:
             universe = load_full_universe(full_path)
         except (FileNotFoundError, json.JSONDecodeError, ValueError) as exc:
@@ -374,8 +402,10 @@ def main() -> int:
         # Override tier1 date range to benchmark window
         TIER_CONFIG["tier1"]["default_start"] = FULL_UNIVERSE_START
         TIER_CONFIG["tier1"]["default_end"] = FULL_UNIVERSE_END
-        print(f"Full universe mode: {len(universe['tiers']['tier1']['symbols'])} symbols "
-              f"({FULL_UNIVERSE_START} to {FULL_UNIVERSE_END})")
+        print(
+            f"Full universe mode: {len(universe['tiers']['tier1']['symbols'])} symbols "
+            f"({FULL_UNIVERSE_START} to {FULL_UNIVERSE_END})"
+        )
     else:
         try:
             universe = load_universe(args.universe)
@@ -393,17 +423,19 @@ def main() -> int:
     if skipped:
         print(f"  Skipping {skipped} already-downloaded files (resume mode)")
 
+    job_results: list[dict] = []
+
+    ok_count = 0
+    empty_count = 0
+    error_count = 0
+
     if not pending:
         print("All kline files already downloaded.")
     else:
-        ok_count = 0
-        empty_count = 0
-        error_count = 0
 
         with ThreadPoolExecutor(max_workers=args.workers) as executor:
             futures = {
-                executor.submit(download_single_job, job): job
-                for job in pending
+                executor.submit(download_single_job, job): job for job in pending
             }
 
             with tqdm(total=len(pending), desc="[klines]", unit="file") as pbar:
@@ -411,6 +443,16 @@ def main() -> int:
                     job = futures[future]
                     try:
                         _, status = future.result()
+                        job_results.append(
+                            {
+                                "symbol": job.symbol,
+                                "interval": job.interval,
+                                "status": status,
+                                "start_date": job.start_date.isoformat(),
+                                "end_date": job.end_date.isoformat(),
+                                "output_path": str(job.output_path),
+                            }
+                        )
                         if status == "ok":
                             ok_count += 1
                         elif status == "empty":
@@ -419,11 +461,57 @@ def main() -> int:
                             skipped += 1
                     except Exception as exc:
                         error_count += 1
+                        job_results.append(
+                            {
+                                "symbol": job.symbol,
+                                "interval": job.interval,
+                                "status": "error",
+                                "start_date": job.start_date.isoformat(),
+                                "end_date": job.end_date.isoformat(),
+                                "output_path": str(job.output_path),
+                                "error": str(exc),
+                            }
+                        )
                         tqdm.write(f"  ERROR {job.symbol}/{job.interval}: {exc}")
                     pbar.update(1)
 
-        print(f"\nKline results: {ok_count} downloaded, {empty_count} empty, "
-              f"{error_count} errors, {skipped} skipped")
+        print(
+            f"\nKline results: {ok_count} downloaded, {empty_count} empty, "
+            f"{error_count} errors, {skipped} skipped"
+        )
+
+    report = {
+        "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+        "universe_mode": args.universe_mode,
+        "universe_path": str(args.universe),
+        "tiers": tiers,
+        "allow_empty": args.allow_empty,
+        "output_dir": str(output_dir),
+        "summary": {
+            "job_count": len(jobs),
+            "pending_count": len(pending),
+            "downloaded_count": ok_count,
+            "empty_count": empty_count,
+            "error_count": error_count,
+            "skipped_count": skipped,
+        },
+        "jobs": sorted(
+            job_results, key=lambda item: (item["symbol"], item["interval"])
+        ),
+    }
+    args.report_path.parent.mkdir(parents=True, exist_ok=True)
+    args.report_path.write_text(json.dumps(report, indent=2, ensure_ascii=False) + "\n")
+    print(f"  Wrote report: {args.report_path}")
+
+    if not args.allow_empty and empty_count > 0:
+        print(
+            "ERROR: Required benchmark contracts resolved to empty downloads.",
+            file=sys.stderr,
+        )
+        return 3
+    if error_count > 0:
+        print("ERROR: One or more downloads failed.", file=sys.stderr)
+        return 4
 
     # Funding rates (sequential, API rate-limited)
     if args.include_funding or args.tier in ("all",):

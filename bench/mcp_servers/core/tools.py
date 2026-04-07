@@ -201,13 +201,19 @@ def shell_exec(command: str, timeout: int = 30) -> str:
 def file_write(path: str, content: str) -> str:
     """Write content to a file in the workspace."""
     workspace = _workspace_dir()
-    full_path = os.path.join(workspace, path) if not path.startswith("/") else path
-    if not full_path.startswith(workspace):
+    # Strip redundant workspace/ prefix (agents often write "workspace/foo.py"
+    # which becomes /workspace/workspace/foo.py without this fix)
+    clean = path
+    while clean.startswith("workspace/") or clean.startswith("Workspace/"):
+        clean = clean[len("workspace/") :]
+    full_path = os.path.join(workspace, clean) if not clean.startswith("/") else clean
+    full_path = os.path.realpath(full_path)
+    if not full_path.startswith(os.path.realpath(workspace)):
         return f"Error: Can only write to {workspace}"
     os.makedirs(os.path.dirname(full_path), exist_ok=True)
     with open(full_path, "w") as f:
         f.write(content)
-    return f"Written {len(content)} bytes to {path}"
+    return f"Written {len(content)} bytes to {full_path}"
 
 
 def _resolve_path(path: str) -> Optional[str]:
@@ -400,9 +406,11 @@ def compute_indicator(
     full_path = _resolve_path(data_path)
     if not full_path:
         return f"Error: File not found: {data_path}"
+    with open(full_path) as _hdr:
+        _has_date_col = "Date" in _hdr.readline()
     df = pd.read_csv(
         full_path,
-        parse_dates=["Date"] if "Date" in open(full_path).readline() else None,
+        parse_dates=["Date"] if _has_date_col else None,
     )
 
     indicator = indicator.upper()
@@ -2264,7 +2272,9 @@ def get_environment_info() -> str:
             f"This environment has LEAN Engine (QuantConnect) with "
             f".NET {lean_info.get('dotnet_version', 'unknown')}. "
             f"To run a C# backtest: "
-            f"1) Write your .cs file to {workspace}/Algorithm.cs using file_write, "
+            f"1) Write your .cs file to {workspace}/Algorithm.cs using file_write "
+            f"(IMPORTANT: the class must be named 'Algorithm' in namespace "
+            f"'QuantConnect.Algorithm.CSharp' — any other class name will fail), "
             f"2) Run 'run_backtest {workspace}/Algorithm.cs' using shell_exec "
             f"(set timeout=600 as compilation + engine run may take a few minutes). "
             f"The stdout output shows a performance summary; "
@@ -2272,8 +2282,14 @@ def get_environment_info() -> str:
             f"summary.json (key metrics), log.txt (engine log), "
             f"orders.json (order details), build_log.txt (compilation output). "
             f"Use file_read() to inspect these files. "
-            f"LEAN market data is pre-loaded at /lean/Data/. "
-            f"Python is also available for analysis. "
+            f"LEAN market data is pre-loaded at /lean/Data/cryptofuture/binance/ "
+            f"(Binance USDT-M futures, 2022-2025). "
+            f"Other directories under /lean/Data/ (equity/, forex/, crypto/, etc.) "
+            f"are framework internals — do not use them for trading data. "
+            f"Python is also available for analysis "
+            f"(pandas 3.0 — use df.ffill()/df.bfill() instead of "
+            f"fillna(method=...); order status values are lowercase "
+            f"e.g. 'filled' not 'Filled'). "
             f"Workspace for saving outputs: {workspace}."
         )
     else:
@@ -3866,12 +3882,29 @@ def run_lean_backtest(
 ) -> str:
     """Compile and run a LEAN backtest, automatically recording the result as a trial.
 
-    Combines shell_exec("run_backtest ...") with trial tracking. Budget
-    enforcement is handled by run_backtest.sh itself (environment-level),
-    so both tool calls and shell_exec("run_backtest ...") share the same
-    budget. Returns structured status with metrics and remaining budget.
+    Budget is enforced at the Python level before executing the shell
+    script.  Returns structured status with metrics and remaining budget.
     """
     tm = _get_trial_manager()
+
+    # Budget check — refuse before consuming any compute
+    if not tm.can_run():
+        status = tm.get_status()
+        return (
+            f"Error: Backtest budget exhausted "
+            f"({status['trials_used']}/{status['max_trials']} used). "
+            f"No more trials available.\n"
+            f"Use select_submission(trial_id) to pick your best trial, "
+            f"or get_trial_status() to review all results."
+        )
+
+    # Strip redundant workspace/ prefix (same fix as file_write — agents
+    # often pass "workspace/Algorithm.cs" which becomes a double path
+    # under cwd=/workspace/).
+    while algorithm_path.startswith("workspace/") or algorithm_path.startswith(
+        "Workspace/"
+    ):
+        algorithm_path = algorithm_path[len("workspace/") :]
 
     # Build the run_backtest command
     cmd = f"run_backtest {algorithm_path}"
@@ -3916,30 +3949,56 @@ def run_lean_backtest(
         "error" in output.lower() and "build failed" in output.lower()
     ):
         status = "compile_error"
-    elif _exit_code in (3, 124):
-        status = "runtime_error"
     elif os.path.exists(summary_path):
+        # Check results first — LEAN may complete with trades even if the
+        # wrapper script reports a non-zero exit (timeout race, extraction issue).
         trade_count = 0
+        order_count = 0
         try:
             with open(summary_path) as f:
                 sdata = json.load(f)
             perf = sdata.get("totalPerformance", {}).get("tradeStatistics", {})
             trade_count = perf.get("totalNumberOfTrades", 0)
-            if trade_count == 0:
-                stats = sdata.get("statistics", {})
-                trade_count = int(stats.get("Total Orders", "0"))
+            stats = sdata.get("statistics", {})
+            order_count = int(stats.get("Total Orders", "0"))
         except (json.JSONDecodeError, IOError, ValueError):
             pass
-        status = "success" if trade_count > 0 else "empty_trades"
+        # Fallback: when statistics dict is empty (multi-symbol CryptoFuture),
+        # count filled orders directly from orders.json.
+        if order_count == 0:
+            orders_path = os.path.join(results_dir, "orders.json")
+            if os.path.exists(orders_path):
+                try:
+                    with open(orders_path) as f:
+                        odata = json.load(f)
+                    if isinstance(odata, list):
+                        order_count = sum(
+                            1
+                            for o in odata
+                            if isinstance(o, dict) and o.get("status") == "filled"
+                        )
+                except Exception:
+                    pass
+        if trade_count == 0 and order_count > 0:
+            trade_count = order_count // 2
+        # Success if closed trades exist OR orders were filled (TradeBuilder
+        # may report 0 closed trades for multi-symbol CryptoFuture strategies)
+        status = "success" if (trade_count > 0 or order_count > 0) else "empty_trades"
+    elif _exit_code in (3, 4, 124):
+        status = "runtime_error"
     else:
         status = "runtime_error"
 
-    # Get trial_id from JSONL count (the run was already registered by
-    # run_backtest.sh EXIT trap before we reach here)
-    trial_id = tm.count_all_runs()
+    # Allocate a trial_id (increments the counter atomically)
+    trial_id = tm.next_trial_id()
 
     # Record structured metadata (snapshot + manifest entry)
-    meta = tm.snapshot_and_record(trial_id, status, algorithm_path)
+    meta = tm.snapshot_and_record(
+        trial_id,
+        status,
+        algo_path=algorithm_path,
+        source_results_dir=results_dir,
+    )
     metrics = meta.get("metrics", {})
     remaining = tm.max_trials - tm.trials_used()
 
@@ -3976,7 +4035,7 @@ def submit_trial(notes: str = "") -> str:
     # Allocate a trial_id that doesn't conflict with JSONL-tracked runs.
     # Use max(existing manifest IDs, JSONL count) + 1.
     manifest_ids = [int(k) for k in tm.get_status()["trials"].keys()] or [0]
-    trial_id = max(max(manifest_ids), tm.count_all_runs()) + 1
+    trial_id = max(max(manifest_ids), tm.trials_used()) + 1
 
     # Determine status from current results
     workspace = _workspace_dir()
@@ -4095,7 +4154,7 @@ CORE_TOOLS["run_lean_backtest"] = {
     "params": {
         "algorithm_path": {
             "type": "string",
-            "description": "Path to the .cs algorithm file relative to workspace, e.g. 'Main.cs'",
+            "description": "Path to the .cs algorithm file relative to workspace, e.g. 'Algorithm.cs'. The class inside must be named 'Algorithm'.",
             "required": True,
         },
         "params_json": {
@@ -4150,4 +4209,284 @@ CORE_TOOLS["get_trial_status"] = {
         "remaining trial budget, and which trial is currently selected for evaluation."
     ),
     "params": {},
+}
+
+
+# ---------------------------------------------------------------------------
+# analyze_lean_results — structured LEAN result analysis
+# ---------------------------------------------------------------------------
+
+
+def analyze_lean_results(
+    results_path: str = "",
+    trial_id: int = 0,
+    sections: str = "summary",
+) -> str:
+    """Analyze LEAN backtest results and return structured metrics.
+
+    Provides pre-built analysis of backtest output files so the agent
+    does not need to write Python parsing scripts via shell_exec.
+    Handles the quirks of LEAN's output format (empty statistics dict,
+    UNIX timestamps in orders, lowercase status values, etc.).
+    """
+    import json as _json
+    from collections import Counter as _Counter
+
+    workspace = _workspace_dir()
+
+    # Resolve results directory
+    rdir = ""
+    if trial_id > 0:
+        trial_dir = os.path.join(workspace, ".trials", f"trial_{trial_id}", "results")
+        if os.path.isdir(trial_dir):
+            rdir = trial_dir
+    if not rdir and results_path:
+        candidate = results_path
+        if not os.path.isabs(candidate):
+            candidate = os.path.join(workspace, candidate)
+        if os.path.isdir(candidate):
+            rdir = candidate
+    if not rdir:
+        # Auto-detect: latest trial or workspace/results
+        try:
+            manifest_path = os.path.join(workspace, ".trials", "manifest.json")
+            if os.path.exists(manifest_path):
+                with open(manifest_path) as f:
+                    manifest = _json.load(f)
+                best_tid = None
+                for tid_str, meta in manifest.get("trials", {}).items():
+                    if meta.get("status") == "success":
+                        best_tid = int(tid_str)
+                if best_tid:
+                    candidate = os.path.join(
+                        workspace, ".trials", f"trial_{best_tid}", "results"
+                    )
+                    if os.path.isdir(candidate):
+                        rdir = candidate
+        except Exception:
+            pass
+        if not rdir:
+            # Fallback: workspace/results
+            candidate = os.path.join(workspace, "results")
+            if os.path.isdir(candidate):
+                rdir = candidate
+    if not rdir:
+        return "Error: No results directory found. Run a backtest first."
+
+    requested = set(s.strip().lower() for s in sections.split(","))
+    if "all" in requested:
+        requested = {"summary", "orders", "trades", "symbols"}
+
+    parts = [f"Results directory: {rdir}"]
+
+    # ── Load summary.json ──
+    summary_data = None
+    for fn in os.listdir(rdir):
+        if fn.endswith("-summary.json") or fn == "summary.json":
+            try:
+                with open(os.path.join(rdir, fn)) as f:
+                    summary_data = _json.load(f)
+                break
+            except Exception:
+                pass
+
+    # ── SUMMARY section ──
+    if "summary" in requested:
+        parts.append("\n=== Backtest Summary ===")
+        if summary_data:
+            rt = summary_data.get("runtimeStatistics", {})
+            stats = summary_data.get("statistics", {})
+            ts = summary_data.get("totalPerformance", {}).get("tradeStatistics", {})
+            ps = summary_data.get("totalPerformance", {}).get("portfolioStatistics", {})
+
+            # Prefer statistics dict, fall back to runtimeStatistics
+            ret = stats.get("Net Profit", rt.get("Return", "N/A"))
+            sharpe = stats.get("Sharpe Ratio", ps.get("sharpeRatio", "N/A"))
+            sortino = stats.get("Sortino Ratio", ps.get("sortinoRatio", "N/A"))
+            cagr = stats.get(
+                "Compounding Annual Return", ps.get("compoundingAnnualReturn", "N/A")
+            )
+            drawdown = stats.get("Drawdown", ps.get("drawdown", "N/A"))
+            start_eq = stats.get("Start Equity", "N/A")
+            end_eq = stats.get("End Equity", rt.get("Equity", "N/A"))
+            fees = stats.get("Total Fees", rt.get("Fees", "N/A"))
+            total_orders = stats.get("Total Orders", "N/A")
+
+            # Trades: prefer tradeStatistics, fall back to orders.json count
+            trades = ts.get("totalNumberOfTrades", 0)
+            win_rate = ts.get("winRate", "N/A")
+            avg_win = stats.get("Average Win", "N/A")
+            avg_loss = stats.get("Average Loss", "N/A")
+
+            # If trades=0 but orders exist, estimate from orders.json
+            if trades == 0:
+                orders_path = os.path.join(rdir, "orders.json")
+                if os.path.exists(orders_path):
+                    try:
+                        with open(orders_path) as f:
+                            odata = _json.load(f)
+                        if isinstance(odata, list):
+                            filled = sum(
+                                1 for o in odata if o.get("status") == "filled"
+                            )
+                            trades = filled // 2
+                            total_orders = filled
+                    except Exception:
+                        pass
+
+            parts.append(
+                f"  Return: {ret} | CAGR: {cagr} | Sharpe: {sharpe} | Sortino: {sortino}"
+            )
+            parts.append(
+                f"  Max Drawdown: {drawdown} | Start Equity: {start_eq} | End Equity: {end_eq}"
+            )
+            parts.append(f"  Trades: {trades} | Orders: {total_orders} | Fees: {fees}")
+            parts.append(
+                f"  Win Rate: {win_rate} | Avg Win: {avg_win} | Avg Loss: {avg_loss}"
+            )
+        else:
+            parts.append("  (summary.json not found)")
+
+    # ── ORDERS section ──
+    if "orders" in requested:
+        parts.append("\n=== Order Analysis ===")
+        orders_path = os.path.join(rdir, "orders.json")
+        if os.path.exists(orders_path):
+            try:
+                with open(orders_path) as f:
+                    orders = _json.load(f)
+                if isinstance(orders, list) and orders:
+                    filled = [o for o in orders if o.get("status") == "filled"]
+                    buys = sum(1 for o in filled if o.get("direction") == "buy")
+                    sells = sum(1 for o in filled if o.get("direction") == "sell")
+                    symbols = _Counter(o.get("symbolValue", "") for o in filled)
+                    parts.append(
+                        f"  Total filled: {len(filled)} | Buy: {buys} | Sell: {sells}"
+                    )
+                    parts.append(f"  Unique symbols traded: {len(symbols)}")
+                    top5 = symbols.most_common(5)
+                    parts.append(
+                        f"  Top 5 by order count: {', '.join(f'{s}({c})' for s, c in top5)}"
+                    )
+                    # Time range
+                    times = [o.get("time", 0) for o in filled if o.get("time")]
+                    if times:
+                        import datetime
+
+                        first = datetime.datetime.utcfromtimestamp(min(times)).strftime(
+                            "%Y-%m-%d"
+                        )
+                        last = datetime.datetime.utcfromtimestamp(max(times)).strftime(
+                            "%Y-%m-%d"
+                        )
+                        parts.append(f"  First fill: {first} | Last fill: {last}")
+                else:
+                    parts.append("  (no order events)")
+            except Exception as e:
+                parts.append(f"  Error reading orders.json: {e}")
+        else:
+            parts.append("  (orders.json not found)")
+
+    # ── TRADES section ──
+    if "trades" in requested:
+        parts.append("\n=== Trade Analysis ===")
+        if summary_data:
+            ts = summary_data.get("totalPerformance", {}).get("tradeStatistics", {})
+            total = ts.get("totalNumberOfTrades", 0)
+            if total > 0:
+                wins = ts.get("numberOfWinningTrades", 0)
+                losses = ts.get("numberOfLosingTrades", 0)
+                parts.append(
+                    f"  Closed trades: {total} | Winners: {wins} ({ts.get('winRate', 'N/A')}) | Losers: {losses}"
+                )
+                parts.append(
+                    f"  Avg profit: {ts.get('averageProfit', 'N/A')} | Avg loss: {ts.get('averageLoss', 'N/A')}"
+                )
+                parts.append(
+                    f"  Largest win: {ts.get('largestProfit', 'N/A')} | Largest loss: {ts.get('largestLoss', 'N/A')}"
+                )
+                parts.append(f"  Profit factor: {ts.get('profitFactor', 'N/A')}")
+                parts.append(
+                    f"  Max consecutive wins: {ts.get('maxConsecutiveWinningTrades', 'N/A')} | losses: {ts.get('maxConsecutiveLosingTrades', 'N/A')}"
+                )
+            else:
+                parts.append(
+                    "  (LEAN TradeBuilder reported 0 trades — use 'orders' section for fill-level data)"
+                )
+        else:
+            parts.append("  (summary.json not found)")
+
+    # ── SYMBOLS section ──
+    if "symbols" in requested:
+        parts.append("\n=== Symbol P&L Breakdown ===")
+        orders_path = os.path.join(rdir, "orders.json")
+        if os.path.exists(orders_path):
+            try:
+                with open(orders_path) as f:
+                    orders = _json.load(f)
+                if isinstance(orders, list):
+                    filled = [o for o in orders if o.get("status") == "filled"]
+                    # Compute approximate P&L per symbol from fills
+                    sym_fills = {}
+                    for o in filled:
+                        sym = o.get("symbolValue", "")
+                        if sym not in sym_fills:
+                            sym_fills[sym] = {"buys": 0, "sells": 0, "volume": 0.0}
+                        price = float(o.get("fillPrice", 0) or 0)
+                        qty = abs(float(o.get("fillQuantity", 0) or 0))
+                        if o.get("direction") == "buy":
+                            sym_fills[sym]["buys"] += 1
+                        else:
+                            sym_fills[sym]["sells"] += 1
+                        sym_fills[sym]["volume"] += price * qty
+
+                    parts.append(f"  Total symbols with fills: {len(sym_fills)}")
+                    # Sort by fill count
+                    by_fills = sorted(
+                        sym_fills.items(),
+                        key=lambda x: x[1]["buys"] + x[1]["sells"],
+                        reverse=True,
+                    )
+                    parts.append("  Top 10 by fill count:")
+                    for sym, data in by_fills[:10]:
+                        total_fills = data["buys"] + data["sells"]
+                        parts.append(
+                            f"    {sym}: {total_fills} fills (buy={data['buys']}, sell={data['sells']}, volume=₮{data['volume']:,.0f})"
+                        )
+                else:
+                    parts.append("  (no order data)")
+            except Exception as e:
+                parts.append(f"  Error: {e}")
+        else:
+            parts.append("  (orders.json not found)")
+
+    return "\n".join(parts)
+
+
+CORE_TOOLS["analyze_lean_results"] = {
+    "func": analyze_lean_results,
+    "description": (
+        "Analyze LEAN backtest results and return structured metrics. "
+        "Use this instead of writing Python scripts to parse summary.json or orders.json. "
+        "Sections: 'summary' (metrics), 'orders' (fill analysis), 'trades' (win/loss stats), "
+        "'symbols' (per-symbol breakdown), or 'all'. "
+        "Specify trial_id to analyze a specific trial, or leave blank for latest successful trial."
+    ),
+    "params": {
+        "results_path": {
+            "type": "string",
+            "description": "Path to results directory (relative to workspace). If empty, auto-detects latest trial.",
+            "required": False,
+        },
+        "trial_id": {
+            "type": "integer",
+            "description": "Trial number to analyze (e.g. 3). Overrides results_path. 0 = auto-detect latest successful trial.",
+            "required": False,
+        },
+        "sections": {
+            "type": "string",
+            "description": "Comma-separated sections: summary, orders, trades, symbols, or all. Default: summary.",
+            "required": False,
+        },
+    },
 }

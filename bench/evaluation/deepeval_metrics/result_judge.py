@@ -13,10 +13,11 @@ Uses 10-point integer scale (1-10) normalized to 0.0-1.0.
 
 import json as _json
 import os
-import re
 import threading
 
 from config.model_resolver import resolve_deepeval_model
+
+from evaluation.deepeval_metrics._scoring_utils import extract_json_from_response
 
 try:
     from deepeval.models.llms.openai_model import GPTModel
@@ -185,6 +186,15 @@ IMPORTANT EVALUATION GUIDELINES:
    Do not penalize intermediate or superseded results as long as the
    final output is coherent.
 """
+    # Debug-specific guideline: separate "fix works" from "strategy profits"
+    if category == "debug":
+        guidelines += """5. DEBUG TASKS: For debugging tasks, "fix" means resolving the identified
+   bug so the code behaves as architecturally intended (e.g., trades execute
+   instead of canceling, warm-up period is respected, correct order type is
+   used). The fix does NOT need to produce profitable results — a correctly
+   fixed strategy may still lose money due to market conditions. Judge
+   whether the bug was resolved, not whether the strategy is profitable.
+"""
 
     # Dimensions — numerical accuracy is handled separately by programmatic
     # code_eval (Layer C), so the judge focuses on completeness + correctness.
@@ -282,30 +292,6 @@ AGENT RESULT:
         )
 
     return prompt
-
-
-# ──────────────────────────────────────────────────────────────
-# JSON extraction (shared with process_metrics.py pattern)
-# ──────────────────────────────────────────────────────────────
-
-
-def _extract_json_from_response(text: str) -> dict:
-    """Extract JSON object from LLM response, handling markdown fences."""
-    text = text.strip()
-    if text.startswith("```"):
-        lines = text.split("\n")
-        lines = [ln for ln in lines if not ln.strip().startswith("```")]
-        text = "\n".join(lines).strip()
-    try:
-        return _json.loads(text)
-    except _json.JSONDecodeError:
-        match = re.search(r"\{[^{}]*\}", text, re.DOTALL)
-        if match:
-            try:
-                return _json.loads(match.group())
-            except _json.JSONDecodeError:
-                pass
-    return {}
 
 
 def _normalize_score(val, default=0.5) -> float:
@@ -410,7 +396,7 @@ async def async_evaluate_result_quality(
 
             model_obj = GPTModel(model=model_obj, **get_deepeval_cost_kwargs(model_obj))
         response_text, call_cost = await model_obj.a_generate(prompt)
-        parsed = _extract_json_from_response(response_text)
+        parsed = extract_json_from_response(response_text)
         parsed["_eval_cost"] = float(call_cost) if call_cost else 0.0
         return parsed
 

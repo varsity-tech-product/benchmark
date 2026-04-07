@@ -3,6 +3,8 @@
 
 Reads raw kline CSVs (from download_binance_full_universe.py) and produces
 the LEAN-format directory tree expected by QuantConnect's data readers.
+This pipeline produces trade-bar files only. It does NOT generate quote or
+margin-interest sidecars for the current benchmark contract.
 
 Supports two security types (--security-type flag):
 
@@ -88,6 +90,16 @@ def _ms_from_midnight(dt: datetime) -> int:
     return (dt.hour * 3600 + dt.minute * 60 + dt.second) * 1000
 
 
+def _fmt_price(v: float) -> str:
+    """Format a price as fixed-point decimal, never scientific notation.
+
+    LEAN's CryptoFuture CSV parser does not handle scientific notation
+    (e.g. '6.68e-05'), so all prices must be in fixed-point format.
+    Uses 10 decimal places then strips trailing zeros for readability.
+    """
+    return f"{v:.10f}".rstrip("0").rstrip(".")
+
+
 def format_lean_row(
     dt: datetime,
     open_price: float,
@@ -111,7 +123,11 @@ def format_lean_row(
         # High-res: milliseconds from midnight
         ts = str(_ms_from_midnight(dt))
 
-    return f"{ts},{open_price},{high_price},{low_price},{close_price},{volume}"
+    o = _fmt_price(open_price)
+    h = _fmt_price(high_price)
+    lo = _fmt_price(low_price)
+    c = _fmt_price(close_price)
+    return f"{ts},{o},{h},{lo},{c},{volume}"
 
 
 def convert_to_lean_lines(df: pd.DataFrame, interval: str) -> list[str]:
@@ -261,10 +277,14 @@ def convert_single_csv(
     lines = convert_to_lean_lines(df, interval)
 
     if interval in LOW_RES_INTERVALS:
-        out_path = write_low_res_zip(lines, symbol, lean_dir, output_base, security_type)
+        out_path = write_low_res_zip(
+            lines, symbol, lean_dir, output_base, security_type
+        )
         return f"{symbol}/{interval} -> {out_path.name}", len(lines)
     else:
-        written = write_high_res_zips(df, lines, symbol, lean_dir, output_base, security_type)
+        written = write_high_res_zips(
+            df, lines, symbol, lean_dir, output_base, security_type
+        )
         return f"{symbol}/{interval} -> {len(written)} daily zips", len(lines)
 
 
@@ -288,13 +308,17 @@ def aggregate_minute_to_daily(
     )
 
     # Aggregate minute → daily OHLCV
-    agg = df_min.groupby("date").agg(
-        open=("open", "first"),
-        high=("high", "max"),
-        low=("low", "min"),
-        close=("close", "last"),
-        volume=("volume", "sum"),
-    ).reset_index()
+    agg = (
+        df_min.groupby("date")
+        .agg(
+            open=("open", "first"),
+            high=("high", "max"),
+            low=("low", "min"),
+            close=("close", "last"),
+            volume=("volume", "sum"),
+        )
+        .reset_index()
+    )
 
     # If existing daily data, only keep dates not already covered
     existing_dates: set[str] = set()
@@ -318,16 +342,21 @@ def aggregate_minute_to_daily(
     new_lines = []
     for _, row in new_dates.iterrows():
         date_str = f"{row['date']} 00:00"
-        new_lines.append(
-            f"{date_str},{row['open']},{row['high']},{row['low']},{row['close']},{row['volume']}"
-        )
+        o = _fmt_price(float(row["open"]))
+        h = _fmt_price(float(row["high"]))
+        lo = _fmt_price(float(row["low"]))
+        c = _fmt_price(float(row["close"]))
+        new_lines.append(f"{date_str},{o},{h},{lo},{c},{row['volume']}")
 
     all_lines = sorted(existing_lines + new_lines)
 
     out_path = write_low_res_zip(all_lines, symbol, "daily", output_base, security_type)
     filled = len(new_dates)
     total = len(all_lines)
-    return f"{symbol}/daily: {filled} bars from minute, {total} total -> {out_path.name}", total
+    return (
+        f"{symbol}/daily: {filled} bars from minute, {total} total -> {out_path.name}",
+        total,
+    )
 
 
 def parse_args() -> argparse.Namespace:
@@ -352,7 +381,7 @@ def parse_args() -> argparse.Namespace:
         choices=["cryptofuture", "crypto"],
         default="cryptofuture",
         help="LEAN security type: 'cryptofuture' (default) for AddCryptoFuture, "
-             "'crypto' for AddCrypto.",
+        "'crypto' for AddCrypto.",
     )
     parser.add_argument(
         "--fill-daily-from-minute",
@@ -360,8 +389,8 @@ def parse_args() -> argparse.Namespace:
         default=None,
         metavar="MINUTE_DIR",
         help="Aggregate minute CSVs from this directory to fill gaps in daily data. "
-             "For each symbol with minute data, generates daily bars for dates "
-             "not already covered by daily raw data.",
+        "For each symbol with minute data, generates daily bars for dates "
+        "not already covered by daily raw data.",
     )
     parser.add_argument(
         "--dry-run",
@@ -418,7 +447,8 @@ def main() -> int:
     if args.fill_daily_from_minute:
         minute_dir = args.fill_daily_from_minute.resolve()
         minute_csvs = [
-            p for p in find_raw_csvs(minute_dir)
+            p
+            for p in find_raw_csvs(minute_dir)
             if detect_interval_from_filename(p.name) == "1m"
         ]
         if minute_csvs:

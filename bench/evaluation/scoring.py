@@ -36,12 +36,17 @@ def compute_task_score(
     tutor_dimension_scores: dict[str, float],
     category: Optional[str] = None,
     requires_code: bool = False,
+    eval_mode: str = "full",
 ) -> dict:
     """Compute the overall task score.
 
     Design doc §6.3:
     Task Score = 0.70 × Quant Agent Score + 0.30 × Tutor Score
     Quant Agent Score = 0.50 × Result + 0.50 × Process
+
+    When ``eval_mode`` is ``"qr_only"`` or ``"qp_only"``, the quant
+    agent score uses 100% of the available component instead of a
+    50/50 blend (avoids halving the score due to a missing zero).
 
     Tutor Score uses per-category dimension weights for weighted averaging
     (see CATEGORY_DIMENSION_WEIGHTS in tutor_conv_geval.py).
@@ -53,15 +58,21 @@ def compute_task_score(
         category: TaskCategory.value for per-category tutor dimension weighting.
         requires_code: Whether the task expects code output (passed
             through to compute_tutor_score for D5 weight override).
+        eval_mode: "full" (default), "qr_only", or "qp_only".
 
     Returns:
         Dict with all sub-scores and overall score.
     """
     from evaluation.deepeval_metrics.tutor_conv_geval import compute_tutor_score
 
-    quant_score = (
-        RESULT_WEIGHT * quant_result_score + PROCESS_WEIGHT * quant_process_score
-    )
+    if eval_mode == "qr_only":
+        quant_score = quant_result_score
+    elif eval_mode == "qp_only":
+        quant_score = quant_process_score
+    else:
+        quant_score = (
+            RESULT_WEIGHT * quant_result_score + PROCESS_WEIGHT * quant_process_score
+        )
 
     # Filter out internal metadata keys (_eval_cost, _eval_cost_by_model)
     clean_tutor = {

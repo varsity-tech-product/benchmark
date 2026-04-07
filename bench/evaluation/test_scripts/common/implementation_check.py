@@ -10,54 +10,14 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 
 
-def _read_text_excerpt(path: str, max_chars: int = 16000) -> str:
-    """Read a bounded excerpt from a text file."""
-    with open(path) as fh:
-        content = fh.read()
-    if len(content) <= max_chars:
-        return content
-    head = content[: max_chars // 2]
-    tail = content[-(max_chars // 2) :]
-    return head + "\n...\n" + tail
-
-
 def collect_artifact_text(
     workspace_path: str,
     tool_logs: list | None = None,
 ) -> str:
     """Collect workspace artifacts and tool traces, including .cs files."""
-    parts: list[str] = []
+    from common.shared_utils import collect_artifact_text as _cat
 
-    for log in tool_logs or []:
-        parts.append(str(getattr(log, "name", "")))
-        parts.append(str(getattr(log, "args", {})))
-        parts.append(str(getattr(log, "result", "") or ""))
-
-    if workspace_path and os.path.isdir(workspace_path):
-        for root, _, files in os.walk(workspace_path):
-            for fname in sorted(files):
-                if not fname.endswith(
-                    (".cs", ".py", ".json", ".txt", ".md", ".csv", ".log")
-                ):
-                    continue
-                fpath = os.path.join(root, fname)
-                try:
-                    parts.append(os.path.relpath(fpath, workspace_path))
-                    parts.append(_read_text_excerpt(fpath))
-                except (IOError, UnicodeDecodeError):
-                    continue
-
-    return "\n".join(parts).lower()
-
-
-def has_any(text: str, keywords: list[str]) -> bool:
-    """Return True when any keyword is present as a substring."""
-    return any(keyword.lower() in text for keyword in keywords)
-
-
-def has_regex(text: str, patterns: list[str]) -> bool:
-    """Return True when any regex pattern matches."""
-    return any(re.search(pattern, text, re.IGNORECASE) for pattern in patterns)
+    return _cat(workspace_path, tool_logs, extra_suffixes=(".cs",))
 
 
 # ── Reference data directory ──
@@ -130,6 +90,41 @@ def _ci_get_trade(d: dict, *keys, default=None):
     return default
 
 
+def _normalize_symbol_value(raw_sym, raw_symbols=None) -> str:
+    """Normalize a LEAN symbol field into a clean comparable ticker.
+
+    Handles:
+    - ``Symbol`` / ``symbol`` as string or ``{"Value": ...}``
+    - ``symbols`` arrays used by LEAN closedTrades
+    - LEAN suffixes like ``"ADAUSDT 18R"``
+    """
+    symbol = ""
+    if isinstance(raw_sym, dict):
+        symbol = raw_sym.get("Value", raw_sym.get("value", str(raw_sym)))
+    elif raw_sym is not None:
+        symbol = str(raw_sym)
+
+    if not symbol and isinstance(raw_symbols, list):
+        values = []
+        for entry in raw_symbols:
+            if isinstance(entry, dict):
+                val = entry.get("value", entry.get("Value", ""))
+            else:
+                val = str(entry)
+            val = str(val).strip()
+            if val:
+                values.append(val)
+        if len(values) == 1:
+            symbol = values[0]
+        elif values:
+            symbol = " + ".join(values)
+
+    symbol = str(symbol).strip()
+    if not symbol:
+        return ""
+    return symbol.split()[0]
+
+
 def _normalize_trade(trade: dict) -> dict:
     """Normalize a trade dict to the snake_case schema expected by match_trades().
 
@@ -151,10 +146,8 @@ def _normalize_trade(trade: dict) -> dict:
 
     # Symbol: might be a string or an object with Value
     raw_sym = _ci_get_trade(trade, "Symbol", "symbol", default="")
-    if isinstance(raw_sym, dict):
-        symbol = raw_sym.get("Value", raw_sym.get("value", str(raw_sym)))
-    else:
-        symbol = str(raw_sym)
+    raw_symbols = _ci_get_trade(trade, "Symbols", "symbols", default=None)
+    symbol = _normalize_symbol_value(raw_sym, raw_symbols)
 
     profit_loss = float(
         _ci_get_trade(trade, "ProfitLoss", "gross_pnl", "net_pnl", default=0)
@@ -179,22 +172,221 @@ def _normalize_trade(trade: dict) -> dict:
 def load_agent_trades(workspace_path: str) -> list[dict]:
     """Parse agent's trade log from workspace results.
 
+    Searches multiple locations (in priority order) because LEAN output
+    naming varies across builds and ``run_backtest.sh`` may fail to
+    extract a standalone ``trades.json``.
+
     Normalizes LEAN PascalCase fields to the snake_case schema
     expected by match_trades().
     """
-    trades_path = os.path.join(workspace_path, "results", "trades.json")
-    if not os.path.exists(trades_path):
+    import glob as _glob
+
+    results_dir = os.path.join(workspace_path, "results")
+    if not os.path.isdir(results_dir):
         return []
+
+    # 1. LEAN-native closedTrades from main result JSON
+    ct = _extract_closed_trades_from_main_json(results_dir)
+    if ct:
+        return [_normalize_trade(t) for t in ct]
+
+    # 2. Standard extracted name (run_backtest.sh copy_result output)
+    raw_trades = _try_load_trades_file(os.path.join(results_dir, "trades.json"))
+    if raw_trades is not None:
+        return [_normalize_trade(t) for t in raw_trades]
+
+    # 3. LEAN-native pattern (*-trades.json)
+    for f in _glob.glob(os.path.join(results_dir, "*-trades.json")):
+        raw_trades = _try_load_trades_file(f)
+        if raw_trades is not None:
+            return [_normalize_trade(t) for t in raw_trades]
+
+    # 4. Extract closedTrades from summary.json
+    for candidate in [os.path.join(results_dir, "summary.json")] + _glob.glob(
+        os.path.join(results_dir, "*-summary.json")
+    ):
+        ct = _extract_closed_trades(candidate)
+        if ct:
+            return [_normalize_trade(t) for t in ct]
+
+    # 5. Pair round-trips from order events (lowest confidence)
+    paired = _pair_trades_from_orders(results_dir)
+    if paired:
+        return paired
+
+    return []
+
+
+def _try_load_trades_file(path: str) -> list | None:
+    """Load a trades JSON file, returning the raw trade list or None."""
+    if not os.path.exists(path):
+        return None
     try:
-        with open(trades_path) as f:
+        with open(path) as f:
             data = json.load(f)
         if isinstance(data, list):
-            raw_trades = data
-        else:
-            raw_trades = data.get("trades", data.get("ClosedTrades", []))
-        return [_normalize_trade(t) for t in raw_trades]
+            return data
+        return data.get("trades", data.get("ClosedTrades", []))
+    except (json.JSONDecodeError, IOError):
+        return None
+
+
+def _extract_closed_trades(path: str) -> list:
+    """Extract totalPerformance.closedTrades from a LEAN JSON file."""
+    if not os.path.exists(path):
+        return []
+    try:
+        with open(path) as f:
+            data = json.load(f)
+        return data.get("totalPerformance", {}).get("closedTrades", [])
     except (json.JSONDecodeError, IOError):
         return []
+
+
+def _extract_closed_trades_from_main_json(results_dir: str) -> list:
+    """Find the main LEAN output JSON (prefer result.json, else largest JSON)."""
+    import glob as _glob
+
+    # Prefer LEAN main JSONs first, then the deterministic result.json.
+    native_candidates = []
+    result_json = os.path.join(results_dir, "result.json")
+
+    _SKIP_SUFFIXES = ("-summary.json", "-order-events.json", "-log.txt")
+    _SKIP_PREFIXES = ("data-monitor", "succeeded-data", "failed-data")
+    best, best_size = None, 0
+    for f in _glob.glob(os.path.join(results_dir, "*.json")):
+        name = os.path.basename(f)
+        if any(name.endswith(s) for s in _SKIP_SUFFIXES):
+            continue
+        if any(name.startswith(p) for p in _SKIP_PREFIXES):
+            continue
+        if name in ("trades.json", "orders.json", "summary.json", "result.json"):
+            continue
+        sz = os.path.getsize(f)
+        if sz > best_size:
+            best, best_size = f, sz
+
+    if best and best_size > 10000:
+        native_candidates.append(best)
+    if os.path.exists(result_json):
+        native_candidates.append(result_json)
+
+    for path in native_candidates:
+        ct = _extract_closed_trades(path)
+        if ct:
+            return ct
+    return []
+
+
+def _pair_trades_from_orders(results_dir: str) -> list[dict]:
+    """Pair filled orders into round-trip trades using reference-compatible FIFO logic.
+
+    This intentionally mirrors the simplified pairing approach used by the
+    reference-trade generator so that fallback agent trades remain comparable
+    to the benchmark's reference trade files.
+    """
+    import glob as _glob
+    from collections import defaultdict
+
+    orders_path = os.path.join(results_dir, "orders.json")
+    if not os.path.exists(orders_path):
+        # Try LEAN-native name
+        candidates = _glob.glob(os.path.join(results_dir, "*-order-events.json"))
+        if not candidates:
+            return []
+        orders_path = candidates[0]
+
+    try:
+        with open(orders_path) as f:
+            data = json.load(f)
+    except (json.JSONDecodeError, IOError):
+        return []
+
+    # Parse filled orders (reuse logic from load_agent_orders)
+    if isinstance(data, dict):
+        if "Orders" in data or "orders" in data:
+            data = data.get("Orders", data.get("orders", {}))
+        if isinstance(data, dict):
+            raw_orders = list(data.values())
+        else:
+            raw_orders = data
+    else:
+        raw_orders = data
+
+    by_symbol = defaultdict(list)
+    for o in raw_orders:
+        status = _ci_get_trade(o, "Status", "status", default=0)
+        if isinstance(status, int) and status != 3:
+            continue
+        if isinstance(status, str) and status.lower() not in ("filled", "3"):
+            continue
+        sym = _normalize_symbol_value(
+            _ci_get_trade(o, "Symbol", "symbol", default=""),
+            _ci_get_trade(o, "Symbols", "symbols", default=None),
+        ) or _normalize_symbol_value(
+            _ci_get_trade(o, "symbolValue", "SymbolValue", default=""),
+            None,
+        )
+        raw_dir = _ci_get_trade(o, "Direction", "direction", default=0)
+        if isinstance(raw_dir, int):
+            direction = "Buy" if raw_dir == 0 else "Sell"
+        else:
+            d = str(raw_dir).lower()
+            direction = "Buy" if d in ("long", "buy", "0") else "Sell"
+        by_symbol[str(sym)].append(
+            {
+                "direction": direction,
+                "quantity": abs(
+                    float(
+                        _ci_get_trade(
+                            o, "Quantity", "fillQuantity", "quantity", default=0
+                        )
+                    )
+                ),
+                "fill_price": float(
+                    _ci_get_trade(
+                        o, "Price", "fillPrice", "fill_price", "price", default=0
+                    )
+                ),
+                "time": _ci_get_trade(o, "Time", "time", default=""),
+            }
+        )
+
+    trades = []
+    for sym, sym_orders in by_symbol.items():
+        sym_orders.sort(key=lambda x: _parse_time(x["time"]))
+        pending = None
+        for order in sym_orders:
+            if pending is None:
+                pending = order
+                continue
+
+            if order["direction"] != pending["direction"]:
+                matched_qty = min(float(pending["quantity"]), float(order["quantity"]))
+                pnl = (order["fill_price"] - pending["fill_price"]) * matched_qty
+                if pending["direction"] == "Sell":
+                    pnl = -pnl
+                trades.append(
+                    {
+                        "symbol": sym,
+                        "direction": pending["direction"],
+                        "quantity": matched_qty,
+                        "entry_time": pending["time"],
+                        "entry_price": pending["fill_price"],
+                        "exit_time": order["time"],
+                        "exit_price": order["fill_price"],
+                        "gross_pnl": pnl,
+                        "net_pnl": pnl,
+                        "_source": "order_pairing",
+                    }
+                )
+                pending = None
+            else:
+                # Same direction again: treat as updated entry, mirroring
+                # generate_lean_reference.py's simplified pairing.
+                pending = order
+
+    return trades
 
 
 def _parse_time(t: str | int | float) -> float:
@@ -207,6 +399,12 @@ def _parse_time(t: str | int | float) -> float:
 
     # Strip UTC indicators so strptime works with timezone-naive formats
     clean = str(t).strip()
+    # Handle numeric strings emitted by fallback order pairing, e.g. "1641513600.0"
+    try:
+        numeric = float(clean)
+        return numeric / 1000.0 if numeric > 1e12 else numeric
+    except (ValueError, TypeError):
+        pass
     if clean.endswith("Z"):
         clean = clean[:-1]
     if clean.endswith("+00:00"):
@@ -266,12 +464,20 @@ def match_trades(
     for ref_trade in ref_trades:
         ref_entry = _parse_time(ref_trade.get("entry_time", 0))
         ref_dir = ref_trade.get("direction", "").lower()
+        # Normalize symbol for comparison (strip LEAN suffixes like " 18R")
+        ref_sym_raw = str(ref_trade.get("symbol", "")).strip()
+        ref_sym = ref_sym_raw.split()[0].upper() if ref_sym_raw else ""
 
         best_idx = None
         best_delta = float("inf")
 
         for i, agent_trade in enumerate(agent_trades):
             if i in used_agent_indices:
+                continue
+            # Symbol check: if both trades have symbols, they must match
+            agent_sym_raw = str(agent_trade.get("symbol", "")).strip()
+            agent_sym = agent_sym_raw.split()[0].upper() if agent_sym_raw else ""
+            if ref_sym and agent_sym and ref_sym != agent_sym:
                 continue
             agent_entry = _parse_time(agent_trade.get("entry_time", 0))
             delta = abs(agent_entry - ref_entry)
@@ -340,32 +546,6 @@ def match_trades(
     return result
 
 
-def compute_trade_log_score(match_result: MatchResult) -> float:
-    """Apply the weighted scoring from S7.1.2."""
-    score = 0.0
-    # Trade count match (0.20)
-    if match_result.count_within_tolerance(0.10):
-        score += 0.20
-    # Entry timing match (0.20)
-    if match_result.entry_match_rate >= 0.80:
-        score += 0.20
-    # Direction match (0.15)
-    if match_result.direction_match_rate >= 1.0:
-        score += 0.15
-    elif match_result.direction_match_rate >= 0.95:
-        score += 0.10
-    # Exit timing match (0.15)
-    if match_result.exit_match_rate >= 0.70:
-        score += 0.15
-    # PnL alignment (0.10)
-    if match_result.pnl_correlation > 0.85:
-        score += 0.10
-    # Return proximity (0.05)
-    if match_result.return_within_tolerance(0.20):
-        score += 0.05
-    return score
-
-
 def check_csharp_patterns(workspace_path: str, patterns: list[str]) -> dict[str, bool]:
     """Scan .cs files in workspace for expected code patterns."""
     results: dict[str, bool] = {p: False for p in patterns}
@@ -391,15 +571,33 @@ def check_csharp_patterns(workspace_path: str, patterns: list[str]) -> dict[str,
 
 
 def collect_lean_results(workspace_path: str) -> dict | None:
-    """Parse LEAN output from /workspace/results/summary.json."""
-    summary_path = os.path.join(workspace_path, "results", "summary.json")
-    if not os.path.exists(summary_path):
+    """Parse LEAN statistics from workspace results.
+
+    Searches multiple file patterns because ``run_backtest.sh`` may fail
+    to copy the summary to the standard name, and LEAN naming varies
+    across builds (``*-summary.json`` vs ``*-statistics.json``).
+    """
+    import glob as _glob
+
+    results_dir = os.path.join(workspace_path, "results")
+    if not os.path.isdir(results_dir):
         return None
-    try:
-        with open(summary_path) as f:
-            return json.load(f)
-    except (json.JSONDecodeError, IOError):
-        return None
+
+    # Try in priority order: standard name, LEAN summary, legacy statistics
+    candidates = [os.path.join(results_dir, "summary.json")]
+    candidates += sorted(_glob.glob(os.path.join(results_dir, "*-summary.json")))
+    candidates += sorted(_glob.glob(os.path.join(results_dir, "*-statistics.json")))
+
+    for path in candidates:
+        if not os.path.exists(path):
+            continue
+        try:
+            with open(path) as f:
+                return json.load(f)
+        except (json.JSONDecodeError, IOError):
+            continue
+
+    return None
 
 
 # ════════════════════════════════════════════════════════════════════
@@ -513,9 +711,14 @@ def load_agent_orders(workspace_path: str) -> list[dict]:
         if isinstance(status, str) and status.lower() not in ("filled", "3"):
             continue
 
-        sym = _ci_get_trade(o, "Symbol", "symbol", default="")
-        if isinstance(sym, dict):
-            sym = sym.get("Value", sym.get("value", str(sym)))
+        # Symbol: prefer symbolValue (clean ticker), fall back to symbol
+        # with LEAN suffix stripped (e.g., "ADAUSDT 18R" → "ADAUSDT")
+        sym = _ci_get_trade(o, "symbolValue", "SymbolValue", default="")
+        if not sym:
+            sym = _ci_get_trade(o, "Symbol", "symbol", default="")
+            if isinstance(sym, dict):
+                sym = sym.get("Value", sym.get("value", str(sym)))
+            sym = str(sym).split()[0]  # strip LEAN suffix
 
         raw_dir = _ci_get_trade(o, "Direction", "direction", default=0)
         if isinstance(raw_dir, int):
@@ -529,12 +732,18 @@ def load_agent_orders(workspace_path: str) -> list[dict]:
                 "symbol": str(sym),
                 "direction": direction,
                 "quantity": abs(
-                    float(_ci_get_trade(o, "Quantity", "quantity", default=0))
+                    float(
+                        _ci_get_trade(
+                            o, "Quantity", "fillQuantity", "quantity", default=0
+                        )
+                    )
                 ),
                 "fill_price": float(
-                    _ci_get_trade(o, "Price", "fill_price", "price", default=0)
+                    _ci_get_trade(
+                        o, "Price", "fillPrice", "fill_price", "price", default=0
+                    )
                 ),
-                "time": str(_ci_get_trade(o, "Time", "time", default="")),
+                "time": _ci_get_trade(o, "Time", "time", default=""),
             }
         )
 
@@ -641,6 +850,12 @@ def _parse_date(s) -> "date | None":
         ts = s / 1000.0 if s > 1e12 else float(s)
         return datetime.fromtimestamp(ts, tz=timezone.utc).date()
     clean = str(s).strip()
+    try:
+        numeric = float(clean)
+        ts = numeric / 1000.0 if numeric > 1e12 else numeric
+        return datetime.fromtimestamp(ts, tz=timezone.utc).date()
+    except (ValueError, TypeError, OSError):
+        pass
     if clean.endswith("Z"):
         clean = clean[:-1]
     if clean.endswith("+00:00"):
@@ -656,13 +871,24 @@ def _parse_date(s) -> "date | None":
 def load_agent_summary(workspace_path: str) -> dict:
     """Parse summary.json into standardized metrics dict."""
     lean = collect_lean_results(workspace_path)
-    if lean is None:
-        return {}
+    results_dir = os.path.join(workspace_path, "results")
+
+    def _coerce_float(s, default=0.0):
+        import re as _re
+
+        if isinstance(s, (int, float)):
+            return float(s)
+        text = str(s).strip()
+        if not text:
+            return default
+        text = text.replace(",", "")
+        match = _re.search(r"-?\d+(?:\.\d+)?", text)
+        return float(match.group(0)) if match else default
 
     def _pct(s):
         if isinstance(s, (int, float)):
             return float(s)
-        return float(str(s).replace("%", "").strip() or "0")
+        return _coerce_float(str(s).replace("%", "").strip(), 0.0)
 
     # LEAN summary can have various key formats
     stats = lean if isinstance(lean, dict) else {}
@@ -672,25 +898,83 @@ def load_agent_summary(workspace_path: str) -> dict:
     elif "statistics" in stats:
         stats = stats["statistics"]
 
-    sharpe = stats.get("Sharpe Ratio", stats.get("sharpe_ratio", "0"))
-    total_return = stats.get("Net Profit", stats.get("total_return", "0%"))
-    drawdown = stats.get("Drawdown", stats.get("max_drawdown", "0%"))
-    win_rate = stats.get("Win Rate", stats.get("win_rate", "0%"))
-    total_trades_str = stats.get(
-        "Total Trades", stats.get("Total Orders", stats.get("total_trades", "0"))
+    sharpe = _coerce_float(
+        stats.get("Sharpe Ratio", stats.get("sharpe_ratio", "0")), 0.0
+    )
+    total_return = _pct(stats.get("Net Profit", stats.get("total_return", "0%")))
+    drawdown = _pct(stats.get("Drawdown", stats.get("max_drawdown", "0%")))
+    win_rate_raw = _pct(stats.get("Win Rate", stats.get("win_rate", "0%")))
+    total_trades = int(
+        _coerce_float(stats.get("Total Trades", stats.get("total_trades", "0")), 0.0)
     )
 
-    try:
-        total_trades = int(total_trades_str)
-    except (ValueError, TypeError):
-        total_trades = 0
+    # Fallback for LEAN builds where summary.statistics is empty but result.json
+    # still contains runtime stats and full equity/drawdown charts.
+    if (sharpe == 0.0 and total_return == 0.0 and drawdown == 0.0) and os.path.isdir(
+        results_dir
+    ):
+        result_path = os.path.join(results_dir, "result.json")
+        if os.path.exists(result_path):
+            try:
+                with open(result_path) as f:
+                    result = json.load(f)
+            except (json.JSONDecodeError, IOError):
+                result = {}
+
+            runtime = result.get("runtimeStatistics", {})
+            total_return = _pct(runtime.get("Return", total_return))
+
+            charts = result.get("charts", {})
+            drawdown_chart = charts.get("Drawdown", {})
+            drawdown_series = drawdown_chart.get(
+                "series", drawdown_chart.get("Series", {})
+            )
+            dd_values = drawdown_series.get("Equity Drawdown", {}).get(
+                "values",
+                drawdown_series.get("Equity Drawdown", {}).get("Values", []),
+            )
+            if dd_values:
+                drawdown = abs(min(point[1] for point in dd_values if len(point) >= 2))
+
+            strat_chart = charts.get("Strategy Equity", {})
+            strat_series = strat_chart.get("series", strat_chart.get("Series", {}))
+            equity_values = strat_series.get("Equity", {}).get(
+                "values",
+                strat_series.get("Equity", {}).get("Values", []),
+            )
+            if equity_values and sharpe == 0.0:
+                closes = [
+                    float(v[4])
+                    for v in equity_values
+                    if len(v) >= 5 and float(v[4]) != 0.0
+                ]
+                if len(closes) >= 2:
+                    import math
+
+                    returns = [
+                        (b - a) / abs(a) for a, b in zip(closes, closes[1:]) if a != 0
+                    ]
+                    if returns:
+                        mean = sum(returns) / len(returns)
+                        if len(returns) > 1:
+                            var = sum((r - mean) ** 2 for r in returns) / (
+                                len(returns) - 1
+                            )
+                            std = math.sqrt(var)
+                            if std > 0:
+                                sharpe = (mean / std) * math.sqrt(365)
+
+    if total_trades == 0:
+        total_trades = len(load_agent_trades(workspace_path))
+
+    win_rate = win_rate_raw / 100.0 if win_rate_raw > 1 else win_rate_raw
 
     return {
-        "total_return_pct": _pct(total_return),
-        "sharpe_ratio": float(sharpe or "0"),
-        "max_drawdown_pct": _pct(drawdown),
+        "total_return_pct": total_return,
+        "sharpe_ratio": float(sharpe or 0.0),
+        "max_drawdown_pct": drawdown,
         "total_trades": total_trades,
-        "win_rate": _pct(win_rate) / 100.0 if _pct(win_rate) > 1 else _pct(win_rate),
+        "win_rate": win_rate,
     }
 
 

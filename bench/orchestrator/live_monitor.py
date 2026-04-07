@@ -19,7 +19,9 @@ Or via the global helper (used by simulation.py / mcp_proxy.py):
 
 import json
 import logging
+import os
 import queue
+import tempfile
 import textwrap
 import threading
 import time
@@ -34,15 +36,29 @@ _event_queue: queue.Queue = queue.Queue()
 _monitor_active: bool = False
 
 # Async mode (web dashboard) — set by init_async()
-_async_queue = None  # asyncio.Queue
+_broadcast_fn = None  # events.broadcast callable
 _event_loop = None  # asyncio event loop
 _mode: str = "off"  # "off" | "sync" | "async"
 
+# Thread-local job key — set by group runs so parallel tasks' events are distinguishable.
+# Single runs never set this, so their events have no job_key (backward-compatible).
+_thread_local = threading.local()
 
-def init_async(loop, async_queue):
+# Active workspace path — set by orchestrator so web API can serve live files.
+# Thread-safe: only one single-run at a time; group runs use per-job workspaces
+# but only the "currently viewed" job's workspace is needed.
+_active_workspace: Optional[str] = None
+_workspace_lock = threading.Lock()
+
+# Event log persistence (survives server restart)
+_event_log_lock = threading.Lock()
+_EVENT_LOG_PATH = os.path.join(tempfile.gettempdir(), "qtb_event_log.jsonl")
+
+
+def init_async(loop, broadcast_fn):
     """Switch emit() to async mode for the web dashboard."""
-    global _async_queue, _event_loop, _mode, _monitor_active
-    _async_queue = async_queue
+    global _broadcast_fn, _event_loop, _mode, _monitor_active
+    _broadcast_fn = broadcast_fn
     _event_loop = loop
     _mode = "async"
     _monitor_active = True
@@ -55,19 +71,85 @@ def init_sync():
     _monitor_active = True
 
 
+def set_job_key(key: Optional[str]):
+    """Set the job key for the current thread (used by group runs)."""
+    _thread_local.job_key = key
+
+
+def get_job_key() -> Optional[str]:
+    """Get the job key for the current thread, or None."""
+    return getattr(_thread_local, "job_key", None)
+
+
+def set_active_workspace(path: Optional[str]):
+    """Set the active workspace path for live file serving."""
+    global _active_workspace
+    with _workspace_lock:
+        _active_workspace = path
+
+
+def get_active_workspace() -> Optional[str]:
+    """Get the active workspace path, or None if no run is active."""
+    with _workspace_lock:
+        return _active_workspace
+
+
 def emit(event_type: str, data: dict):
     """Push an event to connected clients.
 
-    Routes to asyncio.Queue (web) or threading.Queue (CLI) based on mode.
+    Routes to broadcast (web) or threading.Queue (CLI) based on mode.
+    Also persists events to disk for crash recovery (async mode only).
+    Injects thread-local ``job_key`` when set (group runs).
     No-op when mode is "off".
     """
     if _mode == "off":
         return
     payload = {"type": event_type, "ts": time.time(), **data}
-    if _mode == "async" and _async_queue is not None and _event_loop is not None:
-        _event_loop.call_soon_threadsafe(_async_queue.put_nowait, payload)
+    job_key = getattr(_thread_local, "job_key", None)
+    if job_key is not None:
+        payload["job_key"] = job_key
+    if _mode == "async" and _broadcast_fn is not None and _event_loop is not None:
+        _persist_event(event_type, payload)
+        _event_loop.call_soon_threadsafe(_broadcast_fn, payload)
     elif _mode == "sync":
         _event_queue.put(payload)
+
+
+def _persist_event(event_type: str, payload: dict):
+    """Append event to JSONL log file. Truncate on new run session."""
+    try:
+        with _event_log_lock:
+            # New run session (not eval) → start fresh log
+            if event_type == "session_start" and payload.get("mode") != "eval":
+                mode = "w"
+            else:
+                mode = "a"
+            with open(_EVENT_LOG_PATH, mode) as f:
+                f.write(json.dumps(payload, default=str) + "\n")
+    except Exception:
+        pass
+
+
+def load_event_log() -> list[dict]:
+    """Load persisted events from disk (for crash recovery on startup).
+
+    Tolerates corrupt lines (e.g. from mid-write server kill) by skipping
+    them instead of discarding the entire log.
+    """
+    events = []
+    try:
+        with open(_EVENT_LOG_PATH) as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    events.append(json.loads(line))
+                except json.JSONDecodeError:
+                    logger.warning("Skipped corrupt line in event log: %s", line[:80])
+    except FileNotFoundError:
+        pass
+    return events
 
 
 # ── Embedded HTML dashboard ───────────────────────────────────────────

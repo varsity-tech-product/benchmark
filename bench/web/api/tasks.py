@@ -29,6 +29,7 @@ async def list_tasks():
                     "description": t.get("description", ""),
                     "persona_ids": t.get("persona_ids", []),
                     "max_turns": t.get("max_turns", 10),
+                    "timeout_minutes": t.get("timeout_minutes"),
                     "requires_code": t.get("requires_code", False),
                 }
             )

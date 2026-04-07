@@ -2,9 +2,11 @@
 
 Provides:
 - normalize_10pt(): Convert integer 1-10 to float 0.0-1.0
-- build_10pt_rubric(): Generate standard 10-point scale description
-- parse_llm_score(): Extract and normalize score from LLM response
+- extract_json_from_response(): Parse JSON from LLM output (handles markdown fences)
 """
+
+import json
+import re
 
 
 def normalize_10pt(score: int | float, default: float = 0.5) -> float:
@@ -33,3 +35,25 @@ def denormalize_10pt(normalized: float) -> int:
 # 10-point ordinal values (for reference/testing)
 SCALE_10PT = [round((i - 1) / 9, 4) for i in range(1, 11)]
 # [0.0, 0.1111, 0.2222, 0.3333, 0.4444, 0.5556, 0.6667, 0.7778, 0.8889, 1.0]
+
+
+def extract_json_from_response(text: str) -> dict:
+    """Extract JSON object from LLM response, handling markdown fences.
+
+    Returns {} on failure (never raises).
+    """
+    text = text.strip()
+    if text.startswith("```"):
+        lines = text.split("\n")
+        lines = [ln for ln in lines if not ln.strip().startswith("```")]
+        text = "\n".join(lines).strip()
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        match = re.search(r"\{[^{}]*\}", text, re.DOTALL)
+        if match:
+            try:
+                return json.loads(match.group())
+            except json.JSONDecodeError:
+                pass
+    return {}

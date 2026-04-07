@@ -19,9 +19,10 @@ Uses 5-point ordinal scale: {0.0, 0.25, 0.5, 0.75, 1.0}.
 """
 
 import json as _json
-import re
 
 from config.model_resolver import resolve_deepeval_model
+
+from evaluation.deepeval_metrics._scoring_utils import extract_json_from_response
 
 try:
     from deepeval.models.llms.openai_model import GPTModel
@@ -132,25 +133,6 @@ def _build_agent_trace_for_prompt(proxy_logs: list) -> str:
     return "\n".join(lines) if lines else "  (no tool calls)"
 
 
-def _extract_json_from_response(text: str) -> dict:
-    """Extract JSON object from LLM response, handling markdown fences."""
-    text = text.strip()
-    if text.startswith("```"):
-        lines = text.split("\n")
-        lines = [ln for ln in lines if not ln.strip().startswith("```")]
-        text = "\n".join(lines).strip()
-    try:
-        return _json.loads(text)
-    except _json.JSONDecodeError:
-        match = re.search(r"\{[^{}]*\}", text, re.DOTALL)
-        if match:
-            try:
-                return _json.loads(match.group())
-            except _json.JSONDecodeError:
-                pass
-    return {}
-
-
 def _clamp_ordinal(val, default=0.5) -> float:
     """Snap value to nearest 5-point ordinal."""
     try:
@@ -169,7 +151,7 @@ async def _call_llm(model, prompt: str) -> dict:
 
         model_obj = GPTModel(model=model_obj, **get_deepeval_cost_kwargs(model_obj))
     response_text, call_cost = await model_obj.a_generate(prompt)
-    result = _extract_json_from_response(response_text)
+    result = extract_json_from_response(response_text)
     result["_eval_cost"] = float(call_cost) if call_cost else 0.0
     return result
 

@@ -2,25 +2,19 @@
 
 from __future__ import annotations
 
-import csv
 import json
 import os
-import re
+
+from common.shared_utils import (
+    has_any,
+    read_text_excerpt,
+    workspace_files,
+)
 
 
 def _read_text_excerpt(path: str, max_chars: int = 12000) -> str:
-    """Read a bounded excerpt from a text file.
-
-    For large files, keep both the head and the tail so late-file signal
-    definitions do not disappear entirely.
-    """
-    with open(path) as f:
-        content = f.read()
-    if len(content) <= max_chars:
-        return content
-    head = content[: max_chars // 2]
-    tail = content[-(max_chars // 2) :]
-    return head + "\n...\n" + tail
+    """S-series wrapper: smaller budget to preserve late-file signal defs."""
+    return read_text_excerpt(path, max_chars=max_chars)
 
 
 def collect_evidence_text(
@@ -28,7 +22,11 @@ def collect_evidence_text(
     tool_logs: list | None = None,
     conversation: list | None = None,
 ) -> str:
-    """Collect tool, workspace, and conversation evidence as a single string."""
+    """Collect tool, workspace, and conversation evidence as a single string.
+
+    Unlike ``collect_artifact_text`` (which excludes conversation), this
+    includes both conversation prose and workspace files.
+    """
     parts: list[str] = []
 
     for log in tool_logs or []:
@@ -46,68 +44,20 @@ def collect_evidence_text(
                 if not fname.endswith((".py", ".json", ".txt", ".md", ".csv", ".log")):
                     continue
                 fpath = os.path.join(root, fname)
-                rel_path = os.path.relpath(fpath, workspace_path)
                 try:
-                    parts.append(rel_path)
+                    parts.append(os.path.relpath(fpath, workspace_path))
                     parts.append(_read_text_excerpt(fpath))
                 except (IOError, UnicodeDecodeError):
                     pass
 
     return "\n".join(parts).lower()
-
-
-def collect_artifact_text(
-    workspace_path: str,
-    tool_logs: list | None = None,
-) -> str:
-    """Collect only executable artifacts: workspace files + tool traces.
-
-    Excludes assistant conversation so evals cannot be satisfied by prose
-    alone. This is the primary evidence source for programmatic S-series checks.
-    """
-    parts: list[str] = []
-
-    for log in tool_logs or []:
-        parts.append(str(getattr(log, "name", "")))
-        parts.append(str(getattr(log, "args", {})))
-        parts.append(str(getattr(log, "result", "") or ""))
-
-    if workspace_path and os.path.isdir(workspace_path):
-        for root, _, files in os.walk(workspace_path):
-            for fname in sorted(files):
-                if not fname.endswith((".py", ".json", ".txt", ".md", ".csv", ".log")):
-                    continue
-                fpath = os.path.join(root, fname)
-                rel_path = os.path.relpath(fpath, workspace_path)
-                try:
-                    parts.append(rel_path)
-                    parts.append(_read_text_excerpt(fpath))
-                except (IOError, UnicodeDecodeError):
-                    pass
-
-    return "\n".join(parts).lower()
-
-
-def conversation_text(conversation: list | None = None, role: str | None = None) -> str:
-    """Collect conversation text, optionally filtered by role."""
-    snippets = []
-    for turn in conversation or []:
-        if role is not None and turn.get("role") != role:
-            continue
-        snippets.append(str(turn.get("content", "")))
-    return "\n".join(snippets).lower()
-
-
-def has_any(text: str, keywords: list[str]) -> bool:
-    """Return True when any keyword is present as a substring."""
-    return any(keyword.lower() in text for keyword in keywords)
 
 
 def has_regex(text: str, patterns: list[str]) -> bool:
-    """Return True when any regex pattern matches."""
-    return any(
-        re.search(pattern, text, re.IGNORECASE | re.MULTILINE) for pattern in patterns
-    )
+    """S-series wrapper: includes re.MULTILINE for line-anchored patterns."""
+    from common.shared_utils import has_regex as _base
+
+    return _base(text, patterns, multiline=True)
 
 
 def count_keyword_groups(text: str, keyword_groups: list[list[str]]) -> int:
@@ -170,58 +120,6 @@ def has_pnl_evidence(text: str) -> bool:
         "pnl",
     ]
     return has_any(text, pnl_terms)
-
-
-def workspace_files(
-    workspace_path: str,
-    *,
-    suffixes: tuple[str, ...] | None = None,
-) -> list[str]:
-    """Return workspace files matching the requested suffixes."""
-    files: list[str] = []
-    if not workspace_path or not os.path.isdir(workspace_path):
-        return files
-
-    for root, _, names in os.walk(workspace_path):
-        for fname in sorted(names):
-            if suffixes and not fname.endswith(suffixes):
-                continue
-            files.append(os.path.join(root, fname))
-    return files
-
-
-def workspace_csv_headers(workspace_path: str) -> list[tuple[str, list[str]]]:
-    """Return CSV header rows for workspace CSV artifacts."""
-    headers: list[tuple[str, list[str]]] = []
-    for fpath in workspace_files(workspace_path, suffixes=(".csv",)):
-        try:
-            with open(fpath, newline="") as fh:
-                reader = csv.reader(fh)
-                row = next(reader, [])
-            if row:
-                headers.append(
-                    (
-                        os.path.basename(fpath),
-                        [str(col).strip().lower() for col in row if str(col).strip()],
-                    )
-                )
-        except (IOError, UnicodeDecodeError, StopIteration, csv.Error):
-            continue
-    return headers
-
-
-def workspace_has_csv_columns(workspace_path: str, required_columns: list[str]) -> bool:
-    """Return True if any workspace CSV contains all required columns."""
-    required = {col.lower() for col in required_columns}
-    for _, header in workspace_csv_headers(workspace_path):
-        if required.issubset(set(header)):
-            return True
-    return False
-
-
-def tool_called(tool_logs: list | None, tool_name: str) -> bool:
-    """Return True if a tool was called successfully or unsuccessfully."""
-    return any(getattr(log, "name", "") == tool_name for log in tool_logs or [])
 
 
 def tool_called_with_method(
@@ -355,19 +253,3 @@ def signal_eval_has_pnl(record: dict, *, min_observations: int = 10) -> bool:
 def count_records_with_sources(records: list[dict]) -> int:
     """Count records by distinct source name."""
     return len({record.get("source", "") for record in records if record.get("source")})
-
-
-def has_metric_numbers(text: str, keyword_groups: list[list[str]]) -> bool:
-    """Return True when at least two metric groups have nearby numeric values."""
-    matched_groups = 0
-    for group in keyword_groups:
-        if any(
-            re.search(
-                rf"{re.escape(keyword)}[^0-9\-]{{0,40}}-?\d+(?:\.\d+)?",
-                text,
-                re.IGNORECASE,
-            )
-            for keyword in group
-        ):
-            matched_groups += 1
-    return matched_groups >= 2

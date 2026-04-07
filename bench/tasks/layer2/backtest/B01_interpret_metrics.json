@@ -11,9 +11,9 @@
     "advanced_quant"
   ],
   "student_openings": {
-    "beginner_no_finance": "I ran a backtest and got a bunch of numbers back — Sharpe ratio, max drawdown, total return. I have no idea what any of these mean. Can you help me understand if my strategy is any good?",
+    "beginner_no_finance": "I ran a backtest and got a bunch of numbers back \u2014 Sharpe ratio, max drawdown, total return. I have no idea what any of these mean. Can you help me understand if my strategy is any good?",
     "intermediate_developer": "I have backtest results with Sharpe 1.8, annual return 22%, and max drawdown -15%. How should I interpret these in context? What benchmarks should I compare against?",
-    "advanced_quant": "I'm reviewing backtest metrics across multiple parameter sets. I want to discuss the interplay between Sharpe, Sortino, Calmar, and max drawdown — specifically how to detect overfitting from the metric surface. What's your framework?"
+    "advanced_quant": "I'm reviewing backtest metrics across multiple parameter sets. I want to discuss the interplay between Sharpe, Sortino, Calmar, and max drawdown \u2014 specifically how to detect overfitting from the metric surface. What's your framework?"
   },
   "environment": {
     "data_files": [
@@ -57,11 +57,12 @@
     ],
     "quant_validation": {
       "eval_script": "evaluation/test_scripts/backtest/B01_interpret_metrics.py"
-    }
+    },
+    "termination_criteria": "The tutor has completed the following steps with computational evidence (not just verbal discussion): (1) Ran or loaded a backtest and presented performance metrics including at least Sharpe ratio, total return, and maximum drawdown with specific numerical values. (2) Explained what at least two of these metrics mean and how to interpret whether their values are good or bad, using benchmarks or rules of thumb. (3) Discussed at least one common pitfall such as overfitting, survivorship bias, or in-sample vs out-of-sample issues in backtest interpretation. Once all three steps have been computationally demonstrated, the session is complete."
   },
   "requires_code": false,
   "sample_code": null,
-  "max_turns": 20,
+  "max_turns": 12,
   "agent_max_steps": 8,
-  "timeout_minutes": 10
+  "timeout_minutes": 25
 }

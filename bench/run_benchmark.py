@@ -163,6 +163,7 @@ def _build_job_spec(task, persona, args, result_base_dir: Path):
         model_override=getattr(args, "model", None),
         skip_eval=runonly,
         timeout_minutes=getattr(args, "max_minutes", None),
+        eval_mode=getattr(args, "eval_mode", "full"),
     )
 
 
@@ -497,8 +498,97 @@ def _save_group_summary(results: list, label: str, result_base_dir: Path):
 
 
 # ---------------------------------------------------------------------------
-# Network preflight — fail fast when required API endpoints are unreachable
+# Agent creation (used by cmd_run and cmd_run_layer1)
 # ---------------------------------------------------------------------------
+
+
+def _create_agent(args):
+    """Create the appropriate agent adapter based on --agent and --condition.
+
+    The 2x2 matrix:
+      --condition agent            → SDK adapter + native model + TUTOR prompt
+      --condition baseline         → SDK adapter + native model + BASELINE prompt
+      --condition pure_llm         → GenericLLM + OpenRouter model + TUTOR prompt
+      --condition pure_llm_baseline → GenericLLM + OpenRouter model + BASELINE prompt
+
+    OpenAI Agent SDK always routes through OpenRouter for higher rate limits.
+    Anthropic and Google SDKs use their native APIs.
+    """
+    from config.prompt_config import (
+        BASELINE_SYSTEM_PROMPT,
+        ORACLE_SYSTEM_PROMPT,
+        TUTOR_SYSTEM_PROMPT,
+    )
+
+    agent_type = getattr(args, "agent", "generic")
+    condition = CONDITIONS[getattr(args, "condition", "agent")]
+    model_override = getattr(args, "model", None)
+
+    _PROMPT_MAP = {
+        "tutor": TUTOR_SYSTEM_PROMPT,
+        "baseline": BASELINE_SYSTEM_PROMPT,
+        "oracle": ORACLE_SYSTEM_PROMPT,
+    }
+    system_prompt = _PROMPT_MAP.get(condition.prompt_mode, TUTOR_SYSTEM_PROMPT)
+
+    # Include model short name in agent_name for distinguishable results
+    if model_override:
+        model_short = model_override.split("/")[-1]
+        agent_name = f"{agent_type}_{condition.name}_{model_short}"
+    else:
+        agent_name = f"{agent_type}_{condition.name}"
+
+    # Pure LLM conditions: no SDK framework needed, use GenericLLM via OpenRouter
+    if not condition.tools_enabled:
+        from orchestrator.agent_adapters.generic_adapter import GenericLLMAdapter
+
+        model = model_override or get_model_for_agent(agent_type, use_openrouter=True)
+        return GenericLLMAdapter(
+            model=model, system_prompt=system_prompt, agent_name=agent_name
+        )
+
+    # Tools-enabled conditions: use the native SDK adapter
+    if agent_type == "claude-code":
+        from orchestrator.agent_adapters.claude_code_adapter import ClaudeCodeAdapter
+
+        model = model_override or "sonnet"
+        return ClaudeCodeAdapter(
+            model=model, system_prompt=system_prompt, agent_name=agent_name
+        )
+    elif agent_type == "anthropic":
+        from orchestrator.agent_adapters.anthropic_adapter import ClaudeAgentAdapter
+
+        model = model_override or get_model_for_agent("anthropic")
+        return ClaudeAgentAdapter(
+            model=model, system_prompt=system_prompt, agent_name=agent_name
+        )
+    elif agent_type == "google":
+        from orchestrator.agent_adapters.google_adapter import GoogleAdapter
+
+        model = model_override or get_model_for_agent("google")
+        return GoogleAdapter(
+            model=model, system_prompt=system_prompt, agent_name=agent_name
+        )
+    elif agent_type == "openai":
+        from orchestrator.agent_adapters.openai_adapter import OpenAIAgentAdapter
+
+        # Route through OpenRouter when its key is available; otherwise use
+        # native OpenAI API directly (OPENAI_API_KEY).
+        has_openrouter = bool(os.environ.get("OPENROUTER_API_KEY"))
+        model = model_override or get_model_for_agent(
+            "openai", use_openrouter=has_openrouter
+        )
+        kwargs = dict(model=model, system_prompt=system_prompt, agent_name=agent_name)
+        if has_openrouter:
+            kwargs["base_url"] = OPENROUTER_BASE_URL
+        return OpenAIAgentAdapter(**kwargs)
+    else:  # generic
+        from orchestrator.agent_adapters.generic_adapter import GenericLLMAdapter
+
+        model = model_override or get_model_for_agent("generic")
+        return GenericLLMAdapter(
+            model=model, system_prompt=system_prompt, agent_name=agent_name
+        )
 
 
 def _add_endpoint(
@@ -594,91 +684,6 @@ def _preflight_remote_endpoints(args):
             f"{joined}\n\n"
             "If this is a sandboxed environment, rerun with unrestricted network "
             "access or set QTB_SKIP_NETWORK_PREFLIGHT=1 to bypass this check."
-        )
-
-
-# ---------------------------------------------------------------------------
-# Agent creation (used by cmd_run and cmd_run_layer1)
-# ---------------------------------------------------------------------------
-
-
-def _create_agent(args):
-    """Create the appropriate agent adapter based on --agent and --condition.
-
-    The 2x2 matrix:
-      --condition agent            → SDK adapter + native model + TUTOR prompt
-      --condition baseline         → SDK adapter + native model + BASELINE prompt
-      --condition pure_llm         → GenericLLM + OpenRouter model + TUTOR prompt
-      --condition pure_llm_baseline → GenericLLM + OpenRouter model + BASELINE prompt
-
-    OpenAI Agent SDK always routes through OpenRouter for higher rate limits.
-    Anthropic and Google SDKs use their native APIs.
-    """
-    from config.prompt_config import (
-        BASELINE_SYSTEM_PROMPT,
-        ORACLE_SYSTEM_PROMPT,
-        TUTOR_SYSTEM_PROMPT,
-    )
-
-    agent_type = getattr(args, "agent", "generic")
-    condition = CONDITIONS[getattr(args, "condition", "agent")]
-    model_override = getattr(args, "model", None)
-
-    _PROMPT_MAP = {
-        "tutor": TUTOR_SYSTEM_PROMPT,
-        "baseline": BASELINE_SYSTEM_PROMPT,
-        "oracle": ORACLE_SYSTEM_PROMPT,
-    }
-    system_prompt = _PROMPT_MAP.get(condition.prompt_mode, TUTOR_SYSTEM_PROMPT)
-
-    # Include model short name in agent_name for distinguishable results
-    if model_override:
-        model_short = model_override.split("/")[-1]
-        agent_name = f"{agent_type}_{condition.name}_{model_short}"
-    else:
-        agent_name = f"{agent_type}_{condition.name}"
-
-    # Pure LLM conditions: no SDK framework needed, use GenericLLM via OpenRouter
-    if not condition.tools_enabled:
-        from orchestrator.agent_adapters.generic_adapter import GenericLLMAdapter
-
-        model = model_override or get_model_for_agent(agent_type, use_openrouter=True)
-        return GenericLLMAdapter(
-            model=model, system_prompt=system_prompt, agent_name=agent_name
-        )
-
-    # Tools-enabled conditions: use the native SDK adapter
-    if agent_type == "anthropic":
-        from orchestrator.agent_adapters.anthropic_adapter import ClaudeAgentAdapter
-
-        model = model_override or get_model_for_agent("anthropic")
-        return ClaudeAgentAdapter(
-            model=model, system_prompt=system_prompt, agent_name=agent_name
-        )
-    elif agent_type == "google":
-        from orchestrator.agent_adapters.google_adapter import GoogleAdapter
-
-        model = model_override or get_model_for_agent("google")
-        return GoogleAdapter(
-            model=model, system_prompt=system_prompt, agent_name=agent_name
-        )
-    elif agent_type == "openai":
-        from orchestrator.agent_adapters.openai_adapter import OpenAIAgentAdapter
-
-        # Always route through OpenRouter for higher rate limits / parallelism
-        model = model_override or get_model_for_agent("openai", use_openrouter=True)
-        return OpenAIAgentAdapter(
-            model=model,
-            base_url=OPENROUTER_BASE_URL,
-            system_prompt=system_prompt,
-            agent_name=agent_name,
-        )
-    else:  # generic
-        from orchestrator.agent_adapters.generic_adapter import GenericLLMAdapter
-
-        model = model_override or get_model_for_agent("generic")
-        return GenericLLMAdapter(
-            model=model, system_prompt=system_prompt, agent_name=agent_name
         )
 
 
@@ -1491,7 +1496,7 @@ def _add_common_args(parser):
     parser.add_argument(
         "--agent",
         default="generic",
-        choices=["generic", "openai", "anthropic", "google"],
+        choices=["generic", "openai", "anthropic", "google", "claude-code"],
         help="Agent SDK / model family",
     )
     parser.add_argument(
@@ -1553,6 +1558,13 @@ def _add_common_args(parser):
         "saves scores.md + updated cost.md. No agent/docker needed.",
     )
     parser.add_argument(
+        "--eval-mode",
+        choices=["full", "qr_only", "qp_only"],
+        default="full",
+        help="Evaluation scope: full (default), qr_only (Result only), "
+        "or qp_only (Process only). Tutor 7D always runs.",
+    )
+    parser.add_argument(
         "--live",
         action="store_true",
         help="Launch live monitor dashboard (SSE) to watch conversation in real-time.",
@@ -1570,6 +1582,9 @@ def main():
     # DeepEval's @retry_openai uses Tenacity. Defaults (max=2, cap=5s) are
     # too aggressive for 10-worker parallel runs hitting OpenRouter rate limits.
     # setdefault() allows users to override via env vars if needed.
+    os.environ.setdefault("DEEPEVAL_TELEMETRY_OPT_OUT", "1")
+    os.environ.setdefault("DEEPEVAL_CACHE_FOLDER", str(BENCH_ROOT / ".deepeval"))
+    os.makedirs(os.environ["DEEPEVAL_CACHE_FOLDER"], exist_ok=True)
     os.environ.setdefault("DEEPEVAL_RETRY_MAX_ATTEMPTS", "6")
     os.environ.setdefault("DEEPEVAL_RETRY_INITIAL_SECONDS", "3")
     os.environ.setdefault("DEEPEVAL_RETRY_CAP_SECONDS", "60")
@@ -1583,7 +1598,7 @@ def main():
     run_parser.add_argument(
         "--agent",
         default="generic",
-        choices=["generic", "openai", "anthropic", "google"],
+        choices=["generic", "openai", "anthropic", "google", "claude-code"],
         help="Agent SDK / model family",
     )
     run_parser.add_argument(

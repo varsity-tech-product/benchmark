@@ -53,11 +53,12 @@
     ],
     "quant_validation": {
       "eval_script": "evaluation/test_scripts/backtest/B02_basic_sequential_engine.py"
-    }
+    },
+    "termination_criteria": "The tutor has completed the following steps with computational evidence (not just verbal discussion): (1) Built a data handler that loads price data and replays bars sequentially, and explained why separating data replay from strategy logic matters for preventing look-ahead bias. (2) Implemented a backtest engine with position tracking and PnL computation, and a decoupled strategy component that only accesses current and past bars. (3) Ran the complete system end-to-end and presented a performance summary with specific numerical values such as total return, Sharpe ratio, or maximum drawdown. Once all three steps have been computationally demonstrated, the session is complete."
   },
   "requires_code": true,
   "sample_code": null,
-  "max_turns": 30,
+  "max_turns": 20,
   "agent_max_steps": 10,
-  "timeout_minutes": 20
+  "timeout_minutes": 25
 }

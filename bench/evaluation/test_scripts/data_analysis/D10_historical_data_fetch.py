@@ -7,7 +7,15 @@ data validation was performed, and actual data was saved. (network-enabled sandb
 
 import json
 import os
-import re
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from common.evidence_helpers import (
+    checklist_score,
+    collect_evidence,
+    has_keywords,
+    has_number,
+)
 
 
 def evaluate(
@@ -21,7 +29,7 @@ def evaluate(
         "score": 0.0,
     }
 
-    combined = _collect_evidence(workspace_path, tool_logs)
+    combined = collect_evidence(workspace_path, tool_logs)
     workspace_files = (
         os.listdir(workspace_path) if os.path.isdir(workspace_path) else []
     )
@@ -40,10 +48,10 @@ def evaluate(
         "pandas_datareader",
         "compute_statistics",
     ]
-    has_fetch_code = any(f.endswith(".py") for f in workspace_files) and _has_keywords(
+    has_fetch_code = any(f.endswith(".py") for f in workspace_files) and has_keywords(
         combined, workflow_kws
     )
-    if has_fetch_code or _has_keywords(combined, workflow_kws):
+    if has_fetch_code or has_keywords(combined, workflow_kws):
         results["data_workflow_demonstrated"] = True
 
     # 2. Price adjustment awareness (0.25)
@@ -56,7 +64,7 @@ def evaluate(
         "corporate action",
         "unadjusted",
     ]
-    if _has_keywords(combined, adj_kws):
+    if has_keywords(combined, adj_kws):
         results["price_adjustment_awareness"] = True
 
     # 3. Data validation performed (0.25)
@@ -75,7 +83,7 @@ def evaluate(
         "missing_count",
         "missing_pct",
     ]
-    if _has_keywords(combined, val_kws) and _has_number(combined):
+    if has_keywords(combined, val_kws) and has_number(combined):
         results["data_validation_performed"] = True
 
     # 4. Data saved to workspace (0.20)
@@ -113,35 +121,10 @@ def evaluate(
             "passed": results["data_saved_to_workspace"],
         },
     ]
-    score = sum(c["weight"] for c in _checklist if c["passed"])
+    score = checklist_score(_checklist)
     results["_checklist"] = _checklist
     results["score"] = round(score, 2)
     return results
-
-
-def _collect_evidence(workspace_path: str, tool_logs: list) -> str:
-    parts = []
-    for log in tool_logs or []:
-        parts.append(log.name)
-        parts.append(str(log.args))
-        parts.append(str(log.result or ""))
-    if workspace_path and os.path.isdir(workspace_path):
-        for fname in os.listdir(workspace_path):
-            if fname.endswith((".txt", ".json", ".md", ".csv", ".log")):
-                try:
-                    with open(os.path.join(workspace_path, fname)) as f:
-                        parts.append(f.read()[:2000])
-                except (IOError, UnicodeDecodeError):
-                    pass
-    return " ".join(parts).lower()
-
-
-def _has_keywords(text: str, keywords: list[str]) -> bool:
-    return any(kw in text for kw in keywords)
-
-
-def _has_number(text: str) -> bool:
-    return bool(re.search(r"-?\d+\.?\d*", text))
 
 
 if __name__ == "__main__":

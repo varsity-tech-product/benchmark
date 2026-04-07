@@ -3,14 +3,14 @@
 Evaluates agent-produced code without re-execution by analyzing workspace
 files, tool logs, and (optionally) reference data.
 
-Layer A: Static Analysis (20%)
+Layer A: Static Analysis (15%)
     AST-parse all .py files; check syntax, structure, dangerous patterns.
 
-Layer B: Execution Result Analysis (40%)
+Layer B: Execution Result Analysis (35%)
     Parse recorded shell_exec results for execution success/failure.
     Uses the LAST execution per script to reflect iterative debugging.
 
-Layer C: Output Verification (40%)
+Layer C: Output Verification (50%)
     Compare numerical outputs to reference["key_results"].
     Scores 0.0 when no reference is available (hard zero, no renormalization).
 """
@@ -469,11 +469,87 @@ def evaluate_code_output(
 # ===================================================================
 
 
+def _evaluate_lean_code(workspace_path: str, tool_logs: list, reference) -> dict:
+    """Code eval for LEAN C# tasks using trial results.
+
+    Instead of Python AST parsing, uses dotnet build results (compile
+    success/failure) and backtest execution outcomes from run_lean_backtest
+    tool calls.
+
+    Layer A: Compilation (15%) — did the code compile?
+    Layer B: Execution (35%) — did the backtest run and produce trades?
+    Layer C: Output Verification (50%) — same as Python (JSON vs reference).
+    """
+    # Collect trial results from run_lean_backtest tool calls
+    trials = []
+    _status_map = {
+        "success": 1.0,
+        "empty_trades": 0.5,
+        "runtime_error": 0.1,
+        "compile_error": 0.0,
+    }
+    for log in tool_logs or []:
+        if log.name != "run_lean_backtest":
+            continue
+        result = str(getattr(log, "result", "") or "")
+        # Extract status
+        import re as _re
+
+        m = _re.search(r"Status: (\w+)", result)
+        status = m.group(1) if m else "unknown"
+        trials.append(status)
+
+    if not trials:
+        return {
+            "applicable": False,
+            "score": 0.0,
+            "reason": "no run_lean_backtest calls found",
+            "static_analysis": None,
+            "execution": None,
+            "output_verification": None,
+        }
+
+    last_status = trials[-1]
+
+    # Layer A: Compilation — last trial compiled?
+    compile_score = 0.0 if last_status == "compile_error" else 1.0
+    layer_a = {
+        "has_code": True,
+        "syntax_valid": last_status != "compile_error",
+        "score": compile_score,
+        "trials_total": len(trials),
+        "compile_errors": sum(1 for t in trials if t == "compile_error"),
+    }
+
+    # Layer B: Execution quality — last trial result
+    exec_score = _status_map.get(last_status, 0.2)
+    layer_b = {
+        "score": exec_score,
+        "last_status": last_status,
+        "exec_calls_found": len(trials),
+        "success_rate": exec_score,
+    }
+
+    # Layer C: Output Verification (reuse existing Python logic)
+    layer_c = evaluate_code_output(workspace_path, reference, tool_logs)
+
+    score = 0.15 * layer_a["score"] + 0.35 * layer_b["score"] + 0.50 * layer_c["score"]
+
+    return {
+        "applicable": True,
+        "score": round(score, 4),
+        "static_analysis": layer_a,
+        "execution": layer_b,
+        "output_verification": layer_c if layer_c.get("applicable") else None,
+    }
+
+
 def evaluate_code_combined(
     workspace_path: str,
     tool_logs: list,
     reference: Optional[dict] = None,
     task_requires_code: bool = False,
+    is_lean_task: bool = False,
 ) -> dict:
     """Combined Code Execution QR evaluation.
 
@@ -482,15 +558,24 @@ def evaluate_code_combined(
     - Layer B: Execution Result Analysis — 35%
     - Layer C: Output Verification — 50% (scores 0.0 if no reference)
 
+    For LEAN C# tasks, uses trial compilation/execution results instead
+    of Python AST parsing and shell_exec detection.
+
     Args:
         workspace_path: Path to the agent's workspace directory.
         tool_logs: Tool call logs (ToolCallLog objects from proxy.get_logs()).
         reference: Reference data from ReferenceStore.load() (may be None).
         task_requires_code: Whether the task definition requires code.
+        is_lean_task: Whether this is a LEAN C# task (uses trial-based eval).
 
     Returns:
         Dict with per-layer results, applicability flag, and combined score.
     """
+    # LEAN C# tasks: use trial-based evaluation
+    if is_lean_task:
+        return _evaluate_lean_code(workspace_path, tool_logs, reference)
+
+    # Python tasks: existing logic
     # Layer A: Static Analysis
     layer_a = evaluate_code_static(workspace_path, tool_logs)
 
@@ -511,10 +596,6 @@ def evaluate_code_combined(
     layer_c = evaluate_code_output(workspace_path, reference, tool_logs)
 
     # Combine scores — A=15%, B=35%, C=50%.
-    # Layer C (numerical accuracy via programmatic relative-error) is the
-    # primary signal since numerical accuracy was removed from the LLM
-    # Result Judge to avoid unreliable LLM-based arithmetic.
-    # When no reference, Layer C scores 0.0 (hard zero) — no renormalization.
     score = 0.15 * layer_a["score"] + 0.35 * layer_b["score"] + 0.50 * layer_c["score"]
 
     return {

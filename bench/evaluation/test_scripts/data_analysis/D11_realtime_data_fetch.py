@@ -8,6 +8,10 @@ data quality handling was addressed, and captured data was saved.
 
 import json
 import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from common.evidence_helpers import checklist_score, collect_evidence, has_keywords
 
 
 def evaluate(
@@ -21,7 +25,7 @@ def evaluate(
         "score": 0.0,
     }
 
-    combined = _collect_evidence(workspace_path, tool_logs)
+    combined = collect_evidence(workspace_path, tool_logs)
     workspace_files = (
         os.listdir(workspace_path) if os.path.isdir(workspace_path) else []
     )
@@ -40,10 +44,10 @@ def evaluate(
         "server-sent",
         "long_poll",
     ]
-    has_rt_code = any(f.endswith(".py") for f in workspace_files) and _has_keywords(
+    has_rt_code = any(f.endswith(".py") for f in workspace_files) and has_keywords(
         combined, rt_kws
     )
-    if has_rt_code or _has_keywords(combined, rt_kws):
+    if has_rt_code or has_keywords(combined, rt_kws):
         results["realtime_architecture_demonstrated"] = True
 
     # 2. Quote/trade handling (0.30)
@@ -59,7 +63,7 @@ def evaluate(
         "order_book",
         "tick",
     ]
-    if _has_keywords(combined, qt_kws):
+    if has_keywords(combined, qt_kws):
         results["quote_trade_handling"] = True
 
     # 3. Data quality handling (0.25)
@@ -78,7 +82,7 @@ def evaluate(
         "market_hours",
         "market hours",
     ]
-    if _has_keywords(combined, dq_kws):
+    if has_keywords(combined, dq_kws):
         results["data_quality_handling"] = True
 
     # 4. Data captured to workspace (0.20)
@@ -123,31 +127,10 @@ def evaluate(
             "passed": results["data_captured_to_workspace"],
         },
     ]
-    score = sum(c["weight"] for c in _checklist if c["passed"])
+    score = checklist_score(_checklist)
     results["_checklist"] = _checklist
     results["score"] = round(score, 2)
     return results
-
-
-def _collect_evidence(workspace_path: str, tool_logs: list) -> str:
-    parts = []
-    for log in tool_logs or []:
-        parts.append(log.name)
-        parts.append(str(log.args))
-        parts.append(str(log.result or ""))
-    if workspace_path and os.path.isdir(workspace_path):
-        for fname in os.listdir(workspace_path):
-            if fname.endswith((".txt", ".json", ".md", ".csv", ".log")):
-                try:
-                    with open(os.path.join(workspace_path, fname)) as f:
-                        parts.append(f.read()[:2000])
-                except (IOError, UnicodeDecodeError):
-                    pass
-    return " ".join(parts).lower()
-
-
-def _has_keywords(text: str, keywords: list[str]) -> bool:
-    return any(kw in text for kw in keywords)
 
 
 if __name__ == "__main__":

@@ -1,5 +1,6 @@
 """Run execution endpoint — wraps the existing CLI run-single path."""
 
+import concurrent.futures
 import json
 import logging
 import sys
@@ -20,18 +21,14 @@ _BENCH_ROOT = Path(__file__).parent.parent.parent
 if str(_BENCH_ROOT) not in sys.path:
     sys.path.insert(0, str(_BENCH_ROOT))
 
-# ── Run state (single run at a time) ─────────────────────────────────
+# ── Run state (concurrent single runs) ───────────────────────────────
 
-_current_run: dict = {
-    "running": False,
-    "task_id": None,
-    "persona_id": None,
-    "agent": None,
-    "model": None,
-    "started_at": None,
-    "error": None,
-}
+_single_runs: dict[str, dict] = {}  # key: "task_id__persona_id" → run info
+_single_cancels: dict[str, threading.Event] = {}  # key → cancel event
 _run_lock = threading.Lock()
+
+# ── Group run cancel ──────────────────────────────────────────────────
+_group_cancel: threading.Event | None = None  # cancel event for the active group run
 
 # ── Eval state (concurrent evals allowed) ────────────────────────────
 
@@ -46,6 +43,7 @@ class RunRequest(BaseModel):
     agent: str = "anthropic"
     docker: bool = True
     max_turns: Optional[int] = None
+    timeout_minutes: Optional[int] = None
     model: Optional[str] = None
     skip_eval: bool = True
 
@@ -56,8 +54,10 @@ class RunGroupRequest(BaseModel):
     persona: Optional[str] = None
     docker: bool = True
     max_turns: Optional[int] = None
+    timeout_minutes: Optional[int] = None
     model: Optional[str] = None
     workers: int = 3
+    skip_eval: bool = True
 
 
 class EvalRequest(BaseModel):
@@ -69,47 +69,133 @@ class EvalRequest(BaseModel):
     persona_id: str
 
 
+class RunStopRequest(BaseModel):
+    job_key: str
+
+
 @router.post("/run")
 async def start_run(req: RunRequest):
+    key = f"{req.task_id}__{req.persona_id}"
+    # [DIAG]
+    _prev_running = _single_runs.get(key, {}).get("running", "N/A")
+    log.info("[DIAG] POST /run key=%s prev_running=%s", key, _prev_running)
     with _run_lock:
-        if _current_run["running"]:
+        if key in _single_runs and _single_runs[key].get("running"):
+            log.info("[DIAG] POST /run REJECTED 409 key=%s", key)
             raise HTTPException(
                 409,
-                f"A run is already in progress: {_current_run['task_id']}",
+                f"Already running: {req.task_id} / {req.persona_id}",
             )
-        _current_run.update(
-            running=True,
-            task_id=req.task_id,
-            persona_id=req.persona_id,
-            agent=req.agent,
-            model=req.model,
-            started_at=time.time(),
-            error=None,
-        )
+        cancel_ev = threading.Event()
+        _single_runs[key] = {
+            "running": True,
+            "task_id": req.task_id,
+            "persona_id": req.persona_id,
+            "agent": req.agent,
+            "model": req.model,
+            "started_at": time.time(),
+            "error": None,
+        }
+        _single_cancels[key] = cancel_ev
 
     thread = threading.Thread(
         target=_execute_run,
-        args=(req,),
+        args=(req, key, cancel_ev),
         daemon=True,
-        name="web-run",
+        name=f"web-run-{key}",
     )
     thread.start()
-    return {"status": "started", "task_id": req.task_id, "persona_id": req.persona_id}
+    log.info("[DIAG] POST /run thread started key=%s thread=%s", key, thread.name)
+    return {
+        "status": "started",
+        "task_id": req.task_id,
+        "persona_id": req.persona_id,
+        "job_key": key,
+    }
+
+
+@router.post("/run/stop")
+async def stop_run(req: RunStopRequest):
+    with _run_lock:
+        info = _single_runs.get(req.job_key)
+        if not info or not info.get("running"):
+            raise HTTPException(404, f"No active run for key: {req.job_key}")
+        cancel_ev = _single_cancels.get(req.job_key)
+        if cancel_ev:
+            cancel_ev.set()
+    return {"status": "stopping", "job_key": req.job_key}
+
+
+@router.get("/run/active")
+async def list_active_runs():
+    """Return list of currently running single runs (for frontend sync)."""
+    with _run_lock:
+        return [
+            {
+                "job_key": k,
+                "task_id": v["task_id"],
+                "persona_id": v["persona_id"],
+                "agent": v.get("agent"),
+                "running": v.get("running", False),
+            }
+            for k, v in _single_runs.items()
+            if v.get("running")
+        ]
+
+
+@router.get("/agent-models")
+async def get_agent_models():
+    """Return available models per agent type. First item is the default."""
+    from config.llm_config import AGENT_MODEL_MAP
+
+    return {agent: [native] for agent, (native, _or) in AGENT_MODEL_MAP.items()}
 
 
 @router.get("/status")
 async def get_status():
-    info = dict(_current_run)
-    if info["started_at"] and info["running"]:
-        info["elapsed_seconds"] = round(time.time() - info["started_at"], 1)
-    info["active_evals"] = list(_active_evals.values())
+    with _run_lock:
+        any_running = any(v.get("running") for v in _single_runs.values())
+    info = {
+        "running": any_running,
+        "active_runs": len([v for v in _single_runs.values() if v.get("running")]),
+        "active_evals": list(_active_evals.values()),
+        "group_running": _group_run.get("running", False),
+    }
     return info
 
 
-def _execute_run(req: RunRequest):
-    """Run in background thread — reuses the existing orchestrator path."""
-    from orchestrator.live_monitor import emit
+def _disable_rich_live():
+    """Disable DeepEval's Rich-based progress bars for web-mode runs.
 
+    Reuses the same patch that parallel_runner uses for run-group:
+    replaces DeepEval's progress context managers with thread-safe no-ops.
+    This is process-global and idempotent (guarded by _PATCHED flag + lock).
+    """
+    from orchestrator.runners.parallel_runner import _apply_deepeval_progress_patch
+
+    _apply_deepeval_progress_patch()
+
+
+def _execute_run(
+    req: RunRequest, job_key: str, cancel_event: threading.Event | None = None
+):
+    """Run in background thread — reuses the existing orchestrator path."""
+    from orchestrator.live_monitor import emit, set_job_key
+
+    # Disable Rich Live display to allow concurrent simulations
+    _disable_rich_live()
+
+    # Tag all SSE events from this thread with job_key
+    set_job_key(job_key)
+
+    _t0 = time.time()
+    # [DIAG] Backend session_start
+    log.info(
+        "[DIAG] session_start key=%s t=%.3f thread=%s",
+        job_key,
+        _t0,
+        threading.current_thread().name,
+    )
     emit(
         "session_start",
         {
@@ -119,13 +205,16 @@ def _execute_run(req: RunRequest):
         },
     )
 
+    model_short = None
+    task = None
+    error = None
+
     try:
         from config.model_resolver import get_model_for_agent
         from orchestrator.runners.job_runner import JobSpec, run_single_job
         from orchestrator.schemas import QuantTutorTask, StudentPersona
 
         # Load task
-        task = None
         for category_dir in (_BENCH_ROOT / "tasks" / "layer2").iterdir():
             if not category_dir.is_dir():
                 continue
@@ -162,23 +251,32 @@ def _execute_run(req: RunRequest):
             result_base_dir=result_base_dir,
             model_override=req.model,
             skip_eval=req.skip_eval,
+            timeout_minutes=req.timeout_minutes,
         )
 
-        job_result = run_single_job(job)
-        if job_result.error:
+        job_result = run_single_job(job, cancel_event=cancel_event)
+        if job_result and job_result.error:
             log.error("Run failed: %s", job_result.error)
-            _current_run["error"] = job_result.error
+            error = job_result.error
 
+    except InterruptedError:
+        log.info("Run cancelled: %s / %s", req.task_id, req.persona_id)
+        error = "cancelled"
     except Exception as exc:
         log.error("Run exception: %s", exc, exc_info=True)
-        _current_run["error"] = str(exc)
+        error = str(exc)
     finally:
-        _current_run["running"] = False
-        # Structured fields for frontend route construction (no local paths)
+        set_job_key(None)
+        with _run_lock:
+            if job_key in _single_runs:
+                _single_runs[job_key]["running"] = False
+                _single_runs[job_key]["error"] = error
+            _single_cancels.pop(job_key, None)
+        # Structured fields for frontend route construction
         end_payload = {
             "task_id": req.task_id,
             "persona_id": req.persona_id,
-            "error": _current_run.get("error"),
+            "error": error,
         }
         try:
             end_payload["source"] = "run-single"
@@ -187,7 +285,19 @@ def _execute_run(req: RunRequest):
             end_payload["category"] = task.category.value
         except Exception:
             pass
+        # [DIAG] Backend session_end
+        _t1 = time.time()
+        log.info(
+            "[DIAG] session_end key=%s error=%s elapsed=%.1fs thread=%s",
+            job_key,
+            error,
+            _t1 - _t0,
+            threading.current_thread().name,
+        )
+        # Re-set job_key briefly for the session_end emit
+        set_job_key(job_key)
         emit("session_end", end_payload)
+        set_job_key(None)
 
 
 # ── Group run endpoint ──────────────────────────────────────────────
@@ -198,14 +308,16 @@ _group_lock = threading.Lock()
 
 @router.post("/run-group")
 async def start_group_run(req: RunGroupRequest):
+    global _group_cancel
     with _group_lock:
         if _group_run["running"]:
             raise HTTPException(409, "A group run is already in progress")
         _group_run["running"] = True
+        _group_cancel = threading.Event()
 
     thread = threading.Thread(
         target=_execute_group_run,
-        args=(req,),
+        args=(req, _group_cancel),
         daemon=True,
         name="web-run-group",
     )
@@ -218,13 +330,27 @@ async def start_group_run(req: RunGroupRequest):
     return {"status": "started", "group": req.group, "total_jobs": estimated_jobs}
 
 
-def _execute_group_run(req: RunGroupRequest):
+@router.post("/run-group/stop")
+async def stop_group_run():
+    global _group_cancel
+    with _group_lock:
+        if not _group_run["running"]:
+            raise HTTPException(404, "No group run in progress")
+        if _group_cancel:
+            _group_cancel.set()
+    return {"status": "stopping"}
+
+
+def _execute_group_run(
+    req: RunGroupRequest, cancel_event: threading.Event | None = None
+):
     """Run all tasks in a group — reuses the existing parallel runner."""
+    global _group_cancel
     from orchestrator.live_monitor import emit
 
     try:
         from config.model_resolver import get_model_for_agent
-        from orchestrator.runners.job_runner import JobSpec, run_single_job
+        from orchestrator.runners.job_runner import JobResult, JobSpec, run_single_job
         from orchestrator.runners.parallel_runner import run_jobs_parallel
         from orchestrator.schemas import QuantTutorTask, StudentPersona
 
@@ -264,7 +390,8 @@ def _execute_group_run(req: RunGroupRequest):
                         save_result=True,
                         result_base_dir=result_base_dir,
                         model_override=req.model,
-                        skip_eval=True,
+                        skip_eval=req.skip_eval,
+                        timeout_minutes=req.timeout_minutes,
                     )
                 )
                 job_list.append({"task_id": task.task_id, "persona_id": pid})
@@ -285,7 +412,18 @@ def _execute_group_run(req: RunGroupRequest):
 
         def progress_cb(completed, total, result):
             nonlocal ok_count, err_count
-            if result and result.task_result:
+            if result and result.error:
+                err_count += 1
+                emit(
+                    "group_task_end",
+                    {
+                        "task_id": result.job.task.task_id,
+                        "persona_id": result.job.persona.persona_id,
+                        "error": result.error,
+                        "duration": result.duration_seconds,
+                    },
+                )
+            elif result and result.task_result:
                 ok_count += 1
                 scores = (
                     {
@@ -313,15 +451,25 @@ def _execute_group_run(req: RunGroupRequest):
                     {
                         "task_id": result.job.task.task_id,
                         "persona_id": result.job.persona.persona_id,
-                        "error": result.error or "Unknown error",
+                        "error": "Unknown error",
                         "duration": result.duration_seconds,
                     },
                 )
 
-        # Emit task_start for each job as they begin
+        # Emit task_start for each job as they begin; skip job if cancelled
         original_run = run_single_job
 
         def tracked_run(job):
+            if cancel_event and cancel_event.is_set():
+                # Return an error result immediately without running the job
+                return JobResult(
+                    job=job,
+                    task_result=None,
+                    trace_captured={},
+                    error="cancelled",
+                    duration_seconds=0.0,
+                )
+            job_key = job.task.task_id + "__" + job.persona.persona_id
             emit(
                 "group_task_start",
                 {
@@ -329,7 +477,15 @@ def _execute_group_run(req: RunGroupRequest):
                     "persona_id": job.persona.persona_id,
                 },
             )
-            return original_run(job)
+            # Set thread-local job_key so all emit() calls from this job
+            # are tagged — allows frontend to route events per-task.
+            from orchestrator.live_monitor import set_job_key
+
+            set_job_key(job_key)
+            try:
+                return original_run(job, cancel_event=cancel_event)
+            finally:
+                set_job_key(None)
 
         workers = min(req.workers, len(jobs)) if jobs else 1
         run_jobs_parallel(
@@ -338,6 +494,9 @@ def _execute_group_run(req: RunGroupRequest):
             progress_callback=progress_cb,
             job_fn=tracked_run,
         )
+
+        if cancel_event and cancel_event.is_set():
+            raise InterruptedError("Group run cancelled by user")
 
         emit(
             "group_end",
@@ -349,6 +508,18 @@ def _execute_group_run(req: RunGroupRequest):
             },
         )
 
+    except InterruptedError:
+        log.info("Group run cancelled: %s", req.group)
+        emit(
+            "group_end",
+            {
+                "group": req.group,
+                "total": len(jobs) if "jobs" in dir() else 0,
+                "ok_count": ok_count,
+                "err_count": err_count,
+                "error": "cancelled",
+            },
+        )
     except Exception as exc:
         log.error("Group run exception: %s", exc, exc_info=True)
         emit(
@@ -362,6 +533,7 @@ def _execute_group_run(req: RunGroupRequest):
             },
         )
     finally:
+        _group_cancel = None
         with _group_lock:
             _group_run["running"] = False
 
@@ -403,6 +575,37 @@ async def start_eval(req: EvalRequest):
 class EvalStopRequest(BaseModel):
     task_id: str
     persona_id: str
+
+
+@router.get("/eval/active")
+async def list_active_evals():
+    """Return list of currently running eval jobs (for frontend sync)."""
+    with _eval_lock:
+        return list(_active_evals.values())
+
+
+def _archive_previous_scores(result_base_dir: Path, req: "EvalRequest") -> None:
+    """If scores.md exists, append it to score_history.json before overwriting."""
+    result_dir = result_base_dir / req.category / req.task_id / req.persona_id
+    scores_file = result_dir / "scores.md"
+    if not scores_file.exists():
+        return
+    try:
+        history_file = result_dir / "score_history.json"
+        history: list = (
+            json.loads(history_file.read_text()) if history_file.exists() else []
+        )
+        history.append(
+            {
+                "timestamp": scores_file.stat().st_mtime,
+                "scores_md": scores_file.read_text(),
+            }
+        )
+        history_file.write_text(json.dumps(history, indent=2, ensure_ascii=False))
+    except Exception as exc:
+        log.warning(
+            "Failed to archive scores for %s/%s: %s", req.task_id, req.persona_id, exc
+        )
 
 
 @router.post("/eval/stop")
@@ -483,9 +686,24 @@ def _execute_eval(req: EvalRequest, cancel_event: threading.Event | None = None)
 
         _check_cancel()
 
-        job_result = eval_single_job(job)
+        # Archive any existing scores before overwriting (re-evaluation history)
+        _archive_previous_scores(result_base_dir, req)
 
-        _check_cancel()
+        # Run eval in a sub-thread so cancel_event can interrupt it within ~0.5 s
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as exe:
+            future = exe.submit(eval_single_job, job, cancel_event=cancel_event)
+            while not future.done():
+                if cancel_event and cancel_event.is_set():
+                    # Wait briefly for the eval thread to notice the cancel
+                    try:
+                        future.result(timeout=3.0)
+                    except concurrent.futures.TimeoutError:
+                        pass
+                    except InterruptedError:
+                        pass
+                    raise InterruptedError("Evaluation cancelled by user")
+                time.sleep(0.5)
+        job_result = future.result()
 
         # Extract final scores for the session_end event
         scores = None

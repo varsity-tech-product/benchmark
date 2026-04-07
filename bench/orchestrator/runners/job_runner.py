@@ -24,16 +24,17 @@ class JobSpec:
     persona: StudentPersona
     agent_type: str  # "generic", "openai", "anthropic", "google"
     condition_name: str  # "agent", "baseline", ...
-    max_turns: int
     use_docker: bool
     save_result: bool
     result_base_dir: Path  # e.g. bench/results/run-single/openai/gpt-5.2/
+    max_turns: Optional[int] = None
     eval_model: Optional[str] = None
     simulator_model: Optional[str] = None
     model_override: Optional[str] = None
     trial_index: int = 0
     skip_eval: bool = False
     timeout_minutes: Optional[int] = None
+    eval_mode: str = "full"  # "full" | "qr_only" | "qp_only"
 
 
 @dataclass
@@ -47,7 +48,7 @@ class JobResult:
     duration_seconds: float = 0.0
 
 
-def run_single_job(job: JobSpec, create_agent_fn=None) -> JobResult:
+def run_single_job(job: JobSpec, create_agent_fn=None, cancel_event=None) -> JobResult:
     """Execute one benchmark job in isolation.
 
     Creates a fresh agent, orchestrator, and runs the full lifecycle.
@@ -120,17 +121,38 @@ def run_single_job(job: JobSpec, create_agent_fn=None) -> JobResult:
             skip_eval=job.skip_eval,
             prompt_mode=condition.prompt_mode,
             timeout_minutes=job.timeout_minutes,
+            cancel_event=cancel_event,
+            eval_mode=job.eval_mode,
         )
 
-        # 5. Save reports
+        # 5. Check if cancelled
+        cancelled = cancel_event and cancel_event.is_set()
+
+        # 6. Save reports (skip if cancelled)
         if job.save_result and result_dir is not None:
-            _save_job_reports(result_dir, task_result, trace_captured, agent, job)
+            if cancelled:
+                # Clean up the pre-created result directory and empty parents
+                if result_dir.exists():
+                    shutil.rmtree(result_dir)
+                # Remove empty parent dirs up to result_base_dir
+                for parent in result_dir.parents:
+                    if (
+                        parent == job.result_base_dir
+                        or parent == job.result_base_dir.parent
+                    ):
+                        break
+                    try:
+                        parent.rmdir()  # only removes if empty
+                    except OSError:
+                        break
+            else:
+                _save_job_reports(result_dir, task_result, trace_captured, agent, job)
 
         return JobResult(
             job=job,
             task_result=task_result,
             trace_captured=trace_captured,
-            error=None,
+            error="cancelled" if cancelled else None,
             duration_seconds=time.time() - start,
         )
     except Exception as e:
@@ -370,7 +392,7 @@ class _ProxyStub:
         return self._distractor_names
 
 
-def eval_single_job(job: JobSpec) -> JobResult:
+def eval_single_job(job: JobSpec, cancel_event=None) -> JobResult:
     """Evaluate a previously saved --runonly result.
 
     Loads run_state.json from the result directory, reconstructs
@@ -447,81 +469,41 @@ def eval_single_job(job: JobSpec) -> JobResult:
             workspace_path,
             proxy,
             conversation,
+            cancel_event=cancel_event,
+            eval_mode=job.eval_mode,
         )
 
         # Populate result with evaluation scores
-        result.quant_result_score = eval_results.get("quant_result", 0.0)
-        result.quant_process_score = eval_results.get("quant_process", 0.0)
-        result.tutor_scores = eval_results.get("tutor_scores", {})
-        result.tutor_scores_by_model = eval_results.get("tutor_scores_by_model", {})
-        result.tutor_fallback_count = eval_results.get("tutor_fallback_count", 0)
-        result.tutor_eval_error = eval_results.get("tutor_eval_error")
-        result.process_metrics = eval_results.get("process_metrics", {})
-        result.eval_script_detail = eval_results.get("eval_script_detail", {})
-        result.code_eval = eval_results.get("code_eval", {})
-        result.result_judge = eval_results.get("result_judge", {})
-        result.code_process = eval_results.get("process_metrics", {}).get(
-            "code_process", {}
-        )
-        result.tool_usage = eval_results.get("tool_usage", {})
+        from orchestrator.eval_helpers import populate_eval_results
 
-        from evaluation.scoring import compute_task_score
-
-        score_breakdown = compute_task_score(
-            quant_result_score=result.quant_result_score,
-            quant_process_score=result.quant_process_score,
-            tutor_dimension_scores=result.tutor_scores,
+        populate_eval_results(
+            result,
+            eval_results,
             category=job.task.category.value,
             requires_code=job.task.requires_code,
+            eval_mode=job.eval_mode,
         )
-        result.overall_score = score_breakdown["overall_score"]
 
         # Merge costs: run-phase (from state) + eval-phase (from evaluation)
+        from orchestrator.eval_helpers import aggregate_eval_cost, build_token_usage
+
         agent_cost_data = state.get("agent_cost", {})
-        sim_cost = state.get("simulator_cost", 0.0)
-        eval_cost = 0.0
-        eval_cost += result.process_metrics.get("_eval_cost", 0.0)
-        eval_cost += result.result_judge.get("_eval_cost", 0.0)
-        eval_cost += result.tutor_scores.get("_eval_cost", 0.0)
+        eval_cost, eval_cost_by_model, eval_cost_by_stage_model = aggregate_eval_cost(
+            result
+        )
 
-        eval_cost_by_model: dict[str, float] = {}
-        eval_cost_by_stage_model: dict[str, dict[str, float]] = {}
-        for stage_name, src in [
-            ("Tutor 7D", result.tutor_scores),
-            ("Process Metrics", result.process_metrics),
-            ("Result Judge", result.result_judge),
-        ]:
-            by_model = src.get("_eval_cost_by_model", {})
-            if by_model:
-                eval_cost_by_stage_model[stage_name] = {
-                    m: round(c, 6) for m, c in by_model.items()
-                }
-            for m, c in by_model.items():
-                eval_cost_by_model[m] = round(eval_cost_by_model.get(m, 0.0) + c, 6)
-
-        agent_cost_usd = agent_cost_data.get("cost_usd", 0.0)
-        result.token_usage = {
-            "agent": {
-                "input_tokens": agent_cost_data.get("input_tokens", 0),
-                "output_tokens": agent_cost_data.get("output_tokens", 0),
-                "cost_usd": round(agent_cost_usd, 6),
-                "api_calls": agent_cost_data.get("api_calls", 0),
-                "model": agent_cost_data.get("model", "unknown"),
-            },
-            "simulator": {
-                "cost_usd": round(sim_cost, 6),
-                "model": "unknown",
-            },
-            "eval": {
-                "cost_usd": round(eval_cost, 6),
-                "by_model": eval_cost_by_model,
-                "by_stage_model": eval_cost_by_stage_model,
-            },
-            "total": {
-                "cost_usd": round(agent_cost_usd + sim_cost + eval_cost, 6),
-            },
-        }
-        result.cost_usd = round(agent_cost_usd + sim_cost + eval_cost, 4)
+        result.token_usage, result.cost_usd = build_token_usage(
+            agent_input=agent_cost_data.get("input_tokens", 0),
+            agent_output=agent_cost_data.get("output_tokens", 0),
+            agent_cost=agent_cost_data.get("cost_usd", 0.0),
+            api_calls=agent_cost_data.get("api_calls", 0),
+            agent_model=agent_cost_data.get("model", "unknown"),
+            sim_cost=state.get("simulator_cost", 0.0),
+            sim_model="unknown",
+            eval_cost=eval_cost,
+            eval_cost_by_model=eval_cost_by_model,
+            eval_cost_by_stage_model=eval_cost_by_stage_model,
+        )
 
         # Save scores.md + updated cost.md
         from evaluation.cost_report import generate_cost_report

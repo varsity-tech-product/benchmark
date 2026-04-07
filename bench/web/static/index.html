@@ -114,11 +114,19 @@
               <option value="generic">Generic (OpenRouter)</option>
             </select>
           </label>
+          <label>Model
+            <select id="run-model" class="styled-select">
+              <option value="">Default</option>
+            </select>
+          </label>
           <label class="checkbox-label">
             <input type="checkbox" id="run-docker" checked> Docker sandbox
           </label>
           <label>Max turns
-            <input type="number" id="run-max-turns" value="10" min="1" max="30">
+            <input type="text" id="run-max-turns" inputmode="numeric" pattern="[0-9]*">
+          </label>
+          <label>Timeout (min)
+            <input type="text" id="run-timeout" inputmode="numeric" pattern="[0-9]*">
           </label>
           <div class="run-mode-toggle">
             <label class="radio-card">
@@ -135,45 +143,92 @@
           </div>
           <div class="run-actions">
             <button id="btn-run" class="btn btn-primary">Run</button>
-            <button id="btn-stop" class="btn btn-secondary" disabled>Stop</button>
           </div>
           <div id="run-status-bar" class="run-status"></div>
         </aside>
-        <!-- Chat + tools -->
+        <!-- Job list (main area) -->
         <div class="run-main">
-          <div class="run-chat-panel">
-            <div class="panel-header">Conversation Turns <span id="run-turn-count" class="badge">0</span></div>
-            <div id="run-chat" class="chat-area">
-              <div class="empty-state">Select a task and click Run to begin</div>
+          <div class="rs-main-inner">
+            <div class="panel-header">
+              <a href="#/run" class="bc-back" style="margin-right:8px">&larr;</a>
+              Single Tasks
+              <span id="rs-counter" class="badge">0</span>
+              <span id="rs-timer" class="rs-timer"></span>
             </div>
-          </div>
-          <div class="run-tool-panel collapsed">
-            <div class="panel-header">Tool Calls <span id="run-tool-count" class="badge">0</span></div>
-            <div id="run-tools" class="tool-area"></div>
+            <div class="rs-toolbar" id="rs-toolbar">
+              <label class="eval-select-all-label">
+                <input type="checkbox" id="rs-select-all"> Select all
+              </label>
+              <div class="eval-toolbar-actions">
+                <button class="btn btn-sm btn-primary" id="rs-rerun-selected" disabled>Rerun Selected</button>
+                <button class="btn btn-sm btn-danger" id="rs-stop-selected" disabled>Stop Selected</button>
+              </div>
+              <span class="eval-active-count" id="rs-active-count"></span>
+            </div>
+            <div id="rs-job-area" class="rg-job-area">
+              <div class="empty-state">Select a task and click Run to add it to the queue</div>
+            </div>
           </div>
         </div>
       </div>
       <div class="statusbar">
-        <span id="run-msg-count">Messages: 0</span>
-        <span id="run-tool-total">Tools: 0</span>
-        <span id="run-elapsed">Elapsed: 0s</span>
+        <span id="rs-status-msg">Ready</span>
+        <span id="rs-elapsed">Elapsed: 0s</span>
+      </div>
+    </div>
+  </template>
+
+  <template id="tpl-run-single-detail">
+    <div class="page page-run-single-detail">
+      <div class="run-layout">
+        <!-- Info sidebar (read-only config for this task) -->
+        <aside class="run-config rsd-config">
+          <div class="rgd-back-row">
+            <a href="#/run/single" class="bc-back">&larr; Back to list</a>
+          </div>
+          <div class="rgd-meta">
+            <div class="rgd-meta-label">Task</div>
+            <div class="rgd-meta-value" id="rsd-task-id">-</div>
+          </div>
+          <div class="rgd-meta">
+            <div class="rgd-meta-label">Persona</div>
+            <div class="rgd-meta-value" id="rsd-persona-id">-</div>
+          </div>
+          <div class="rgd-meta">
+            <div class="rgd-meta-label">Status</div>
+            <div><span class="rgd-status-badge rgd-pending" id="rsd-status-badge">pending</span></div>
+          </div>
+          <div class="rgd-meta">
+            <div class="rgd-meta-label">Duration</div>
+            <div class="rgd-meta-value" id="rsd-elapsed">-</div>
+          </div>
+        </aside>
+        <!-- Chat + tools -->
+        <div class="run-main">
+          <div class="run-chat-panel">
+            <div class="panel-header">Conversation <span id="rsd-turn-count" class="badge">0</span></div>
+            <div id="rsd-chat" class="chat-area">
+              <div class="empty-state">Waiting for task to start...</div>
+            </div>
+          </div>
+          <div class="run-tool-panel collapsed">
+            <div class="panel-header">Tool Calls <span id="rsd-tool-count" class="badge">0</span></div>
+            <div id="rsd-tools" class="tool-area"></div>
+          </div>
+        </div>
+      </div>
+      <div class="statusbar">
+        <span id="rsd-msg-count">Messages: 0</span>
+        <span id="rsd-tool-total">Tools: 0</span>
       </div>
     </div>
   </template>
 
   <template id="tpl-run-group">
     <div class="page page-run-group">
-      <div class="page-header">
-        <div class="folder-breadcrumb">
-          <a href="#/run" class="bc-back">&larr;</a>
-          <a href="#/run">Run</a>
-          <span class="bc-sep">/</span>
-          <span>Group Run</span>
-        </div>
-        <p class="subtitle">Run all tasks in a category in parallel</p>
-      </div>
-      <div class="run-group-config">
-        <div class="run-group-form">
+      <div class="run-layout">
+        <!-- Config panel (left sidebar, same as run-single) -->
+        <aside class="run-config">
           <label>Category Group
             <select id="rg-group" class="styled-select"></select>
           </label>
@@ -185,27 +240,110 @@
               <option value="generic">Generic (OpenRouter)</option>
             </select>
           </label>
-          <label>Persona (optional)
-            <select id="rg-persona" class="styled-select">
-              <option value="">All (from task definition)</option>
+          <label>Model
+            <select id="rg-model" class="styled-select">
+              <option value="">Default</option>
             </select>
           </label>
-          <label class="checkbox-label">
-            <input type="checkbox" id="rg-docker" checked> Docker sandbox
+          <label>Persona
+            <select id="rg-persona" class="styled-select">
+              <option value="">All (from task)</option>
+            </select>
           </label>
           <label>Max turns
-            <input type="number" id="rg-max-turns" value="10" min="1" max="30">
+            <input type="text" id="rg-max-turns" inputmode="numeric" pattern="[0-9]*">
+          </label>
+          <label>Timeout (min)
+            <input type="text" id="rg-timeout" inputmode="numeric" pattern="[0-9]*">
           </label>
           <label>Workers
             <input type="number" id="rg-workers" value="3" min="1" max="8">
           </label>
+          <div class="run-mode-toggle">
+            <label class="radio-card">
+              <input type="radio" name="rg-mode" value="runonly" checked>
+              <span class="radio-label">Run Only</span>
+            </label>
+            <label class="radio-card">
+              <input type="radio" name="rg-mode" value="runeval">
+              <span class="radio-label">Run + Eval</span>
+            </label>
+          </div>
           <div class="run-actions">
             <button id="btn-run-group" class="btn btn-primary">Run Group</button>
+            <button id="btn-stop-group" class="btn btn-danger" disabled>Stop</button>
           </div>
           <div id="rg-status-bar" class="run-status"></div>
+        </aside>
+        <!-- Job list (main area) -->
+        <div class="run-main">
+          <div class="rg-main-inner">
+            <div class="panel-header">
+              <a href="#/run" class="bc-back" style="margin-right:8px">&larr;</a>
+              Group Run
+              <span id="rg-counter" class="badge">0</span>
+              <span id="rg-timer" class="rg-timer"></span>
+            </div>
+            <div class="rg-progress-bar" id="rg-progress-bar" style="display:none">
+              <div class="rg-progress-fill" id="rg-fill" style="width:0%"></div>
+            </div>
+            <div id="rg-progress" class="rg-job-area">
+              <div class="empty-state">Configure and click Run Group to begin</div>
+            </div>
+          </div>
         </div>
       </div>
-      <div id="rg-progress" class="run-group-progress"></div>
+      <div class="statusbar">
+        <span id="rg-status-msg">Ready</span>
+        <span id="rg-elapsed">Elapsed: 0s</span>
+      </div>
+    </div>
+  </template>
+
+  <template id="tpl-run-group-detail">
+    <div class="page page-run-group-detail">
+      <div class="run-layout">
+        <!-- Info sidebar (read-only config for this task) -->
+        <aside class="run-config rgd-config">
+          <div class="rgd-back-row">
+            <a href="#/run/group" class="bc-back">&larr; Back to list</a>
+          </div>
+          <div class="rgd-meta">
+            <div class="rgd-meta-label">Task</div>
+            <div class="rgd-meta-value" id="rgd-task-id">-</div>
+          </div>
+          <div class="rgd-meta">
+            <div class="rgd-meta-label">Persona</div>
+            <div class="rgd-meta-value" id="rgd-persona-id">-</div>
+          </div>
+          <div class="rgd-meta">
+            <div class="rgd-meta-label">Status</div>
+            <div><span class="rgd-status-badge rgd-pending" id="rgd-status-badge">pending</span></div>
+          </div>
+          <div class="rgd-meta">
+            <div class="rgd-meta-label">Duration</div>
+            <div class="rgd-meta-value" id="rgd-elapsed">-</div>
+          </div>
+        </aside>
+        <!-- Chat + tools -->
+        <div class="run-main">
+          <div class="run-chat-panel">
+            <div class="panel-header">Conversation <span id="rgd-turn-count" class="badge">0</span></div>
+            <div id="rgd-chat" class="chat-area">
+              <div class="empty-state">Waiting for task to start...</div>
+            </div>
+          </div>
+          <div class="run-tool-panel collapsed">
+            <div class="panel-header">Tool Calls <span id="rgd-tool-count" class="badge">0</span></div>
+            <div id="rgd-tools" class="tool-area"></div>
+          </div>
+        </div>
+      </div>
+      <div class="statusbar">
+        <span id="rgd-msg-count">Messages: 0</span>
+        <span id="rgd-tool-total">Tools: 0</span>
+        <span id="rgd-elapsed-bar">Elapsed: 0s</span>
+      </div>
     </div>
   </template>
 

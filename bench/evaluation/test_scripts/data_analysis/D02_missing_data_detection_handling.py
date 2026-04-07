@@ -6,11 +6,16 @@ missing values were profiled, gaps were analyzed, and handling was applied.
 
 import json
 import os
-import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from common.data_source_check import verify_data_source
+from common.evidence_helpers import (
+    apply_data_source_cap,
+    checklist_score,
+    collect_evidence,
+    has_keywords,
+    has_number,
+)
 
 
 def evaluate(
@@ -27,7 +32,7 @@ def evaluate(
         "score": 0.0,
     }
 
-    combined = _collect_evidence(workspace_path, tool_logs)
+    combined = collect_evidence(workspace_path, tool_logs)
 
     # 1. Missing values profiled (0.35)
     profile_ops = [
@@ -41,17 +46,17 @@ def evaluate(
         "missing_count",
         "missing_pct",
     ]
-    if _has_keywords(combined, profile_ops) and _has_number(combined):
+    if has_keywords(combined, profile_ops) and has_number(combined):
         results["missing_values_profiled"] = True
 
     # 2. Gap analysis performed (0.35)
     gap_ops = ["diff()", "timedelta", "asfreq", "date_range", "freq=", "bday"]
-    if _has_keywords(combined, gap_ops):
+    if has_keywords(combined, gap_ops):
         results["gap_analysis_performed"] = True
 
     # 3. Handling applied (0.30)
     handle_ops = ["fillna", "dropna", "interpolate", "ffill", "bfill", "pad"]
-    if _has_keywords(combined, handle_ops):
+    if has_keywords(combined, handle_ops):
         results["handling_applied"] = True
 
     _checklist = [
@@ -71,44 +76,13 @@ def evaluate(
             "passed": results["handling_applied"],
         },
     ]
-    score = sum(c["weight"] for c in _checklist if c["passed"])
+    score = checklist_score(_checklist)
 
-    # Data source verification — cap score if task data wasn't accessed
-    if data_files:
-        ds = verify_data_source(tool_logs or [], data_files)
-        results["data_source_verified"] = ds["verified"]
-        results["data_source_fraction"] = ds["fraction"]
-        if not ds["verified"]:
-            score *= max(0.25, ds["fraction"])
+    score = apply_data_source_cap(score, results, tool_logs, data_files)
 
     results["_checklist"] = _checklist
     results["score"] = round(score, 2)
     return results
-
-
-def _collect_evidence(workspace_path: str, tool_logs: list) -> str:
-    parts = []
-    for log in tool_logs or []:
-        parts.append(log.name)
-        parts.append(str(log.args))
-        parts.append(str(log.result or ""))
-    if workspace_path and os.path.isdir(workspace_path):
-        for fname in os.listdir(workspace_path):
-            if fname.endswith((".txt", ".json", ".md", ".csv", ".log")):
-                try:
-                    with open(os.path.join(workspace_path, fname)) as f:
-                        parts.append(f.read()[:2000])
-                except (IOError, UnicodeDecodeError):
-                    pass
-    return " ".join(parts).lower()
-
-
-def _has_keywords(text: str, keywords: list[str]) -> bool:
-    return any(kw in text for kw in keywords)
-
-
-def _has_number(text: str) -> bool:
-    return bool(re.search(r"-?\d+\.?\d*", text))
 
 
 if __name__ == "__main__":

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import Optional
+from typing import Optional, Union
 
 from pydantic import BaseModel, Field
 
@@ -43,7 +43,7 @@ class QuantValidation(BaseModel):
 
 class GroundTruth(BaseModel):
     expected_outcome: str
-    termination_criteria: str = ""
+    termination_criteria: Union[str, dict[str, str]] = ""
     required_capabilities: list[str] = Field(default_factory=list)
     expected_mcp_tools: list[str] = Field(default_factory=list)
     convenient_tools: list[str] = Field(default_factory=list)
@@ -166,6 +166,7 @@ class TaskResult(BaseModel):
     eval_aborted: bool = (
         False  # True when evaluation was aborted due to LLM call failures
     )
+    eval_mode: str = "full"  # "full" | "qr_only" | "qp_only"
 
 
 class BenchmarkReport(BaseModel):

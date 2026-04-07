@@ -5,7 +5,7 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from common.data_source_check import verify_data_source
+from common.evidence_helpers import apply_data_source_cap
 from common.strategy_research_check import (
     collect_artifact_text,
     collect_performance_metric_records,
@@ -120,12 +120,12 @@ def evaluate(
     _checklist = [
         {
             "item": "reversion_characteristics_identified",
-            "weight": 0.20,
+            "weight": 0.15,
             "passed": results["reversion_characteristics_identified"],
         },
         {
             "item": "signal_formalized",
-            "weight": 0.30,
+            "weight": 0.25,
             "passed": results["signal_formalized"],
         },
         {
@@ -135,7 +135,7 @@ def evaluate(
         },
         {
             "item": "rough_pnl_computed",
-            "weight": 0.20,
+            "weight": 0.30,
             "passed": results["rough_pnl_computed"],
         },
     ]
@@ -147,11 +147,7 @@ def evaluate(
         score = min(score, 0.45)
 
     if data_files:
-        ds = verify_data_source(tool_logs or [], data_files)
-        results["data_source_verified"] = ds["verified"]
-        results["data_source_fraction"] = ds["fraction"]
-        if not ds["verified"]:
-            score *= max(0.25, ds["fraction"])
+        score = apply_data_source_cap(score, results, tool_logs, data_files)
 
     results["_checklist"] = _checklist
     results["score"] = round(score, 2)

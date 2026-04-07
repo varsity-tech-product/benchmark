@@ -31,6 +31,8 @@ from typing import Optional
 
 from config.model_resolver import resolve_deepeval_model
 
+from evaluation.deepeval_metrics._scoring_utils import extract_json_from_response
+
 # ──────────────────────────────────────────────────────────────
 # Concurrency control — adjustable for parallel runner
 # ──────────────────────────────────────────────────────────────
@@ -318,30 +320,6 @@ Return ONLY a JSON object (no markdown, no extra text):
     )
 
 
-def _extract_json_from_response(text: str) -> dict:
-    """Extract JSON object from LLM response, handling markdown fences."""
-    text = text.strip()
-    # Strip markdown code fences
-    if text.startswith("```"):
-        lines = text.split("\n")
-        # Remove first and last fence lines
-        lines = [ln for ln in lines if not ln.strip().startswith("```")]
-        text = "\n".join(lines).strip()
-    try:
-        return _json.loads(text)
-    except _json.JSONDecodeError:
-        # Try to find JSON object in the text
-        import re
-
-        match = re.search(r"\{[^{}]*\}", text, re.DOTALL)
-        if match:
-            try:
-                return _json.loads(match.group())
-            except _json.JSONDecodeError:
-                pass
-    return {}
-
-
 async def _async_eval_step_efficiency(
     input_text,
     actual_output,
@@ -407,7 +385,7 @@ async def _async_eval_step_efficiency(
 
             model_obj = GPTModel(model=model_obj, **get_deepeval_cost_kwargs(model_obj))
         response_text, call_cost = await model_obj.a_generate(prompt)
-        result = _extract_json_from_response(response_text)
+        result = extract_json_from_response(response_text)
     except Exception:
         raise  # propagate to abort handler
 

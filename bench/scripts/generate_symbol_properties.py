@@ -23,7 +23,6 @@ from __future__ import annotations
 import argparse
 import json
 import subprocess
-import sys
 import urllib.request
 from pathlib import Path
 
@@ -40,9 +39,19 @@ MARKET_HOURS_DIR = LEAN_DIR / "market-hours"
 def _docker_cat(path: str) -> str:
     """Extract a file from the LEAN Docker image."""
     result = subprocess.run(
-        ["docker", "run", "--rm", "--entrypoint", "bash",
-         LEAN_IMAGE, "-c", f"cat {path}"],
-        capture_output=True, text=True, timeout=60,
+        [
+            "docker",
+            "run",
+            "--rm",
+            "--entrypoint",
+            "bash",
+            LEAN_IMAGE,
+            "-c",
+            f"cat {path}",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=60,
     )
     if result.returncode != 0:
         raise RuntimeError(f"Failed to extract {path}: {result.stderr}")
@@ -52,7 +61,9 @@ def _docker_cat(path: str) -> str:
 def _extract_lean_files() -> tuple[str, str, str]:
     """Extract symbol-properties, security-database, and market-hours from Docker."""
     print("Extracting LEAN metadata from Docker...")
-    symprops = _docker_cat("/Lean/Data/symbol-properties/symbol-properties-database.csv")
+    symprops = _docker_cat(
+        "/Lean/Data/symbol-properties/symbol-properties-database.csv"
+    )
     security = _docker_cat("/Lean/Data/symbol-properties/security-database.csv")
     market_hours = _docker_cat("/Lean/Data/market-hours/market-hours-database.json")
     print(f"  symbol-properties: {len(symprops.splitlines())} lines")
@@ -139,15 +150,21 @@ def _generate_new_rows(
         row = f"binance,{symbol},cryptofuture,{symbol},USDT,1,{tick},{lot},{symbol}"
         rows.append(row)
 
-    print(f"  Generated {len(rows)} new rows ({api_hits} from API, {defaults_used} defaults)")
+    print(
+        f"  Generated {len(rows)} new rows ({api_hits} from API, {defaults_used} defaults)"
+    )
     return rows
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__,
-                                     formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--dry-run", action="store_true",
-                        help="Show what would be generated without writing files")
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Show what would be generated without writing files",
+    )
     args = parser.parse_args()
 
     # 1. Extract LEAN's built-in files
@@ -179,7 +196,9 @@ def main() -> int:
         merged_csv += "\n".join(new_rows) + "\n"
 
     total_binance = len(_parse_existing_symbols(merged_csv))
-    print(f"\nMerged DB: {len(merged_csv.splitlines())} lines, {total_binance} Binance cryptofuture symbols")
+    print(
+        f"\nMerged DB: {len(merged_csv.splitlines())} lines, {total_binance} Binance cryptofuture symbols"
+    )
 
     if args.dry_run:
         print("\nDRY RUN — no files written.")

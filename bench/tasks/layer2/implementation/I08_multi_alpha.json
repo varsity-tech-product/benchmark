@@ -57,11 +57,13 @@
     "convenient_tools": [
       "search_docs",
       "compute_indicator",
-      "analyze_backtest_results"
+      "analyze_backtest_results",
+      "analyze_lean_results"
     ],
     "quant_validation": {
-      "eval_script": "evaluation/test_scripts/implementation/I08_multi_alpha.py"
-    }
+      "eval_script": "evaluation/test_scripts/I08_multi_alpha.py"
+    },
+    "termination_criteria": "The tutor has completed the following steps with computational evidence (not just verbal discussion): (1) Showed C# code for multiple AlphaModel classes registered via AddAlpha, each with distinct signal logic. (2) Presented backtest results for at least one portfolio construction configuration with specific numerical values such as Sharpe ratio or total return. (3) Showed a comparison of results across different portfolio construction models or weight configurations with specific numbers. (4) Responded to the student's follow-up about the implementation or results with additional explanation, code refinement, or analysis beyond the initial demonstration. Once all four steps have been computationally demonstrated, the session is complete."
   },
   "requires_code": true,
   "sample_code": null,

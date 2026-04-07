@@ -11,7 +11,7 @@ import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from common.data_source_check import verify_data_source
+from common.evidence_helpers import apply_data_source_cap
 
 
 def evaluate(
@@ -122,11 +122,7 @@ def evaluate(
     score = sum(c["weight"] for c in _checklist if c["passed"])
 
     if data_files:
-        ds = verify_data_source(tool_logs or [], data_files)
-        results["data_source_verified"] = ds["verified"]
-        results["data_source_fraction"] = ds["fraction"]
-        if not ds["verified"]:
-            score *= max(0.25, ds["fraction"])
+        score = apply_data_source_cap(score, results, tool_logs, data_files)
 
     results["_checklist"] = _checklist
     results["score"] = round(score, 2)

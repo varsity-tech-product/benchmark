@@ -72,6 +72,19 @@
       '</div>';
     }
 
+    // Show images in modal if available
+    var outputFiles = toolInfo.output_files || [];
+    if (outputFiles.length > 0) {
+      html += '<div style="margin-top:12px">' +
+        '<div style="font-size:12px;font-weight:600;color:var(--text-muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.05em">Output Images</div>';
+      outputFiles.forEach(function (fname) {
+        html += '<img src="/api/files/live/' + encodeURIComponent(fname) +
+          '" alt="' + QTB.escapeHtml(fname) +
+          '" style="max-width:100%;border-radius:var(--radius,8px);margin-top:8px;cursor:pointer;" />';
+      });
+      html += '</div>';
+    }
+
     // Access the global showModal (defined in app.js, attached to window)
     if (window._qtbShowModal) {
       window._qtbShowModal(name, html);
@@ -134,6 +147,7 @@
       result: null,
       success: null,
       duration_ms: null,
+      output_files: null,
     };
 
     var preview = formatArgsShort(data.args);
@@ -169,12 +183,30 @@
       _toolData[id].result = data.result || '';
       _toolData[id].success = data.success;
       _toolData[id].duration_ms = data.duration_ms;
+      _toolData[id].output_files = data.output_files || null;
     }
 
     // Update preview to show result snippet
     var previewDiv = el.querySelector('.tool-preview');
     if (data.result && previewDiv) {
       previewDiv.textContent = truncate(data.result, 200);
+    }
+
+    // Render inline images if tool produced image files
+    if (data.output_files && data.output_files.length > 0) {
+      var imgWrap = document.createElement('div');
+      imgWrap.className = 'tool-images';
+      data.output_files.forEach(function (fname) {
+        var img = document.createElement('img');
+        img.src = '/api/files/live/' + encodeURIComponent(fname);
+        img.alt = fname;
+        img.className = 'tool-img-preview';
+        img.addEventListener('click', function () {
+          window.open(img.src, '_blank');
+        });
+        imgWrap.appendChild(img);
+      });
+      el.appendChild(imgWrap);
     }
 
     delete pendingTools[id];
@@ -204,12 +236,22 @@
       var durationMs = log.duration_ms || null;
       var id = 'r' + i;
 
+      var outputFiles = log.output_files || [];
+      // Fallback: extract image filenames from result text (old run_states)
+      if (outputFiles.length === 0 && result && success) {
+        var imgRe = /(?:saved to|wrote|created|generated)\s+\/\S+\/([\w.-]+\.(?:png|jpg|jpeg|svg|gif))/gi;
+        var match;
+        while ((match = imgRe.exec(result)) !== null) {
+          outputFiles.push(match[1]);
+        }
+      }
       _toolData[id] = {
         name: name,
         args: args,
         result: result,
         success: success,
         duration_ms: durationMs,
+        output_files: outputFiles,
       };
 
       var statusClass = success ? 'success' : 'failed';
@@ -221,6 +263,23 @@
       if (!preview && result) preview = truncate(result, 150);
 
       var div = buildToolCard(id, name, statusClass, statusText, preview, '', duration);
+      // Render inline images for replay
+      if (outputFiles.length > 0) {
+        var imgWrap = document.createElement('div');
+        imgWrap.className = 'tool-images';
+        outputFiles.forEach(function (fname) {
+          var img = document.createElement('img');
+          // Will be rewritten by rewriteImages() for proper API path
+          img.src = fname;
+          img.alt = fname;
+          img.className = 'tool-img-preview';
+          img.addEventListener('click', function () {
+            window.open(img.src, '_blank');
+          });
+          imgWrap.appendChild(img);
+        });
+        div.appendChild(imgWrap);
+      }
       container.appendChild(div);
     });
   }

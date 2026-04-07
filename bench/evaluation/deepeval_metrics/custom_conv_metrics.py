@@ -9,10 +9,29 @@ Uses GPTModel + _call_llm pattern from process_reasonableness.py.
 Test with: cd bench && python -m evaluation.test_custom_conv_metrics
 """
 
-import json as _json
 import re
 
 from config.model_resolver import resolve_deepeval_model
+
+from evaluation.deepeval_metrics._scoring_utils import extract_json_from_response
+
+# ──────────────────────────────────────────────────────────────
+# Conversation preprocessing — strip code blocks from assistant
+# messages before sending to role/topic adherence judges.
+# Master switch.  Set to False to send raw conversation (original).
+# ──────────────────────────────────────────────────────────────
+ENABLE_CONV_PREPROCESSING = True
+
+_CODE_FENCE_RE = re.compile(
+    r"^[ \t]*```[^\n]*\n(.*?)^[ \t]*```[ \t]*$",
+    re.MULTILINE | re.DOTALL,
+)
+
+
+def _strip_code_blocks(content: str) -> str:
+    """Replace fenced code blocks with a [code snippet] placeholder."""
+    return _CODE_FENCE_RE.sub("[code snippet]", content)
+
 
 try:
     from deepeval.models.llms.openai_model import GPTModel
@@ -25,25 +44,6 @@ except ImportError:
 # ──────────────────────────────────────────────────────────────
 # Shared helpers (same patterns as process_reasonableness.py)
 # ──────────────────────────────────────────────────────────────
-
-
-def _extract_json_from_response(text: str) -> dict:
-    """Extract JSON object from LLM response, handling markdown fences."""
-    text = text.strip()
-    if text.startswith("```"):
-        lines = text.split("\n")
-        lines = [ln for ln in lines if not ln.strip().startswith("```")]
-        text = "\n".join(lines).strip()
-    try:
-        return _json.loads(text)
-    except _json.JSONDecodeError:
-        match = re.search(r"\{[^{}]*\}", text, re.DOTALL)
-        if match:
-            try:
-                return _json.loads(match.group())
-            except _json.JSONDecodeError:
-                pass
-    return {}
 
 
 def _normalize_score(val, default=0.5) -> float:
@@ -61,23 +61,35 @@ async def _call_llm(model, prompt: str) -> dict:
 
         model_obj = GPTModel(model=model_obj, **get_deepeval_cost_kwargs(model_obj))
     response_text, call_cost = await model_obj.a_generate(prompt)
-    result = _extract_json_from_response(response_text)
+    result = extract_json_from_response(response_text)
     result["_eval_cost"] = float(call_cost) if call_cost else 0.0
     return result
 
 
+def _format_turn(index: int, turn: dict) -> str:
+    """Format a single turn with optional code-block stripping."""
+    role_label = "Student" if turn["role"] == "user" else "Tutor"
+    content = turn["content"]
+    if ENABLE_CONV_PREPROCESSING and turn["role"] == "assistant":
+        content = _strip_code_blocks(content)
+    return f"[Turn {index} — {role_label}]\n{content}"
+
+
 def _build_turns_text(turns: list[dict], max_chars: int = 12000) -> str:
     """Build conversation text from turns, truncating if needed.
+
+    When ``ENABLE_CONV_PREPROCESSING`` is True, code blocks in assistant
+    messages are replaced with ``[code snippet]`` before building the
+    text.  This removes noise that is irrelevant to role/topic adherence
+    evaluation and lets the judge focus on the tutor's language and
+    pedagogical structure.
 
     Args:
         turns: List of {"role": "user"/"assistant", "content": "..."}.
         max_chars: Max total characters. If exceeded, keep first + last
             turns and omit middle with a marker.
     """
-    lines = []
-    for i, t in enumerate(turns):
-        role_label = "Student" if t["role"] == "user" else "Tutor"
-        lines.append(f"[Turn {i + 1} — {role_label}]\n{t['content']}")
+    lines = [_format_turn(i + 1, t) for i, t in enumerate(turns)]
     full = "\n\n".join(lines)
     if len(full) <= max_chars:
         return full
@@ -88,15 +100,10 @@ def _build_turns_text(turns: list[dict], max_chars: int = 12000) -> str:
     head = turns[:keep_n]
     tail = turns[-keep_n:]
     omitted = len(turns) - keep_n * 2
-    head_lines = []
-    for i, t in enumerate(head):
-        role_label = "Student" if t["role"] == "user" else "Tutor"
-        head_lines.append(f"[Turn {i + 1} — {role_label}]\n{t['content']}")
-    tail_lines = []
-    for j, t in enumerate(tail):
-        idx = len(turns) - keep_n + j + 1
-        role_label = "Student" if t["role"] == "user" else "Tutor"
-        tail_lines.append(f"[Turn {idx} — {role_label}]\n{t['content']}")
+    head_lines = [_format_turn(i + 1, t) for i, t in enumerate(head)]
+    tail_lines = [
+        _format_turn(len(turns) - keep_n + j + 1, t) for j, t in enumerate(tail)
+    ]
     mid = f"\n\n[... {omitted} turns omitted for brevity ...]\n\n"
     result = "\n\n".join(head_lines) + mid + "\n\n".join(tail_lines)
     # Final safety trim

@@ -17,15 +17,23 @@ Install (SDK mode): pip install openai-agents
 Install (direct mode): pip install openai
 """
 
+import asyncio
 import json
 import logging
 import os
+import threading
 from pathlib import Path
 from typing import Optional
 
 from dotenv import load_dotenv
 
-from .base_adapter import BaseAgentAdapter, TokenRecord
+from .base_adapter import (
+    BaseAgentAdapter,
+    ensure_str,
+    extract_latest_user_message,
+    normalize_tool_params,
+    record_token_usage,
+)
 from .prompts import TUTOR_SYSTEM_PROMPT
 
 _PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
@@ -42,7 +50,7 @@ log = logging.getLogger(__name__)
 
 # --- OpenAI Agents SDK imports (SDK mode only) ---
 try:
-    from agents import Agent, MaxTurnsExceeded, Runner
+    from agents import Agent, MaxTurnsExceeded, RunConfig, Runner
     from agents.model_settings import ModelSettings
     from agents.tool import FunctionTool
 
@@ -51,7 +59,7 @@ except ImportError:
     OPENAI_AGENTS_AVAILABLE = False
 
 # Max LLM invocations per generate_response() call.
-DEFAULT_AGENT_MAX_TURNS = 8
+DEFAULT_AGENT_MAX_TURNS = 16
 
 # --- Direct API: history compaction ---
 # Mirrors Anthropic BetaToolRunner's compaction_control.
@@ -97,13 +105,14 @@ class OpenAIAgentAdapter(BaseAgentAdapter):
         self.base_url = base_url
         self.system_prompt = system_prompt or TUTOR_SYSTEM_PROMPT
         self.max_turns = max_turns
-        self._task_context = ""
 
         # Persistent state across conversation turns (both modes)
         self._agent = None
         self._input_history: list = []
         self._tool_callback = None
         self._direct_client = None  # lazy-init OpenAI client for Direct API mode
+        self._model_obj = None
+        self._async_client = None
 
         if base_url:
             self.api_key = (
@@ -130,12 +139,8 @@ class OpenAIAgentAdapter(BaseAgentAdapter):
             )
 
     def set_task_context(self, context: str):
-        """Set per-task dynamic context injected into system prompt.
-
-        Resets persistent agent and conversation state for the new task.
-        """
-        self._task_context = context
-        # Reset SDK mode state
+        """Override: also clear agent and conversation state."""
+        super().set_task_context(context)
         self._agent = None
         self._input_history = []
         self._tool_callback = None
@@ -144,20 +149,12 @@ class OpenAIAgentAdapter(BaseAgentAdapter):
         """Reset internal state between tasks."""
         super().reset()
         self._input_history = []
-        self._task_context = ""
         self._agent = None
         self._tool_callback = None
 
     def set_agent_max_steps(self, n: int):
         """Limit how many LLM→tool→LLM cycles per generate_response() call."""
         self.max_turns = n
-
-    def _get_full_system_prompt(self) -> str:
-        """Build system prompt with optional task context."""
-        base = self.system_prompt
-        if self._task_context:
-            base += "\n\n" + self._task_context
-        return base
 
     def generate_response(
         self,
@@ -170,6 +167,63 @@ class OpenAIAgentAdapter(BaseAgentAdapter):
             return self._generate_direct(messages, available_tools, tool_callback)
         else:
             return self._generate_sdk(messages, available_tools, tool_callback)
+
+    # ==================================================================
+    # SDK model management
+    # ==================================================================
+
+    def _get_or_create_model(self):
+        """Lazy-init SDK model with an adapter-owned AsyncOpenAI client.
+
+        Use an explicit AsyncOpenAI client even for native OpenAI so the
+        adapter owns the resource lifecycle and can close it deterministically
+        after each benchmark task.
+        """
+        if self._model_obj is None:
+            from agents.models.openai_chatcompletions import (
+                OpenAIChatCompletionsModel,
+            )
+            from openai import AsyncOpenAI
+
+            client_kwargs = {"api_key": self.api_key}
+            if self.base_url:
+                client_kwargs["base_url"] = self.base_url
+            self._async_client = AsyncOpenAI(**client_kwargs)
+            self._model_obj = OpenAIChatCompletionsModel(
+                model=self.model,
+                openai_client=self._async_client,
+            )
+        return self._model_obj
+
+    def close(self):
+        """Release async client resources used by the Agents SDK."""
+        self._agent = None
+        self._input_history = []
+        self._tool_callback = None
+        self._task_context = ""
+        self._model_obj = None
+
+        client = self._async_client
+        self._async_client = None
+        if client is None:
+            return
+
+        try:
+            asyncio.run(client.close())
+        except RuntimeError:
+            close_error: list[Exception] = []
+
+            def _close_in_thread():
+                try:
+                    asyncio.run(client.close())
+                except Exception as exc:  # pragma: no cover - defensive cleanup
+                    close_error.append(exc)
+
+            thread = threading.Thread(target=_close_in_thread, daemon=True)
+            thread.start()
+            thread.join()
+            if close_error:
+                raise close_error[0]
 
     # ==================================================================
     # Direct API mode: Chat Completions with tool_calls loop
@@ -201,25 +255,20 @@ class OpenAIAgentAdapter(BaseAgentAdapter):
         """
         from config.pricing import estimate_cost
 
-        # Extract the latest user message (same pattern as SDK mode)
-        new_user_msg = None
-        for msg in reversed(messages):
-            if msg["role"] == "user":
-                new_user_msg = msg["content"]
-                break
+        new_user_msg = extract_latest_user_message(messages)
         if new_user_msg is None:
             return ""
 
         self._input_history.append({"role": "user", "content": new_user_msg})
 
         client = self._get_direct_client()
-        tools = self._format_tools_openai(available_tools) if available_tools else None
+        tools = self.format_tools_openai(available_tools) if available_tools else None
 
         # Build from persistent history (preserves tool_calls/tool results)
         api_messages = [{"role": "system", "content": self._get_full_system_prompt()}]
         api_messages.extend(self._input_history)
 
-        result_text = ""
+        text_parts: list[str] = []
         turns = 0
         last_prompt_tokens = 0
 
@@ -241,22 +290,21 @@ class OpenAIAgentAdapter(BaseAgentAdapter):
                 # --- Token tracking ---
                 usage = getattr(response, "usage", None)
                 if usage:
-                    inp = getattr(usage, "prompt_tokens", 0) or 0
-                    out = getattr(usage, "completion_tokens", 0) or 0
-                    last_prompt_tokens = inp
-                    self._token_records.append(
-                        TokenRecord(
-                            model=self.model,
-                            input_tokens=inp,
-                            output_tokens=out,
-                            cost_usd=estimate_cost(self.model, inp, out),
-                        )
-                    )
+                    last_prompt_tokens = getattr(usage, "prompt_tokens", 0) or 0
+                record_token_usage(
+                    self._token_records,
+                    self.model,
+                    usage,
+                    cost_fn=estimate_cost,
+                )
 
                 message = response.choices[0].message
 
+                # Accumulate text fragments across tool-call iterations.
+                # Models like GPT-5.2 often return content=None during tool
+                # rounds and only produce text in the final response.
                 if message.content:
-                    result_text = self._ensure_str(message.content)
+                    text_parts.append(ensure_str(message.content))
 
                 # Append ALL assistant messages (intermediate + final)
                 api_messages.append(message.model_dump(exclude_none=True))
@@ -291,6 +339,66 @@ class OpenAIAgentAdapter(BaseAgentAdapter):
                         )
             else:
                 log.warning("Direct API: max_turns (%d) reached", self.max_turns)
+                # When max_turns exhausted with no text captured, make one
+                # more call WITH tools so GPT can properly structure any
+                # remaining tool-call intent (omitting tools= causes GPT
+                # to leak raw JSON fragments into the text content).
+                if not text_parts:
+                    log.info("Direct API: forcing summary call after tool loop")
+                    try:
+                        # Append a nudge so the model produces a text summary
+                        # instead of requesting more tool calls.
+                        summary_messages = list(api_messages) + [
+                            {
+                                "role": "user",
+                                "content": (
+                                    "[SYSTEM: You have used all available tool-call rounds. "
+                                    "Please respond to the student NOW with a helpful text "
+                                    "message summarizing what you accomplished and any "
+                                    "guidance. Do NOT call any more tools.]"
+                                ),
+                            }
+                        ]
+                        force_kwargs: dict = dict(
+                            model=self.model,
+                            messages=summary_messages,
+                            max_tokens=4096,
+                        )
+                        # Omit tools to guarantee a text response.
+                        force_resp = client.chat.completions.create(**force_kwargs)
+                        force_msg = force_resp.choices[0].message
+                        if force_msg.content:
+                            text_parts.append(ensure_str(force_msg.content))
+                        # Process any final tool calls from the forced response
+                        if force_msg.tool_calls and tool_callback:
+                            api_messages.append(force_msg.model_dump(exclude_none=True))
+                            for tc in force_msg.tool_calls:
+                                args = (
+                                    json.loads(tc.function.arguments)
+                                    if tc.function.arguments
+                                    else {}
+                                )
+                                try:
+                                    result = tool_callback(tc.function.name, **args)
+                                    api_messages.append(
+                                        {
+                                            "tool_call_id": tc.id,
+                                            "role": "tool",
+                                            "content": str(result),
+                                        }
+                                    )
+                                except Exception:
+                                    pass
+                        else:
+                            api_messages.append(force_msg.model_dump(exclude_none=True))
+                        record_token_usage(
+                            self._token_records,
+                            self.model,
+                            getattr(force_resp, "usage", None),
+                            cost_fn=estimate_cost,
+                        )
+                    except Exception as exc:
+                        log.warning("Direct API: forced text call failed: %s", exc)
 
             # --- History compaction (mirrors Anthropic BetaToolRunner) ---
             # When context grows too large, summarize and replace history
@@ -301,6 +409,7 @@ class OpenAIAgentAdapter(BaseAgentAdapter):
             # Persist full history (skip system message)
             self._input_history = api_messages[1:]
 
+            result_text = "\n\n".join(text_parts)
             return result_text if result_text else "[No response from OpenAI API]"
 
         except Exception as e:
@@ -333,21 +442,14 @@ class OpenAIAgentAdapter(BaseAgentAdapter):
             )
             summary_text = summary_resp.choices[0].message.content or ""
 
-            # Track the compaction call's token usage
             from config.pricing import estimate_cost
 
-            s_usage = getattr(summary_resp, "usage", None)
-            if s_usage:
-                s_inp = getattr(s_usage, "prompt_tokens", 0) or 0
-                s_out = getattr(s_usage, "completion_tokens", 0) or 0
-                self._token_records.append(
-                    TokenRecord(
-                        model=self.model,
-                        input_tokens=s_inp,
-                        output_tokens=s_out,
-                        cost_usd=estimate_cost(self.model, s_inp, s_out),
-                    )
-                )
+            record_token_usage(
+                self._token_records,
+                self.model,
+                getattr(summary_resp, "usage", None),
+                cost_fn=estimate_cost,
+            )
 
             log.info("Compaction complete (%d chars summary).", len(summary_text))
 
@@ -382,12 +484,7 @@ class OpenAIAgentAdapter(BaseAgentAdapter):
             self._tool_callback = tool_callback
             agent = self._get_or_create_agent(available_tools)
 
-            new_user_msg = None
-            for msg in reversed(messages):
-                if msg["role"] == "user":
-                    new_user_msg = msg["content"]
-                    break
-
+            new_user_msg = extract_latest_user_message(messages)
             if new_user_msg is None:
                 return ""
 
@@ -397,6 +494,10 @@ class OpenAIAgentAdapter(BaseAgentAdapter):
                 agent,
                 self._input_history,
                 max_turns=self.max_turns,
+                run_config=RunConfig(
+                    tracing_disabled=bool(self.base_url),
+                    trace_include_sensitive_data=False,
+                ),
             )
 
             self._input_history = result.to_input_list()
@@ -425,18 +526,6 @@ class OpenAIAgentAdapter(BaseAgentAdapter):
         """Dynamic instructions callable for the Agent (SDK mode)."""
         return self._get_full_system_prompt()
 
-    def _resolve_model(self):
-        """Resolve model object for the Agent SDK."""
-        if self.base_url:
-            from agents.models.openai_chatcompletions import (
-                OpenAIChatCompletionsModel,
-            )
-            from openai import AsyncOpenAI
-
-            client = AsyncOpenAI(api_key=self.api_key, base_url=self.base_url)
-            return OpenAIChatCompletionsModel(model=self.model, openai_client=client)
-        return self.model
-
     def _get_or_create_agent(self, available_tools: list[dict]) -> "Agent":
         """Create the Agent once per task, reuse across turns (SDK mode)."""
         if self._agent is None:
@@ -452,7 +541,7 @@ class OpenAIAgentAdapter(BaseAgentAdapter):
             self._agent = Agent(
                 name="quant_tutor",
                 instructions=self._dynamic_instructions,
-                model=self._resolve_model(),
+                model=self._get_or_create_model(),
                 tools=agent_tools,
                 model_settings=ModelSettings(**model_settings_kwargs),
             )
@@ -467,7 +556,6 @@ class OpenAIAgentAdapter(BaseAgentAdapter):
         for tool_schema in available_tools:
             tool_name = tool_schema["name"]
             tool_desc = tool_schema.get("description", f"Tool: {tool_name}")
-            params = tool_schema.get("parameters", {})
 
             def make_tool_fn(name, adapter_ref):
                 async def tool_fn(ctx, args_json: str) -> str:
@@ -479,25 +567,9 @@ class OpenAIAgentAdapter(BaseAgentAdapter):
 
             fn = make_tool_fn(tool_name, self)
 
-            properties = {}
-            required_list = []
-            for param_name, param_info in params.items():
-                if isinstance(param_info, dict):
-                    prop = {
-                        "type": param_info.get("type", "string"),
-                        "description": param_info.get("description", param_name),
-                    }
-                    if "items" in param_info:
-                        prop["items"] = param_info["items"]
-                    properties[param_name] = prop
-                    if param_info.get("required", False):
-                        required_list.append(param_name)
-                else:
-                    properties[param_name] = {
-                        "type": "string",
-                        "description": param_name,
-                    }
-
+            properties, required_list = normalize_tool_params(
+                tool_schema.get("parameters", {})
+            )
             schema = {
                 "type": "object",
                 "properties": properties,
@@ -522,79 +594,15 @@ class OpenAIAgentAdapter(BaseAgentAdapter):
         from config.pricing import estimate_cost
 
         for raw_resp in getattr(result, "raw_responses", []):
-            usage = getattr(raw_resp, "usage", None)
-            if usage:
-                inp = getattr(usage, "input_tokens", 0) or 0
-                out = getattr(usage, "output_tokens", 0) or 0
-                self._token_records.append(
-                    TokenRecord(
-                        model=self.model,
-                        input_tokens=inp,
-                        output_tokens=out,
-                        cost_usd=estimate_cost(self.model, inp, out),
-                    )
-                )
+            record_token_usage(
+                self._token_records,
+                self.model,
+                getattr(raw_resp, "usage", None),
+                input_attr="input_tokens",
+                output_attr="output_tokens",
+                cost_fn=estimate_cost,
+            )
 
     # ==================================================================
     # Shared utilities
     # ==================================================================
-
-    @staticmethod
-    def _ensure_str(content) -> str:
-        """Flatten OpenAI content to a plain string.
-
-        gpt-5.2 occasionally returns message.content as a list of
-        content-block dicts instead of a string.
-        """
-        if content is None:
-            return ""
-        if isinstance(content, str):
-            return content
-        if isinstance(content, list):
-            return "\n".join(
-                b.get("text", "") if isinstance(b, dict) else str(b) for b in content
-            ).strip()
-        return str(content)
-
-    def _format_tools_openai(self, tools: list[dict]) -> list[dict]:
-        """Convert benchmark tool schemas to OpenAI function calling format."""
-        formatted = []
-        for tool in tools:
-            params = tool.get("parameters", {})
-            properties = {}
-            required_list = []
-            for param_name, param_info in params.items():
-                if isinstance(param_info, dict):
-                    prop = {
-                        "type": param_info.get("type", "string"),
-                        "description": param_info.get("description", param_name),
-                    }
-                    if "items" in param_info:
-                        prop["items"] = param_info["items"]
-                    properties[param_name] = prop
-                    if param_info.get("required", False):
-                        required_list.append(param_name)
-                else:
-                    properties[param_name] = {
-                        "type": "string",
-                        "description": param_name,
-                    }
-
-            schema = {
-                "type": "object",
-                "properties": properties,
-            }
-            if required_list:
-                schema["required"] = required_list
-
-            formatted.append(
-                {
-                    "type": "function",
-                    "function": {
-                        "name": tool["name"],
-                        "description": tool.get("description", ""),
-                        "parameters": schema,
-                    },
-                }
-            )
-        return formatted

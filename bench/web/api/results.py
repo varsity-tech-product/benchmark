@@ -1,13 +1,28 @@
 """Result browsing endpoints."""
 
 import json
+import math
 import mimetypes
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 
 router = APIRouter()
+
+
+def _sanitize_for_json(obj):
+    """Replace non-finite floats (-inf, inf, NaN) with their string repr."""
+    if isinstance(obj, float):
+        if not math.isfinite(obj):
+            return str(obj)  # "-inf", "inf", "nan"
+        return obj
+    if isinstance(obj, dict):
+        return {k: _sanitize_for_json(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_sanitize_for_json(v) for v in obj]
+    return obj
+
 
 _BENCH_ROOT = Path(__file__).parent.parent.parent
 _RESULTS_DIRS = {
@@ -67,6 +82,30 @@ def _scan_results_dir(base_dir: Path, source: str) -> list[dict]:
     return results
 
 
+@router.get("/files/live/{filename}")
+async def get_live_file(filename: str):
+    """Serve a file from the active workspace during a live run (e.g. charts)."""
+    try:
+        from orchestrator.live_monitor import get_active_workspace
+    except ImportError:
+        raise HTTPException(503, "Live monitor not available")
+
+    workspace = get_active_workspace()
+    if not workspace:
+        raise HTTPException(404, "No active run workspace")
+
+    # Security: only allow simple filenames (no path traversal)
+    if "/" in filename or "\\" in filename or ".." in filename:
+        raise HTTPException(403, "Invalid filename")
+
+    target = Path(workspace) / filename
+    if not target.is_file():
+        raise HTTPException(404, f"File not found: {filename}")
+
+    media_type = mimetypes.guess_type(filename)[0] or "application/octet-stream"
+    return FileResponse(str(target), media_type=media_type)
+
+
 @router.get("/results")
 async def list_results():
     """Scan results/run-single/ and results/run-group/ and return all saved runs."""
@@ -100,10 +139,20 @@ async def get_result(
     scores_file = result_dir / "scores.md"
     if scores_file.exists():
         state["_scores_md"] = scores_file.read_text()
+        state["_score_timestamp"] = scores_file.stat().st_mtime
     cost_file = result_dir / "cost.md"
     if cost_file.exists():
         state["_cost_md"] = cost_file.read_text()
-    return state
+    history_file = result_dir / "score_history.json"
+    if history_file.exists():
+        try:
+            state["_score_history"] = json.loads(history_file.read_text())
+        except Exception:
+            pass
+    # run_state.json may contain non-finite floats (-Infinity, NaN) from
+    # tool results.  These are valid in Python but not in JSON spec, so
+    # FastAPI's default serializer raises ValueError.  Sanitize them.
+    return JSONResponse(content=_sanitize_for_json(state))
 
 
 @router.get(

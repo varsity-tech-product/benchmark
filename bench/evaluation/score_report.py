@@ -38,9 +38,14 @@ def generate_score_report(
     lines = []
     _a = lines.append  # shorthand
 
+    eval_mode = getattr(result, "eval_mode", "full")
+
     # ── Header ──
     _a(f"# Score Report: {tid} / {pid}\n")
-    _a(f"**Category**: {cat} | **Difficulty**: {diff} | **Timestamp**: {ts}\n")
+    mode_label = f" | **Eval Mode**: {eval_mode}" if eval_mode != "full" else ""
+    _a(
+        f"**Category**: {cat} | **Difficulty**: {diff} | **Timestamp**: {ts}{mode_label}\n"
+    )
 
     # ── Overall Scores ──
     _a("## Overall Scores\n")
@@ -49,12 +54,18 @@ def generate_score_report(
     _a(f"| Overall Agent Score (OAS) | {_f(result.overall_score)} |")
     _a(f"| Quant Result (QR) | {_f(result.quant_result_score)} |")
     _a(f"| Quant Process (QP) | {_f(result.quant_process_score)} |")
+    from evaluation.deepeval_metrics.tutor_conv_geval import compute_tutor_score
+
     tutor_avg = (
-        _safe_mean(v for k, v in result.tutor_scores.items() if not k.startswith("_"))
+        compute_tutor_score(
+            result.tutor_scores,
+            category=getattr(result, "category", None),
+            requires_code=getattr(result, "requires_code", False),
+        )
         if result.tutor_scores
         else 0.0
     )
-    _a(f"| Tutor Score (avg 7D) | {_f(tutor_avg)} |")
+    _a(f"| Tutor Score (weighted 7D) | {_f(tutor_avg)} |")
     _a("")
 
     # ── QR Breakdown ──
@@ -189,14 +200,27 @@ def _section_qr(lines, result):
         _a("| Check Item | Weight | Result | Weighted |")
         _a("|------------|--------|--------|----------|")
         for c in checklist:
-            passed = c.get("passed", False)
             weight = c.get("weight", 0.0)
-            result_str = "Pass" if passed else "Fail"
-            weighted = weight if passed else 0.0
+            if "score" in c:
+                # Continuous score (e.g. behavioral_score, trial_efficiency)
+                score_val = c["score"]
+                result_str = f"{score_val:.3f}"
+                weighted = weight * score_val
+            else:
+                passed = c.get("passed", False)
+                result_str = "Pass" if passed else "Fail"
+                weighted = weight if passed else 0.0
             _a(
                 f"| {c.get('item', '')} | {weight:.2f} | {result_str} | {_f(weighted)} |"
             )
-        raw_sum = sum(c.get("weight", 0.0) for c in checklist if c.get("passed"))
+        raw_sum = sum(
+            (
+                c["weight"] * c["score"]
+                if "score" in c
+                else (c.get("weight", 0.0) if c.get("passed") else 0.0)
+            )
+            for c in checklist
+        )
         _a(f"| **Sum (pre-cap)** | | | **{_f(raw_sum)}** |")
 
         if ds_verified is not None:
@@ -632,21 +656,34 @@ def _section_tutor(lines, result):
             row += f" {_f(mv)} |"
         _a(row)
 
-    # Average row
-    tutor_avg = (
-        _safe_mean(v for k, v in ts.items() if not k.startswith("_")) if ts else 0.0
-    )
-    row = f"| **Average** | {_f(tutor_avg)} |"
+    # Average row (weighted by category)
+    from evaluation.deepeval_metrics.tutor_conv_geval import compute_tutor_score
+
+    _cat = getattr(result, "category", None)
+    _rc = getattr(result, "requires_code", False)
+    tutor_avg = compute_tutor_score(ts, category=_cat, requires_code=_rc) if ts else 0.0
+    row = f"| **Average (weighted)** | {_f(tutor_avg)} |"
     for m in model_names:
         m_scores = by_model[m]
         m_avg = (
-            _safe_mean(v for k, v in m_scores.items() if not k.startswith("_"))
+            compute_tutor_score(m_scores, category=_cat, requires_code=_rc)
             if m_scores
             else 0.0
         )
         row += f" {_f(m_avg)} |"
     _a(row)
     _a("")
+
+    # Per-dimension reasons (judge explanations)
+    dim_reasons = ts.get("_dim_reasons", {})
+    if dim_reasons:
+        _a("<details>")
+        _a("<summary><b>Judge Reasons (per dimension)</b></summary>\n")
+        for dim in _TUTOR_DIMS:
+            reason = dim_reasons.get(dim, "")
+            if reason:
+                _a(f"**{dim}**: {reason}\n")
+        _a("</details>\n")
 
     # Fallback recovery note
     fb_count = getattr(result, "tutor_fallback_count", 0)

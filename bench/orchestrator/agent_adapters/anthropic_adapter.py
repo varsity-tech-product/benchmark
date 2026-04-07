@@ -20,12 +20,19 @@ Claude autonomously decides all tool calls in every mode.
 import asyncio
 import logging
 import os
+import time
 from pathlib import Path
 from typing import Optional
 
 from dotenv import load_dotenv
 
-from .base_adapter import BaseAgentAdapter, TokenRecord
+from .base_adapter import (
+    BaseAgentAdapter,
+    TokenRecord,
+    extract_latest_user_message,
+    normalize_tool_params,
+    record_token_usage,
+)
 from .prompts import TUTOR_SYSTEM_PROMPT
 
 _PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
@@ -33,11 +40,14 @@ load_dotenv(_PROJECT_ROOT / ".env")
 
 from config.llm_config import (
     AGENT_USE_OAUTH,
+    AGENT_USE_OPENROUTER,
     ANTHROPIC_AGENT_MODEL,
+    ANTHROPIC_AGENT_MODEL_OR,
     ANTHROPIC_ENABLE_THINKING,
     ANTHROPIC_THINKING_BUDGET,
     ANTHROPIC_USE_SDK,
     OAUTH_BETA_HEADER,
+    OPENROUTER_ANTHROPIC_BASE_URL,
 )
 from config.pricing import estimate_cost
 
@@ -94,30 +104,10 @@ class DynamicTool(BetaBuiltinFunctionTool if ANTHROPIC_SDK_AVAILABLE else object
 
     def to_dict(self) -> dict:
         """Return Anthropic API tool definition."""
-        # Build input_schema from MCP-style parameters
-        properties = {}
-        required = []
-        for param_name, param_info in self._schema.get("parameters", {}).items():
-            if isinstance(param_info, dict):
-                prop = {
-                    "type": param_info.get("type", "string"),
-                    "description": param_info.get("description", param_name),
-                }
-                if "items" in param_info:
-                    prop["items"] = param_info["items"]
-                properties[param_name] = prop
-                if param_info.get("required", False):
-                    required.append(param_name)
-            else:
-                properties[param_name] = {
-                    "type": "string",
-                    "description": param_name,
-                }
-
+        properties, required = normalize_tool_params(self._schema.get("parameters", {}))
         input_schema = {"type": "object", "properties": properties}
         if required:
             input_schema["required"] = required
-
         return {
             "name": self._name,
             "description": self._schema.get("description", ""),
@@ -222,7 +212,6 @@ class ClaudeAgentAdapter(BaseAgentAdapter):
         self.max_agent_turns = max_agent_turns
 
         # Persistent state for cross-turn context (parallels OpenAI _input_history)
-        self._task_context: str = ""
         self._input_history: list[dict] = []
         self._thinking_trace: list[dict] = []  # COT blocks from extended thinking
         self._turn_index: int = 0  # conversation turn counter for thinking trace
@@ -230,6 +219,9 @@ class ClaudeAgentAdapter(BaseAgentAdapter):
         self._current_turn_blocks: list[dict] = (
             []
         )  # incremental capture during iteration
+        self._captured_tool_results: dict[str, dict] = (
+            {}
+        )  # tool_use_id → {content, is_error}, captured incrementally
         self._client: object | None = None  # anthropic.Anthropic instance
 
         if ANTHROPIC_USE_SDK:
@@ -260,6 +252,22 @@ class ClaudeAgentAdapter(BaseAgentAdapter):
                 self._client = anthropic.Anthropic(auth_token=auth_token)
                 self._client.api_key = None  # suppress X-Api-Key header
                 self._betas = [OAUTH_BETA_HEADER]
+            elif AGENT_USE_OPENROUTER:
+                # OpenRouter Anthropic Skin: transparent proxy to Anthropic API.
+                # Base URL /api (SDK appends /v1/messages → /api/v1/messages).
+                # Supports tool_runner, thinking blocks, native tool use.
+                api_key = os.environ.get("OPENROUTER_API_KEY", "")
+                if not api_key:
+                    raise ValueError("OPENROUTER_API_KEY not set in .env")
+                self.model = (
+                    ANTHROPIC_AGENT_MODEL_OR  # OR format: "anthropic/claude-..."
+                )
+                self._client = anthropic.Anthropic(
+                    auth_token=api_key,  # Bearer header (OpenRouter Anthropic Skin)
+                    base_url=OPENROUTER_ANTHROPIC_BASE_URL,
+                )
+                self._client.api_key = None  # suppress x-api-key header
+                self._betas = []
             else:
                 api_key = os.environ.get("ANTHROPIC_API_KEY", "")
                 if not api_key:
@@ -268,23 +276,13 @@ class ClaudeAgentAdapter(BaseAgentAdapter):
                 self._betas = []
 
     def set_task_context(self, context: str):
-        """Set per-task dynamic context injected into system prompt.
+        """Override: also clear conversation history.
 
-        Resets conversation history but preserves thinking_trace —
-        the trace is collected by pre_teardown_hook after the
-        conversation ends but before reset() is called.
+        Preserves thinking_trace — collected by pre_teardown_hook after
+        the conversation ends but before reset() is called.
         """
-        self._task_context = context
+        super().set_task_context(context)
         self._input_history = []
-        # NOTE: _thinking_trace and _turn_index are NOT reset here.
-        # They are cleared in reset() which runs between tasks.
-
-    def _get_full_system_prompt(self) -> str:
-        """Build system prompt with optional task context."""
-        base = self.system_prompt
-        if self._task_context:
-            base += "\n\n" + self._task_context
-        return base
 
     def set_agent_max_steps(self, n: int):
         """Limit how many LLM→tool→LLM cycles per generate_response() call."""
@@ -294,7 +292,6 @@ class ClaudeAgentAdapter(BaseAgentAdapter):
         """Reset internal state between tasks."""
         super().reset()
         self._input_history = []
-        self._task_context = ""
         self._thinking_trace = []
         self._turn_index = 0
         self._turn_content_blocks = {}
@@ -331,12 +328,7 @@ class ClaudeAgentAdapter(BaseAgentAdapter):
         - Prompt caching and rate-limit retry built-in
         """
         try:
-            # Extract the latest user message (same pattern as OpenAI SDK adapter)
-            new_user_msg = None
-            for msg in reversed(messages):
-                if msg["role"] == "user":
-                    new_user_msg = msg["content"]
-                    break
+            new_user_msg = extract_latest_user_message(messages)
             if new_user_msg is None:
                 return ""
 
@@ -363,14 +355,35 @@ class ClaudeAgentAdapter(BaseAgentAdapter):
                 runner_kwargs["betas"] = self._betas
 
             # Enable automatic compaction when context exceeds threshold.
-            # The SDK calls an extra LLM summarization and replaces the
-            # full history with a condensed version — prevents O(n²) token
-            # growth across long multi-turn conversations.
-            runner_kwargs["compaction_control"] = {"enabled": True}
+            # Default SDK threshold is 100K tokens — far too late for
+            # strategy tasks where 10 iterations of shell_exec + plot_chart
+            # generate 30-40K tokens of tool_use blocks alone.  Lowering to
+            # 40K triggers summarization after ~6 iterations, preventing
+            # O(n²) token growth within a single tool_runner burst.
+            runner_kwargs["compaction_control"] = {
+                "enabled": True,
+                "context_token_threshold": 40_000,
+            }
 
-            # NOTE: context_management (server-side clear_tool_uses /
-            # compact) requires a beta header not yet available via OAuth.
-            # compaction_control above is client-side and sufficient.
+            # Automatically clear old tool_use/tool_result blocks and
+            # thinking blocks during the tool loop.  This keeps the
+            # context lean: only the most recent 6 tool calls remain in
+            # full, older ones are discarded (their results are already
+            # reflected in the agent's own text and workspace files).
+            # Thinking blocks are captured by _extract_thinking() before
+            # being cleared, so no information is lost.
+            runner_kwargs["context_management"] = {
+                "edits": [
+                    {
+                        "type": "clear_thinking_20251015",
+                        "keep": {"type": "thinking_turns", "value": 1},
+                    },
+                    {
+                        "type": "clear_tool_uses_20250919",
+                        "keep": {"type": "tool_uses", "value": 6},
+                    },
+                ]
+            }
 
             # Extended thinking: capture COT blocks per-iteration.
             if ANTHROPIC_ENABLE_THINKING:
@@ -390,16 +403,91 @@ class ClaudeAgentAdapter(BaseAgentAdapter):
             final_message = None
             iteration = 0
             self._current_turn_blocks = []
+            self._captured_tool_results = {}
+            text_parts: list[str] = []  # Accumulate text from ALL iterations
+            _runner_crashed = False
+            _iter_t0 = time.time()
             for message in runner:
+                # Cancel check: exit runner loop immediately
+                if self._cancel_event is not None and self._cancel_event.is_set():
+                    log.info(
+                        "Cancel detected in runner loop at iteration %d, breaking",
+                        iteration,
+                    )
+                    break
                 final_message = message
                 iteration += 1
+                # [DIAG] Log iteration timing and content types
+                block_types = [getattr(b, "type", "?") for b in message.content]
+                _iter_elapsed = time.time() - _iter_t0
+                _thinking_len = sum(
+                    len(getattr(b, "thinking", "") or "")
+                    for b in message.content
+                    if getattr(b, "type", None) == "thinking"
+                )
+                _text_len = sum(
+                    len(getattr(b, "text", "") or "")
+                    for b in message.content
+                    if getattr(b, "type", None) == "text"
+                )
+                _usage = getattr(message, "usage", None)
+                _in_tok = getattr(_usage, "input_tokens", "?") if _usage else "?"
+                _out_tok = getattr(_usage, "output_tokens", "?") if _usage else "?"
+                print(
+                    f"    [iter {iteration}] {_iter_elapsed:.1f}s "
+                    f"blocks={block_types} "
+                    f"thinking={_thinking_len}ch text={_text_len}ch "
+                    f"tokens={_in_tok}in/{_out_tok}out",
+                    flush=True,
+                )
+                _iter_t0 = time.time()
+
                 self._record_message_usage(message)
                 self._extract_thinking(message, iteration)
                 self._capture_iteration_blocks(message)
+                # Incrementally capture tool_results from runner messages
+                # BEFORE context_management clears them in the next iteration.
+                self._scan_runner_tool_results(runner)
+
+                # Emit progress event so frontend knows we're alive
+                try:
+                    from orchestrator.live_monitor import emit
+
+                    emit(
+                        "agent_progress",
+                        {
+                            "iteration": iteration,
+                            "has_thinking": "thinking" in block_types,
+                            "has_tool_use": "tool_use" in block_types,
+                            "has_text": "text" in block_types,
+                            "thinking_len": _thinking_len,
+                        },
+                    )
+                except Exception:
+                    pass
+
+                # Collect text blocks from every iteration, not just the last.
+                # Without this, intermediate explanations (concept intro, code
+                # walkthrough, progress notes) are lost — only the final
+                # results summary would survive.
+                for block in message.content:
+                    if hasattr(block, "text") and block.text.strip():
+                        text_parts.append(block.text)
+
+            # Final scan: capture tool_results from the last iteration
+            # (tools execute AFTER yield, so the last iteration's results
+            # only appear in messages after the loop exits).
+            try:
+                self._scan_runner_tool_results(runner)
+            except Exception:
+                pass
 
             # Persist full message history (including tool_use/tool_result).
             # If compaction fired, this already contains the summarized version.
-            self._input_history = list(runner._params["messages"])
+            try:
+                self._input_history = list(runner._params["messages"])
+            except Exception:
+                pass
 
             # Finalize content blocks: inject tool_results from history into
             # the incrementally captured blocks.
@@ -412,16 +500,92 @@ class ClaudeAgentAdapter(BaseAgentAdapter):
 
             self._turn_index += 1
 
-            # Extract final text response
-            result_text = ""
-            for block in final_message.content:
-                if hasattr(block, "text"):
-                    result_text += block.text
+            # Join all text parts across iterations into one response.
+            result_text = "\n\n".join(text_parts)
+
+            # Fallback: generate a text summary when the runner's final
+            # message lacks a substantive text conclusion.  This covers:
+            #   (a) Final message is pure tool_use with no text at all
+            #   (b) Final message has only transition text (< 100 chars like
+            #       "Now the charts:") followed by tool_use — the student
+            #       would see the transition but no summary of tool results.
+            last_needs_summary = False
+            if final_message is not None:
+                fm_text_chars = sum(
+                    len(b.text)
+                    for b in final_message.content
+                    if hasattr(b, "text") and b.text.strip()
+                )
+                fm_has_tool = any(
+                    getattr(b, "type", None) == "tool_use"
+                    for b in final_message.content
+                )
+                if fm_text_chars == 0:
+                    last_needs_summary = True
+                elif fm_has_tool and fm_text_chars < 100:
+                    # Trivial transition text followed by tool calls
+                    last_needs_summary = True
+            if not result_text or last_needs_summary:
+                try:
+                    log.warning(
+                        "BetaToolRunner ended with tool_use (no final text). "
+                        "Making fallback summary call (existing text: %d chars).",
+                        len(result_text),
+                    )
+                    # When thinking is enabled, max_tokens must exceed
+                    # budget_tokens to leave room for actual text output.
+                    fallback_max = (
+                        ANTHROPIC_THINKING_BUDGET + 4096
+                        if ANTHROPIC_ENABLE_THINKING
+                        else 4096
+                    )
+                    summary_kwargs = dict(
+                        model=self.model,
+                        max_tokens=fallback_max,
+                        system=self._get_full_system_prompt(),
+                        messages=list(self._input_history),
+                    )
+                    if self._betas:
+                        summary_kwargs["betas"] = self._betas
+                    if ANTHROPIC_ENABLE_THINKING:
+                        summary_kwargs["thinking"] = {
+                            "type": "enabled",
+                            "budget_tokens": ANTHROPIC_THINKING_BUDGET,
+                        }
+                    summary_msg = self._client.beta.messages.create(**summary_kwargs)
+                    fallback_text = ""
+                    for block in summary_msg.content:
+                        if hasattr(block, "text"):
+                            fallback_text += block.text
+                    self._record_message_usage(summary_msg)
+                    # Append fallback to existing text with separator
+                    if fallback_text:
+                        if result_text:
+                            result_text = result_text + "\n\n" + fallback_text
+                        else:
+                            result_text = fallback_text
+                    # Append to history so next turn has context
+                    if result_text:
+                        self._input_history.append(
+                            {"role": "assistant", "content": result_text}
+                        )
+                except Exception as fallback_exc:
+                    log.error("Fallback summary call failed: %s", fallback_exc)
 
             return result_text if result_text else "[No response from Anthropic API]"
 
         except Exception as e:
             log.error("BetaToolRunner error: %s", e, exc_info=True)
+            # Recover accumulated text from iterations completed before crash.
+            # Without this, a mid-loop API error discards all prior work.
+            if text_parts:
+                log.warning(
+                    "Recovering %d chars of text from %d iterations before crash.",
+                    sum(len(t) for t in text_parts),
+                    iteration,
+                )
+                self._turn_index += 1
+                return "\n\n".join(text_parts)
             return f"[Anthropic API error: {e}]"
 
     def _record_message_usage(self, message) -> None:
@@ -434,18 +598,16 @@ class ClaudeAgentAdapter(BaseAgentAdapter):
         usage = getattr(message, "usage", None)
         if not usage:
             return
-        inp = getattr(usage, "input_tokens", 0) or 0
-        out = getattr(usage, "output_tokens", 0) or 0
         cache_read = getattr(usage, "cache_read_input_tokens", 0) or 0
         cache_create = getattr(usage, "cache_creation_input_tokens", 0) or 0
-        total_inp = inp + cache_read + cache_create
-        self._token_records.append(
-            TokenRecord(
-                model=self.model,
-                input_tokens=total_inp,
-                output_tokens=out,
-                cost_usd=estimate_cost(self.model, total_inp, out),
-            )
+        record_token_usage(
+            self._token_records,
+            self.model,
+            usage,
+            input_attr="input_tokens",
+            output_attr="output_tokens",
+            extra_input=cache_read + cache_create,
+            cost_fn=estimate_cost,
         )
 
     # ------------------------------------------------------------------
@@ -505,6 +667,54 @@ class ClaudeAgentAdapter(BaseAgentAdapter):
     # Content blocks capture (for web UI inline display)
     # ------------------------------------------------------------------
 
+    def _scan_runner_tool_results(self, runner) -> None:
+        """Incrementally capture tool_results from runner._params['messages'].
+
+        Called during each iteration AND once after the loop exits.
+        Captures tool_results before context_management clears them in
+        subsequent API calls.  Idempotent — already-captured results are
+        skipped via the _captured_tool_results dict.
+
+        Wrapped in try/except so capture failures never affect the main
+        agent loop or result recording.
+        """
+        try:
+            messages = runner._params.get("messages", [])
+            for msg in messages:
+                if not isinstance(msg, dict) or msg.get("role") != "user":
+                    continue
+                content = msg.get("content", [])
+                if not isinstance(content, list):
+                    continue
+                for block in content:
+                    # Handle both SDK objects and plain dicts
+                    if isinstance(block, dict):
+                        bt = block.get("type")
+                        tui = block.get("tool_use_id")
+                        raw = block.get("content", "")
+                        is_err = block.get("is_error", False)
+                    else:
+                        bt = getattr(block, "type", None)
+                        tui = getattr(block, "tool_use_id", None)
+                        raw = getattr(block, "content", "")
+                        is_err = getattr(block, "is_error", False)
+
+                    if bt != "tool_result" or not tui:
+                        continue
+                    if tui in self._captured_tool_results:
+                        continue  # already captured
+
+                    if not isinstance(raw, str):
+                        raw = str(raw)
+                    if len(raw) > 800:
+                        raw = raw[:800] + "\u2026"
+                    self._captured_tool_results[tui] = {
+                        "content": raw,
+                        "is_error": bool(is_err),
+                    }
+        except Exception as exc:
+            log.debug("_scan_runner_tool_results: %s (non-fatal)", exc)
+
     def _capture_iteration_blocks(self, message) -> None:
         """Capture content blocks from a single BetaToolRunner iteration.
 
@@ -548,46 +758,13 @@ class ClaudeAgentAdapter(BaseAgentAdapter):
                     self._current_turn_blocks.append({"type": "text", "text": text_val})
 
     def _finalize_turn_blocks(self) -> list[dict]:
-        """Inject tool_results from history into incrementally captured blocks.
+        """Inject tool_results into incrementally captured blocks.
 
-        Tool results live in user messages (role="user", content=[tool_result])
-        and are NOT stripped by the runner, so we read them from
-        ``_input_history`` after the iteration loop completes.
+        Uses ``_captured_tool_results`` (populated by ``_scan_runner_tool_results``
+        during each iteration) instead of scanning ``_input_history``.  This
+        ensures tool_results cleared by context_management are still available.
         """
-        # Collect tool_results keyed by tool_use_id
-        tool_results: dict[str, dict] = {}
-        for msg in self._input_history:
-            if msg.get("role") != "user":
-                continue
-            content = msg.get("content", [])
-            if not isinstance(content, list):
-                continue
-            for block in content:
-                bt = getattr(block, "type", None)
-                if isinstance(block, dict):
-                    bt = block.get("type")
-                if bt != "tool_result":
-                    continue
-                tui = getattr(block, "tool_use_id", None)
-                if isinstance(block, dict):
-                    tui = block.get("tool_use_id")
-                if not tui:
-                    continue
-                raw_content = getattr(block, "content", "")
-                if isinstance(block, dict):
-                    raw_content = block.get("content", "")
-                if not isinstance(raw_content, str):
-                    raw_content = str(raw_content)
-                is_err = getattr(block, "is_error", False)
-                if isinstance(block, dict):
-                    is_err = block.get("is_error", False)
-                # Truncate for storage (full result is in tool_logs)
-                if len(raw_content) > 800:
-                    raw_content = raw_content[:800] + "\u2026"
-                tool_results[tui] = {
-                    "content": raw_content,
-                    "is_error": bool(is_err),
-                }
+        tool_results = dict(self._captured_tool_results)
 
         # Build final list: inject tool_result after each tool_use,
         # and strip the temporary _tool_id field.
@@ -607,124 +784,6 @@ class ClaudeAgentAdapter(BaseAgentAdapter):
                 final_blocks.append(block)
 
         return final_blocks
-
-    def _capture_content_blocks(self) -> list[dict]:
-        """Legacy fallback — extract content blocks from ``_input_history``.
-
-        NOTE: This method misses intermediate thinking blocks because the
-        BetaToolRunner strips them before they reach ``_input_history``.
-        Prefer the incremental capture path (_capture_iteration_blocks +
-        _finalize_turn_blocks) which is used by _generate_direct().
-        """
-        """Extract ordered content blocks for the current turn from runner history.
-
-        Scans _input_history backwards from the end to find all messages
-        belonging to the current turn (everything after our injected user
-        message). Returns a flat list preserving the natural sequence:
-        thinking → tool_use → tool_result → thinking → ... → text.
-        """
-        blocks: list[dict] = []
-
-        # Find the start of current turn: last "real" user message
-        # (tool_result messages also have role="user" but content is a list)
-        start_idx = None
-        for i in range(len(self._input_history) - 1, -1, -1):
-            msg = self._input_history[i]
-            if msg.get("role") == "user" and isinstance(msg.get("content"), str):
-                start_idx = i + 1
-                break
-        if start_idx is None:
-            return blocks
-
-        # First pass: collect tool_results keyed by tool_use_id
-        tool_results: dict[str, dict] = {}
-        for msg in self._input_history[start_idx:]:
-            if msg.get("role") != "user":
-                continue
-            content = msg.get("content", [])
-            if not isinstance(content, list):
-                continue
-            for block in content:
-                bt = getattr(block, "type", None)
-                if isinstance(block, dict):
-                    bt = block.get("type")
-                if bt != "tool_result":
-                    continue
-                tui = getattr(block, "tool_use_id", None)
-                if isinstance(block, dict):
-                    tui = block.get("tool_use_id")
-                if not tui:
-                    continue
-                raw_content = getattr(block, "content", "")
-                if isinstance(block, dict):
-                    raw_content = block.get("content", "")
-                if not isinstance(raw_content, str):
-                    raw_content = str(raw_content)
-                is_err = getattr(block, "is_error", False)
-                if isinstance(block, dict):
-                    is_err = block.get("is_error", False)
-                # Truncate for storage (full result is in tool_logs)
-                if len(raw_content) > 800:
-                    raw_content = raw_content[:800] + "\u2026"
-                tool_results[tui] = {
-                    "content": raw_content,
-                    "is_error": bool(is_err),
-                }
-
-        # Second pass: build ordered blocks from assistant messages
-        for msg in self._input_history[start_idx:]:
-            if msg.get("role") != "assistant":
-                continue
-            content = msg.get("content", [])
-            if isinstance(content, str):
-                if content:
-                    blocks.append({"type": "text", "text": content})
-                continue
-            if not isinstance(content, list):
-                continue
-            for block in content:
-                bt = getattr(block, "type", None)
-                if isinstance(block, dict):
-                    bt = block.get("type")
-
-                if bt == "thinking":
-                    thinking_text = getattr(block, "thinking", "")
-                    if isinstance(block, dict):
-                        thinking_text = block.get("thinking", "")
-                    blocks.append({"type": "thinking", "text": thinking_text})
-
-                elif bt == "tool_use":
-                    tool_id = getattr(block, "id", "")
-                    tool_name = getattr(block, "name", "")
-                    tool_input = getattr(block, "input", {})
-                    if isinstance(block, dict):
-                        tool_id = block.get("id", "")
-                        tool_name = block.get("name", "")
-                        tool_input = block.get("input", {})
-                    blocks.append(
-                        {
-                            "type": "tool_use",
-                            "name": tool_name,
-                            "input": tool_input,
-                        }
-                    )
-                    # Immediately follow with paired tool_result
-                    if tool_id in tool_results:
-                        blocks.append(
-                            {
-                                "type": "tool_result",
-                                **tool_results[tool_id],
-                            }
-                        )
-
-                elif bt == "text":
-                    text_val = getattr(block, "text", "")
-                    if isinstance(block, dict):
-                        text_val = block.get("text", "")
-                    if text_val:
-                        blocks.append({"type": "text", "text": text_val})
-
-        return blocks
 
     def get_content_blocks(self) -> dict[int, list[dict]]:
         """Return per-turn content blocks {turn_index: [blocks]}."""
@@ -785,7 +844,7 @@ class ClaudeAgentAdapter(BaseAgentAdapter):
         ]
 
         options_kwargs = dict(
-            system_prompt=self.system_prompt,
+            system_prompt=self._get_full_system_prompt(),
             model=self.model,
             mcp_servers=mcp_servers,
             max_turns=self.max_agent_turns,
@@ -846,7 +905,7 @@ class ClaudeAgentAdapter(BaseAgentAdapter):
 
     async def _query_sdk(self, prompt: str, options) -> str:
         """Execute the Claude Agent SDK query and extract the result."""
-        result_text = ""
+        text_parts: list[str] = []
 
         async with ClaudeSDKClient(options=options) as client:
             await client.query(prompt)
@@ -862,24 +921,22 @@ class ClaudeAgentAdapter(BaseAgentAdapter):
                 if isinstance(message, AssistantMessage):
                     for block in message.content:
                         if isinstance(block, TextBlock):
-                            result_text = block.text
-                    usage = getattr(message, "usage", None)
-                    if usage:
-                        inp = getattr(usage, "input_tokens", 0) or 0
-                        out = getattr(usage, "output_tokens", 0) or 0
-                        self._token_records.append(
-                            TokenRecord(
-                                model=self.model,
-                                input_tokens=inp,
-                                output_tokens=out,
-                                cost_usd=estimate_cost(self.model, inp, out),
-                            )
-                        )
+                            if block.text.strip():
+                                text_parts.append(block.text)
+                    record_token_usage(
+                        self._token_records,
+                        self.model,
+                        getattr(message, "usage", None),
+                        input_attr="input_tokens",
+                        output_attr="output_tokens",
+                        cost_fn=estimate_cost,
+                    )
                 elif isinstance(message, ResultMessage):
                     if hasattr(message, "result") and message.result:
-                        result_text = message.result
+                        text_parts.append(message.result)
                     break  # ResultMessage = end of response
 
+        result_text = "\n\n".join(text_parts)
         # Fallback: estimate from character count if SDK didn't expose usage
         if not any(r.model == self.model for r in self._token_records):
             est_inp = int(len(prompt) / 3.5)

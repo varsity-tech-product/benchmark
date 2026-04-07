@@ -104,9 +104,9 @@
     return el;
   }
 
-  function createInlineToolEl(toolUse, toolResult, fullLog) {
+  function createInlineToolEl(toolUse, toolResult, fullLog, mdImageNames) {
     var el = document.createElement('div');
-    var isError = toolResult && toolResult.is_error;
+    var isError = (toolResult && toolResult.is_error) || (fullLog && fullLog.success === false);
     el.className = 'cb-tool' + (isError ? ' cb-tool-error' : '');
 
     var statusIcon = toolResult
@@ -132,6 +132,37 @@
       '</div>';
 
     el.innerHTML = html;
+
+    // Render inline images if tool produced image files
+    var outputFiles = (fullLog && fullLog.output_files) || [];
+    // Fallback: extract image filenames from result text (old data)
+    if (outputFiles.length === 0 && fullLog && fullLog.result && fullLog.success !== false) {
+      var imgRe = /(?:saved to|wrote|created|generated)\s+\/\S+\/([\w.-]+\.(?:png|jpg|jpeg|svg|gif))/gi;
+      var m;
+      while ((m = imgRe.exec(fullLog.result)) !== null) {
+        outputFiles.push(m[1]);
+      }
+    }
+    // Dedup: skip images already shown in a text bubble's markdown
+    var deduped = mdImageNames
+      ? outputFiles.filter(function (f) { return !mdImageNames[f]; })
+      : outputFiles;
+    if (deduped.length > 0) {
+      var imgWrap = document.createElement('div');
+      imgWrap.className = 'cb-tool-images';
+      deduped.forEach(function (fname) {
+        var img = document.createElement('img');
+        // Bare filename; caller rewrites for live (/api/files/live/) or replay (/api/results/.../files/)
+        img.src = fname;
+        img.alt = fname;
+        img.className = 'cb-tool-img';
+        img.addEventListener('click', function () {
+          window.open(img.src, '_blank');
+        });
+        imgWrap.appendChild(img);
+      });
+      el.appendChild(imgWrap);
+    }
 
     // Click tool name → modal with full details
     el.querySelector('.cb-tool-name').addEventListener('click', function (e) {
@@ -179,6 +210,22 @@
         '</div>';
     }
 
+    // Show images in modal if available
+    var outputFiles = info.output_files || [];
+    if (outputFiles.length > 0) {
+      html += '<div style="margin-top:12px">' +
+        '<div style="font-size:12px;font-weight:600;color:var(--text-muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.05em">Output Images</div>';
+      outputFiles.forEach(function (fname) {
+        // Modal images: use live endpoint (modals are typically shown during live runs)
+        // For replay, the user sees images inline in the tool card instead
+        html += '<img src="/api/files/live/' + encodeURIComponent(fname) +
+          '" alt="' + QTB.escapeHtml(fname) +
+          '" class="cb-tool-img" style="max-width:100%;border-radius:var(--radius);margin-top:8px;cursor:pointer;" ' +
+          'onerror="this.style.display=\'none\'" />';
+      });
+      html += '</div>';
+    }
+
     window._qtbShowModal(name, html);
   }
 
@@ -193,6 +240,22 @@
   function createContentBlocksEl(blocks, turnToolLogs) {
     var container = document.createElement('div');
     container.className = 'cb-container';
+
+    // Pre-scan: collect image filenames already referenced in text blocks'
+    // markdown (e.g. ![Chart](chart_xxx.png)) to avoid showing them twice
+    // (once in the text bubble, once in the tool card).
+    var mdImageNames = {};
+    for (var p = 0; p < blocks.length; p++) {
+      if (blocks[p].type === 'text' && blocks[p].text) {
+        var mdImgRe = /!\[[^\]]*\]\(([^)]+)\)/g;
+        var mm;
+        while ((mm = mdImgRe.exec(blocks[p].text)) !== null) {
+          // Extract bare filename from possibly path-like refs
+          var fname = mm[1].split('/').pop();
+          if (fname) mdImageNames[fname] = true;
+        }
+      }
+    }
 
     var toolLogIdx = 0;
 
@@ -222,7 +285,7 @@
           }
         }
 
-        container.appendChild(createInlineToolEl(block, result, fullLog));
+        container.appendChild(createInlineToolEl(block, result, fullLog, mdImageNames));
       } else if (block.type === 'text') {
         var bubble = document.createElement('div');
         bubble.className = 'bubble';
@@ -277,14 +340,13 @@
 
   // ── Thinking indicator (live streaming) ────────────────────
 
-  var THINKING_ID = 'qtb-thinking';
+  var THINKING_CLS = 'qtb-thinking';
 
   function showThinking(container, text) {
     hideThinking(container);
 
     var msg = document.createElement('div');
-    msg.className = 'msg tutor';
-    msg.id = THINKING_ID;
+    msg.className = 'msg tutor ' + THINKING_CLS;
 
     var avatar = document.createElement('div');
     avatar.className = 'avatar avatar-tutor';
@@ -313,27 +375,26 @@
   }
 
   function updateThinking(container, text) {
-    var el = document.getElementById(THINKING_ID);
+    var el = container.querySelector('.' + THINKING_CLS);
     if (!el) return showThinking(container, text);
     var span = el.querySelector('.thinking-text');
     if (span) span.textContent = text;
   }
 
   function hideThinking(container) {
-    var el = document.getElementById(THINKING_ID);
+    var el = container.querySelector('.' + THINKING_CLS);
     if (el) el.remove();
   }
 
   // ── Responding indicator (student typing) ──────────────────
 
-  var RESPONDING_ID = 'qtb-responding';
+  var RESPONDING_CLS = 'qtb-responding';
 
   function showResponding(container) {
     hideResponding(container);
 
     var msg = document.createElement('div');
-    msg.className = 'msg student';
-    msg.id = RESPONDING_ID;
+    msg.className = 'msg student ' + RESPONDING_CLS;
 
     var avatar = document.createElement('div');
     avatar.className = 'avatar avatar-student';
@@ -362,7 +423,7 @@
   }
 
   function hideResponding(container) {
-    var el = document.getElementById(RESPONDING_ID);
+    var el = container.querySelector('.' + RESPONDING_CLS);
     if (el) el.remove();
   }
 

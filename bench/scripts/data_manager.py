@@ -65,6 +65,35 @@ def _ensure_docs(
     return str(docs_dir)
 
 
+def _ensure_reference(
+    cache_dir: Path,
+    hf_repo: str,
+    revision: str | None,
+) -> str:
+    """Download reference results if not cached. Returns reference dir path."""
+    # Reference data lives alongside hf_cache, not inside it:
+    #   bench/data/reference/  (sibling of bench/data/hf_cache/)
+    ref_dir = cache_dir.parent / "reference"
+    # Use a marker file to detect completed extraction
+    marker = ref_dir / ".hf_downloaded"
+    if ref_dir.exists() and (marker.exists() or any(ref_dir.glob("I01_*"))):
+        return str(ref_dir)
+    archive = hf_hub_download(
+        repo_id=hf_repo,
+        repo_type="dataset",
+        filename="reference.tar.gz",
+        local_dir=str(cache_dir),
+        revision=revision,
+    )
+    ref_dir.mkdir(parents=True, exist_ok=True)
+    with tarfile.open(archive, "r:gz") as tf:
+        tf.extractall(path=str(ref_dir))
+    os.remove(archive)
+    # Write marker so we don't re-download
+    marker.write_text("downloaded")
+    return str(ref_dir)
+
+
 def ensure_data(
     series: str = "i",
     cache_dir: str | Path = DEFAULT_CACHE_DIR,
@@ -86,8 +115,9 @@ def ensure_data(
     cache_dir = Path(cache_dir)
     cache_dir.mkdir(parents=True, exist_ok=True)
 
-    # Docs are shared across all series
+    # Docs and reference are shared across all series
     docs_path = _ensure_docs(cache_dir, hf_repo, revision)
+    _ensure_reference(cache_dir, hf_repo, revision)
 
     if series == "lean":
         lean_dir = cache_dir / "lean"

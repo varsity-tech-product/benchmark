@@ -20,16 +20,23 @@ GOOGLE_AGENT_MODEL_OR = "google/gemini-2.5-flash-preview"
 # --- Reference / Evaluation / Simulation ---
 REFERENCE_DEFAULT_MODEL = "openai/gpt-5.2"
 SIMULATOR_DEFAULT_MODEL = "openai/gpt-5.2"
+TC_CHECKER_MODEL = "anthropic/claude-sonnet-4-6"
 EVAL_DEFAULT_MODELS: list[str] = [
+    # "anthropic/claude-haiku-4.5",
     "anthropic/claude-sonnet-4.6",
     # "openai/gpt-5.2",
     # "anthropic/claude-opus-4.6",
 ]
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+# Anthropic Skin: exposes Anthropic Messages API at /api (SDK appends /v1/messages).
+# Passes through thinking blocks + native tool use. Used by AGENT_USE_OPENROUTER.
+OPENROUTER_ANTHROPIC_BASE_URL = "https://openrouter.ai/api"
 
 # --- OAuth direct (Claude Max) ---
 # Anthropic eval models use OAuth → Anthropic API, falling back to OpenRouter.
-EVAL_USE_OAUTH = True
+# Disabled for eval: OAuth path bypasses DeepEval's temperature controls,
+# causing judges to run at Anthropic's default temp=1.0 instead of 0.0.
+EVAL_USE_OAUTH = False
 OAUTH_BETA_HEADER = "oauth-2025-04-20"
 
 # --- Anthropic agent transport ---
@@ -39,7 +46,11 @@ ANTHROPIC_USE_SDK = False
 
 # --- Agent OAuth (Claude Max) ---
 # Uses CLAUDE_CODE_OAUTH_TOKEN instead of ANTHROPIC_API_KEY. Only when SDK=False.
-AGENT_USE_OAUTH = True
+AGENT_USE_OAUTH = False
+# True = route agent calls through OpenRouter Anthropic Skin (OPENROUTER_API_KEY).
+# Supports tool_runner, thinking, compaction — transparent proxy to Anthropic API.
+# False = Anthropic direct API (ANTHROPIC_API_KEY). Only when AGENT_USE_OAUTH=False.
+AGENT_USE_OPENROUTER = True
 
 # --- OpenAI direct API mode ---
 # True = Chat Completions loop (visible reasoning). False = Agents SDK Runner.
@@ -54,6 +65,12 @@ ANTHROPIC_THINKING_BUDGET = 4096
 # Effort levels: "none", "low", "medium", "high". No reasoning text exposed.
 OPENAI_ENABLE_REASONING = False
 OPENAI_REASONING_EFFORT = "medium"
+
+# --- Evaluation temperature ---
+# Judge / TC checker / simulator temperature.  Deterministic (0.0) ensures
+# reproducible scores across runs.  Agent temperature is NOT controlled here
+# — agents run at their provider's default to reflect real-world behaviour.
+EVAL_JUDGE_TEMPERATURE = 0.0
 
 # --- Model mapping: agent type → (native model, OpenRouter model) ---
 AGENT_MODEL_MAP: dict[str, tuple[str, str]] = {

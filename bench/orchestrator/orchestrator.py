@@ -222,6 +222,8 @@ class BenchmarkOrchestrator:
         skip_eval: bool = False,
         prompt_mode: str = "tutor",
         timeout_minutes: Optional[int] = None,
+        cancel_event=None,
+        eval_mode: str = "full",
     ) -> TaskResult:
         """Run a single task with a specific persona and agent.
 
@@ -235,6 +237,7 @@ class BenchmarkOrchestrator:
         """
         start_time = time.time()
         max_turns = max_turns or task.max_turns
+        agent.reset()
         result = TaskResult(
             task_id=task.task_id,
             persona_id=persona.persona_id,
@@ -247,6 +250,7 @@ class BenchmarkOrchestrator:
         staged_temp_dirs: list[str] = []
         container = None
         simulator_cost = None
+        conversational_test_case = None
 
         try:
             # === PHASE 1: RESET ===
@@ -293,7 +297,10 @@ class BenchmarkOrchestrator:
             if self.container_manager.use_docker:
                 self.container_manager.start_executor(
                     container.container_id,
-                    env_vars={"QTB_MAX_BACKTEST_TRIALS": str(max_bt)},
+                    env_vars={
+                        "QTB_MAX_BACKTEST_TRIALS": str(max_bt),
+                        "LEAN_RUN_TIMEOUT": "300",
+                    },
                 )
 
             # 1c. Set environment vars for tool implementations (lazy reads in tools.py)
@@ -303,7 +310,21 @@ class BenchmarkOrchestrator:
             os.environ["QTB_DOCS_DIR"] = staged_docs_dir
             os.environ["QTB_WORKSPACE_DIR"] = container.workspace_path
             os.environ["QTB_STUDENT_CODE_DIR"] = student_code_dir or ""
+            # Pass max_backtest_trials so trial tools know the budget
+            max_bt = task.environment.max_backtest_trials if task.environment else 0
             os.environ["QTB_MAX_BACKTEST_TRIALS"] = str(max_bt)
+
+            # Expose workspace path for live file serving (web dashboard)
+            try:
+                from orchestrator.live_monitor import set_active_workspace
+
+                set_active_workspace(container.workspace_path)
+                print(
+                    f"  [DIAG] set_active_workspace({container.workspace_path})",
+                    flush=True,
+                )
+            except Exception as _ws_exc:
+                print(f"  [DIAG] set_active_workspace FAILED: {_ws_exc}", flush=True)
 
             # 1d. Configure MCP proxy with task-specific tools + container info
             proxy = create_proxy_for_task(
@@ -325,17 +346,11 @@ class BenchmarkOrchestrator:
             # === PHASE 1.5: INJECT DYNAMIC CONTEXT ===
             # Temporarily augment the agent's system prompt with task/persona
             # context so it knows what to teach and who the student is.
-            original_system_prompt = agent.system_prompt
             if prompt_mode == "oracle":
                 dynamic_context = build_oracle_context(task, persona)
             else:
                 dynamic_context = build_tutor_context(task, persona)
-            # Use set_task_context() if available (OpenAI SDK adapter uses
-            # dynamic instructions callable); fall back to direct mutation.
-            if hasattr(agent, "set_task_context"):
-                agent.set_task_context(dynamic_context)
-            else:
-                agent.system_prompt = f"{original_system_prompt}\n\n{dynamic_context}"
+            agent.set_task_context(dynamic_context)
 
             # Apply per-task agent step limit (controls SDK internal loop depth)
             agent.set_agent_max_steps(task.agent_max_steps)
@@ -367,6 +382,7 @@ class BenchmarkOrchestrator:
                     max_turns=max_turns,
                     tools_enabled=tools_enabled,
                     timeout_minutes=timeout_minutes,
+                    cancel_event=cancel_event,
                 )
                 # Extract turns from ConversationalTestCase into TaskResult
                 for t in conversational_test_case.turns:
@@ -380,10 +396,8 @@ class BenchmarkOrchestrator:
                     f"  ConversationSimulator completed: {len(conversational_test_case.turns)} turns"
                 )
             finally:
-                # Restore original system prompt for next task+persona
-                if hasattr(agent, "set_task_context"):
-                    agent.set_task_context("")
-                agent.system_prompt = original_system_prompt
+                # Clear task context for next task+persona
+                agent.set_task_context("")
 
             # === PHASE 3: CAPTURE ===
             # Capture workspace file list before teardown destroys the container.
@@ -406,60 +420,12 @@ class BenchmarkOrchestrator:
                 ),
             }
 
-            # === PHASE 3.5: PRE-TEARDOWN HOOK ===
-            # Allows callers (e.g. reference generator) to capture full proxy
-            # logs and workspace files before evaluation and teardown.
-            if pre_teardown_hook is not None:
-                pre_teardown_hook(
-                    result=result,
-                    proxy=proxy,
-                    workspace_path=container.workspace_path,
-                )
-
-            # === PHASE 4: EVALUATE ===
-            if skip_eval:
-                print("  [RUNONLY] Skipping evaluation (--runonly mode)")
-            else:
-                conversation = [
-                    {"role": t.role, "content": t.content} for t in result.turns
-                ]
-                eval_results = self._evaluate_task(
-                    task,
-                    persona,
-                    container.workspace_path,
-                    proxy,
-                    conversation,
-                )
-                result.quant_result_score = eval_results.get("quant_result", 0.0)
-                result.quant_process_score = eval_results.get("quant_process", 0.0)
-                result.tutor_scores = eval_results.get("tutor_scores", {})
-                result.tutor_scores_by_model = eval_results.get(
-                    "tutor_scores_by_model", {}
-                )
-                result.tutor_fallback_count = eval_results.get(
-                    "tutor_fallback_count", 0
-                )
-                result.tutor_eval_error = eval_results.get("tutor_eval_error")
-                result.process_metrics = eval_results.get("process_metrics", {})
-                result.eval_script_detail = eval_results.get("eval_script_detail", {})
-                result.code_eval = eval_results.get("code_eval", {})
-                result.result_judge = eval_results.get("result_judge", {})
-                result.code_process = eval_results.get("process_metrics", {}).get(
-                    "code_process", {}
-                )
-
-                score_breakdown = compute_task_score(
-                    quant_result_score=result.quant_result_score,
-                    quant_process_score=result.quant_process_score,
-                    tutor_dimension_scores=result.tutor_scores,
-                    category=task.category.value,
-                    requires_code=task.requires_code,
-                )
-                result.overall_score = score_breakdown["overall_score"]
-
             # === PHASE 3.25: TRIAL FINALIZATION ===
+            # If the task uses the trial system, auto-select best trial
+            # when the agent didn't explicitly call select_submission.
             # Check for either manifest (tool-invoked runs) or JSONL log
-            # (shell_exec-invoked runs). Both paths are now unified.
+            # (shell_exec-invoked runs).
+            max_bt = task.environment.max_backtest_trials if task.environment else 0
             if max_bt > 0 and container.workspace_path:
                 manifest_path = os.path.join(
                     container.workspace_path, ".trials", "manifest.json"
@@ -483,6 +449,44 @@ class BenchmarkOrchestrator:
                     except Exception as e:
                         print(f"  [Trials] Warning: finalization failed: {e}")
 
+            # === PHASE 3.5: PRE-TEARDOWN HOOK ===
+            # Allows callers (e.g. reference generator) to capture full proxy
+            # logs and workspace files before evaluation and teardown.
+            if pre_teardown_hook is not None:
+                pre_teardown_hook(
+                    result=result,
+                    proxy=proxy,
+                    workspace_path=container.workspace_path,
+                )
+
+            # === PHASE 4: EVALUATE ===
+            if cancel_event and cancel_event.is_set():
+                print("  [CANCEL] Run cancelled by user, skipping evaluation")
+            elif skip_eval:
+                print("  [RUNONLY] Skipping evaluation (--runonly mode)")
+            else:
+                conversation = [
+                    {"role": t.role, "content": t.content} for t in result.turns
+                ]
+                eval_results = self._evaluate_task(
+                    task,
+                    persona,
+                    container.workspace_path,
+                    proxy,
+                    conversation,
+                    cancel_event=cancel_event,
+                    eval_mode=eval_mode,
+                )
+                from orchestrator.eval_helpers import populate_eval_results
+
+                populate_eval_results(
+                    result,
+                    eval_results,
+                    category=task.category.value,
+                    requires_code=task.requires_code,
+                    eval_mode=eval_mode,
+                )
+
             # === PHASE 5: TEARDOWN ===
             self.container_manager.destroy_container(container.container_id)
 
@@ -493,6 +497,13 @@ class BenchmarkOrchestrator:
         except Exception as e:
             result.error = str(e)
         finally:
+            # Clear live workspace path (no longer accessible after teardown)
+            try:
+                from orchestrator.live_monitor import set_active_workspace
+
+                set_active_workspace(None)
+            except ImportError:
+                pass
             # Clean up staged directories (always, even on error)
             if container is not None and result.error:
                 try:
@@ -500,70 +511,44 @@ class BenchmarkOrchestrator:
                 except Exception:
                     pass
             self._cleanup_staged_dirs(staged_temp_dirs)
+            try:
+                agent.close()
+            except Exception as close_err:
+                print(f"  [warn] agent.close() failed: {close_err}")
 
         result.duration_seconds = time.time() - start_time
 
         # §6.5: Aggregate cost from actual token tracking
         # Harvest then clear so records reflect only THIS task (not prior ones).
+        from orchestrator.eval_helpers import aggregate_eval_cost, build_token_usage
+
         agent_records = agent.get_token_records()
         agent._token_records.clear()
         agent_input = sum(r.input_tokens for r in agent_records)
         agent_output = sum(r.output_tokens for r in agent_records)
         agent_cost = sum(r.cost_usd for r in agent_records)
 
-        # Evaluator cost from _eval_cost fields injected by judge functions.
-        # Note: process_metrics._eval_cost already includes code_process cost
-        # (code_process is one of the tasks inside evaluate_all_process_metrics),
-        # so we must NOT add code_process._eval_cost separately.
-        eval_cost = 0.0
-        eval_cost += result.process_metrics.get("_eval_cost", 0.0)
-        eval_cost += result.result_judge.get("_eval_cost", 0.0)
-        eval_cost += result.tutor_scores.get("_eval_cost", 0.0)
-
-        # Merge per-model cost from all evaluation stages.
-        # Code Process is part of Process Metrics (not a separate stage).
-        eval_cost_by_model: dict[str, float] = {}
-        eval_cost_by_stage_model: dict[str, dict[str, float]] = {}
-        _eval_stages = [
-            ("Tutor 7D", result.tutor_scores),
-            ("Process Metrics", result.process_metrics),
-            ("Result Judge", result.result_judge),
-        ]
-        for stage_name, src in _eval_stages:
-            by_model = src.get("_eval_cost_by_model", {})
-            if by_model:
-                eval_cost_by_stage_model[stage_name] = {
-                    m: round(c, 6) for m, c in by_model.items()
-                }
-            for m, c in by_model.items():
-                eval_cost_by_model[m] = round(eval_cost_by_model.get(m, 0.0) + c, 6)
+        eval_cost, eval_cost_by_model, eval_cost_by_stage_model = aggregate_eval_cost(
+            result
+        )
 
         agent_model = getattr(agent, "model", "unknown")
         sim_model_obj = self.simulator_model or SIMULATOR_DEFAULT_MODEL
         sim_model = getattr(sim_model_obj, "name", str(sim_model_obj))
         sim_cost = simulator_cost or 0.0
-        result.token_usage = {
-            "agent": {
-                "input_tokens": agent_input,
-                "output_tokens": agent_output,
-                "cost_usd": round(agent_cost, 6),
-                "api_calls": len(agent_records),
-                "model": agent_model,
-            },
-            "simulator": {
-                "cost_usd": round(sim_cost, 6),
-                "model": sim_model,
-            },
-            "eval": {
-                "cost_usd": round(eval_cost, 6),
-                "by_model": eval_cost_by_model,
-                "by_stage_model": eval_cost_by_stage_model,
-            },
-            "total": {
-                "cost_usd": round(agent_cost + sim_cost + eval_cost, 6),
-            },
-        }
-        result.cost_usd = round(agent_cost + sim_cost + eval_cost, 4)
+
+        result.token_usage, result.cost_usd = build_token_usage(
+            agent_input=agent_input,
+            agent_output=agent_output,
+            agent_cost=agent_cost,
+            api_calls=len(agent_records),
+            agent_model=agent_model,
+            sim_cost=sim_cost,
+            sim_model=sim_model,
+            eval_cost=eval_cost,
+            eval_cost_by_model=eval_cost_by_model,
+            eval_cost_by_stage_model=eval_cost_by_stage_model,
+        )
 
         return result
 
@@ -669,6 +654,8 @@ class BenchmarkOrchestrator:
         workspace_path,
         proxy,
         conversation,
+        cancel_event=None,
+        eval_mode="full",
     ) -> dict:
         """Run full evaluation on a completed task.
 
@@ -687,10 +674,15 @@ class BenchmarkOrchestrator:
             workspace_path: Path to the container workspace.
             proxy: The MCPProxy instance with tool call logs.
             conversation: List of {"role", "content"} dicts.
+            eval_mode: "full" (default), "qr_only", or "qp_only".
         """
         from orchestrator.live_monitor import emit
 
         _eval_id = {"task_id": task.task_id, "persona_id": persona.persona_id}
+
+        def _check_eval_cancel():
+            if cancel_event and cancel_event.is_set():
+                raise InterruptedError("Evaluation cancelled by user")
 
         results = {
             "quant_result": 0.0,
@@ -699,10 +691,17 @@ class BenchmarkOrchestrator:
             "process_metrics": {},
         }
 
+        _run_qr = eval_mode in ("full", "qr_only")
+        _run_qp = eval_mode in ("full", "qp_only")
+
+        if _run_qr or _run_qp:
+            print(f"  Eval mode: {eval_mode}")
+
         # ── Step 2: Quant Result Score (custom eval scripts) ──
         emit("eval_step", {**_eval_id, "step": "quant_result", "status": "running"})
-        print("  Evaluating Quant Result...")
-        if task.ground_truth.quant_validation:
+        if _run_qr:
+            print("  Evaluating Quant Result...")
+        if _run_qr and task.ground_truth.quant_validation:
             eval_script = (
                 self.bench_root / task.ground_truth.quant_validation.eval_script
             )
@@ -745,26 +744,38 @@ class BenchmarkOrchestrator:
             },
         )
 
+        _check_eval_cancel()
+
         # ── Step 2b: Code Execution QR (Phase 1) ──
+        # Reference loading is always needed (QP uses it for process_alignment).
+        # Code eval scoring is QR-only.
         emit("eval_step", {**_eval_id, "step": "code_eval", "status": "running"})
-        print("  Evaluating Code Execution QR...")
+        if _run_qr:
+            print("  Evaluating Code Execution QR...")
         reference = None  # loaded here, also used by Step 2c + Step 3b
         try:
-            from evaluation.code_eval import evaluate_code_combined
-            from reference.script.reference_store import ReferenceStore
+            from reference_generator.reference_store import ReferenceStore
 
             ref_store = ReferenceStore()
             reference = ref_store.load(task.task_id, persona.persona_id)
 
-            code_eval_result = evaluate_code_combined(
-                workspace_path=workspace_path,
-                tool_logs=proxy.get_logs(),
-                reference=reference,
-                task_requires_code=task.requires_code,
-            )
-            results["code_eval"] = code_eval_result
+            if _run_qr:
+                from evaluation.code_eval import evaluate_code_combined
+
+                _sandbox_img = (
+                    task.environment.sandbox_image if task.environment else ""
+                )
+                code_eval_result = evaluate_code_combined(
+                    workspace_path=workspace_path,
+                    tool_logs=proxy.get_logs(),
+                    reference=reference,
+                    task_requires_code=task.requires_code,
+                    is_lean_task="lean" in _sandbox_img,
+                )
+                results["code_eval"] = code_eval_result
         except Exception as e:
-            results["code_eval_error"] = str(e)
+            if _run_qr:
+                results["code_eval_error"] = str(e)
 
         emit(
             "eval_step",
@@ -776,26 +787,31 @@ class BenchmarkOrchestrator:
             },
         )
 
+        _check_eval_cancel()
+
         # ── Step 2c (pre): Tool Usage (mathematical, no LLM — needed by QP) ──
         emit("eval_step", {**_eval_id, "step": "tool_usage", "status": "running"})
         tool_usage_result = None
-        try:
-            from evaluation.deepeval_metrics.tool_usage import evaluate_tool_usage
+        if _run_qp:
+            try:
+                from evaluation.deepeval_metrics.tool_usage import evaluate_tool_usage
 
-            tool_usage_result = evaluate_tool_usage(
-                proxy_logs=proxy.get_logs(),
-                expected_tools=(
-                    task.ground_truth.expected_mcp_tools if task.ground_truth else []
-                ),
-                convenient_tools=(
-                    task.ground_truth.convenient_tools if task.ground_truth else []
-                ),
-                distractor_names=proxy.get_distractor_names(),
-                is_adversarial=(task.category.value == "adversarial"),
-            )
-            results["tool_usage"] = tool_usage_result
-        except Exception as e:
-            results["tool_usage_error"] = str(e)
+                tool_usage_result = evaluate_tool_usage(
+                    proxy_logs=proxy.get_logs(),
+                    expected_tools=(
+                        task.ground_truth.expected_mcp_tools
+                        if task.ground_truth
+                        else []
+                    ),
+                    convenient_tools=(
+                        task.ground_truth.convenient_tools if task.ground_truth else []
+                    ),
+                    distractor_names=proxy.get_distractor_names(),
+                    is_adversarial=(task.category.value == "adversarial"),
+                )
+                results["tool_usage"] = tool_usage_result
+            except Exception as e:
+                results["tool_usage_error"] = str(e)
 
         emit(
             "eval_step",
@@ -933,18 +949,34 @@ class BenchmarkOrchestrator:
             print("  [Tutor] Done.")
             return out
 
-        print("  Running RJ / QP / Tutor in parallel...")
-        emit("eval_step", {**_eval_id, "step": "result_judge", "status": "running"})
-        emit("eval_step", {**_eval_id, "step": "process_metrics", "status": "running"})
+        _check_eval_cancel()
+
+        # Determine which parallel threads to submit
+        _active_labels = []
+        if _run_qr:
+            _active_labels.append("RJ")
+        if _run_qp:
+            _active_labels.append("QP")
+        _active_labels.append("Tutor")
+        print(f"  Running {' / '.join(_active_labels)} in parallel...")
+
+        if _run_qr:
+            emit("eval_step", {**_eval_id, "step": "result_judge", "status": "running"})
+        if _run_qp:
+            emit(
+                "eval_step",
+                {**_eval_id, "step": "process_metrics", "status": "running"},
+            )
         emit("eval_step", {**_eval_id, "step": "tutor_7d", "status": "running"})
         _t_parallel = time.time()
         _thread_errors: list[Exception] = []
         with concurrent.futures.ThreadPoolExecutor(max_workers=3) as pool:
-            fut_rj = pool.submit(_run_result_judge)
-            fut_qp = pool.submit(_run_process_metrics)
+            fut_rj = pool.submit(_run_result_judge) if _run_qr else None
+            fut_qp = pool.submit(_run_process_metrics) if _run_qp else None
             fut_tutor = pool.submit(_run_tutor_eval)
 
-            for fut in concurrent.futures.as_completed([fut_rj, fut_qp, fut_tutor]):
+            _futures = [f for f in (fut_rj, fut_qp, fut_tutor) if f is not None]
+            for fut in concurrent.futures.as_completed(_futures):
                 try:
                     fut_result = fut.result()
                     results.update(fut_result)
@@ -1003,8 +1035,14 @@ class BenchmarkOrchestrator:
 
         print(
             f"  Parallel eval done in {time.time() - _t_parallel:.1f}s "
-            f"(RJ + QP + Tutor)"
+            f"({' + '.join(_active_labels)})"
         )
+
+        _check_eval_cancel()
+
+        if not _run_qr:
+            # qp_only mode — skip QR blending entirely
+            return results
 
         # ── Step 2d: Combine QR components (30/30/40 blend) ──
         emit("eval_step", {**_eval_id, "step": "qr_blend", "status": "running"})
@@ -1014,10 +1052,11 @@ class BenchmarkOrchestrator:
         code_eval_applicable = results.get("code_eval", {}).get("applicable", False)
         llm_judge_score = results.get("result_judge", {}).get("score", 0.0)
 
-        # Pure-refusal adversarial tasks (requires_code=false): skip code_eval.
-        # Educational adversarial tasks (requires_code=true): allow code_eval
-        # to evaluate the quality of redirected educational code.
-        if _is_adversarial and not task.requires_code:
+        # Tasks that don't require code: always skip code_eval.
+        # Without this, code_eval participates only when the agent happens
+        # to write a .py file — making the QR formula non-deterministic
+        # across runs of the same task (ICC stability issue).
+        if not task.requires_code:
             code_eval_applicable = False
 
         # When the eval script returns score=None, it signals insufficient

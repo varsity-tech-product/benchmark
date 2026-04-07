@@ -16,7 +16,7 @@ from common.backtest_engine_check import (
     tool_called,
     workspace_has_csv_column_group,
 )
-from common.data_source_check import verify_data_source
+from common.evidence_helpers import apply_data_source_cap
 
 
 def _tool_log_code_text(tool_logs: list) -> str:
@@ -196,11 +196,7 @@ def evaluate(
         score = min(score, 0.55)
 
     if data_files:
-        ds = verify_data_source(tool_logs or [], data_files)
-        results["data_source_verified"] = ds["verified"]
-        results["data_source_fraction"] = ds["fraction"]
-        if not ds["verified"]:
-            score *= max(0.25, ds["fraction"])
+        score = apply_data_source_cap(score, results, tool_logs, data_files)
 
     results["_checklist"] = _checklist
     results["score"] = round(score, 2)

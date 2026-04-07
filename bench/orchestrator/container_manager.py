@@ -208,6 +208,34 @@ class ContainerManager:
             network_mode = "host"
             network_enabled = True
 
+        # Warm up LEAN compilation for lean containers so the first
+        # run_backtest call only does an incremental build (~13s vs ~190s).
+        # Write a dummy Algorithm.cs to trigger a real recompile of the
+        # Algorithm.CSharp project; without this the warmup is a no-op.
+        if self.use_docker and "lean" in image.lower():
+            subprocess.run(
+                [
+                    "docker",
+                    "exec",
+                    container_id,
+                    "bash",
+                    "-c",
+                    "echo 'using QuantConnect; using QuantConnect.Algorithm; "
+                    "using QuantConnect.Data; namespace QuantConnect.Algorithm"
+                    ".CSharp { public class Algorithm : QCAlgorithm { "
+                    "public override void Initialize() { SetStartDate(2022,1,1); "
+                    'SetEndDate(2025,1,1); SetAccountCurrency("USDT"); '
+                    "SetCash(100000); } "
+                    "public override void OnData(Slice d) {} } }' "
+                    "> /lean/Algorithm.CSharp/Algorithm.cs && "
+                    "cd /lean && MSBUILDDISABLENODEREUSE=1 "
+                    "dotnet build Algorithm.CSharp/QuantConnect.Algorithm.CSharp.csproj "
+                    "-c Debug --no-restore > /dev/null 2>&1",
+                ],
+                capture_output=True,
+                timeout=300,
+            )
+
         info = ContainerInfo(
             container_id=container_id,
             workspace_path=workspace,

@@ -86,7 +86,7 @@ def create_proxy_for_task(
         Configured MCPProxy instance.
     """
     convenient_tool_names = convenient_tool_names or []
-    proxy = MCPProxy()
+    proxy = MCPProxy(workspace_path=workspace_path)
 
     # Register core tools
     for name in core_tool_names:

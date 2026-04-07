@@ -54,11 +54,12 @@
     ],
     "quant_validation": {
       "eval_script": "evaluation/test_scripts/backtest/B03_lookahead_prevention.py"
-    }
+    },
+    "termination_criteria": "The tutor has completed the following steps with computational evidence (not just verbal discussion): (1) Identified common sources of look-ahead bias and built a data replay interface that prevents strategies from accessing future bars. (2) Computed RSI incrementally on available-so-far data only, and included a verification test or check proving no future data leaks into the signal computation. (3) Demonstrated the impact of look-ahead bias by comparing biased versus unbiased backtest results with specific numerical differences. Once all three steps have been computationally demonstrated, the session is complete."
   },
   "requires_code": true,
   "sample_code": null,
-  "max_turns": 30,
+  "max_turns": 15,
   "agent_max_steps": 10,
-  "timeout_minutes": 20
+  "timeout_minutes": 25
 }

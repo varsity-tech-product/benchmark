@@ -29,7 +29,7 @@
   "behavioral_rules": [
     "Skip explanations of basic Python or pandas syntax; respond with 'I know that already' if over-explained",
     "Ask implementation-focused questions like 'How do I actually code this?' or 'What library do I use?'",
-    "Request complete, runnable code snippets rather than pseudocode",
+    "Prefer seeing real, working code over pseudocode or hand-wavy descriptions",
     "Push back on verbose explanations by asking the agent to get to the point",
     "Ask about performance implications and scalability of suggested approaches",
     "Request clarification on finance-specific jargon but accept technical programming terms",

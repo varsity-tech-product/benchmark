@@ -11,7 +11,10 @@ from typing import Optional
 
 from dotenv import load_dotenv
 
-from .base_adapter import BaseAgentAdapter, TokenRecord
+from .base_adapter import (
+    BaseAgentAdapter,
+    record_token_usage,
+)
 from .prompts import TUTOR_SYSTEM_PROMPT
 
 # Load .env from project root (two levels up from this file)
@@ -70,11 +73,11 @@ class GenericLLMAdapter(BaseAgentAdapter):
         client = self._client
 
         # Build messages with system prompt
-        api_messages = [{"role": "system", "content": self.system_prompt}]
+        api_messages = [{"role": "system", "content": self._get_full_system_prompt()}]
         api_messages.extend(messages)
 
         # Convert tool schemas to OpenAI format
-        tools = self._format_tools(available_tools) if available_tools else None
+        tools = self.format_tools_openai(available_tools) if available_tools else None
 
         try:
             response = client.chat.completions.create(
@@ -123,65 +126,16 @@ class GenericLLMAdapter(BaseAgentAdapter):
         except Exception as e:
             return f"[Agent error: {str(e)}]"
 
-    def _format_tools(self, tools: list[dict]) -> list[dict]:
-        """Convert tool schemas to OpenAI function calling format."""
-        formatted = []
-        for tool in tools:
-            params = tool.get("parameters", {})
-            properties = {}
-            required_list = []
-            for param_name, param_info in params.items():
-                if isinstance(param_info, dict):
-                    prop = {
-                        "type": param_info.get("type", "string"),
-                        "description": param_info.get("description", param_name),
-                    }
-                    if "items" in param_info:
-                        prop["items"] = param_info["items"]
-                    properties[param_name] = prop
-                    if param_info.get("required", False):
-                        required_list.append(param_name)
-                else:
-                    properties[param_name] = {
-                        "type": "string",
-                        "description": param_name,
-                    }
-
-            schema = {
-                "type": "object",
-                "properties": properties,
-            }
-            if required_list:
-                schema["required"] = required_list
-
-            formatted.append(
-                {
-                    "type": "function",
-                    "function": {
-                        "name": tool["name"],
-                        "description": tool.get("description", ""),
-                        "parameters": schema,
-                    },
-                }
-            )
-        return formatted
-
     def _record_usage(self, response):
         """Extract token usage from OpenAI-compatible API response."""
-        usage = getattr(response, "usage", None)
-        if usage:
-            from config.pricing import estimate_cost
+        from config.pricing import estimate_cost
 
-            inp = getattr(usage, "prompt_tokens", 0) or 0
-            out = getattr(usage, "completion_tokens", 0) or 0
-            self._token_records.append(
-                TokenRecord(
-                    model=self.model,
-                    input_tokens=inp,
-                    output_tokens=out,
-                    cost_usd=estimate_cost(self.model, inp, out),
-                )
-            )
+        record_token_usage(
+            self._token_records,
+            self.model,
+            getattr(response, "usage", None),
+            cost_fn=estimate_cost,
+        )
 
     def _fallback_response(self, messages: list[dict]) -> str:
         """Fallback when OpenAI SDK is not available."""

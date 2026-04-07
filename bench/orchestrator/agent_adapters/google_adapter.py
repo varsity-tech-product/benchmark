@@ -76,12 +76,12 @@ class GoogleAdapter(BaseAgentAdapter):
 
         # Build generation config
         config = types.GenerateContentConfig(
-            system_instruction=self.system_prompt,
+            system_instruction=self._get_full_system_prompt(),
             max_output_tokens=4096,
         )
         if tools_config:
             config = types.GenerateContentConfig(
-                system_instruction=self.system_prompt,
+                system_instruction=self._get_full_system_prompt(),
                 max_output_tokens=4096,
                 tools=tools_config,
             )

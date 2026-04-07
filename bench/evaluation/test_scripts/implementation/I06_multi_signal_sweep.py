@@ -6,7 +6,7 @@ import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from common.data_source_check import verify_data_source
+from common.evidence_helpers import apply_data_source_cap
 from common.implementation_check import (
     check_csharp_patterns,
     collect_artifact_text,
@@ -29,8 +29,8 @@ def evaluate(
     """Evaluate I06 multi-signal parameter sweep implementation.
 
     Checks: backtest completion, trade log produced, behavioral equivalence,
-    sweep completion (21 combos), top configs identified, funding data
-    handling, signal weight patterns.
+    sweep completion (19 combos), top configs identified,
+    signal weight patterns.
     """
     results = {
         "backtest_completed": False,
@@ -42,7 +42,6 @@ def evaluate(
         "code_patterns": False,
         "sweep_completed": False,
         "top_configs_identified": False,
-        "funding_handled": False,
         "score": 0.0,
     }
 
@@ -69,8 +68,8 @@ def evaluate(
     results["performance_match"] = behavioral.performance_score >= 0.50
     results["trade_count_match"] = behavioral.trade_score >= 0.40
 
-    # ── Code patterns (signal weight, funding) ──
-    expected_patterns = ["signal", "weight", "funding"]
+    # ── Code patterns (signal weight) ──
+    expected_patterns = ["signal", "weight"]
     cs_matches = check_csharp_patterns(workspace_path, expected_patterns)
     has_signal_weight = (
         cs_matches.get("signal", False) and cs_matches.get("weight", False)
@@ -84,20 +83,17 @@ def evaluate(
             r"signal.?combin",
         ],
     )
-    has_funding = cs_matches.get("funding", False) or has_regex(
-        artifact_text, [r"funding.?rate", r"funding.?fee", r"funding.?cost"]
-    )
-    results["code_patterns"] = has_signal_weight or has_funding
+    results["code_patterns"] = has_signal_weight
 
-    # ── Sweep completed (21 combos) ──
+    # ── Sweep completed (19 combos) ──
     sweep_path = os.path.join(workspace_path, "results", "sweep_results.json")
     if os.path.exists(sweep_path):
         try:
             with open(sweep_path) as f:
                 sweep_data = json.load(f)
-            if isinstance(sweep_data, list) and len(sweep_data) >= 21:
+            if isinstance(sweep_data, list) and len(sweep_data) >= 19:
                 results["sweep_completed"] = True
-            elif isinstance(sweep_data, dict) and len(sweep_data) >= 21:
+            elif isinstance(sweep_data, dict) and len(sweep_data) >= 19:
                 results["sweep_completed"] = True
         except (json.JSONDecodeError, IOError):
             pass
@@ -110,7 +106,7 @@ def evaluate(
             results["sweep_completed"] = True
         elif has_regex(
             artifact_text,
-            [r"21\s*combo", r"21\s*config", r"sweep.*(?:complete|done|finish)"],
+            [r"19\s*combo", r"19\s*config", r"sweep.*(?:complete|done|finish)"],
         ):
             results["sweep_completed"] = True
 
@@ -129,9 +125,6 @@ def evaluate(
     if os.path.exists(ranking_path):
         results["top_configs_identified"] = True
 
-    # ── Funding handled ──
-    results["funding_handled"] = has_funding
-
     # ── Trial efficiency ──
     efficiency_score = compute_trial_efficiency(workspace_path)
 
@@ -149,24 +142,19 @@ def evaluate(
         },
         {
             "item": "behavioral_score",
-            "weight": 0.40,
+            "weight": 0.60,
             "score": behavioral.composite_score,
         },
         {"item": "code_patterns", "weight": 0.05, "passed": results["code_patterns"]},
         {
             "item": "sweep_completed",
-            "weight": 0.10,
+            "weight": 0.15,
             "passed": results["sweep_completed"],
         },
         {
             "item": "top_configs_identified",
             "weight": 0.05,
             "passed": results["top_configs_identified"],
-        },
-        {
-            "item": "funding_handled",
-            "weight": 0.05,
-            "passed": results["funding_handled"],
         },
         {"item": "trial_efficiency", "weight": 0.05, "score": efficiency_score},
     ]
@@ -183,11 +171,7 @@ def evaluate(
 
     # ── Data source verification ──
     if data_files:
-        ds = verify_data_source(tool_logs or [], data_files)
-        results["data_source_verified"] = ds["verified"]
-        results["data_source_fraction"] = ds["fraction"]
-        if not ds["verified"]:
-            score *= max(0.25, ds["fraction"])
+        score = apply_data_source_cap(score, results, tool_logs, data_files)
 
     results["_checklist"] = _checklist
     results["behavioral_composite"] = round(behavioral.composite_score, 4)

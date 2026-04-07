@@ -19,6 +19,7 @@ DeepEval API (v3.8+):
 import asyncio
 import json
 import logging as _logging
+import re as _re_mod
 
 _log = _logging.getLogger(__name__)
 import random
@@ -27,6 +28,8 @@ from pathlib import Path
 from typing import Optional
 
 from config.model_resolver import resolve_deepeval_model
+
+from evaluation.deepeval_metrics._scoring_utils import extract_json_from_response
 
 # ──────────────────────────────────────────────────────────────
 # Concurrency control — adjustable for parallel runner
@@ -270,25 +273,6 @@ def _extract_score_from_prose(raw_text: str):
     return None
 
 
-def _extract_json_from_response(text: str) -> dict:
-    """Extract JSON from LLM response. Returns {} on failure (never raises)."""
-    text = text.strip()
-    if text.startswith("```"):
-        lines = text.split("\n")
-        lines = [ln for ln in lines if not ln.strip().startswith("```")]
-        text = "\n".join(lines).strip()
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError:
-        m = _re.search(r"\{[^{}]*\}", text, _re.DOTALL)
-        if m:
-            try:
-                return json.loads(m.group())
-            except json.JSONDecodeError:
-                pass
-    return {}
-
-
 async def _fallback_direct_eval(metric, tc, model_name: str):
     """Fallback: reconstruct the exact ConversationalGEval Phase 2 prompt
     and send via ``model.a_generate()`` with our robust JSON parser.
@@ -298,7 +282,7 @@ async def _fallback_direct_eval(metric, tc, model_name: str):
     the same prompt that ConversationalGEval would have sent, but route
     it through ``a_generate()`` (returns text) instead of
     ``a_generate_raw_response()`` (returns ChatCompletion), then parse
-    with our robust ``_extract_json_from_response`` (returns {} on
+    with our robust ``extract_json_from_response`` (returns {} on
     failure, never raises).
 
     Uses the same eval model as the primary path for scoring consistency.
@@ -361,7 +345,7 @@ async def _fallback_direct_eval(metric, tc, model_name: str):
         model_obj = _GPTModel(model=model_obj, **get_deepeval_cost_kwargs(model_obj))
 
     response_text, cost = await model_obj.a_generate(prompt)
-    parsed = _extract_json_from_response(response_text)
+    parsed = extract_json_from_response(response_text)
 
     score = parsed.get("score", 5)
     reason = parsed.get("reason", "Fallback evaluation")
@@ -651,6 +635,66 @@ from evaluation.deepeval_metrics.async_utils import run_async as _run_async
 _ENRICHED_DIMS = {"D4_domain_accuracy", "D5_code_teaching", "D7_safety_boundaries"}
 
 
+# ──────────────────────────────────────────────────────────────
+# Conversation preprocessing — reduce noise per dimension
+# ──────────────────────────────────────────────────────────────
+# Master switch.  Set to False to bypass all preprocessing and
+# send the raw conversation to every dimension (original behaviour).
+ENABLE_CONVERSATION_PREPROCESSING = True
+
+# Regex matching fenced code blocks (``` ... ```)
+_CODE_FENCE_RE = _re_mod.compile(
+    r"^[ \t]*```[^\n]*\n(.*?)^[ \t]*```[ \t]*$",
+    _re_mod.MULTILINE | _re_mod.DOTALL,
+)
+
+
+def _strip_code_blocks(content: str) -> str:
+    """Replace fenced code blocks with a [code snippet] placeholder."""
+    return _CODE_FENCE_RE.sub("[code snippet]", content)
+
+
+# Per-dimension preprocessing applied to *assistant* messages only.
+# "none"       → pass through unchanged
+# "strip_code" → replace code blocks with [code snippet]
+_DIMENSION_PREPROCESS: dict[str, str] = {
+    "D1_level_detection": "strip_code",
+    "D2_language_adaptation": "strip_code",
+    "D3_scaffolding_calibration": "strip_code",
+    "D4_domain_accuracy": "none",
+    "D5_code_teaching": "none",
+    "D6_empathetic_response": "strip_code",
+    "D7_safety_boundaries": "strip_code",
+}
+
+
+def preprocess_turns(
+    turns: list[dict],
+    dimension_name: str,
+) -> list[dict]:
+    """Return a copy of *turns* with assistant content preprocessed for
+    *dimension_name*.  Student messages are never modified.
+
+    When ``ENABLE_CONVERSATION_PREPROCESSING`` is False, returns
+    *turns* as-is (zero-copy).
+    """
+    if not ENABLE_CONVERSATION_PREPROCESSING:
+        return turns
+
+    mode = _DIMENSION_PREPROCESS.get(dimension_name, "none")
+    if mode == "none":
+        return turns
+
+    fn = _strip_code_blocks
+    processed: list[dict] = []
+    for t in turns:
+        if t["role"] != "assistant":
+            processed.append(t)
+        else:
+            processed.append({**t, "content": fn(t["content"])})
+    return processed
+
+
 def evaluate_tutor_dimensions(
     conversation_turns: list[dict],
     persona_level: str,
@@ -764,43 +808,55 @@ def evaluate_tutor_dimensions(
     import copy
     import time as _time
 
-    # ── Build base test cases ──
-    # Two-tier: original conversation for teaching-quality dims (D1/D2/D3/D6),
-    # enriched conversation for competence dims (D4/D5/D7).
+    # ── Build per-dimension test cases ──
+    # Each dimension gets its own conversation view:
+    #   1. Source selection: enriched (D4/D5/D7) vs original (rest)
+    #   2. Preprocessing: strip code / truncate / none (per _DIMENSION_PREPROCESS)
+    # When ENABLE_CONVERSATION_PREPROCESSING is False, step 2 is a no-op.
+    _tc_kwargs = dict(
+        scenario=scenario,
+        expected_outcome=expected_outcome,
+        user_description=user_description,
+    )
+    _enriched_src = enriched_conversation_turns or conversation_turns
+
+    # Pre-build one test case per dimension (shared across models × runs).
+    _dim_test_cases: dict[str, "ConversationalTestCase"] = {}
+
     if conversational_test_case is not None:
-        base_tc_original = conversational_test_case
-        base_tc_enriched = conversational_test_case  # caller pre-built
+        # Caller pre-built a single test case — use it for every dim.
+        for dim in active_dims:
+            _dim_test_cases[dim] = conversational_test_case
     else:
-        _tc_kwargs = dict(
-            scenario=scenario,
-            expected_outcome=expected_outcome,
-            user_description=user_description,
-        )
-        turns_original = [
-            Turn(role=t["role"], content=t["content"]) for t in conversation_turns
-        ]
-        base_tc_original = ConversationalTestCase(
-            turns=turns_original,
-            **_tc_kwargs,
-        )
-        # Enriched version — falls back to original when not provided.
-        _enriched_src = enriched_conversation_turns or conversation_turns
-        if _enriched_src is conversation_turns:
-            base_tc_enriched = base_tc_original
-        else:
-            turns_enriched = [
-                Turn(role=t["role"], content=t["content"]) for t in _enriched_src
-            ]
-            base_tc_enriched = ConversationalTestCase(
-                turns=turns_enriched,
+        _pp_log_lines: list[str] = []
+        for dim in active_dims:
+            # Step 1: pick source
+            src = _enriched_src if dim in _ENRICHED_DIMS else conversation_turns
+            # Step 2: preprocess
+            processed = preprocess_turns(src, dim)
+            # Build test case
+            tc_turns = [Turn(role=t["role"], content=t["content"]) for t in processed]
+            _dim_test_cases[dim] = ConversationalTestCase(
+                turns=tc_turns,
                 **_tc_kwargs,
             )
+            # Log preprocessing effect
+            src_chars = sum(len(t["content"]) for t in src)
+            out_chars = sum(len(t["content"]) for t in processed)
+            mode = _DIMENSION_PREPROCESS.get(dim, "none")
+            if ENABLE_CONVERSATION_PREPROCESSING and mode != "none":
+                _pp_log_lines.append(
+                    f"      {dim[:2]}: {src_chars:,} → {out_chars:,} chars "
+                    f"(-{(1 - out_chars / max(src_chars, 1)) * 100:.0f}%, {mode})"
+                )
+        if _pp_log_lines:
+            print("    Conversation preprocessing:")
+            for ln in _pp_log_lines:
+                print(ln)
 
     # ── Build ALL metric instances (models × runs × dims) ──
     # Each metric gets its own deep-copied test case to avoid state
     # conflicts when DeepEval's a_measure() mutates internal fields.
-    # Dimensions in _ENRICHED_DIMS get the enriched test case; others
-    # get the original (no tool-activity summaries).
     all_metrics = []
     all_test_cases = []
     # task_keys: (model_name, run_idx, dim_name) for each metric
@@ -824,13 +880,7 @@ def evaluate_tutor_dimensions(
             )
             for metric in metrics:
                 all_metrics.append(metric)
-                # Route: enriched test case for D4/D5/D7, original for rest
-                base = (
-                    base_tc_enriched
-                    if metric.name in _ENRICHED_DIMS
-                    else base_tc_original
-                )
-                all_test_cases.append(copy.deepcopy(base))
+                all_test_cases.append(copy.deepcopy(_dim_test_cases[metric.name]))
                 task_keys.append((mname, run_idx, metric.name))
 
     # ── Run ALL judge calls in parallel with concurrency limit ──
@@ -956,8 +1006,11 @@ def evaluate_tutor_dimensions(
     if _first_error:
         raise _first_error[0]
 
-    # ── Accumulate scores and costs by (model, dimension) ──
+    # ── Accumulate scores, reasons, and costs by (model, dimension) ──
     model_accumulated: dict[str, dict[str, list[float]]] = {
+        name: {d: [] for d in active_dims} for name in model_names
+    }
+    model_reasons: dict[str, dict[str, list[str]]] = {
         name: {d: [] for d in active_dims} for name in model_names
     }
     model_costs: dict[str, list[float]] = {name: [] for name in model_names}
@@ -970,12 +1023,14 @@ def evaluate_tutor_dimensions(
         else:
             raw_score = all_metrics[i].score
             cost = all_metrics[i].evaluation_cost or 0.0
+            reason = getattr(all_metrics[i], "reason", None) or ""
             # §6.2: "Each dimension: 1-10 scale, normalized to 0-1."
             if raw_score > 1.0:
                 raw_score = raw_score / 10.0
             score = max(0.0, min(1.0, raw_score))
 
         model_accumulated[mname][dim_name].append(score)
+        model_reasons[mname][dim_name].append(reason)
         model_costs[mname].append(cost)
 
     # ── Per-model dimension scores (average over shuffled runs) ──
@@ -1005,6 +1060,34 @@ def evaluate_tutor_dimensions(
     final_scores["_fallback_count"] = _fallback_count[0]
     if _fallback_details:
         final_scores["_fallback_details"] = _fallback_details
+
+    # ── Per-dimension reasons (for transparency / human review) ──
+    # Collect the best reason per dimension: pick the reason from the
+    # run whose score is closest to the final average (most representative).
+    dim_reasons: dict[str, str] = {}
+    _reason_debug_count = 0
+    for dim_name in active_dims:
+        all_reasons_for_dim: list[str] = []
+        all_scores_for_dim: list[float] = []
+        for mname in model_names:
+            all_reasons_for_dim.extend(model_reasons[mname][dim_name])
+            all_scores_for_dim.extend(model_accumulated[mname][dim_name])
+        # Count non-empty reasons for debug
+        non_empty = [r for r in all_reasons_for_dim if r]
+        _reason_debug_count += len(non_empty)
+        # Pick reason from the run closest to the final score
+        target = final_scores[dim_name]
+        best_idx = 0
+        best_dist = float("inf")
+        for idx, s in enumerate(all_scores_for_dim):
+            dist = abs(s - target)
+            if dist < best_dist:
+                best_dist = dist
+                best_idx = idx
+        if best_idx < len(all_reasons_for_dim) and all_reasons_for_dim[best_idx]:
+            dim_reasons[dim_name] = all_reasons_for_dim[best_idx]
+    if dim_reasons:
+        final_scores["_dim_reasons"] = dim_reasons
 
     return final_scores
 

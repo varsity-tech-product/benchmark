@@ -56,11 +56,13 @@
     "convenient_tools": [
       "search_docs",
       "compute_indicator",
-      "analyze_backtest_results"
+      "analyze_backtest_results",
+      "analyze_lean_results"
     ],
     "quant_validation": {
-      "eval_script": "evaluation/test_scripts/implementation/I07_alpha_model.py"
-    }
+      "eval_script": "evaluation/test_scripts/I07_alpha_model.py"
+    },
+    "termination_criteria": "The tutor has completed the following steps with computational evidence (not just verbal discussion): (1) Showed C# code for a custom AlphaModel class that emits Insight objects, with framework wiring via SetAlpha, SetPortfolioConstruction, and SetExecution. (2) Presented backtest results with specific numerical values such as total return, Sharpe ratio, or number of trades. (3) Showed trade log or order output with entry/exit records. (4) Responded to the student's follow-up about the implementation or results with additional explanation, code refinement, or analysis beyond the initial demonstration. Once all four steps have been computationally demonstrated, the session is complete."
   },
   "requires_code": true,
   "sample_code": null,

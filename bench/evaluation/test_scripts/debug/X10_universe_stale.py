@@ -5,12 +5,12 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from common.data_source_check import verify_data_source
 from common.debug_check import (
     check_fix_applied,
     check_fix_verified,
     check_root_cause_explained,
 )
+from common.evidence_helpers import apply_data_source_cap
 from common.implementation_check import (
     collect_lean_results,
     compute_behavioral_score,
@@ -152,11 +152,7 @@ def evaluate(
     score = sum(c["weight"] for c in _checklist if c["passed"])
 
     if data_files:
-        ds = verify_data_source(tool_logs or [], data_files)
-        results["data_source_verified"] = ds["verified"]
-        results["data_source_fraction"] = ds["fraction"]
-        if not ds["verified"]:
-            score *= max(0.25, ds["fraction"])
+        score = apply_data_source_cap(score, results, tool_logs, data_files)
 
     results["_checklist"] = _checklist
     results["score"] = round(score, 2)

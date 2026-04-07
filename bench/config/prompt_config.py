@@ -69,18 +69,22 @@ _PROMPT_C_BEYOND_SNIPPETS = (
 _PROMPT_D_IMPLEMENTATION_TRACKING = (
     "IMPLEMENTATION TRACKING: This is a code-producing task. Do "
     "not treat a verbal explanation as completion for an "
-    "implementation goal. After at most one conceptual follow-up "
-    "on a goal, ask for the concrete code, executed output, or "
-    "saved artifact needed for that goal. Example: 'That makes "
-    "sense. Can you show the actual code and save the result so I "
-    "can build on it?'"
+    "implementation goal. After the tutor has explained a concept, "
+    "expect them to follow up with code and execution results "
+    "shown in the conversation. Once you have seen both a code "
+    "walkthrough and concrete results (specific numbers, output "
+    "excerpts) for a goal, consider it demonstrated and move on "
+    "to the next learning goal. Example: 'I see the code and the "
+    "results make sense — what should we tackle next?'"
 )
 
 _PROMPT_D_ABSTRACT_PUSH = (
-    "WHEN THE TUTOR STAYS ABSTRACT: If the tutor keeps describing "
-    "architecture, workflow, or theory without producing files, "
-    "code execution, or saved results for the current goal, push "
-    "them back to implementation on your next turn."
+    "WHEN THE TUTOR STAYS ABSTRACT: If the tutor has spent two "
+    "consecutive turns on the same topic discussing only theory "
+    "or architecture without showing any code or sharing specific "
+    "results in the conversation, ask them to demonstrate "
+    "concretely: 'Can you show me the code for this and walk me "
+    "through what happens when it runs?'"
 )
 
 # Prompt E — BACKTEST TRIAL SYSTEM (tutor context)
@@ -88,7 +92,8 @@ _PROMPT_D_ABSTRACT_PUSH = (
 _PROMPT_E_BACKTEST_TRIAL_SYSTEM = (
     "Use the trial tools to iterate efficiently:\n\n"
     "WORKFLOW:\n"
-    "1. Write your C# algorithm file\n"
+    "1. Write your C# algorithm file (class must be named 'Algorithm' in "
+    "namespace 'QuantConnect.Algorithm.CSharp')\n"
     "2. Call run_lean_backtest(algorithm_path) to compile + run + record a trial\n"
     "3. Review the result (compile errors, empty trades, metrics)\n"
     "4. Fix issues and run again (each run uses 1 trial)\n"
@@ -381,12 +386,6 @@ def build_tutor_context(
         parts.append("=== STUDENT CODE ===")
         parts.append(f"The student's code is located at: {task.sample_code}")
 
-    # LEARNING OBJECTIVE omitted to avoid leaking expected answers.
-    # if task.ground_truth and task.ground_truth.expected_outcome:
-    #     parts.append("")
-    #     parts.append("=== LEARNING OBJECTIVE ===")
-    #     parts.append(task.ground_truth.expected_outcome)
-
     # When reference docs are available, nudge the agent to consult them
     # before answering. We do NOT reveal doc filenames (that would leak
     # the topic); the agent discovers them via get_environment_info.
@@ -398,17 +397,7 @@ def build_tutor_context(
             "Reference documentation is available for this session. "
             "Use get_environment_info to discover available docs and "
             "file_read to consult them — this helps ensure your "
-            "teaching covers important concepts and caveats.\n\n"
-            "IMPORTANT: Reading documentation is preparation, not "
-            "execution. After reading docs, respond to the student's "
-            "question and wait for their direction — do NOT proceed "
-            "to execute the entire task workflow (downloading data, "
-            "saving files, running computations, generating charts) "
-            "before the student has asked for it.\n"
-            "- GOOD: Read docs → answer the student's question with "
-            "a teaching explanation → wait for their next question.\n"
-            "- BAD: Read docs → download data → save CSV → compute "
-            "returns → generate chart → then finally respond."
+            "teaching covers important concepts and caveats."
         )
         # Prompt A: relax "wait" rule for I/E/X coding tasks
         if segments.a_wait_override:
@@ -523,17 +512,23 @@ def build_tutor_context(
             "This task involves coding. Present key code snippets directly "
             "in your response with clear, level-appropriate explanations. "
             "Break code into small, digestible chunks — never dump an "
-            "entire script at once. For each chunk, explain WHY this step "
-            "matters, not just WHAT it does.\n"
+            "entire script at once. When you create or update a code file "
+            "using tools, include the most instructive portion (5-15 lines) "
+            "in your response so the student can follow along — they cannot "
+            "see your tool calls or file contents directly. For each chunk, "
+            "explain WHY this step matters, not just WHAT it does.\n"
             # Prompt C: move beyond snippets for I/E/X coding tasks
             + (segments.c_beyond_snippets if segments.c_beyond_snippets else "")
             + "Adjust code complexity to the student's level:\n"
             "- Beginners: simple variable names, print statements, one "
-            "new concept at a time, line-by-line explanation.\n"
+            "new concept at a time, line-by-line explanation. After saving "
+            "a file, walk through the complete logic in small blocks.\n"
             "- Intermediate: focus on quant-specific patterns (rolling "
-            "windows, vectorized ops), skip basic Python syntax.\n"
+            "windows, vectorized ops), skip basic syntax. After saving a "
+            "file, highlight the domain-specific logic.\n"
             "- Advanced: production patterns, type hints, discuss design "
-            "trade-offs and alternatives."
+            "trade-offs and alternatives. After saving a file, focus on "
+            "the key design decisions rather than line-by-line walkthrough."
         )
     else:
         parts.append(
@@ -587,7 +582,10 @@ def build_oracle_context(
     return "\n".join(parts)
 
 
-def build_user_description(persona: StudentPersona) -> str:
+def build_user_description(
+    persona: StudentPersona,
+    has_incremental_tc: bool = False,
+) -> str:
     """Build user_description string for DeepEval ConversationalGolden.
 
     Combines the persona's description, knowledge level, emotional profile,
@@ -617,11 +615,18 @@ def build_user_description(persona: StudentPersona) -> str:
         parts.append("\nBehavioral rules (follow these strictly):")
         for rule in persona.behavioral_rules:
             parts.append(f"  - {rule}")
-        parts.append(
-            "  - When the tutor explains a concept, ask them to demonstrate "
-            "it with real data or actual code execution rather than just "
-            "describing it in text"
-        )
+        if has_incremental_tc:
+            parts.append(
+                "  - When the tutor explains a concept, feel free to ask "
+                "to see it in action with real data or code — but also "
+                "explore aspects that genuinely interest or confuse you"
+            )
+        else:
+            parts.append(
+                "  - When the tutor explains a concept, ask them to demonstrate "
+                "it with real data or actual code execution rather than just "
+                "describing it in text"
+            )
 
     parts.append(
         "\nINTERACTION RULES (follow these strictly):\n"
@@ -669,7 +674,11 @@ def build_user_description(persona: StudentPersona) -> str:
     return "\n".join(parts)
 
 
-def build_scenario(task: QuantTutorTask, persona_id: str) -> str:
+def build_scenario(
+    task: QuantTutorTask,
+    persona_id: str,
+    has_incremental_tc: bool = False,
+) -> str:
     """Build scenario string for DeepEval ConversationalGolden.
 
     Combines task description with the persona-specific opening message
@@ -727,24 +736,53 @@ def build_scenario(task: QuantTutorTask, persona_id: str) -> str:
                 "subsequent turn. Space goals across the conversation so the "
                 "tutor has room to teach each one properly."
             )
-            parts.append("")
-            parts.append(
-                "COVERAGE TRACKING: Mentally track which learning goals have "
-                "been covered. After 3 consecutive follow-up turns on the "
-                "same goal, transition to the next uncovered goal even if "
-                "the current topic is still interesting. When uncovered goals "
-                "remain and the conversation is past the halfway point, "
-                "prioritize breadth over depth. Example: 'That makes sense "
-                "now — can we move on to [next uncovered topic]?'"
-            )
-            parts.append(
-                "ACTION EXPECTATION: When a learning goal involves saving "
-                "data or producing outputs, do NOT consider it fulfilled "
-                "until the tutor has actually saved the result to a file. "
-                "Plotting or printing alone does not count. If the tutor "
-                "demonstrates data without saving it, ask: 'Can we also "
-                "save that to a file so I can use it later?'"
-            )
+            # COVERAGE TRACKING, ACTION EXPECTATION: full version when
+            # there is NO incremental TC checker.  When TC checker is
+            # active, use lightweight versions that guide the student's
+            # direction without judging completion or rushing.
+            if has_incremental_tc:
+                parts.append("")
+                parts.append(
+                    "TOPIC FLOW: If you have spent several turns exploring "
+                    "one topic and feel you understand it well, feel free to "
+                    "move on to another learning goal that interests you."
+                )
+                if task.category.value in ("implementation", "end_to_end", "debug"):
+                    parts.append(
+                        "CODE EXPECTATION: This is a code-producing task. "
+                        "When the tutor explains a concept, it is natural to "
+                        "want to see the actual code and what happens when "
+                        "it runs."
+                    )
+            else:
+                parts.append("")
+                parts.append(
+                    "COVERAGE TRACKING: Mentally track which learning goals have "
+                    "been covered. After 3 consecutive follow-up turns on the "
+                    "same goal, transition to the next uncovered goal even if "
+                    "the current topic is still interesting. When uncovered goals "
+                    "remain and the conversation is past the halfway point, "
+                    "prioritize breadth over depth. Example: 'That makes sense "
+                    "now — can we move on to [next uncovered topic]?'"
+                )
+                if task.category.value in ("implementation", "end_to_end", "debug"):
+                    parts.append(
+                        "ACTION EXPECTATION: When a learning goal involves saving "
+                        "data or producing outputs, do NOT consider it fulfilled "
+                        "until the tutor has actually saved the result to a file. "
+                        "Plotting or printing alone does not count. If the tutor "
+                        "demonstrates data without saving it, ask: 'Can we also "
+                        "save that to a file so I can use it later?'"
+                    )
+                else:
+                    parts.append(
+                        "ACTION EXPECTATION: When a learning goal involves "
+                        "computing results or metrics, do NOT consider it "
+                        "fulfilled until the tutor has actually run the "
+                        "computation and presented specific numerical results. "
+                        "A verbal description of what 'would' happen does not "
+                        "count — you need to see actual numbers."
+                    )
             parts.append("")
             parts.append(
                 "DEAD-END AVOIDANCE: If the tutor's response focuses on "
@@ -758,25 +796,58 @@ def build_scenario(task: QuantTutorTask, persona_id: str) -> str:
                 "the setup tips — I will try that on my own later! For "
                 "now, can we go back to [next uncovered learning goal]?'"
             )
-            parts.append("")
-            parts.append(
-                f"TURN BUDGET: This session has approximately "
-                f"{task.max_turns} turns total. Be efficient — if the "
-                f"tutor has adequately addressed a learning goal, move on "
-                f"to the next one rather than asking further refinement "
-                f"questions on the same topic."
-            )
-            # Prompt D: implementation tracking for I/E/X coding tasks
+            # COMPLETION, TURN BUDGET, IMPLEMENTATION TRACKING: only when
+            # there is NO incremental TC checker.  These rules involve
+            # completion judgment or rushing — the TC checker handles
+            # termination instead.
             segments = get_filtered_prompt_segments(
                 task.category.value,
                 task.requires_code,
                 _get_max_bt(task),
             )
-            if segments.d_implementation_tracking:
+            if not has_incremental_tc:
                 parts.append("")
-                parts.append(segments.d_implementation_tracking)
+                parts.append(
+                    "COMPLETION: Once every learning goal above has been "
+                    "covered with a computational demonstration (the tutor "
+                    "ran code or a tool and showed you concrete results), "
+                    "end the conversation immediately. Do NOT ask follow-up "
+                    "questions about parameter tuning, alternative methods, "
+                    "or further improvements — these are beyond the scope "
+                    "of this session. Your final message should be a brief "
+                    "statement of what you learned. Example: 'That covers "
+                    "everything I wanted to learn — thanks for walking me "
+                    "through all of it!'"
+                )
+                parts.append("")
+                parts.append(
+                    f"TURN BUDGET: This session has approximately "
+                    f"{task.max_turns} turns total. Be efficient — if the "
+                    f"tutor has adequately addressed a learning goal, move on "
+                    f"to the next one rather than asking further refinement "
+                    f"questions on the same topic."
+                )
+                if segments.d_implementation_tracking:
+                    parts.append("")
+                    parts.append(segments.d_implementation_tracking)
             if segments.d_abstract_push:
                 parts.append("")
                 parts.append(segments.d_abstract_push)
+            # Code visibility: help the student understand what counts
+            # as "demonstrated" in a tool-based coding session.
+            if task.category.value in ("implementation", "end_to_end", "debug"):
+                parts.append("")
+                parts.append(
+                    "CODE VISIBILITY: You interact through a text-only chat. "
+                    "The tutor may write and run code behind the scenes that "
+                    "you cannot see directly. When the tutor shows you code "
+                    "snippets in the conversation and describes execution "
+                    "results (e.g., 'the backtest returned a Sharpe of 1.2' "
+                    "or 'here are the first 10 trades'), treat that as a "
+                    "concrete demonstration — you do not need to see the "
+                    "entire source file pasted in chat. If you want to "
+                    "understand a specific part better, ask about that part "
+                    "rather than requesting the full code again."
+                )
 
     return "\n".join(parts)

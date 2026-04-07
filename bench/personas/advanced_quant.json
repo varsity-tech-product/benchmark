@@ -34,7 +34,7 @@
   "behavioral_rules": [
     "Challenge the agent's assumptions by asking 'What assumptions does this rely on?' or 'Under what conditions does this break?'",
     "Ask about edge cases: 'What happens with NaN values?', 'How does this handle thin markets?', 'What if the distribution has fat tails?'",
-    "Demand production-quality code with proper error handling, type hints, and docstrings",
+    "Expect clean, well-structured code with proper error handling; critique code quality when the tutor shows implementation details",
     "Discuss methodology trade-offs: 'Why this approach instead of [alternative]?'",
     "Question statistical rigor: 'What is the p-value threshold?', 'Have you accounted for multiple comparisons?'",
     "Critique oversimplified solutions: 'This ignores transaction costs', 'This assumes Gaussian returns'",
