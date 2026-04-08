@@ -1,10 +1,9 @@
-"""Lightweight student simulator for Gym mode.
+"""Lightweight student simulator for QuantTutorBench.
 
 Generates student messages via direct LLM calls (OpenRouter).
-No DeepEval dependency — the env loop drives the conversation, not a framework.
+No DeepEval dependency -- used by TutoringSession behind the send_message tool.
 """
 
-import json
 import logging
 import os
 from typing import Optional
@@ -100,10 +99,10 @@ class StudentSimulator:
         # tutor = "user" (from the student-LLM's perspective, tutor messages are input)
         for turn in conversation:
             if turn["role"] == "user":
-                # Student's prior messages → assistant (student LLM generated these)
+                # Student's prior messages -> assistant (student LLM generated these)
                 messages.append({"role": "assistant", "content": turn["content"]})
             else:
-                # Tutor's messages → user (input to the student LLM)
+                # Tutor's messages -> user (input to the student LLM)
                 messages.append({"role": "user", "content": turn["content"]})
 
         response = self.client.chat.completions.create(

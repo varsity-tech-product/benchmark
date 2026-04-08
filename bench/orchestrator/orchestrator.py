@@ -31,7 +31,7 @@ from config.prompt_config import (
     build_user_description,
 )
 from evaluation.scoring import compute_benchmark_kpis, compute_task_score
-from mcp_servers.registry import create_proxy_for_task
+from mcp_servers.registry import create_proxy_for_task, register_session_tools
 
 from orchestrator.agent_adapters.base_adapter import BaseAgentAdapter
 from orchestrator.container_manager import ContainerManager
@@ -43,6 +43,7 @@ from orchestrator.schemas import (
     TaskResult,
 )
 from orchestrator.simulation import (
+    run_agent_session,
     run_conversation_simulation,
 )
 
@@ -355,45 +356,115 @@ class BenchmarkOrchestrator:
             # Apply per-task agent step limit (controls SDK internal loop depth)
             agent.set_agent_max_steps(task.agent_max_steps)
 
-            # === PHASE 2: INTERACT (via DeepEval ConversationSimulator) ===
-            # ConversationSimulator manages the interaction loop.
-            # ConversationalGolden is built from Task + Persona.
-            # model_callback wraps the Agent Under Test through MCP Proxy.
-            # Termination: max_user_simulations (hard cap) OR LLM-judged
-            # goal achievement (stop_conversation checks expected_outcome).
+            # === PHASE 2: INTERACT (agent-driven via MCP tools) ===
+            # The agent drives the conversation through tool calls.
+            # send_message is a regular MCP tool backed by TutoringSession.
+            # TC checking and student simulation happen inside send_message.
             try:
-                if not DEEPEVAL_AVAILABLE:
-                    raise RuntimeError(
-                        "DeepEval is required for conversation simulation. "
-                        "Install with: pip install deepeval"
-                    )
+                from mcp_servers.session import TutoringSession
+                from mcp_servers.student_sim import StudentSimulator
+                from mcp_servers.tc_checker import TCChecker, parse_tc_items
 
                 simulator_cost = None
 
-                print(
-                    f"  Using DeepEval ConversationSimulator (model={self.simulator_model or 'default'})..."
+                # Build student simulator
+                has_tc_items = False
+                tc_text = (
+                    task.ground_truth.termination_criteria
+                    if task.ground_truth else None
                 )
-                conversational_test_case, simulator_cost = run_conversation_simulation(
+                tc_items = parse_tc_items(
+                    tc_text,
+                    task.category.value,
+                    persona_id=persona.persona_id,
+                )
+                has_tc_items = tc_items is not None
+
+                student_sim = StudentSimulator(
+                    scenario=build_scenario(
+                        task, persona.persona_id,
+                        has_incremental_tc=has_tc_items,
+                    ),
+                    user_description=build_user_description(
+                        persona, has_incremental_tc=has_tc_items,
+                    ),
+                    model=self.simulator_model or SIMULATOR_DEFAULT_MODEL,
+                )
+
+                tc_checker = None
+                if tc_items:
+                    tc_checker = TCChecker(tc_items)
+
+                # Compute deadline
+                effective_timeout = timeout_minutes or task.timeout_minutes
+                deadline = None
+                if effective_timeout and effective_timeout > 0:
+                    deadline = time.time() + effective_timeout * 60
+
+                session = TutoringSession(
                     task=task,
                     persona=persona,
-                    agent_adapter=agent,
-                    proxy=proxy,
-                    simulator_model=self.simulator_model or SIMULATOR_DEFAULT_MODEL,
+                    student_sim=student_sim,
+                    tc_checker=tc_checker,
                     max_turns=max_turns,
-                    tools_enabled=tools_enabled,
-                    timeout_minutes=timeout_minutes,
-                    cancel_event=cancel_event,
+                    deadline=deadline,
+                    proxy=proxy,
                 )
-                # Extract turns from ConversationalTestCase into TaskResult
-                for t in conversational_test_case.turns:
-                    result.turns.append(
-                        ConversationTurn(
-                            role=t.role,
-                            content=t.content,
+
+                # Register send_message + get_session_info on the proxy
+                register_session_tools(proxy, session)
+
+                if tools_enabled:
+                    print(
+                        f"  Agent-driven session "
+                        f"(simulator={self.simulator_model or 'default'}, "
+                        f"tc={'incremental' if tc_items else 'native'})..."
+                    )
+                    conversation = run_agent_session(
+                        task=task,
+                        persona=persona,
+                        agent_adapter=agent,
+                        proxy=proxy,
+                        session=session,
+                        timeout_minutes=timeout_minutes,
+                        cancel_event=cancel_event,
+                    )
+                else:
+                    # No tools: fall back to legacy DeepEval path
+                    # (pure LLM conditions without tool calling)
+                    if not DEEPEVAL_AVAILABLE:
+                        raise RuntimeError(
+                            "DeepEval required for no-tools mode. "
+                            "Install with: pip install deepeval"
+                        )
+                    conversational_test_case, simulator_cost = (
+                        run_conversation_simulation(
+                            task=task,
+                            persona=persona,
+                            agent_adapter=agent,
+                            proxy=proxy,
+                            simulator_model=(
+                                self.simulator_model or SIMULATOR_DEFAULT_MODEL
+                            ),
+                            max_turns=max_turns,
+                            tools_enabled=False,
+                            timeout_minutes=timeout_minutes,
+                            cancel_event=cancel_event,
                         )
                     )
+                    conversation = [
+                        {"role": t.role, "content": t.content}
+                        for t in conversational_test_case.turns
+                    ]
+
+                # Populate result turns from conversation
+                for m in conversation:
+                    result.turns.append(
+                        ConversationTurn(role=m["role"], content=m["content"])
+                    )
                 print(
-                    f"  ConversationSimulator completed: {len(conversational_test_case.turns)} turns"
+                    f"  Session completed: {len(conversation)} messages, "
+                    f"{session.turn} turns"
                 )
             finally:
                 # Clear task context for next task+persona

@@ -4,13 +4,17 @@ Creates configured MCPProxy instances with the correct tools for each task.
 """
 
 import random
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from mcp_servers.core.tools import CORE_TOOLS
 from mcp_servers.distractors.distractor_tools import DISTRACTOR_TOOLS
 from mcp_servers.proxy.mcp_proxy import MCPProxy
 
+if TYPE_CHECKING:
+    from mcp_servers.session import TutoringSession
+
 # Total tool slots available to the agent (core + convenient + distractors).
+# Session tools (get_session_info, send_message) do NOT count toward this cap.
 _TOTAL_TOOL_SLOTS = 15
 
 
@@ -135,3 +139,47 @@ def create_proxy_for_task(
         )
 
     return proxy
+
+
+def register_session_tools(
+    proxy: MCPProxy,
+    session: "TutoringSession",
+) -> None:
+    """Register session-management tools on an existing proxy.
+
+    These tools are infrastructure (like ``get_environment_info``) and do
+    NOT count toward the 15-slot tool budget or tool_usage scoring.
+
+    Args:
+        proxy: The MCPProxy to add tools to.
+        session: TutoringSession that backs the tool implementations.
+    """
+    proxy.register_tool(
+        name="get_session_info",
+        func=session.handle_get_session_info,
+        description=(
+            "Get the tutoring task description, student profile, and the "
+            "student's opening message. Call this first to understand what "
+            "you need to teach."
+        ),
+        params={"type": "object", "properties": {}, "required": []},
+    )
+    proxy.register_tool(
+        name="send_message",
+        func=session.handle_send_message,
+        description=(
+            "Send a message to the student. Returns the student's reply "
+            "and session status. Use this to communicate with the student "
+            "during the tutoring session."
+        ),
+        params={
+            "type": "object",
+            "properties": {
+                "text": {
+                    "type": "string",
+                    "description": "Your message to the student.",
+                }
+            },
+            "required": ["text"],
+        },
+    )

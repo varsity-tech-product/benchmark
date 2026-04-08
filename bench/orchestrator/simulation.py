@@ -864,3 +864,115 @@ def run_conversation_simulation(
         f"Simulation failed after {1 + _MAX_SIMULATION_RETRIES} attempts: "
         f"0 conversation turns produced"
     )
+
+
+# ============================================================================
+# Agent-driven session (MCP unification)
+# ============================================================================
+
+# Bootstrap prompt given to the agent at the start of a session.
+# The agent's system prompt already contains task context (via set_task_context),
+# so this only needs to instruct it on the interaction protocol.
+_AGENT_BOOTSTRAP = (
+    "A student is waiting for your help. Here is their opening message:\n\n"
+    '"{opening}"\n\n'
+    "You have access to tools for data analysis, coding, backtesting, "
+    "and communicating with the student.\n\n"
+    "IMPORTANT: To talk to the student, you MUST use the send_message "
+    "tool. Your text responses are internal notes — only send_message "
+    "delivers messages to the student.\n\n"
+    "Workflow:\n"
+    "1. Use tools (shell_exec, file_read, fetch_market_data, etc.) to "
+    "prepare your teaching.\n"
+    "2. Use send_message(text=...) to respond to the student.\n"
+    "3. Read the student's reply from the send_message result.\n"
+    "4. Repeat until send_message returns status 'completed'.\n\n"
+    "Begin by addressing the student's opening message."
+)
+
+
+def run_agent_session(
+    task: "QuantTutorTask",
+    persona: "StudentPersona",
+    agent_adapter,
+    proxy,
+    session: "TutoringSession",
+    timeout_minutes: Optional[int] = None,
+    cancel_event=None,
+) -> list[dict[str, str]]:
+    """Run a tutoring session where the agent drives the loop.
+
+    The agent interacts with the student via ``send_message`` tool calls
+    and uses other MCP tools autonomously.  The conversation is managed
+    by ``TutoringSession``; this function only bootstraps the agent and
+    handles edge cases.
+
+    Args:
+        task: The benchmark task.
+        persona: The student persona.
+        agent_adapter: The agent adapter (BaseAgentAdapter).
+        proxy: MCPProxy with session tools already registered.
+        session: TutoringSession backing the session tools.
+        timeout_minutes: Wall-clock timeout (also enforced by proxy deadline).
+        cancel_event: threading.Event for user cancellation.
+
+    Returns:
+        Conversation history as list of {role, content} dicts.
+    """
+    # Compute deadline and propagate to proxy
+    deadline: Optional[float] = None
+    effective_timeout = timeout_minutes or getattr(task, "timeout_minutes", None)
+    if effective_timeout and effective_timeout > 0:
+        deadline = time.time() + effective_timeout * 60
+    proxy.set_deadline(deadline)
+
+    if cancel_event is not None:
+        proxy.set_cancel_event(cancel_event)
+        if hasattr(agent_adapter, "set_cancel_event"):
+            agent_adapter.set_cancel_event(cancel_event)
+
+    # Get student opening and inject into session
+    opening = task.student_openings.get(persona.persona_id, "")
+    if not opening:
+        opening = "Hi, I need help with this topic."
+    session.inject_student_opening(opening)
+
+    # Build bootstrap prompt with the student's opening
+    bootstrap = _AGENT_BOOTSTRAP.format(opening=opening)
+
+    # Give the agent enough iterations for the full session.
+    # Each "turn" may involve many tool calls + one send_message.
+    agent_adapter.set_agent_max_steps(task.max_turns * 10)
+
+    # Agent runs autonomously — it uses tools (including send_message)
+    # until the session is done or it runs out of iterations.
+    available_tools = proxy.get_available_tools()
+
+    def tool_callback(name, **kwargs):
+        return proxy.call_tool(name, **kwargs)
+
+    try:
+        response = agent_adapter.generate_response(
+            messages=[{"role": "user", "content": bootstrap}],
+            available_tools=available_tools,
+            tool_callback=tool_callback,
+        )
+    except Exception as exc:
+        if cancel_event is not None and cancel_event.is_set():
+            logger.info("Agent session cancelled by user.")
+        else:
+            logger.error(
+                "Agent session failed: %s: %s", type(exc).__name__, exc
+            )
+        response = ""
+
+    # Fallback: if agent returned text but never called send_message,
+    # treat the text as the agent's first message to the student.
+    if response and not session.conversation:
+        logger.warning(
+            "Agent did not call send_message. Wrapping text response "
+            "as implicit send_message."
+        )
+        proxy.call_tool("send_message", text=response)
+
+    return session.conversation

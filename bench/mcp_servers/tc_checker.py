@@ -1,8 +1,11 @@
-"""Termination criteria checker for Gym mode.
+"""Termination criteria checker for QuantTutorBench.
 
-Extracted from simulation.py's _EfficientSimulator.
 Checks whether the conversation has met all learning objectives
 via incremental LLM calls on the latest exchange only.
+No DeepEval dependency -- used by TutoringSession inside send_message.
+
+This is the single authoritative implementation of TC checking.
+The orchestrator's _EfficientSimulator delegates to this module.
 """
 
 import json
