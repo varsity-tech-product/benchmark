@@ -161,10 +161,12 @@ def _build_standalone_server(task_id: str, persona_id: str, use_docker: bool = T
     tc_items = parse_tc_items(tc_text, task.category.value, persona_id=persona_id)
     has_tc = tc_items is not None
 
+    from config.model_resolver import resolve_deepeval_model
+
     student_sim = StudentSimulator(
         scenario=build_scenario(task, persona_id, has_incremental_tc=has_tc),
         user_description=build_user_description(persona, has_incremental_tc=has_tc),
-        model=SIMULATOR_DEFAULT_MODEL,
+        model=resolve_deepeval_model(SIMULATOR_DEFAULT_MODEL),
     )
 
     tc_checker = TCChecker(tc_items) if tc_items else None

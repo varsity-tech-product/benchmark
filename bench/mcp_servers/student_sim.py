@@ -1,21 +1,24 @@
-"""Lightweight student simulator for QuantTutorBench.
+"""Student simulator for QuantTutorBench.
 
-Generates student messages via direct LLM calls (OpenRouter).
-No DeepEval dependency -- used by TutoringSession behind the send_message tool.
+Generates student messages via a DeepEval model object (resolved by
+``config.model_resolver.resolve_deepeval_model``).  Shares the same
+model resolution pipeline as the DeepEval ConversationSimulator path,
+eliminating duplicate OpenRouter client setup.
+
+Used by TutoringSession behind the ``send_message`` MCP tool.
 """
 
 import logging
-import os
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-# System prompt template for the student simulator LLM.
-_STUDENT_SYSTEM = (
+# Prompt template for generating the next student message.
+_MESSAGE_PROMPT = (
     "You are a simulated student in a tutoring conversation about "
     "quantitative finance. Stay in character at all times.\n\n"
     "{user_description}\n\n"
     "SCENARIO:\n{scenario}\n\n"
+    "Conversation so far:\n{transcript}\n\n"
     "Generate only the student's next message. Do NOT include any "
     "metadata, role labels, or stage directions — just the student's "
     "words as they would type them in a chat."
@@ -27,57 +30,59 @@ _CLOSING_PROMPT = (
     "message (1-2 sentences) that thanks the tutor and mentions one "
     "specific thing you learned or plan to try. Stay in character.\n\n"
     "Scenario: {scenario}\n\n"
+    "{transcript}\n"
     "Reply with ONLY the closing message."
 )
 
 
-class StudentSimulator:
-    """Generates student messages via OpenRouter API calls.
+def _format_transcript(
+    conversation: list[dict[str, str]], max_chars: int | None = None
+) -> str:
+    """Format conversation history as a labelled transcript."""
+    lines = []
+    for turn in conversation:
+        label = "Student" if turn["role"] == "user" else "Tutor"
+        content = turn["content"][:max_chars] if max_chars else turn["content"]
+        lines.append(f"{label}: {content}")
+    return "\n\n".join(lines)
 
-    Uses the same persona/scenario prompt structure as the DeepEval
-    simulator but without the ConversationSimulator framework.
+
+def _extract_text(result) -> str:
+    """Extract plain text from a DeepEval model.generate() result.
+
+    Returns (text, cost) tuple for OAuth/GPTModel, or plain string for
+    fallback string models.
+    """
+    text = result[0] if isinstance(result, tuple) else result
+    return (text or "").strip()
+
+
+class StudentSimulator:
+    """Generates student messages via a DeepEval model object.
+
+    Accepts any object returned by ``resolve_deepeval_model()`` —
+    ``GPTModel``, ``_OAuthAnthropicModel``, or a plain model-name string.
+    When a plain string is passed, it is resolved lazily on first use.
     """
 
     def __init__(
         self,
         scenario: str,
         user_description: str,
-        model: str = "openai/gpt-5.2",
-        temperature: float = 0.0,
+        model=None,
     ):
         self.scenario = scenario
         self.user_description = user_description
-        self.model = model
-        self.temperature = temperature
-
-        self._system_prompt = _STUDENT_SYSTEM.format(
-            user_description=user_description,
-            scenario=scenario,
-        )
-        self._client = None
-        self._total_cost: float = 0.0
+        self._model = model  # DeepEval model object or string
 
     @property
-    def client(self):
-        """Lazy-init OpenAI client pointed at OpenRouter."""
-        if self._client is None:
-            try:
-                import openai
-            except ImportError:
-                raise ImportError(
-                    "openai package required for student simulation. "
-                    "Install with: pip install openai"
-                )
-            api_key = os.environ.get("OPENROUTER_API_KEY", "")
-            if not api_key:
-                raise RuntimeError(
-                    "OPENROUTER_API_KEY not set. Required for student simulation."
-                )
-            self._client = openai.OpenAI(
-                api_key=api_key,
-                base_url="https://openrouter.ai/api/v1",
-            )
-        return self._client
+    def model(self):
+        """Lazy-resolve plain string model names on first use."""
+        if isinstance(self._model, str) or self._model is None:
+            from config.model_resolver import resolve_deepeval_model
+
+            self._model = resolve_deepeval_model(self._model)
+        return self._model
 
     def generate_message(
         self,
@@ -92,53 +97,22 @@ class StudentSimulator:
         Returns:
             The student's next message as a string.
         """
-        messages = [{"role": "system", "content": self._system_prompt}]
-
-        # Map our roles to the LLM call roles:
-        # student = "assistant" (we want the LLM to generate the student's message)
-        # tutor = "user" (from the student-LLM's perspective, tutor messages are input)
-        for turn in conversation:
-            if turn["role"] == "user":
-                # Student's prior messages -> assistant (student LLM generated these)
-                messages.append({"role": "assistant", "content": turn["content"]})
-            else:
-                # Tutor's messages -> user (input to the student LLM)
-                messages.append({"role": "user", "content": turn["content"]})
-
-        response = self.client.chat.completions.create(
-            model=self.model,
-            messages=messages,
-            temperature=self.temperature,
-            max_tokens=1024,
+        prompt = _MESSAGE_PROMPT.format(
+            user_description=self.user_description,
+            scenario=self.scenario,
+            transcript=_format_transcript(conversation),
         )
-
-        text = response.choices[0].message.content or ""
-        return text.strip()
+        result = self.model.generate(prompt)
+        return _extract_text(result)
 
     def generate_closing(
         self,
         conversation: list[dict[str, str]],
     ) -> str:
         """Generate a natural closing message from the student."""
-        prompt = _CLOSING_PROMPT.format(scenario=self.scenario[:400])
-
-        # Include last 2 turns for context
-        context = ""
-        for turn in conversation[-4:]:
-            role_label = "Student" if turn["role"] == "user" else "Tutor"
-            context += f"{role_label}: {turn['content'][:300]}\n\n"
-
-        messages = [
-            {"role": "system", "content": prompt},
-            {"role": "user", "content": context + "Write the student's closing message:"},
-        ]
-
-        response = self.client.chat.completions.create(
-            model=self.model,
-            messages=messages,
-            temperature=self.temperature,
-            max_tokens=256,
+        prompt = _CLOSING_PROMPT.format(
+            scenario=self.scenario[:400],
+            transcript=_format_transcript(conversation[-4:], max_chars=300),
         )
-
-        text = response.choices[0].message.content or ""
-        return text.strip()
+        result = self.model.generate(prompt)
+        return _extract_text(result)

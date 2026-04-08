@@ -380,6 +380,11 @@ class BenchmarkOrchestrator:
                 )
                 has_tc_items = tc_items is not None
 
+                from config.model_resolver import resolve_deepeval_model
+
+                resolved_sim_model = resolve_deepeval_model(
+                    self.simulator_model or SIMULATOR_DEFAULT_MODEL,
+                )
                 student_sim = StudentSimulator(
                     scenario=build_scenario(
                         task, persona.persona_id,
@@ -388,7 +393,7 @@ class BenchmarkOrchestrator:
                     user_description=build_user_description(
                         persona, has_incremental_tc=has_tc_items,
                     ),
-                    model=self.simulator_model or SIMULATOR_DEFAULT_MODEL,
+                    model=resolved_sim_model,
                 )
 
                 tc_checker = None
