@@ -273,62 +273,64 @@ def _check_docker():
         sys.exit(1)
 
 
-def _ensure_lean_data():
-    """Ensure LEAN market data is available. Returns data directory path."""
-    # Prefer local converted data (populated by convert_binance_to_lean.py)
-    local_lean = BENCH_ROOT / "data" / "lean"
-    if local_lean.is_dir() and any(local_lean.iterdir()):
-        # Warn if custom symbol-properties is missing — LEAN will fall back to
-        # its built-in DB which doesn't cover all universe symbols.
-        if not (local_lean / "symbol-properties").is_dir():
-            print(
-                "WARNING: bench/data/lean/symbol-properties/ not found. "
-                "Run scripts/generate_symbol_properties.py to create it. "
-                "Without it, some symbols will fail to resolve in LEAN."
-            )
-        print(f"Using LEAN data from: {local_lean}")
-        return str(local_lean)
+def _ensure_lean_runtime() -> tuple[str, str]:
+    """Ensure LEAN runtime assets are available.
 
-    # Try to use data_manager (HuggingFace) if local data unavailable
+    Returns:
+        (lean_metadata_dir, custom_data_dir)
+    """
     try:
         sys.path.insert(0, str(BENCH_ROOT))
         from scripts.data_manager import ensure_data
 
         paths = ensure_data(series="lean", revision=DATASET_REVISION)
-        return paths.lean_data
+        if paths.lean_data and paths.custom_data:
+            return paths.lean_data, paths.custom_data
     except (ImportError, Exception) as e:
-        print(f"WARNING: Could not load data via data_manager: {e}")
+        print(f"WARNING: Could not load LEAN runtime via data_manager: {e}")
 
-    # Fallback: check common locations
-    candidates = [
-        Path.home() / ".cache" / "quanttutorbench" / "lean_data",
-        Path("/tmp/lean_data"),
-    ]
-    for path in candidates:
-        if path.is_dir() and any(path.iterdir()):
-            print(f"Using LEAN data from: {path}")
-            return str(path)
+    fallback_metadata = BENCH_ROOT / "runtime_assets" / "lean" / "metadata"
+    fallback_custom = BENCH_ROOT / "data" / "custom"
+    if fallback_metadata.is_dir() and (fallback_custom / "binance").is_dir():
+        print(f"Using fallback LEAN metadata from: {fallback_metadata}")
+        print(f"Using fallback custom data from: {fallback_custom}")
+        return str(fallback_metadata), str(fallback_custom)
 
-    print("ERROR: No LEAN market data found. Run scripts/data_manager.py first.")
+    print("ERROR: No LEAN runtime assets found. Run scripts/data_manager.py first.")
     sys.exit(1)
 
 
 def _build_lean_config(
     class_name: str, algo_filename: str, start_date: str, end_date: str
 ) -> dict:
-    """Build a minimal LEAN configuration for the backtest."""
+    """Build a LEAN configuration for the backtest.
+
+    Aligned with MatchX cloud backtest lean-config.json template.
+    """
     return {
         "environment": "backtesting",
+        "environments": {
+            "backtesting": {
+                "live-mode": False,
+                "setup-handler": "QuantConnect.Lean.Engine.Setup.BacktestingSetupHandler",
+                "result-handler": "QuantConnect.Lean.Engine.Results.BacktestingResultHandler",
+                "data-feed-handler": "QuantConnect.Lean.Engine.DataFeeds.FileSystemDataFeed",
+                "real-time-handler": "QuantConnect.Lean.Engine.RealTime.BacktestingRealTimeHandler",
+                "transaction-handler": "QuantConnect.Lean.Engine.TransactionHandlers.BacktestingTransactionHandler",
+                "history-provider": "QuantConnect.Lean.Engine.HistoricalData.SubscriptionDataReaderHistoryProvider",
+            }
+        },
         "algorithm-type-name": class_name,
         "algorithm-language": "CSharp",
         "algorithm-location": f"/Lean/Algorithm.CSharp/{algo_filename}",
         "parameters": {},
         "data-folder": "/Lean/Data",
+        "data-directory": "/Lean/Data",
         "results-destination-folder": "/Results",
         "log-handler": "QuantConnect.Logging.CompositeLogHandler",
-        "messaging-handler": "QuantConnect.Messaging.Messaging",
-        "job-queue-handler": "QuantConnect.Queues.JobQueue",
-        "api-handler": "QuantConnect.Api.Api",
+        "debugging": False,
+        "close-automatically": True,
+        "cache-location": "/Results/cache",
         "start-date": start_date,
         "end-date": end_date,
     }
@@ -538,12 +540,13 @@ def run_lean_backtest(
     }
     class_name = class_name_map.get(algo_name, algo_name)
 
-    lean_data_dir = _ensure_lean_data()
+    lean_data_dir, custom_data_dir = _ensure_lean_runtime()
 
     if dry_run:
         print(f"DRY RUN: Would run {class_name} from {algo_file}")
         print(f"  LEAN image: {lean_image}")
-        print(f"  Data dir:   {lean_data_dir}")
+        print(f"  Metadata:   {lean_data_dir}")
+        print(f"  Custom:     {custom_data_dir}")
         print(f"  Period:     {start_date} → {end_date}")
         if parameters:
             print(f"  Parameters: {parameters}")
@@ -639,6 +642,11 @@ def run_lean_backtest(
         dll_path = "/CustomAlgo/bin/Debug/net10.0/CustomAlgo.dll"
         config = _build_lean_config(class_name, algo_file.name, start_date, end_date)
         config["algorithm-location"] = dll_path
+        # Inject custom data root for 12-col data
+        config.setdefault("parameters", {})
+        config["parameters"]["custom-data-root"] = "/data/custom/binance"
+        config["parameters"]["maker-fee-rate"] = "0.0005"
+        config["parameters"]["taker-fee-rate"] = "0.0005"
         # Merge task-specific parameters into config
         if parameters:
             config["parameters"] = {**config.get("parameters", {}), **parameters}
@@ -655,6 +663,11 @@ def run_lean_backtest(
                 data_mounts += ["-v", f"{child}:/Lean/Data/universe.json:ro"]
             elif child.is_dir() or child.is_symlink():
                 data_mounts += ["-v", f"{child.resolve()}:/Lean/Data/{child.name}"]
+
+        # Mount 12-col custom data
+        custom_data = Path(custom_data_dir)
+        if custom_data.is_dir():
+            data_mounts += ["-v", f"{custom_data.resolve()}:/data/custom:ro"]
 
         # Compile C# algorithm inside the container, then run LEAN
         build_and_run = (

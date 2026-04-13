@@ -68,7 +68,7 @@ def evaluate(
     results["trade_count_match"] = behavioral.trade_score >= 0.40
 
     # ── Code patterns (LEAN API usage) ──
-    expected_patterns = ["AddCryptoFuture", "SMA(", "SetWarmUp", "IsWarmingUp"]
+    expected_patterns = ["AddCrypto", "SMA(", "SetWarmUp", "IsWarmingUp"]
     cs_matches = check_csharp_patterns(workspace_path, expected_patterns)
     results["code_patterns"] = sum(cs_matches.values()) >= 3
 

@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
-"""Upload all benchmark data to HuggingFace.
+"""Upload benchmark data artifacts to HuggingFace.
 
-Uploads four categories of data consumed by ``data_manager.py``:
-  1. LEAN market data  → I.tar.gz  (I/E/X series crypto futures)
-  2. Normal data       → docs/**, BDS/**, X/**, A/**  (uploaded as folder)
-  3. Reference results → reference.tar.gz  (eval reference JSONs)
-  4. Universe metadata → raw/i-series/universe*.json
+Uploads five categories of data consumed by the benchmark:
+  1. 12-col custom market data → custom_binance_12col.tar.gz
+  2. Normal data               → docs/**, BDS/**, X/**, A/**  (uploaded as folder)
+  3. Reference results         → reference.tar.gz  (eval reference JSONs)
+  4. Universe metadata         → raw/i-series/universe*.json
+  5. Optional deletion         → remove legacy I.tar.gz from the dataset repo
 
 HF repo layout produced::
 
-    I.tar.gz                                    # LEAN market data
+    custom_binance_12col.tar.gz                 # 12-col custom market data
     reference.tar.gz                            # eval reference results
     docs/                                       # shared reference docs
     BDS/                                        # normal CSV data
@@ -23,8 +24,9 @@ Usage::
 
     python upload_lean_to_hf.py --dry-run       # preview
     python upload_lean_to_hf.py                 # upload all
-    python upload_lean_to_hf.py --only lean     # upload only LEAN archive
+    python upload_lean_to_hf.py --only custom   # upload only 12-col archive
     python upload_lean_to_hf.py --only reference  # upload only reference
+    python upload_lean_to_hf.py --delete-legacy-i-tar
 """
 
 from __future__ import annotations
@@ -37,12 +39,8 @@ from pathlib import Path
 _BENCH_ROOT = Path(__file__).resolve().parent.parent
 _DATA_DIR = _BENCH_ROOT / "data"
 
-DEFAULT_LEAN_DIR = _DATA_DIR / "hf_cache" / "lean" / "I"
-DEFAULT_LEAN_E_DIR = _DATA_DIR / "hf_cache" / "lean" / "E"
-DEFAULT_LEAN_X_DIR = _DATA_DIR / "hf_cache" / "lean" / "X"
-DEFAULT_I05_PAIRS = (
-    _BENCH_ROOT / "reference" / "Implementation" / "result" / "I05_candidate_pairs.json"
-)
+DEFAULT_CUSTOM_DATA_DIR = _DATA_DIR / "custom"
+DEFAULT_CUSTOM_ARCHIVE_NAME = "custom_binance_12col.tar.gz"
 
 DEFAULT_DOCS_DIR = _DATA_DIR / "hf_cache" / "docs"
 DEFAULT_NORMAL_DIR = _DATA_DIR / "hf_cache" / "normal"
@@ -60,31 +58,18 @@ DEFAULT_REPO_ID = "Varsity-Tech/quant-tutor-bench-data"
 # ---------------------------------------------------------------------------
 
 
-def _build_lean_archive(
-    lean_dir: Path,
-    output_path: Path,
-    lean_e_dir: Path = DEFAULT_LEAN_E_DIR,
-    lean_x_dir: Path = DEFAULT_LEAN_X_DIR,
-    i05_pairs_path: Path = DEFAULT_I05_PAIRS,
-) -> Path:
-    """Create I.tar.gz with top-level I/E/X members."""
+def _build_custom_archive(custom_dir: Path, output_path: Path) -> Path:
+    """Create custom_binance_12col.tar.gz with top-level binance/ members."""
+    binance_dir = custom_dir / "binance"
+    if not binance_dir.is_dir():
+        raise FileNotFoundError(f"12-col custom data dir not found: {binance_dir}")
+
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with tarfile.open(output_path, "w:gz") as tf:
-        for path in sorted(lean_dir.rglob("*")):
+        for path in sorted(binance_dir.rglob("*")):
             if not path.is_file():
                 continue
-            tf.add(path, arcname=str(Path("I") / path.relative_to(lean_dir)))
-
-        if i05_pairs_path.is_file():
-            tf.add(i05_pairs_path, arcname="I/I05_candidate_pairs.json")
-
-        for extra_dir, top_level in ((lean_e_dir, "E"), (lean_x_dir, "X")):
-            if not extra_dir.is_dir():
-                continue
-            for path in sorted(extra_dir.rglob("*")):
-                if not path.is_file():
-                    continue
-                tf.add(path, arcname=str(Path(top_level) / path.relative_to(extra_dir)))
+            tf.add(path, arcname=str(Path("binance") / path.relative_to(binance_dir)))
     return output_path
 
 
@@ -108,31 +93,37 @@ def upload(
     repo_id: str = DEFAULT_REPO_ID,
     dry_run: bool = False,
     only: str | None = None,
+    custom_dir: Path = DEFAULT_CUSTOM_DATA_DIR,
+    delete_legacy_i_tar: bool = False,
+    custom_archive_name: str = DEFAULT_CUSTOM_ARCHIVE_NAME,
 ) -> str | None:
     """Upload all benchmark data to HuggingFace.
 
     Args:
         repo_id: HuggingFace dataset repo ID.
         dry_run: If True, show what would be uploaded without uploading.
-        only: If set, upload only this category ("lean", "normal", "docs",
+        only: If set, upload only this category ("custom", "normal", "docs",
               "reference", "universe"). None = upload all.
+        custom_dir: Local 12-col data directory containing ``binance/``.
+        delete_legacy_i_tar: If True, delete the legacy ``I.tar.gz`` artifact.
+        custom_archive_name: Target filename for the 12-col archive in HF.
     """
     from huggingface_hub import HfApi
 
-    categories = {only} if only else {"lean", "normal", "docs", "reference", "universe"}
+    categories = (
+        {only} if only else {"custom", "normal", "docs", "reference", "universe"}
+    )
 
     with tempfile.TemporaryDirectory(prefix="hf_upload_") as tmpdir:
         tmpdir = Path(tmpdir)
         uploads: list[tuple[Path | str, str]] = []
 
-        # --- LEAN archive ---
-        if "lean" in categories:
-            if not DEFAULT_LEAN_DIR.is_dir():
-                raise FileNotFoundError(f"LEAN dir not found: {DEFAULT_LEAN_DIR}")
-            archive = _build_lean_archive(DEFAULT_LEAN_DIR, tmpdir / "I.tar.gz")
+        # --- 12-col custom archive ---
+        if "custom" in categories:
+            archive = _build_custom_archive(custom_dir, tmpdir / custom_archive_name)
             size_mb = archive.stat().st_size / (1024 * 1024)
-            print(f"[lean] I.tar.gz: {size_mb:.1f} MiB")
-            uploads.append((archive, "I.tar.gz"))
+            print(f"[custom] {custom_archive_name}: {size_mb:.1f} MiB")
+            uploads.append((archive, custom_archive_name))
 
         # --- Reference archive ---
         if "reference" in categories:
@@ -194,12 +185,16 @@ def upload(
         # --- Summary ---
         print(f"\nTotal uploads: {len(uploads)} files")
         print(f"HF repo: {repo_id}")
+        if delete_legacy_i_tar:
+            print("Legacy delete: I.tar.gz")
 
         if dry_run:
             print("\nDRY RUN — listing all files:")
             for local, remote in uploads:
                 size = Path(local).stat().st_size
                 print(f"  {remote}  ({size:,} bytes)")
+            if delete_legacy_i_tar:
+                print("  DELETE I.tar.gz")
             return None
 
         # --- Execute upload ---
@@ -214,6 +209,15 @@ def upload(
                 repo_id=repo_id,
                 repo_type="dataset",
                 commit_message=f"Update benchmark data: {remote_path}",
+            )
+
+        if delete_legacy_i_tar:
+            print("  [delete] I.tar.gz")
+            api.delete_file(
+                path_in_repo="I.tar.gz",
+                repo_id=repo_id,
+                repo_type="dataset",
+                commit_message="Remove legacy I.tar.gz after 12-col-only migration",
             )
 
         latest = api.list_repo_commits(repo_id, repo_type="dataset")[0].commit_id
@@ -233,8 +237,34 @@ def main() -> int:
     )
     parser.add_argument(
         "--only",
-        choices=["lean", "normal", "docs", "reference", "universe"],
+        choices=["custom", "normal", "docs", "reference", "universe"],
         help="Upload only this category (default: upload all).",
+    )
+    parser.add_argument(
+        "--custom-dir",
+        type=Path,
+        default=DEFAULT_CUSTOM_DATA_DIR,
+        help="Path to 12-col custom data root containing binance/ (default: %(default)s).",
+    )
+    parser.add_argument(
+        "--custom-archive-name",
+        default=DEFAULT_CUSTOM_ARCHIVE_NAME,
+        help="Destination filename for the 12-col archive in HF (default: %(default)s).",
+    )
+    parser.add_argument(
+        "--delete-legacy-i-tar",
+        action="store_true",
+        help="Delete legacy I.tar.gz from the dataset repo after upload.",
+    )
+    parser.add_argument(
+        "--lean-dir",
+        default=None,
+        help="Deprecated compatibility flag. Ignored by the 12-col-only uploader.",
+    )
+    parser.add_argument(
+        "--universe",
+        default=None,
+        help="Deprecated compatibility flag. Ignored by the 12-col-only uploader.",
     )
     parser.add_argument(
         "--dry-run",
@@ -248,6 +278,9 @@ def main() -> int:
             repo_id=args.repo_id,
             dry_run=args.dry_run,
             only=args.only,
+            custom_dir=args.custom_dir,
+            delete_legacy_i_tar=args.delete_legacy_i_tar,
+            custom_archive_name=args.custom_archive_name,
         )
         if revision:
             print(f"REVISION={revision}")

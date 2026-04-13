@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
-"""Generate a custom symbol-properties DB that covers all 671 universe symbols.
+"""Generate LEAN metadata sidecars for the 12-col benchmark runtime.
 
 Extracts LEAN's built-in symbol-properties-database.csv, security-database.csv,
 and market-hours-database.json from Docker, then appends entries for any universe
 symbols missing from LEAN's DB (fetching real tick/lot sizes from Binance API).
 
 Output:
-    bench/data/lean/symbol-properties/symbol-properties-database.csv
-    bench/data/lean/symbol-properties/security-database.csv
-    bench/data/lean/market-hours/market-hours-database.json
+    bench/runtime_assets/lean/metadata/symbol-properties/symbol-properties-database.csv
+    bench/runtime_assets/lean/metadata/symbol-properties/security-database.csv
+    bench/runtime_assets/lean/metadata/market-hours/market-hours-database.json
 
 These files are auto-mounted into the LEAN Docker container by
 generate_lean_reference.py, overriding LEAN's built-in metadata.
@@ -27,13 +27,13 @@ import urllib.request
 from pathlib import Path
 
 BENCH_ROOT = Path(__file__).resolve().parent.parent
-LEAN_DIR = BENCH_ROOT / "data" / "lean"
+LEAN_METADATA_DIR = BENCH_ROOT / "runtime_assets" / "lean" / "metadata"
 UNIVERSE_FILE = BENCH_ROOT / "data" / "lean_universe.json"
 LEAN_IMAGE = "quantconnect/lean:latest"
 
 # Output paths
-SYMPROPS_DIR = LEAN_DIR / "symbol-properties"
-MARKET_HOURS_DIR = LEAN_DIR / "market-hours"
+SYMPROPS_DIR = LEAN_METADATA_DIR / "symbol-properties"
+MARKET_HOURS_DIR = LEAN_METADATA_DIR / "market-hours"
 
 
 def _docker_cat(path: str) -> str:
@@ -82,13 +82,13 @@ def _load_universe() -> list[str]:
 
 
 def _parse_existing_symbols(symprops_csv: str) -> set[str]:
-    """Parse existing Binance USDT cryptofuture symbols from the CSV."""
+    """Parse existing Binance USDT crypto symbols from the CSV."""
     existing = set()
     for line in symprops_csv.splitlines():
         if line.startswith("#") or line.startswith("market,"):
             continue
         parts = line.split(",")
-        if len(parts) >= 3 and parts[0] == "binance" and parts[2] == "cryptofuture":
+        if len(parts) >= 3 and parts[0] == "binance" and parts[2] in ("crypto", "cryptofuture"):
             existing.add(parts[1].upper())
     return existing
 
@@ -130,7 +130,7 @@ def _generate_new_rows(
 ) -> list[str]:
     """Generate CSV rows for missing symbols.
 
-    Format: binance,{SYMBOL},cryptofuture,{SYMBOL},USDT,1,{tick_size},{lot_size},{SYMBOL}
+    Format: binance,{SYMBOL},crypto,{SYMBOL},USDT,1,{tick_size},{lot_size},{SYMBOL}
     """
     rows = []
     api_hits = 0
@@ -147,7 +147,7 @@ def _generate_new_rows(
             lot = "1"
             defaults_used += 1
 
-        row = f"binance,{symbol},cryptofuture,{symbol},USDT,1,{tick},{lot},{symbol}"
+        row = f"binance,{symbol},crypto,{symbol},USDT,1,{tick},{lot},{symbol}"
         rows.append(row)
 
     print(
@@ -174,7 +174,7 @@ def main() -> int:
     universe = _load_universe()
     existing = _parse_existing_symbols(symprops_csv)
     missing = [s for s in universe if s.upper() not in existing]
-    print(f"Existing in LEAN DB: {len(existing)} Binance cryptofuture symbols")
+    print(f"Existing in LEAN DB: {len(existing)} Binance crypto symbols")
     print(f"Missing from LEAN DB: {len(missing)} symbols")
 
     if missing:
@@ -197,7 +197,7 @@ def main() -> int:
 
     total_binance = len(_parse_existing_symbols(merged_csv))
     print(
-        f"\nMerged DB: {len(merged_csv.splitlines())} lines, {total_binance} Binance cryptofuture symbols"
+        f"\nMerged DB: {len(merged_csv.splitlines())} lines, {total_binance} Binance crypto symbols"
     )
 
     if args.dry_run:

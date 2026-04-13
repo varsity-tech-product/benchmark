@@ -36,7 +36,7 @@ def evaluate(
     }
 
     # --- 1. point_in_time_universe (0.25) ---
-    # Check for date-conditional AddCryptoFuture or AddUniverse or listing date logic
+    # Check for date-conditional AddCrypto or AddUniverse or listing date logic
     pit_fix = check_fix_applied(
         workspace_path,
         tool_logs,

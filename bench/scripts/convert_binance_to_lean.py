@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Convert raw Binance CSV data to LEAN engine directory structure.
+"""Convert raw Binance CSV data to a legacy LEAN engine directory structure.
 
 Reads raw kline CSVs (from download_binance_full_universe.py) and produces
 the LEAN-format directory tree expected by QuantConnect's data readers.
@@ -8,15 +8,7 @@ margin-interest sidecars for the current benchmark contract.
 
 Supports two security types (--security-type flag):
 
-  cryptofuture (default):
-    Path:   Data/cryptofuture/binance/
-    Daily:  {sym}_trade.zip  →  {sym}_trade_perp.csv
-    Hour:   {sym}_trade.zip  →  {sym}_trade_perp.csv
-    Minute: {date}_trade.zip →  {date}_{sym}_minute_trade_perp.csv
-    Prices: Raw decimals (no scaling)
-    Minute timestamp: milliseconds from midnight (0, 60000, ...)
-
-  crypto:
+  crypto (default):
     Path:   Data/crypto/binance/
     Daily:  {sym}_trade.zip  →  {sym}.csv
     Hour:   {sym}_trade.zip  →  {sym}.csv
@@ -24,13 +16,25 @@ Supports two security types (--security-type flag):
     Prices: Raw decimals (no scaling)
     Minute timestamp: milliseconds from midnight (0, 60000, ...)
 
+  cryptofuture:
+    Path:   Data/cryptofuture/binance/
+    Daily:  {sym}_trade.zip  →  {sym}_trade_perp.csv
+    Hour:   {sym}_trade.zip  →  {sym}_trade_perp.csv
+    Minute: {date}_trade.zip →  {date}_{sym}_minute_trade_perp.csv
+    Prices: Raw decimals (no scaling)
+    Minute timestamp: milliseconds from midnight (0, 60000, ...)
+
 LEAN TradeBar CSV format (all crypto types):
     Timestamp, Open, High, Low, Close, Volume
     Prices are stored as raw decimals (NOT scaled).
 
+This script is retained for one-off exports and backwards compatibility.
+The active benchmark runtime no longer reads ``bench/data/lean`` market bars;
+it uses ``bench/data/custom/binance`` plus ``bench/runtime_assets/lean``.
+
 Usage:
     python convert_binance_to_lean.py --input-dir PATH --output-dir PATH
-    python convert_binance_to_lean.py --input-dir bench/data/raw/i-series --output-dir bench/data/lean
+    python convert_binance_to_lean.py --input-dir PATH --output-dir /tmp/lean-export
     python convert_binance_to_lean.py --input-dir PATH --output-dir PATH --security-type crypto
 """
 
@@ -93,8 +97,8 @@ def _ms_from_midnight(dt: datetime) -> int:
 def _fmt_price(v: float) -> str:
     """Format a price as fixed-point decimal, never scientific notation.
 
-    LEAN's CryptoFuture CSV parser does not handle scientific notation
-    (e.g. '6.68e-05'), so all prices must be in fixed-point format.
+    LEAN's CSV parser does not handle scientific notation (e.g.
+    '6.68e-05'), so all prices must be in fixed-point format.
     Uses 10 decimal places then strips trailing zeros for readability.
     """
     return f"{v:.10f}".rstrip("0").rstrip(".")
@@ -374,14 +378,14 @@ def parse_args() -> argparse.Namespace:
         "--output-dir",
         type=Path,
         required=True,
-        help="Output directory for LEAN-format data (will contain cryptofuture/binance/...).",
+        help="Output directory for LEAN-format data (will contain crypto/binance/...).",
     )
     parser.add_argument(
         "--security-type",
-        choices=["cryptofuture", "crypto"],
-        default="cryptofuture",
-        help="LEAN security type: 'cryptofuture' (default) for AddCryptoFuture, "
-        "'crypto' for AddCrypto.",
+        choices=["crypto", "cryptofuture"],
+        default="crypto",
+        help="LEAN security type: 'crypto' (default) for AddCrypto, "
+        "'cryptofuture' for AddCryptoFuture.",
     )
     parser.add_argument(
         "--fill-daily-from-minute",

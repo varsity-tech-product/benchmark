@@ -68,14 +68,14 @@ def evaluate(
     results["trade_count_match"] = behavioral.trade_score >= 0.40
 
     # ── Code patterns ──
-    expected_patterns = ["AddCryptoFuture", "SMA(", "SetWarmUp", "Dictionary"]
+    expected_patterns = ["AddCrypto", "SMA(", "SetWarmUp", "Dictionary"]
     cs_matches = check_csharp_patterns(workspace_path, expected_patterns)
     results["code_patterns"] = sum(cs_matches.values()) >= 3
 
     # ── Universe coverage (>=80 symbols subscribed) ──
     symbol_count = 0
-    if has_regex(artifact_text, [r"addcryptofuture"]):
-        calls = re.findall(r"addcryptofuture\s*\(\s*[\"']?(\w+)", artifact_text)
+    if has_regex(artifact_text, [r"addcrypto(?:future)?"]):
+        calls = re.findall(r"addcrypto(?:future)?\s*\(\s*[\"']?(\w+)", artifact_text)
         symbol_count = len(set(calls))
     if symbol_count >= 80:
         results["universe_coverage"] = True

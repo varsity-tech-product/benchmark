@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Task-aware LEAN cache audit for the pinned HuggingFace dataset revision.
+"""Task-aware LEAN runtime audit for the pinned benchmark dataset revision.
 
 This script validates both:
 1. Direct task contract files (data_files, docs_available, sample_code)
-2. Shared LEAN runtime data under /lean/Data (market-data families, sidecars)
+2. Shared LEAN runtime assets: metadata sidecars under /lean/Data and
+   12-col custom bars under /data/custom
 
 The output is designed to answer "what is missing?" and
 "which tasks are affected?" without relying on ad-hoc log inspection.
@@ -124,7 +125,7 @@ def _build_runtime_profile(
     uses_universe = "LoadUniverse(" in source_text
     subset_match = re.search(r"\.Take\(\s*([A-Za-z0-9_]+)\s*\)", source_text)
     explicit_symbols = _ordered_unique(
-        re.findall(r'AddCryptoFuture\("([A-Z0-9]+)"', source_text)
+        re.findall(r'AddCrypto(?:Future)?\("([A-Z0-9]+)"', source_text)
     )
 
     universe_mode = "unknown"
@@ -197,8 +198,8 @@ def _resolve_sample_code(
     return None
 
 
-def _symbol_sets_for_resolution(lean_data_dir: Path, resolution: str) -> dict[str, Any]:
-    root = lean_data_dir / "cryptofuture" / "binance" / resolution
+def _symbol_sets_for_resolution(custom_data_dir: Path, resolution: str) -> dict[str, Any]:
+    root = custom_data_dir / resolution
     payload: dict[str, Any] = {
         "path": str(root),
         "exists": root.exists(),
@@ -209,21 +210,8 @@ def _symbol_sets_for_resolution(lean_data_dir: Path, resolution: str) -> dict[st
     if not root.exists():
         return payload
 
-    if resolution in {"minute", "5minute"}:
-        symbol_dirs = sorted(p.name.upper() for p in root.iterdir() if p.is_dir())
-        payload["trade_symbols"] = symbol_dirs
-        payload["zip_file_count"] = sum(1 for _ in root.rglob("*.zip"))
-        return payload
-
-    trade_symbols = sorted(
-        p.name.replace("_trade.zip", "").upper() for p in root.glob("*_trade.zip")
-    )
-    quote_symbols = sorted(
-        p.name.replace("_quote.zip", "").upper() for p in root.glob("*_quote.zip")
-    )
-    payload["trade_symbols"] = trade_symbols
-    payload["quote_symbols"] = quote_symbols
-    payload["zip_file_count"] = len(list(root.glob("*.zip")))
+    payload["trade_symbols"] = sorted(p.name.upper() for p in root.iterdir() if p.is_dir())
+    payload["zip_file_count"] = sum(1 for _ in root.rglob("*.zip"))
     return payload
 
 
@@ -271,12 +259,18 @@ def audit_lean_data(
     )
 
     lean_data_dir = Path(paths.lean_data or "")
+    custom_data_dir = (
+        Path(paths.custom_data or "") / "binance" if paths.custom_data else Path()
+    )
     docs_dir = Path(paths.docs or "") if paths.docs else None
     student_code_dir = Path(paths.student_code or "") if paths.student_code else None
     data_search_dirs = [Path(p) for p in paths.data_search_dirs]
     tasks = _load_tasks()
 
-    universe_path = lean_data_dir / "universe.json"
+    universe_resolved = _resolve_declared_file("universe.json", data_search_dirs)
+    universe_path = (
+        Path(universe_resolved) if universe_resolved else lean_data_dir / "universe.json"
+    )
     universe_payload = _load_json(universe_path)
     if isinstance(universe_payload, list):
         universe_order = list(universe_payload)
@@ -289,11 +283,11 @@ def audit_lean_data(
                 universe_order.append(value)
 
     resolution_inventory = {
-        "daily": _symbol_sets_for_resolution(lean_data_dir, "daily"),
-        "hour": _symbol_sets_for_resolution(lean_data_dir, "hour"),
-        "4hour": _symbol_sets_for_resolution(lean_data_dir, "4hour"),
-        "minute": _symbol_sets_for_resolution(lean_data_dir, "minute"),
-        "5minute": _symbol_sets_for_resolution(lean_data_dir, "5minute"),
+        "daily": _symbol_sets_for_resolution(custom_data_dir, "daily"),
+        "hour": _symbol_sets_for_resolution(custom_data_dir, "hour"),
+        "4hour": _symbol_sets_for_resolution(custom_data_dir, "4hour"),
+        "minute": _symbol_sets_for_resolution(custom_data_dir, "minute"),
+        "5minute": _symbol_sets_for_resolution(custom_data_dir, "5minute"),
     }
 
     direct_missing: dict[str, list[dict[str, Any]]] = {
@@ -402,10 +396,8 @@ def audit_lean_data(
 
     sidecars = {
         "universe_json": str(universe_path) if universe_path.exists() else None,
-        "i05_candidate_pairs": (
-            str(lean_data_dir / "I05_candidate_pairs.json")
-            if (lean_data_dir / "I05_candidate_pairs.json").exists()
-            else None
+        "i05_candidate_pairs": _resolve_declared_file(
+            "I05_candidate_pairs.json", data_search_dirs
         ),
         "market_hours_database": (
             str(lean_data_dir / "market-hours" / "market-hours-database.json")
@@ -440,7 +432,8 @@ def audit_lean_data(
         "dataset_revision": DATASET_REVISION,
         "lean_image": LEAN_IMAGE,
         "cache_layout": {
-            "lean_data_dir": str(lean_data_dir),
+            "lean_metadata_dir": str(lean_data_dir),
+            "custom_data_dir": str(custom_data_dir),
             "docs_dir": str(docs_dir) if docs_dir else None,
             "student_code_dir": str(student_code_dir) if student_code_dir else None,
             "data_search_dirs": [str(p) for p in data_search_dirs],

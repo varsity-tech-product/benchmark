@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Test HuggingFace download by fetching into a temp directory.
+"""Test dataset access by fetching into a temp directory.
 
-Does NOT touch local bench/data/ — downloads to /tmp/hf_download_test/.
-Verifies all 4 categories: docs, lean, normal, reference.
+Does NOT touch local bench/data/ caches — downloads to /tmp/hf_download_test/.
+Verifies docs, normal data, reference data, and 12-col custom data access.
 
 Usage:
     python scripts/test_hf_download.py
@@ -41,7 +41,7 @@ def main():
     print(f"Test cache dir: {test_cache}")
     print()
 
-    # Test 1: lean series (downloads I.tar.gz + docs + reference)
+    # Test 1: lean series (tracked metadata + 12-col custom data + docs + reference)
     print("=" * 60)
     print("TEST 1: ensure_data(series='lean')")
     print("=" * 60)
@@ -53,6 +53,7 @@ def main():
         )
         print(f"  docs:       {paths.docs}")
         print(f"  lean_data:  {paths.lean_data}")
+        print(f"  custom:     {paths.custom_data}")
         print(f"  search:     {paths.data_search_dirs}")
         print(f"  student:    {paths.student_code}")
 
@@ -60,14 +61,30 @@ def main():
         checks = [
             ("docs dir", Path(paths.docs).is_dir()),
             (
-                "lean I dir",
+                "LEAN metadata dir",
                 Path(paths.lean_data).is_dir() if paths.lean_data else False,
             ),
             (
-                "I/universe.json",
+                "metadata/universe.json",
                 (
                     (Path(paths.lean_data) / "universe.json").is_file()
                     if paths.lean_data
+                    else False
+                ),
+            ),
+            (
+                "metadata/market-hours",
+                (
+                    (Path(paths.lean_data) / "market-hours" / "market-hours-database.json").is_file()
+                    if paths.lean_data
+                    else False
+                ),
+            ),
+            (
+                "custom/binance",
+                (
+                    (Path(paths.custom_data) / "binance").is_dir()
+                    if paths.custom_data
                     else False
                 ),
             ),

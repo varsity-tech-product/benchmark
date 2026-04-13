@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Freeze a benchmark universe from actual raw + LEAN trade coverage.
+"""Freeze a benchmark universe from actual raw + 12-col custom-data coverage.
 
 The input structured universe may contain all currently discoverable symbols.
 This script rewrites it into a benchmark contract universe that only retains
@@ -22,11 +22,11 @@ DEFAULT_OUTPUT = DATA_DIR / "universe.json"
 DEFAULT_FLAT_OUTPUT = DATA_DIR / "lean_universe.json"
 DEFAULT_REPORT = DATA_DIR / "benchmark_universe_coverage.json"
 DEFAULT_RAW_DIR = DATA_DIR / "raw" / "i-series"
-DEFAULT_LEAN_DIR = DATA_DIR / "lean"
+DEFAULT_CUSTOM_DIR = DATA_DIR / "custom" / "binance"
 
 REQUIRED_INTERVALS = {
     "tier1": ["1d"],
-    "tier2": ["1h", "4h"],
+    "tier2": ["1h"],
     "tier3": ["1m", "5m"],
 }
 
@@ -44,14 +44,12 @@ def _raw_path(raw_dir: Path, tier: str, symbol: str, interval: str) -> Path:
     return subdir / f"{symbol}_{interval}.csv"
 
 
-def _lean_path(lean_dir: Path, symbol: str, interval: str) -> Path:
-    base = lean_dir / "cryptofuture" / "binance"
+def _custom_path(custom_dir: Path, symbol: str, interval: str) -> Path:
+    base = custom_dir
     if interval == "1d":
-        return base / "daily" / f"{symbol.lower()}_trade.zip"
+        return base / "daily" / symbol.lower()
     if interval == "1h":
-        return base / "hour" / f"{symbol.lower()}_trade.zip"
-    if interval == "4h":
-        return base / "4hour" / f"{symbol.lower()}_trade.zip"
+        return base / "hour" / symbol.lower()
     if interval == "1m":
         return base / "minute" / symbol.lower()
     if interval == "5m":
@@ -59,17 +57,15 @@ def _lean_path(lean_dir: Path, symbol: str, interval: str) -> Path:
     raise ValueError(f"Unsupported interval: {interval}")
 
 
-def _lean_exists(lean_dir: Path, symbol: str, interval: str) -> bool:
-    target = _lean_path(lean_dir, symbol, interval)
-    if interval in {"1m", "5m"}:
-        return target.exists() and any(target.glob("*_trade.zip"))
-    return target.exists()
+def _custom_exists(custom_dir: Path, symbol: str, interval: str) -> bool:
+    target = _custom_path(custom_dir, symbol, interval)
+    return target.exists() and any(target.glob("*_trade.zip"))
 
 
 def build_coverage_report(
     universe: dict,
     raw_dir: Path,
-    lean_dir: Path,
+    custom_dir: Path,
 ) -> dict:
     report = {
         "generated_on": date.today().isoformat(),
@@ -92,13 +88,13 @@ def build_coverage_report(
             missing_intervals: list[dict] = []
             for interval in required:
                 raw_exists = _raw_path(raw_dir, tier, symbol, interval).exists()
-                lean_exists = _lean_exists(lean_dir, symbol, interval)
-                if not (raw_exists and lean_exists):
+                custom_exists = _custom_exists(custom_dir, symbol, interval)
+                if not (raw_exists and custom_exists):
                     missing_intervals.append(
                         {
                             "interval": interval,
                             "raw_exists": raw_exists,
-                            "lean_exists": lean_exists,
+                            "custom_exists": custom_exists,
                         }
                     )
 
@@ -133,7 +129,7 @@ def freeze_structured_universe(
     frozen["freeze_date"] = date.today().isoformat()
     frozen["coverage_policy"] = (
         "coverage-frozen benchmark universe; symbol kept only if raw CSV and "
-        "LEAN trade coverage exist for all required tier intervals"
+        "12-col custom trade coverage exist for all required tier intervals"
     )
     frozen["required_intervals"] = deepcopy(REQUIRED_INTERVALS)
     frozen["source_universe_symbol_counts"] = deepcopy(
@@ -173,13 +169,13 @@ def generate_flat_universe(universe: dict) -> list[str]:
 def freeze_universe_files(
     input_path: Path = DEFAULT_INPUT,
     raw_dir: Path = DEFAULT_RAW_DIR,
-    lean_dir: Path = DEFAULT_LEAN_DIR,
+    custom_dir: Path = DEFAULT_CUSTOM_DIR,
     output_path: Path = DEFAULT_OUTPUT,
     flat_output_path: Path = DEFAULT_FLAT_OUTPUT,
     report_path: Path = DEFAULT_REPORT,
 ) -> dict:
     universe = json.loads(input_path.read_text())
-    report = build_coverage_report(universe, raw_dir=raw_dir, lean_dir=lean_dir)
+    report = build_coverage_report(universe, raw_dir=raw_dir, custom_dir=custom_dir)
     frozen = freeze_structured_universe(universe, report)
     flat = generate_flat_universe(frozen)
 
@@ -201,16 +197,23 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--input", type=Path, default=DEFAULT_INPUT)
     parser.add_argument("--raw-dir", type=Path, default=DEFAULT_RAW_DIR)
-    parser.add_argument("--lean-dir", type=Path, default=DEFAULT_LEAN_DIR)
+    parser.add_argument("--custom-dir", type=Path, default=None)
+    parser.add_argument(
+        "--lean-dir",
+        type=Path,
+        default=None,
+        help="Deprecated compatibility alias for --custom-dir.",
+    )
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
     parser.add_argument("--flat-output", type=Path, default=DEFAULT_FLAT_OUTPUT)
     parser.add_argument("--report-output", type=Path, default=DEFAULT_REPORT)
     args = parser.parse_args()
 
+    custom_dir = args.custom_dir or args.lean_dir or DEFAULT_CUSTOM_DIR
     result = freeze_universe_files(
         input_path=args.input,
         raw_dir=args.raw_dir,
-        lean_dir=args.lean_dir,
+        custom_dir=custom_dir,
         output_path=args.output,
         flat_output_path=args.flat_output,
         report_path=args.report_output,
@@ -222,6 +225,7 @@ def main() -> int:
                 "input_counts": summary["input_counts"],
                 "frozen_counts": summary["frozen_counts"],
                 "total_missing_contracts": summary["total_missing_contracts"],
+                "custom_dir": str(custom_dir),
                 "output": str(args.output),
                 "flat_output": str(args.flat_output),
                 "report_output": str(args.report_output),

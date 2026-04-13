@@ -63,13 +63,16 @@ COPY docker/lean-config.json /lean/Launcher/config.json
 COPY docker/run_backtest.sh /usr/local/bin/run_backtest
 RUN chmod +x /usr/local/bin/run_backtest
 
+# ── Install strategy injection script (for custom data mode) ────────
+COPY scripts/inject_strategy.py /opt/bench/scripts/inject_strategy.py
+
 # ── Create mount-point directories ───────────────────────────────────
 # /lean/Data  — LEAN-format market data (mounted at runtime, NOT baked in)
 # /Lean      — compatibility symlink for tools that expect the upstream path
 # /workspace  — agent's working directory (read-write)
 # /data       — universe.json and metadata (read-only)
 # /docs       — reference documentation (read-only)
-RUN mkdir -p /lean/Data /workspace /data /docs \
+RUN mkdir -p /lean/Data /workspace /data /data/custom /docs \
     && ln -s /lean /Lean \
     && mkdir -p /home/sandbox/.nuget /home/sandbox/.dotnet \
     && mkdir -p /lean/Launcher/bin/Debug/storage \

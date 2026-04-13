@@ -93,7 +93,7 @@ def _check_portfolio_model_comparison(workspace_path: str, artifact_text: str) -
 
 def _check_universe_coverage(artifact_text: str) -> bool:
     """Check if >= 80 symbols were subscribed."""
-    calls = re.findall(r"addcryptofuture\s*\(\s*[\"']?(\w+)", artifact_text)
+    calls = re.findall(r"addcrypto(?:future)?\s*\(\s*[\"']?(\w+)", artifact_text)
     if len(set(calls)) >= 80:
         return True
 

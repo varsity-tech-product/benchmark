@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""End-to-end pipeline for I-series data: download, convert, generate flat universe, upload, verify.
+"""Support pipeline for benchmark universe metadata and HF uploads.
 
-Orchestrates the full data pipeline:
+Orchestrates the remaining non-legacy parts of the data pipeline:
   Phase 1: Download raw Binance klines (reuses download_binance_full_universe)
-  Phase 2: Convert to LEAN format (reuses convert_binance_to_lean)
-  Phase 3: Generate flat universe.json for C# algorithms
+  Phase 2: Legacy LEAN-format conversion (deprecated no-op)
+  Phase 3: Generate flat universe + refresh runtime metadata sidecars
   Phase 4: Upload to HuggingFace (optional --upload)
   Phase 5: Verify data_manager roundtrip (optional --verify)
 
@@ -28,7 +28,10 @@ SCRIPTS_DIR = BENCH_ROOT / "scripts"
 DATA_DIR = BENCH_ROOT / "data"
 
 RAW_DIR = DATA_DIR / "raw" / "i-series"
-LEAN_DIR = DATA_DIR / "lean"
+CUSTOM_DIR = DATA_DIR / "custom" / "binance"
+RUNTIME_LEAN_ROOT = BENCH_ROOT / "runtime_assets" / "lean"
+RUNTIME_METADATA_DIR = RUNTIME_LEAN_ROOT / "metadata"
+RUNTIME_DATA_DIR = RUNTIME_LEAN_ROOT / "data"
 UNIVERSE_PATH = DATA_DIR / "universe.json"
 FLAT_UNIVERSE_PATH = DATA_DIR / "lean_universe.json"
 DOWNLOAD_REPORT_PATH = RAW_DIR / "download_report.json"
@@ -79,27 +82,16 @@ def phase_download(
 
 
 def phase_convert() -> bool:
-    """Phase 2: Convert raw CSVs to LEAN format."""
+    """Phase 2: legacy LEAN-format conversion (deprecated no-op)."""
     print("\n" + "=" * 60)
-    print("Phase 2: Convert to LEAN format")
+    print("Phase 2: Legacy LEAN conversion")
     print("=" * 60)
-
-    cmd = [
-        sys.executable,
-        str(SCRIPTS_DIR / "convert_binance_to_lean.py"),
-        "--input-dir",
-        str(RAW_DIR),
-        "--output-dir",
-        str(LEAN_DIR),
-    ]
-
-    print(f"Running: {' '.join(cmd)}")
-    result = subprocess.run(cmd)
-    if result.returncode != 0:
-        print(f"ERROR: Conversion failed with exit code {result.returncode}")
-        return False
-
-    print("Phase 2 complete.")
+    print(
+        "Skipping legacy bench/data/lean conversion. "
+        "The active benchmark runtime uses bench/data/custom/binance "
+        "plus bench/runtime_assets/lean/metadata."
+    )
+    print("Phase 2 complete (no-op).")
     return True
 
 
@@ -120,7 +112,7 @@ def phase_flat_universe(universe: Path | None = None) -> bool:
     result = freeze_universe_files(
         input_path=uni,
         raw_dir=RAW_DIR,
-        lean_dir=LEAN_DIR,
+        custom_dir=CUSTOM_DIR,
         output_path=UNIVERSE_PATH,
         flat_output_path=FLAT_UNIVERSE_PATH,
         report_path=COVERAGE_REPORT_PATH,
@@ -134,17 +126,19 @@ def phase_flat_universe(universe: Path | None = None) -> bool:
     )
     print(f"Dropped contracts: {summary['total_missing_contracts']}")
 
-    lean_universe = LEAN_DIR / "universe.json"
-    LEAN_DIR.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(str(FLAT_UNIVERSE_PATH), str(lean_universe))
-    print(f"Copied flat universe to {lean_universe}")
+    RUNTIME_METADATA_DIR.mkdir(parents=True, exist_ok=True)
+    RUNTIME_DATA_DIR.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(str(FLAT_UNIVERSE_PATH), str(RUNTIME_METADATA_DIR / "universe.json"))
+    shutil.copy2(str(FLAT_UNIVERSE_PATH), str(RUNTIME_DATA_DIR / "universe.json"))
+    print(f"Copied flat universe to {RUNTIME_METADATA_DIR / 'universe.json'}")
+    print(f"Copied flat universe to {RUNTIME_DATA_DIR / 'universe.json'}")
 
     print("Phase 3 complete.")
     return True
 
 
 def phase_upload(repo_id: str) -> bool:
-    """Phase 4: Upload LEAN data to HuggingFace."""
+    """Phase 4: Upload 12-col benchmark data to HuggingFace."""
     print("\n" + "=" * 60)
     print("Phase 4: Upload to HuggingFace")
     print("=" * 60)
@@ -152,10 +146,8 @@ def phase_upload(repo_id: str) -> bool:
     cmd = [
         sys.executable,
         str(SCRIPTS_DIR / "upload_lean_to_hf.py"),
-        "--lean-dir",
-        str(LEAN_DIR),
-        "--universe",
-        str(FLAT_UNIVERSE_PATH),
+        "--custom-dir",
+        str(DATA_DIR / "custom"),
         "--repo-id",
         repo_id,
     ]
@@ -189,7 +181,11 @@ def phase_verify() -> bool:
 
         universe = json.loads(UNIVERSE_PATH.read_text())
         flat_symbols = json.loads(FLAT_UNIVERSE_PATH.read_text())
-        coverage = build_coverage_report(universe, raw_dir=RAW_DIR, lean_dir=LEAN_DIR)
+        coverage = build_coverage_report(
+            universe,
+            raw_dir=RAW_DIR,
+            custom_dir=CUSTOM_DIR,
+        )
         missing = coverage["summary"]["total_missing_contracts"]
 
         print(f"  frozen tier1: {coverage['summary']['frozen_counts']['tier1']}")
@@ -202,16 +198,24 @@ def phase_verify() -> bool:
             print(f"ERROR: Frozen universe still has {missing} missing contracts")
             return False
 
-        if not (LEAN_DIR / "market-hours" / "market-hours-database.json").exists():
-            print("ERROR: market-hours database missing from LEAN data")
+        if not CUSTOM_DIR.is_dir():
+            print(f"ERROR: custom data root missing: {CUSTOM_DIR}")
             return False
         if not (
-            LEAN_DIR / "symbol-properties" / "symbol-properties-database.csv"
+            RUNTIME_METADATA_DIR / "market-hours" / "market-hours-database.json"
         ).exists():
-            print("ERROR: symbol-properties database missing from LEAN data")
+            print("ERROR: market-hours database missing from runtime metadata")
             return False
-        if not (LEAN_DIR / "universe.json").exists():
-            print("ERROR: lean/universe.json missing")
+        if not (
+            RUNTIME_METADATA_DIR / "symbol-properties" / "symbol-properties-database.csv"
+        ).exists():
+            print("ERROR: symbol-properties database missing from runtime metadata")
+            return False
+        if not (RUNTIME_METADATA_DIR / "universe.json").exists():
+            print("ERROR: runtime metadata universe.json missing")
+            return False
+        if not (RUNTIME_DATA_DIR / "universe.json").exists():
+            print("ERROR: runtime data universe.json missing")
             return False
 
         print("Phase 5 complete — local contract verification passed.")

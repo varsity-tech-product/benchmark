@@ -37,9 +37,9 @@ LEAN_RUN_TIMEOUT="${LEAN_RUN_TIMEOUT:-300}"
 
 # ── Usage check ────────────────────────────────────────────────────────
 if [ $# -lt 1 ]; then
-    echo "Usage: run_backtest <Algorithm.cs path> [--params '{\"key\":\"value\"}'] [--run-id NAME]"
+    echo "Usage: run_backtest <Algorithm.cs path> [--params '{\"key\":\"value\"}'] [--run-id NAME] [--class-name NAME]"
     echo "  e.g. run_backtest /workspace/Algorithm.cs"
-    echo "  e.g. run_backtest /workspace/Algorithm.cs --params '{\"risk_config\":\"builtin\"}' --run-id builtin"
+    echo "  e.g. run_backtest /workspace/Algorithm.cs --class-name MyStrategy --symbol BTCUSDT"
     exit 1
 fi
 
@@ -49,6 +49,9 @@ shift
 # Parse optional arguments
 PARAMS_JSON=""
 RUN_ID=""
+DATA_MODE="custom"
+SYMBOL=""
+CLASS_NAME=""
 while [ $# -gt 0 ]; do
     case "$1" in
         --params)
@@ -59,11 +62,29 @@ while [ $# -gt 0 ]; do
             RUN_ID="$2"
             shift 2
             ;;
+        --data-mode)
+            DATA_MODE="$2"
+            shift 2
+            ;;
+        --symbol)
+            SYMBOL="$2"
+            shift 2
+            ;;
+        --class-name)
+            CLASS_NAME="$2"
+            shift 2
+            ;;
         *)
             shift
             ;;
     esac
 done
+
+if [ "$DATA_MODE" != "custom" ]; then
+    echo "ERROR: Legacy data mode '$DATA_MODE' is no longer supported."
+    echo "The benchmark now runs on 12-col custom data only."
+    exit 1
+fi
 
 if [ ! -f "$ALGO_FILE" ]; then
     echo "ERROR: Algorithm file not found: $ALGO_FILE"
@@ -78,6 +99,10 @@ fi
 echo "=== LEAN Backtest Runner ==="
 echo "  Algorithm: $ALGO_FILE"
 echo "  LEAN root: $LEAN_ROOT"
+echo "  Data mode: $DATA_MODE"
+if [ -n "$SYMBOL" ]; then
+    echo "  Symbol: $SYMBOL"
+fi
 if [ -n "$PARAMS_JSON" ]; then
     echo "  Parameters: $PARAMS_JSON"
 fi
@@ -97,6 +122,25 @@ mkdir -p "$RESULTS_DIR"
 echo "[1/4] Copying algorithm into LEAN project..."
 cp "$ALGO_FILE" "${LEAN_ALGO_DIR}/Algorithm.cs"
 echo "  -> Copied to ${LEAN_ALGO_DIR}/Algorithm.cs"
+
+# ── Step 1b: Inject backtest infrastructure ─────────────────────────
+# Always inject the 12-col custom-data reader, account currency,
+# fee model, and TradingDaysPerYear.
+echo "[1b/4] Injecting backtest infrastructure into strategy..."
+INJECT_SCRIPT="/opt/bench/scripts/inject_strategy.py"
+if [ ! -f "$INJECT_SCRIPT" ]; then
+    # Fallback: look in the standard bench scripts location
+    INJECT_SCRIPT="/opt/bench/bench/scripts/inject_strategy.py"
+fi
+if [ -f "$INJECT_SCRIPT" ]; then
+    INJECT_ARGS="--symbol ${SYMBOL:-BTCUSDT} --data-mode custom --csv-path /data/custom/binance"
+    python3 "$INJECT_SCRIPT" \
+        "${LEAN_ALGO_DIR}/Algorithm.cs" \
+        "${LEAN_ALGO_DIR}/Algorithm.cs" \
+        $INJECT_ARGS 2>&1
+else
+    echo "  WARNING: inject_strategy.py not found, skipping injection"
+fi
 
 # ── Step 2: Build the C# project ──────────────────────────────────────
 echo "[2/4] Building LEAN project..."
@@ -150,19 +194,31 @@ if params_file and os.path.isfile(params_file):
     params = json.loads(raw) if raw else {}
 else:
     params = {}
+
+# Inject default fee rates (both modes — matches MatchX compiler.py behavior).
+params.setdefault('maker-fee-rate', '0.0002')
+params.setdefault('taker-fee-rate', '0.0005')
+
+data_mode = '$DATA_MODE'
+params.setdefault('custom-data-root', '/data/custom/binance')
+
 cfg['parameters'] = params
 
 # Point LEAN results to the run-specific directory
 cfg['results-destination-folder'] = '$RESULTS_DIR'
 
-# Ensure algorithm-type-name is fully qualified so LEAN can resolve
-# the user's class among 500+ QCAlgorithm subclasses in the project.
-cfg['algorithm-type-name'] = 'QuantConnect.Algorithm.CSharp.Algorithm'
+# Use submitted class name if provided, else fall back to 'Algorithm'.
+# MatchX uses the submitted strategy_class_name; benchmark previously
+# hardcoded 'Algorithm'.  With --class-name, both paths align.
+class_name = '$CLASS_NAME' or 'Algorithm'
+cfg['algorithm-type-name'] = f'QuantConnect.Algorithm.CSharp.{class_name}'
 
 with open('$LEAN_CONFIG', 'w') as f:
     json.dump(cfg, f, indent=2)
 
 print(f'  -> Set {len(params)} parameter(s)')
+print(f'  -> Data mode: {data_mode}')
+print(f'  -> Class name: {class_name}')
 print(f'  -> Results folder: $RESULTS_DIR')
 " 2>&1
 rm -f "$_PARAMS_TMPFILE"

@@ -2249,18 +2249,46 @@ def get_environment_info() -> str:
     if os.path.isfile(run_backtest_path):
         lean_info["run_backtest"] = run_backtest_path
 
-    lean_data_dir = "/lean/Data"
-    if os.path.isdir(lean_data_dir):
-        lean_data_summary: dict = {}
-        cf_binance = os.path.join(lean_data_dir, "cryptofuture", "binance")
-        if os.path.isdir(cf_binance):
-            for res in sorted(os.listdir(cf_binance)):
-                res_path = os.path.join(cf_binance, res)
-                if os.path.isdir(res_path):
-                    symbols = sorted(os.listdir(res_path))
-                    lean_data_summary[res] = symbols[:10]
-        if lean_data_summary:
-            lean_info["available_data"] = lean_data_summary
+    lean_metadata_dir = "/lean/Data"
+    if os.path.isdir(lean_metadata_dir):
+        lean_info["lean_metadata_root"] = lean_metadata_dir
+        lean_info["metadata_sidecars"] = {
+            "universe_json": os.path.isfile(
+                os.path.join(lean_metadata_dir, "universe.json")
+            ),
+            "market_hours_database": os.path.isfile(
+                os.path.join(lean_metadata_dir, "market-hours", "market-hours-database.json")
+            ),
+            "symbol_properties_database": os.path.isfile(
+                os.path.join(
+                    lean_metadata_dir,
+                    "symbol-properties",
+                    "symbol-properties-database.csv",
+                )
+            ),
+            "security_database": os.path.isfile(
+                os.path.join(
+                    lean_metadata_dir,
+                    "symbol-properties",
+                    "security-database.csv",
+                )
+            ),
+        }
+
+    custom_data_root = "/data/custom/binance"
+    if os.path.isdir(custom_data_root):
+        lean_info["custom_data_root"] = custom_data_root
+        custom_data_summary: dict = {}
+        for res in sorted(os.listdir(custom_data_root)):
+            res_path = os.path.join(custom_data_root, res)
+            if os.path.isdir(res_path):
+                symbols = sorted(
+                    name for name in os.listdir(res_path)
+                    if os.path.isdir(os.path.join(res_path, name))
+                )
+                custom_data_summary[res] = symbols[:10]
+        if custom_data_summary:
+            lean_info["available_data"] = custom_data_summary
 
     if lean_info:
         info["lean_environment"] = lean_info
@@ -2273,8 +2301,9 @@ def get_environment_info() -> str:
             f".NET {lean_info.get('dotnet_version', 'unknown')}. "
             f"To run a C# backtest: "
             f"1) Write your .cs file to {workspace}/Algorithm.cs using file_write "
-            f"(IMPORTANT: the class must be named 'Algorithm' in namespace "
-            f"'QuantConnect.Algorithm.CSharp' — any other class name will fail), "
+            f"(the class should be in namespace 'QuantConnect.Algorithm.CSharp'; "
+            f"by default it must be named 'Algorithm', or pass "
+            f"--class-name YourName to run_backtest to use a different name), "
             f"2) Run 'run_backtest {workspace}/Algorithm.cs' using shell_exec "
             f"(set timeout=600 as compilation + engine run may take a few minutes). "
             f"The stdout output shows a performance summary; "
@@ -2282,10 +2311,11 @@ def get_environment_info() -> str:
             f"summary.json (key metrics), log.txt (engine log), "
             f"orders.json (order details), build_log.txt (compilation output). "
             f"Use file_read() to inspect these files. "
-            f"LEAN market data is pre-loaded at /lean/Data/cryptofuture/binance/ "
-            f"(Binance USDT-M futures, 2022-2025). "
-            f"Other directories under /lean/Data/ (equity/, forex/, crypto/, etc.) "
-            f"are framework internals — do not use them for trading data. "
+            f"12-col custom market data is pre-loaded at /data/custom/binance "
+            f"(Binance USDT perpetuals, 2021-2025), and required LEAN metadata "
+            f"is mounted at /lean/Data. "
+            f"Use AddCrypto() to subscribe to symbols — the harness handles "
+            f"data access automatically. "
             f"Python is also available for analysis "
             f"(pandas 3.0 — use df.ffill()/df.bfill() instead of "
             f"fillna(method=...); order status values are lowercase "
@@ -3878,12 +3908,18 @@ def _get_trial_manager() -> "TrialManager":
 
 
 def run_lean_backtest(
-    algorithm_path: str, params_json: str = "", run_id: str = ""
+    algorithm_path: str, params_json: str = "", run_id: str = "",
+    data_mode: str = "custom", symbol: str = "",
 ) -> str:
     """Compile and run a LEAN backtest, automatically recording the result as a trial.
 
     Budget is enforced at the Python level before executing the shell
     script.  Returns structured status with metrics and remaining budget.
+
+    Args:
+        data_mode: Must be "custom". Legacy standard/6-col mode was removed.
+        symbol: Trading symbol (e.g. "BTCUSDT"). Optional; used for quote
+            currency inference in the 12-col injection path.
     """
     tm = _get_trial_manager()
 
@@ -3906,12 +3942,21 @@ def run_lean_backtest(
     ):
         algorithm_path = algorithm_path[len("workspace/") :]
 
+    if data_mode and data_mode != "custom":
+        return (
+            "Error: Legacy standard/6-col LEAN data mode has been removed. "
+            "Use the default 12-col custom mode instead."
+        )
+
     # Build the run_backtest command
     cmd = f"run_backtest {algorithm_path}"
     if params_json:
         cmd += f" --params '{params_json}'"
     if run_id:
         cmd += f" --run-id {run_id}"
+    cmd += " --data-mode custom"
+    if symbol:
+        cmd += f" --symbol {symbol}"
 
     # Execute via shell_exec (reuses existing bash script inside container)
     output = shell_exec(cmd, timeout=600)
@@ -4165,6 +4210,16 @@ CORE_TOOLS["run_lean_backtest"] = {
         "run_id": {
             "type": "string",
             "description": "Run identifier for multi-run tasks. Optional.",
+            "required": False,
+        },
+        "data_mode": {
+            "type": "string",
+            "description": "Data mode for LEAN backtests. Only 'custom' is supported because the benchmark now uses 12-col data only. Default: 'custom'.",
+            "required": False,
+        },
+        "symbol": {
+            "type": "string",
+            "description": "Trading symbol (e.g. 'BTCUSDT'). Optional; used to infer quote currency and fee wiring for 12-col custom data.",
             "required": False,
         },
     },

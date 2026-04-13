@@ -96,6 +96,7 @@ class ContainerManager:
         sandbox_image: Optional[str] = None,
         network_enabled: bool = False,
         lean_data_dir: Optional[str] = None,
+        custom_data_dir: Optional[str] = None,
     ) -> ContainerInfo:
         """Create a sandboxed Docker container (or local workspace fallback).
 
@@ -106,12 +107,19 @@ class ContainerManager:
             docs_dir: Host-side directory to mount as /docs (read-only).
                       May be a staged/filtered directory.
             student_code_dir: If provided, mounted as /student_code (read-only).
+            lean_data_dir: If provided, mounted as /lean/Data (LEAN metadata only).
             sandbox_image: Docker image override (default: self.docker_image).
         """
         image = sandbox_image or self.docker_image
         workspace = tempfile.mkdtemp(prefix=f"qtb_{task_id}_")
 
         if self.use_docker:
+            # Docker cannot create a nested bind mount like /data/custom when /data
+            # itself is a read-only bind mount. Pre-create the mountpoint inside the
+            # staged task-data directory so the 12-col custom-data bind can attach.
+            if custom_data_dir and data_dir and os.path.isdir(data_dir):
+                os.makedirs(os.path.join(data_dir, "custom"), exist_ok=True)
+
             mounts = [
                 f"-v {workspace}:/workspace",
                 f"-v {data_dir}:/data:ro",
@@ -121,6 +129,8 @@ class ContainerManager:
                 mounts.append(f"-v {student_code_dir}:/student_code:ro")
             if lean_data_dir:
                 mounts.append(f"-v {lean_data_dir}:/lean/Data:ro")
+            if custom_data_dir:
+                mounts.append(f"-v {custom_data_dir}:/data/custom:ro")
 
             network_flag = "--network bridge" if network_enabled else "--network none"
             network_mode = "bridge" if network_enabled else "none"
@@ -183,6 +193,35 @@ class ContainerManager:
                         "cp",
                         str(run_backtest_sh),
                         f"{container_id}:/usr/local/bin/run_backtest",
+                    ],
+                    capture_output=True,
+                )
+
+            # Inject the latest 12-col strategy injector so run_backtest.sh does
+            # not fall back to the stale image copy or skip injection entirely.
+            inject_strategy_py = (
+                Path(__file__).parent.parent / "scripts" / "inject_strategy.py"
+            )
+            if inject_strategy_py.exists():
+                subprocess.run(
+                    [
+                        "docker",
+                        "exec",
+                        "--user",
+                        "root",
+                        container_id,
+                        "mkdir",
+                        "-p",
+                        "/opt/bench/scripts",
+                    ],
+                    capture_output=True,
+                )
+                subprocess.run(
+                    [
+                        "docker",
+                        "cp",
+                        str(inject_strategy_py),
+                        f"{container_id}:/opt/bench/scripts/inject_strategy.py",
                     ],
                     capture_output=True,
                 )

@@ -268,7 +268,7 @@ class BenchmarkOrchestrator:
                 )
             )
 
-            # LEAN data mount (I-series only)
+            # LEAN metadata mount (symbol-properties, market-hours, universe sidecar)
             lean_data_dir = paths.lean_data
 
             # Student code for debug tasks (from current series' paths)
@@ -277,6 +277,9 @@ class BenchmarkOrchestrator:
                 student_code_dir = paths.student_code
 
             # 1b. Create sandbox container (Docker or local fallback)
+            # 12-col custom data mount (I-series / X-series LEAN tasks)
+            custom_data_dir = getattr(paths, "custom_data", None)
+
             container = self.container_manager.create_container(
                 task_id=f"{task.task_id}_{persona.persona_id}_{run_index}",
                 data_dir=staged_data_dir,
@@ -289,6 +292,7 @@ class BenchmarkOrchestrator:
                     task.environment.network_enabled if task.environment else False
                 ),
                 lean_data_dir=lean_data_dir,
+                custom_data_dir=custom_data_dir,
             )
 
             # 1b.5. Start tool executor daemon inside the container (Docker only).
@@ -371,7 +375,8 @@ class BenchmarkOrchestrator:
                 has_tc_items = False
                 tc_text = (
                     task.ground_truth.termination_criteria
-                    if task.ground_truth else None
+                    if task.ground_truth
+                    else None
                 )
                 tc_items = parse_tc_items(
                     tc_text,
@@ -387,11 +392,13 @@ class BenchmarkOrchestrator:
                 )
                 student_sim = StudentSimulator(
                     scenario=build_scenario(
-                        task, persona.persona_id,
+                        task,
+                        persona.persona_id,
                         has_incremental_tc=has_tc_items,
                     ),
                     user_description=build_user_description(
-                        persona, has_incremental_tc=has_tc_items,
+                        persona,
+                        has_incremental_tc=has_tc_items,
                     ),
                     model=resolved_sim_model,
                 )
