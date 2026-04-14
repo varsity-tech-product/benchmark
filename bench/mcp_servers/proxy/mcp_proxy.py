@@ -67,6 +67,19 @@ class MCPProxy:
         logs = proxy.get_logs()
     """
 
+    # Tools exempt from per-turn step counting.
+    _STEP_EXEMPT_TOOLS = frozenset(
+        {
+            "send_message",
+            "get_session_info",
+            "get_environment_info",
+            "list_tasks",
+            "get_task_info",
+            "get_system_prompt",
+            "register_session",
+        }
+    )
+
     def __init__(self, workspace_path: Optional[str] = None):
         self._tools: dict[str, Callable] = {}
         self._distractors: dict[str, str] = {}
@@ -77,6 +90,9 @@ class MCPProxy:
         self._cancel_event = None
         # Host-side workspace path (for mapping container /workspace/ paths)
         self._workspace_path: Optional[str] = workspace_path
+        # Per-turn step limit callback: () -> str|None.
+        # Returns error JSON if limit exceeded, None if OK.
+        self._step_check_fn: Optional[Callable] = None
 
     def register_tool(
         self,
@@ -197,6 +213,28 @@ class MCPProxy:
                 },
             )
             return log.result
+
+        # Per-turn step limit: reject non-session tool calls when budget
+        # exhausted.  The callback is set by exam_server after session
+        # creation; legacy path leaves it as None (no enforcement).
+        if self._step_check_fn is not None and name not in self._STEP_EXEMPT_TOOLS:
+            step_error = self._step_check_fn()
+            if step_error is not None:
+                log.result = step_error
+                log.success = False
+                log.duration_ms = 0.0
+                self._logs.append(log)
+                _emit(
+                    "tool_result",
+                    {
+                        "call_id": call_id,
+                        "name": name,
+                        "result": log.result,
+                        "success": False,
+                        "duration_ms": 0.0,
+                    },
+                )
+                return log.result
 
         try:
             if name in self._distractors:

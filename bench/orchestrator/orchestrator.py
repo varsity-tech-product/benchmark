@@ -259,12 +259,14 @@ class BenchmarkOrchestrator:
             paths = self._ensure_paths(task)
             data_files = task.environment.data_files if task.environment else []
             docs_available = task.environment.docs_available if task.environment else []
+            custom_data_dir = getattr(paths, "custom_data", None)
             staged_data_dir, staged_docs_dir, staged_temp_dirs = (
                 self._create_staged_dirs(
                     data_files,
                     docs_available,
                     data_search_dirs=paths.data_search_dirs,
                     docs_dir=paths.docs,
+                    force_temp_data_dir=bool(custom_data_dir),
                 )
             )
 
@@ -278,7 +280,6 @@ class BenchmarkOrchestrator:
 
             # 1b. Create sandbox container (Docker or local fallback)
             # 12-col custom data mount (I-series / X-series LEAN tasks)
-            custom_data_dir = getattr(paths, "custom_data", None)
 
             container = self.container_manager.create_container(
                 task_id=f"{task.task_id}_{persona.persona_id}_{run_index}",
@@ -407,6 +408,37 @@ class BenchmarkOrchestrator:
                 if tc_items:
                     tc_checker = TCChecker(tc_items)
 
+                # GoalChecker for non-TC categories (data_analysis,
+                # end_to_end, adversarial).  Replicates DeepEval
+                # stop_conversation() behavior.
+                # Logic aligned with build_conversational_golden()
+                # (simulation.py:438-450).
+                goal_checker = None
+                if tc_items is None and task.ground_truth:
+                    gt = task.ground_truth
+                    if gt.termination_criteria:
+                        if task.category.value in (
+                            "implementation",
+                            "end_to_end",
+                            "debug",
+                        ):
+                            expected_outcome = (
+                                f"{gt.expected_outcome}\n\n"
+                                f"Observable completion criteria:\n"
+                                f"{gt.termination_criteria}"
+                            )
+                        else:
+                            expected_outcome = gt.termination_criteria
+                    else:
+                        expected_outcome = gt.expected_outcome
+                    if expected_outcome:
+                        from mcp_servers.session import GoalChecker
+
+                        goal_checker = GoalChecker(
+                            expected_outcome,
+                            resolved_sim_model,
+                        )
+
                 # Compute deadline
                 effective_timeout = timeout_minutes or task.timeout_minutes
                 deadline = None
@@ -421,6 +453,7 @@ class BenchmarkOrchestrator:
                     max_turns=max_turns,
                     deadline=deadline,
                     proxy=proxy,
+                    goal_checker=goal_checker,
                 )
 
                 # Register send_message + get_session_info on the proxy
@@ -441,6 +474,7 @@ class BenchmarkOrchestrator:
                         timeout_minutes=timeout_minutes,
                         cancel_event=cancel_event,
                     )
+                    simulator_cost = student_sim.total_cost or None
                 else:
                     # No tools: fall back to legacy DeepEval path
                     # (pure LLM conditions without tool calling)
@@ -1235,6 +1269,7 @@ class BenchmarkOrchestrator:
         docs_available: list[str],
         data_search_dirs: list[str],
         docs_dir: str,
+        force_temp_data_dir: bool = False,
     ) -> tuple[str, str, list[str]]:
         """Create temp directories with copies of only the allowed files.
 
@@ -1260,6 +1295,20 @@ class BenchmarkOrchestrator:
                         os.makedirs(os.path.dirname(dst), exist_ok=True)
                         shutil.copy2(src, dst)
                         break
+        elif force_temp_data_dir and data_search_dirs:
+            staged_data = tempfile.mkdtemp(prefix="qtb_data_")
+            temp_dirs.append(staged_data)
+            for search_dir in data_search_dirs:
+                if not os.path.isdir(search_dir):
+                    continue
+                for name in os.listdir(search_dir):
+                    src = os.path.join(search_dir, name)
+                    dst = os.path.join(staged_data, name)
+                    if os.path.isdir(src):
+                        shutil.copytree(src, dst, dirs_exist_ok=True)
+                    elif os.path.isfile(src):
+                        os.makedirs(os.path.dirname(dst), exist_ok=True)
+                        shutil.copy2(src, dst)
         else:
             staged_data = data_search_dirs[0] if data_search_dirs else ""
 

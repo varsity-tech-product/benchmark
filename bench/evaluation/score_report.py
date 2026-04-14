@@ -685,6 +685,33 @@ def _section_tutor(lines, result):
                 _a(f"**{dim}**: {reason}\n")
         _a("</details>\n")
 
+    # Per-run raw scores (shuffled judge runs)
+    per_run = ts.get("_per_run_scores", {})
+    if per_run:
+        _a("<details>")
+        _a("<summary><b>Per-Run Raw Scores (shuffled judge runs)</b></summary>\n")
+        _a("| Dimension | Run 1 | Run 2 | Run 3 | Std |")
+        _a("|-----------|-------|-------|-------|-----|")
+        for dim in _TUTOR_DIMS:
+            dim_runs = per_run.get(dim, {})
+            all_run_scores = []
+            for mname in sorted(dim_runs.keys()):
+                for rk in sorted(dim_runs[mname].keys()):
+                    s = dim_runs[mname][rk].get("score")
+                    if s is not None:
+                        all_run_scores.append(s)
+            if all_run_scores:
+                cells = " | ".join(f"{s:.2f}" for s in all_run_scores[:3])
+                if len(all_run_scores) >= 2:
+                    import numpy as _np
+
+                    std = _np.std(all_run_scores, ddof=1)
+                    _a(f"| {dim} | {cells} | {std:.3f} |")
+                else:
+                    _a(f"| {dim} | {cells} | — |")
+        _a("")
+        _a("</details>\n")
+
     # Fallback recovery note
     fb_count = getattr(result, "tutor_fallback_count", 0)
     if fb_count > 0:

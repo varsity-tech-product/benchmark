@@ -450,9 +450,69 @@ QR Cohen's d ≈ 0（两个 judge 下都是），这不是 QR 评估有问题，
 
 ---
 
-## 七、核心结论与论文建议
+## 七、评分粒度消融实验
 
-### 7.1 数据呈现建议
+### 7.1 问题
+
+各维度 LLM judge 的评分粒度不一致：
+
+| 维度 | LLM 子维度评分粒度 | 说明 |
+|------|-------------------|------|
+| **QR** Result Judge | 10 档（1-10 整数） | result_judge.py |
+| **QP** step_efficiency, process_reasonableness, code_process, process_alignment | 5 档（0.0/0.25/0.5/0.75/1.0, clamp） | process_metrics.py, process_reasonableness.py, code_process.py |
+| **QP** role_adherence, topic_adherence | 10 档（1-10 整数） | custom_conv_metrics.py |
+| **Tutor** D1-D7 | 10 档（1-10 整数，ConversationalGEval fallback） | tutor_conv_geval.py |
+
+**核心疑问**：Tutor d=1.75 是否因为 10 档比 QP 的 5 档粒度更细，从而人为放大了区分度？
+
+### 7.2 消融设计
+
+将 Tutor 的 D1-D7 每个子维度分数 clamp 到 5 档（0.0/0.25/0.5/0.75/1.0），重新聚合计算 Tutor 总分，对比 Cohen's d 变化。数据来源：Sonnet judge, 8 ICC tasks × 3 runs × 2 agents（排除 Tutor=0 异常值）。
+
+### 7.3 结果
+
+| 方案 | Sonnet Mean | Haiku Mean | Sonnet Std | Haiku Std | Cohen's d | 变化 |
+|------|-----------|-----------|-----------|-----------|-----------|------|
+| **原始 10 档** | 0.6507 | 0.4759 | 0.0744 | 0.1216 | **+1.745** | 基准 |
+| 实验 1: 对聚合分 clamp 5 档 | 0.6500 | 0.4737 | 0.1257 | 0.1418 | +1.318 | -24.5% |
+| **实验 2: 对 D1-D7 分别 clamp 5 档再聚合** | 0.6393 | 0.4699 | 0.0704 | 0.1125 | **+1.816** | **+4.1%** |
+
+**实验 1 vs 实验 2 的区别**：
+- 实验 1 对最终聚合分做 clamp——这是不正确的消融，因为实际系统不会对聚合分做离散化。强行离散化导致方差膨胀，d 人为下降。
+- **实验 2 是正确的消融**——模拟"如果 Tutor 每个子维度都像 QP 一样用 5 档评分"的情况。结果 d=1.816，与原始 1.745 基本一致（+4.1%）。
+
+### 7.4 原始 10 档分布 vs 5 档 clamp 分布
+
+```
+原始 10 档（273 个子维度分数）：
+  0.13: 1    0.17: 2    0.20: 3    0.23: 8    0.27: 5
+  0.30: 12   0.33: 6    0.37: 15   0.40: 9    0.43: 13
+  0.47: 7    0.50: 35   0.53: 19   0.57: 11   0.60: 17
+  0.63: 17   0.67: 16   0.70: 18   0.73: 13   0.77: 15
+  0.80: 14   0.83: 9    0.87: 4    0.90: 4
+
+Clamp 5 档：
+  0.00: 0    0.25: 52    0.50: 111    0.75: 106    1.00: 4
+```
+
+大量信息被压缩（24 个不同值 → 4 个），但 7 个独立子维度聚合后仍保留了足够的分辨率。
+
+### 7.5 结论
+
+**Tutor 的区分度不来源于评分粒度**。即使将 D1-D7 全部降至 5 档，Cohen's d 从 1.745 变为 1.816（+4.1%），区分度不降反升。
+
+原因：7 个独立子维度各自 clamp 后取均值，聚合分的有效分辨率远高于单个 5 档——类似 7 枚硬币各自只有正反面，但 7 枚一起投有 128 种组合。
+
+**区分度的真正来源是 Sonnet 和 Haiku 在教学能力上的真实差距**（均值差 0.175），不是量尺精度。
+
+**论文表述建议**：
+> "An ablation clamping Tutor per-dimension scores to the same 5-point ordinal scale used by QP shows negligible impact on discrimination (Cohen's d: 1.75 → 1.82), confirming that the observed effect size reflects genuine ability differences rather than measurement granularity."
+
+---
+
+## 八、核心结论与论文建议
+
+### 8.1 数据呈现建议
 
 用 **Sonnet judge 作为主结果**，理由充分：
 - 区分度更强（Tutor d=1.694 vs 0.797）
@@ -461,7 +521,7 @@ QR Cohen's d ≈ 0（两个 judge 下都是），这不是 QR 评估有问题，
 
 同时在附录报告 Haiku judge 结果作为 **cross-judge robustness check**，展示排名一致性。这比只用一个 judge 说服力强得多——有两个独立 judge 的交叉验证。
 
-### 7.2 关键数据点汇总
+### 8.2 关键数据点汇总
 
 | 结论 | 证据 |
 |------|------|
@@ -472,7 +532,7 @@ QR Cohen's d ≈ 0（两个 judge 下都是），这不是 QR 评估有问题，
 | **Haiku judge 偏差** | Tutor 系统性虚高 +0.198，压缩分布导致区分度减半 |
 | **任务难度梯度** | 难度 vs 区分度 r=+0.609，难任务更能区分模型 |
 
-### 7.3 论文 Section 5 叙事框架
+### 8.3 论文 Section 5 叙事框架
 
 ```
 5.1 Main Results (Table 1: Sonnet judge, 8 tasks × 4 dims × 2 agents)

@@ -9,12 +9,12 @@ AGENT_DEFAULT_MODEL = "openai/gpt-5.2"
 
 # --- Per-SDK agent models (native API format) ---
 OPENAI_AGENT_MODEL = "gpt-5.2"
-ANTHROPIC_AGENT_MODEL = "claude-haiku-4-5-20251001"
+ANTHROPIC_AGENT_MODEL = "claude-sonnet-4-6"
 GOOGLE_AGENT_MODEL = "gemini-2.5-flash"
 
 # --- OpenRouter equivalents (for baseline comparison) ---
 OPENAI_AGENT_MODEL_OR = "openai/gpt-5.2"
-ANTHROPIC_AGENT_MODEL_OR = "anthropic/claude-haiku-4-5-20251001"
+ANTHROPIC_AGENT_MODEL_OR = "anthropic/claude-sonnet-4-6"
 GOOGLE_AGENT_MODEL_OR = "google/gemini-2.5-flash-preview"
 
 # --- Reference / Evaluation / Simulation ---

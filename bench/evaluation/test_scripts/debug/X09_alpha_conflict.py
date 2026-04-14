@@ -36,17 +36,21 @@ def evaluate(
     }
 
     # --- 1. conflict_resolved (0.25) ---
-    # Check if PCM was changed or confidence/magnitude was adjusted
-    # Acceptable fixes: InsightWeighting, explicit weights, different confidence values,
-    # regime gating, removing one alpha
+    # Check if PCM was changed or explicit asymmetry/priority was introduced.
+    # The buggy baseline uses AccumulativeInsightPortfolioConstructionModel,
+    # which aggregates all active insights for a symbol. A fix should switch
+    # to a different PCM or introduce explicit gating/priority.
     pcm_fix = check_fix_applied(
         workspace_path,
         tool_logs,
         fix_patterns=[
+            r"EqualWeighting",
             r"InsightWeighting",
+            r"ConfidenceWeighted",
             r"weight\s*[:=]\s*0\.[1-9]",
-            r"confidence\s*[:=]\s*0\.[89]",  # higher confidence for one alpha
-            r"confidence\s*[:=]\s*0\.[1-4]",  # lower confidence for other
+            r"priority",
+            r"gate",
+            r"dominat",
         ],
         bug_patterns=[],
         file_extension=".cs",
@@ -61,7 +65,13 @@ def evaluate(
                 all_text.append(str(v))
             all_text.append(str(log.result or ""))
         full = "\n".join(all_text).lower()
-        if "insightweighting" in full or "confidence" in full:
+        if (
+            "equalweighting" in full
+            or "insightweighting" in full
+            or "confidenceweighted" in full
+            or "priority" in full
+            or "gate" in full
+        ):
             results["conflict_resolved"] = True
 
     # --- 2. fix_verified (0.10) ---
@@ -82,7 +92,9 @@ def evaluate(
             "conflicting",
             "neutralize",
             "offset",
-            "equal weight",
+            "accumulative",
+            "active insights",
+            "net to zero",
         ],
     )
 

@@ -24,7 +24,7 @@
       "file_write",
       "file_read",
       "file_list",
-      "search_docs"
+      "get_environment_info"
     ],
     "docs_available": [
       "moving_averages.md",
@@ -45,12 +45,14 @@
     "expected_mcp_tools": [
       "file_read",
       "shell_exec",
-      "file_write"
+      "file_write",
+      "get_environment_info"
     ],
     "convenient_tools": [
       "fetch_market_data",
       "compute_indicator",
-      "plot_chart"
+      "plot_chart",
+      "search_docs"
     ],
     "quant_validation": {
       "eval_script": "evaluation/test_scripts/debug/X02_lookahead.py"
@@ -58,7 +60,7 @@
   },
   "requires_code": true,
   "sample_code": "student_code/lookahead.py",
-  "max_turns": 20,
+  "max_turns": 10,
   "agent_max_steps": 8,
-  "timeout_minutes": 10
+  "timeout_minutes": 15
 }

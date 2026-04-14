@@ -110,18 +110,18 @@ def evaluate(
         },
         {
             "item": "behavioral_score",
-            "weight": 0.60,
+            "weight": 0.45,
             "score": behavioral.composite_score,
         },
-        {"item": "code_patterns", "weight": 0.05, "passed": results["code_patterns"]},
+        {"item": "code_patterns", "weight": 0.10, "passed": results["code_patterns"]},
         {
             "item": "consolidator_used",
-            "weight": 0.10,
+            "weight": 0.15,
             "passed": results["consolidator_used"],
         },
         {
             "item": "dual_resolution_indicators",
-            "weight": 0.10,
+            "weight": 0.15,
             "passed": results["dual_resolution_indicators"],
         },
         {"item": "trial_efficiency", "weight": 0.05, "score": efficiency_score},

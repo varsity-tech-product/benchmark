@@ -95,10 +95,20 @@ Conversation depth differences between personas should be driven by `behavioral_
 Only categories listed in `_INCREMENTAL_CHECKER_CATEGORIES` use the incremental TC checker. Currently:
 
 ```python
-{"strategy", "backtest", "implementation"}
+{"strategy", "backtest", "implementation", "debug", "data_analysis"}
 ```
 
-Tasks in other categories (`end_to_end`, `debug`, `data_analysis`, `adversarial`) use DeepEval's native `stop_conversation` with `expected_outcome`. To enable incremental checking for a new category, add it to this set and write `termination_criteria` for its tasks.
+Tasks in other categories (`end_to_end`, `adversarial`) use DeepEval's native `stop_conversation` with `expected_outcome`. To enable incremental checking for a new category, add it to this set and write `termination_criteria` for its tasks.
+
+For `data_analysis` tasks, prefer TC items that are directly observable from
+the tutor's message text:
+
+- Showed literal pandas output, concrete numerical results, or chart-backed observations
+- Explained a quant data caveat or interpretation issue tied to the displayed results
+- Responded to a follow-up with additional concrete analysis beyond the first inspection
+
+Avoid TC items that require hidden state or filesystem visibility, such as
+"saved a CSV", "finished a network fetch", or "ran the script successfully".
 
 ## 9. Text Accumulation Dependency
 

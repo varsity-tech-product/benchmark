@@ -1,0 +1,1079 @@
+"""Session lifecycle manager for QuantTutorBench HTTP Server.
+
+Each MCP HTTP session maps to one ``SessionState`` instance that manages:
+- Task + persona loading (random persona selection)
+- Container + tool setup
+- TutoringSession lifecycle (student simulation, termination checking)
+- Result saving (run_state.json + agent_files/)
+- Evaluation triggering (background thread)
+
+Thread safety:
+- MCP processes requests sequentially per session, so ``handle_tool_call``
+  is never called concurrently within a single session.
+- ``_run_evaluation`` runs in a separate daemon thread.  Access to
+  ``_eval_status`` / ``_eval_results`` is guarded by ``_eval_lock``.
+- ``_last_activity`` is updated on every tool call for idle-timeout
+  detection by the ``BenchSessionManager`` sweeper.
+
+"""
+
+import asyncio
+import hashlib
+import json
+import logging
+import os
+import random
+import threading
+import time
+from pathlib import Path
+from typing import TYPE_CHECKING, Optional
+
+from mcp.types import TextContent, Tool
+
+if TYPE_CHECKING:
+    from mcp.server import Server
+
+from .protocol import (
+    GET_RESULTS_TOOL,
+    GET_SCORES_TOOL,
+    REGISTER_SESSION_TOOL,
+    REQUEST_EVALUATION_TOOL,
+    SEND_MESSAGE_TOOL,
+    SESSION_API_TOOLS,
+    START_SESSION_TOOL,
+    SessionPhase,
+    check_permission,
+    make_error_response,
+)
+
+logger = logging.getLogger(__name__)
+
+
+def _stable_int_seed(*parts: object) -> int:
+    """Build a stable non-negative integer seed from arbitrary values."""
+    material = "::".join(str(part) for part in parts)
+    digest = hashlib.sha256(material.encode("utf-8")).digest()
+    return int.from_bytes(digest[:8], "big", signed=False)
+
+
+def _session_random_seed(
+    task_id: str, session_id: str, task_seed: Optional[int]
+) -> int:
+    """Return the internal RNG seed for this session.
+
+    Precedence:
+    1. ``QTB_TEST_RANDOM_SEED`` for reproducible internal regression tests
+    2. task-level seed from the task definition
+    3. stable hash of task_id + session_id
+    """
+    test_seed = os.environ.get("QTB_TEST_RANDOM_SEED", "").strip()
+    if test_seed:
+        return _stable_int_seed("qtb-test-seed", test_seed, task_id)
+    if task_seed is not None:
+        return int(task_seed)
+    return _stable_int_seed(task_id, session_id)
+
+
+def _resolve_persona_pin(task_id: str, persona_ids: list[str]) -> Optional[str]:
+    """Return an internal-only pinned persona override, if configured."""
+    raw_json = os.environ.get("QTB_TEST_PERSONA_PIN_JSON", "").strip()
+    if raw_json:
+        try:
+            mapping = json.loads(raw_json)
+        except json.JSONDecodeError:
+            logger.warning("Ignoring invalid QTB_TEST_PERSONA_PIN_JSON")
+        else:
+            if isinstance(mapping, dict):
+                desired = mapping.get(task_id) or mapping.get("*")
+                if desired:
+                    desired = str(desired)
+                    if desired in persona_ids:
+                        return desired
+                    logger.warning(
+                        "Ignoring persona pin '%s' for task %s; valid options: %s",
+                        desired,
+                        task_id,
+                        persona_ids,
+                    )
+
+    desired = os.environ.get("QTB_TEST_PERSONA_PIN", "").strip()
+    if not desired:
+        return None
+    if desired in persona_ids:
+        return desired
+    logger.warning(
+        "Ignoring persona pin '%s' for task %s; valid options: %s",
+        desired,
+        task_id,
+        persona_ids,
+    )
+    return None
+
+
+class SessionState:
+    """Per-session state for one benchmark session.
+
+    Lifecycle:
+        1. Created by BenchSessionManager when a new MCP connection arrives.
+        2. ``register(task_id)`` — loads task, picks persona, creates container.
+        3. ``start()`` — returns student opening, enters IN_SESSION.
+        4. ``handle_send_message(text)`` — routes through proxy, may complete.
+        5. ``request_evaluation()`` — triggers eval pipeline in background.
+        6. ``cleanup()`` — destroys container and temp dirs.
+    """
+
+    def __init__(
+        self,
+        session_id: str,
+        use_docker: bool = True,
+        bench_root: Optional[Path] = None,
+        eval_model: str = "anthropic/claude-sonnet-4-6",
+        auto_eval: bool = False,
+    ):
+        self.session_id = session_id
+        self.phase = SessionPhase.UNREGISTERED
+        self.use_docker = use_docker
+        self.bench_root = bench_root or Path(__file__).parent.parent.parent
+        self.eval_model = eval_model
+        self.auto_eval = auto_eval
+
+        # Task state (set during register)
+        self.task = None
+        self.persona = None
+        self.task_id: str = ""
+        self.persona_id: str = ""
+        self._task_core_tool_names: tuple[str, ...] = ()
+        self._task_convenient_tool_names: tuple[str, ...] = ()
+
+        # Runtime components (set during register)
+        self.proxy = None
+        self.session = None  # TutoringSession
+        self.container_manager = None
+        self.container = None
+        self.student_sim = None
+        self.staged_temp_dirs: list = []
+
+        # Timing
+        self._start_time: Optional[float] = None
+        self._last_activity: float = time.time()
+
+        # Concurrency: serializes all write operations (MCP + REST).
+        self._request_lock = asyncio.Lock()
+
+        # Per-session MCP Server reference (set by http_app._create_mcp_server).
+        # Used to send tools/list_changed notifications on phase transitions.
+        self._mcp_server: Optional["Server"] = None
+
+        # Evaluation state (guarded by _eval_lock)
+        self._eval_lock = threading.Lock()
+        self._eval_status: str = "pending"  # pending | running | completed | failed
+        self._eval_results: Optional[dict] = None
+        self._eval_error: Optional[str] = None
+        self._result_dir: Optional[Path] = None
+        self._closed: bool = False
+
+    def _build_session_context(
+        self,
+        *,
+        docs_available: list[str],
+        student_code_dir: Optional[Path | str],
+    ) -> dict:
+        """Build the truthful runtime context exposed to tools."""
+        environment = self.task.environment if self.task else None
+        max_backtest_trials = environment.max_backtest_trials if environment else 0
+        return {
+            "category": self.task.category.value if self.task else "",
+            "requires_code": bool(self.task.requires_code) if self.task else False,
+            "docs_available": list(docs_available or []),
+            "max_backtest_trials": max_backtest_trials,
+            "sandbox_image": environment.sandbox_image if environment else "",
+            "student_code_available": bool(student_code_dir),
+        }
+
+    def _build_tool_env(
+        self,
+        *,
+        data_dir: str | Path,
+        docs_dir: str | Path,
+        workspace_dir: str | Path,
+        student_code_dir: Optional[str | Path],
+        docs_available: list[str],
+    ) -> dict[str, str]:
+        """Build per-session tool environment variables."""
+        context = self._build_session_context(
+            docs_available=docs_available,
+            student_code_dir=student_code_dir,
+        )
+        env = {
+            "QTB_DATA_DIR": str(data_dir),
+            "QTB_DOCS_DIR": str(docs_dir),
+            "QTB_WORKSPACE_DIR": str(workspace_dir),
+            "QTB_MAX_BACKTEST_TRIALS": str(context["max_backtest_trials"]),
+            "LEAN_RUN_TIMEOUT": "300",
+            "QTB_SESSION_CONTEXT_JSON": json.dumps(context),
+        }
+        if student_code_dir:
+            env["QTB_STUDENT_CODE_DIR"] = str(student_code_dir)
+        return env
+
+    # ------------------------------------------------------------------
+    # register_session
+    # ------------------------------------------------------------------
+
+    def register(self, task_id: str, persona_id: Optional[str] = None) -> dict:
+        """Handle ``register_session(task_id, persona_id?)``.
+
+        Heavy operation: loads task, selects persona, creates container,
+        registers tools, creates TutoringSession. If ``persona_id`` is
+        provided, it overrides the default random persona selection.
+
+        """
+        from server.config.benchmark_config import DATASET_REVISION
+        from server.config.bootstrap import load_server_env
+        from server.config.llm_config import SIMULATOR_DEFAULT_MODEL
+        from server.config.prompt_config import build_scenario, build_user_description
+        from server.core.container import ContainerManager
+        from server.core.proxy import MCPProxy
+        from server.core.registry import populate_proxy_for_task
+        from server.core.session import GoalChecker, TutoringSession
+        from server.core.staging import create_staged_dirs, create_staged_sample_code
+        from server.core.student_sim import StudentSimulator
+        from server.core.tc_checker import TCChecker, parse_tc_items
+        from server.data_manager import ensure_data
+        from server.eval.ewan_eval.model_resolver import require_ewan_model
+
+        self._closed = False
+
+        try:
+            task = self._load_task(task_id)
+            if task is None:
+                return {"accepted": False, "error": f"Task not found: {task_id}"}
+
+            self.task = task
+            self.task_id = task_id
+            self._task_core_tool_names = tuple(
+                task.environment.core_mcp_tools if task.environment else ()
+            )
+            self._task_convenient_tool_names = tuple(
+                task.ground_truth.convenient_tools if task.ground_truth else ()
+            )
+
+            if not task.persona_ids:
+                return {
+                    "accepted": False,
+                    "error": f"Task {task_id} has no persona_ids",
+                }
+
+            session_seed = _session_random_seed(task_id, self.session_id, task.seed)
+            selected_persona_id = persona_id.strip() if persona_id else None
+            if selected_persona_id:
+                if selected_persona_id not in task.persona_ids:
+                    return {
+                        "accepted": False,
+                        "error": (
+                            f"Unsupported persona_id '{selected_persona_id}' for task {task_id}. "
+                            f"Valid persona_ids: {task.persona_ids}"
+                        ),
+                    }
+                logger.info(
+                    "Session %s using explicitly requested persona=%s for task=%s",
+                    self.session_id,
+                    selected_persona_id,
+                    task_id,
+                )
+            else:
+                selected_persona_id = _resolve_persona_pin(task_id, task.persona_ids)
+            if selected_persona_id is None:
+                selected_persona_id = random.Random(session_seed).choice(
+                    task.persona_ids
+                )
+            elif not persona_id:
+                logger.info(
+                    "Session %s using internally pinned persona=%s for task=%s",
+                    self.session_id,
+                    selected_persona_id,
+                    task_id,
+                )
+            persona = self._load_persona(selected_persona_id)
+            if persona is None:
+                return {
+                    "accepted": False,
+                    "error": f"Persona not found: {selected_persona_id}",
+                }
+            self.persona = persona
+            self.persona_id = selected_persona_id
+
+            load_server_env(self.bench_root)
+            try:
+                resolved_sim_model = require_ewan_model(
+                    SIMULATOR_DEFAULT_MODEL,
+                    purpose="student simulator",
+                )
+            except RuntimeError as exc:
+                return {"accepted": False, "error": str(exc)}
+
+            sandbox_img = task.environment.sandbox_image if task.environment else ""
+            series = "lean" if sandbox_img and "lean" in sandbox_img else "normal"
+            paths = ensure_data(
+                series=series,
+                revision=DATASET_REVISION,
+                need_reference=False,
+            )
+
+            self.container_manager = ContainerManager(use_docker=self.use_docker)
+            data_files = task.environment.data_files if task.environment else []
+            docs_available = task.environment.docs_available if task.environment else []
+
+            staged_data_dir, staged_docs_dir, self.staged_temp_dirs = (
+                create_staged_dirs(
+                    data_files,
+                    docs_available,
+                    data_search_dirs=paths.data_search_dirs,
+                    docs_dir=paths.docs,
+                    force_temp_data_dir=bool(paths.custom_data),
+                )
+            )
+
+            student_code_dir = None
+            if task.sample_code:
+                student_code_dir, sample_temp_dirs = create_staged_sample_code(
+                    task.sample_code,
+                    data_search_dirs=paths.data_search_dirs,
+                    student_code_dir=paths.student_code,
+                )
+                self.staged_temp_dirs.extend(sample_temp_dirs)
+
+            self.container = self.container_manager.create_container(
+                task_id=f"{task_id}_{self.session_id[:8]}",
+                data_dir=staged_data_dir,
+                docs_dir=staged_docs_dir,
+                student_code_dir=student_code_dir,
+                sandbox_image=(
+                    task.environment.sandbox_image if task.environment else None
+                ),
+                network_enabled=(
+                    task.environment.network_enabled if task.environment else False
+                ),
+                lean_data_dir=paths.lean_data,
+                custom_data_dir=paths.custom_data,
+            )
+
+            local_tool_env = self._build_tool_env(
+                data_dir=staged_data_dir,
+                docs_dir=staged_docs_dir,
+                workspace_dir=self.container.workspace_path,
+                student_code_dir=student_code_dir,
+                docs_available=docs_available,
+            )
+            container_tool_env = self._build_tool_env(
+                data_dir="/data",
+                docs_dir="/docs",
+                workspace_dir="/workspace",
+                student_code_dir="/student_code" if student_code_dir else None,
+                docs_available=docs_available,
+            )
+
+            if self.container_manager.use_docker:
+                self.container_manager.start_executor(
+                    self.container.container_id,
+                    env_vars=container_tool_env,
+                )
+
+            self.proxy = MCPProxy(workspace_path=self.container.workspace_path)
+            populate_proxy_for_task(
+                proxy=self.proxy,
+                core_tool_names=(
+                    task.environment.core_mcp_tools if task.environment else []
+                ),
+                convenient_tool_names=(
+                    task.ground_truth.convenient_tools if task.ground_truth else []
+                ),
+                seed=session_seed,
+                container_manager=self.container_manager,
+                container_id=self.container.container_id,
+                workspace_path=self.container.workspace_path,
+                use_docker=self.container_manager.use_docker,
+                env_overrides=local_tool_env,
+            )
+
+            tc_text = (
+                task.ground_truth.termination_criteria if task.ground_truth else None
+            )
+            tc_items = parse_tc_items(
+                tc_text,
+                task.category.value,
+                persona_id=self.persona_id,
+            )
+            has_tc = tc_items is not None
+
+            self.student_sim = StudentSimulator(
+                scenario=build_scenario(
+                    task, self.persona_id, has_incremental_tc=has_tc
+                ),
+                user_description=build_user_description(
+                    self.persona,
+                    has_incremental_tc=has_tc,
+                ),
+                model=resolved_sim_model,
+            )
+
+            tc_checker = TCChecker(tc_items) if tc_items else None
+            goal_checker = None
+            if tc_items is None and task.ground_truth:
+                gt = task.ground_truth
+                if gt.termination_criteria:
+                    if task.category.value in ("implementation", "end_to_end", "debug"):
+                        expected_outcome = (
+                            f"{gt.expected_outcome}\n\n"
+                            f"Observable completion criteria:\n{gt.termination_criteria}"
+                        )
+                    else:
+                        expected_outcome = gt.termination_criteria
+                else:
+                    expected_outcome = gt.expected_outcome
+                if expected_outcome:
+                    goal_checker = GoalChecker(expected_outcome, resolved_sim_model)
+
+            effective_timeout = task.timeout_minutes
+            deadline = None
+            if effective_timeout and effective_timeout > 0:
+                deadline = time.time() + effective_timeout * 60
+            self.proxy.set_deadline(deadline)
+
+            self.session = TutoringSession(
+                task=task,
+                persona=persona,
+                student_sim=self.student_sim,
+                tc_checker=tc_checker,
+                max_turns=task.max_turns,
+                deadline=deadline,
+                proxy=self.proxy,
+                goal_checker=goal_checker,
+                workspace_path=self.container.workspace_path,
+            )
+
+            # Keep protocol traffic in raw logs; downstream reports decide what to hide.
+            self.proxy.register_tool(
+                name="send_message",
+                func=self.session.handle_send_message,
+                description="Send a message to the student.",
+                params={
+                    "type": "object",
+                    "properties": {"text": {"type": "string"}},
+                    "required": ["text"],
+                },
+            )
+
+            self._start_time = time.time()
+            self.phase = SessionPhase.REGISTERED
+
+            logger.info(
+                "Session %s registered: task=%s persona=%s docker=%s",
+                self.session_id,
+                task_id,
+                self.persona_id,
+                self.use_docker,
+            )
+            return {"accepted": True, "session_id": self.session_id}
+        except Exception as exc:
+            logger.exception("Session %s register failed", self.session_id)
+            self._reset_registration_state()
+            return {"accepted": False, "error": f"Registration failed: {exc}"}
+
+    # ------------------------------------------------------------------
+    # start_session
+    # ------------------------------------------------------------------
+
+    def start(self) -> dict:
+        """Handle ``start_session()`` — return student opening."""
+        if self._closed:
+            return {"error": "Session is closed"}
+        result = self.session.handle_start_session()
+        self.phase = SessionPhase.IN_SESSION
+        logger.info("Session %s started.", self.session_id)
+        return json.loads(result)
+
+    # ------------------------------------------------------------------
+    # send_message (routed through proxy for logging)
+    # ------------------------------------------------------------------
+
+    def handle_send_message(self, text: str) -> str:
+        """Handle ``send_message(text)``.
+
+        Routes through ``proxy.call_tool`` so the call is logged.
+        Detects session completion and triggers result saving.
+
+        Returns:
+            Raw JSON string from TutoringSession (via proxy).
+        """
+        if self._closed:
+            return json.dumps({"error": "Session is closed", "status": "closed"})
+
+        result = self.proxy.call_tool("send_message", text=text)
+
+        # Check for session completion
+        try:
+            data = json.loads(result)
+            if data.get("status") == "completed":
+                self.phase = SessionPhase.COMPLETED
+                self._save_results()
+                self._destroy_container()
+                logger.info(
+                    "Session %s completed: reason=%s",
+                    self.session_id,
+                    data.get("reason", "unknown"),
+                )
+                # Server-side auto_eval
+                if self.auto_eval:
+                    with self._eval_lock:
+                        if self._eval_status == "pending":
+                            self._eval_status = "running"
+                            threading.Thread(
+                                target=self._run_evaluation,
+                                daemon=True,
+                                name=f"autoeval-{self.session_id[:8]}",
+                            ).start()
+                            logger.info(
+                                "Session %s auto_eval started",
+                                self.session_id,
+                            )
+        except (json.JSONDecodeError, KeyError):
+            pass
+
+        return result
+
+    # ------------------------------------------------------------------
+    # request_evaluation
+    # ------------------------------------------------------------------
+
+    def request_evaluation(self) -> dict:
+        """Handle ``request_evaluation()``.
+
+        First call triggers eval in a background thread.
+        Subsequent calls return status or cached results.
+        Failed evals can be retried.
+        """
+        if self._closed:
+            return {"status": "failed", "error": "Session is closed"}
+        with self._eval_lock:
+            if self._eval_status == "pending":
+                self._eval_status = "running"
+                threading.Thread(
+                    target=self._run_evaluation,
+                    daemon=True,
+                    name=f"eval-{self.session_id[:8]}",
+                ).start()
+                return {"status": "running", "message": "Evaluation started."}
+
+            if self._eval_status == "running":
+                return {"status": "running", "message": "Evaluation in progress."}
+
+            if self._eval_status == "completed":
+                return {"status": "completed", "scores": self._eval_results}
+
+            if self._eval_status == "failed":
+                self._eval_status = "running"
+                threading.Thread(
+                    target=self._run_evaluation,
+                    daemon=True,
+                    name=f"eval-{self.session_id[:8]}",
+                ).start()
+                return {"status": "running", "message": "Retrying evaluation."}
+
+        return {"status": "unknown"}
+
+    # ------------------------------------------------------------------
+    # Domain tool calls
+    # ------------------------------------------------------------------
+
+    def call_domain_tool(self, name: str, **kwargs) -> str:
+        """Route a domain tool call through the proxy."""
+        if self._closed:
+            return "Error: Session is closed"
+        return self.proxy.call_tool(name, **kwargs)
+
+    # ------------------------------------------------------------------
+    # Tool visibility per phase (for MCP list_tools)
+    # ------------------------------------------------------------------
+
+    def get_visible_tools(self) -> list[Tool]:
+        """Return MCP Tool list for the current phase.
+
+        | Phase       | list_tools returns                              |
+        |-------------|--------------------------------------------------|
+        | UNREGISTERED| [register_session]                               |
+        | REGISTERED  | [start_session]                                  |
+        | IN_SESSION  | [send_message] + all domain tools                |
+        | COMPLETED   | [request_evaluation, get_results, get_scores]    |
+        """
+        if self.phase == SessionPhase.UNREGISTERED:
+            return [REGISTER_SESSION_TOOL]
+
+        domain_tools = self._get_domain_tools()
+
+        if self.phase == SessionPhase.REGISTERED:
+            return [START_SESSION_TOOL]
+
+        if self.phase == SessionPhase.IN_SESSION:
+            return [SEND_MESSAGE_TOOL] + domain_tools
+
+        if self.phase == SessionPhase.COMPLETED:
+            return [REQUEST_EVALUATION_TOOL, GET_RESULTS_TOOL, GET_SCORES_TOOL]
+
+        return []
+
+    # ------------------------------------------------------------------
+    # Unified MCP call_tool handler
+    # ------------------------------------------------------------------
+
+    async def _notify_tools_changed(self) -> None:
+        """Send ``tools/list_changed`` notification to the MCP client.
+
+        Called after phase transitions so the client re-fetches
+        ``list_tools`` and sees the updated tool set.
+        """
+        if self._mcp_server is None:
+            return
+        try:
+            ctx = self._mcp_server.request_context
+            await ctx.session.send_tool_list_changed()
+        except Exception as exc:
+            # Non-fatal — client can still call list_tools manually.
+            logger.debug("Failed to send tool_list_changed: %s", exc)
+
+    async def handle_tool_call(
+        self,
+        name: str,
+        arguments: dict,
+    ) -> list[TextContent]:
+        """Route an MCP tool call with permission checking.
+
+        Called by the per-session MCP Server's ``call_tool`` handler.
+        """
+        self._last_activity = time.time()
+
+        if self._closed:
+            return [
+                TextContent(
+                    type="text",
+                    text=make_error_response("Session is closed.", []),
+                )
+            ]
+
+        # Permission check
+        allowed, error, allowed_ops = check_permission(self.phase, name)
+        if not allowed:
+            logger.debug(
+                "[%s] DENIED %s in phase %s",
+                self.session_id[:8],
+                name,
+                self.phase.value,
+            )
+            return [
+                TextContent(
+                    type="text",
+                    text=make_error_response(error, allowed_ops),
+                )
+            ]
+
+        logger.debug(
+            "[%s] tool_call: %s (phase=%s)", self.session_id[:8], name, self.phase.value
+        )
+
+        # Session API routing
+        if name == "register_session":
+            task_id = arguments.get("task_id", "")
+            persona_id = arguments.get("persona_id")
+            result = await asyncio.to_thread(self.register, task_id, persona_id)
+            if result.get("accepted"):
+                await self._notify_tools_changed()
+            return [TextContent(type="text", text=json.dumps(result))]
+
+        if name == "start_session":
+            result = await asyncio.to_thread(self.start)
+            await self._notify_tools_changed()
+            return [TextContent(type="text", text=json.dumps(result))]
+
+        if name == "send_message":
+            text = arguments.get("text", "")
+            logger.info(
+                "[%s] send_message (turn %d): %s...",
+                self.session_id[:8],
+                self.session.turn if self.session else 0,
+                text[:100],
+            )
+            result = await asyncio.to_thread(self.handle_send_message, text)
+            # Log student reply
+            try:
+                data = json.loads(result)
+                logger.info(
+                    "[%s] student reply (status=%s): %s...",
+                    self.session_id[:8],
+                    data.get("status", "?"),
+                    data.get("student_message", "")[:100],
+                )
+            except Exception:
+                pass
+            if self.phase == SessionPhase.COMPLETED:
+                await self._notify_tools_changed()
+            return [TextContent(type="text", text=str(result))]
+
+        if name == "request_evaluation":
+            result = await asyncio.to_thread(self.request_evaluation)
+            logger.info(
+                "[%s] request_evaluation: %s", self.session_id[:8], result.get("status")
+            )
+            return [TextContent(type="text", text=json.dumps(result))]
+
+        if name == "get_results":
+            result = self.get_run_results()
+            return [TextContent(type="text", text=json.dumps(result))]
+
+        if name == "get_scores":
+            history = arguments.get("history", False)
+            result = self.get_eval_scores(history=history)
+            return [TextContent(type="text", text=json.dumps(result))]
+
+        # Domain tool — route through proxy
+        result = await asyncio.to_thread(self.call_domain_tool, name, **arguments)
+        result_preview = str(result)[:150]
+        logger.debug("[%s] %s -> %s...", self.session_id[:8], name, result_preview)
+        return [TextContent(type="text", text=str(result))]
+
+    # ------------------------------------------------------------------
+    # Result saving
+    # ------------------------------------------------------------------
+
+    def _save_results(self):
+        """Save run_state.json after session completion.
+
+        Storage path: results/server/{task_id}/{persona_id}/{YYYYMMDD_HHMMSS}_{session_id[:8]}/
+        """
+        from datetime import datetime
+
+        from server.storage.result_writer import save_run_state
+
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        dir_name = f"{ts}_{self.session_id[:8]}"
+        result_dir = (
+            self.bench_root
+            / "results"
+            / "server"
+            / self.task_id
+            / self.persona_id
+            / dir_name
+        )
+        self._result_dir = result_dir
+
+        conversation = self.session.conversation
+        tool_logs = self.proxy.get_logs()
+        distractor_names = self.proxy.get_distractor_names()
+        duration = time.time() - self._start_time if self._start_time else 0.0
+
+        # TC checker cost (if incremental TC was used)
+        tc_cost = 0.0
+        if self.session and self.session._tc_checker:
+            tc_cost = getattr(self.session._tc_checker, "total_cost", 0.0)
+
+        save_run_state(
+            result_dir=result_dir,
+            conversation=conversation,
+            tool_logs=tool_logs,
+            workspace_path=(self.container.workspace_path if self.container else None),
+            simulator_cost=(self.student_sim.total_cost if self.student_sim else 0.0),
+            tc_checker_cost=tc_cost,
+            duration_seconds=duration,
+            distractor_names=distractor_names,
+            task_id=self.task_id,
+            session_id=self.session_id,
+            persona_id=self.persona_id,
+            session_status=self.session.session_status if self.session else "",
+            termination_reason=(
+                self.session.completion_reason if self.session else None
+            ),
+            tc_coverage=(self.session.tc_coverage_summary if self.session else None),
+            tc_debug_history=(self.session.tc_debug_history if self.session else None),
+            artifact_debug_history=(
+                self.session.artifact_debug_history if self.session else None
+            ),
+        )
+        logger.info("Results saved: %s", result_dir)
+
+    # ------------------------------------------------------------------
+    # Evaluation (background thread)
+    # ------------------------------------------------------------------
+
+    def _run_evaluation(self):
+        """Run evaluation pipeline in a background thread.
+
+        Writes to ``_eval_status`` / ``_eval_results`` under ``_eval_lock``
+        to avoid races with ``request_evaluation`` reads.
+        """
+        try:
+            from server.storage.eval_writer import run_evaluation
+
+            if not self._result_dir:
+                raise RuntimeError("No result_dir — session results not saved")
+
+            conversation = self.session.conversation
+            tool_logs = self.proxy.get_logs()
+            distractor_names = self.proxy.get_distractor_names()
+
+            eval_results = run_evaluation(
+                task=self.task,
+                persona=self.persona,
+                result_dir=self._result_dir,
+                conversation=conversation,
+                tool_logs=tool_logs,
+                distractor_names=distractor_names,
+                bench_root=str(self.bench_root),
+                eval_model=self.eval_model,
+            )
+
+            # Build scores summary for API response
+            scores_summary: dict = {
+                "quant_result": eval_results.get("quant_result", 0.0),
+                "quant_process": eval_results.get("quant_process", 0.0),
+                "tutor_scores": eval_results.get("tutor_scores", {}),
+            }
+
+            # Try to compute overall composite score
+            try:
+                from server.eval.scoring import compute_task_score
+
+                scores = compute_task_score(
+                    quant_result_score=eval_results.get("quant_result", 0.0),
+                    quant_process_score=eval_results.get("quant_process", 0.0),
+                    tutor_dimension_scores=eval_results.get("tutor_scores", {}),
+                    category=self.task.category.value,
+                    requires_code=self.task.requires_code,
+                )
+                scores_summary["overall"] = scores.get("overall_score", 0.0)
+            except Exception as exc:
+                logger.debug("Could not compute overall score: %s", exc)
+
+            with self._eval_lock:
+                self._eval_results = scores_summary
+                self._eval_status = "completed"
+            logger.info("Evaluation completed for session %s", self.session_id)
+
+        except Exception as e:
+            logger.error(
+                "Evaluation failed for session %s: %s",
+                self.session_id,
+                e,
+                exc_info=True,
+            )
+            with self._eval_lock:
+                self._eval_error = str(e)
+                self._eval_status = "failed"
+            # Update run_state.json status
+            if self._result_dir:
+                try:
+                    from server.storage.result_writer import update_evaluation_status
+
+                    update_evaluation_status(self._result_dir, "failed")
+                except Exception:
+                    pass
+
+    # ------------------------------------------------------------------
+    # Query methods (shared by MCP get_results/get_scores + REST endpoints)
+    # ------------------------------------------------------------------
+
+    def get_run_results(self) -> dict:
+        """Return run_state.json content as dict."""
+        if not self._result_dir:
+            return {"error": "Results not available"}
+        state_path = self._result_dir / "run_state.json"
+        if not state_path.exists():
+            return {"error": "Results not available"}
+        return json.loads(state_path.read_text(encoding="utf-8"))
+
+    def get_eval_scores(self, history: bool = False) -> dict:
+        """Return evaluation scores.
+
+        Args:
+            history: If True, return all evaluation runs from evaluations/.
+        """
+        if history:
+            return self._read_eval_history()
+
+        with self._eval_lock:
+            if self._eval_status == "completed":
+                return {"status": "completed", "scores": self._eval_results}
+            if self._eval_status == "running":
+                return {"status": "running"}
+            if self._eval_status == "failed":
+                return {"status": "failed", "error": self._eval_error or "Unknown"}
+        return {"status": "pending"}
+
+    def _read_eval_history(self) -> dict:
+        """Read all eval_meta.json files from evaluations/."""
+        if not self._result_dir:
+            return {"session_id": self.session_id, "evaluations": []}
+        evals_dir = self._result_dir / "evaluations"
+        if not evals_dir.is_dir():
+            return {"session_id": self.session_id, "evaluations": []}
+        entries = []
+        for sub in sorted(evals_dir.iterdir(), reverse=True):
+            if (
+                not sub.is_dir()
+                or sub.name == "latest"
+                or not sub.name.startswith("eval_")
+            ):
+                continue
+            meta_path = sub / "eval_meta.json"
+            if meta_path.exists():
+                try:
+                    meta = json.loads(meta_path.read_text(encoding="utf-8"))
+                    meta["eval_dir"] = sub.name
+                    entries.append(meta)
+                except Exception:
+                    pass
+        return {"session_id": self.session_id, "evaluations": entries}
+
+    # ------------------------------------------------------------------
+    # Container cleanup
+    # ------------------------------------------------------------------
+
+    def _destroy_container(self):
+        """Destroy container and clean temp dirs.
+
+        Called after results are saved (agent_files copied to result_dir).
+        """
+        if self.container_manager and self.container:
+            try:
+                self.container_manager.destroy_container(
+                    self.container.container_id,
+                )
+                logger.info(
+                    "Container destroyed: %s",
+                    self.container.container_id,
+                )
+            except Exception as exc:
+                logger.warning("Container cleanup failed: %s", exc)
+            self.container = None
+
+        from server.core.staging import cleanup_staged_dirs
+
+        cleanup_staged_dirs(self.staged_temp_dirs)
+        self.staged_temp_dirs = []
+
+    def cleanup(self, *, persist_partial: bool = False):
+        """Full cleanup — called on cancellation, idle cleanup, or shutdown.
+
+        Partial-result persistence is opt-in so user-triggered cancellation
+        does not silently write incomplete sessions to the results store.
+        """
+        self._closed = True
+        if (
+            persist_partial
+            and self.session
+            and self.session.conversation
+            and self._result_dir is None
+            and self.phase in (SessionPhase.IN_SESSION, SessionPhase.REGISTERED)
+        ):
+            try:
+                logger.info(
+                    "Session %s: saving partial results before cleanup", self.session_id
+                )
+                self._save_results()
+            except Exception as exc:
+                logger.warning(
+                    "Session %s: save before cleanup failed: %s",
+                    self.session_id,
+                    exc,
+                )
+        self._destroy_container()
+
+    def _reset_registration_state(self):
+        """Rollback partial register() state after a failed initialization."""
+        try:
+            self._destroy_container()
+        except Exception:
+            logger.warning(
+                "Session %s rollback cleanup failed",
+                self.session_id,
+                exc_info=True,
+            )
+        self.task = None
+        self.persona = None
+        self.task_id = ""
+        self.persona_id = ""
+        self._task_core_tool_names = ()
+        self._task_convenient_tool_names = ()
+        self.proxy = None
+        self.session = None
+        self.container_manager = None
+        self.container = None
+        self.student_sim = None
+        self._start_time = None
+        self._result_dir = None
+        self.phase = SessionPhase.UNREGISTERED
+
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
+
+    def _load_task(self, task_id: str):
+        """Load task JSON by ID."""
+        from server.schemas import QuantTutorTask
+
+        tasks_dir = self.bench_root / "tasks"
+        for json_path in tasks_dir.rglob(f"{task_id}.json"):
+            return QuantTutorTask(**json.loads(json_path.read_text()))
+        return None
+
+    def _load_persona(self, persona_id: str):
+        """Load persona JSON by ID."""
+        from server.schemas import StudentPersona
+
+        personas_dir = self.bench_root / "personas"
+        for json_path in personas_dir.rglob(f"{persona_id}.json"):
+            return StudentPersona(**json.loads(json_path.read_text()))
+        return None
+
+    def _get_domain_tools(self) -> list[Tool]:
+        """Convert proxy tool schemas to MCP Tool objects.
+
+        Excludes session API tools (send_message is on the proxy for logging
+        but listed separately by get_visible_tools).
+        """
+        from server.tooling import (
+            get_task_tool_specs,
+            normalize_input_schema,
+            render_agent_tool_description,
+        )
+
+        if not self.proxy:
+            return []
+
+        tool_specs = get_task_tool_specs(
+            core_tool_names=self._task_core_tool_names,
+            convenient_tool_names=self._task_convenient_tool_names,
+            distractor_tool_names=self.proxy.get_distractor_names(),
+        )
+        tools = []
+        for schema in self.proxy.get_available_tools():
+            name = schema["name"]
+            if name in SESSION_API_TOOLS:
+                continue
+            spec = tool_specs.get(name)
+            description = (
+                render_agent_tool_description(spec)
+                if spec is not None
+                else schema.get("description", "")
+            )
+            input_schema = (
+                spec.input_schema
+                if spec is not None
+                else normalize_input_schema(schema.get("parameters", {}))
+            )
+            tools.append(
+                Tool(
+                    name=name,
+                    description=description,
+                    inputSchema=input_schema,
+                )
+            )
+        return tools

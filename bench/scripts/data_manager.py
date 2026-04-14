@@ -21,6 +21,7 @@ Usage:
 from __future__ import annotations
 
 import os
+import shutil
 
 # Import pinned defaults from reproducibility config
 import sys as _sys
@@ -42,6 +43,7 @@ LEAN_RUNTIME_DATA_DIR = LEAN_RUNTIME_ROOT / "data"
 LEAN_RUNTIME_METADATA_DIR = LEAN_RUNTIME_ROOT / "metadata"
 LEAN_RUNTIME_STUDENT_CODE_DIR = LEAN_RUNTIME_ROOT / "student_code"
 LOCAL_CUSTOM_DATA_DIR = BENCH_ROOT / "data" / "custom"
+_REVISION_MARKER = ".hf_revision"
 
 
 @dataclass
@@ -55,6 +57,24 @@ class DataPaths:
     student_code: str | None = None  # debug task student code dir
 
 
+def _revision_matches(target_dir: Path, revision: str | None) -> bool:
+    if revision is None:
+        return True
+    marker = target_dir / _REVISION_MARKER
+    if not marker.exists():
+        return False
+    try:
+        return marker.read_text(encoding="utf-8").strip() == revision
+    except OSError:
+        return False
+
+
+def _write_revision_marker(target_dir: Path, revision: str | None) -> None:
+    if revision is None:
+        return
+    (target_dir / _REVISION_MARKER).write_text(revision, encoding="utf-8")
+
+
 def _ensure_docs(
     cache_dir: Path,
     hf_repo: str,
@@ -62,6 +82,8 @@ def _ensure_docs(
 ) -> str:
     """Download shared docs if not cached. Returns docs dir path."""
     docs_dir = cache_dir / "docs"
+    if docs_dir.exists() and not _revision_matches(docs_dir, revision):
+        shutil.rmtree(docs_dir, ignore_errors=True)
     if not docs_dir.exists():
         snapshot_download(
             repo_id=hf_repo,
@@ -70,6 +92,7 @@ def _ensure_docs(
             local_dir=str(cache_dir),
             revision=revision,
         )
+        _write_revision_marker(docs_dir, revision)
     return str(docs_dir)
 
 
@@ -84,7 +107,13 @@ def _ensure_reference(
     ref_dir = cache_dir.parent / "reference"
     # Use a marker file to detect completed extraction
     marker = ref_dir / ".hf_downloaded"
-    if ref_dir.exists() and (marker.exists() or any(ref_dir.glob("I01_*"))):
+    if ref_dir.exists() and not _revision_matches(ref_dir, revision):
+        shutil.rmtree(ref_dir, ignore_errors=True)
+    if (
+        ref_dir.exists()
+        and _revision_matches(ref_dir, revision)
+        and (marker.exists() or any(ref_dir.glob("I01_*")))
+    ):
         return str(ref_dir)
     archive = hf_hub_download(
         repo_id=hf_repo,
@@ -99,6 +128,7 @@ def _ensure_reference(
     os.remove(archive)
     # Write marker so we don't re-download
     marker.write_text("downloaded")
+    _write_revision_marker(ref_dir, revision)
     return str(ref_dir)
 
 
@@ -111,9 +141,7 @@ def _ensure_local_lean_runtime_assets() -> tuple[str, str, str]:
         LEAN_RUNTIME_DATA_DIR / "universe.json",
         LEAN_RUNTIME_METADATA_DIR / "universe.json",
         LEAN_RUNTIME_METADATA_DIR / "market-hours" / "market-hours-database.json",
-        LEAN_RUNTIME_METADATA_DIR
-        / "symbol-properties"
-        / "security-database.csv",
+        LEAN_RUNTIME_METADATA_DIR / "symbol-properties" / "security-database.csv",
         LEAN_RUNTIME_METADATA_DIR
         / "symbol-properties"
         / "symbol-properties-database.csv",
@@ -135,21 +163,37 @@ def _ensure_local_lean_runtime_assets() -> tuple[str, str, str]:
     )
 
 
+def _resolve_custom_data_root(base_dir: Path) -> Path | None:
+    """Return the directory that directly contains the Binance folders.
+
+    Some dataset archives extract into ``custom/binance/...`` while others
+    extract directly into ``binance/...``. Accept both layouts so cached data
+    remains usable across archive revisions.
+    """
+    if (base_dir / "binance").is_dir():
+        return base_dir
+    nested_root = base_dir / "custom"
+    if (nested_root / "binance").is_dir():
+        return nested_root
+    return None
+
+
 def _ensure_custom_data(
     cache_dir: Path,
     hf_repo: str,
     revision: str | None,
 ) -> str:
     """Return a local 12-col data root, downloading the archive if needed."""
-    prefer_local_custom = (
-        cache_dir.resolve() == DEFAULT_CACHE_DIR.resolve()
-        and (LOCAL_CUSTOM_DATA_DIR / "binance").is_dir()
-    )
-    if prefer_local_custom:
-        return str(LOCAL_CUSTOM_DATA_DIR)
+    if cache_dir.resolve() == DEFAULT_CACHE_DIR.resolve():
+        local_custom_root = _resolve_custom_data_root(LOCAL_CUSTOM_DATA_DIR)
+        if local_custom_root is not None:
+            return str(local_custom_root)
 
     custom_dir = cache_dir / "lean" / "custom"
-    if not (custom_dir / "binance").exists():
+    if custom_dir.exists() and not _revision_matches(custom_dir, revision):
+        shutil.rmtree(custom_dir, ignore_errors=True)
+    custom_root = _resolve_custom_data_root(custom_dir)
+    if custom_root is None:
         custom_archive = hf_hub_download(
             repo_id=hf_repo,
             repo_type="dataset",
@@ -161,7 +205,16 @@ def _ensure_custom_data(
         with tarfile.open(custom_archive, "r:gz") as tf:
             tf.extractall(path=str(custom_dir))
         os.remove(custom_archive)
-    return str(custom_dir)
+        _write_revision_marker(custom_dir, revision)
+        custom_root = _resolve_custom_data_root(custom_dir)
+
+    if custom_root is None:
+        raise FileNotFoundError(
+            "custom_binance_12col archive extracted, but no Binance data root "
+            f"was found under {custom_dir}"
+        )
+
+    return str(custom_root)
 
 
 def ensure_data(
@@ -169,6 +222,7 @@ def ensure_data(
     cache_dir: str | Path = DEFAULT_CACHE_DIR,
     hf_repo: str = HF_REPO_ID,
     revision: str | None = _CFG_REVISION,
+    need_reference: bool = True,
 ) -> DataPaths:
     """Prepare benchmark data for runtime use.
 
@@ -187,7 +241,8 @@ def ensure_data(
 
     # Docs and reference are shared across all series
     docs_path = _ensure_docs(cache_dir, hf_repo, revision)
-    _ensure_reference(cache_dir, hf_repo, revision)
+    if need_reference:
+        _ensure_reference(cache_dir, hf_repo, revision)
 
     if series == "lean":
         lean_metadata_dir, lean_runtime_data_dir, student_code_dir = (

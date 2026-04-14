@@ -37,9 +37,10 @@ LEAN_RUN_TIMEOUT="${LEAN_RUN_TIMEOUT:-300}"
 
 # ── Usage check ────────────────────────────────────────────────────────
 if [ $# -lt 1 ]; then
-    echo "Usage: run_backtest <Algorithm.cs path> [--params '{\"key\":\"value\"}'] [--run-id NAME] [--class-name NAME]"
+    echo "Usage: run_backtest <Algorithm.cs path> [--params '{\"key\":\"value\"}'] [--run-id NAME] [--class-name NAME] [--full-type-name NAME]"
     echo "  e.g. run_backtest /workspace/Algorithm.cs"
     echo "  e.g. run_backtest /workspace/Algorithm.cs --class-name MyStrategy --symbol BTCUSDT"
+    echo "  e.g. run_backtest /student_code/alpha_conflict.cs --full-type-name QuantTutorBench.AlphaConflict"
     exit 1
 fi
 
@@ -52,6 +53,7 @@ RUN_ID=""
 DATA_MODE="custom"
 SYMBOL=""
 CLASS_NAME=""
+FULL_TYPE_NAME=""
 while [ $# -gt 0 ]; do
     case "$1" in
         --params)
@@ -72,6 +74,10 @@ while [ $# -gt 0 ]; do
             ;;
         --class-name)
             CLASS_NAME="$2"
+            shift 2
+            ;;
+        --full-type-name)
+            FULL_TYPE_NAME="$2"
             shift 2
             ;;
         *)
@@ -211,14 +217,21 @@ cfg['results-destination-folder'] = '$RESULTS_DIR'
 # MatchX uses the submitted strategy_class_name; benchmark previously
 # hardcoded 'Algorithm'.  With --class-name, both paths align.
 class_name = '$CLASS_NAME' or 'Algorithm'
-cfg['algorithm-type-name'] = f'QuantConnect.Algorithm.CSharp.{class_name}'
+full_type_name = '$FULL_TYPE_NAME'
+if full_type_name:
+    cfg['algorithm-type-name'] = full_type_name
+else:
+    cfg['algorithm-type-name'] = f'QuantConnect.Algorithm.CSharp.{class_name}'
 
 with open('$LEAN_CONFIG', 'w') as f:
     json.dump(cfg, f, indent=2)
 
 print(f'  -> Set {len(params)} parameter(s)')
 print(f'  -> Data mode: {data_mode}')
-print(f'  -> Class name: {class_name}')
+if full_type_name:
+    print(f'  -> Full type name: {full_type_name}')
+else:
+    print(f'  -> Class name: {class_name}')
 print(f'  -> Results folder: $RESULTS_DIR')
 " 2>&1
 rm -f "$_PARAMS_TMPFILE"
@@ -296,7 +309,7 @@ for search_dir in "${LEAN_RESULTS_SEARCH_DIRS[@]}"; do
         ! -name "*-summary.json" ! -name "*-order-events.json" \
         ! -name "*-log*" ! -name "data-monitor*" ! -name "*data-requests*" \
         ! -name "summary.json" ! -name "orders.json" ! -name "trades.json" \
-        -size +100k -type f -printf '%s %p\n' 2>/dev/null | sort -rn | head -1 | cut -d' ' -f2-)
+        -type f -printf '%s %p\n' 2>/dev/null | sort -rn | head -1 | cut -d' ' -f2-)
     if [ -n "$found" ] && [ "$found" != "$RESULTS_DIR/result.json" ]; then
         cp "$found" "$RESULTS_DIR/result.json"
         echo "  -> result.json (from $found)"

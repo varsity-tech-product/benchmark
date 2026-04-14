@@ -12,6 +12,8 @@ from __future__ import annotations
 import glob as glob_module
 import json
 import os
+import re
+import shlex
 import signal
 import subprocess
 from typing import TYPE_CHECKING, Optional
@@ -38,6 +40,65 @@ def _workspace_dir() -> str:
 
 def _student_code_dir() -> str:
     return os.environ.get("QTB_STUDENT_CODE_DIR", "/student_code")
+
+
+def _session_context() -> dict:
+    """Return truthful per-session runtime context exposed by the server."""
+    raw = os.environ.get("QTB_SESSION_CONTEXT_JSON", "").strip()
+    if not raw:
+        return {}
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def _infer_csharp_entrypoint(source_path: str) -> dict[str, str]:
+    """Infer namespace/class entrypoint from a C# QCAlgorithm source file."""
+    try:
+        with open(source_path, encoding="utf-8") as f:
+            source = f.read()
+    except OSError:
+        return {}
+
+    namespace_match = re.search(
+        r"^\s*namespace\s+([A-Za-z_][A-Za-z0-9_.]*)",
+        source,
+        flags=re.MULTILINE,
+    )
+    class_match = re.search(
+        r"\bclass\s+([A-Za-z_][A-Za-z0-9_]*)\s*:\s*[^{\n]*\bQCAlgorithm\b",
+        source,
+    )
+    if not class_match:
+        return {}
+
+    class_name = class_match.group(1)
+    namespace = namespace_match.group(1) if namespace_match else ""
+    full_type_name = f"{namespace}.{class_name}" if namespace else class_name
+    return {
+        "class_name": class_name,
+        "full_type_name": full_type_name,
+    }
+
+
+def _extract_compile_errors(output: str, limit: int = 5) -> list[str]:
+    """Pull out the most actionable compiler error lines from tool output."""
+    errors: list[str] = []
+    seen: set[str] = set()
+    for line in output.splitlines():
+        stripped = line.strip()
+        lowered = stripped.lower()
+        if "error cs" not in lowered and ": error " not in lowered:
+            continue
+        if stripped in seen:
+            continue
+        seen.add(stripped)
+        errors.append(stripped)
+        if len(errors) >= limit:
+            break
+    return errors
 
 
 def _compute_performance_metrics(returns, annual_factor=252):
@@ -2194,6 +2255,8 @@ def get_environment_info() -> str:
     data_dir = _data_dir()
     docs_dir = _docs_dir()
     workspace = _workspace_dir()
+    student_code_dir = _student_code_dir()
+    session_context = _session_context()
 
     info = {
         "directories": {
@@ -2206,6 +2269,9 @@ def get_environment_info() -> str:
         "workspace": [],
         "installed_packages": [],
     }
+    if os.path.isdir(student_code_dir):
+        info["directories"]["student_code"] = student_code_dir
+        info["student_code_files"] = sorted(os.listdir(student_code_dir))
     for d, key in [
         (data_dir, "data_files"),
         (docs_dir, "docs"),
@@ -2257,7 +2323,9 @@ def get_environment_info() -> str:
                 os.path.join(lean_metadata_dir, "universe.json")
             ),
             "market_hours_database": os.path.isfile(
-                os.path.join(lean_metadata_dir, "market-hours", "market-hours-database.json")
+                os.path.join(
+                    lean_metadata_dir, "market-hours", "market-hours-database.json"
+                )
             ),
             "symbol_properties_database": os.path.isfile(
                 os.path.join(
@@ -2283,7 +2351,8 @@ def get_environment_info() -> str:
             res_path = os.path.join(custom_data_root, res)
             if os.path.isdir(res_path):
                 symbols = sorted(
-                    name for name in os.listdir(res_path)
+                    name
+                    for name in os.listdir(res_path)
                     if os.path.isdir(os.path.join(res_path, name))
                 )
                 custom_data_summary[res] = symbols[:10]
@@ -2292,43 +2361,37 @@ def get_environment_info() -> str:
 
     if lean_info:
         info["lean_environment"] = lean_info
+    if session_context:
+        info["session_context"] = session_context
 
     # ---------- Note (context-aware) ----------
     if lean_info.get("lean_engine"):
-        info["note"] = (
-            f"Data files are in {data_dir}. "
-            f"This environment has LEAN Engine (QuantConnect) with "
-            f".NET {lean_info.get('dotnet_version', 'unknown')}. "
-            f"To run a C# backtest: "
-            f"1) Write your .cs file to {workspace}/Algorithm.cs using file_write "
-            f"(the class should be in namespace 'QuantConnect.Algorithm.CSharp'; "
-            f"by default it must be named 'Algorithm', or pass "
-            f"--class-name YourName to run_backtest to use a different name), "
-            f"2) Run 'run_backtest {workspace}/Algorithm.cs' using shell_exec "
-            f"(set timeout=600 as compilation + engine run may take a few minutes). "
-            f"The stdout output shows a performance summary; "
-            f"detailed results are saved as files in {workspace}/results/: "
-            f"summary.json (key metrics), log.txt (engine log), "
-            f"orders.json (order details), build_log.txt (compilation output). "
-            f"Use file_read() to inspect these files. "
-            f"12-col custom market data is pre-loaded at /data/custom/binance "
-            f"(Binance USDT perpetuals, 2021-2025), and required LEAN metadata "
-            f"is mounted at /lean/Data. "
-            f"Use AddCrypto() to subscribe to symbols — the harness handles "
-            f"data access automatically. "
-            f"Python is also available for analysis "
-            f"(pandas 3.0 — use df.ffill()/df.bfill() instead of "
-            f"fillna(method=...); order status values are lowercase "
-            f"e.g. 'filled' not 'Filled'). "
-            f"Workspace for saving outputs: {workspace}."
-        )
+        note_parts = [
+            f"Data files are in {data_dir}.",
+            f"This environment has LEAN Engine (QuantConnect) with .NET {lean_info.get('dotnet_version', 'unknown')}.",
+            f"Tracked LEAN runs should generally use run_lean_backtest; source files may come from {workspace} and, when mounted, {student_code_dir}.",
+            "run_lean_backtest can infer a C# entrypoint from the source file and also accepts explicit class_name or full_type_name overrides.",
+            "12-col custom market data is pre-loaded at /data/custom/binance and required LEAN metadata is mounted at /lean/Data.",
+            f"Detailed run artifacts are written under {workspace}/results/ and can be inspected with file_read().",
+            "Python is also available for analysis (pandas 3.0 — use df.ffill()/df.bfill() instead of fillna(method=...); order status values are lowercase e.g. 'filled' not 'Filled').",
+            f"Workspace for saving outputs: {workspace}.",
+        ]
+        if session_context.get("sample_code"):
+            note_parts.append(f"Session sample code: {session_context['sample_code']}.")
+        if session_context.get("max_backtest_trials"):
+            note_parts.append(
+                f"Tracked LEAN backtests are budgeted at {session_context['max_backtest_trials']} trial(s) for this session."
+            )
+        info["note"] = " ".join(note_parts)
     else:
-        info["note"] = (
-            f"Data files are in {data_dir}. "
-            f"Use absolute paths in Python code, "
-            f"e.g. pd.read_csv('{data_dir}/FILENAME.csv'). "
-            f"Workspace for saving outputs: {workspace}."
-        )
+        note_parts = [
+            f"Data files are in {data_dir}.",
+            f"Use absolute paths in Python code, e.g. pd.read_csv('{data_dir}/FILENAME.csv').",
+            f"Workspace for saving outputs: {workspace}.",
+        ]
+        if session_context.get("sample_code"):
+            note_parts.append(f"Session sample code: {session_context['sample_code']}.")
+        info["note"] = " ".join(note_parts)
 
     return json.dumps(info, indent=2)
 
@@ -3461,7 +3524,7 @@ CORE_TOOLS = {
     },
     "get_environment_info": {
         "func": get_environment_info,
-        "description": "Return directory paths (data, docs, workspace), available files, and installed packages. Use this first to discover file locations and absolute paths for shell_exec.",
+        "description": "Return directory paths, mounted files, installed packages, and truthful session runtime context such as student_code availability or tracked trial budget when present.",
         "params": {},
     },
     "construct_signal": {
@@ -3908,8 +3971,13 @@ def _get_trial_manager() -> "TrialManager":
 
 
 def run_lean_backtest(
-    algorithm_path: str, params_json: str = "", run_id: str = "",
-    data_mode: str = "custom", symbol: str = "",
+    algorithm_path: str,
+    params_json: str = "",
+    run_id: str = "",
+    data_mode: str = "custom",
+    symbol: str = "",
+    class_name: str = "",
+    full_type_name: str = "",
 ) -> str:
     """Compile and run a LEAN backtest, automatically recording the result as a trial.
 
@@ -3934,13 +4002,10 @@ def run_lean_backtest(
             f"or get_trial_status() to review all results."
         )
 
-    # Strip redundant workspace/ prefix (same fix as file_write — agents
-    # often pass "workspace/Algorithm.cs" which becomes a double path
-    # under cwd=/workspace/).
-    while algorithm_path.startswith("workspace/") or algorithm_path.startswith(
-        "Workspace/"
-    ):
-        algorithm_path = algorithm_path[len("workspace/") :]
+    requested_path = algorithm_path
+    resolved_algorithm_path = _resolve_path(algorithm_path)
+    if not resolved_algorithm_path or not os.path.isfile(resolved_algorithm_path):
+        return f"Error: Algorithm file not found: {requested_path}"
 
     if data_mode and data_mode != "custom":
         return (
@@ -3948,15 +4013,26 @@ def run_lean_backtest(
             "Use the default 12-col custom mode instead."
         )
 
+    inferred_entrypoint = _infer_csharp_entrypoint(resolved_algorithm_path)
+    if not full_type_name and inferred_entrypoint.get("full_type_name"):
+        full_type_name = inferred_entrypoint["full_type_name"]
+    if not class_name and inferred_entrypoint.get("class_name"):
+        class_name = inferred_entrypoint["class_name"]
+
     # Build the run_backtest command
-    cmd = f"run_backtest {algorithm_path}"
+    cmd_parts = ["run_backtest", shlex.quote(resolved_algorithm_path)]
     if params_json:
-        cmd += f" --params '{params_json}'"
+        cmd_parts.extend(["--params", shlex.quote(params_json)])
     if run_id:
-        cmd += f" --run-id {run_id}"
-    cmd += " --data-mode custom"
+        cmd_parts.extend(["--run-id", shlex.quote(run_id)])
+    cmd_parts.extend(["--data-mode", "custom"])
     if symbol:
-        cmd += f" --symbol {symbol}"
+        cmd_parts.extend(["--symbol", shlex.quote(symbol)])
+    if full_type_name:
+        cmd_parts.extend(["--full-type-name", shlex.quote(full_type_name)])
+    elif class_name:
+        cmd_parts.extend(["--class-name", shlex.quote(class_name)])
+    cmd = " ".join(cmd_parts)
 
     # Execute via shell_exec (reuses existing bash script inside container)
     output = shell_exec(cmd, timeout=600)
@@ -4041,11 +4117,14 @@ def run_lean_backtest(
     meta = tm.snapshot_and_record(
         trial_id,
         status,
-        algo_path=algorithm_path,
+        algo_path=requested_path,
         source_results_dir=results_dir,
     )
     metrics = meta.get("metrics", {})
     remaining = tm.max_trials - tm.trials_used()
+    compile_errors = (
+        _extract_compile_errors(output) if status == "compile_error" else []
+    )
 
     # Build structured response
     parts = [
@@ -4056,6 +4135,11 @@ def run_lean_backtest(
         parts.append(f"Trades: {metrics.get('total_trades', 'N/A')}")
         parts.append(f"Sharpe: {metrics.get('sharpe_ratio', 'N/A')}")
         parts.append(f"Return: {metrics.get('total_return_pct', 'N/A')}%")
+    parts.append(f"Source file: {resolved_algorithm_path}")
+    if full_type_name:
+        parts.append(f"Entrypoint: {full_type_name}")
+    elif class_name:
+        parts.append(f"Entrypoint class: {class_name}")
     parts.append(f"Remaining trials: {remaining}/{tm.max_trials}")
     parts.append("")
     parts.append("--- Backtest Output ---")
@@ -4064,6 +4148,10 @@ def run_lean_backtest(
         parts.append(output[:2000] + "\n...(truncated)...\n" + output[-1500:])
     else:
         parts.append(output)
+    if compile_errors:
+        parts.append("")
+        parts.append("--- Key Compile Errors ---")
+        parts.extend(compile_errors)
 
     return "\n".join(parts)
 
@@ -4194,12 +4282,13 @@ CORE_TOOLS["run_lean_backtest"] = {
         "Compile and run a LEAN C# backtest, automatically recording the result as a trial. "
         "Each call uses one trial from the budget (default 5). Returns trial status, "
         "trade count, Sharpe ratio, and remaining budget. Use this instead of "
-        "shell_exec('run_backtest ...') for tracked iteration."
+        "shell_exec('run_backtest ...') for tracked iteration. The source file may live "
+        "in the workspace or in a mounted student_code directory."
     ),
     "params": {
         "algorithm_path": {
             "type": "string",
-            "description": "Path to the .cs algorithm file relative to workspace, e.g. 'Algorithm.cs'. The class inside must be named 'Algorithm'.",
+            "description": "Path to the .cs algorithm file relative to the workspace or mounted student_code directory, e.g. 'Algorithm.cs' or 'student_code/alpha_conflict.cs'.",
             "required": True,
         },
         "params_json": {
@@ -4220,6 +4309,16 @@ CORE_TOOLS["run_lean_backtest"] = {
         "symbol": {
             "type": "string",
             "description": "Trading symbol (e.g. 'BTCUSDT'). Optional; used to infer quote currency and fee wiring for 12-col custom data.",
+            "required": False,
+        },
+        "class_name": {
+            "type": "string",
+            "description": "Optional C# class name override for the QCAlgorithm entrypoint. If omitted, the tool will try to infer it from the source.",
+            "required": False,
+        },
+        "full_type_name": {
+            "type": "string",
+            "description": "Optional fully-qualified C# type name override, e.g. 'QuantTutorBench.AlphaConflict'. Takes precedence over class_name.",
             "required": False,
         },
     },

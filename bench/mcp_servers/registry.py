@@ -64,6 +64,61 @@ def _register_core_tool(
     )
 
 
+def populate_proxy_for_task(
+    proxy: MCPProxy,
+    core_tool_names: list[str],
+    convenient_tool_names: list[str] | None = None,
+    seed: Optional[int] = None,
+    container_manager=None,
+    container_id: Optional[str] = None,
+    workspace_path: Optional[str] = None,
+    use_docker: bool = False,
+) -> None:
+    """Register task-specific tools on an existing MCPProxy.
+
+    Same logic as ``create_proxy_for_task`` but operates on an existing
+    proxy instance.  Used by the Exam Server to add domain tools to the
+    same proxy that already hosts exam-phase tools.
+    """
+    convenient_tool_names = convenient_tool_names or []
+
+    for name in core_tool_names:
+        _register_core_tool(
+            proxy,
+            name,
+            container_manager,
+            container_id,
+            workspace_path,
+            use_docker,
+        )
+    for name in convenient_tool_names:
+        _register_core_tool(
+            proxy,
+            name,
+            container_manager,
+            container_id,
+            workspace_path,
+            use_docker,
+        )
+
+    excluded = set(core_tool_names) | set(convenient_tool_names)
+    available = [d for d in DISTRACTOR_TOOLS if d not in excluded]
+    n = _TOTAL_TOOL_SLOTS - len(core_tool_names) - len(convenient_tool_names)
+    n = max(0, min(n, len(available)))
+    rng = random.Random(seed) if seed is not None else random.Random()
+    selected = rng.sample(available, n)
+
+    for name in selected:
+        info = DISTRACTOR_TOOLS[name]
+        proxy.register_distractor(
+            name=name,
+            error_message=info.get("error", ""),
+            description=info["description"],
+            params=info.get("params", {}),
+            func=info.get("func"),
+        )
+
+
 def create_proxy_for_task(
     core_tool_names: list[str],
     convenient_tool_names: list[str] | None = None,

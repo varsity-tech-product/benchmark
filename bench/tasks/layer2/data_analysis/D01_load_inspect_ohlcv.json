@@ -52,7 +52,8 @@
     ],
     "quant_validation": {
       "eval_script": "evaluation/test_scripts/data_analysis/D01_load_inspect_ohlcv.py"
-    }
+    },
+    "termination_criteria": "(1) Showed actual pandas-based inspection output from loading at least one OHLCV file and explained what the core OHLCV columns or date field mean in plain language. (2) Presented concrete inspection results such as a real date range, sample rows, summary statistics, or a specific data pattern or anomaly discovered from the dataset. (3) Responded to a student follow-up with additional concrete analysis, output, or visualization beyond the initial inspection. Once all 3 steps have been computationally demonstrated, the session is complete."
   },
   "requires_code": true,
   "sample_code": null,

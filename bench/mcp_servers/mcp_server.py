@@ -13,7 +13,6 @@ Usage (from orchestrator):
 """
 
 import asyncio
-import json
 import logging
 from typing import Any
 
@@ -49,13 +48,17 @@ def create_mcp_server(proxy, name: str = "QuantTutorBench") -> Server:
                 Tool(
                     name=schema["name"],
                     description=schema.get("description", ""),
-                    inputSchema=schema.get("parameters", {"type": "object", "properties": {}}),
+                    inputSchema=schema.get(
+                        "parameters", {"type": "object", "properties": {}}
+                    ),
                 )
             )
         return tools
 
     @server.call_tool()
-    async def handle_call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
+    async def handle_call_tool(
+        name: str, arguments: dict[str, Any]
+    ) -> list[TextContent]:
         # Route through proxy (synchronous) — run in thread to avoid
         # blocking the async event loop.
         result = await asyncio.to_thread(proxy.call_tool, name, **arguments)
@@ -80,6 +83,7 @@ async def run_server_stdio(server: Server) -> None:
 # Standalone entry point
 # ──────────────────────────────────────────────────────────────
 
+
 def _build_standalone_server(task_id: str, persona_id: str, use_docker: bool = True):
     """Build a fully configured MCP server for a single task.
 
@@ -87,7 +91,6 @@ def _build_standalone_server(task_id: str, persona_id: str, use_docker: bool = T
     registration, session creation) and returns a ready-to-serve MCP server.
     """
     import sys
-    import time
     from pathlib import Path
 
     sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -95,12 +98,12 @@ def _build_standalone_server(task_id: str, persona_id: str, use_docker: bool = T
     from config.benchmark_config import DATASET_REVISION
     from config.llm_config import SIMULATOR_DEFAULT_MODEL
     from config.prompt_config import build_scenario, build_user_description
+    from orchestrator.container_manager import ContainerManager
+
     from mcp_servers.registry import create_proxy_for_task, register_session_tools
     from mcp_servers.session import TutoringSession
     from mcp_servers.student_sim import StudentSimulator
     from mcp_servers.tc_checker import TCChecker, parse_tc_items
-    from orchestrator.container_manager import ContainerManager
-    from orchestrator.schemas import QuantTutorTask, StudentPersona
     from scripts.data_manager import ensure_data
 
     # Load task and persona
@@ -123,32 +126,45 @@ def _build_standalone_server(task_id: str, persona_id: str, use_docker: bool = T
     from orchestrator.orchestrator import BenchmarkOrchestrator
 
     orch = BenchmarkOrchestrator(use_docker=use_docker)
+    custom_data_dir = getattr(paths, "custom_data", None)
     staged_data_dir, staged_docs_dir, staged_temp_dirs = orch._create_staged_dirs(
-        data_files, docs_available,
+        data_files,
+        docs_available,
         data_search_dirs=paths.data_search_dirs,
         docs_dir=paths.docs,
+        force_temp_data_dir=bool(custom_data_dir),
     )
 
+    student_code_dir = paths.student_code if task.category.value == "debug" else None
     container = container_manager.create_container(
         task_id=f"{task_id}_{persona_id}_mcp",
         data_dir=staged_data_dir,
         docs_dir=staged_docs_dir,
+        student_code_dir=student_code_dir,
         sandbox_image=(task.environment.sandbox_image if task.environment else None),
-        network_enabled=(task.environment.network_enabled if task.environment else False),
+        network_enabled=(
+            task.environment.network_enabled if task.environment else False
+        ),
         lean_data_dir=paths.lean_data,
+        custom_data_dir=custom_data_dir,
     )
 
     if container_manager.use_docker:
         max_bt = task.environment.max_backtest_trials if task.environment else 0
         container_manager.start_executor(
             container.container_id,
-            env_vars={"QTB_MAX_BACKTEST_TRIALS": str(max_bt), "LEAN_RUN_TIMEOUT": "300"},
+            env_vars={
+                "QTB_MAX_BACKTEST_TRIALS": str(max_bt),
+                "LEAN_RUN_TIMEOUT": "300",
+            },
         )
 
     # Create proxy with tools
     proxy = create_proxy_for_task(
         core_tool_names=task.environment.core_mcp_tools,
-        convenient_tool_names=(task.ground_truth.convenient_tools if task.ground_truth else []),
+        convenient_tool_names=(
+            task.ground_truth.convenient_tools if task.ground_truth else []
+        ),
         seed=task.seed if task.seed is not None else hash(f"{task_id}_0"),
         container_manager=container_manager,
         container_id=container.container_id,
@@ -171,6 +187,30 @@ def _build_standalone_server(task_id: str, persona_id: str, use_docker: bool = T
 
     tc_checker = TCChecker(tc_items) if tc_items else None
 
+    # GoalChecker for non-TC categories (data_analysis, end_to_end, adversarial).
+    # Replicates DeepEval stop_conversation() behavior.
+    # Logic aligned with build_conversational_golden() (simulation.py:438-450).
+    goal_checker = None
+    if tc_items is None and task.ground_truth:
+        gt = task.ground_truth
+        if gt.termination_criteria:
+            if task.category.value in ("implementation", "end_to_end", "debug"):
+                expected_outcome = (
+                    f"{gt.expected_outcome}\n\n"
+                    f"Observable completion criteria:\n"
+                    f"{gt.termination_criteria}"
+                )
+            else:
+                expected_outcome = gt.termination_criteria
+        else:
+            expected_outcome = gt.expected_outcome
+        if expected_outcome:
+            from mcp_servers.session import GoalChecker
+
+            goal_checker = GoalChecker(
+                expected_outcome, resolve_deepeval_model(SIMULATOR_DEFAULT_MODEL)
+            )
+
     session = TutoringSession(
         task=task,
         persona=persona,
@@ -178,6 +218,7 @@ def _build_standalone_server(task_id: str, persona_id: str, use_docker: bool = T
         tc_checker=tc_checker,
         max_turns=task.max_turns,
         proxy=proxy,
+        goal_checker=goal_checker,
     )
     register_session_tools(proxy, session)
 
@@ -195,6 +236,7 @@ def _load_task(task_id: str):
     tasks_dir = Path(__file__).parent.parent / "tasks"
     for json_path in tasks_dir.rglob(f"{task_id}.json"):
         from orchestrator.schemas import QuantTutorTask
+
         return QuantTutorTask(**_json.loads(json_path.read_text()))
     raise FileNotFoundError(f"Task not found: {task_id}")
 
@@ -207,6 +249,7 @@ def _load_persona(persona_id: str):
     personas_dir = Path(__file__).parent.parent / "personas"
     for json_path in personas_dir.rglob(f"{persona_id}.json"):
         from orchestrator.schemas import StudentPersona
+
         return StudentPersona(**_json.loads(json_path.read_text()))
     raise FileNotFoundError(f"Persona not found: {persona_id}")
 
@@ -217,7 +260,9 @@ def main():
 
     parser = argparse.ArgumentParser(description="QuantTutorBench MCP Server")
     parser.add_argument("--task", required=True, help="Task ID (e.g. S01_ma_crossover)")
-    parser.add_argument("--persona", required=True, help="Persona ID (e.g. intermediate_developer)")
+    parser.add_argument(
+        "--persona", required=True, help="Persona ID (e.g. intermediate_developer)"
+    )
     parser.add_argument("--no-docker", action="store_true", help="Run without Docker")
     args = parser.parse_args()
 

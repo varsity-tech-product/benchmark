@@ -4,7 +4,7 @@
   "difficulty": "medium",
   "category": "end_to_end",
   "task_type": "multi_turn",
-  "description": "Guide a student through validating a time-series momentum signal on SPY with rigorous train/test methodology \u2014 from exploratory data analysis, through signal formalization and evaluation, to proper in-sample / out-of-sample separation and overfitting assessment.",
+  "description": "Guide a student through validating a time-series momentum signal on SPY with rigorous train/test methodology — from exploratory data analysis, through signal formalization and evaluation, to proper in-sample / out-of-sample separation and overfitting assessment.",
   "persona_ids": [
     "beginner_no_finance",
     "intermediate_developer",
@@ -12,7 +12,7 @@
   ],
   "student_openings": {
     "beginner_no_finance": "I want to build a momentum strategy on SPY. I've heard that stocks that went up recently tend to keep going up. But how do I know if this actually works, or if I'm just fooling myself with past data? Can you help me test this properly?",
-    "intermediate_developer": "I'm building a time-series momentum signal on SPY \u2014 something like ROCP(20) or trailing returns. I want to do this rigorously with proper train/test separation to avoid overfitting. Can you walk me through the full validation workflow?",
+    "intermediate_developer": "I'm building a time-series momentum signal on SPY — something like ROCP(20) or trailing returns. I want to do this rigorously with proper train/test separation to avoid overfitting. Can you walk me through the full validation workflow?",
     "advanced_quant": "I need to validate a time-series momentum factor on SPY with proper IS/OOS methodology. The pipeline should be: EDA, signal formalization, IC analysis, walk-forward or fixed-split backtest, and robustness assessment. I want to quantify how much the signal degrades out-of-sample."
   },
   "environment": {
@@ -25,7 +25,8 @@
       "file_write",
       "file_read",
       "file_list",
-      "search_docs"
+      "search_docs",
+      "get_environment_info"
     ],
     "docs_available": [
       "alpha_research_methodology.md",

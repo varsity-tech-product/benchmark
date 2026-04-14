@@ -53,7 +53,8 @@
     ],
     "quant_validation": {
       "eval_script": "evaluation/test_scripts/data_analysis/D04_ohlcv_summary_statistics.py"
-    }
+    },
+    "termination_criteria": "(1) Showed actual descriptive-statistics or summary output for OHLCV data using pandas or equivalent code. (2) Interpreted at least one concrete price-range, volume, distribution, or outlier pattern from the displayed results. (3) Responded to a student follow-up with one additional focused diagnostic, statistic, or visualization on the same dataset that deepened the initial summary without branching into multiple new advanced topics. Once all 3 steps have been computationally demonstrated, the session is complete."
   },
   "requires_code": true,
   "sample_code": null,

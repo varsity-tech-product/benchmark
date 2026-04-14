@@ -25,7 +25,8 @@
       "file_write",
       "file_read",
       "file_list",
-      "search_docs"
+      "search_docs",
+      "get_environment_info"
     ],
     "docs_available": [
       "moving_averages.md",

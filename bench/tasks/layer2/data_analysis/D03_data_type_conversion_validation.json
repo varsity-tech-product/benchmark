@@ -49,7 +49,8 @@
     "convenient_tools": [],
     "quant_validation": {
       "eval_script": "evaluation/test_scripts/data_analysis/D03_data_type_conversion_validation.py"
-    }
+    },
+    "termination_criteria": "(1) Showed actual parsing or coercion output for datetime or numeric OHLCV columns, such as dtypes before and after conversion, invalid rows, or normalized timestamps. (2) Presented concrete validation results demonstrating schema integrity after conversion, such as dtype checks, timezone normalization results, or examples of failed coercions. (3) Responded to a student follow-up with one additional concrete validation pass on a focused example, such as a literal failed coercion, schema violation, or structured validation report beyond the initial conversion pass. Once all 3 steps have been computationally demonstrated, the session is complete."
   },
   "requires_code": true,
   "sample_code": null,

@@ -51,7 +51,8 @@
     ],
     "quant_validation": {
       "eval_script": "evaluation/test_scripts/data_analysis/D02_missing_data_detection_handling.py"
-    }
+    },
+    "termination_criteria": "(1) Showed actual missing-value or date-gap inspection output from the OHLCV dataset, such as null counts, affected rows, or missing-date checks. (2) Used concrete evidence from the displayed results to distinguish expected market-closure gaps from suspicious data-feed issues, and explained at least one handling choice or trade-off. (3) Responded to a student follow-up by comparing at least two concrete handling choices on the same missing-data example, showing additional output or downstream differences and explaining the trade-off. Once all 3 steps have been computationally demonstrated, the session is complete."
   },
   "requires_code": true,
   "sample_code": null,

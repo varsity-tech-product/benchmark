@@ -1,27 +1,23 @@
 /*
- * X09 — Alpha Conflict (Framework Bug)
+ * X09 - Alpha Conflict (Framework Bug)
  *
  * Strategy:
- *   - Universe: 10 crypto-futures from universe.json
+ *   - Universe: 10 crypto symbols from universe.json
  *   - Timeframe: Daily bars
  *   - Two AlphaModels:
- *       1. TrendAlpha:     EMA(10)/EMA(30) crossover
- *       2. ReversionAlpha: RSI(14) overbought/oversold
- *   - Portfolio: EqualWeightingPortfolioConstructionModel
+ *       1. TrendAlpha: EMA(10)/EMA(30) crossover
+ *       2. ReversionAlpha: contrarian fade of the same EMA spread
+ *   - Portfolio: AccumulativeInsightPortfolioConstructionModel
  *   - Execution: ImmediateExecutionModel
  *
- * BUG: Both alphas emit insights with the SAME confidence (0.6).
- *      Under EqualWeightingPortfolioConstructionModel, insights from
- *      different alphas get equal weight. When TrendAlpha says Up and
- *      ReversionAlpha says Down for the same symbol (e.g., strong uptrend
- *      pushes RSI > 70), the opposing insights cancel out, producing
- *      near-zero target allocation. This results in very few or no trades.
+ * BUG: Both alphas emit equally active but opposing insights on the
+ *      same symbols with the same horizon. Under
+ *      AccumulativeInsightPortfolioConstructionModel, the active
+ *      insights net toward zero, producing very few or no trades.
  *
- *      Fix: Use InsightWeightingPortfolioConstructionModel and assign
- *      different confidence levels, or use a custom PCM that resolves
- *      conflicts via a priority/scoring system.
- *
- * LEAN API: Algorithm Framework (AddAlpha, EqualWeighting conflict)
+ * NOTE: On the standalone 12-col pipeline, these alpha models use the
+ * subscribed symbol list plus manually updated indicators instead of
+ * relying on OnSecuritiesChanged() auto-registration.
  */
 
 using System;
@@ -35,16 +31,13 @@ using QuantConnect.Algorithm.Framework.Alphas;
 using QuantConnect.Algorithm.Framework.Execution;
 using QuantConnect.Algorithm.Framework.Portfolio;
 using QuantConnect.Data;
-using QuantConnect.Data.Market;
 using QuantConnect.Indicators;
-using QuantConnect.Data.UniverseSelection;
 using QuantConnect.Orders;
 
 namespace QuantTutorBench
 {
     public class AlphaConflict : QCAlgorithm
     {
-        // ── Configuration ──
         private const int MaxSymbols = 10;
         private const decimal InitialCash = 100_000m;
 
@@ -57,40 +50,41 @@ namespace QuantTutorBench
 
             var tickers = LoadUniverse();
             var subset = tickers.Take(MaxSymbols).ToList();
+            var symbols = new List<Symbol>();
 
             foreach (var ticker in subset)
             {
-                AddCrypto(ticker, Resolution.Daily, Market.Binance);
+                var security = AddCrypto(ticker, Resolution.Daily, Market.Binance);
+                symbols.Add(security.Symbol);
             }
 
-            // Two alpha models that frequently disagree
-            AddAlpha(new TrendAlpha());
-            AddAlpha(new ReversionAlpha());
+            AddAlpha(new TrendAlpha(symbols));
+            AddAlpha(new ReversionAlpha(symbols));
 
-            // BUG: EqualWeightingPortfolioConstructionModel treats all insights
-            // equally. When TrendAlpha emits Up and ReversionAlpha emits Down
-            // for the same symbol (both with confidence 0.6), the portfolio
-            // construction model averages them out → near-zero allocation →
-            // almost no trades are placed.
-            SetPortfolioConstruction(new EqualWeightingPortfolioConstructionModel());
-
+            // BUG: AccumulativeInsightPortfolioConstructionModel aggregates all
+            // active insights for a symbol. Since TrendAlpha and ReversionAlpha
+            // emit equal-and-opposite signals, the net target stays near zero.
+            SetPortfolioConstruction(new AccumulativeInsightPortfolioConstructionModel());
             SetExecution(new ImmediateExecutionModel());
-
             SetWarmUp(30, Resolution.Daily);
 
-            Log($"X09 AlphaConflict initialized with {subset.Count} symbols, " +
-                $"TrendAlpha(EMA 10/30) + ReversionAlpha(RSI 14) → EqualWeighting");
+            Log(
+                $"X09 AlphaConflict initialized with {symbols.Count} symbols, " +
+                "TrendAlpha(EMA 10/30) + ReversionAlpha(contrarian EMA spread) -> Accumulative"
+            );
         }
 
         public override void OnOrderEvent(OrderEvent orderEvent)
         {
             if (orderEvent.Status == OrderStatus.Filled)
             {
-                Log($"TRADE: {orderEvent.Symbol} | " +
+                Log(
+                    $"TRADE: {orderEvent.Symbol} | " +
                     $"Direction={orderEvent.Direction} | " +
                     $"Qty={orderEvent.FillQuantity} | " +
                     $"Price={orderEvent.FillPrice} | " +
-                    $"Tag={orderEvent.Message}");
+                    $"Tag={orderEvent.Message}"
+                );
             }
         }
 
@@ -123,15 +117,6 @@ namespace QuantTutorBench
         }
     }
 
-    // ────────────────────────────────────────────────────────────────────────
-    // Alpha Model 1: EMA(10)/EMA(30) Trend Crossover
-    // ────────────────────────────────────────────────────────────────────────
-
-    /// <summary>
-    /// Trend-following alpha: EMA(10)/EMA(30) crossover.
-    /// Emits Up when fast EMA > slow EMA, Down otherwise.
-    /// Uses magnitude 0.5 and confidence 0.6.
-    /// </summary>
     public class TrendAlpha : AlphaModel
     {
         private const int FastPeriod = 10;
@@ -139,144 +124,128 @@ namespace QuantTutorBench
 
         private class SymbolData
         {
-            public Symbol Symbol;
             public ExponentialMovingAverage EmaFast;
             public ExponentialMovingAverage EmaSlow;
-            public InsightDirection LastDirection = InsightDirection.Flat;
         }
 
+        private readonly List<Symbol> _symbols;
         private readonly Dictionary<Symbol, SymbolData> _data = new();
+
+        public TrendAlpha(IEnumerable<Symbol> symbols)
+        {
+            _symbols = symbols.ToList();
+        }
 
         public override IEnumerable<Insight> Update(QCAlgorithm algorithm, Slice data)
         {
             var insights = new List<Insight>();
 
-            foreach (var kvp in _data)
+            foreach (var symbol in _symbols)
             {
-                var sd = kvp.Value;
+                if (!_data.ContainsKey(symbol))
+                {
+                    _data[symbol] = new SymbolData
+                    {
+                        EmaFast = new ExponentialMovingAverage(FastPeriod),
+                        EmaSlow = new ExponentialMovingAverage(SlowPeriod),
+                    };
+                }
+
+                if (!data.ContainsKey(symbol) || !algorithm.Securities.ContainsKey(symbol))
+                {
+                    continue;
+                }
+
+                var price = algorithm.Securities[symbol].Price;
+                if (price <= 0)
+                {
+                    continue;
+                }
+
+                var sd = _data[symbol];
+                sd.EmaFast.Update(algorithm.Time, price);
+                sd.EmaSlow.Update(algorithm.Time, price);
 
                 if (!sd.EmaFast.IsReady || !sd.EmaSlow.IsReady)
+                {
                     continue;
-                if (!data.ContainsKey(sd.Symbol))
-                    continue;
+                }
 
-                var fast = sd.EmaFast.Current.Value;
-                var slow = sd.EmaSlow.Current.Value;
+                var direction = sd.EmaFast > sd.EmaSlow
+                    ? InsightDirection.Up
+                    : InsightDirection.Down;
 
-                InsightDirection direction;
-                if (fast > slow)
-                    direction = InsightDirection.Up;
-                else
-                    direction = InsightDirection.Down;
-
-                // BUG: confidence is always 0.6 — same as ReversionAlpha.
-                // Under EqualWeighting, opposing insights cancel out.
-                insights.Add(Insight.Price(sd.Symbol, TimeSpan.FromDays(5),
-                    direction, 0.5, 0.6));
-
-                sd.LastDirection = direction;
+                // BUG: this active insight is exactly opposed by ReversionAlpha,
+                // and the accumulative PCM nets the pair toward zero.
+                insights.Add(Insight.Price(symbol, TimeSpan.FromDays(5), direction, 0.5, 0.6));
             }
 
             return insights;
-        }
-
-        public override void OnSecuritiesChanged(QCAlgorithm algorithm, SecurityChanges changes)
-        {
-            foreach (var added in changes.AddedSecurities)
-            {
-                if (!_data.ContainsKey(added.Symbol))
-                {
-                    _data[added.Symbol] = new SymbolData
-                    {
-                        Symbol = added.Symbol,
-                        EmaFast = algorithm.EMA(added.Symbol, FastPeriod, Resolution.Daily),
-                        EmaSlow = algorithm.EMA(added.Symbol, SlowPeriod, Resolution.Daily),
-                    };
-                }
-            }
-
-            foreach (var removed in changes.RemovedSecurities)
-            {
-                _data.Remove(removed.Symbol);
-            }
         }
     }
 
-    // ────────────────────────────────────────────────────────────────────────
-    // Alpha Model 2: RSI(14) Mean Reversion
-    // ────────────────────────────────────────────────────────────────────────
-
-    /// <summary>
-    /// Mean-reversion alpha: RSI(14) extremes.
-    /// RSI > 70 (overbought) → Down, RSI < 30 (oversold) → Up.
-    /// Uses magnitude 0.8 and confidence 0.6 (same as TrendAlpha — this is the bug).
-    /// </summary>
     public class ReversionAlpha : AlphaModel
     {
-        private const int RsiPeriod = 14;
+        private const int FastPeriod = 10;
+        private const int SlowPeriod = 30;
 
         private class SymbolData
         {
-            public Symbol Symbol;
-            public RelativeStrengthIndex Rsi;
+            public ExponentialMovingAverage EmaFast;
+            public ExponentialMovingAverage EmaSlow;
         }
 
+        private readonly List<Symbol> _symbols;
         private readonly Dictionary<Symbol, SymbolData> _data = new();
+
+        public ReversionAlpha(IEnumerable<Symbol> symbols)
+        {
+            _symbols = symbols.ToList();
+        }
 
         public override IEnumerable<Insight> Update(QCAlgorithm algorithm, Slice data)
         {
             var insights = new List<Insight>();
 
-            foreach (var kvp in _data)
+            foreach (var symbol in _symbols)
             {
-                var sd = kvp.Value;
-
-                if (!sd.Rsi.IsReady)
-                    continue;
-                if (!data.ContainsKey(sd.Symbol))
-                    continue;
-
-                var rsi = sd.Rsi.Current.Value;
-
-                if (rsi > 70)
+                if (!_data.ContainsKey(symbol))
                 {
-                    // Overbought → expect reversion down
-                    // BUG: confidence 0.6 matches TrendAlpha, so when trend
-                    // is Up (strong uptrend pushes RSI > 70), the two insights
-                    // cancel under EqualWeighting.
-                    insights.Add(Insight.Price(sd.Symbol, TimeSpan.FromDays(3),
-                        InsightDirection.Down, 0.8, 0.6));
+                    _data[symbol] = new SymbolData
+                    {
+                        EmaFast = new ExponentialMovingAverage(FastPeriod),
+                        EmaSlow = new ExponentialMovingAverage(SlowPeriod),
+                    };
                 }
-                else if (rsi < 30)
+
+                if (!data.ContainsKey(symbol) || !algorithm.Securities.ContainsKey(symbol))
                 {
-                    // Oversold → expect reversion up
-                    // Similarly cancels when trend says Down during oversold conditions.
-                    insights.Add(Insight.Price(sd.Symbol, TimeSpan.FromDays(3),
-                        InsightDirection.Up, 0.8, 0.6));
+                    continue;
                 }
+
+                var price = algorithm.Securities[symbol].Price;
+                if (price <= 0)
+                {
+                    continue;
+                }
+
+                var sd = _data[symbol];
+                sd.EmaFast.Update(algorithm.Time, price);
+                sd.EmaSlow.Update(algorithm.Time, price);
+
+                if (!sd.EmaFast.IsReady || !sd.EmaSlow.IsReady)
+                {
+                    continue;
+                }
+
+                var direction = sd.EmaFast > sd.EmaSlow
+                    ? InsightDirection.Down
+                    : InsightDirection.Up;
+
+                insights.Add(Insight.Price(symbol, TimeSpan.FromDays(5), direction, 0.5, 0.6));
             }
 
             return insights;
-        }
-
-        public override void OnSecuritiesChanged(QCAlgorithm algorithm, SecurityChanges changes)
-        {
-            foreach (var added in changes.AddedSecurities)
-            {
-                if (!_data.ContainsKey(added.Symbol))
-                {
-                    _data[added.Symbol] = new SymbolData
-                    {
-                        Symbol = added.Symbol,
-                        Rsi = algorithm.RSI(added.Symbol, RsiPeriod, MovingAverageType.Wilders, Resolution.Daily),
-                    };
-                }
-            }
-
-            foreach (var removed in changes.RemovedSecurities)
-            {
-                _data.Remove(removed.Symbol);
-            }
         }
     }
 }

@@ -984,12 +984,16 @@ def load_agent_summary(workspace_path: str) -> dict:
 def score_signal_agreement(
     ref_signals: dict,
     agent_positions: dict[str, list[dict]],
+    warmup_days: int = 0,
 ) -> float:
     """Compare reference signal direction vs sign(agent_position).
 
     Per (date, symbol): +1.0 if match, +0.3 if one is 0 (missed signal
     or flat when should be active), +0.0 if oppose.
     Returns weighted mean. Range [0.0, 1.0].
+
+    warmup_days: skip the first N signal entries per symbol (grace period
+    for indicator warm-up differences between reference and agent).
     """
     signals_by_sym = ref_signals.get("signals", {})
     if not signals_by_sym:
@@ -1004,7 +1008,9 @@ def score_signal_agreement(
         for entry in agent_positions.get(sym, []):
             agent_pos_map[entry["date"]] = entry["quantity"]
 
-        for sig_entry in sig_list:
+        for idx, sig_entry in enumerate(sig_list):
+            if idx < warmup_days:
+                continue  # skip warmup grace period
             date_str = sig_entry["date"]
             ref_sig = sig_entry["signal"]  # +1, -1, or 0
             agent_qty = agent_pos_map.get(date_str, 0.0)
@@ -1228,7 +1234,12 @@ def compute_behavioral_score(
     has_signals = bool(ref_signals.get("signals"))
     has_agent_pos = bool(agent_positions)
     if has_signals and has_agent_pos:
-        result.signal_score = score_signal_agreement(ref_signals, agent_positions)
+        # Grace period: skip warmup days to avoid penalizing different warmup handling
+        _warmup_map = {"daily": 30, "hour": 720, "4hour": 180, "minute": 43200}
+        warmup = _warmup_map.get(resolution, 30)
+        result.signal_score = score_signal_agreement(
+            ref_signals, agent_positions, warmup_days=warmup
+        )
         available_weights["signal"] = result.signal_weight
         result.layers_available.append("signal")
 

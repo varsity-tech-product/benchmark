@@ -161,10 +161,10 @@ def evaluate(
         },
         {
             "item": "behavioral_score",
-            "weight": 0.60,
+            "weight": 0.45,
             "score": behavioral.composite_score,
         },
-        {"item": "code_patterns", "weight": 0.05, "passed": results["code_patterns"]},
+        {"item": "code_patterns", "weight": 0.10, "passed": results["code_patterns"]},
         {
             "item": "candidate_pairs_used",
             "weight": 0.05,
@@ -172,7 +172,7 @@ def evaluate(
         },
         {
             "item": "pair_selection_present",
-            "weight": 0.05,
+            "weight": 0.10,
             "passed": results["pair_selection_present"],
         },
         {
@@ -182,7 +182,7 @@ def evaluate(
         },
         {
             "item": "exposure_capped",
-            "weight": 0.05,
+            "weight": 0.10,
             "passed": results["exposure_capped"],
         },
         {"item": "trial_efficiency", "weight": 0.05, "score": efficiency_score},

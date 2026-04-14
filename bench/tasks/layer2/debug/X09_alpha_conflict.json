@@ -4,16 +4,16 @@
   "difficulty": "hard",
   "category": "debug",
   "task_type": "multi_turn",
-  "description": "Guide a student to diagnose and fix conflicting alpha model insights in a LEAN Algorithm Framework strategy where trend and mean-reversion alphas cancel each other out under EqualWeightingPortfolioConstructionModel, producing near-zero trades.",
+  "description": "Guide a student to diagnose and fix conflicting alpha model insights in a LEAN Algorithm Framework strategy where trend and mean-reversion alphas net each other out under AccumulativeInsightPortfolioConstructionModel, producing near-zero trades. On the standalone 12-col pipeline, the alpha models should manage their state from subscribed symbols or data.Keys and update indicators manually instead of relying on OnSecuritiesChanged auto-registration.",
   "persona_ids": [
     "beginner_no_finance",
     "intermediate_developer",
     "advanced_quant"
   ],
   "student_openings": {
-    "beginner_no_finance": "I set up two alpha models in LEAN — one for trend following and one for mean reversion — but the algorithm barely trades at all. Both alphas seem to be generating insights but nothing happens. Can you help?",
-    "intermediate_developer": "My LEAN framework algorithm has TrendAlpha and ReversionAlpha both emitting insights, but EqualWeightingPortfolioConstructionModel produces almost no positions. I think the insights are canceling each other. How do I fix this?",
-    "advanced_quant": "I have a multi-alpha LEAN setup with trend and mean-reversion models. Under EqualWeighting, the opposing insights neutralize, resulting in near-zero net exposure. I need to implement a priority scheme or explicit weight-based aggregation. Can you help me diagnose the insight conflict?"
+    "beginner_no_finance": "I set up two alpha models in LEAN — one for trend following and one for mean reversion — but the algorithm barely trades at all. The alphas seem to disagree and the portfolio model keeps netting them out. Can you help?",
+    "intermediate_developer": "My LEAN framework algorithm has TrendAlpha and ReversionAlpha both emitting insights, but AccumulativeInsightPortfolioConstructionModel produces almost no positions. I think the active insights are netting to zero. How do I fix this?",
+    "advanced_quant": "I have a multi-alpha LEAN setup with trend and mean-reversion models. Under AccumulativeInsightPortfolioConstructionModel, the opposing active insights neutralize and I end up with near-zero net exposure. I need a priority scheme or a different PCM. Can you help me diagnose the conflict?"
   },
   "environment": {
     "data_files": [
@@ -37,15 +37,15 @@
     ],
     "sandbox_image": "quant-tutor-env:v2.2-lean",
     "network_enabled": false,
-    "max_backtest_trials": 3
+    "max_backtest_trials": 5
   },
   "ground_truth": {
-    "expected_outcome": "Student resolves the insight conflict by switching to InsightWeightingPortfolioConstructionModel with explicit insight weights, or by implementing gating/priority so one alpha dominates per symbol. The fix is verified by running a backtest that produces meaningful trades.",
+    "expected_outcome": "Student resolves the insight conflict by switching away from AccumulativeInsightPortfolioConstructionModel to a portfolio construction model that does not net every active conflicting insight equally, such as EqualWeightingPortfolioConstructionModel, InsightWeightingPortfolioConstructionModel with explicit insight weights, or ConfidenceWeightedPortfolioConstructionModel with explicit confidences, or by implementing gating/priority so one alpha dominates per symbol. The fix is verified by running a backtest that produces meaningful trades.",
     "required_capabilities": [
       "Read the framework algorithm and identify the two alpha models",
-      "Understand how EqualWeighting treats opposing insights",
+      "Understand how AccumulativeInsightPortfolioConstructionModel uses all active insights for a symbol",
       "Diagnose why trades are near zero",
-      "Fix by changing PCM, assigning explicit weights, or adding signal priority/gating",
+      "Fix by changing the portfolio construction model or adding signal priority/gating so opposing insights no longer net to zero",
       "Run a backtest on the fixed algorithm and verify trades now occur"
     ],
     "expected_mcp_tools": [
@@ -64,7 +64,7 @@
     "quant_validation": {
       "eval_script": "evaluation/test_scripts/debug/X09_alpha_conflict.py"
     },
-    "termination_criteria": "The tutor has completed the following steps with computational evidence (not just verbal discussion): (1) Reviewed the student's LEAN C# code and identified that the TrendAlpha and ReversionAlpha both emit insights with the same confidence under EqualWeightingPortfolioConstructionModel, causing opposing signals to cancel out. (2) Explained why this produces near-zero trades, such as describing how EqualWeighting averages opposing Up and Down insights into a neutral allocation. (3) Showed corrected C# code and presented backtest results demonstrating that trades now occur after the fix, with specific numerical evidence such as trade count or portfolio performance. (4) Responded to the student's follow-up about the conflict resolution or the fix with additional explanation or analysis beyond the initial demonstration. Once all four steps have been computationally demonstrated, the session is complete."
+    "termination_criteria": "The tutor has completed the following steps with computational evidence (not just verbal discussion): (1) Reviewed the student's LEAN C# code and identified that TrendAlpha and ReversionAlpha emit opposing active insights on the same symbols under AccumulativeInsightPortfolioConstructionModel, causing the net target to stay near zero. (2) Explained why this produces near-zero trades, such as describing how the accumulative PCM aggregates all active Up and Down insights for each symbol. (3) Showed corrected C# code and presented backtest results demonstrating that trades now occur after the fix, with specific numerical evidence such as trade count or portfolio performance. (4) Responded to the student's follow-up about the conflict resolution or the fix with additional explanation or analysis beyond the initial demonstration. Once all four steps have been computationally demonstrated, the session is complete."
   },
   "requires_code": true,
   "sample_code": "student_code/alpha_conflict.cs",
