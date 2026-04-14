@@ -1,12 +1,14 @@
 """Task runner for QuantTutorBench baseline client.
 
-Manages the conversation loop between agent and server:
+Minimal orchestration layer:
 1. Connect → register → start_session → list_tools
-2. Loop: adapter.generate_response (one turn) → runner sends to server → receive student reply
-3. Save client trace
+2. Inject background + student opening into conversation
+3. Single adapter.generate_response() call — BetaToolRunner manages
+   the full session (tool calls, send_message, multi-turn dialogue)
+4. Save client trace
 
-The agent sees only domain tools (shell_exec, file_read, etc.).
-send_message is a runner-to-server handshake, NOT an agent tool.
+The agent sees ALL domain tools including send_message and get_background.
+It autonomously decides when to use tools and when to message the student.
 """
 
 import asyncio
@@ -27,21 +29,16 @@ from .trace_writer import save_client_trace
 
 logger = logging.getLogger(__name__)
 
-# Tools that are server protocol, not agent domain tools.
+# Session setup/teardown tools — not part of the teaching interaction.
+# These are called by the runner before/after the agent loop.
 _PROTOCOL_TOOLS = frozenset(
     {
         "register_session",
         "start_session",
-        "send_message",
         "request_evaluation",
         "get_results",
         "get_scores",
     }
-)
-
-_NON_FAILURE_TERMINAL_ERRORS = (
-    "Session completed.",
-    "Session is closed",
 )
 
 
@@ -50,7 +47,7 @@ async def run_single_task(
     task_id: str,
     adapter_factory: Callable,
     result_dir: Optional[Path] = None,
-    agent_max_steps: Optional[int] = 15,
+    agent_max_steps: Optional[int] = 200,
     persona_id: Optional[str] = None,
 ) -> dict:
     """Run a single benchmark task end-to-end.
@@ -58,13 +55,10 @@ async def run_single_task(
     Flow:
         1. Connect to server via MCP StreamableHTTP
         2. register_session(task_id) → session_id
-        3. start_session() → student opening message
-        4. list_tools() → domain tools (protocol tools filtered out)
-        5. Per-turn loop:
-           a. adapter.generate_response(conversation, domain_tools)
-           b. Runner sends agent text to server via send_message
-           c. Server returns student reply + status
-           d. If completed → break, else append to conversation
+        3. start_session() → background + student opening message
+        4. list_tools() → all tools (send_message visible to agent)
+        5. Single adapter.generate_response() — agent autonomously
+           calls tools, sends messages to student, handles replies
         6. Save client trace (client_trace.json + client_trace.md)
     """
     adapter = adapter_factory()
@@ -94,9 +88,10 @@ async def run_single_task(
                 session_id = reg["session_id"]
                 logger.info("[%s] Registered: session=%s", task_id, session_id)
 
-                # 2. Start session
+                # 2. Start session — returns background + student opening
                 start_result = await mcp.call_tool("start_session", {})
                 start = _parse_tool_result(start_result)
+                background = start.get("background", "")
                 opening = start.get("student_message", "")
                 logger.info(
                     "[%s] Session started: %s...",
@@ -104,7 +99,8 @@ async def run_single_task(
                     opening[:80],
                 )
 
-                # 3. List tools — after start_session the domain tools become visible
+                # 3. List tools — agent sees everything including
+                #    send_message and get_background
                 tools_result = await mcp.list_tools()
                 all_tools = convert_mcp_tools(tools_result)
                 domain_tools = [
@@ -117,78 +113,35 @@ async def run_single_task(
                     len(all_tools),
                 )
 
-                # 4. Conversation loop
-                bridge = ToolBridge(mcp, asyncio.get_running_loop())
-                conversation = [{"role": "user", "content": opening}]
+                # 4. Build initial conversation
+                conversation = []
+                if background:
+                    conversation.append(
+                        {
+                            "role": "user",
+                            "content": f"[Session Background]\n{background}",
+                        }
+                    )
+                    conversation.append({"role": "assistant", "content": "Understood."})
+                conversation.append({"role": "user", "content": opening})
 
-                # Baseline cost control: local per-turn cap, configurable by CLI.
-                if agent_max_steps is not None:
+                # 5. Single agent run — BetaToolRunner handles the full
+                #    session including send_message calls to the student
+                bridge = ToolBridge(mcp, asyncio.get_running_loop())
+                if agent_max_steps is not None and agent_max_steps > 0:
                     adapter.set_agent_max_steps(agent_max_steps)
 
-                while True:
-                    # _input_history accumulates across turns (tool_use/tool_result context).
-                    # SDK compaction handles token overflow automatically.
-                    # Do NOT call set_task_context("") — it would erase tool memory.
-
-                    # Agent turn: generate response using domain tools only
-                    response = await asyncio.to_thread(
-                        adapter.generate_response,
-                        messages=list(conversation),
-                        available_tools=domain_tools,
-                        tool_callback=bridge.call,
-                    )
-
-                    if not response or not response.strip():
-                        response = "(no response)"
-
-                    logger.info(
-                        "[%s] Agent response (%d chars): %s...",
-                        task_id,
-                        len(response),
-                        response[:100],
-                    )
-
-                    # Runner handshake: send agent's text to server
-                    send_result = await mcp.call_tool(
-                        "send_message",
-                        {"text": response},
-                    )
-                    data = _parse_tool_result(send_result)
-
-                    status = data.get("status", "")
-                    error = data.get("error", "")
-                    student_msg = data.get("student_message", "")
-
-                    logger.info(
-                        "[%s] Student reply (status=%s): %s...",
-                        task_id,
-                        status or error[:40],
-                        student_msg[:80],
-                    )
-
-                    # Exit on completion or error (permission denied, max_turns, etc.)
-                    if status == "completed" or error:
-                        conversation.append({"role": "assistant", "content": response})
-                        if student_msg:
-                            conversation.append(
-                                {"role": "user", "content": student_msg}
-                            )
-                        if error and not _is_non_failure_terminal_error(error):
-                            terminal_error = error
-                            needs_session_cleanup = True
-                            logger.warning(
-                                "[%s] Session ended with error: %s", task_id, error
-                            )
-                        break
-
-                    # Append exchange and continue
-                    conversation.append({"role": "assistant", "content": response})
-                    conversation.append({"role": "user", "content": student_msg})
+                response = await asyncio.to_thread(
+                    adapter.generate_response,
+                    messages=conversation,
+                    available_tools=domain_tools,
+                    tool_callback=bridge.call,
+                )
 
                 logger.info(
-                    "[%s] Conversation complete: %d messages",
+                    "[%s] Session complete (%d chars final text)",
                     task_id,
-                    len(conversation),
+                    len(response or ""),
                 )
 
     except Exception as exc:
@@ -201,7 +154,7 @@ async def run_single_task(
 
     duration = time.time() - start_time
 
-    # 5. Save client-side trace
+    # 6. Save client-side trace
     agent_cost = {}
     try:
         records = adapter.get_token_records()
@@ -242,7 +195,7 @@ async def run_multiple_tasks(
     adapter_factory: Callable,
     workers: int = 1,
     result_dir: Optional[Path] = None,
-    agent_max_steps: Optional[int] = 15,
+    agent_max_steps: Optional[int] = 200,
     persona_id: Optional[str] = None,
 ) -> list[dict]:
     """Run multiple tasks with bounded concurrency."""
@@ -283,11 +236,6 @@ def _parse_tool_result(result) -> dict:
         if isinstance(text, str) and text.strip().startswith("Error:"):
             return {"error": text}
         return {"raw": text}
-
-
-def _is_non_failure_terminal_error(error: str) -> bool:
-    """Return True for server terminal signals that should not count as failure."""
-    return any(marker in error for marker in _NON_FAILURE_TERMINAL_ERRORS)
 
 
 async def _delete_mcp_session(server_url: str, session_id: str) -> None:

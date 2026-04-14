@@ -100,8 +100,8 @@ def main():
     parser.add_argument(
         "--agent-max-steps",
         type=int,
-        default=15,
-        help="Per-turn internal agent loop cap for baseline cost control (default: 15)",
+        default=200,
+        help="Agent loop iteration cap (default: 200, set 0 for unlimited)",
     )
     parser.add_argument(
         "--persona",
@@ -177,8 +177,12 @@ def main():
             print(f"\n  {tid}")
             print(f"    session_id:  {sid}")
             print(f"    duration:    {dur}s")
+            cost = r.get("agent_cost", {})
+            if cost:
+                print(
+                    f"    cost:        ${cost.get('cost_usd', 0):.4f} ({cost.get('api_calls', 0)} API calls)"
+                )
             print(f"    client trace: {result_dir}/{sid}/client_trace.md")
-            print(f"    server data:  results/server/{tid}/{sid}/")
     print()
 
 

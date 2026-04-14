@@ -23,7 +23,6 @@ from typing import Optional
 from .base_adapter import (
     BaseAgentAdapter,
     TokenRecord,
-    extract_latest_user_message,
     normalize_tool_params,
     record_token_usage,
 )
@@ -177,8 +176,7 @@ class ClaudeAgentAdapter(BaseAgentAdapter):
 
     Transport (ANTHROPIC_USE_SDK):
       True  → Claude Agent SDK (ClaudeSDKClient, black-box loop)
-      False → Anthropic Python SDK BetaToolRunner (automatic tool loop
-              with cross-turn context persistence via _input_history)
+      False → Anthropic Python SDK BetaToolRunner (automatic tool loop)
 
       False → API key (x-api-key header)
 
@@ -197,8 +195,6 @@ class ClaudeAgentAdapter(BaseAgentAdapter):
         self.system_prompt = system_prompt or CLEAN_SYSTEM_PROMPT
         self.max_agent_turns = max_agent_turns
 
-        # Persistent state for cross-turn context (parallels OpenAI _input_history)
-        self._input_history: list[dict] = []
         self._thinking_trace: list[dict] = []  # COT blocks from extended thinking
         self._turn_index: int = 0  # conversation turn counter for thinking trace
         self._turn_content_blocks: dict[int, list[dict]] = {}  # per-turn content blocks
@@ -246,13 +242,8 @@ class ClaudeAgentAdapter(BaseAgentAdapter):
                 self._betas = []
 
     def set_task_context(self, context: str):
-        """Override: also clear conversation history.
-
-        Preserves thinking_trace — collected by pre_teardown_hook after
-        the conversation ends but before reset() is called.
-        """
+        """Override: clear state for a new task."""
         super().set_task_context(context)
-        self._input_history = []
 
     def set_agent_max_steps(self, n: int):
         """Limit how many LLM→tool→LLM cycles per generate_response() call."""
@@ -261,7 +252,6 @@ class ClaudeAgentAdapter(BaseAgentAdapter):
     def reset(self):
         """Reset internal state between tasks."""
         super().reset()
-        self._input_history = []
         self._thinking_trace = []
         self._turn_index = 0
         self._turn_content_blocks = {}
@@ -291,19 +281,16 @@ class ClaudeAgentAdapter(BaseAgentAdapter):
     ) -> str:
         """Generate response via Anthropic BetaToolRunner.
 
-        The SDK handles the tool loop automatically:
-        - Auto-executes tools via DynamicTool.call()
+        The SDK manages the full agent loop autonomously:
+        - Auto-executes tools via DynamicTool.call() (including send_message)
         - Parallel tool execution when Claude emits multiple tool_use
-        - Cross-turn context persistence via _input_history
+        - Built-in compaction and context management
         - Prompt caching and rate-limit retry built-in
+
+        Called once per session — the entire multi-turn tutoring conversation
+        runs inside a single BetaToolRunner invocation.
         """
         try:
-            new_user_msg = extract_latest_user_message(messages)
-            if new_user_msg is None:
-                return ""
-
-            self._input_history.append({"role": "user", "content": new_user_msg})
-
             # Build auto-executable tool objects
             tools = (
                 _build_runner_tools(available_tools, tool_callback)
@@ -311,11 +298,11 @@ class ClaudeAgentAdapter(BaseAgentAdapter):
                 else []
             )
 
-            # Create BetaToolRunner — SDK manages the full agent loop
+            # Create BetaToolRunner — SDK manages the full session
             runner_kwargs = dict(
                 model=self.model,
                 max_tokens=16384,
-                messages=list(self._input_history),
+                messages=list(messages),
                 system=self._get_full_system_prompt(),
                 max_iterations=self.max_agent_turns,
             )
@@ -438,22 +425,9 @@ class ClaudeAgentAdapter(BaseAgentAdapter):
             except Exception:
                 pass
 
-            # Persist full message history (including tool_use/tool_result).
-            # If compaction fired, this already contains the summarized version.
-            try:
-                self._input_history = list(runner._params["messages"])
-            except Exception:
-                pass
-
             # Finalize content blocks: inject tool_results from history into
             # the incrementally captured blocks.
             self._turn_content_blocks[self._turn_index] = self._finalize_turn_blocks()
-
-            # Strip thinking blocks from persisted history to prevent
-            # them from being re-sent as input tokens on subsequent turns.
-            # COT is already captured in _thinking_trace above.
-            self._strip_thinking_from_history()
-
             self._turn_index += 1
 
             # Join all text parts across iterations into one response.
@@ -495,11 +469,16 @@ class ClaudeAgentAdapter(BaseAgentAdapter):
                         if ANTHROPIC_ENABLE_THINKING
                         else 4096
                     )
+                    # Use runner's current message history for fallback context
+                    try:
+                        fallback_messages = list(runner._params["messages"])
+                    except Exception:
+                        fallback_messages = list(messages)
                     summary_kwargs = dict(
                         model=self.model,
                         max_tokens=fallback_max,
                         system=self._get_full_system_prompt(),
-                        messages=list(self._input_history),
+                        messages=fallback_messages,
                     )
                     if self._betas:
                         summary_kwargs["betas"] = self._betas
@@ -520,11 +499,6 @@ class ClaudeAgentAdapter(BaseAgentAdapter):
                             result_text = result_text + "\n\n" + fallback_text
                         else:
                             result_text = fallback_text
-                    # Append to history so next turn has context
-                    if result_text:
-                        self._input_history.append(
-                            {"role": "assistant", "content": result_text}
-                        )
                 except Exception as fallback_exc:
                     log.error("Fallback summary call failed: %s", fallback_exc)
 
@@ -589,31 +563,6 @@ class ClaudeAgentAdapter(BaseAgentAdapter):
                         "thinking": block.thinking,
                     }
                 )
-
-    def _strip_thinking_from_history(self) -> None:
-        """Remove thinking blocks from ``_input_history`` to prevent
-        them from being re-sent as input tokens on subsequent turns.
-
-        Thinking blocks are the model's internal scratchpad and do not
-        need to persist in the conversation history.  They have already
-        been captured in ``_thinking_trace`` by ``_extract_thinking``.
-        """
-        for msg in self._input_history:
-            if msg.get("role") != "assistant":
-                continue
-            content = msg.get("content")
-            if not isinstance(content, list):
-                continue
-            filtered = [
-                block
-                for block in content
-                if not (
-                    (isinstance(block, dict) and block.get("type") == "thinking")
-                    or getattr(block, "type", None) == "thinking"
-                )
-            ]
-            if len(filtered) != len(content):
-                msg["content"] = filtered
 
     def get_thinking_trace(self) -> list[dict]:
         """Return accumulated thinking/COT blocks from all iterations."""
@@ -717,8 +666,8 @@ class ClaudeAgentAdapter(BaseAgentAdapter):
         """Inject tool_results into incrementally captured blocks.
 
         Uses ``_captured_tool_results`` (populated by ``_scan_runner_tool_results``
-        during each iteration) instead of scanning ``_input_history``.  This
-        ensures tool_results cleared by context_management are still available.
+        during each iteration).  This ensures tool_results cleared by
+        context_management are still available.
         """
         tool_results = dict(self._captured_tool_results)
 

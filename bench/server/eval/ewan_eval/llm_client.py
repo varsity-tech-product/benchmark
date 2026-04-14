@@ -1,8 +1,7 @@
 """Lightweight LLM client for evaluation judges.
 
 Replaces deepeval.models.llms.openai_model.GPTModel with direct OpenAI SDK
-calls.  All calls go through OpenRouter (OpenAI-compatible API) or Anthropic
-OAuth direct, matching the existing model_resolver resolution order.
+calls.  All calls go through OpenRouter (OpenAI-compatible API).
 
 Interface contract — every model object exposes:
     async a_generate(prompt: str) -> tuple[str, float]

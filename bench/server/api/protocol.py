@@ -69,8 +69,12 @@ START_SESSION_TOOL = Tool(
 SEND_MESSAGE_TOOL = Tool(
     name="send_message",
     description=(
-        "Send a message to the student. Returns the student's reply and "
-        "session status. When status is 'completed', the session has ended."
+        "Send a message to the student and receive their reply. "
+        "This is the ONLY way to communicate with the student. "
+        "Your text output is NOT delivered to the student — "
+        "only messages sent through this tool reach them. "
+        "Returns the student's reply and session status. "
+        "When status is 'completed', the session has ended."
     ),
     inputSchema={
         "type": "object",
@@ -82,6 +86,15 @@ SEND_MESSAGE_TOOL = Tool(
         },
         "required": ["text"],
     },
+)
+
+GET_BACKGROUND_TOOL = Tool(
+    name="get_background",
+    description=(
+        "Session background: environment description, interaction constraints, "
+        "and available systems. Call this to re-read your operating context."
+    ),
+    inputSchema={"type": "object", "properties": {}, "required": []},
 )
 
 REQUEST_EVALUATION_TOOL = Tool(

@@ -35,6 +35,8 @@ def save_client_trace(
     out_dir = Path(result_dir) / session_id
     out_dir.mkdir(parents=True, exist_ok=True)
 
+    segmented_blocks, content_blocks_mode = _normalize_content_blocks(content_blocks)
+
     trace_data = {
         "task_id": task_id,
         "session_id": session_id,
@@ -42,7 +44,8 @@ def save_client_trace(
         "duration_seconds": round(duration_seconds, 2),
         "agent_cost": agent_cost,
         "thinking_trace": thinking_trace,
-        "content_blocks": {str(k): v for k, v in content_blocks.items()},
+        "content_blocks": {str(k): v for k, v in segmented_blocks.items()},
+        "content_blocks_mode": content_blocks_mode,
     }
 
     json_path = out_dir / "client_trace.json"
@@ -84,6 +87,9 @@ def _render_md(data: dict) -> str:
     L.append(f"| Input tokens | {cost.get('input_tokens', 0):,} |")
     L.append(f"| Output tokens | {cost.get('output_tokens', 0):,} |")
     L.append(f"| Cost | ${cost.get('cost_usd', 0):.4f} |")
+    L.append(
+        f"| Content blocks mode | `{data.get('content_blocks_mode', 'unknown')}` |"
+    )
     L.append("")
 
     # ── Thinking Trace (full) ──
@@ -180,3 +186,107 @@ def _render_md(data: dict) -> str:
         L.append("")
 
     return "\n".join(L)
+
+
+def _normalize_content_blocks(
+    content_blocks: dict[int, list[dict]],
+) -> tuple[dict[int, list[dict]], str]:
+    """Return turn-aligned content blocks for replay.
+
+    Older outer-loop clients already save one block-list per tutor turn.
+    The current whole-session baseline captures the entire session into a
+    single block-list. For replay, we split that single list at successful
+    ``send_message`` boundaries so web can render per-turn traces again.
+    """
+    if not content_blocks:
+        return {}, "empty"
+
+    cleaned = {
+        int(k): v
+        for k, v in content_blocks.items()
+        if isinstance(k, int) and isinstance(v, list) and v
+    }
+    if not cleaned:
+        return {}, "empty"
+
+    if len(cleaned) != 1:
+        return cleaned, "per_turn"
+
+    only_turn = next(iter(cleaned))
+    only_blocks = cleaned[only_turn]
+    send_message_uses = sum(
+        1
+        for block in only_blocks
+        if isinstance(block, dict)
+        and block.get("type") == "tool_use"
+        and block.get("name") == "send_message"
+    )
+
+    if send_message_uses <= 1:
+        return cleaned, "single_turn"
+
+    segmented = _split_blocks_on_send_message(only_blocks)
+    if segmented:
+        return segmented, "session_split"
+    return cleaned, "session_raw"
+
+
+def _split_blocks_on_send_message(blocks: list[dict]) -> dict[int, list[dict]]:
+    """Split a whole-session block list into tutor turns.
+
+    A tutor turn becomes externally visible only when ``send_message``
+    succeeds. We therefore finalize a segment only after a successful
+    ``send_message`` + immediate ``tool_result`` pair.
+    """
+    segmented: dict[int, list[dict]] = {}
+    current: list[dict] = []
+    turn_index = 0
+    idx = 0
+
+    while idx < len(blocks):
+        block = blocks[idx]
+        current.append(block)
+
+        is_send_message = (
+            isinstance(block, dict)
+            and block.get("type") == "tool_use"
+            and block.get("name") == "send_message"
+        )
+        if is_send_message and idx + 1 < len(blocks):
+            next_block = blocks[idx + 1]
+            if isinstance(next_block, dict) and next_block.get("type") == "tool_result":
+                current.append(next_block)
+                idx += 1
+                if _is_successful_send_message_result(next_block):
+                    segmented[turn_index] = current
+                    turn_index += 1
+                    current = []
+
+        idx += 1
+
+    return segmented
+
+
+def _is_successful_send_message_result(block: dict) -> bool:
+    content = block.get("content")
+    payload = None
+
+    if isinstance(content, str):
+        try:
+            payload = json.loads(content)
+        except Exception:
+            return False
+    elif isinstance(content, dict):
+        payload = content
+    else:
+        return False
+
+    if not isinstance(payload, dict):
+        return False
+    if payload.get("error"):
+        return False
+    return bool(
+        payload.get("student_message") is not None
+        or payload.get("status") in {"active", "completed"}
+        or payload.get("reason")
+    )

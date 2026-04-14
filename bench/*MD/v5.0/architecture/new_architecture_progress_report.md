@@ -1,6 +1,6 @@
 # QuantTutorBench 新架构进展报告
 
-> 日期：2026-04-14
+> 更新日期：2026-04-15
 > 分支：ewan
 > 对标文档：overall_architecture.md, architecture_implementation_plan.md, stage_report.md
 
@@ -72,31 +72,37 @@ UNREGISTERED ──register_session()──→ REGISTERED ──start_session()�
 |------|-----------|-----------|
 | **UNREGISTERED** | register_session | 其他所有 |
 | **REGISTERED** | start_session, list_tools | register, send, tools, evaluate |
-| **IN_SESSION** | send_message, domain tools | register, start, evaluate |
+| **IN_SESSION** | send_message, get_background, domain tools | register, start, evaluate |
 | **COMPLETED** | request_evaluation, get_results, get_scores | register, start, send, tools |
 
-违规操作返回 `{"error": "...", "allowed": ["permitted_operations"]}`。
+#### 2.1.3 Session Background（环境背景）
 
-#### 2.1.3 任务执行引擎
+Server 在 `start_session` 时**强制返回**一份环境背景描述（`background` 字段），内容根据任务环境动态生成。同时提供 `get_background` 工具供 Agent 在对话中随时重读。
 
-每个会话的生命周期：
+**固定内容（所有任务一致）：**
+- 沙箱环境说明（Python 运行时可用）
+- 通信约束：**必须通过 `send_message` 工具与学生通信**，文本输出对学生不可见
 
-1. **注册阶段**：加载任务定义、自动选择或指定学生 persona、创建 Docker 容器、注册 domain tools（core + convenient + distractor，最多 15 个）
-2. **对话阶段**：学生模拟器生成开场白 → Agent 回复 → 学生回复 → 循环，直到终止条件触发
-3. **终止判定**：
-   - **增量 TC 检查**（strategy/backtest/implementation/debug/data_analysis 类别）：逐条检查学习目标覆盖
-   - **Goal 检查**（end_to_end/adversarial 类别）：LLM 判断预期结果是否达成
-   - 兜底：max_turns / timeout / agent 重复消息检测
-4. **结果持久化**：对话、工具日志、工作区文件 → `run_state.json` + `run_state.md`
-5. **异步评分**：后台线程运行评分流水线，结果写入 `eval_meta.json`
+**动态内容（按任务环境拼接）：**
+
+| 段落 | 触发条件 | 内容 |
+|------|---------|------|
+| 算法回测引擎 | sandbox_image 含 "lean" | C# 编译/回测/结果查看，试用预算有限 |
+| 学生代码 | task.sample_code 非空 | 挂载位置 /student_code/ |
+| 参考文档 | docs_available 非空 | 挂载位置 /docs/ |
+| 市场数据 | data_files 非空 | 挂载位置 /data/ |
+
+Background **不包含**：任务类别、学生水平、回测预算数字、行为指导、评分标准。Agent 需要通过 `get_environment_info` 和对话来发现这些细节。
 
 #### 2.1.4 工具管理与执行
 
 **工具分类**：
-- **Core tools**：任务必需的领域工具（shell_exec, run_backtest, file_read 等）
-- **Convenient tools**：加分捷径，使用意味着更优解法
+- **Core tools**：任务必需的领域工具（shell_exec, file_read, run_lean_backtest 等）
+- **Convenient tools**：加分捷径（run_backtest, compute_indicator 等）
 - **Distractor tools**：干扰项（最多填满 15 个槽位），测试 agent 的工具选择判断
-- **Session tools**：基础设施（send_message, register_session 等，对 agent 不可见）
+- **Session tools**：`send_message`（与学生通信的唯一通道）和 `get_background`（重读环境背景），Agent 可见可用
+
+`send_message` 的工具描述中明确声明："This is the ONLY way to communicate with the student. Your text output is NOT delivered to the student."
 
 **Docker 执行**：
 ```
@@ -135,13 +141,14 @@ evaluate_task(run_state)
        └── Persona-aware rubric
 ```
 
-**去 DeepEval 化**：Server 的评分引擎（`server/eval/ewan_eval/`）不依赖 DeepEval 类，使用自建的 `EwanLLMClient` + `OAuthAnthropicModel` 直接调用 LLM API。
+**去 DeepEval 化**：Server 的评分引擎（`server/eval/ewan_eval/`）不依赖 DeepEval 类，使用 `EwanLLMClient` 通过 OpenRouter 调用 LLM API（已删除 OAuth 路径）。
 
 #### 2.1.7 Web UI
 
 Server 内嵌 Web UI（`/ui/*`），提供：
 - 已完成会话的浏览和索引
 - 对话回放（包括工具调用详情）
+- Client trace 的 best-effort 加载：若 `results/client/{session_id}/client_trace.json` 存在则合并展示（thinking blocks 等），不存在则纯展示 Server 侧对话
 - 评分结果查看
 
 #### 2.1.8 会话清理
@@ -153,46 +160,47 @@ Server 内嵌 Web UI（`/ui/*`），提供：
 
 ### 2.2 Client：Baseline Runner
 
-Client 是一个轻量级的 agent 运行器，用于跑 baseline 实验。通过 `python -m client --server http://localhost:8000/mcp --task X01` 启动。
+Client 是一个轻量级的 baseline 运行器。通过 `python -m client --server http://localhost:8000/mcp --task X01` 启动。
 
-#### 2.2.1 核心职责
+#### 2.2.1 核心架构
 
-Client 只做一件事：**驱动 agent 与 Server 交互**。它不参与评分、不管理沙箱、不模拟学生。
+Client 只做 session setup，整个教学对话由 Anthropic BetaToolRunner 在单次调用中自主完成：
 
 ```
-Client 启动 → 连接 Server → register_session → start_session →
-[Agent loop: generate_response → call tools → send_message] →
-session completed → save client trace
+Runner: connect → register → start_session（获取 background）→ list_tools
+        → 注入 background 到 conversation
+        → 单次 adapter.generate_response()
+            → BetaToolRunner 内部自主：
+              调工具、调 send_message 与学生对话、接收学生回复、
+              继续调工具和对话...直到 session completed
+        → 保存 client trace
 ```
 
-#### 2.2.2 Adapter 体系
+**没有外层对话循环**。Agent 通过 `send_message` 工具自主控制对话节奏，BetaToolRunner 管理完整的 tool-use loop。
+
+#### 2.2.2 Adapter
 
 | 模式 | 实现 | 说明 |
 |------|------|------|
-| **Direct API** (默认) | Anthropic BetaToolRunner | 手动迭代，完整捕获中间 API 调用 |
-| **SDK** | Claude Agent SDK | 黑盒 agent loop，SDK 自主管理工具调用 |
+| **Direct API** (默认) | Anthropic BetaToolRunner | 单次调用管理完整 session，SDK 内置 compaction 和 context management |
+| **SDK** | Claude Agent SDK | 黑盒 agent loop |
 
-支持 OpenRouter 代理转发、Extended Thinking (COT)、自动上下文压缩（>40K tokens 时保留最后 6 个 tool_use）。
+支持 OpenRouter 代理转发、Extended Thinking (COT)。SDK 内置的 compaction（40K token 阈值）和 context management（保留最近 6 个 tool_use、1 个 thinking turn）由 SDK 原生管理。
 
-#### 2.2.3 Sync-Async 桥接
+#### 2.2.3 产出物
 
-Agent adapter 是同步接口，Server 是异步 MCP。`ToolBridge` 通过 `asyncio.run_coroutine_threadsafe()` 在 worker 线程中桥接两者，600s 超时。
+`client_trace.json` / `client_trace.md`：完整的 agent 行为记录（thinking blocks、content blocks、tool calls、agent cost）
 
-#### 2.2.4 产出物
+#### 2.2.4 并发支持
 
-- `client_trace.json` / `client_trace.md`：完整的 agent 行为记录（thinking blocks、content blocks、tool calls）
-- `agent_cost.json`：token 用量和费用统计（每个 API 调用独立计费）
-
-#### 2.2.5 并发支持
-
-`--workers N` 参数支持多任务并行，使用 semaphore 控制并发数。
+`--workers N` 参数支持多任务并行，使用 semaphore 控制并发数。默认 `--agent-max-steps 200`（单次 BetaToolRunner 的 iteration 上限）。
 
 ### 2.3 Spec：用户文档
 
 | 文档 | 内容 |
 |------|------|
 | `spec/PROTOCOL.md` | 会话生命周期、MCP/REST 操作详解、错误格式 |
-| `spec/TASKS.md` | 65 个任务的完整列表（ID、类别、难度、描述） |
+| `spec/TASKS.md` | 65 个任务 ID 列表（按类别分组，含类别简介，不含任务名后缀/难度/描述） |
 
 ---
 
@@ -207,8 +215,11 @@ Agent adapter 是同步接口，Server 是异步 MCP。`ToolBridge` 通过 `asyn
 | **通信** | 函数调用（adapter.generate_response） | MCP StreamableHTTP / REST API |
 | **Agent 接入** | 必须实现 Python BaseAgentAdapter | 任何 MCP/HTTP client |
 | **Agent 可见性** | Server 持有 adapter 引用，知道 agent 细节 | Server 完全不知道 Client 是谁 |
+| **send_message** | Runner 代理调用，Agent 不可见 | **Agent 可见的 domain tool，自主调用** |
+| **环境背景** | 通过 system prompt 注入完整任务上下文 | **Server 通过 background 提供事实性环境描述，不含行为指导** |
+| **对话管理** | Runner 外层循环控制多轮对话 | **Agent 在 BetaToolRunner 内自主控制** |
 | **评分触发** | orchestrator Phase 4 内嵌 | 独立 pipeline，可异步触发 |
-| **DeepEval 依赖** | 深度依赖（StudentSimulator、ConversationalGEval） | 完全去依赖（ewan_eval 自建） |
+| **DeepEval 依赖** | 深度依赖 | 完全去依赖（ewan_eval，OpenRouter） |
 | **结果存储** | `results/{task_id}/{timestamp}/` | `results/server/{task_id}/{persona_id}/{timestamp}_{session_id}/` |
 
 ### 3.2 执行流程对比
@@ -216,8 +227,8 @@ Agent adapter 是同步接口，Server 是异步 MCP。`ToolBridge` 通过 `asyn
 **Legacy（5 Phase）**：
 ```
 orchestrator.run_single_task()
-  Phase 1: RESET（创建容器、配工具、注入 context）
-  Phase 2: INTERACT（orchestrator 驱动 adapter.generate_response 循环）
+  Phase 1: RESET（创建容器、配工具、注入丰富的 system prompt）
+  Phase 2: INTERACT（Runner 外层循环：generate_response → send_message → 学生回复）
   Phase 3: CAPTURE（收集 workspace + proxy logs + enrichment）
   Phase 4: EVALUATE（内嵌评分）
   Phase 5: TEARDOWN（清理容器）
@@ -227,35 +238,18 @@ orchestrator.run_single_task()
 ```
 Server 侧:
   register → 创建容器 + 工具 + persona
-  start → 学生开场白
-  [send_message 循环] → 学生回复 + TC 检查
+  start → background + 学生开场白
+  [Agent 自主调 send_message + domain tools] → 学生回复 + TC 检查
   completed → 保存 run_state.json
   request_evaluation → 后台评分 → eval_meta.json
 
 Client 侧:
-  connect → register → start →
-  [adapter.generate_response → call tools → send_message] 循环
-  → save client_trace.json
+  connect → register → start（获取 background）→ list_tools
+  → 单次 adapter.generate_response（BetaToolRunner 管理完整 session）
+  → 保存 client_trace.json
 ```
 
-### 3.3 模块归属对比
-
-| 功能模块 | Legacy 位置 | 新架构位置 | 变化 |
-|---------|------------|-----------|------|
-| 学生模拟器 | mcp_servers/student_sim.py | server/core/student_sim.py | 去 DeepEval 依赖 |
-| 对话管理 | mcp_servers/session.py | server/core/session.py | 增加 GoalChecker |
-| TC 检查 | orchestrator 内 | server/core/tc_checker.py | 独立模块，直接调 OpenRouter |
-| 工具注册 | mcp_servers/registry.py | server/core/registry.py | 增加 populate 接口 |
-| 工具代理 | mcp_servers/proxy/mcp_proxy.py | server/core/proxy.py | 删 live_monitor |
-| 工具实现 | mcp_servers/core/tools.py | server/core/tools/tools.py | 增加 C# 入口推断 |
-| 评分流水线 | evaluation/ (散布) | server/eval/pipeline.py（统一入口） | 独立可调用 |
-| 评分指标 | evaluation/deepeval_metrics/ | server/eval/ewan_eval/ | 全部去 DeepEval 化 |
-| Agent adapter | orchestrator/agent_adapters/ | client/adapters/ | 精简复制 |
-| 结果存储 | orchestrator 内嵌 | server/storage/ | 独立模块 |
-
-### 3.4 依赖隔离
-
-新架构严格执行依赖隔离规则：
+### 3.3 依赖隔离
 
 ```
 server/  只 import → server/ 内部 + scripts/data_manager + 外部库
@@ -267,177 +261,122 @@ client/  只 import → client/ 内部 + 外部库
   orchestrator/ → server/, client/
 ```
 
-Server 内部分层：
-```
-api/     → core/, eval/, storage/, config/
-core/    → config/
-eval/    → config/
-storage/ → (无内部依赖)
-core/ ✕ eval/ ✕ storage/（互不 import）
-```
-
 ---
 
 ## 四、已完成的工作
 
-### 4.1 Server 核心功能（已实现）
+### 4.1 Server 核心功能
 
 | 模块 | 状态 | 说明 |
 |------|------|------|
-| `server/__main__.py` | ✅ 可运行 | Uvicorn 启动，支持 --port, --docker |
-| `server/api/http_app.py` | ✅ 可运行 | Starlette app，MCP + REST 双协议，会话管理 |
-| `server/api/protocol.py` | ✅ 可运行 | 4 阶段状态机，权限检查 |
-| `server/api/session_api.py` | ✅ 可运行 | SessionState 完整生命周期 |
-| `server/core/session.py` | ✅ 已验证 | TutoringSession + GoalChecker，防御层完整 |
-| `server/core/student_sim.py` | ✅ 已验证 | 去 DeepEval，prompt 对齐 |
-| `server/core/tc_checker.py` | ✅ 已验证 | 增量 TC + 直接 OpenRouter 调用 |
-| `server/core/proxy.py` | ✅ 可运行 | 透明日志 + 截断 + 防御层 |
-| `server/core/registry.py` | ✅ 可运行 | core/convenient/distractor 注册 |
-| `server/core/container.py` | ✅ 可运行 | Docker 管理 + 本地 fallback |
-| `server/core/tools/` | ✅ 可运行 | 50+ domain tools + C# 入口推断 |
-| `server/eval/pipeline.py` | ✅ 可运行 | 独立评分入口 |
-| `server/eval/ewan_eval/` | ✅ 可运行 | 去 DeepEval 评分全链路 |
-| `server/storage/` | ✅ 可运行 | run_state.json + eval_meta.json |
-| `server/web/` | ✅ 可运行 | Web UI 回放 |
+| `server/__main__.py` | ✅ | Uvicorn 启动，支持 --port, --docker |
+| `server/api/http_app.py` | ✅ | Starlette app，MCP + REST 双协议，会话管理 |
+| `server/api/protocol.py` | ✅ | 4 阶段状态机，权限检查，send_message/get_background 工具定义 |
+| `server/api/session_api.py` | ✅ | SessionState 完整生命周期，get_background 路由 |
+| `server/core/session.py` | ✅ | TutoringSession + GoalChecker + `build_background()` 动态生成 |
+| `server/core/student_sim.py` | ✅ | 去 DeepEval，prompt 对齐 |
+| `server/core/tc_checker.py` | ✅ | 增量 TC + 直接 OpenRouter 调用 |
+| `server/core/proxy.py` | ✅ | 透明日志 + 截断 + 防御层 |
+| `server/core/registry.py` | ✅ | core/convenient/distractor 注册 |
+| `server/core/container.py` | ✅ | Docker 管理 + 本地 fallback |
+| `server/core/tools/` | ✅ | 50+ domain tools + C# 入口推断 |
+| `server/eval/pipeline.py` | ✅ | 独立评分入口 |
+| `server/eval/ewan_eval/` | ✅ | 去 DeepEval + 去 OAuth，纯 OpenRouter |
+| `server/storage/` | ✅ | run_state.json + eval_meta.json |
+| `server/web/` | ✅ | Web UI 回放，client trace best-effort 合并 |
 
-### 4.2 Client 核心功能（已实现）
+### 4.2 Client 核心功能
 
 | 模块 | 状态 | 说明 |
 |------|------|------|
-| `client/__main__.py` | ✅ 可运行 | CLI 入口，支持 --task/--group/--workers |
-| `client/runner.py` | ✅ 可运行 | MCP 连接 + 对话循环 + 并行调度 |
-| `client/tool_bridge.py` | ✅ 可运行 | Sync-Async 桥接 |
-| `client/adapters/anthropic_adapter.py` | ✅ 可运行 | Direct API + SDK 双模式 |
-| `client/cost_tracker.py` | ✅ 可运行 | Token 计费 |
-| `client/trace_writer.py` | ✅ 可运行 | 客户端 trace 输出 |
+| `client/__main__.py` | ✅ | CLI 入口，默认 --agent-max-steps 200 |
+| `client/runner.py` | ✅ | 精简架构：setup → 单次 generate_response → 保存 trace |
+| `client/tool_bridge.py` | ✅ | Sync-Async 桥接 |
+| `client/adapters/anthropic_adapter.py` | ✅ | 单次调用，无 `_input_history`，SDK 原生 compaction/context management |
+| `client/cost_tracker.py` | ✅ | Token 计费 |
+| `client/trace_writer.py` | ✅ | 客户端 trace 输出 |
 
-### 4.3 Spec 文档（已完成）
+### 4.3 Spec 文档
 
-| 文档 | 状态 |
-|------|------|
-| `spec/PROTOCOL.md` | ✅ 完成 |
-| `spec/TASKS.md` | ✅ 完成 |
-
-### 4.4 Legacy 侧的同步修改（已完成）
-
-在 Legacy 代码中同步进行的改进，保持新旧架构行为一致：
-
-| 修改 | 文件 | 说明 |
+| 文档 | 状态 | 说明 |
 |------|------|------|
-| GoalChecker 集成 | mcp_servers/session.py, mcp_servers/mcp_server.py | 非 TC 类别的终止判定 |
-| StudentSimulator 去 DeepEval | mcp_servers/student_sim.py | 独立 model resolver |
-| 工具增强 | mcp_servers/core/tools.py | C# 入口推断、session context JSON |
-| Proxy 增强 | mcp_servers/proxy/mcp_proxy.py | step exempt tools、step_check_fn |
-| Registry 增强 | mcp_servers/registry.py | populate_proxy_for_task 接口 |
+| `spec/PROTOCOL.md` | ✅ | 会话生命周期、操作详解 |
+| `spec/TASKS.md` | ✅ 已更新 | 65 任务 ID 列表，按类别分组 + 类别简介，不含任务名后缀/难度/描述 |
 
 ---
 
-## 五、未完成的工作与残留问题
+## 五、待验证与残留问题
 
-### 5.1 待验证项
+### 5.1 核心验证项
 
-| 项目 | 状态 | 风险 | 说明 |
-|------|------|------|------|
-| **新旧架构评分一致性验证** | 🔴 未开始 | 高 | 同一对话在 Legacy eval 和 Server eval（ewan_eval）下的评分是否一致？去 DeepEval 后可能引入偏差 |
-| **端到端 HTTP 回归测试** | 🟡 部分完成 | 中 | 有 test_server_session_runtime.py 和 test_server_web_ui.py，但未覆盖全链路（register → send_message × N → evaluate → scores） |
-| **65 任务全量验证** | 🔴 未开始 | 高 | 目前只在少量任务上验证过 Server 路径，需要确保所有任务都能正确运行和评分 |
+| 项目 | 优先级 | 状态 | 说明 |
+|------|--------|------|------|
+| **协议约束传达有效性** | P0 | 🟡 待验证 | Agent 是否在 background + 工具描述的约束下正确使用 send_message 通信。这是新架构从"runner 代理"转向"agent 自主"后的关键验证 |
+| **单次 agent loop 稳定性** | P0 | 🟡 待验证 | 单次 BetaToolRunner 管理完整 session（可能 100+ iterations），需要验证在多种任务类型上的稳定性（compaction、timeout、session 终止） |
+| **新旧评分一致性** | P0 | 🔴 未开始 | ewan_eval（OpenRouter）与 Legacy eval（DeepEval）在同一对话上的评分是否一致 |
+| **全量任务覆盖** | P0 | 🔴 未开始 | 65 个任务在 Server 路径下是否都能正常运行和评分 |
 
-### 5.2 已知问题
+### 5.2 工程收尾
 
-| 问题 | 严重性 | 说明 |
+| 项目 | 优先级 | 说明 |
 |------|--------|------|
-| **Legacy 代码中混入了新架构准备代码** | 中 | mcp_servers/session.py 增加了 316 行（GoalChecker 等），这些本应只在 server/ 中。目前两边都有，存在维护同步风险 |
-| **eval_pipeline.py 的 import 路径** | 低 | evaluation/eval_pipeline.py 是新文件，用于 Legacy + Server 共享的评分入口。但 server/eval/pipeline.py 也有独立实现。两个 pipeline 的关系需要理清 |
-| **deepeval_metrics_legacy/ 是否需要保留** | 低 | 归档了旧的 DeepEval 评分代码，但如果 ewan_eval 已完全替代，可以在确认后删除 |
-| **ewan_eval/ 在 Legacy 和 Server 中各有一份** | 中 | evaluation/ewan_eval/ (Legacy 侧) 和 server/eval/ewan_eval/ (Server 侧) 可能存在代码分叉。需要确认是否共用还是独立演化 |
-| **X09 新架构回归** | 中 | v5.0/investigation/ 中有 x09_newarch_regression_investigation.md，说明 X09（alpha_conflict）任务在新架构下存在评分回归 |
-
-### 5.3 待完成开发工作
-
-| 项目 | 优先级 | 预估工时 | 说明 |
-|------|--------|---------|------|
-| 新旧评分一致性对比实验 | P0 | 2-3 天 | 选 8 个 ICC 任务，对比 Legacy eval vs ewan_eval 的评分差异 |
-| 全量 65 任务 Server 路径验证 | P0 | 3-5 天 | 含 Docker 环境、工具可用性、TC 终止、评分完整性 |
-| Legacy → Server 代码去重 | P1 | 2 天 | 确认 mcp_servers/ 和 server/core/ 的关系，消除重复 |
-| Client 多 adapter 支持 | P2 | 2 天 | OpenAI / Google adapter 迁移到 client/adapters/ |
-| BENCHMARK_SPEC.md（第三方接入文档） | P2 | 1 天 | 合并 PROTOCOL.md + TASKS.md + 接入示例 |
-
-### 5.4 评分体系改进（独立于架构迁移）
-
-以下改进记录在 `tutor review/tutor_scoring_enhancement_plan.md` 中，可独立推进：
-
-| 方案 | 优先级 | 说明 |
-|------|--------|------|
-| Task-Specific Behavioral Checklist | P0 | 为 Tutor 引入程序化锚点，提升 cross-judge r |
-| Human Calibration 实验 | P0 | 30-50 样本人类评分，验证 LLM-judge 有效性 |
-| D3/D4 Rubric 修改 | P1 | 覆盖 Autonomy Preservation + Error Diagnosis |
-| 对话长度退化分析 | P2 | 检测 tutor 在长对话中的质量退化 |
+| 非正常终止时的结果保存 | P1 | session 被人工中止或 sweeper 清理时，应尝试 flush run_state |
+| Legacy / Server 代码去重 | P1 | mcp_servers/ 和 server/core/ 存在功能重叠，需确定 source of truth |
+| BENCHMARK_SPEC.md | P2 | 合并 PROTOCOL.md + TASKS.md + 接入示例 |
 
 ---
 
 ## 六、评分体系同步改进
 
-在架构迁移过程中，评分体系也进行了多项改进：
-
 ### 6.1 评分公式与权重调整
 
-**Implementation 类任务权重重平衡**：
-- behavioral_score 从 0.60 降至 0.45（减少简单执行成功的权重）
-- code_patterns 从 0.05 升至 0.10-0.15（增加代码架构质量的权重）
-- 各任务特定指标权重上调（如 sweep_completed 0.15→0.20）
+**Implementation 类任务权重重平衡**：behavioral_score 0.60→0.45，code_patterns 0.05→0.10-0.15。
 
-**Code eval 改进**：执行质量层（Layer B）从"最后一次试验"改为"最佳试验"，更准确反映 agent 的迭代能力。
+**Code eval 改进**：执行质量层（Layer B）从"最后一次试验"改为"最佳试验"。
 
-**Result judge 新增准则**：Guideline 5 "CODE MUST BE EXECUTED TO COUNT" — 未执行的代码草稿不计入结果评分。
+**Result judge 新增准则**：Guideline 5 "CODE MUST BE EXECUTED TO COUNT"。
 
 ### 6.2 Tutor 评分优化
 
 **Phase 1 缓存**：ConversationalGEval 的 evaluation steps 按 (model, dim) 缓存，节省 `(num_judge_runs - 1) × dims` 次 LLM 调用。
 
-**Per-run raw scores 追踪**：记录每次 shuffled run 的原始分数，支持标准差分析和跨 run 方差诊断。
+**Per-run raw scores 追踪**：记录每次 shuffled run 的原始分数。
 
 ### 6.3 TC 扩展
 
-增量 TC 检查类别从 `{strategy, backtest, implementation}` 扩展到包含 `debug` 和 `data_analysis`，非增量类别使用 GoalChecker。
+增量 TC 检查类别从 `{strategy, backtest, implementation}` 扩展到包含 `debug` 和 `data_analysis`。
 
 ### 6.4 消融实验
 
-完成了评分粒度消融实验，证明 Tutor 的 Cohen's d=1.745 不是 10 档评分粒度造成的假象：
-- 将 D1-D7 各维度 clamp 到 5 档后重新聚合 → d=1.816 (+4.1%)
-- 结论：区分度来源于 Sonnet/Haiku 的真实教学能力差距
+Tutor 评分粒度消融：D1-D7 clamp 到 5 档后 Cohen's d 从 1.745 变为 1.816（+4.1%），证明区分度来源于真实能力差距。
 
 ---
 
 ## 七、总结
 
-### 7.1 当前状态一句话
+### 7.1 当前状态
 
-> **新架构（Server + Client）的核心功能已全部实现且可运行，但尚未完成与 Legacy 架构的评分一致性验证和全量任务回归测试。**
+> **新架构核心功能和基础设施已全部实现。Server 工程稳定性已通过多轮实际执行确认。当前阶段的核心工作是验证：在 Server 仅提供环境事实（不提供行为指导）的设计下，Agent 能否通过协议传达的约束正确完成任务。**
 
 ### 7.2 关键里程碑
 
 ```
 ✅ 已完成:
-   Server 双协议（MCP + REST）+ 会话状态机 + 全链路去 DeepEval
-   Client baseline runner + Anthropic adapter
+   Server 双协议 + 状态机 + 去 DeepEval/OAuth + background 机制
+   Client 单次调用架构 + send_message 作为 agent 自主 domain tool
+   Web UI + client trace best-effort 合并
    Spec 文档（PROTOCOL.md + TASKS.md）
-   Legacy 侧同步改进（GoalChecker、TC 扩展、评分优化）
+   Server 工程稳定性确认（多轮多任务实际执行验证）
 
-🔄 进行中:
-   新旧评分一致性验证
-   X09 新架构回归调查
-
-⬜ 待开始:
-   65 任务全量 Server 路径验证
-   Legacy → Server 代码去重
-   第三方接入文档
-   Human Calibration 实验
+⬜ 待验证/待开始:
+   协议约束传达有效性（send_message 通信行为）
+   单次 agent loop 全 session 稳定性
+   新旧评分引擎一致性
+   65 任务全量覆盖
 ```
 
-### 7.3 风险评估
+### 7.3 设计原则确认
 
-| 风险 | 概率 | 影响 | 缓解措施 |
-|------|------|------|---------|
-| ewan_eval 与 DeepEval eval 评分不一致 | 中 | 高（影响论文数据可比性） | P0：8 任务对比实验 |
-| 部分任务在 Server 路径下行为异常 | 中 | 中（需逐任务修复） | 全量验证 + 回归测试 |
-| Legacy/Server 代码分叉导致维护成本 | 高 | 中（长期） | 代码去重，确定单一 source of truth |
+在多轮调查中确立了一个重要设计原则：
+
+> **Server 提供环境事实，不提供行为指导。** 如果 Agent 在收到环境背景后仍然不探索环境、不使用回测工具、不回复学生，这是 Agent（Client）的能力问题——这正是 benchmark 要测量的。Server 不应通过更积极的引导来弥补 Agent 的能力缺陷，否则会泄漏评分标准、降低 benchmark 的区分度。

@@ -47,6 +47,66 @@ _FILE_LIMIT_RE = re.compile(
     r"(file|files|artifact|artifacts|workspace|open|access|see|read|paste)",
     re.IGNORECASE,
 )
+# ---------------------------------------------------------------------------
+# Session background builder — factual environment description, no directives
+# ---------------------------------------------------------------------------
+
+
+def build_background(task) -> str:
+    """Build a factual background description of the session environment.
+
+    Content is determined by what the container actually provides — derived
+    from task definition fields, not hardcoded per category.  Contains NO
+    behavioural directives or scoring hints.
+    """
+    env = task.environment if task.environment else None
+    sandbox_image = (env.sandbox_image or "") if env else ""
+    is_lean = "lean" in sandbox_image
+    has_student_code = bool(task.sample_code)
+    has_docs = bool(env.docs_available) if env else False
+    has_data = bool(
+        (env.data_files if env else None)
+        or getattr(task, "series", None)
+        or getattr(task, "custom_data_key", None)
+    )
+
+    parts: list[str] = [
+        "You are operating inside a sandboxed tutoring environment for "
+        "quantitative finance. A Python runtime with common data-science "
+        "packages is available.",
+        "To communicate with the student, you MUST use the send_message "
+        "tool. This is the only way your words reach the student. Your "
+        "text output outside of send_message is NOT visible to them. "
+        "The student also cannot see your tool calls, file operations, "
+        "or raw command output.",
+    ]
+
+    if is_lean:
+        parts.append(
+            "An algorithmic trading engine is available in this environment. "
+            "You can compile and execute C# trading algorithms, run backtests "
+            "against historical market data, and inspect detailed results "
+            "including trade logs and performance metrics. Backtest executions "
+            "are tracked and budget-limited."
+        )
+
+    if has_student_code:
+        parts.append("The student's existing code is mounted at /student_code/.")
+
+    if has_docs:
+        parts.append("Reference documentation is mounted at /docs/.")
+
+    if has_data:
+        parts.append("Market data files are pre-loaded at /data/.")
+
+    parts.append(
+        "Call get_environment_info for detailed directory listings, "
+        "available packages, and session constraints."
+    )
+
+    return "\n\n".join(parts)
+
+
 _HIDDEN_ARTIFACT_RE = re.compile(
     r"(/workspace|saved to|written to|created (?:a|an)? file|see the file|"
     r"open the file|report file|artifact file|workspace artifact)",
@@ -199,11 +259,11 @@ class TutoringSession:
     # ------------------------------------------------------------------
 
     def handle_start_session(self) -> str:
-        """Start the session — return student's first message.
+        """Start the session — return background + student's first message.
 
-        New architecture: only returns {student_message}. Does NOT
-        expose task_description, category, difficulty, student_level,
-        or max_turns to the Client.
+        Returns {background, student_message}.  ``background`` is a factual
+        description of the environment (no directives, no scoring hints).
+        The client decides how to present it to the agent.
 
         Can only be called once per session.
         """
@@ -214,7 +274,13 @@ class TutoringSession:
         self._conversation.append({"role": "user", "content": opening})
         self._session_info_called = True
 
-        return json.dumps({"student_message": opening})
+        background = build_background(self._task)
+        return json.dumps(
+            {
+                "background": background,
+                "student_message": opening,
+            }
+        )
 
     def handle_send_message(self, text: str) -> str:
         """Process agent message, generate student reply.

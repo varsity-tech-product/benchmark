@@ -34,6 +34,7 @@ if TYPE_CHECKING:
     from mcp.server import Server
 
 from .protocol import (
+    GET_BACKGROUND_TOOL,
     GET_RESULTS_TOOL,
     GET_SCORES_TOOL,
     REGISTER_SESSION_TOOL,
@@ -615,7 +616,7 @@ class SessionState:
             return [START_SESSION_TOOL]
 
         if self.phase == SessionPhase.IN_SESSION:
-            return [SEND_MESSAGE_TOOL] + domain_tools
+            return [SEND_MESSAGE_TOOL, GET_BACKGROUND_TOOL] + domain_tools
 
         if self.phase == SessionPhase.COMPLETED:
             return [REQUEST_EVALUATION_TOOL, GET_RESULTS_TOOL, GET_SCORES_TOOL]
@@ -693,6 +694,12 @@ class SessionState:
             result = await asyncio.to_thread(self.start)
             await self._notify_tools_changed()
             return [TextContent(type="text", text=json.dumps(result))]
+
+        if name == "get_background":
+            from server.core.session import build_background
+
+            bg = build_background(self.task) if self.task else ""
+            return [TextContent(type="text", text=bg)]
 
         if name == "send_message":
             text = arguments.get("text", "")
