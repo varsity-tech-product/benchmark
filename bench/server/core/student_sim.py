@@ -36,88 +36,53 @@ class SimulatedInput(BaseModel):
 
 _FIRST_MESSAGE_PROMPT = textwrap.dedent(
     """\
-    Pretend you are a user of an LLM app. Your goal is to start a conversation \
-    in English based on a scenario and user profile. The scenario defines your \
-    context and motivation for interacting with the LLM, while the user profile \
-    provides additional personal details to make the conversation realistic \
-    and relevant.
+    --- BACKGROUND ---
+    You are role-playing as a real person using an LLM tutoring app.
+    Your profile: {user_description}
+    Your situation: {scenario}
+    --- END BACKGROUND ---
+
+    Generate your opening message to the tutor.
 
     Guidelines:
-    1. The opening message should clearly convey the user's intent or need \
-    within the scenario.
-    2. Keep the tone warm, conversational, and natural, as if it's from a \
-    real person seeking assistance.
-    3. Avoid providing excessive details upfront; the goal is to initiate \
-    the conversation and build rapport, not to solve it in the first message.
-    4. The message should be concise, ideally no more than 1-3 sentences.
+    1. Clearly convey your intent or need within the situation above.
+    2. Keep the tone warm, conversational, and natural.
+    3. Do not dump all details upfront — start the conversation, don't solve it.
+    4. 1-3 sentences maximum.
 
-    Example Language: english
-    Example User Profile: "Jeff Seid, is available Monday and Thursday \
-    afternoons, and their phone number is 0010281839. He suffers from \
-    chronic migraines."
-    Example Scenario: "A sick person trying to get a diagnosis for \
-    persistent headaches and fever."
-    Example JSON Output:
+    Example:
     {{
         "simulated_input": "Hi, I haven't been feeling well lately. \
     I've had these headaches and a fever that just won't go away. \
     Could you help me figure out what's going on?"
     }}
 
-    Language: English
-    User Profile: "{user_description}"
-    Scenario: "{scenario}"
-
-    IMPORTANT: The output must be formatted as a JSON object with a single \
-    key `simulated_input`, where the value is the generated opening message \
-    in English.
+    Respond with a JSON object containing a single key `simulated_input`.
     JSON Output:
 """
 )
 
 _NEXT_MESSAGE_PROMPT = textwrap.dedent(
     """\
-    Pretend you are a user of an LLM app. Your task is to generate the next \
-    user input in English based on the provided scenario, user profile, and \
-    the previous conversation.
+    --- BACKGROUND ---
+    You are role-playing as a real person using an LLM tutoring app.
+    Your profile: {user_description}
+    Your situation: {scenario}
+    --- END BACKGROUND ---
+
+    Generate your next message to the tutor based on the conversation so far.
 
     Guidelines:
-    1. Use the scenario and user profile as the guiding context for the \
-    user's next input.
-    2. Ensure the next input feels natural, conversational, and relevant \
-    to the last assistant reply in the conversation.
-    3. Keep the tone consistent with the previous user inputs.
-    4. The generated user input should be concise, ideally no more than \
-    1-2 sentences.
+    1. Stay in character and respond naturally to the tutor's last reply.
+    2. Keep tone consistent with your earlier messages.
+    3. 1-2 sentences maximum.
 
     {runtime_guidance_block}
 
-    Example Language: english
-    Example User Profile: "Jeff Seid, is available Monday and Thursday \
-    afternoons, and their phone number is 0010281839."
-    Example Scenario: "A user seeking tips for securing a funding round."
-    Example Previous Conversation:
-    [
-        {{"role": "user", "content": "Hi, I need help preparing for my \
-    funding pitch."}},
-        {{"role": "assistant", "content": "Of course! Can you share more \
-    about your business and the type of investors you are targeting?"}}
-    ]
-    Example JSON Output:
-    {{
-        "simulated_input": "Sure, we are a SaaS startup focusing on \
-    productivity tools for small businesses."
-    }}
-
-    Language: English
-    User Profile: "{user_description}"
-    Scenario: "{scenario}"
-    Previous Conversation:
+    Conversation so far:
     {transcript}
 
-    IMPORTANT: The output must be formatted as a JSON object with a single \
-    key `simulated_input`, where the value is the generated user input \
-    in English.
+    Respond with a JSON object containing a single key `simulated_input`.
     JSON Output:
 """
 )
