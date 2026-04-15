@@ -15,6 +15,7 @@ from server.config.llm_config import (
     EVAL_DEFAULT_MODELS,
     EVAL_JUDGE_TEMPERATURE,
     OPENROUTER_BASE_URL,
+    STUDENT_MODEL_POOL_ALL,
 )
 from server.config.pricing import MODEL_PRICING
 from server.eval.ewan_eval.llm_client import EwanLLMClient
@@ -83,6 +84,34 @@ def require_ewan_model(
         "No usable model client was configured. Set OPENROUTER_API_KEY in "
         "the server environment or choose a simulator model backed by a "
         "configured provider."
+    )
+
+
+def require_student_model(
+    model=None,
+    *,
+    temperature=EVAL_JUDGE_TEMPERATURE,
+):
+    """Resolve a student simulator model — must be vision-capable.
+
+    Only models in ``STUDENT_MODEL_POOL_ALL`` are accepted.  This ensures
+    the student LLM can handle image attachments.
+    """
+    from server.config.llm_config import SIMULATOR_DEFAULT_MODEL
+
+    model = model or SIMULATOR_DEFAULT_MODEL
+
+    if isinstance(model, str) and model not in STUDENT_MODEL_POOL_ALL:
+        raise ValueError(
+            f"Student simulator model {model!r} is not in the "
+            f"vision-capable model pool. Choose from: "
+            + ", ".join(sorted(STUDENT_MODEL_POOL_ALL))
+        )
+
+    return require_ewan_model(
+        model,
+        purpose="student simulator",
+        temperature=temperature,
     )
 
 

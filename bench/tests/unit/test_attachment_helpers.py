@@ -29,9 +29,13 @@ def workspace():
         with open(os.path.join(ws, "big.txt"), "w") as f:
             f.write("x" * (_ATTACHMENT_MAX_CHARS + 5000))
 
-        # Binary file
+        # Image file (now supported)
         with open(os.path.join(ws, "chart.png"), "wb") as f:
             f.write(b"\x89PNG\r\n\x1a\n")
+
+        # Binary file (still rejected)
+        with open(os.path.join(ws, "model.pkl"), "wb") as f:
+            f.write(b"\x80\x04\x95")
 
         # Subdirectory with nested file
         os.makedirs(os.path.join(ws, "results"))
@@ -82,7 +86,20 @@ class TestReadAttachment:
 
     def test_rejects_binary_file(self, workspace):
         with pytest.raises(ValueError, match="Binary"):
-            _read_attachment(workspace, "chart.png")
+            _read_attachment(workspace, "model.pkl")
+
+    def test_reads_image_file(self, workspace):
+        att = _read_attachment(workspace, "chart.png")
+        assert att["is_image"] is True
+        assert att["media_type"] == "image/png"
+        assert att["truncated"] is False
+        # Content should be valid base64
+        import base64
+        base64.b64decode(att["content"])
+
+    def test_text_file_has_is_image_false(self, workspace):
+        att = _read_attachment(workspace, "strategy.py")
+        assert att["is_image"] is False
 
     def test_rejects_no_workspace(self):
         with pytest.raises(ValueError, match="No workspace"):

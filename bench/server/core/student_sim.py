@@ -212,6 +212,13 @@ def _format_transcript_with_files(
         for att in atts:
             fname = att["filename"]
             ledger = file_ledger.get(fname)
+
+            # Images — text reference only (actual data goes via multimodal API)
+            if (ledger and ledger.get("is_image")) or att.get("is_image"):
+                text = f"[Image: {fname}]"
+                file_entries.append((idx, fname, text, 0))
+                continue
+
             base = ledger["base_content"] if ledger else None
 
             if base is not None and att["content"] != base:
@@ -256,6 +263,28 @@ def _format_transcript_with_files(
         result.append(item)
 
     return json.dumps(result, indent=4, ensure_ascii=False)
+
+
+def _collect_images_from_ledger(
+    file_ledger: dict[str, dict],
+) -> list[dict]:
+    """Extract image data from file ledger for multimodal API calls.
+
+    Returns list of ``{"filename", "data", "media_type"}`` where
+    *data* is a base64-encoded string.  Only the latest version
+    (``current_content``) of each image is returned.
+    """
+    images: list[dict] = []
+    for fname, entry in file_ledger.items():
+        if entry.get("is_image"):
+            images.append(
+                {
+                    "filename": fname,
+                    "data": entry["current_content"],
+                    "media_type": entry.get("media_type", "image/png"),
+                }
+            )
+    return images
 
 
 def _parse_simulated_input(raw: str) -> str:
@@ -316,7 +345,9 @@ class StudentSimulator:
             self._model = resolve_deepeval_model(self._model)
         return self._model
 
-    def _generate_parsed(self, prompt: str) -> str:
+    def _generate_parsed(
+        self, prompt: str, images: list[dict] | None = None
+    ) -> str:
         """Generate text via model, parse JSON output, track cost.
 
         Tries structured output (schema=) first, falls back to plain
@@ -329,7 +360,9 @@ class StudentSimulator:
         # rate limits, etc. should propagate (aligned with DeepEval's
         # generate_schema which only catches TypeError).
         try:
-            result = self.model.generate(prompt, schema=SimulatedInput)
+            result = self.model.generate(
+                prompt, schema=SimulatedInput, images=images or None
+            )
             if isinstance(result, tuple):
                 obj, cost = result[0], result[1] if len(result) > 1 else None
                 if cost is not None:
@@ -342,7 +375,7 @@ class StudentSimulator:
             logger.debug("Structured output failed (%s), falling back to text.", exc)
 
         # Fallback: plain text generation + JSON extraction.
-        result = self.model.generate(prompt)
+        result = self.model.generate(prompt, images=images or None)
         if isinstance(result, tuple):
             text = result[0]
             cost = result[1] if len(result) > 1 else None
@@ -394,15 +427,17 @@ class StudentSimulator:
                 transcript = _format_transcript_with_files(
                     conversation, file_ledger
                 )
+                images = _collect_images_from_ledger(file_ledger)
             else:
                 transcript = _format_transcript(conversation)
+                images = []
             prompt = _NEXT_MESSAGE_PROMPT.format(
                 user_description=self.user_description,
                 scenario=self.scenario,
                 transcript=transcript,
                 runtime_guidance_block=runtime_guidance_block,
             )
-        return self._generate_parsed(prompt)
+        return self._generate_parsed(prompt, images=images or None)
 
     def generate_closing(
         self,

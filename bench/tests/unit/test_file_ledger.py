@@ -10,6 +10,7 @@ import pytest
 
 from server.core.student_sim import (
     _LEDGER_BUDGET,
+    _collect_images_from_ledger,
     _compute_file_diff,
     _format_transcript,
     _format_transcript_with_files,
@@ -307,3 +308,147 @@ class TestFileLedgerIntegration:
         assert len(ledger) == 2
         assert "a.py" in ledger
         assert "b.py" in ledger
+
+
+# ---------------------------------------------------------------------------
+# Image support
+# ---------------------------------------------------------------------------
+
+_FAKE_IMAGE_B64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+
+
+def _image_ledger_entry(fname="chart.png", turn=1):
+    return {
+        "base_content": _FAKE_IMAGE_B64,
+        "base_turn": turn,
+        "current_content": _FAKE_IMAGE_B64,
+        "current_turn": turn,
+        "is_image": True,
+        "media_type": "image/png",
+    }
+
+
+def _text_ledger_entry(content="print('hello')\n", turn=1):
+    return {
+        "base_content": content,
+        "base_turn": turn,
+        "current_content": content,
+        "current_turn": turn,
+        "is_image": False,
+        "media_type": "",
+    }
+
+
+class TestImageInTranscript:
+    def test_image_shows_reference_not_content(self):
+        conv = _make_conversation(
+            ("user", "hi"),
+            ("assistant", "here's the chart", [
+                {"filename": "chart.png", "content": _FAKE_IMAGE_B64,
+                 "truncated": False, "is_image": True, "media_type": "image/png"}
+            ]),
+        )
+        ledger = {"chart.png": _image_ledger_entry()}
+        result = _format_transcript_with_files(conv, ledger)
+        parsed = json.loads(result)
+        assert "[Image: chart.png]" in parsed[1]["files"]
+        # Base64 data must NOT appear in transcript
+        assert _FAKE_IMAGE_B64 not in result
+
+    def test_image_does_not_count_against_budget(self):
+        conv = _make_conversation(
+            ("user", "hi"),
+            ("assistant", "image", [
+                {"filename": "chart.png", "content": _FAKE_IMAGE_B64,
+                 "truncated": False, "is_image": True, "media_type": "image/png"}
+            ]),
+        )
+        ledger = {"chart.png": _image_ledger_entry()}
+        # Even with budget=1 (impossibly small), image reference survives
+        result = _format_transcript_with_files(conv, ledger, budget=1)
+        parsed = json.loads(result)
+        assert "[Image: chart.png]" in parsed[1]["files"]
+
+    def test_mixed_text_and_image_attachments(self):
+        code = "import pandas as pd\n"
+        conv = _make_conversation(
+            ("user", "hi"),
+            ("assistant", "code and chart", [
+                {"filename": "strategy.py", "content": code,
+                 "truncated": False, "is_image": False},
+                {"filename": "plot.png", "content": _FAKE_IMAGE_B64,
+                 "truncated": False, "is_image": True, "media_type": "image/png"},
+            ]),
+        )
+        ledger = {
+            "strategy.py": _text_ledger_entry(code),
+            "plot.png": _image_ledger_entry("plot.png"),
+        }
+        result = _format_transcript_with_files(conv, ledger)
+        parsed = json.loads(result)
+        files = parsed[1]["files"]
+        assert "[File: strategy.py]" in files
+        assert "[Image: plot.png]" in files
+        assert "pandas" in files
+
+    def test_image_updated_shows_reference(self):
+        """Re-attaching same image shows [Image: ...] — no diff."""
+        new_b64 = "AAAA"
+        conv = _make_conversation(
+            ("user", "hi"),
+            ("assistant", "v1", [
+                {"filename": "c.png", "content": _FAKE_IMAGE_B64,
+                 "truncated": False, "is_image": True, "media_type": "image/png"}
+            ]),
+            ("user", "ok"),
+            ("assistant", "v2", [
+                {"filename": "c.png", "content": new_b64,
+                 "truncated": False, "is_image": True, "media_type": "image/png"}
+            ]),
+        )
+        ledger = {
+            "c.png": {
+                **_image_ledger_entry("c.png"),
+                "current_content": new_b64,
+                "current_turn": 2,
+            }
+        }
+        result = _format_transcript_with_files(conv, ledger)
+        parsed = json.loads(result)
+        assert "[Image: c.png]" in parsed[1]["files"]
+        assert "[Image: c.png]" in parsed[3]["files"]
+        assert "updated" not in parsed[3]["files"]
+
+
+class TestCollectImagesFromLedger:
+    def test_empty_ledger_returns_empty(self):
+        assert _collect_images_from_ledger({}) == []
+
+    def test_text_only_ledger_returns_empty(self):
+        ledger = {"strategy.py": _text_ledger_entry()}
+        assert _collect_images_from_ledger(ledger) == []
+
+    def test_single_image_returns_data(self):
+        ledger = {"chart.png": _image_ledger_entry()}
+        images = _collect_images_from_ledger(ledger)
+        assert len(images) == 1
+        assert images[0]["filename"] == "chart.png"
+        assert images[0]["data"] == _FAKE_IMAGE_B64
+        assert images[0]["media_type"] == "image/png"
+
+    def test_mixed_ledger_returns_only_images(self):
+        ledger = {
+            "strategy.py": _text_ledger_entry(),
+            "chart.png": _image_ledger_entry(),
+        }
+        images = _collect_images_from_ledger(ledger)
+        assert len(images) == 1
+        assert images[0]["filename"] == "chart.png"
+
+    def test_returns_latest_content(self):
+        entry = _image_ledger_entry()
+        entry["current_content"] = "UPDATED_B64"
+        entry["current_turn"] = 3
+        ledger = {"chart.png": entry}
+        images = _collect_images_from_ledger(ledger)
+        assert images[0]["data"] == "UPDATED_B64"

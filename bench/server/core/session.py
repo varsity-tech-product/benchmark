@@ -12,6 +12,7 @@ Defense layers aligned with Legacy path (simulation.py create_model_callback):
 - Max-turns student closing (aligned with _append_student_closing)
 """
 
+import base64
 import json
 import logging
 import os
@@ -120,19 +121,34 @@ _HIDDEN_ARTIFACT_RE = re.compile(
 
 _ATTACHMENT_MAX_FILES = 3
 _ATTACHMENT_MAX_CHARS = 4_000
+
+_IMAGE_EXTENSIONS = frozenset({".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp"})
+_IMAGE_MAX_BYTES = 5 * 1024 * 1024  # 5 MB raw before base64
+_IMAGE_LEDGER_MAX = 5               # max images in ledger across session
+
 _BINARY_EXTENSIONS = frozenset(
     {
-        ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".ico", ".svg",
+        ".ico", ".svg",
         ".pdf", ".zip", ".gz", ".tar", ".7z", ".pkl", ".pickle",
         ".npy", ".npz", ".pyc", ".so", ".dylib", ".dll", ".exe",
     }
 )
 
+_MEDIA_TYPES = {
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".gif": "image/gif",
+    ".bmp": "image/bmp",
+    ".webp": "image/webp",
+}
+
 
 def _read_attachment(workspace_path: str, filename: str) -> dict:
     """Read a single workspace file for attachment.
 
-    Returns ``{"filename": str, "content": str, "truncated": bool}``.
+    Returns a dict with at least ``filename``, ``content``, ``truncated``,
+    and ``is_image``.  Image attachments also include ``media_type``.
     Raises ``ValueError`` on validation failure.
     """
     if not workspace_path:
@@ -149,9 +165,31 @@ def _read_attachment(workspace_path: str, filename: str) -> dict:
         raise ValueError(f"File not found: {filename}")
 
     _, ext = os.path.splitext(real)
-    if ext.lower() in _BINARY_EXTENSIONS:
+    ext_lower = ext.lower()
+
+    # ── Image files ──
+    if ext_lower in _IMAGE_EXTENSIONS:
+        size = os.path.getsize(real)
+        if size > _IMAGE_MAX_BYTES:
+            raise ValueError(
+                f"Image too large: {filename} "
+                f"({size:,} bytes, max {_IMAGE_MAX_BYTES:,})"
+            )
+        with open(real, "rb") as f:
+            data = base64.b64encode(f.read()).decode("ascii")
+        return {
+            "filename": filename,
+            "content": data,
+            "truncated": False,
+            "is_image": True,
+            "media_type": _MEDIA_TYPES[ext_lower],
+        }
+
+    # ── Remaining binary files — rejected ──
+    if ext_lower in _BINARY_EXTENSIONS:
         raise ValueError(f"Binary file not supported: {filename}")
 
+    # ── Text files ──
     try:
         with open(real, encoding="utf-8") as f:
             content = f.read()
@@ -169,7 +207,12 @@ def _read_attachment(workspace_path: str, filename: str) -> dict:
             + content[-tail:]
         )
 
-    return {"filename": filename, "content": content, "truncated": truncated}
+    return {
+        "filename": filename,
+        "content": content,
+        "truncated": truncated,
+        "is_image": False,
+    }
 
 
 def _resolve_attachments(
@@ -416,6 +459,25 @@ class TutoringSession:
                 }
             )
 
+        # ── Image ledger limit ──
+        new_images = sum(1 for a in resolved_attachments if a.get("is_image"))
+        if new_images:
+            existing_images = sum(
+                1 for e in self._file_ledger.values() if e.get("is_image")
+            )
+            # Don't count images that will be overwritten (same filename)
+            overwrites = sum(
+                1 for a in resolved_attachments
+                if a.get("is_image") and a["filename"] in self._file_ledger
+            )
+            if existing_images + new_images - overwrites > _IMAGE_LEDGER_MAX:
+                return json.dumps(
+                    {
+                        "error": f"Maximum {_IMAGE_LEDGER_MAX} images per session",
+                        "status": "active",
+                    }
+                )
+
         # ── Repeat detection ──  (aligned: model_callback:606-624)
         if text == self._last_agent_msg:
             self._repeat_count += 1
@@ -447,6 +509,8 @@ class TutoringSession:
                     "base_turn": self._turn,
                     "current_content": att["content"],
                     "current_turn": self._turn,
+                    "is_image": att.get("is_image", False),
+                    "media_type": att.get("media_type", ""),
                 }
             else:
                 self._file_ledger[fname]["current_content"] = att["content"]

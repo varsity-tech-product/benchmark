@@ -59,12 +59,32 @@ class EwanLLMClient:
             )
         return self._client
 
-    async def a_generate(self, prompt: str, schema=None) -> tuple[str, float]:
-        """Generate text completion. Returns (text, cost)."""
+    async def a_generate(
+        self, prompt: str, schema=None, images: list[dict] | None = None
+    ) -> tuple[str, float]:
+        """Generate text completion. Returns (text, cost).
+
+        When *images* is provided, constructs multimodal content blocks
+        using the OpenAI ``image_url`` format (base64 data URI).
+        """
+        if images:
+            content: list[dict] = [{"type": "text", "text": prompt}]
+            for img in images:
+                content.append(
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:{img['media_type']};base64,{img['data']}"
+                        },
+                    }
+                )
+            messages = [{"role": "user", "content": content}]
+        else:
+            messages = [{"role": "user", "content": prompt}]
         client = self._get_client()
         completion = await client.chat.completions.create(
             model=self.model,
-            messages=[{"role": "user", "content": prompt}],
+            messages=messages,
             temperature=self.temperature,
         )
         text = completion.choices[0].message.content or ""
@@ -108,13 +128,17 @@ class EwanLLMClient:
             cost = usage.prompt_tokens * self._cpi + usage.completion_tokens * self._cpo
         return completion, cost
 
-    def generate(self, prompt: str, schema=None) -> tuple[str, float]:
+    def generate(
+        self, prompt: str, schema=None, images: list[dict] | None = None
+    ) -> tuple[str, float]:
         """Synchronous wrapper for a_generate."""
         import asyncio
         import concurrent.futures
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-            return pool.submit(asyncio.run, self.a_generate(prompt, schema)).result()
+            return pool.submit(
+                asyncio.run, self.a_generate(prompt, schema, images=images)
+            ).result()
 
     def get_model_name(self) -> str:
         return self.model

@@ -128,7 +128,7 @@ class FakeLLMModel:
     def __init__(self):
         self._call_count = 0
 
-    def generate(self, prompt: str, schema=None):
+    def generate(self, prompt: str, schema=None, images=None):
         self._call_count += 1
 
         # GoalChecker uses ConversationCompletion schema
@@ -166,7 +166,7 @@ class FakeTCModel:
         self.force_all_covered = False
         self._call_count = 0
 
-    def generate(self, prompt: str, schema=None):
+    def generate(self, prompt: str, schema=None, images=None):
         self._call_count += 1
         if self.force_all_covered:
             return '{"covered_items": [1, 2, 3, 4, 5]}', 0.0

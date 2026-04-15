@@ -241,7 +241,10 @@ class SessionState:
         from server.core.student_sim import StudentSimulator
         from server.core.tc_checker import TCChecker, parse_tc_items
         from server.data_manager import ensure_data
-        from server.eval.ewan_eval.model_resolver import require_ewan_model
+        from server.eval.ewan_eval.model_resolver import (
+            require_ewan_model,
+            require_student_model,
+        )
 
         self._closed = False
 
@@ -306,11 +309,10 @@ class SessionState:
 
             load_server_env(self.bench_root)
             try:
-                resolved_sim_model = require_ewan_model(
+                resolved_sim_model = require_student_model(
                     SIMULATOR_DEFAULT_MODEL,
-                    purpose="student simulator",
                 )
-            except RuntimeError as exc:
+            except (RuntimeError, ValueError) as exc:
                 return {"accepted": False, "error": str(exc)}
 
             sandbox_img = task.environment.sandbox_image if task.environment else ""
