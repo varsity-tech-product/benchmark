@@ -87,23 +87,18 @@ _NEXT_MESSAGE_PROMPT = textwrap.dedent(
 """
 )
 
-_CLOSING_PROMPT = (
-    "You are the student in the conversation below. The tutor just "
-    "finished answering your last question. Write a brief closing "
-    "message (1-2 sentences) that thanks the tutor and mentions one "
-    "specific thing you learned or plan to try. Stay in character.\n\n"
-    "Scenario: {scenario}\n\n"
-    "{transcript}\n"
-    "Reply with ONLY the closing message."
-)
-
-# Hardcoded fallback when closing generation fails (aligned with
-# _EfficientSimulator._generate_closing fallback in simulation.py:401-405).
-_CLOSING_FALLBACK = (
-    "Thanks for walking me through all of this — "
-    "I have a much clearer picture now. "
-    "I'll try applying these techniques to my own data."
-)
+# Pre-written closing messages — zero LLM cost, selected by hash of
+# conversation length to keep deterministic per session.
+_CLOSING_POOL = [
+    "Thanks for walking me through all of this — I have a much clearer picture now. I'll try applying these techniques to my own data.",
+    "This was really helpful, I think I understand the core idea now. Let me go try it out.",
+    "Got it, that makes a lot more sense now. Thanks for being so patient with my questions!",
+    "I appreciate the detailed explanations. I'm going to revisit my code with this in mind.",
+    "That clears things up — I wasn't thinking about it the right way before. Thanks!",
+    "This has been great, I learned a lot. I'll experiment with what you showed me.",
+    "Thanks for the help! I feel much more confident about tackling this now.",
+    "Really appreciate you breaking it down step by step. I'll give it another shot.",
+]
 
 # Regex for extracting JSON from LLM output.
 _JSON_RE = re.compile(r"\{.*\}", re.DOTALL)
@@ -408,26 +403,11 @@ class StudentSimulator:
         self,
         conversation: list[dict[str, str]],
     ) -> str:
-        """Generate a natural closing message from the student.
+        """Select a pre-written closing message. Zero LLM cost.
 
-        Closing uses a simpler prompt (no JSON output) aligned with
-        _EfficientSimulator._generate_closing (simulation.py:372-405).
+        Uses conversation length as a deterministic seed so the same
+        session always gets the same closing, but different sessions
+        get variety.
         """
-        prompt = _CLOSING_PROMPT.format(
-            scenario=self.scenario[:400],
-            transcript=_format_transcript(conversation[-4:], max_chars=300),
-        )
-        try:
-            result = self.model.generate(prompt)
-            if isinstance(result, tuple):
-                text = result[0]
-                cost = result[1] if len(result) > 1 else None
-                if cost is not None:
-                    self.total_cost += cost
-            else:
-                text = result
-            if text and text.strip():
-                return text.strip()
-        except Exception as exc:
-            logger.warning("Failed to generate closing: %s", exc)
-        return _CLOSING_FALLBACK
+        idx = len(conversation) % len(_CLOSING_POOL)
+        return _CLOSING_POOL[idx]

@@ -29,14 +29,6 @@ from server.core.workspace_delta import scan_workspace_snapshot
 
 logger = logging.getLogger(__name__)
 
-# Hardcoded closing fallback — aligned with _EfficientSimulator._generate_closing
-# (simulation.py:401-405) and StudentSimulator._CLOSING_FALLBACK.
-_CLOSING_FALLBACK = (
-    "Thanks for walking me through all of this — "
-    "I have a much clearer picture now. "
-    "I'll try applying these techniques to my own data."
-)
-
 # Fallback student message when generate_message() fails — aligned with
 # model_callback exception handler (simulation.py:586).
 _STUDENT_FALLBACK = "Could you explain that in a bit more detail?"
@@ -101,9 +93,7 @@ def build_background(task) -> str:
         "available packages, and session constraints."
     )
 
-    return "
-
-".join(parts)
+    return "\n\n".join(parts)
 
 
 # ---------------------------------------------------------------------------
@@ -855,17 +845,8 @@ class TutoringSession:
         )
 
     def _safe_closing(self) -> str:
-        """Generate student closing with fallback on failure.
-
-        Aligned with _EfficientSimulator._generate_closing (simulation.py:372-405).
-        """
-        try:
-            closing = self._student_sim.generate_closing(self._conversation)
-            if closing and closing.strip():
-                return closing.strip()
-        except Exception as exc:
-            logger.warning("Failed to generate closing: %s", exc)
-        return _CLOSING_FALLBACK
+        """Select a pre-written student closing message."""
+        return self._student_sim.generate_closing(self._conversation)
 
     def inject_student_opening(self, opening: str) -> None:
         """Inject the student opening into conversation without start_session.
