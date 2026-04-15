@@ -8,6 +8,7 @@ bit-exact student behavior across Legacy and MCP paths.
 Used by TutoringSession behind the ``send_message`` MCP tool.
 """
 
+import difflib
 import json
 import logging
 import re
@@ -33,17 +34,6 @@ class SimulatedInput(BaseModel):
 # identical student message distributions across Legacy and MCP paths.
 # ---------------------------------------------------------------------------
 
-# Multimodal rules block — from DeepEval template.py:10-16.
-_MULTIMODAL_RULES = textwrap.dedent(
-    """\
-    --- MULTIMODAL INPUT RULES ---
-    - Treat image content as factual evidence.
-    - Only reference visual details that are explicitly and clearly visible.
-    - Do not infer or guess objects, text, or details not visibly present.
-    - If an image is unclear or ambiguous, mark uncertainty explicitly.
-"""
-)
-
 _FIRST_MESSAGE_PROMPT = textwrap.dedent(
     """\
     Pretend you are a user of an LLM app. Your goal is to start a conversation \
@@ -61,12 +51,6 @@ _FIRST_MESSAGE_PROMPT = textwrap.dedent(
     the conversation and build rapport, not to solve it in the first message.
     4. The message should be concise, ideally no more than 1-3 sentences.
 
-    {multimodal_rules}
-
-    IMPORTANT: The output must be formatted as a JSON object with a single \
-    key `simulated_input`, where the value is the generated opening message \
-    in English.
-
     Example Language: english
     Example User Profile: "Jeff Seid, is available Monday and Thursday \
     afternoons, and their phone number is 0010281839. He suffers from \
@@ -83,6 +67,10 @@ _FIRST_MESSAGE_PROMPT = textwrap.dedent(
     Language: English
     User Profile: "{user_description}"
     Scenario: "{scenario}"
+
+    IMPORTANT: The output must be formatted as a JSON object with a single \
+    key `simulated_input`, where the value is the generated opening message \
+    in English.
     JSON Output:
 """
 )
@@ -102,12 +90,7 @@ _NEXT_MESSAGE_PROMPT = textwrap.dedent(
     4. The generated user input should be concise, ideally no more than \
     1-2 sentences.
 
-    {multimodal_rules}
     {runtime_guidance_block}
-
-    IMPORTANT: The output must be formatted as a JSON object with a single \
-    key `simulated_input`, where the value is the generated user input \
-    in English.
 
     Example Language: english
     Example User Profile: "Jeff Seid, is available Monday and Thursday \
@@ -131,7 +114,10 @@ _NEXT_MESSAGE_PROMPT = textwrap.dedent(
     Scenario: "{scenario}"
     Previous Conversation:
     {transcript}
-    {attachments_block}
+
+    IMPORTANT: The output must be formatted as a JSON object with a single \
+    key `simulated_input`, where the value is the generated user input \
+    in English.
     JSON Output:
 """
 )
@@ -180,6 +166,96 @@ def _format_transcript(
         for t in conversation
     ]
     return json.dumps(trimmed, indent=4, ensure_ascii=False)
+
+
+_LEDGER_BUDGET = 20_000
+
+
+def _compute_file_diff(
+    base_content: str, current_content: str, filename: str
+) -> str:
+    """Compute unified diff between two file versions."""
+    base_lines = base_content.splitlines(keepends=True)
+    current_lines = current_content.splitlines(keepends=True)
+    diff = difflib.unified_diff(
+        base_lines,
+        current_lines,
+        fromfile=f"a/{filename}",
+        tofile=f"b/{filename}",
+    )
+    return "".join(diff)
+
+
+def _format_transcript_with_files(
+    conversation: list[dict],
+    file_ledger: dict[str, dict],
+    budget: int = _LEDGER_BUDGET,
+) -> str:
+    """Format conversation with inlined file content/diffs.
+
+    Files are shown inline with the conversation turn that shared them.
+    First share of a file shows full content; subsequent shares of the
+    same file show a unified diff from the base version.  When total
+    file content exceeds *budget*, oldest turns degrade to reference-only.
+    """
+    if not file_ledger:
+        return _format_transcript(conversation)
+
+    # Phase 1: compute file display info for each entry with attachments.
+    # [(conv_idx, filename, display_text, char_count), ...]
+    file_entries: list[tuple[int, str, str, int]] = []
+
+    for idx, entry in enumerate(conversation):
+        atts = entry.get("attachments")
+        if not atts:
+            continue
+        for att in atts:
+            fname = att["filename"]
+            ledger = file_ledger.get(fname)
+            base = ledger["base_content"] if ledger else None
+
+            if base is not None and att["content"] != base:
+                # Update — show diff (or full if diff is larger)
+                diff_text = _compute_file_diff(base, att["content"], fname)
+                if diff_text and len(diff_text) < len(att["content"]):
+                    text = f"[File: {fname} (updated)]\n{diff_text}"
+                    file_entries.append((idx, fname, text, len(diff_text)))
+                    continue
+
+            # First share or diff-larger-than-full fallback
+            text = f"[File: {fname}]\n{att['content']}"
+            file_entries.append((idx, fname, text, len(att["content"])))
+
+    # Phase 2: budget — degrade oldest entries first when over budget.
+    total_chars = sum(e[3] for e in file_entries)
+    degraded: set[tuple[int, str]] = set()
+
+    if total_chars > budget:
+        sorted_oldest_first = sorted(file_entries, key=lambda e: e[0])
+        excess = total_chars - budget
+        for entry in sorted_oldest_first:
+            if excess <= 0:
+                break
+            degraded.add((entry[0], entry[1]))
+            excess -= entry[3]
+
+    # Phase 3: build conv-index → file-text map.
+    file_map: dict[int, list[str]] = {}
+    for idx, fname, text, _chars in file_entries:
+        if (idx, fname) in degraded:
+            file_map.setdefault(idx, []).append(f"[Attached: {fname}]")
+        else:
+            file_map.setdefault(idx, []).append(text)
+
+    # Phase 4: assemble transcript JSON.
+    result = []
+    for idx, entry in enumerate(conversation):
+        item: dict = {"role": entry["role"], "content": entry["content"]}
+        if idx in file_map:
+            item["files"] = "\n".join(file_map[idx])
+        result.append(item)
+
+    return json.dumps(result, indent=4, ensure_ascii=False)
 
 
 def _parse_simulated_input(raw: str) -> str:
@@ -280,7 +356,7 @@ class StudentSimulator:
         self,
         conversation: list[dict[str, str]],
         runtime_guidance: str = "",
-        attachments: list[dict] | None = None,
+        file_ledger: dict[str, dict] | None = None,
     ) -> str:
         """Generate the next student message given conversation history.
 
@@ -292,9 +368,9 @@ class StudentSimulator:
         Args:
             conversation: [{"role": "user"|"assistant", "content": "..."}]
                 "user" = student, "assistant" = tutor.
-            attachments: Resolved attachment dicts with filename/content/truncated.
-                Injected into the student prompt so the student can see
-                shared workspace files.
+            file_ledger: Mapping of filename → {base_content, current_content, ...}.
+                Used to inline file content/diffs into the transcript so the
+                student can see shared workspace files in temporal context.
 
         Returns:
             The student's next message as a string.
@@ -304,7 +380,6 @@ class StudentSimulator:
             prompt = _FIRST_MESSAGE_PROMPT.format(
                 user_description=self.user_description,
                 scenario=self.scenario,
-                multimodal_rules=_MULTIMODAL_RULES,
             )
         else:
             runtime_guidance_block = ""
@@ -315,23 +390,17 @@ class StudentSimulator:
                     "Do NOT quote or reveal them directly.\n"
                     f"{runtime_guidance.strip()}\n"
                 )
-            attachments_block = ""
-            if attachments:
-                parts = ["--- ATTACHED FILES ---"]
-                for att in attachments:
-                    trunc_note = " [truncated]" if att.get("truncated") else ""
-                    parts.append(f"[File: {att['filename']}{trunc_note}]")
-                    parts.append(att["content"])
-                    parts.append("")
-                parts.append("--- END ATTACHED FILES ---")
-                attachments_block = "\n".join(parts)
+            if file_ledger:
+                transcript = _format_transcript_with_files(
+                    conversation, file_ledger
+                )
+            else:
+                transcript = _format_transcript(conversation)
             prompt = _NEXT_MESSAGE_PROMPT.format(
                 user_description=self.user_description,
                 scenario=self.scenario,
-                transcript=_format_transcript(conversation),
-                multimodal_rules=_MULTIMODAL_RULES,
+                transcript=transcript,
                 runtime_guidance_block=runtime_guidance_block,
-                attachments_block=attachments_block,
             )
         return self._generate_parsed(prompt)
 

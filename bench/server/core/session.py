@@ -324,6 +324,11 @@ class TutoringSession:
         self._done: bool = False
         self._session_info_called: bool = False
         self._completion_reason: str | None = None
+
+        # File ledger — tracks all files shared via attachments.
+        # Key: filename, Value: {base_content, base_turn, current_content, current_turn}
+        # Same-name files are deduped (latest version replaces current_content).
+        self._file_ledger: dict[str, dict] = {}
         self._workspace_snapshot = scan_workspace_snapshot(workspace_path)
         self._artifact_debug_history: list[dict] = []
         self._pending_visibility_gap: dict[str, object] = {
@@ -433,6 +438,20 @@ class TutoringSession:
         self._conversation.append(msg_entry)
         self._turn += 1
 
+        # ── Update file ledger ──
+        for att in resolved_attachments:
+            fname = att["filename"]
+            if fname not in self._file_ledger:
+                self._file_ledger[fname] = {
+                    "base_content": att["content"],
+                    "base_turn": self._turn,
+                    "current_content": att["content"],
+                    "current_turn": self._turn,
+                }
+            else:
+                self._file_ledger[fname]["current_content"] = att["content"]
+                self._file_ledger[fname]["current_turn"] = self._turn
+
         # Update proxy turn index for tool log attribution
         if self._proxy is not None:
             self._proxy.set_turn(self._turn)
@@ -509,7 +528,7 @@ class TutoringSession:
                     text,
                     artifact_digest,
                 ),
-                attachments=resolved_attachments,
+                file_ledger=self._file_ledger,
             )
         except Exception as exc:
             logger.warning("StudentSimulator.generate_message failed: %s", exc)
@@ -558,6 +577,11 @@ class TutoringSession:
         if self._tc_checker is None:
             return None
         return self._tc_checker.coverage_summary
+
+    @property
+    def file_ledger(self) -> dict[str, dict]:
+        """All files shared via attachments — latest versions, keyed by filename."""
+        return dict(self._file_ledger)
 
     @property
     def artifact_debug_history(self) -> list[dict]:
