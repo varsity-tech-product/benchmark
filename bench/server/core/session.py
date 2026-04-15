@@ -44,11 +44,6 @@ _STUDENT_FALLBACK = "Could you explain that in a bit more detail?"
 # Repeat detection threshold — aligned with model_callback _MAX_REPEATS
 # (simulation.py:493).
 _MAX_REPEATS = 2
-_FILE_LIMIT_RE = re.compile(
-    r"(can't|cannot|can not|do not|don't|unable to).{0,40}"
-    r"(file|files|artifact|artifacts|workspace|open|access|see|read|paste)",
-    re.IGNORECASE,
-)
 # ---------------------------------------------------------------------------
 # Session background builder — factual environment description, no directives
 # ---------------------------------------------------------------------------
@@ -106,14 +101,10 @@ def build_background(task) -> str:
         "available packages, and session constraints."
     )
 
-    return "\n\n".join(parts)
+    return "
 
+".join(parts)
 
-_HIDDEN_ARTIFACT_RE = re.compile(
-    r"(/workspace|saved to|written to|created (?:a|an)? file|see the file|"
-    r"open the file|report file|artifact file|workspace artifact)",
-    re.IGNORECASE,
-)
 
 # ---------------------------------------------------------------------------
 # Attachment support
@@ -522,7 +513,8 @@ class TutoringSession:
 
         tc_turn_index = self._current_tool_turn_index()
         turn_evidence = self._build_turn_evidence(tc_turn_index)
-        artifact_digest = self._build_artifact_digest(text)
+        attached_filenames = frozenset(a["filename"] for a in resolved_attachments)
+        artifact_digest = self._build_artifact_digest(text, attached_filenames)
 
         # ── TC check ──  (aligned: _EfficientSimulator.stop_conversation)
         try:
@@ -718,7 +710,11 @@ class TutoringSession:
             logger.debug("Failed to build TC turn evidence: %s", exc)
             return None
 
-    def _build_artifact_digest(self, latest_agent_text: str) -> dict:
+    def _build_artifact_digest(
+        self,
+        latest_agent_text: str,
+        shared_filenames: frozenset[str] = frozenset(),
+    ) -> dict:
         latest_student_text = ""
         if len(self._conversation) >= 2 and self._conversation[-2]["role"] == "user":
             latest_student_text = self._conversation[-2]["content"]
@@ -729,6 +725,7 @@ class TutoringSession:
                 previous_snapshot=self._workspace_snapshot,
                 latest_student_text=latest_student_text,
                 latest_agent_text=latest_agent_text,
+                shared_filenames=shared_filenames,
             )
         except Exception as exc:
             logger.debug("Failed to build artifact digest: %s", exc)
@@ -811,22 +808,20 @@ class TutoringSession:
             },
         }
 
-    def _recent_student_mentions_file_limit(self) -> bool:
-        recent_users = [
-            msg["content"]
-            for msg in reversed(self._conversation[:-1])
-            if msg["role"] == "user"
-        ][:3]
-        return any(_FILE_LIMIT_RE.search(text) for text in recent_users)
-
-    def _assistant_refers_to_hidden_artifacts(self, text: str) -> bool:
-        return bool(_HIDDEN_ARTIFACT_RE.search(text or ""))
-
     def _build_student_runtime_guidance(
         self,
         latest_agent_text: str,
         artifact_digest: Optional[dict] = None,
     ) -> str:
+        """Build steering notes for conversation pacing only.
+
+        Artifact visibility signals (B1-B4) are intentionally excluded.
+        The student should not be coached to request code/output — if the
+        agent fails to share artifacts, that is the agent's fault and
+        should be penalised in evaluation, not compensated at runtime.
+        Artifact digest data is still recorded in ``_artifact_debug_history``
+        for the evaluation pipeline to consume.
+        """
         if self._tc_checker is None:
             return ""
 
@@ -847,34 +842,6 @@ class TutoringSession:
         if self._turn >= max(self._max_turns - 2, 1):
             signals.append(
                 "- The session is nearing its natural limit. Prioritize one final concrete clarification over opening a brand-new branch."
-            )
-        if (
-            self._recent_student_mentions_file_limit()
-            and self._assistant_refers_to_hidden_artifacts(latest_agent_text)
-        ):
-            signals.append(
-                "- The tutor may be relying on files or artifacts you cannot access directly. Ask once for the key literal code, output, or number in the chat, then keep the next request narrow."
-            )
-
-        artifact_signals = (artifact_digest or {}).get("steering_signals", {})
-        request_signals = (artifact_digest or {}).get("request_signals", {})
-        if artifact_signals.get("artifact_ready_but_not_shown"):
-            signals.append(
-                "- The tutor appears to have generated a relevant artifact already, but has not shown the key part directly in chat. Keep your next message focused on asking for the smallest literal code block or concrete output inline."
-            )
-        if artifact_signals.get("student_should_request_literal_code"):
-            signals.append(
-                "- Ask for the exact minimal code snippet directly in the chat instead of accepting more file references."
-            )
-        if artifact_signals.get("student_should_request_literal_output"):
-            signals.append(
-                "- Ask for the specific output table, number, or printed result directly in the chat."
-            )
-        if artifact_signals.get("avoid_new_branch") and not request_signals.get(
-            "asks_for_comparison"
-        ):
-            signals.append(
-                "- Stay on the same concrete example rather than opening a new library, tool, or advanced side branch."
             )
 
         if not signals:
