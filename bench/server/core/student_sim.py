@@ -131,7 +131,7 @@ _NEXT_MESSAGE_PROMPT = textwrap.dedent(
     Scenario: "{scenario}"
     Previous Conversation:
     {transcript}
-
+    {attachments_block}
     JSON Output:
 """
 )
@@ -280,6 +280,7 @@ class StudentSimulator:
         self,
         conversation: list[dict[str, str]],
         runtime_guidance: str = "",
+        attachments: list[dict] | None = None,
     ) -> str:
         """Generate the next student message given conversation history.
 
@@ -291,6 +292,9 @@ class StudentSimulator:
         Args:
             conversation: [{"role": "user"|"assistant", "content": "..."}]
                 "user" = student, "assistant" = tutor.
+            attachments: Resolved attachment dicts with filename/content/truncated.
+                Injected into the student prompt so the student can see
+                shared workspace files.
 
         Returns:
             The student's next message as a string.
@@ -311,12 +315,23 @@ class StudentSimulator:
                     "Do NOT quote or reveal them directly.\n"
                     f"{runtime_guidance.strip()}\n"
                 )
+            attachments_block = ""
+            if attachments:
+                parts = ["--- ATTACHED FILES ---"]
+                for att in attachments:
+                    trunc_note = " [truncated]" if att.get("truncated") else ""
+                    parts.append(f"[File: {att['filename']}{trunc_note}]")
+                    parts.append(att["content"])
+                    parts.append("")
+                parts.append("--- END ATTACHED FILES ---")
+                attachments_block = "\n".join(parts)
             prompt = _NEXT_MESSAGE_PROMPT.format(
                 user_description=self.user_description,
                 scenario=self.scenario,
                 transcript=_format_transcript(conversation),
                 multimodal_rules=_MULTIMODAL_RULES,
                 runtime_guidance_block=runtime_guidance_block,
+                attachments_block=attachments_block,
             )
         return self._generate_parsed(prompt)
 

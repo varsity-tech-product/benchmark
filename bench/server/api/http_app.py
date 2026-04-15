@@ -620,15 +620,26 @@ async def rest_send(request: Request) -> JSONResponse:
             {"error": "Empty message. Provide text to send to the student."}, 400
         )
 
+    attachments = body.get("attachments") or []
+    if not isinstance(attachments, list):
+        return JSONResponse(
+            {"error": "attachments must be an array of file paths"}, 400
+        )
+    if len(attachments) > 3:
+        return JSONResponse({"error": "Maximum 3 attachments allowed"}, 400)
+
     logger.info(
-        "[REST:%s] send_message (turn %d): %s...",
+        "[REST:%s] send_message (turn %d, %d attachments): %s...",
         sid[:8],
         state.session.turn if state.session else 0,
+        len(attachments),
         text[:100],
     )
     async with state._request_lock:
         state._last_activity = time.time()
-        result = await asyncio.to_thread(state.handle_send_message, text)
+        result = await asyncio.to_thread(
+            state.handle_send_message, text, attachments=attachments
+        )
     data = json.loads(result)
     logger.info(
         "[REST:%s] student reply (status=%s): %s...",

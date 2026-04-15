@@ -14,6 +14,7 @@ Defense layers aligned with Legacy path (simulation.py create_model_callback):
 
 import json
 import logging
+import os
 import re
 import textwrap
 import time
@@ -112,6 +113,87 @@ _HIDDEN_ARTIFACT_RE = re.compile(
     r"open the file|report file|artifact file|workspace artifact)",
     re.IGNORECASE,
 )
+
+# ---------------------------------------------------------------------------
+# Attachment support
+# ---------------------------------------------------------------------------
+
+_ATTACHMENT_MAX_FILES = 3
+_ATTACHMENT_MAX_CHARS = 4_000
+_BINARY_EXTENSIONS = frozenset(
+    {
+        ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".ico", ".svg",
+        ".pdf", ".zip", ".gz", ".tar", ".7z", ".pkl", ".pickle",
+        ".npy", ".npz", ".pyc", ".so", ".dylib", ".dll", ".exe",
+    }
+)
+
+
+def _read_attachment(workspace_path: str, filename: str) -> dict:
+    """Read a single workspace file for attachment.
+
+    Returns ``{"filename": str, "content": str, "truncated": bool}``.
+    Raises ``ValueError`` on validation failure.
+    """
+    if not workspace_path:
+        raise ValueError("No workspace available")
+
+    resolved = os.path.join(workspace_path, filename)
+    real = os.path.realpath(resolved)
+    workspace_real = os.path.realpath(workspace_path)
+
+    if not (real.startswith(workspace_real + os.sep) or real == workspace_real):
+        raise ValueError(f"Path outside workspace: {filename}")
+
+    if not os.path.isfile(real):
+        raise ValueError(f"File not found: {filename}")
+
+    _, ext = os.path.splitext(real)
+    if ext.lower() in _BINARY_EXTENSIONS:
+        raise ValueError(f"Binary file not supported: {filename}")
+
+    try:
+        with open(real, encoding="utf-8") as f:
+            content = f.read()
+    except UnicodeDecodeError:
+        raise ValueError(f"Cannot read as text: {filename}")
+
+    truncated = len(content) > _ATTACHMENT_MAX_CHARS
+    if truncated:
+        head = _ATTACHMENT_MAX_CHARS * 2 // 3
+        tail = _ATTACHMENT_MAX_CHARS // 3
+        content = (
+            content[:head]
+            + f"\n\n... [{len(content):,} chars total, showing first "
+            f"{head:,} + last {tail:,}] ...\n\n"
+            + content[-tail:]
+        )
+
+    return {"filename": filename, "content": content, "truncated": truncated}
+
+
+def _resolve_attachments(
+    workspace_path: str | None, raw_paths: list[str]
+) -> tuple[list[dict], list[str]]:
+    """Resolve and read attachment files.
+
+    Returns ``(attachments, errors)``.
+    """
+    if not raw_paths:
+        return [], []
+
+    if len(raw_paths) > _ATTACHMENT_MAX_FILES:
+        return [], [f"Maximum {_ATTACHMENT_MAX_FILES} attachments allowed"]
+
+    attachments: list[dict] = []
+    errors: list[str] = []
+    for path in raw_paths:
+        try:
+            attachments.append(_read_attachment(workspace_path or "", path))
+        except ValueError as exc:
+            errors.append(str(exc))
+
+    return attachments, errors
 
 
 # ---------------------------------------------------------------------------
@@ -282,7 +364,9 @@ class TutoringSession:
             }
         )
 
-    def handle_send_message(self, text: str) -> str:
+    def handle_send_message(
+        self, text: str, attachments: list[str] | None = None
+    ) -> str:
         """Process agent message, generate student reply.
 
         Execution order aligned with Legacy model_callback
@@ -290,13 +374,14 @@ class TutoringSession:
         (conversation_simulator.py:226-272):
 
         1. Pre-checks (done, empty)
-        2. Repeat detection (model_callback:606-624)
-        3. Record + advance turn
-        4. TC check (_EfficientSimulator.stop_conversation)
-        5. Goal check (DeepEval stop_conversation + stop_simulation)
-        6. Deadline check
-        7. Max turns (_append_student_closing:642-678)
-        8. Generate student reply (generate_next_user_input)
+        2. Resolve attachments
+        3. Repeat detection (model_callback:606-624)
+        4. Record + advance turn
+        5. TC check (_EfficientSimulator.stop_conversation)
+        6. Goal check (DeepEval stop_conversation + stop_simulation)
+        7. Deadline check
+        8. Max turns (_append_student_closing:642-678)
+        9. Generate student reply (generate_next_user_input)
 
         Returns JSON: {student_message, status[, reason]}
         """
@@ -311,6 +396,18 @@ class TutoringSession:
                     "status": "active",
                     "turn": self._turn,
                     "max_turns": self._max_turns,
+                }
+            )
+
+        # ── Resolve attachments ──
+        resolved_attachments, attach_errors = _resolve_attachments(
+            self._workspace_path, attachments or []
+        )
+        if attach_errors:
+            return json.dumps(
+                {
+                    "error": "Attachment errors: " + "; ".join(attach_errors),
+                    "status": "active",
                 }
             )
 
@@ -330,7 +427,10 @@ class TutoringSession:
         self._last_agent_msg = text
 
         # ── Record agent message + advance turn ──
-        self._conversation.append({"role": "assistant", "content": text})
+        msg_entry: dict = {"role": "assistant", "content": text}
+        if resolved_attachments:
+            msg_entry["attachments"] = resolved_attachments
+        self._conversation.append(msg_entry)
         self._turn += 1
 
         # Update proxy turn index for tool log attribution
@@ -409,6 +509,7 @@ class TutoringSession:
                     text,
                     artifact_digest,
                 ),
+                attachments=resolved_attachments,
             )
         except Exception as exc:
             logger.warning("StudentSimulator.generate_message failed: %s", exc)

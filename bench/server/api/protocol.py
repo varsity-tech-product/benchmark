@@ -83,6 +83,15 @@ SEND_MESSAGE_TOOL = Tool(
                 "type": "string",
                 "description": "Your message to the student.",
             },
+            "attachments": {
+                "type": "array",
+                "description": (
+                    "Up to 3 workspace file paths to share with the student. "
+                    "The student will see the file contents."
+                ),
+                "items": {"type": "string"},
+                "maxItems": 3,
+            },
         },
         "required": ["text"],
     },

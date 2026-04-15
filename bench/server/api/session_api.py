@@ -460,7 +460,14 @@ class SessionState:
                 description="Send a message to the student.",
                 params={
                     "type": "object",
-                    "properties": {"text": {"type": "string"}},
+                    "properties": {
+                        "text": {"type": "string"},
+                        "attachments": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "maxItems": 3,
+                        },
+                    },
                     "required": ["text"],
                 },
             )
@@ -498,8 +505,10 @@ class SessionState:
     # send_message (routed through proxy for logging)
     # ------------------------------------------------------------------
 
-    def handle_send_message(self, text: str) -> str:
-        """Handle ``send_message(text)``.
+    def handle_send_message(
+        self, text: str, attachments: list[str] | None = None
+    ) -> str:
+        """Handle ``send_message(text, attachments?)``.
 
         Routes through ``proxy.call_tool`` so the call is logged.
         Detects session completion and triggers result saving.
@@ -510,7 +519,9 @@ class SessionState:
         if self._closed:
             return json.dumps({"error": "Session is closed", "status": "closed"})
 
-        result = self.proxy.call_tool("send_message", text=text)
+        result = self.proxy.call_tool(
+            "send_message", text=text, attachments=attachments or []
+        )
 
         # Check for session completion
         try:
@@ -703,13 +714,17 @@ class SessionState:
 
         if name == "send_message":
             text = arguments.get("text", "")
+            attachments = arguments.get("attachments") or []
             logger.info(
-                "[%s] send_message (turn %d): %s...",
+                "[%s] send_message (turn %d, %d attachments): %s...",
                 self.session_id[:8],
                 self.session.turn if self.session else 0,
+                len(attachments),
                 text[:100],
             )
-            result = await asyncio.to_thread(self.handle_send_message, text)
+            result = await asyncio.to_thread(
+                self.handle_send_message, text, attachments=attachments
+            )
             # Log student reply
             try:
                 data = json.loads(result)
