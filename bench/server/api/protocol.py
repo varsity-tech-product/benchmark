@@ -60,7 +60,8 @@ REGISTER_SESSION_TOOL = Tool(
 START_SESSION_TOOL = Tool(
     name="start_session",
     description=(
-        "Start the tutoring session. Returns the student's first message. "
+        "Start the tutoring session. Returns the session background, "
+        "the student's first message, and the list of available tools. "
         "Can only be called once after register_session."
     ),
     inputSchema={"type": "object", "properties": {}, "required": []},
@@ -73,6 +74,7 @@ SEND_MESSAGE_TOOL = Tool(
         "This is the ONLY way to communicate with the student. "
         "Your text output is NOT delivered to the student — "
         "only messages sent through this tool reach them. "
+        "Each call advances the conversation by one turn and cannot be undone. "
         "Returns the student's reply and session status. "
         "When status is 'completed', the session has ended."
     ),
@@ -102,8 +104,10 @@ SEND_MESSAGE_TOOL = Tool(
 GET_BACKGROUND_TOOL = Tool(
     name="get_background",
     description=(
-        "Session background: environment description, interaction constraints, "
-        "and available systems. Call this to re-read your operating context."
+        "Re-read the session background returned by start_session. "
+        "Contains the sandbox environment description, communication "
+        "constraints, and available systems (data directories, runtime "
+        "engines, mounted code). Returns a plain text string."
     ),
     inputSchema={"type": "object", "properties": {}, "required": []},
 )
