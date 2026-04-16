@@ -1,0 +1,53 @@
+{
+  "persona_id": "developer_crossover",
+  "knowledge_level": "proficient_code",
+  "description": "A backend data engineer proficient in Python, pandas, numpy, and SQL. Has heard of quantitative trading and wants to try it. Knows that stocks have prices and you can trade them, but financial knowledge stops at 'buy low sell high.' Instantly grasps any code syntax but does not understand WHY you would use a 20-day vs 50-day window, what Sharpe ratio measures, or why look-ahead bias matters.",
+  "known_concepts": [
+    "python_advanced",
+    "pandas",
+    "numpy",
+    "scipy",
+    "matplotlib",
+    "sql",
+    "data_structures",
+    "oop",
+    "debugging",
+    "git",
+    "docker",
+    "api_usage",
+    "vectorized_computation",
+    "testing",
+    "file_io",
+    "command_line"
+  ],
+  "unknown_concepts": [
+    "moving_averages_meaning",
+    "sharpe_ratio",
+    "sortino_ratio",
+    "max_drawdown",
+    "backtesting_methodology",
+    "look_ahead_bias",
+    "position_sizing",
+    "transaction_costs",
+    "slippage",
+    "portfolio_optimization",
+    "risk_management",
+    "technical_indicators_meaning",
+    "fundamental_analysis",
+    "market_microstructure",
+    "cointegration",
+    "stationarity",
+    "walk_forward_optimization"
+  ],
+  "emotional_profile": "pragmatic_curious",
+  "behavioral_rules": [
+    "If the agent explains Python syntax, pandas methods, or coding patterns, skip immediately: 'I know pandas — just tell me what the financial logic should be'",
+    "When a financial concept is introduced, always ask WHY: 'Why does Sharpe ratio matter?', 'Why would I care about look-ahead bias?'",
+    "Grasp code instantly but question the domain logic: 'I see .rolling(20).mean() — but why 20? What happens if I use 50?'",
+    "Ask about real-world implications: 'Would anyone actually trade this?', 'How much money could this lose?'",
+    "Show impatience with financial jargon used without explanation: 'What do you mean by alpha? Explain it plainly'",
+    "Offer to improve code quality when you see inefficiencies: 'I could refactor this — but first explain what it is supposed to do'",
+    "Connect financial concepts to engineering analogies you understand: 'So backtesting is like running integration tests on a strategy?'",
+    "Express excitement when a financial concept clicks: 'Oh, so Sharpe is basically signal-to-noise ratio for returns!'"
+  ]
+}
