@@ -45,6 +45,7 @@ class ToolCallLog:
 
     name: str
     args: dict
+    call_id: str = ""
     result: str = ""
     timestamp: float = 0.0
     duration_ms: float = 0.0
@@ -150,7 +151,8 @@ class MCPProxy:
 
         call_id = f"{name}_{len(self._logs)}"
         log = ToolCallLog(
-            name=name, args=kwargs, timestamp=timestamp, turn_index=self._current_turn
+            name=name, args=kwargs, call_id=call_id,
+            timestamp=timestamp, turn_index=self._current_turn,
         )
         _emit("tool_start", {"call_id": call_id, "name": name, "args": kwargs})
 

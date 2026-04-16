@@ -398,7 +398,7 @@ class TutoringSession:
             return json.dumps({"error": "Session already started"})
 
         opening = self._get_student_opening()
-        self._conversation.append({"role": "user", "content": opening})
+        self._conversation.append({"role": "user", "content": opening, "ts": time.time()})
         self._session_info_called = True
 
         background = build_background(self._task)
@@ -491,7 +491,7 @@ class TutoringSession:
         self._last_agent_msg = text
 
         # ── Record agent message + advance turn ──
-        msg_entry: dict = {"role": "assistant", "content": text}
+        msg_entry: dict = {"role": "assistant", "content": text, "ts": time.time()}
         if resolved_attachments:
             msg_entry["attachments"] = resolved_attachments
         self._conversation.append(msg_entry)
@@ -542,7 +542,7 @@ class TutoringSession:
         if tc_met:
             closing = self._safe_closing()
             if closing:
-                self._conversation.append({"role": "user", "content": closing})
+                self._conversation.append({"role": "user", "content": closing, "ts": time.time()})
             self._done = True
             self._completion_reason = "objectives_met"
             logger.info("TC fully covered at turn %d.", self._turn)
@@ -560,7 +560,7 @@ class TutoringSession:
         if goals_met:
             closing = self._safe_closing()
             if closing:
-                self._conversation.append({"role": "user", "content": closing})
+                self._conversation.append({"role": "user", "content": closing, "ts": time.time()})
             self._done = True
             self._completion_reason = "goals_met"
             logger.info("Goals met at turn %d.", self._turn)
@@ -575,7 +575,7 @@ class TutoringSession:
             logger.info("Session timed out at turn %d.", self._turn)
             closing = self._safe_closing()
             if closing:
-                self._conversation.append({"role": "user", "content": closing})
+                self._conversation.append({"role": "user", "content": closing, "ts": time.time()})
             return self._result(closing, "completed", reason="timeout")
 
         # ── Max turns check ──  (aligned: _append_student_closing:642-678)
@@ -585,7 +585,7 @@ class TutoringSession:
             logger.info("Max turns (%d) reached.", self._max_turns)
             closing = self._safe_closing()
             if closing:
-                self._conversation.append({"role": "user", "content": closing})
+                self._conversation.append({"role": "user", "content": closing, "ts": time.time()})
             return self._result(closing, "completed", reason="max_turns")
 
         # ── Generate student reply ──  (aligned: generate_next_user_input)
@@ -602,7 +602,7 @@ class TutoringSession:
         except Exception as exc:
             logger.warning("StudentSimulator.generate_message failed: %s", exc)
             reply = _STUDENT_FALLBACK
-        self._conversation.append({"role": "user", "content": reply})
+        self._conversation.append({"role": "user", "content": reply, "ts": time.time()})
 
         return self._result(reply, "active")
 
@@ -684,7 +684,7 @@ class TutoringSession:
         ):
             closing = self._safe_closing()
             if closing:
-                self._conversation.append({"role": "user", "content": closing})
+                self._conversation.append({"role": "user", "content": closing, "ts": time.time()})
                 return closing
         return ""
 
@@ -878,7 +878,7 @@ class TutoringSession:
         agent's bootstrap prompt.
         """
         if not self._session_info_called and not self._conversation:
-            self._conversation.append({"role": "user", "content": opening})
+            self._conversation.append({"role": "user", "content": opening, "ts": time.time()})
             self._session_info_called = True
 
     def _get_student_opening(self) -> str:
