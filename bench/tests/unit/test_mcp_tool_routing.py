@@ -71,20 +71,19 @@ class TestMCPRegister:
     @pytest.mark.asyncio
     async def test_register_success(self, session_state):
         result = await _register(session_state)
-        assert result.get("accepted") is True
         assert "session_id" in result
 
     @pytest.mark.asyncio
     async def test_register_bad_task(self, session_state):
         result = await _register(session_state, task_id="NONEXISTENT")
-        assert result.get("accepted") is False
+        assert "error" in result
 
     @pytest.mark.asyncio
     async def test_register_wrong_phase(self, session_state):
         await _register(session_state)
         # Already registered — should be denied
         result = await _register(session_state)
-        assert "error" in result or result.get("accepted") is False
+        assert "error" in result
 
 
 # ---------------------------------------------------------------------------
