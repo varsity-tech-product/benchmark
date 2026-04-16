@@ -3259,8 +3259,33 @@ def split_walkforward_windows(
     )
 
 
+# ---------------------------------------------------------------------------
+# note_to_self — agent scratchpad (no side effects, logged for analysis)
+# ---------------------------------------------------------------------------
+
+
+def note_to_self(thought: str = "") -> str:
+    """Record agent reasoning. No side effects — purely logged by the proxy."""
+    return "Noted."
+
+
 # Tool registry for the proxy layer
 CORE_TOOLS = {
+    "note_to_self": {
+        "func": note_to_self,
+        "description": (
+            "Record your reasoning, observations, or intermediate findings "
+            "for your own reference. Content is not shown to the student. "
+            "Use this to organize your thoughts before responding."
+        ),
+        "params": {
+            "thought": {
+                "type": "string",
+                "description": "Your note — reasoning, hypothesis, observation, or plan.",
+                "required": True,
+            },
+        },
+    },
     "shell_exec": {
         "func": shell_exec,
         "description": "Execute a shell command in the sandbox. Returns stdout and stderr combined. Default timeout: 30 seconds. Non-zero exit codes are appended as '[exit code]: N'.",

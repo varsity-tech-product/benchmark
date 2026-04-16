@@ -29,6 +29,7 @@ from .spec_types import (
 )
 
 _FAMILY_BY_NAME: dict[str, ToolFamily] = {
+    "note_to_self": "foundation",
     "shell_exec": "foundation",
     "file_write": "foundation",
     "file_read": "foundation",
@@ -79,6 +80,7 @@ _FAMILY_BY_NAME: dict[str, ToolFamily] = {
 
 _LOW_LEVEL_TOOLS = frozenset(
     {
+        "note_to_self",
         "shell_exec",
         "file_write",
         "file_read",
