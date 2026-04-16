@@ -345,7 +345,7 @@ class SessionState:
         try:
             task = self._load_task(task_id)
             if task is None:
-                return {"accepted": False, "error": f"Task not found: {task_id}"}
+                return {"error": f"Task not found: {task_id}"}
 
             self.task = task
             self.task_id = task_id
@@ -407,7 +407,7 @@ class SessionState:
                     SIMULATOR_DEFAULT_MODEL,
                 )
             except RuntimeError as exc:
-                return {"accepted": False, "error": str(exc)}
+                return {"error": str(exc)}
 
             sandbox_img = task.environment.sandbox_image if task.environment else ""
             series = "lean" if sandbox_img and "lean" in sandbox_img else "normal"
@@ -569,24 +569,38 @@ class SessionState:
                 self.persona_id,
                 self.use_docker,
             )
-            return {"accepted": True, "session_id": self.session_id}
+            return {"session_id": self.session_id}
         except Exception as exc:
             logger.exception("Session %s register failed", self.session_id)
             self._reset_registration_state()
-            return {"accepted": False, "error": f"Registration failed: {exc}"}
+            return {"error": f"Registration failed: {exc}"}
 
     # ------------------------------------------------------------------
     # start_session
     # ------------------------------------------------------------------
 
     def start(self) -> dict:
-        """Handle ``start_session()`` — return student opening."""
+        """Handle ``start_session()`` — return student opening + available tools.
+
+        After phase transitions to IN_SESSION, the full tool list is
+        included so the agent can start working without an extra
+        list_tools round-trip.
+        """
         if self._closed:
             return {"error": "Session is closed"}
         result = self.session.handle_start_session()
         self.phase = SessionPhase.IN_SESSION
         logger.info("Session %s started.", self.session_id)
-        return json.loads(result)
+        data = json.loads(result)
+        data["tools"] = [
+            {
+                "name": t.name,
+                "description": t.description or "",
+                "inputSchema": t.inputSchema,
+            }
+            for t in self.get_visible_tools()
+        ]
+        return data
 
     # ------------------------------------------------------------------
     # send_message (routed through proxy for logging)
@@ -688,7 +702,7 @@ class SessionState:
     def call_domain_tool(self, name: str, **kwargs) -> str:
         """Route a domain tool call through the proxy."""
         if self._closed:
-            return "Error: Session is closed"
+            return json.dumps({"success": False, "output": "Error: Session is closed"})
         return self.proxy.call_tool(name, **kwargs)
 
     # ------------------------------------------------------------------
@@ -784,7 +798,7 @@ class SessionState:
             task_id = arguments.get("task_id", "")
             persona_id = arguments.get("persona_id")
             result = await asyncio.to_thread(self.register, task_id, persona_id)
-            if result.get("accepted"):
+            if "session_id" in result:
                 await self._notify_tools_changed()
             return [TextContent(type="text", text=json.dumps(result))]
 

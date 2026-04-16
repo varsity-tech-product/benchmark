@@ -34,6 +34,48 @@ def _schema(
 
 
 DRAFT_TOOL_SPECS: dict[str, ToolSpec] = {
+    "note_to_self": ToolSpec(
+        name="note_to_self",
+        description=(
+            "Record your reasoning, observations, or intermediate findings "
+            "for your own reference. Content is not shown to the student. "
+            "Use this to organize your thoughts before responding."
+        ),
+        input_schema=_schema(
+            {
+                "thought": {
+                    "type": "string",
+                    "description": "Your note — reasoning, hypothesis, observation, or plan.",
+                },
+            },
+            required=["thought"],
+        ),
+        guidance=ToolGuidance(
+            family="foundation",
+            use_when=(
+                "You want to record an observation or hypothesis before acting.",
+                "You are debugging and want to track what you have tried.",
+                "You are planning a multi-step approach.",
+            ),
+            avoid_when=(
+                "The thought is trivial or obvious from context.",
+            ),
+            common_mistakes=(
+                "Writing to the student instead of to yourself — this tool is private.",
+            ),
+            returns="A short acknowledgment. The note is logged automatically.",
+            related_tools=("send_message", "shell_exec"),
+        ),
+        examples=(
+            ToolExample(
+                intent="Record a debugging hypothesis",
+                args={"thought": "The off-by-one error is likely in the rolling window size. Let me check line 3."},
+            ),
+        ),
+        benchmark_role="core",
+        domain_scope=("reasoning",),
+        abstraction_level="low",
+    ),
     "get_environment_info": ToolSpec(
         name="get_environment_info",
         description=(

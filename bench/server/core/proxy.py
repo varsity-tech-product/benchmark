@@ -4,6 +4,7 @@ Intercepts all tool calls from the Agent Under Test, logs them,
 forwards to real implementations, logs results, and returns to agent.
 """
 
+import json
 import os
 import re
 import time
@@ -44,6 +45,7 @@ class ToolCallLog:
 
     name: str
     args: dict
+    call_id: str = ""
     result: str = ""
     timestamp: float = 0.0
     duration_ms: float = 0.0
@@ -149,7 +151,8 @@ class MCPProxy:
 
         call_id = f"{name}_{len(self._logs)}"
         log = ToolCallLog(
-            name=name, args=kwargs, timestamp=timestamp, turn_index=self._current_turn
+            name=name, args=kwargs, call_id=call_id,
+            timestamp=timestamp, turn_index=self._current_turn,
         )
         _emit("tool_start", {"call_id": call_id, "name": name, "args": kwargs})
 
@@ -292,7 +295,11 @@ class MCPProxy:
             emit_payload["output_files"] = log.output_files
         _emit("tool_result", emit_payload)
 
-        return log.result
+        # Session API tools (send_message) already return structured JSON.
+        # Only wrap domain tools in {"success", "output"} envelope.
+        if name == "send_message":
+            return log.result
+        return json.dumps({"success": log.success, "output": log.result})
 
     def get_logs(self) -> list[ToolCallLog]:
         """Get all recorded tool call logs."""

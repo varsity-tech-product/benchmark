@@ -587,20 +587,20 @@ async def rest_register(request: Request) -> JSONResponse:
     try:
         body = await request.json()
     except Exception:
-        return JSONResponse({"accepted": False, "error": "Invalid JSON body"}, 400)
+        return JSONResponse({"error": "Invalid JSON body"}, 400)
 
     task_id = body.get("task_id", "")
     persona_id = body.get("persona_id")
     if not task_id:
         return JSONResponse(
-            {"accepted": False, "error": "Missing required field: task_id"}, 400
+            {"error": "Missing required field: task_id"}, 400
         )
 
     logger.info("[REST] register task_id=%s persona=%s", task_id, persona_id or "auto")
     state = manager.create_rest_session()
     result = await asyncio.to_thread(state.register, task_id, persona_id)
 
-    if result.get("accepted"):
+    if "session_id" in result:
         manager.register_rest_session(state)
         logger.info(
             "[REST] registered session=%s task=%s persona=%s",
@@ -697,7 +697,11 @@ async def rest_tool_call(request: Request) -> JSONResponse:
         result = await asyncio.to_thread(state.call_domain_tool, name, **body)
     result_preview = str(result)[:150]
     logger.debug("[REST:%s] %s -> %s...", sid[:8], name, result_preview)
-    return JSONResponse({"result": result})
+    try:
+        parsed = json.loads(result)
+    except (json.JSONDecodeError, TypeError):
+        parsed = {"success": True, "output": result}
+    return JSONResponse(parsed)
 
 
 async def rest_send(request: Request) -> JSONResponse:
