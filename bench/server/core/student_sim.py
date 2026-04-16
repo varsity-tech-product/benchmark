@@ -134,9 +134,7 @@ def _format_transcript(
 _LEDGER_BUDGET = 20_000
 
 
-def _compute_file_diff(
-    base_content: str, current_content: str, filename: str
-) -> str:
+def _compute_file_diff(base_content: str, current_content: str, filename: str) -> str:
     """Compute unified diff between two file versions."""
     base_lines = base_content.splitlines(keepends=True)
     current_lines = current_content.splitlines(keepends=True)
@@ -245,8 +243,10 @@ def _collect_images_from_ledger(
         if not entry.get("is_image"):
             continue
         path = os.path.join(workspace_path, entry.get("path", fname))
+        real = os.path.realpath(path)
         try:
-            with open(path, "rb") as f:
+            fd = os.open(real, os.O_RDONLY | os.O_NOFOLLOW)
+            with os.fdopen(fd, "rb") as f:
                 data = base64.b64encode(f.read()).decode("ascii")
         except OSError:
             continue
@@ -318,9 +318,7 @@ class StudentSimulator:
             self._model = resolve_deepeval_model(self._model)
         return self._model
 
-    def _generate_parsed(
-        self, prompt: str, images: list[dict] | None = None
-    ) -> str:
+    def _generate_parsed(self, prompt: str, images: list[dict] | None = None) -> str:
         """Generate text via model, parse JSON output, track cost.
 
         Tries structured output (schema=) first, falls back to plain
@@ -398,9 +396,7 @@ class StudentSimulator:
                     f"{runtime_guidance.strip()}\n"
                 )
             if file_ledger:
-                transcript = _format_transcript_with_files(
-                    conversation, file_ledger
-                )
+                transcript = _format_transcript_with_files(conversation, file_ledger)
                 images = _collect_images_from_ledger(file_ledger, workspace_path)
             else:
                 transcript = _format_transcript(conversation)

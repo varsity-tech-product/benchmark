@@ -4,8 +4,6 @@ Per-token USD prices.  Primary keys use OpenRouter format; native SDK
 model names are resolved via ``_NATIVE_TO_OR`` alias table.
 """
 
-import warnings
-
 # (input_price_per_token, output_price_per_token)
 MODEL_PRICING: dict[str, tuple[float, float]] = {
     "openai/gpt-5.2": (0.00000175, 0.000014),
@@ -38,39 +36,6 @@ def _resolve_pricing(model: str) -> tuple[float, float] | None:
         if or_name:
             pricing = MODEL_PRICING.get(or_name)
     return pricing
-
-
-def resolve_pricing_key(model: str) -> str | None:
-    """Return the best-known pricing key for a model identifier."""
-    normalized = (model or "").strip()
-    if not normalized:
-        return None
-
-    candidates = [normalized]
-    if "/" in normalized:
-        candidates.append(normalized.split("/")[-1])
-    else:
-        candidates.extend(
-            [
-                f"openai/{normalized}",
-                f"anthropic/{normalized}",
-                f"google/{normalized}",
-            ]
-        )
-
-    for candidate in candidates:
-        if candidate in MODEL_PRICING:
-            return candidate
-    return None
-
-
-def estimate_cost(model: str, input_tokens: int, output_tokens: int) -> float:
-    """Return USD cost from token counts.  0.0 + warning if model unknown."""
-    pricing = _resolve_pricing(model)
-    if pricing is None:
-        warnings.warn(f"No pricing for model '{model}', cost=0")
-        return 0.0
-    return input_tokens * pricing[0] + output_tokens * pricing[1]
 
 
 def get_deepeval_cost_kwargs(model: str) -> dict:

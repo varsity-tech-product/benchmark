@@ -5,7 +5,8 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from common.backtest_engine_check import (
+from common.evidence_helpers import apply_data_source_cap
+from common.shared_utils import (
     collect_artifact_text,
     conversation_text,
     has_any,
@@ -17,7 +18,6 @@ from common.backtest_engine_check import (
     source_has_component,
     strategy_isolated_from_data_io,
 )
-from common.evidence_helpers import apply_data_source_cap
 
 
 def _tool_log_code_text(tool_logs: list) -> str:

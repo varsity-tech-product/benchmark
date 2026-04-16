@@ -1,10 +1,11 @@
 """Conversation enrichment with tool activity summaries.
 
-Used by Tutor 7D evaluation (D4/D5/D7 dimensions) to provide the judge
-with tool execution context alongside the tutor's conversational text.
-
-Copied from orchestrator.orchestrator._enrich_conversation_with_tools
-to maintain server/ independence from orchestrator/.
+Two enrichment modes:
+- **Full**: Tool names + truncated args + truncated results.
+  Used by D4/D5/D7 where tool output content matters.
+- **Lightweight**: Tool names + status only.
+  Used by D3 where knowing *that* tools were used matters,
+  but the content of tool output does not.
 """
 
 from collections import defaultdict
@@ -52,13 +53,51 @@ def _summarize_tool_calls(logs: list) -> str:
     return summary
 
 
+def _summarize_tool_calls_lightweight(logs: list) -> str:
+    """Lightweight summary: tool name + status + output size. No content."""
+    lines = []
+    for log in logs:
+        if log.name in NON_SUBSTANTIVE_TOOLS:
+            continue
+        status = "OK" if log.success else "ERROR"
+        result_len = len(str(log.result or ""))
+        # Show key path/command arg (truncated) for context
+        args = getattr(log, "args", {}) or {}
+        hint = ""
+        for key in ("path", "command", "data_path", "file_path"):
+            if key in args:
+                val = str(args[key])
+                hint = f"{key}={val[:60]}"
+                break
+        line = f"- {log.name}({hint}) -> [{status}]"
+        if result_len > 0:
+            line += f" ({result_len:,} chars output)"
+        lines.append(line)
+
+    if not lines:
+        return ""
+    return "[Tool Activity Summary]\n" + "\n".join(lines)
+
+
 def enrich_conversation_with_tools(
     conversation: list[dict],
     tool_logs: list,
+    mode: str = "full",
 ) -> list[dict]:
-    """Append tool-activity summaries to assistant turns for tutor evaluation."""
+    """Append tool-activity summaries to assistant turns.
+
+    Args:
+        mode: "full" — tool names + truncated args + truncated results.
+              "lightweight" — tool names + status + output size only.
+    """
     if not tool_logs:
         return conversation
+
+    summarize_fn = (
+        _summarize_tool_calls_lightweight
+        if mode == "lightweight"
+        else _summarize_tool_calls
+    )
 
     logs_by_turn = defaultdict(list)
     for log in tool_logs:
@@ -72,7 +111,7 @@ def enrich_conversation_with_tools(
             continue
 
         turn_logs = logs_by_turn.get(assistant_idx, [])
-        summary = _summarize_tool_calls(turn_logs) if turn_logs else ""
+        summary = summarize_fn(turn_logs) if turn_logs else ""
         if summary:
             enriched.append(
                 {

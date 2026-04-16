@@ -173,6 +173,101 @@ class SessionState:
         self._result_dir: Optional[Path] = None
         self._closed: bool = False
 
+        # Evaluation parameters (set before request_evaluation if non-default)
+        self._eval_mode: str = "full"
+        self._tutor_dims: Optional[list[str]] = None
+
+    # ------------------------------------------------------------------
+    # Restore from server storage
+    # ------------------------------------------------------------------
+
+    @classmethod
+    def restore_from_storage(
+        cls,
+        session_id: str,
+        result_dir: Path,
+        bench_root: Path,
+        eval_model: str = "anthropic/claude-sonnet-4-6",
+    ) -> "SessionState":
+        """Restore a COMPLETED session from server storage (run_state.json).
+
+        Server persists session data to disk.  When the session is no longer
+        in memory (cleaned by sweeper or server restart), this method
+        reconstructs enough state to service any API call: evaluate, get
+        results, get scores.
+
+        No container, proxy, or student simulator is needed — only the
+        persisted conversation, tool logs, and task/persona metadata.
+        """
+        from types import SimpleNamespace
+
+        run_state = json.loads(
+            (result_dir / "run_state.json").read_text(encoding="utf-8")
+        )
+        task_id = run_state["task_id"]
+        persona_id = run_state["persona_id"]
+
+        state = cls(
+            session_id=session_id,
+            use_docker=False,
+            bench_root=bench_root,
+            eval_model=eval_model,
+        )
+
+        # Load task and persona from server data store
+        state.task = state._load_task(task_id)
+        state.persona = state._load_persona(persona_id)
+        state.task_id = task_id
+        state.persona_id = persona_id
+
+        if not state.task or not state.persona:
+            raise ValueError(
+                f"Cannot restore session: task={task_id} found={state.task is not None}, "
+                f"persona={persona_id} found={state.persona is not None}"
+            )
+
+        # Reconstruct in-memory objects from persisted data
+        conversation = run_state.get("conversation", [])
+        state.session = SimpleNamespace(conversation=conversation)
+
+        tool_logs = run_state.get("tool_logs", [])
+        tool_log_objs = [
+            SimpleNamespace(**log) if isinstance(log, dict) else log
+            for log in tool_logs
+        ]
+        distractor_names = run_state.get("distractor_names", [])
+        state.proxy = SimpleNamespace(
+            get_logs=lambda: tool_log_objs,
+            get_distractor_names=lambda: distractor_names,
+        )
+
+        state._result_dir = result_dir
+        state.phase = SessionPhase.COMPLETED
+
+        # Check if evaluation was already run
+        latest_meta = result_dir / "evaluations" / "latest" / "eval_meta.json"
+        if latest_meta.exists():
+            try:
+                meta = json.loads(latest_meta.read_text(encoding="utf-8"))
+                state._eval_status = "completed"
+                state._eval_results = {
+                    "quant_result": meta.get("quant_result", 0.0),
+                    "quant_process": meta.get("quant_process", 0.0),
+                    "tutor_scores": meta.get("tutor_scores", {}),
+                    "overall": meta.get("overall_score", 0.0),
+                }
+            except Exception:
+                pass
+
+        logger.info(
+            "Restored session %s from storage: %s/%s (eval=%s)",
+            session_id[:8],
+            task_id,
+            persona_id,
+            state._eval_status,
+        )
+        return state
+
     def _build_session_context(
         self,
         *,
@@ -242,7 +337,6 @@ class SessionState:
         from server.core.tc_checker import TCChecker, parse_tc_items
         from server.data_manager import ensure_data
         from server.eval.ewan_eval.model_resolver import (
-            require_ewan_model,
             require_student_model,
         )
 
@@ -709,13 +803,21 @@ class SessionState:
             text = arguments.get("text", "")
             attachments = arguments.get("attachments") or []
             if not isinstance(attachments, list):
-                return [TextContent(type="text", text=json.dumps(
-                    {"error": "attachments must be an array of file paths"}
-                ))]
+                return [
+                    TextContent(
+                        type="text",
+                        text=json.dumps(
+                            {"error": "attachments must be an array of file paths"}
+                        ),
+                    )
+                ]
             if len(attachments) > 3:
-                return [TextContent(type="text", text=json.dumps(
-                    {"error": "Maximum 3 attachments allowed"}
-                ))]
+                return [
+                    TextContent(
+                        type="text",
+                        text=json.dumps({"error": "Maximum 3 attachments allowed"}),
+                    )
+                ]
             logger.info(
                 "[%s] send_message (turn %d, %d attachments): %s...",
                 self.session_id[:8],
@@ -767,6 +869,16 @@ class SessionState:
     # Result saving
     # ------------------------------------------------------------------
 
+    def _storage_session_id(self) -> str:
+        """Session ID with task prefix suffix for optimized storage lookup.
+
+        Format: ``{uuid}_{task_prefix}`` e.g. ``48ad0019…_D01``.
+        The suffix lets ``find_archived_result_dir`` narrow the search to
+        matching task directories instead of scanning all of them.
+        """
+        prefix = self.task_id.split("_")[0] if self.task_id else ""
+        return f"{self.session_id}_{prefix}" if prefix else self.session_id
+
     def _save_results(self):
         """Save run_state.json after session completion.
 
@@ -808,7 +920,7 @@ class SessionState:
             duration_seconds=duration,
             distractor_names=distractor_names,
             task_id=self.task_id,
-            session_id=self.session_id,
+            session_id=self._storage_session_id(),
             persona_id=self.persona_id,
             session_status=self.session.session_status if self.session else "",
             termination_reason=(
@@ -851,6 +963,8 @@ class SessionState:
                 distractor_names=distractor_names,
                 bench_root=str(self.bench_root),
                 eval_model=self.eval_model,
+                eval_mode=self._eval_mode,
+                tutor_dims=self._tutor_dims,
             )
 
             # Build scores summary for API response

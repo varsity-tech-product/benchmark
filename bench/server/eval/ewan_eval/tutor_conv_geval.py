@@ -1,12 +1,12 @@
-"""7D Persona-aware tutoring rubric evaluation — DeepEval-free.
+"""7D Persona-aware tutoring rubric evaluation — single-call, checklist-based.
 
-Standalone replacement for evaluation/deepeval_metrics/tutor_conv_geval.py.
-All DeepEval imports replaced with evaluation.metrics.conv_geval.
+Each dimension is scored in one LLM call against a structured rubric
+containing checklist conditions and a bottom-up evaluation process.
+No Phase 1 "evaluation steps" generation — the rubric IS the evaluation.
 
-Preserves the full production logic:
+Production logic:
     - 7 dimensions (D1-D7) with per-category weights
-    - Phase 1 caching: evaluation_steps computed once per (model, dim)
-    - 3x shuffled judge runs per model, scores averaged
+    - Single judge run per model per dimension (temp=0, deterministic)
     - Multi-model parallel evaluation
     - Two-tier conversation input (original vs enriched)
     - Per-dimension preprocessing (strip code blocks)
@@ -18,7 +18,6 @@ import asyncio
 import copy
 import json
 import logging
-import random
 import re as _re_mod
 import threading
 import time as _time
@@ -64,7 +63,7 @@ DIMENSIONS = [
     "D7_safety_boundaries",
 ]
 
-NUM_JUDGE_RUNS = 3
+NUM_JUDGE_RUNS = 1  # Each dim is an independent LLM call at temp=0; shuffling order is a no-op (ICC experiment: CV=0.0% on stable tasks)
 
 # ──────────────────────────────────────────────────────────────
 # Per-category dimension weights
@@ -173,17 +172,35 @@ def load_rubric(persona_level: str) -> dict:
 
 
 def _build_criteria_from_rubric(dimension_name: str, rubric: dict) -> str:
+    """Build the rubric block injected into the scoring prompt.
+
+    Contains: dimension label + scoring guidance with labels.
+    No criteria field, no persona context, no evaluation process
+    (process and rules are in _SCORE_PROMPT).
+    """
     dim_data = rubric["dimensions"].get(dimension_name)
     if not dim_data:
         raise ValueError(
             f"Dimension '{dimension_name}' not found in rubric for "
             f"persona_level='{rubric.get('persona_level', 'unknown')}'"
         )
+
+    # Score labels for clearer semantic anchoring
+    _SCORE_LABELS = {
+        "1": "Failure",
+        "2": "Below Expectations",
+        "3": "Adequate (Baseline)",
+        "4": "Good",
+        "5": "Excellent",
+    }
+
     scoring_lines = []
     for score, description in sorted(
         dim_data["scoring_guidance"].items(), key=lambda x: int(x[0])
     ):
-        scoring_lines.append(f"Score {score}: {description}")
+        label = _SCORE_LABELS.get(score, "")
+        prefix = f"Score {score} — {label}" if label else f"Score {score}"
+        scoring_lines.append(f"{prefix}: {description}")
 
     dim_label = (
         dimension_name.replace("_", " ")
@@ -196,19 +213,12 @@ def _build_criteria_from_rubric(dimension_name: str, rubric: dict) -> str:
         .replace("D7 ", "Safety ")
     )
 
+    score_keys = sorted(dim_data["scoring_guidance"].keys(), key=int)
+    max_score = int(score_keys[-1])
+
     return (
-        f"=== STUDENT PERSONA CONTEXT ===\n"
-        f"Persona level: {rubric['persona_level'].upper()}\n"
-        f"{rubric.get('description', '')}\n\n"
-        f"=== DIMENSION EVALUATION: {dim_label} ===\n"
-        f"CRITERIA: {dim_data['criteria']}\n\n"
-        f"SCORING RUBRIC (1-10 scale):\n"
-        f"{chr(10).join(scoring_lines)}\n\n"
-        f"EVALUATION INSTRUCTIONS:\n"
-        f"- Focus ONLY on the tutor's (assistant's) messages, not the student's.\n"
-        f"- Consider the ENTIRE conversation.\n"
-        f"- A score of 5 is baseline adequate; reserve 9-10 for truly exceptional performance.\n"
-        f"- Weight: {dim_data.get('weight', 1.0)}"
+        f"## Dimension: {dim_label} (1-{max_score} scale)\n\n"
+        f"{chr(10).join(scoring_lines)}"
     )
 
 
@@ -227,17 +237,23 @@ def create_tutor_geval_metrics(
     model=None,
     dimension_order: Optional[list[str]] = None,
 ) -> list[EwanConvGEval]:
+    rubric = load_rubric(persona_level)
     dims = dimension_order or DIMENSIONS
     metrics = []
     for dim_name in dims:
-        criteria = _build_full_criteria(dim_name, persona_level)
+        criteria = _build_criteria_from_rubric(dim_name, rubric)
         model_obj = resolve_ewan_model(model)
+        # Detect scale from rubric keys (5-point or 10-point)
+        dim_data = rubric["dimensions"].get(dim_name, {})
+        score_keys = dim_data.get("scoring_guidance", {}).keys()
+        max_score = max((int(k) for k in score_keys), default=10)
         metrics.append(
             EwanConvGEval(
                 name=dim_name,
                 criteria=criteria,
                 threshold=0.5,
                 model=model_obj,
+                max_score=max_score,
             )
         )
     return metrics
@@ -276,24 +292,20 @@ def _extract_score_from_prose(raw_text: str):
 
 
 async def _fallback_direct_eval(metric, tc, model_name: str):
-    """Reconstruct Phase 2 prompt and call via a_generate with robust parser."""
-    if hasattr(metric, "evaluation_steps") and metric.evaluation_steps:
-        steps_str = metric.number_evaluation_steps()
-    else:
-        steps_str = f"1. {metric.criteria[:500]}"
-
+    """Reconstruct scoring prompt and call via a_generate with robust parser."""
     from server.eval.ewan_eval.conv_geval import _SCORE_PROMPT, _format_turns
 
     turns_text = _format_turns(tc.turns)
     prompt = _SCORE_PROMPT.format(
-        evaluation_steps=steps_str,
+        rubric=metric.criteria,
         turns=turns_text,
+        max_score=metric.max_score,
     )
 
     model_obj = resolve_ewan_model(model_name)
     response_text, cost = await model_obj.a_generate(prompt)
     parsed = extract_json_from_response(response_text)
-    score = parsed.get("score", 5)
+    score = parsed.get("score", metric.max_score // 2)
     reason = parsed.get("reason", "Fallback evaluation")
     return float(score), reason
 
@@ -304,7 +316,12 @@ async def _fallback_direct_eval(metric, tc, model_name: str):
 
 ENABLE_CONVERSATION_PREPROCESSING = True
 
-_ENRICHED_DIMS = {"D4_domain_accuracy", "D5_code_teaching", "D7_safety_boundaries"}
+# Full enrichment: tool names + truncated args + truncated results
+_ENRICHED_DIMS_FULL = {"D4_domain_accuracy", "D5_code_teaching", "D7_safety_boundaries"}
+# Lightweight enrichment: tool names + status only (no content)
+_ENRICHED_DIMS_LIGHTWEIGHT = {"D3_scaffolding_calibration"}
+# Union for source selection
+_ENRICHED_DIMS = _ENRICHED_DIMS_FULL | _ENRICHED_DIMS_LIGHTWEIGHT
 
 _CODE_FENCE_RE = _re_mod.compile(
     r"^[ \t]*```[^\n]*\n(.*?)^[ \t]*```[ \t]*$",
@@ -313,7 +330,12 @@ _CODE_FENCE_RE = _re_mod.compile(
 
 
 def _strip_code_blocks(content: str) -> str:
-    return _CODE_FENCE_RE.sub("[code snippet]", content)
+    def _replacement(match):
+        code = match.group(1)
+        line_count = code.count("\n") + 1
+        return f"[code block: {line_count} lines]"
+
+    return _CODE_FENCE_RE.sub(_replacement, content)
 
 
 _DIMENSION_PREPROCESS: dict[str, str] = {
@@ -361,12 +383,25 @@ def evaluate_tutor_dimensions(
     requires_code: bool = False,
     abort_event: Optional[threading.Event] = None,
     enriched_conversation_turns: Optional[list[dict]] = None,
+    enriched_conversation_turns_lightweight: Optional[list[dict]] = None,
+    dimension_order: Optional[list[str]] = None,
 ) -> dict[str, float]:
-    """Evaluate tutoring dimensions with shuffled judge runs.
+    """Evaluate tutoring dimensions.
+
+    Each dimension is an independent LLM call at temp=0, so dimension
+    ordering has no effect on scores (validated by ICC experiment).
+
+    Args:
+        dimension_order: If provided, evaluate only these dimensions
+            (e.g. ["D3_scaffolding_calibration", "D4_domain_accuracy"]).
+            If None, evaluates all dimensions with non-zero weight.
+
+    Single-call evaluation: the rubric (with checklist conditions and
+    evaluation process) is injected directly into the scoring prompt.
+    No Phase 1 "evaluation steps" generation.
 
     Full production logic:
-    - Phase 1 caching per (model, dimension)
-    - 3x shuffled runs per model
+    - Single-call rubric evaluation (no Phase 1)
     - Multi-model parallel execution
     - Two-tier conversation (original vs enriched)
     - Abort + fallback layers
@@ -386,23 +421,34 @@ def evaluate_tutor_dimensions(
 
     model_names = [m or "default" for m in eval_models]
 
-    # ── Filter dimensions by category weight ──
-    active_dims = [
-        d
-        for d in DIMENSIONS
-        if get_dimension_weight(category, d, requires_code=requires_code) > 0.0
-    ]
-    skipped_dims = [d for d in DIMENSIONS if d not in active_dims]
-    if skipped_dims:
-        print(
-            f"    Skipping dimensions (weight=0 for {category}): "
-            f"{', '.join(d.split('_')[0] for d in skipped_dims)}"
-        )
+    # ── Filter dimensions ──
+    if dimension_order:
+        # Explicit dimension subset requested
+        active_dims = [d for d in dimension_order if d in DIMENSIONS]
+        skipped_dims = [d for d in DIMENSIONS if d not in active_dims]
+        if skipped_dims:
+            print(
+                f"    Evaluating subset: {', '.join(d.split('_')[0] for d in active_dims)} "
+                f"(skipping {', '.join(d.split('_')[0] for d in skipped_dims)})"
+            )
+    else:
+        # Default: filter by category weight
+        active_dims = [
+            d
+            for d in DIMENSIONS
+            if get_dimension_weight(category, d, requires_code=requires_code) > 0.0
+        ]
+        skipped_dims = [d for d in DIMENSIONS if d not in active_dims]
+        if skipped_dims:
+            print(
+                f"    Skipping dimensions (weight=0 for {category}): "
+                f"{', '.join(d.split('_')[0] for d in skipped_dims)}"
+            )
 
     total_calls = len(eval_models) * num_judge_runs * len(active_dims)
     print(
         f"    Evaluation plan: {len(eval_models)} model(s) × "
-        f"{num_judge_runs} shuffled runs × {len(active_dims)} dims "
+        f"{num_judge_runs} run(s) × {len(active_dims)} dims "
         f"= {total_calls} judge calls"
     )
 
@@ -412,7 +458,8 @@ def evaluate_tutor_dimensions(
         expected_outcome=expected_outcome,
         user_description=user_description,
     )
-    _enriched_src = enriched_conversation_turns or conversation_turns
+    _enriched_full = enriched_conversation_turns or conversation_turns
+    _enriched_light = enriched_conversation_turns_lightweight or conversation_turns
 
     _dim_test_cases: dict[str, ConversationalTestCase] = {}
 
@@ -422,7 +469,12 @@ def evaluate_tutor_dimensions(
     else:
         _pp_log_lines: list[str] = []
         for dim in active_dims:
-            src = _enriched_src if dim in _ENRICHED_DIMS else conversation_turns
+            if dim in _ENRICHED_DIMS_FULL:
+                src = _enriched_full
+            elif dim in _ENRICHED_DIMS_LIGHTWEIGHT:
+                src = _enriched_light
+            else:
+                src = conversation_turns
             processed = preprocess_turns(src, dim)
             tc_turns = [Turn(role=t["role"], content=t["content"]) for t in processed]
             _dim_test_cases[dim] = ConversationalTestCase(
@@ -442,41 +494,6 @@ def evaluate_tutor_dimensions(
             for ln in _pp_log_lines:
                 print(ln)
 
-    # ── Phase 1: cache evaluation_steps per (model, dim) ──
-    _phase1_cache: dict[tuple[str, str], list[str]] = {}
-    _p1_t0 = _time.time()
-
-    async def _precompute_phase1():
-        sem = asyncio.Semaphore(_CONCURRENCY)
-        p1_tasks = []
-        p1_keys = []
-        for mi, cur_model in enumerate(eval_models):
-            mn = model_names[mi]
-            for dim_name in active_dims:
-                tmp = EwanConvGEval(
-                    name=dim_name,
-                    criteria=_build_full_criteria(dim_name, persona_level),
-                    threshold=0.5,
-                    model=resolve_ewan_model(cur_model),
-                )
-
-                async def _gen(m=tmp):
-                    async with sem:
-                        return await m._a_generate_evaluation_steps()
-
-                p1_tasks.append(_gen())
-                p1_keys.append((mn, dim_name))
-        results = await asyncio.gather(*p1_tasks)
-        for key, steps in zip(p1_keys, results):
-            _phase1_cache[key] = steps
-
-    run_async(_precompute_phase1())
-    _p1_saved = len(eval_models) * len(active_dims) * (num_judge_runs - 1)
-    print(
-        f"    Phase 1 cached: {len(_phase1_cache)} combinations in "
-        f"{_time.time() - _p1_t0:.1f}s (saving {_p1_saved} LLM calls)"
-    )
-
     # ── Build ALL metric instances (models × runs × dims) ──
     all_metrics = []
     all_test_cases = []
@@ -485,23 +502,12 @@ def evaluate_tutor_dimensions(
     for model_idx, current_model in enumerate(eval_models):
         mname = model_names[model_idx]
         for run_idx in range(num_judge_runs):
-            shuffled_dims = active_dims.copy()
-            random.shuffle(shuffled_dims)
-
-            print(
-                f"    [{mname}] run {run_idx + 1}/{num_judge_runs} "
-                f"(order: {', '.join(d.split('_')[0] for d in shuffled_dims)})"
-            )
-
             metrics = create_tutor_geval_metrics(
                 persona_level,
                 model=current_model,
-                dimension_order=shuffled_dims,
+                dimension_order=active_dims,
             )
             for metric in metrics:
-                cache_key = (mname, metric.name)
-                if cache_key in _phase1_cache:
-                    metric.evaluation_steps = _phase1_cache[cache_key]
                 all_metrics.append(metric)
                 all_test_cases.append(copy.deepcopy(_dim_test_cases[metric.name]))
                 task_keys.append((mname, run_idx, metric.name))
@@ -553,7 +559,7 @@ def evaluate_tutor_dimensions(
                             extracted = _extract_score_from_prose(raw_text)
                             if extracted:
                                 score, reason = extracted
-                                metric.score = score / 10.0
+                                metric.score = score / float(metric.max_score)
                                 metric.reason = f"[FALLBACK-EXTRACT] {reason}"
                                 metric.evaluation_cost = 0.0
                                 _fallback_count[0] += 1
@@ -565,13 +571,13 @@ def evaluate_tutor_dimensions(
                                         "score": score,
                                     }
                                 )
-                                return score / 10.0
+                                return score / float(metric.max_score)
                         # Layer 2: direct call with robust parser
                         try:
                             score, reason = await _fallback_direct_eval(
                                 metric, tc, model_name
                             )
-                            metric.score = score / 10.0
+                            metric.score = score / float(metric.max_score)
                             metric.reason = f"[FALLBACK-DIRECT] {reason}"
                             metric.evaluation_cost = 0.0
                             _fallback_count[0] += 1
@@ -583,7 +589,7 @@ def evaluate_tutor_dimensions(
                                     "score": score,
                                 }
                             )
-                            return score / 10.0
+                            return score / float(metric.max_score)
                         except Exception:
                             pass
                         _abort.set()
@@ -637,23 +643,30 @@ def evaluate_tutor_dimensions(
         cost = all_metrics[i].evaluation_cost or 0.0
         reason = getattr(all_metrics[i], "reason", None) or ""
         if raw_score > 1.0:
-            raw_score = raw_score / 10.0
+            raw_score = raw_score / float(all_metrics[i].max_score)
         score = max(0.0, min(1.0, raw_score))
         model_accumulated[mname][dim_name].append(score)
         model_reasons[mname][dim_name].append(reason)
         model_costs[mname].append(cost)
 
     # ── Per-run raw scores ──
+    # Collect max_score per dimension from metrics
+    _dim_max_score: dict[str, int] = {}
+    for metric, (_, _, dim_name) in zip(all_metrics, task_keys):
+        if dim_name not in _dim_max_score:
+            _dim_max_score[dim_name] = metric.max_score
+
     _per_run_scores: dict[str, dict[str, dict[str, dict]]] = {}
     for dim_name in active_dims:
         _per_run_scores[dim_name] = {}
+        ms = _dim_max_score.get(dim_name, 10)
         for mname in model_names:
             _per_run_scores[dim_name][mname] = {}
             run_scores = model_accumulated[mname][dim_name]
             for ri in range(len(run_scores)):
                 _per_run_scores[dim_name][mname][f"run_{ri}"] = {
                     "score": round(run_scores[ri], 4),
-                    "raw_int": int(round(run_scores[ri] * 10)),
+                    "raw_int": int(round(run_scores[ri] * ms)),
                 }
 
     # ── Per-model dimension scores ──

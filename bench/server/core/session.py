@@ -105,14 +105,29 @@ _ATTACHMENT_MAX_CHARS = 4_000
 
 _IMAGE_EXTENSIONS = frozenset({".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp"})
 _IMAGE_MAX_BYTES = 5 * 1024 * 1024  # 5 MB raw before base64
-_IMAGE_LEDGER_MAX = 5               # max images in ledger across session
+_IMAGE_LEDGER_MAX = 5  # max images in ledger across session
 
 _BINARY_EXTENSIONS = frozenset(
     {
-        ".ico", ".svg",
-        ".pdf", ".zip", ".gz", ".tar", ".7z", ".pkl", ".pickle",
-        ".npy", ".npz", ".pyc", ".so", ".dylib", ".dll", ".exe",
-        ".whl", ".class", ".o",
+        ".ico",
+        ".svg",
+        ".pdf",
+        ".zip",
+        ".gz",
+        ".tar",
+        ".7z",
+        ".pkl",
+        ".pickle",
+        ".npy",
+        ".npz",
+        ".pyc",
+        ".so",
+        ".dylib",
+        ".dll",
+        ".exe",
+        ".whl",
+        ".class",
+        ".o",
     }
 )
 
@@ -198,10 +213,8 @@ def _read_attachment(workspace_path: str, filename: str) -> dict:
         head = _ATTACHMENT_MAX_CHARS * 2 // 3
         tail = _ATTACHMENT_MAX_CHARS // 3
         content = (
-            content[:head]
-            + f"\n\n... [{len(content):,} chars total, showing first "
-            f"{head:,} + last {tail:,}] ...\n\n"
-            + content[-tail:]
+            content[:head] + f"\n\n... [{len(content):,} chars total, showing first "
+            f"{head:,} + last {tail:,}] ...\n\n" + content[-tail:]
         )
 
     return {
@@ -464,7 +477,8 @@ class TutoringSession:
             )
             # Don't count images that will be overwritten (same filename)
             overwrites = sum(
-                1 for a in resolved_attachments
+                1
+                for a in resolved_attachments
                 if a.get("is_image") and a["filename"] in self._file_ledger
             )
             if existing_images + new_images - overwrites > _IMAGE_LEDGER_MAX:
@@ -493,7 +507,16 @@ class TutoringSession:
         # ── Record agent message + advance turn ──
         msg_entry: dict = {"role": "assistant", "content": text}
         if resolved_attachments:
-            msg_entry["attachments"] = resolved_attachments
+            # Store metadata only — strip base64 content from images to avoid
+            # unbounded memory growth in conversation history.
+            msg_entry["attachments"] = [
+                {
+                    k: v
+                    for k, v in att.items()
+                    if not (att.get("is_image") and k == "content")
+                }
+                for att in resolved_attachments
+            ]
         self._conversation.append(msg_entry)
         self._turn += 1
 
@@ -515,7 +538,9 @@ class TutoringSession:
             else:
                 if not is_image:
                     # Shift current → prev so diff shows incremental changes
-                    self._file_ledger[fname]["prev_content"] = self._file_ledger[fname]["current_content"]
+                    self._file_ledger[fname]["prev_content"] = self._file_ledger[fname][
+                        "current_content"
+                    ]
                     self._file_ledger[fname]["current_content"] = att["content"]
                 self._file_ledger[fname]["current_turn"] = self._turn
 

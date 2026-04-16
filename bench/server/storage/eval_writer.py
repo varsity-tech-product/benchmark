@@ -36,6 +36,7 @@ def run_evaluation(
     eval_model: str,
     cancel_event=None,
     eval_mode: str = "full",
+    tutor_dims: list[str] | None = None,
 ) -> dict:
     """Run full evaluation and save reports into a new evaluations/ subdirectory.
 
@@ -49,7 +50,8 @@ def run_evaluation(
         bench_root: Path to bench/ root.
         eval_model: Model for LLM-based evaluators.
         cancel_event: Optional cancellation event.
-        eval_mode: "full" | "qr_only" | "qp_only".
+        eval_mode: "full" | "qr_only" | "qp_only" | "tutor_only".
+        tutor_dims: Optional list of tutor dimensions to evaluate.
 
     Returns:
         Dict with evaluation results (quant_result, quant_process, tutor_scores, ...).
@@ -68,7 +70,8 @@ def run_evaluation(
 
     workspace_path = str(result_dir / "agent_files")
 
-    logger.info("Running evaluation (mode=%s)...", eval_mode)
+    _dims_info = f", tutor_dims={tutor_dims}" if tutor_dims else ""
+    logger.info("Running evaluation (mode=%s%s)...", eval_mode, _dims_info)
     eval_results = evaluate_task(
         task=task,
         persona=persona,
@@ -80,6 +83,7 @@ def run_evaluation(
         eval_model=eval_model,
         cancel_event=cancel_event,
         eval_mode=eval_mode,
+        tutor_dims=tutor_dims,
     )
 
     # --- Compute task score ---

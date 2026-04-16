@@ -51,6 +51,7 @@ def evaluate_task(
     eval_model: str,
     cancel_event=None,
     eval_mode: str = "full",
+    tutor_dims: list[str] | None = None,
 ) -> dict:
     """Run full evaluation on a completed task.
 
@@ -68,7 +69,10 @@ def evaluate_task(
         bench_root: Path to bench/ root (for locating eval scripts).
         eval_model: Model name for LLM-based evaluators.
         cancel_event: Optional threading.Event for cancellation.
-        eval_mode: "full" | "qr_only" | "qp_only".
+        eval_mode: "full" | "qr_only" | "qp_only" | "tutor_only".
+        tutor_dims: Optional list of tutor dimensions to evaluate
+            (e.g. ["D3_scaffolding_calibration", "D4_domain_accuracy"]).
+            If None, evaluates all dimensions with non-zero weight.
 
     Returns:
         Dict with keys: quant_result, quant_process, tutor_scores,
@@ -103,6 +107,7 @@ def evaluate_task(
 
     _run_qr = eval_mode in ("full", "qr_only")
     _run_qp = eval_mode in ("full", "qp_only")
+    _run_tutor = eval_mode in ("full", "tutor_only")
 
     # ── Step 2: Quant Result Score (custom eval scripts) ──
     if _run_qr and task.ground_truth and task.ground_truth.quant_validation:
@@ -241,12 +246,24 @@ def evaluate_task(
             evaluate_tutor_dimensions,
         )
 
-        # Two-tier conversation: enriched for D4/D5/D7, original for D1/D2/D3/D6
-        enriched_conv = _enrich_conversation_with_tools(conversation, _logs)
+        # Multi-tier conversation enrichment:
+        # - Full: D4/D5/D7 (tool names + truncated args + truncated results)
+        # - Lightweight: D3 (tool names + status only, no content)
+        enriched_conv = _enrich_conversation_with_tools(
+            conversation, _logs, mode="full"
+        )
+        enriched_conv_lightweight = _enrich_conversation_with_tools(
+            conversation, _logs, mode="lightweight"
+        )
+
+        _tutor_kwargs = {}
+        if tutor_dims:
+            _tutor_kwargs["dimension_order"] = tutor_dims
 
         tutor_scores = evaluate_tutor_dimensions(
             conversation_turns=conversation,
             enriched_conversation_turns=enriched_conv,
+            enriched_conversation_turns_lightweight=enriched_conv_lightweight,
             persona_level=persona.knowledge_level,
             scenario=build_scenario(task, persona.persona_id),
             expected_outcome=task.ground_truth.expected_outcome,
@@ -255,6 +272,7 @@ def evaluate_task(
             category=task.category.value,
             requires_code=task.requires_code,
             abort_event=None,
+            **_tutor_kwargs,
         )
         fallback_count = tutor_scores.pop("_fallback_count", 0)
         per_model = tutor_scores.pop("_per_model", None)
@@ -271,7 +289,7 @@ def evaluate_task(
     with concurrent.futures.ThreadPoolExecutor(max_workers=3) as pool:
         fut_rj = pool.submit(_run_result_judge) if _run_qr else None
         fut_qp = pool.submit(_run_process_metrics) if _run_qp else None
-        fut_tutor = pool.submit(_run_tutor_eval)
+        fut_tutor = pool.submit(_run_tutor_eval) if _run_tutor else None
 
         _futures = [f for f in (fut_rj, fut_qp, fut_tutor) if f is not None]
         for fut in concurrent.futures.as_completed(_futures):
@@ -295,6 +313,9 @@ def evaluate_task(
     _check_cancel()
 
     if not _run_qr:
+        return results
+
+    if eval_mode == "tutor_only":
         return results
 
     # ── Step 2d: QR blending (30/30/40 with dampening) ──

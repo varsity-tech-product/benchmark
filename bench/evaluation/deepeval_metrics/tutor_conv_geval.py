@@ -1,7 +1,7 @@
 """ConversationalGEval configuration for 7D persona-aware tutoring rubric.
 
 Design doc §6.2: Each dimension is scored on a 1-10 scale via ConversationalGEval.
-Judge runs 3 times with shuffled dimension order, scores averaged (§6.2, §4.1).
+Single judge run per model (each dim is an independent LLM call at temp=0; shuffle is a no-op).
 
 The judge evaluates TEACHER OUTPUT ONLY — not student learning (§3.2).
 The same teaching behavior can be excellent for one student persona and
@@ -22,7 +22,6 @@ import logging as _logging
 import re as _re_mod
 
 _log = _logging.getLogger(__name__)
-import random
 import threading
 from pathlib import Path
 from typing import Optional
@@ -366,7 +365,7 @@ DIMENSIONS = [
     "D7_safety_boundaries",
 ]
 
-NUM_JUDGE_RUNS = 3  # §4.1: 3x shuffled prompts for judge stability
+NUM_JUDGE_RUNS = 1  # Each dim is an independent LLM call at temp=0; shuffle is a no-op (ICC: CV=0.0%)
 
 # ──────────────────────────────────────────────────────────────
 # Per-category dimension weights
@@ -597,7 +596,7 @@ def create_tutor_geval_metrics(
         persona_level: One of 'beginner', 'intermediate', 'advanced'.
         model: LLM model for evaluation judge.
         dimension_order: Optional ordered list of dimension names.
-            If provided, metrics are created in this order (for shuffled judge runs).
+            If provided, metrics are created in this order.
 
     Returns:
         List of 7 ConversationalGEval metric instances.
@@ -709,10 +708,10 @@ def evaluate_tutor_dimensions(
     abort_event: Optional[threading.Event] = None,
     enriched_conversation_turns: Optional[list[dict]] = None,
 ) -> dict[str, float]:
-    """Evaluate tutoring dimensions with shuffled judge runs.
+    """Evaluate tutoring dimensions.
 
-    Design doc §6.2: Judge runs 3 times with shuffled dimension order,
-    scores averaged for stability (§4.1: "3x shuffled prompts").
+    Each dimension is an independent LLM call at temp=0, so dimension
+    ordering has no effect on scores (validated by ICC experiment).
 
     Two-tier conversation input:
       - **Teaching-quality dimensions** (D1, D2, D3, D6) are evaluated
@@ -728,11 +727,10 @@ def evaluate_tutor_dimensions(
     to ``conversation_turns`` (backward-compatible).
 
     Multi-model support: when ``model`` is a list of N model names, EACH
-    model independently performs ``num_judge_runs`` shuffled runs across
-    all active dimensions.  This yields N × num_judge_runs × dims LLM
-    calls (e.g. 3 models × 3 runs × 7 dims = 63 calls), all executed in
-    parallel.  Per-model dimension scores (averaged over their own
-    shuffled runs) are returned under the ``_per_model`` key.  The final
+    model independently performs ``num_judge_runs`` runs across all active
+    dimensions.  This yields N × num_judge_runs × dims LLM calls, all
+    executed in parallel.  Per-model dimension scores (averaged over their
+    own runs) are returned under the ``_per_model`` key.  The final
     dimension scores are the cross-model average.
 
     Dimensions with weight=0 for the given category are skipped entirely
@@ -752,7 +750,7 @@ def evaluate_tutor_dimensions(
             (uses EVAL_DEFAULT_MODELS list).
         conversational_test_case: Pre-built ConversationalTestCase from ConversationSimulator.
             If provided, uses this directly instead of building from conversation_turns.
-        num_judge_runs: Number of shuffled judge runs *per model* (default: 3).
+        num_judge_runs: Number of judge runs *per model* (default: 1).
         category: TaskCategory.value string for per-category dimension weighting.
         requires_code: Whether the task expects code output.  Used to
             re-enable D5 (Code Teaching) for educational adversarial tasks.
@@ -762,7 +760,7 @@ def evaluate_tutor_dimensions(
         Skipped dimensions (weight=0) are not included in the dict.
         When multi-model is used, an extra ``_per_model`` key maps each
         model name to its own {dimension: score} dict (averaged over that
-        model's shuffled runs).
+        model's runs).
     """
     if not DEEPEVAL_AVAILABLE:
         raise ImportError("deepeval is required. Install with: pip install deepeval")
@@ -801,7 +799,7 @@ def evaluate_tutor_dimensions(
     total_calls = len(eval_models) * num_judge_runs * len(active_dims)
     print(
         f"    Evaluation plan: {len(eval_models)} model(s) × "
-        f"{num_judge_runs} shuffled runs × {len(active_dims)} dims "
+        f"{num_judge_runs} run(s) × {len(active_dims)} dims "
         f"= {total_calls} judge calls"
     )
 
@@ -904,18 +902,10 @@ def evaluate_tutor_dimensions(
     for model_idx, current_model in enumerate(eval_models):
         mname = model_names[model_idx]
         for run_idx in range(num_judge_runs):
-            shuffled_dims = active_dims.copy()
-            random.shuffle(shuffled_dims)
-
-            print(
-                f"    [{mname}] run {run_idx + 1}/{num_judge_runs} "
-                f"(order: {', '.join(d.split('_')[0] for d in shuffled_dims)})"
-            )
-
             metrics = create_tutor_geval_metrics(
                 persona_level,
                 model=current_model,
-                dimension_order=shuffled_dims,
+                dimension_order=active_dims,
             )
             for metric in metrics:
                 # Inject cached Phase 1 steps → a_measure skips LLM call
@@ -1077,7 +1067,7 @@ def evaluate_tutor_dimensions(
         model_costs[mname].append(cost)
 
     # ── Per-run raw scores (for transparency and future ablation) ──
-    # Stores each shuffled run's raw score per (model, dim) so that
+    # Stores each run's raw score per (model, dim) so that
     # cross-run variance can be analyzed without re-running evaluation.
     _per_run_scores: dict[str, dict[str, dict[str, dict]]] = {}
     for dim_name in active_dims:
@@ -1092,7 +1082,7 @@ def evaluate_tutor_dimensions(
                     "raw_int": int(round(run_scores[ri] * 10)),
                 }
 
-    # ── Per-model dimension scores (average over shuffled runs) ──
+    # ── Per-model dimension scores (average over runs) ──
     per_model: dict[str, dict[str, float]] = {}
     for mname in model_names:
         per_model[mname] = {}

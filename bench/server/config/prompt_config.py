@@ -1,15 +1,12 @@
-"""Central prompt configuration for QuantTutorBench.
+"""Server-scoped prompt configuration for QuantTutorBench.
 
-All system prompts and dynamic prompt builders are defined here.
-Other modules should import from this file rather than defining
-prompt text inline.
-
-Parallels config/llm_config.py (model configuration).
+Only prompt builders and constants used by bench/server/ live here.
+Client/orchestrator system prompts and context builders live in
+bench/config/prompt_config.py.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -24,44 +21,6 @@ _IEX_CATEGORIES: frozenset[str] = frozenset(
         "end_to_end",
         "debug",
     }
-)
-
-# Prompt A — wait override (tutor context, inside AVAILABLE DOCUMENTATION)
-# Relaxes the "wait for student direction" rule for coding tasks so the
-# tutor moves from explanation into implementation within the same response.
-_PROMPT_A_WAIT_OVERRIDE = (
-    "\nFor coding tasks, 'wait for their direction' applies only to "
-    "future workflow steps. When the student is asking how to "
-    "implement the current step, move from explanation into concrete "
-    "implementation for that step in the same response."
-)
-
-# Prompt B — CODE TASK EXECUTION REQUIREMENT (tutor context, inside TOOL USAGE DIRECTIVE)
-# Pushes requires_code tasks to produce artifacts, not just explanations.
-_PROMPT_B_CODE_TASK_EXECUTION = (
-    "\nCODE TASK EXECUTION REQUIREMENT:\n"
-    "- For this task, explanation alone is NOT sufficient. Once you "
-    "explain the current implementation step, use tools to produce "
-    "a concrete artifact for that same step whenever possible: create "
-    "or update a file, execute code, save a results table, or inspect "
-    "the generated output.\n"
-    "- Do NOT wait for the student to explicitly say 'write the file' "
-    "if they are already asking how to implement, structure, filter, "
-    "collect, or rank something. Those are implementation requests.\n"
-    "- GOOD: Student asks how to structure an optimization workflow → "
-    "inspect the environment, write the initial scaffold, run the next "
-    "verification step, explain the result.\n"
-    "- BAD: Student asks how to structure an optimization workflow → "
-    "describe an architecture for several turns without creating code "
-    "or workspace artifacts."
-)
-
-# Prompt C — move beyond snippets (tutor context, inside CODE IN RESPONSES)
-# Ensures implementation tasks produce workspace artifacts, not just snippets.
-_PROMPT_C_BEYOND_SNIPPETS = (
-    "For implementation-focused questions, move beyond snippets: the "
-    "student should leave the session with usable workspace artifacts "
-    "and verified outputs, not just architecture discussion.\n"
 )
 
 # Prompt D — IMPLEMENTATION TRACKING (simulator scenario, inside build_scenario)
@@ -87,100 +46,6 @@ _PROMPT_D_ABSTRACT_PUSH = (
     "through what happens when it runs?'"
 )
 
-# Prompt E — BACKTEST TRIAL SYSTEM (tutor context)
-# Injected when the task has a trial budget (max_backtest_trials > 0).
-_PROMPT_E_BACKTEST_TRIAL_SYSTEM = (
-    "Use the trial tools to iterate efficiently:\n\n"
-    "WORKFLOW:\n"
-    "1. Write your C# algorithm file (class must be named 'Algorithm' in "
-    "namespace 'QuantConnect.Algorithm.CSharp')\n"
-    "2. Call run_lean_backtest(algorithm_path) to compile + run + record a trial\n"
-    "3. Review the result (compile errors, empty trades, metrics)\n"
-    "4. Fix issues and run again (each run uses 1 trial)\n"
-    "5. Call select_submission(trial_id) to pick your best version\n"
-    "6. Call get_trial_status() anytime to review all trials\n\n"
-    "EFFICIENCY BONUS: Solving in fewer trials earns a higher efficiency score. "
-    "Plan carefully before each attempt.\n\n"
-    "NOTES:\n"
-    "- shell_exec is still available for non-backtest commands "
-    "(reading files, compiling, checking logs, etc.)\n"
-    "- If you exhaust all trials, you must select from existing trials\n"
-    "- If you don't call select_submission, the best trial is auto-selected"
-)
-
-
-@dataclass
-class PromptSegments:
-    """Container for category-filtered prompt segments.
-
-    Each field holds the text to inject (or empty string when filtered out).
-    The orchestrator can inspect individual segments or use the helper
-    properties to get the assembled text for each injection target.
-    """
-
-    a_wait_override: str = ""
-    b_code_task_execution: str = ""
-    c_beyond_snippets: str = ""
-    d_implementation_tracking: str = ""
-    d_abstract_push: str = ""
-    e_backtest_trial_system: str = ""
-    max_backtest_trials: int = 0
-
-
-def get_filtered_prompt_segments(
-    category: str,
-    requires_code: bool,
-    max_backtest_trials: int,
-) -> PromptSegments:
-    """Return prompt segments filtered by category and task properties.
-
-    Filtering rules:
-        A (wait override)          — I/E/X categories only
-        B (code task execution)    — all requires_code=True tasks
-        C (move beyond snippets)   — I/E/X categories only
-        D (implementation tracking)— I/E/X categories only
-        E (backtest trial system)  — max_backtest_trials > 0 (natural filter)
-
-    Parameters
-    ----------
-    category : str
-        The task category value (e.g. "implementation", "debug", "strategy").
-    requires_code : bool
-        Whether the task requires code execution.
-    max_backtest_trials : int
-        Maximum backtest trial budget (0 means no trial system).
-
-    Returns
-    -------
-    PromptSegments
-        Populated segment container with empty strings for filtered-out prompts.
-    """
-    is_iex = category in _IEX_CATEGORIES
-    segments = PromptSegments(max_backtest_trials=max_backtest_trials)
-
-    # A: wait override — I/E/X + requires_code (only meaningful in docs context)
-    if is_iex and requires_code:
-        segments.a_wait_override = _PROMPT_A_WAIT_OVERRIDE
-
-    # B: code task execution — any requires_code task (broader than I/E/X)
-    if requires_code:
-        segments.b_code_task_execution = _PROMPT_B_CODE_TASK_EXECUTION
-
-    # C: move beyond snippets — I/E/X + requires_code
-    if is_iex and requires_code:
-        segments.c_beyond_snippets = _PROMPT_C_BEYOND_SNIPPETS
-
-    # D: implementation tracking — I/E/X + requires_code (simulator side)
-    if is_iex and requires_code:
-        segments.d_implementation_tracking = _PROMPT_D_IMPLEMENTATION_TRACKING
-        segments.d_abstract_push = _PROMPT_D_ABSTRACT_PUSH
-
-    # E: backtest trial system — natural filter on trial budget
-    if max_backtest_trials > 0:
-        segments.e_backtest_trial_system = _PROMPT_E_BACKTEST_TRIAL_SYSTEM
-
-    return segments
-
 
 def _get_max_bt(task: QuantTutorTask) -> int:
     """Extract max_backtest_trials from a task, defaulting to 0."""
@@ -189,121 +54,9 @@ def _get_max_bt(task: QuantTutorTask) -> int:
     return 0
 
 
-# ── Agent System Prompts ──────────────────────────────────────
-
-TUTOR_SYSTEM_PROMPT = (
-    "You are an expert quantitative finance tutor specializing in "
-    "algorithmic trading, portfolio analysis, risk management, and "
-    "financial data science. Your role is to TEACH — not to do the "
-    "student's work for them. Every response you give must advance "
-    "the student's understanding. Delivering results without "
-    "explanation is a failure of your role, regardless of what the "
-    "student requests.\n\n"
-    "TEACHING APPROACH:\n"
-    "1. ADDRESS THE STUDENT'S TOPIC FIRST: When the student raises "
-    "a topic or question, explain and teach about it before using "
-    "tools to demonstrate. Never skip the student's topic to jump "
-    "straight to code execution.\n"
-    "   CRITICAL: If the student asks 'What is X?', your FIRST "
-    "paragraph MUST explain X in plain language. Only AFTER the "
-    "explanation should you fetch data or run code to illustrate.\n"
-    "2. USE the SESSION CONTEXT below to understand the student's level. "
-    "Do not waste turns asking what they already know — adapt immediately "
-    "based on the provided student profile.\n"
-    "3. ADAPT your language: Use simple analogies and define all terms "
-    "for beginners. Use precise domain terminology with advanced "
-    "students. Never patronize, never overwhelm.\n"
-    "4. PRESENT results naturally: Your response should read like a "
-    "tutor speaking to a student in a classroom. When you use tools "
-    "to fetch data or run code, treat the results as your own "
-    "knowledge — summarize, interpret, and teach from them. Never "
-    "expose the mechanics of how you obtained the information. "
-    "The student should feel like you are a knowledgeable tutor who "
-    "happens to have data at your fingertips, not a bot executing "
-    "commands.\n"
-    "5. SCAFFOLD learning: Guide students to discover answers "
-    "themselves through leading questions and layered hints. Walk the "
-    "student through concepts and results step by step.\n"
-    "6. EXPLAIN your reasoning: When showing code or formulas, explain "
-    "WHY each step matters, not just WHAT it does. Connect concepts "
-    "to build a coherent knowledge framework.\n"
-    "7. DATA ACCESS: Your sandbox has all necessary datasets pre-loaded. "
-    "NEVER ask the student to upload, share, or paste data files — "
-    "they do not have files to give you. If you need data, use your "
-    "tools to read from the sandbox or fetch it yourself.\n\n"
-    "SAFETY BOUNDARIES:\n"
-    "- NEVER give direct investment advice (e.g., 'buy AAPL', "
-    "'allocate 60% to stocks'). Instead, teach the analytical "
-    "frameworks that enable informed decision-making.\n"
-    "- When asked for specific investment recommendations, redirect "
-    "to educational content about how to evaluate such decisions.\n"
-    "- When discussing ANY trading strategy or backtest result, "
-    "ALWAYS include a brief risk disclaimer (e.g., 'Remember, "
-    "past performance does not guarantee future results — always "
-    "consider transaction costs, slippage, and overfitting risk "
-    "before trading real money.').\n\n"
-    "CONVERSATION STYLE:\n"
-    "- Remember and reference earlier parts of the conversation.\n"
-    "- When the student expresses anxiety, frustration, or "
-    "confusion, ALWAYS acknowledge their emotion FIRST before "
-    "providing content. Name the emotion specifically and validate "
-    "it (e.g., 'I can see this feels overwhelming — that is "
-    "completely normal when encountering these concepts for the "
-    "first time. Let me break it down step by step').\n"
-    "- When the student shows excitement or progress, mirror their "
-    "energy and reinforce what they did right specifically.\n"
-    "- Celebrate real progress without empty praise.\n"
-    "- If the student makes an error, guide them to find it "
-    "themselves before correcting directly."
-)
-
-ORACLE_SYSTEM_PROMPT = (
-    "You are an expert quantitative finance tutor producing a reference-quality "
-    "tutoring session. Your goal is to create the BEST POSSIBLE teaching "
-    "interaction that will serve as a scoring baseline for other tutoring agents.\n\n"
-    "TEACHING QUALITY:\n"
-    "- Teach naturally and effectively, matching the student's level precisely.\n"
-    "- Explain concepts before demonstrating them with tools.\n"
-    "- Present tool results as your own knowledge — never expose tool mechanics.\n"
-    "- Adapt language to student level: simple analogies for beginners, "
-    "precise terminology for advanced.\n\n"
-    "COMPLETENESS:\n"
-    "- Address every sub-topic the student raises.\n"
-    "- When computing metrics, ensure ALL standard metrics for the task "
-    "category are included (e.g., for backtests: total_return, sharpe_ratio, "
-    "max_drawdown, win_rate, total_trades at minimum).\n"
-    "- Save key numerical results to JSON files in the workspace.\n\n"
-    "VERIFIABILITY:\n"
-    "- Execute real computations — never describe hypothetical results.\n"
-    "- Save computed metrics to workspace JSON files "
-    "(e.g., backtest_metrics.json, statistics_results.json) so outputs "
-    "can be programmatically verified.\n"
-    "- When creating visualizations, also save the underlying data.\n\n"
-    "EFFICIENCY:\n"
-    "- Use the most appropriate tool for each sub-task.\n"
-    "- Avoid redundant tool calls — do not re-fetch data already available.\n"
-    "- Each tool call should serve a clear pedagogical or computational purpose.\n\n"
-    "SAFETY BOUNDARIES:\n"
-    "- Never give direct investment advice. Teach analytical frameworks.\n"
-    "- When discussing strategy performance, include risk disclaimers.\n\n"
-    "CONVERSATION STYLE:\n"
-    "- Reference earlier parts of the conversation for continuity.\n"
-    "- Respond to student emotions naturally.\n"
-    "- Present results naturally as part of teaching narrative.\n"
-    "- DATA ACCESS: Your sandbox has all necessary datasets pre-loaded. "
-    "Never ask the student to upload data."
-)
-
-BASELINE_SYSTEM_PROMPT = (
-    "You are a quantitative finance expert. "
-    "When the student asks a question, give the complete answer directly. "
-    "Show the final code, formula, or solution immediately without asking "
-    "clarifying questions. Do not try to teach, scaffold, or guide the "
-    "student to discover the answer themselves. Just provide the answer "
-    "as concisely and accurately as possible.\n\n"
-    "If tools are available, use them to compute or fetch data, then "
-    "present the result directly."
-)
+def _is_iex_code_task(task: QuantTutorTask) -> bool:
+    """Return True if the task is an I/E/X category that requires code."""
+    return task.category.value in _IEX_CATEGORIES and task.requires_code
 
 
 # ── Emotional Profile Expansion ───────────────────────────────
@@ -337,61 +90,6 @@ EMOTIONAL_PROFILE_DESCRIPTIONS: dict[str, str] = {
 
 
 # ── Dynamic Prompt Builders ───────────────────────────────────
-
-
-def build_tutor_context(
-    task: QuantTutorTask,
-    persona: StudentPersona,
-) -> str:
-    """New architecture: returns empty string.
-
-    The new server does NOT inject any task/student context into the
-    agent's prompt. The agent must discover everything from the
-    student's messages and tool exploration.
-
-    Original implementation commented out below for ablation experiments.
-    """
-    return ""
-    # For ablation experiments: restore from bench/config/prompt_config.py (Legacy)
-
-
-def build_oracle_context(
-    task: QuantTutorTask,
-    persona: StudentPersona,
-) -> str:
-    """Build dynamic per-conversation context for the oracle (reference) agent.
-
-    Shares the student profile and tool directives with build_tutor_context,
-    but adds oracle-specific instructions for completeness and verifiability:
-    - Explicit learning goals (so the oracle covers all of them)
-    - Instruction to save key results as JSON files
-    """
-    # Start with the standard tutor context
-    parts = [build_tutor_context(task, persona)]
-
-    # Oracle-specific additions
-    parts.append("")
-    parts.append("=== ORACLE REFERENCE DIRECTIVES ===")
-
-    # Expose learning goals so the oracle covers them all
-    if task.ground_truth and task.ground_truth.required_capabilities:
-        parts.append("Learning goals to cover comprehensively:")
-        for i, goal in enumerate(task.ground_truth.required_capabilities, 1):
-            parts.append(f"  {i}. {goal}")
-        parts.append(
-            "Ensure ALL goals above are addressed in the conversation — "
-            "do not end without covering each one."
-        )
-
-    parts.append("")
-    parts.append(
-        "RESULT PERSISTENCE: After computing key metrics or results, "
-        "save them to JSON files in /workspace (e.g., "
-        "backtest_metrics.json, statistics_results.json). This enables "
-        "programmatic verification of your outputs."
-    )
-
-    return "\n".join(parts)
 
 
 def build_user_description(
@@ -647,11 +345,7 @@ def build_scenario(
             # there is NO incremental TC checker.  These rules involve
             # completion judgment or rushing — the TC checker handles
             # termination instead.
-            segments = get_filtered_prompt_segments(
-                task.category.value,
-                task.requires_code,
-                _get_max_bt(task),
-            )
+            is_iex_code = _is_iex_code_task(task)
             if not has_incremental_tc:
                 parts.append("")
                 parts.append(
@@ -674,12 +368,12 @@ def build_scenario(
                     f"to the next one rather than asking further refinement "
                     f"questions on the same topic."
                 )
-                if segments.d_implementation_tracking:
+                if is_iex_code:
                     parts.append("")
-                    parts.append(segments.d_implementation_tracking)
-            if segments.d_abstract_push:
+                    parts.append(_PROMPT_D_IMPLEMENTATION_TRACKING)
+            if is_iex_code:
                 parts.append("")
-                parts.append(segments.d_abstract_push)
+                parts.append(_PROMPT_D_ABSTRACT_PUSH)
             # Code visibility: help the student understand what counts
             # as "demonstrated" in a tool-based coding session.
             if task.category.value in ("implementation", "end_to_end", "debug"):

@@ -213,10 +213,62 @@ class BenchSessionManager:
             await self._transports[session_id].handle_request(scope, receive, send)
             return
 
-        # Unknown session ID
+        # Unknown session ID — try to restore from server storage
         if session_id and session_id not in self._transports:
-            resp = Response(status_code=404, content="Unknown session ID")
-            await resp(scope, receive, send)
+            state = self.get_or_restore_session(session_id)
+            if state is None:
+                resp = Response(status_code=404, content="Unknown session ID")
+                await resp(scope, receive, send)
+                return
+
+            # Restored from storage — set up MCP server + transport
+            server = self._create_mcp_server(state)
+            transport = StreamableHTTPServerTransport(
+                mcp_session_id=session_id,
+                is_json_response_enabled=False,
+                event_store=None,
+                security_settings=None,
+            )
+            self._transports[session_id] = transport
+
+            assert self._task_group is not None
+
+            async def run_restored(
+                *,
+                task_status: anyio.abc.TaskStatus[None] = anyio.TASK_STATUS_IGNORED,
+            ):
+                async with transport.connect() as streams:
+                    read_stream, write_stream = streams
+                    task_status.started()
+                    try:
+                        await server.run(
+                            read_stream,
+                            write_stream,
+                            server.create_initialization_options(),
+                        )
+                    except Exception as e:
+                        logger.error(
+                            "Restored session %s error: %s",
+                            session_id[:8],
+                            e,
+                            exc_info=True,
+                        )
+                    finally:
+                        if session_id in self._sessions:
+                            await self._cleanup_session(session_id)
+
+            try:
+                await self._task_group.start(run_restored)
+            except Exception as e:
+                logger.error(
+                    "Failed to start restored session %s: %s", session_id[:8], e
+                )
+                await self._cleanup_session(session_id)
+                resp = JSONResponse({"error": "Internal server error"}, status_code=500)
+                await resp(scope, receive, send)
+                return
+
+            await transport.handle_request(scope, receive, send)
             return
 
         # New session — POST only
@@ -340,16 +392,41 @@ class BenchSessionManager:
     def find_archived_result_dir(self, session_id: str) -> Path | None:
         """Find archived result dir for a session_id.
 
+        Session ID format:
+        - ``{uuid}_{task_prefix}`` (new) — task prefix (e.g. D01) enables
+          O(1) directory lookup instead of scanning all tasks.
+        - ``{uuid}`` (legacy) — falls back to full scan.
+
         Supports both old layout  ``{task_id}/{session_id}/``
         and new layout ``{task_id}/{persona_id}/{ts}_{session_id[:8]}/``.
         """
+        import re
+
         results_root = self.bench_root / "results" / "server"
         if not results_root.is_dir():
             return None
+
+        # Parse task hint from session_id suffix (e.g. "…_D01" → "D01")
+        task_hint = None
+        m = re.search(r"_([A-Z]\d{2})$", session_id)
+        if m:
+            task_hint = m.group(1)
+
         short_id = session_id[:8]
-        for task_dir in results_root.iterdir():
-            if not task_dir.is_dir():
-                continue
+
+        # Select which task directories to search
+        if task_hint:
+            # O(1): only scan task dirs matching the hint
+            task_dirs = [
+                d
+                for d in results_root.iterdir()
+                if d.is_dir() and d.name.startswith(f"{task_hint}_")
+            ]
+        else:
+            # Legacy: scan all task dirs
+            task_dirs = [d for d in results_root.iterdir() if d.is_dir()]
+
+        for task_dir in task_dirs:
             # Old layout: {task_id}/{session_id}/
             candidate = task_dir / session_id
             if candidate.is_dir():
@@ -360,7 +437,6 @@ class BenchSessionManager:
                     continue
                 for run_dir in persona_dir.iterdir():
                     if run_dir.is_dir() and run_dir.name.endswith(f"_{short_id}"):
-                        # Verify via run_state.json
                         rs = run_dir / "run_state.json"
                         if rs.exists():
                             return run_dir
@@ -470,6 +546,34 @@ class BenchSessionManager:
     def register_rest_session(self, state: SessionState):
         """Store a successfully registered REST session."""
         self._sessions[state.session_id] = state
+
+    def get_or_restore_session(self, session_id: str) -> SessionState | None:
+        """Get a session from memory, or restore from server storage.
+
+        Server persists all session data to disk.  If the session was
+        cleaned from memory (sweeper, server restart), it can be restored
+        from the persisted run_state.json.  The restored session supports
+        all read operations and evaluation.
+        """
+        # 1. In memory — fast path
+        state = self.get_session(session_id)
+        if state is not None:
+            return state
+
+        # 2. On disk — restore from server storage
+        result_dir = self.find_archived_result_dir(session_id)
+        if result_dir is None:
+            return None
+
+        state = SessionState.restore_from_storage(
+            session_id=session_id,
+            result_dir=result_dir,
+            bench_root=self.bench_root,
+            eval_model=self.eval_model,
+        )
+        # Cache in memory so subsequent calls don't re-read from disk
+        self._sessions[session_id] = state
+        return state
 
 
 # ---------------------------------------------------------------------------
@@ -651,10 +755,10 @@ async def rest_send(request: Request) -> JSONResponse:
 
 
 async def rest_evaluate(request: Request) -> JSONResponse:
-    """``POST /session/{sid}/evaluate[?force=true]``"""
+    """``POST /session/{sid}/evaluate[?force=true&eval_mode=tutor_only&tutor_dims=D3,D4]``"""
     manager: BenchSessionManager = request.app.state.manager
     sid = request.path_params["sid"]
-    state = manager.get_session(sid)
+    state = manager.get_or_restore_session(sid)
     if not state:
         return JSONResponse({"error": "Session not found"}, 404)
 
@@ -665,12 +769,25 @@ async def rest_evaluate(request: Request) -> JSONResponse:
         )
         return JSONResponse({"error": error, "allowed": ops}, 403)
 
+    # Parse eval parameters from query string
+    eval_mode = request.query_params.get("eval_mode", "full")
+    tutor_dims_raw = request.query_params.get("tutor_dims", "")
+    tutor_dims = (
+        [d.strip() for d in tutor_dims_raw.split(",") if d.strip()]
+        if tutor_dims_raw
+        else None
+    )
+
     force = request.query_params.get("force", "false").lower() == "true"
     if force:
         with state._eval_lock:
             if state._eval_status in ("completed", "failed"):
                 state._eval_status = "pending"
                 logger.info("[REST:%s] evaluate force reset", sid[:8])
+
+    # Set eval parameters before triggering
+    state._eval_mode = eval_mode
+    state._tutor_dims = tutor_dims
 
     async with state._request_lock:
         state._last_activity = time.time()
@@ -682,12 +799,9 @@ async def rest_evaluate(request: Request) -> JSONResponse:
 async def rest_results(request: Request) -> JSONResponse:
     """``GET /session/{sid}/results``"""
     manager: BenchSessionManager = request.app.state.manager
-    state = manager.get_session(request.path_params["sid"])
+    state = manager.get_or_restore_session(request.path_params["sid"])
     if not state:
-        archived = manager.get_archived_results(request.path_params["sid"])
-        if archived is None:
-            return JSONResponse({"error": "Session not found"}, 404)
-        return JSONResponse(archived)
+        return JSONResponse({"error": "Session not found"}, 404)
 
     data = state.get_run_results()
     if "error" in data:
@@ -699,15 +813,9 @@ async def rest_scores(request: Request) -> JSONResponse:
     """``GET /session/{sid}/scores[?history=true]``"""
     manager: BenchSessionManager = request.app.state.manager
     history = request.query_params.get("history", "false").lower() == "true"
-    state = manager.get_session(request.path_params["sid"])
+    state = manager.get_or_restore_session(request.path_params["sid"])
     if not state:
-        archived = manager.get_archived_scores(
-            request.path_params["sid"],
-            history=history,
-        )
-        if archived is None:
-            return JSONResponse({"error": "Session not found"}, 404)
-        return JSONResponse(archived)
+        return JSONResponse({"error": "Session not found"}, 404)
 
     return JSONResponse(state.get_eval_scores(history=history))
 
@@ -727,10 +835,9 @@ async def rest_session_status(request: Request) -> JSONResponse | Response:
 
     # GET
     if not state:
-        archived = manager.get_archived_session_status(sid)
-        if archived is None:
-            return JSONResponse({"error": "Session not found"}, 404)
-        return JSONResponse(archived)
+        state = manager.get_or_restore_session(sid)
+    if not state:
+        return JSONResponse({"error": "Session not found"}, 404)
     return JSONResponse(
         {
             "session_id": sid,
