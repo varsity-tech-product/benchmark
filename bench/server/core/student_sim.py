@@ -8,9 +8,12 @@ bit-exact student behavior across Legacy and MCP paths.
 Used by TutoringSession behind the ``send_message`` MCP tool.
 """
 
+import base64
 import difflib
+import hashlib
 import json
 import logging
+import os
 import re
 import textwrap
 
@@ -155,7 +158,7 @@ def _format_transcript_with_files(
 
     Files are shown inline with the conversation turn that shared them.
     First share of a file shows full content; subsequent shares of the
-    same file show a unified diff from the base version.  When total
+    same file show a unified diff from the previous version.  When total
     file content exceeds *budget*, oldest turns degrade to reference-only.
     """
     if not file_ledger:
@@ -179,11 +182,11 @@ def _format_transcript_with_files(
                 file_entries.append((idx, fname, text, 0))
                 continue
 
-            base = ledger["base_content"] if ledger else None
+            prev = ledger["prev_content"] if ledger else None
 
-            if base is not None and att["content"] != base:
+            if prev is not None and att["content"] != prev:
                 # Update — show diff (or full if diff is larger)
-                diff_text = _compute_file_diff(base, att["content"], fname)
+                diff_text = _compute_file_diff(prev, att["content"], fname)
                 if diff_text and len(diff_text) < len(att["content"]):
                     text = f"[File: {fname} (updated)]\n{diff_text}"
                     file_entries.append((idx, fname, text, len(diff_text)))
@@ -227,23 +230,33 @@ def _format_transcript_with_files(
 
 def _collect_images_from_ledger(
     file_ledger: dict[str, dict],
+    workspace_path: str | None = None,
 ) -> list[dict]:
     """Extract image data from file ledger for multimodal API calls.
 
     Returns list of ``{"filename", "data", "media_type"}`` where
-    *data* is a base64-encoded string.  Only the latest version
-    (``current_content``) of each image is returned.
+    *data* is a base64-encoded string.  Images are read from disk
+    on demand to avoid holding base64 data in the ledger permanently.
     """
+    if not workspace_path:
+        return []
     images: list[dict] = []
     for fname, entry in file_ledger.items():
-        if entry.get("is_image"):
-            images.append(
-                {
-                    "filename": fname,
-                    "data": entry["current_content"],
-                    "media_type": entry.get("media_type", "image/png"),
-                }
-            )
+        if not entry.get("is_image"):
+            continue
+        path = os.path.join(workspace_path, entry.get("path", fname))
+        try:
+            with open(path, "rb") as f:
+                data = base64.b64encode(f.read()).decode("ascii")
+        except OSError:
+            continue
+        images.append(
+            {
+                "filename": fname,
+                "data": data,
+                "media_type": entry.get("media_type", "image/png"),
+            }
+        )
     return images
 
 
@@ -350,6 +363,7 @@ class StudentSimulator:
         conversation: list[dict[str, str]],
         runtime_guidance: str = "",
         file_ledger: dict[str, dict] | None = None,
+        workspace_path: str | None = None,
     ) -> str:
         """Generate the next student message given conversation history.
 
@@ -387,7 +401,7 @@ class StudentSimulator:
                 transcript = _format_transcript_with_files(
                     conversation, file_ledger
                 )
-                images = _collect_images_from_ledger(file_ledger)
+                images = _collect_images_from_ledger(file_ledger, workspace_path)
             else:
                 transcript = _format_transcript(conversation)
                 images = []
@@ -405,9 +419,9 @@ class StudentSimulator:
     ) -> str:
         """Select a pre-written closing message. Zero LLM cost.
 
-        Uses conversation length as a deterministic seed so the same
-        session always gets the same closing, but different sessions
-        get variety.
+        Uses a hash of the last message for even distribution across
+        the pool while remaining deterministic per session.
         """
-        idx = len(conversation) % len(_CLOSING_POOL)
-        return _CLOSING_POOL[idx]
+        last = conversation[-1]["content"] if conversation else ""
+        seed = hashlib.md5(last.encode()).digest()[0]
+        return _CLOSING_POOL[seed % len(_CLOSING_POOL)]

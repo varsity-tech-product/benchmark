@@ -94,8 +94,8 @@ class TestFormatTranscriptWithFiles:
         )
         ledger = {
             "strategy.py": {
-                "base_content": code,
-                "base_turn": 1,
+                "prev_content": code,
+                "prev_turn": 1,
                 "current_content": code,
                 "current_turn": 1,
             }
@@ -128,8 +128,8 @@ class TestFormatTranscriptWithFiles:
         )
         ledger = {
             "s.py": {
-                "base_content": base,
-                "base_turn": 1,
+                "prev_content": base,
+                "prev_turn": 1,
                 "current_content": updated,
                 "current_turn": 2,
             }
@@ -163,8 +163,8 @@ class TestFormatTranscriptWithFiles:
         )
         ledger = {
             "f.py": {
-                "base_content": base,
-                "base_turn": 1,
+                "prev_content": base,
+                "prev_turn": 1,
                 "current_content": current,
                 "current_turn": 2,
             }
@@ -180,7 +180,7 @@ class TestFormatTranscriptWithFiles:
             ("assistant", "hi"),
             ("user", "bye"),
         )
-        ledger = {"some.py": {"base_content": "x", "base_turn": 1, "current_content": "x", "current_turn": 1}}
+        ledger = {"some.py": {"prev_content": "x", "prev_turn": 1, "current_content": "x", "current_turn": 1}}
         result = _format_transcript_with_files(conv, ledger)
         parsed = json.loads(result)
         for entry in parsed:
@@ -195,8 +195,8 @@ class TestFormatTranscriptWithFiles:
             ]),
         )
         ledger = {
-            "a.py": {"base_content": "aaa\n", "base_turn": 1, "current_content": "aaa\n", "current_turn": 1},
-            "b.py": {"base_content": "bbb\n", "base_turn": 1, "current_content": "bbb\n", "current_turn": 1},
+            "a.py": {"prev_content": "aaa\n", "prev_turn": 1, "current_content": "aaa\n", "current_turn": 1},
+            "b.py": {"prev_content": "bbb\n", "prev_turn": 1, "current_content": "bbb\n", "current_turn": 1},
         }
         result = _format_transcript_with_files(conv, ledger)
         parsed = json.loads(result)
@@ -214,7 +214,7 @@ class TestBudgetDegradation:
             ]),
         )
         ledger = {
-            "f.py": {"base_content": small_content, "base_turn": 1, "current_content": small_content, "current_turn": 1},
+            "f.py": {"prev_content": small_content, "prev_turn": 1, "current_content": small_content, "current_turn": 1},
         }
         result = _format_transcript_with_files(conv, ledger)
         parsed = json.loads(result)
@@ -235,8 +235,8 @@ class TestBudgetDegradation:
             ]),
         )
         ledger = {
-            "old.py": {"base_content": big_content, "base_turn": 1, "current_content": big_content, "current_turn": 1},
-            "new.py": {"base_content": small_content, "base_turn": 2, "current_content": small_content, "current_turn": 2},
+            "old.py": {"prev_content": big_content, "prev_turn": 1, "current_content": big_content, "current_turn": 1},
+            "new.py": {"prev_content": small_content, "prev_turn": 2, "current_content": small_content, "current_turn": 2},
         }
         result = _format_transcript_with_files(conv, ledger)
         parsed = json.loads(result)
@@ -257,7 +257,7 @@ class TestBudgetDegradation:
             ]),
         )
         ledger = {
-            "f.py": {"base_content": content, "base_turn": 1, "current_content": content, "current_turn": 1},
+            "f.py": {"prev_content": content, "prev_turn": 1, "current_content": content, "current_turn": 1},
         }
         # Budget smaller than content → degrades
         result = _format_transcript_with_files(conv, ledger, budget=100)
@@ -280,31 +280,32 @@ class TestFileLedgerIntegration:
     """Test the ledger update logic as it would work in TutoringSession."""
 
     def test_ledger_dedup_on_same_file(self):
-        """Simulates agent sending same file twice — ledger keeps base + latest."""
+        """Simulates agent sending same file twice — prev shifts, current updates."""
         ledger: dict[str, dict] = {}
         v1 = "version1\n"
         v2 = "version2\n"
 
         # First send
         ledger["strategy.py"] = {
-            "base_content": v1,
-            "base_turn": 1,
+            "prev_content": v1,
+            "prev_turn": 1,
             "current_content": v1,
             "current_turn": 1,
         }
 
-        # Second send (update)
+        # Second send — shift current → prev, update current
+        ledger["strategy.py"]["prev_content"] = ledger["strategy.py"]["current_content"]
         ledger["strategy.py"]["current_content"] = v2
         ledger["strategy.py"]["current_turn"] = 2
 
-        assert ledger["strategy.py"]["base_content"] == v1
+        assert ledger["strategy.py"]["prev_content"] == v1
         assert ledger["strategy.py"]["current_content"] == v2
-        assert len(ledger) == 1  # Only one entry
+        assert len(ledger) == 1
 
     def test_ledger_multiple_files(self):
         ledger: dict[str, dict] = {}
-        ledger["a.py"] = {"base_content": "a", "base_turn": 1, "current_content": "a", "current_turn": 1}
-        ledger["b.py"] = {"base_content": "b", "base_turn": 2, "current_content": "b", "current_turn": 2}
+        ledger["a.py"] = {"prev_content": "a", "prev_turn": 1, "current_content": "a", "current_turn": 1}
+        ledger["b.py"] = {"prev_content": "b", "prev_turn": 2, "current_content": "b", "current_turn": 2}
         assert len(ledger) == 2
         assert "a.py" in ledger
         assert "b.py" in ledger
@@ -319,23 +320,25 @@ _FAKE_IMAGE_B64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+
 
 def _image_ledger_entry(fname="chart.png", turn=1):
     return {
-        "base_content": _FAKE_IMAGE_B64,
-        "base_turn": turn,
-        "current_content": _FAKE_IMAGE_B64,
+        "prev_content": None,
+        "prev_turn": turn,
+        "current_content": None,
         "current_turn": turn,
         "is_image": True,
         "media_type": "image/png",
+        "path": fname,
     }
 
 
 def _text_ledger_entry(content="print('hello')\n", turn=1):
     return {
-        "base_content": content,
-        "base_turn": turn,
+        "prev_content": content,
+        "prev_turn": turn,
         "current_content": content,
         "current_turn": turn,
         "is_image": False,
         "media_type": "",
+        "path": None,
     }
 
 
@@ -424,31 +427,38 @@ class TestCollectImagesFromLedger:
     def test_empty_ledger_returns_empty(self):
         assert _collect_images_from_ledger({}) == []
 
-    def test_text_only_ledger_returns_empty(self):
-        ledger = {"strategy.py": _text_ledger_entry()}
-        assert _collect_images_from_ledger(ledger) == []
-
-    def test_single_image_returns_data(self):
+    def test_no_workspace_returns_empty(self):
         ledger = {"chart.png": _image_ledger_entry()}
-        images = _collect_images_from_ledger(ledger)
+        assert _collect_images_from_ledger(ledger, workspace_path=None) == []
+
+    def test_text_only_ledger_returns_empty(self, tmp_path):
+        ledger = {"strategy.py": _text_ledger_entry()}
+        assert _collect_images_from_ledger(ledger, str(tmp_path)) == []
+
+    def test_single_image_reads_from_disk(self, tmp_path):
+        # Write a small image file
+        img_path = tmp_path / "chart.png"
+        img_path.write_bytes(b"\x89PNG\r\n\x1a\n")
+        ledger = {"chart.png": _image_ledger_entry()}
+        images = _collect_images_from_ledger(ledger, str(tmp_path))
         assert len(images) == 1
         assert images[0]["filename"] == "chart.png"
-        assert images[0]["data"] == _FAKE_IMAGE_B64
         assert images[0]["media_type"] == "image/png"
+        # Should be valid base64
+        import base64
+        base64.b64decode(images[0]["data"])
 
-    def test_mixed_ledger_returns_only_images(self):
+    def test_mixed_ledger_returns_only_images(self, tmp_path):
+        (tmp_path / "chart.png").write_bytes(b"\x89PNG")
         ledger = {
             "strategy.py": _text_ledger_entry(),
             "chart.png": _image_ledger_entry(),
         }
-        images = _collect_images_from_ledger(ledger)
+        images = _collect_images_from_ledger(ledger, str(tmp_path))
         assert len(images) == 1
         assert images[0]["filename"] == "chart.png"
 
-    def test_returns_latest_content(self):
-        entry = _image_ledger_entry()
-        entry["current_content"] = "UPDATED_B64"
-        entry["current_turn"] = 3
-        ledger = {"chart.png": entry}
-        images = _collect_images_from_ledger(ledger)
-        assert images[0]["data"] == "UPDATED_B64"
+    def test_missing_file_skipped(self, tmp_path):
+        ledger = {"gone.png": _image_ledger_entry("gone.png")}
+        images = _collect_images_from_ledger(ledger, str(tmp_path))
+        assert images == []

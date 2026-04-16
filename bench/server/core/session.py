@@ -112,6 +112,7 @@ _BINARY_EXTENSIONS = frozenset(
         ".ico", ".svg",
         ".pdf", ".zip", ".gz", ".tar", ".7z", ".pkl", ".pickle",
         ".npy", ".npz", ".pyc", ".so", ".dylib", ".dll", ".exe",
+        ".whl", ".class", ".o",
     }
 )
 
@@ -125,6 +126,15 @@ _MEDIA_TYPES = {
 }
 
 
+def _safe_open(real: str, mode: str = "rb", encoding: str | None = None):
+    """Open a file rejecting symlinks (O_NOFOLLOW) to close TOCTOU gaps."""
+    try:
+        fd = os.open(real, os.O_RDONLY | os.O_NOFOLLOW)
+    except OSError:
+        raise ValueError(f"Cannot open (symlink or inaccessible): {real}")
+    return os.fdopen(fd, mode, encoding=encoding) if encoding else os.fdopen(fd, mode)
+
+
 def _read_attachment(workspace_path: str, filename: str) -> dict:
     """Read a single workspace file for attachment.
 
@@ -135,11 +145,17 @@ def _read_attachment(workspace_path: str, filename: str) -> dict:
     if not workspace_path:
         raise ValueError("No workspace available")
 
+    # ── Filename validation (C3) ──
+    if not filename or not filename.strip():
+        raise ValueError("Empty filename")
+    if "\x00" in filename:
+        raise ValueError("Filename contains null byte")
+
     resolved = os.path.join(workspace_path, filename)
     real = os.path.realpath(resolved)
     workspace_real = os.path.realpath(workspace_path)
 
-    if not (real.startswith(workspace_real + os.sep) or real == workspace_real):
+    if not real.startswith(workspace_real + os.sep):
         raise ValueError(f"Path outside workspace: {filename}")
 
     if not os.path.isfile(real):
@@ -156,7 +172,7 @@ def _read_attachment(workspace_path: str, filename: str) -> dict:
                 f"Image too large: {filename} "
                 f"({size:,} bytes, max {_IMAGE_MAX_BYTES:,})"
             )
-        with open(real, "rb") as f:
+        with _safe_open(real, "rb") as f:
             data = base64.b64encode(f.read()).decode("ascii")
         return {
             "filename": filename,
@@ -172,7 +188,7 @@ def _read_attachment(workspace_path: str, filename: str) -> dict:
 
     # ── Text files ──
     try:
-        with open(real, encoding="utf-8") as f:
+        with _safe_open(real, "r", encoding="utf-8") as f:
             content = f.read()
     except UnicodeDecodeError:
         raise ValueError(f"Cannot read as text: {filename}")
@@ -484,17 +500,23 @@ class TutoringSession:
         # ── Update file ledger ──
         for att in resolved_attachments:
             fname = att["filename"]
+            is_image = att.get("is_image", False)
             if fname not in self._file_ledger:
                 self._file_ledger[fname] = {
-                    "base_content": att["content"],
-                    "base_turn": self._turn,
-                    "current_content": att["content"],
+                    # Text: store content for diff. Images: store None (read from disk on demand).
+                    "prev_content": att["content"] if not is_image else None,
+                    "prev_turn": self._turn,
+                    "current_content": att["content"] if not is_image else None,
                     "current_turn": self._turn,
-                    "is_image": att.get("is_image", False),
+                    "is_image": is_image,
                     "media_type": att.get("media_type", ""),
+                    "path": fname,  # workspace-relative, used for on-demand image reads
                 }
             else:
-                self._file_ledger[fname]["current_content"] = att["content"]
+                if not is_image:
+                    # Shift current → prev so diff shows incremental changes
+                    self._file_ledger[fname]["prev_content"] = self._file_ledger[fname]["current_content"]
+                    self._file_ledger[fname]["current_content"] = att["content"]
                 self._file_ledger[fname]["current_turn"] = self._turn
 
         # Update proxy turn index for tool log attribution
@@ -575,6 +597,7 @@ class TutoringSession:
                     artifact_digest,
                 ),
                 file_ledger=self._file_ledger,
+                workspace_path=self._workspace_path,
             )
         except Exception as exc:
             logger.warning("StudentSimulator.generate_message failed: %s", exc)

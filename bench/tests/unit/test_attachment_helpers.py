@@ -105,6 +105,14 @@ class TestReadAttachment:
         with pytest.raises(ValueError, match="No workspace"):
             _read_attachment("", "anything.txt")
 
+    def test_rejects_empty_filename(self, workspace):
+        with pytest.raises(ValueError, match="Empty filename"):
+            _read_attachment(workspace, "")
+
+    def test_rejects_null_byte_filename(self, workspace):
+        with pytest.raises(ValueError, match="null byte"):
+            _read_attachment(workspace, "file\x00.py")
+
 
 class TestResolveAttachments:
     def test_empty_list_returns_empty(self, workspace):

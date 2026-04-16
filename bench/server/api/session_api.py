@@ -312,7 +312,7 @@ class SessionState:
                 resolved_sim_model = require_student_model(
                     SIMULATOR_DEFAULT_MODEL,
                 )
-            except (RuntimeError, ValueError) as exc:
+            except RuntimeError as exc:
                 return {"accepted": False, "error": str(exc)}
 
             sandbox_img = task.environment.sandbox_image if task.environment else ""
@@ -456,22 +456,13 @@ class SessionState:
             )
 
             # Keep protocol traffic in raw logs; downstream reports decide what to hide.
+            from server.api.protocol import SEND_MESSAGE_TOOL
+
             self.proxy.register_tool(
                 name="send_message",
                 func=self.session.handle_send_message,
-                description="Send a message to the student.",
-                params={
-                    "type": "object",
-                    "properties": {
-                        "text": {"type": "string"},
-                        "attachments": {
-                            "type": "array",
-                            "items": {"type": "string"},
-                            "maxItems": 3,
-                        },
-                    },
-                    "required": ["text"],
-                },
+                description=SEND_MESSAGE_TOOL.description,
+                params=SEND_MESSAGE_TOOL.inputSchema,
             )
 
             self._start_time = time.time()
@@ -717,6 +708,14 @@ class SessionState:
         if name == "send_message":
             text = arguments.get("text", "")
             attachments = arguments.get("attachments") or []
+            if not isinstance(attachments, list):
+                return [TextContent(type="text", text=json.dumps(
+                    {"error": "attachments must be an array of file paths"}
+                ))]
+            if len(attachments) > 3:
+                return [TextContent(type="text", text=json.dumps(
+                    {"error": "Maximum 3 attachments allowed"}
+                ))]
             logger.info(
                 "[%s] send_message (turn %d, %d attachments): %s...",
                 self.session_id[:8],

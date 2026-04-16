@@ -102,7 +102,7 @@ def require_student_model(
     model = model or SIMULATOR_DEFAULT_MODEL
 
     if isinstance(model, str) and model not in STUDENT_MODEL_POOL_ALL:
-        raise ValueError(
+        raise RuntimeError(
             f"Student simulator model {model!r} is not in the "
             f"vision-capable model pool. Choose from: "
             + ", ".join(sorted(STUDENT_MODEL_POOL_ALL))
