@@ -7,13 +7,17 @@
   "description": "Guide a student through validating a time-series momentum signal on SPY with rigorous train/test methodology — from exploratory data analysis, through signal formalization and evaluation, to proper in-sample / out-of-sample separation and overfitting assessment.",
   "persona_ids": [
     "beginner_no_finance",
+    "developer_crossover",
+    "advanced_quant",
     "intermediate_developer",
-    "advanced_quant"
+    "fullstack_practitioner"
   ],
   "student_openings": {
     "beginner_no_finance": "I want to build a momentum strategy on SPY. I've heard that stocks that went up recently tend to keep going up. But how do I know if this actually works, or if I'm just fooling myself with past data? Can you help me test this properly?",
     "intermediate_developer": "I'm building a time-series momentum signal on SPY — something like ROCP(20) or trailing returns. I want to do this rigorously with proper train/test separation to avoid overfitting. Can you walk me through the full validation workflow?",
-    "advanced_quant": "I need to validate a time-series momentum factor on SPY with proper IS/OOS methodology. The pipeline should be: EDA, signal formalization, IC analysis, walk-forward or fixed-split backtest, and robustness assessment. I want to quantify how much the signal degrades out-of-sample."
+    "advanced_quant": "I need to validate a time-series momentum factor on SPY with proper IS/OOS methodology. The pipeline should be: EDA, signal formalization, IC analysis, walk-forward or fixed-split backtest, and robustness assessment. I want to quantify how much the signal degrades out-of-sample.",
+    "fullstack_practitioner": "I need to validating a time-series momentum signal on SPY with. I've done similar work in Python before — let's focus on getting the architecture and edge cases right.",
+    "developer_crossover": "I need to validating a time-series momentum signal on SPY with. I can handle the code, but I don't understand the financial logic behind it. What should this do and why?"
   },
   "environment": {
     "data_files": [

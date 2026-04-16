@@ -7,13 +7,21 @@
   "description": "Guide a student to research mean-reversion alpha in BTCUSDT daily data.",
   "persona_ids": [
     "beginner_no_finance",
+    "double_novice",
+    "finance_veteran",
+    "developer_crossover",
+    "advanced_quant",
     "intermediate_developer",
-    "advanced_quant"
+    "fullstack_practitioner"
   ],
   "student_openings": {
     "beginner_no_finance": "I noticed that Bitcoin sometimes drops a lot and then bounces back. Is there a way to trade that 'bounce back' pattern? How do I know if it's real?",
     "intermediate_developer": "I want to research mean-reversion signals on BTC. I know about z-scores and Bollinger Bands, but I want to systematically evaluate whether reversion is actually present in this data before building a strategy.",
-    "advanced_quant": "I'm researching short-term mean-reversion alpha in crypto. I suspect reversion exists at certain horizons but I want to rigorously test it. What's the approach?"
+    "advanced_quant": "I'm researching short-term mean-reversion alpha in crypto. I suspect reversion exists at certain horizons but I want to rigorously test it. What's the approach?",
+    "fullstack_practitioner": "I'm exploring how to research mean-reversion alpha in BTCUSDT daily data. I have experience with simpler strategies — what are the key trade-offs here?",
+    "finance_veteran": "I want to research mean-reversion alpha in BTCUSDT daily data. I understand the strategy logic from my trading experience — but I need help coding and backtesting it.",
+    "developer_crossover": "I want to research mean-reversion alpha in BTCUSDT daily data. I can write the code — but I need to understand the trading logic first. Why does this work?",
+    "double_novice": "I heard about how to research mean-reversion alpha in BTCUSDT daily data in class and want to try it. I'm new to both coding and trading — can you walk me through it step by step?"
   },
   "environment": {
     "data_files": [

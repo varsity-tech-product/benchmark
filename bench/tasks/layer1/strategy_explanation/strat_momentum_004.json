@@ -15,5 +15,17 @@
     "momentum",
     "cross-sectional",
     "factor-investing"
-  ]
+  ],
+  "persona_ids": [
+    "finance_veteran",
+    "developer_crossover",
+    "double_novice",
+    "fullstack_practitioner"
+  ],
+  "student_openings": {
+    "fullstack_practitioner": "I want to go deeper on a momentum strategy work in practice? I understand the. I have some experience — what are the trade-offs most people miss?",
+    "finance_veteran": "I know a momentum strategy work in practice? I understand the from practice — but how would I implement it computationally?",
+    "developer_crossover": "I want to understand a momentum strategy work in practice? I understand the. I'm a developer — I can implement anything, I just need to understand the financial reasoning.",
+    "double_novice": "My class is covering a momentum strategy work in practice? I understand the. I'm new to trading — can you explain it simply?"
+  }
 }

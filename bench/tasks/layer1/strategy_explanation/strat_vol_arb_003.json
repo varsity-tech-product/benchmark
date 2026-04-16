@@ -15,5 +15,17 @@
     "options",
     "volatility",
     "advanced"
-  ]
+  ],
+  "persona_ids": [
+    "finance_veteran",
+    "developer_crossover",
+    "double_novice",
+    "fullstack_practitioner"
+  ],
+  "student_openings": {
+    "fullstack_practitioner": "I want to go deeper on I want to understand volatility arbitrage. I have some experience — what are the trade-offs most people miss?",
+    "finance_veteran": "I know I want to understand volatility arbitrage from practice — but how would I implement it computationally?",
+    "developer_crossover": "I want to understand I want to understand volatility arbitrage. I'm a developer — I can implement anything, I just need to understand the financial reasoning.",
+    "double_novice": "My class is covering I want to understand volatility arbitrage. I'm new to trading — can you explain it simply?"
+  }
 }

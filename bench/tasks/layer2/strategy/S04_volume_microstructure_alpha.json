@@ -7,13 +7,17 @@
   "description": "Guide a student to research alpha signals derived from non-price data in BTCUSDT futures: volume patterns, taker buy and sell imbalance, trade count, and cross-timeframe features.",
   "persona_ids": [
     "beginner_no_finance",
+    "finance_veteran",
+    "advanced_quant",
     "intermediate_developer",
-    "advanced_quant"
+    "fullstack_practitioner"
   ],
   "student_openings": {
     "beginner_no_finance": "I see that my Bitcoin data has not just prices but also volume, trade count, and something called 'taker buy volume.' What do these mean, and can they help predict price movements?",
     "intermediate_developer": "I want to research volume-based trading signals on BTC. I have multi-timeframe data (daily, hourly, and 5-minute) with detailed volume breakdowns. How should I approach feature engineering from this data?",
-    "advanced_quant": "I'm researching microstructure alpha in crypto futures using Binance kline data. Beyond price, I suspect the volume fields contain untapped signal. What's the systematic approach?"
+    "advanced_quant": "I'm researching microstructure alpha in crypto futures using Binance kline data. Beyond price, I suspect the volume fields contain untapped signal. What's the systematic approach?",
+    "fullstack_practitioner": "I'm exploring how to research alpha signals derived from non-price data in. I have experience with simpler strategies — what are the key trade-offs here?",
+    "finance_veteran": "I want to research alpha signals derived from non-price data in. I understand the strategy logic from my trading experience — but I need help coding and backtesting it."
   },
   "environment": {
     "data_files": [

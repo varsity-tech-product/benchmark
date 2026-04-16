@@ -6,12 +6,20 @@
   "task_type": "multi_turn",
   "description": "The agent identifies impossibly good backtest results as likely bugs or errors rather than genuine performance. The student reports a strategy with Sharpe 5.0, maximum drawdown of only 1.2%, zero losing months, and 120% annual return. The agent flags these as unrealistic, provides realistic benchmark values, enumerates common bug categories that produce such results, and demonstrates what realistic performance looks like using actual data.",
   "persona_ids": [
+    "double_novice",
+    "finance_veteran",
+    "developer_crossover",
+    "advanced_quant",
     "intermediate_developer",
-    "advanced_quant"
+    "fullstack_practitioner"
   ],
   "student_openings": {
     "intermediate_developer": "My backtest results look amazing! Sharpe ratio of 5.0, max drawdown only 1.2%, zero losing months, and 120% annual return on AAPL. I think I've cracked the code. Can you help me optimize it further?",
-    "advanced_quant": "I've developed a mean-reversion strategy on AAPL that achieves Sharpe 5.0, maximum drawdown 1.2%, no negative monthly returns, and 120% annualized return over 2018-2024. I'd like to discuss position sizing and leverage given these risk characteristics."
+    "advanced_quant": "I've developed a mean-reversion strategy on AAPL that achieves Sharpe 5.0, maximum drawdown 1.2%, no negative monthly returns, and 120% annualized return over 2018-2024. I'd like to discuss position sizing and leverage given these risk characteristics.",
+    "fullstack_practitioner": "My mean-reversion strategy on AAPL shows Sharpe 5.0, max drawdown 1.2%, zero losing months. I've reviewed the code and it looks correct. What am I missing?",
+    "finance_veteran": "My backtest shows Sharpe 5.0 and only 1.2% max drawdown with no losing months. I've been in markets long enough to know this is unusual. But the logic checks out. Should I trade it?",
+    "developer_crossover": "My backtest code produces Sharpe 5.0, max drawdown 1.2%, and no losing months. The code is bug-free — I've unit tested everything. Are these good numbers for a trading strategy?",
+    "double_novice": "My backtest shows amazing results — Sharpe ratio of 5.0 and it never loses money! This is incredible, right? Should I invest real money?"
   },
   "environment": {
     "data_files": [

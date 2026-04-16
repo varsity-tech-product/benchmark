@@ -7,13 +7,17 @@
   "description": "Guide a student to diagnose and fix conflicting alpha model insights in a LEAN Algorithm Framework strategy where trend and mean-reversion alphas net each other out under AccumulativeInsightPortfolioConstructionModel, producing near-zero trades. On the standalone 12-col pipeline, the alpha models should manage their state from subscribed symbols or data.Keys and update indicators manually instead of relying on OnSecuritiesChanged auto-registration.",
   "persona_ids": [
     "beginner_no_finance",
+    "developer_crossover",
+    "advanced_quant",
     "intermediate_developer",
-    "advanced_quant"
+    "fullstack_practitioner"
   ],
   "student_openings": {
     "beginner_no_finance": "I set up two alpha models in LEAN — one for trend following and one for mean reversion — but the algorithm barely trades at all. The alphas seem to disagree and the portfolio model keeps netting them out. Can you help?",
     "intermediate_developer": "My LEAN framework algorithm has TrendAlpha and ReversionAlpha both emitting insights, but AccumulativeInsightPortfolioConstructionModel produces almost no positions. I think the active insights are netting to zero. How do I fix this?",
-    "advanced_quant": "I have a multi-alpha LEAN setup with trend and mean-reversion models. Under AccumulativeInsightPortfolioConstructionModel, the opposing active insights neutralize and I end up with near-zero net exposure. I need a priority scheme or a different PCM. Can you help me diagnose the conflict?"
+    "advanced_quant": "I have a multi-alpha LEAN setup with trend and mean-reversion models. Under AccumulativeInsightPortfolioConstructionModel, the opposing active insights neutralize and I end up with near-zero net exposure. I need a priority scheme or a different PCM. Can you help me diagnose the conflict?",
+    "fullstack_practitioner": "I'm debugging an issue: diagnose and fix conflicting alpha model insights in a LEAN. I've narrowed it down but want a second pair of eyes on the root cause.",
+    "developer_crossover": "I'm looking at code that should diagnose and fix conflicting alpha model insights in a LEAN. The code reads fine to me, but I'm not sure the financial logic is correct. What should it be doing?"
   },
   "environment": {
     "data_files": [

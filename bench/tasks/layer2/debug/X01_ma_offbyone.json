@@ -8,12 +8,16 @@
   "persona_ids": [
     "beginner_no_finance",
     "intermediate_developer",
-    "advanced_quant"
+    "advanced_quant",
+    "fullstack_practitioner",
+    "developer_crossover"
   ],
   "student_openings": {
     "beginner_no_finance": "I wrote a moving average crossover strategy but the numbers don't look right. My 20-day moving average seems slightly off compared to what I see online. Can you help me figure out what's wrong?",
     "intermediate_developer": "I have a dual MA crossover script that computes SMA_20 and SMA_50 but the SMA_20 values don't match TradingView. I suspect a bug in my rolling window calculation. Can you help me debug it?",
-    "advanced_quant": "I'm getting a subtle discrepancy in my MA crossover signals vs. a reference implementation. The SMA_50 matches perfectly but the SMA_20 is consistently off by a small amount. I've narrowed it to the computation step. Can you review my code?"
+    "advanced_quant": "I'm getting a subtle discrepancy in my MA crossover signals vs. a reference implementation. The SMA_50 matches perfectly but the SMA_20 is consistently off by a small amount. I've narrowed it to the computation step. Can you review my code?",
+    "fullstack_practitioner": "My SMA crossover backtest is producing slightly different trade entries than a reference run. I've diffed the data and it's identical, so the issue is in the signal logic. I suspect the rolling window parameter but want a second pair of eyes on the code.",
+    "developer_crossover": "I'm trying my first trading strategy — a moving average crossover. The code runs fine but the 20-day average values look wrong compared to what I found online. I know pandas well but I'm new to financial indicators. Can you help me debug this?"
   },
   "environment": {
     "data_files": [

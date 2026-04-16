@@ -7,13 +7,17 @@
   "description": "Guide a student to find and fix a look-ahead bias in an SMA crossover strategy where positions use today's signal without shifting, causing the strategy to 'see' future prices.",
   "persona_ids": [
     "beginner_no_finance",
+    "developer_crossover",
+    "advanced_quant",
     "intermediate_developer",
-    "advanced_quant"
+    "fullstack_practitioner"
   ],
   "student_openings": {
     "beginner_no_finance": "I built an SMA crossover strategy and it performs amazingly well! But my friend says the results are 'too good to be true.' The strategy uses 10 and 30-day moving averages. Can you help me check if something is wrong?",
     "intermediate_developer": "I've implemented an SMA(10)/SMA(30) crossover backtest and the returns look suspiciously high. I suspect there might be a look-ahead bias but I'm not sure where. Can you help me audit the code?",
-    "advanced_quant": "My SMA crossover strategy shows inflated alpha that disappears in live trading. I suspect a temporal alignment issue in how positions are assigned relative to signal generation. Can you review my backtest code?"
+    "advanced_quant": "My SMA crossover strategy shows inflated alpha that disappears in live trading. I suspect a temporal alignment issue in how positions are assigned relative to signal generation. Can you review my backtest code?",
+    "fullstack_practitioner": "I'm debugging an issue: find and fix a look-ahead bias in an SMA crossover strategy. I've narrowed it down but want a second pair of eyes on the root cause.",
+    "developer_crossover": "I'm looking at code that should find and fix a look-ahead bias in an SMA crossover strategy. The code reads fine to me, but I'm not sure the financial logic is correct. What should it be doing?"
   },
   "environment": {
     "data_files": [

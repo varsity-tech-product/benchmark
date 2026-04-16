@@ -7,13 +7,17 @@
   "description": "Guide a student through researching a Bollinger Band mean-reversion signal on BTC in Python, backtesting it to get preliminary metrics, then implementing the same strategy as a LEAN C# algorithm and comparing results across backends.",
   "persona_ids": [
     "beginner_no_finance",
+    "developer_crossover",
+    "advanced_quant",
     "intermediate_developer",
-    "advanced_quant"
+    "fullstack_practitioner"
   ],
   "student_openings": {
     "beginner_no_finance": "I've been reading about Bollinger Bands and mean reversion. I want to try building a strategy that buys BTC when it drops below the lower band. Can you help me prototype it in Python first, and then maybe implement it in C# for the LEAN engine?",
     "intermediate_developer": "I want to prototype a BB(20,2) mean-reversion strategy on BTC in Python, get baseline metrics, then implement the same logic in LEAN C#. I want to compare the Python and LEAN backtests to make sure they agree. Where do we start?",
-    "advanced_quant": "I'm building a Bollinger Band mean-reversion strategy for BTCUSDT. The workflow is: prototype in Python to validate the signal, then port to LEAN C# for production-grade backtest with proper order execution. I need the two backends to produce comparable results. Let's architect this systematically."
+    "advanced_quant": "I'm building a Bollinger Band mean-reversion strategy for BTCUSDT. The workflow is: prototype in Python to validate the signal, then port to LEAN C# for production-grade backtest with proper order execution. I need the two backends to produce comparable results. Let's architect this systematically.",
+    "fullstack_practitioner": "I need to researching a Bollinger Band mean-reversion signal on BTC. I've done similar work in Python before — let's focus on getting the architecture and edge cases right.",
+    "developer_crossover": "I need to researching a Bollinger Band mean-reversion signal on BTC. I can handle the code, but I don't understand the financial logic behind it. What should this do and why?"
   },
   "environment": {
     "data_files": [

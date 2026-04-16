@@ -7,13 +7,21 @@
   "description": "Guide the student to collect realtime market updates from a streaming or polling endpoint, store timestamped updates as a CSV file, and teach quant microstructure and data-quality concepts.",
   "persona_ids": [
     "beginner_no_finance",
+    "double_novice",
+    "finance_veteran",
+    "developer_crossover",
+    "advanced_quant",
     "intermediate_developer",
-    "advanced_quant"
+    "fullstack_practitioner"
   ],
   "student_openings": {
     "beginner_no_finance": "Can you help me write code to capture live stock prices as they happen and save them to a file?",
     "intermediate_developer": "I need a practical realtime ingestion example (streaming endpoint or polling fallback) plus quant checks for out-of-order ticks, timezone normalization, and market-hours filtering.",
-    "advanced_quant": "I want an execution-ready realtime capture script (quote/trade stream to CSV) and a teaching walkthrough on microstructure caveats: bid-ask spread, latency, stale ticks, and session boundaries."
+    "advanced_quant": "I want an execution-ready realtime capture script (quote/trade stream to CSV) and a teaching walkthrough on microstructure caveats: bid-ask spread, latency, stale ticks, and session boundaries.",
+    "fullstack_practitioner": "I want to collect realtime market updates from a streaming or polling rigorously. I know the basics — let's focus on methodology and potential pitfalls.",
+    "finance_veteran": "I need to collect realtime market updates from a streaming or polling in Python. I understand what the data means financially — I just need help with the pandas side.",
+    "developer_crossover": "I need to collect realtime market updates from a streaming or polling. I can use pandas fine — but what do these financial metrics actually mean? Why would a trader care?",
+    "double_novice": "My professor asked us to collect realtime market updates from a streaming or polling. I'm new to both Python and finance — can you start from the basics?"
   },
   "environment": {
     "data_files": [],
