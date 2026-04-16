@@ -73,6 +73,7 @@ SEND_MESSAGE_TOOL = Tool(
         "This is the ONLY way to communicate with the student. "
         "Your text output is NOT delivered to the student — "
         "only messages sent through this tool reach them. "
+        "Each call advances the conversation by one turn and cannot be undone. "
         "Returns the student's reply and session status. "
         "When status is 'completed', the session has ended."
     ),
