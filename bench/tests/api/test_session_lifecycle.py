@@ -37,7 +37,6 @@ class TestRegister:
         )
         assert resp.status_code == 200
         body = resp.json()
-        assert body["accepted"] is True
         assert "session_id" in body
 
     @pytest.mark.asyncio
@@ -46,7 +45,7 @@ class TestRegister:
             "/session/register", json={"task_id": "NONEXISTENT_TASK"}
         )
         assert resp.status_code == 404
-        assert resp.json()["accepted"] is False
+        assert "error" in resp.json()
 
     @pytest.mark.asyncio
     async def test_register_missing_task_id(self, client):
@@ -60,7 +59,7 @@ class TestRegister:
             json={"task_id": DEFAULT_TASK_ID, "persona_id": "nonexistent_persona"},
         )
         assert resp.status_code == 400
-        assert resp.json()["accepted"] is False
+        assert "error" in resp.json()
 
 
 class TestStart:

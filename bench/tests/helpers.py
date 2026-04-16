@@ -34,7 +34,7 @@ async def register_session(
     resp = await client.post("/session/register", json=payload)
     assert resp.status_code == 200, f"Register failed: {resp.text}"
     body = resp.json()
-    assert body.get("accepted") is True, f"Register not accepted: {body}"
+    assert "session_id" in body, f"Register failed: {body}"
     return body["session_id"]
 
 
