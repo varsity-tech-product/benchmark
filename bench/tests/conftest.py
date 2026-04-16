@@ -7,12 +7,10 @@ Pattern reference: backend-service/tests/conftest.py
 """
 
 import json
-import os
 import sys
-import tempfile
 import types
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -47,11 +45,13 @@ if "mcp" not in sys.modules:
         def list_tools(self):
             def decorator(fn):
                 return fn
+
             return decorator
 
         def call_tool(self):
             def decorator(fn):
                 return fn
+
             return decorator
 
         def create_initialization_options(self):
@@ -113,9 +113,7 @@ _STUDENT_REPLIES = [
     "Ok I think I understand. Let me run it again.",
 ]
 
-_CLOSING_MESSAGE = (
-    "Thanks for all the help! I understand the issue much better now."
-)
+_CLOSING_MESSAGE = "Thanks for all the help! I understand the issue much better now."
 
 
 class FakeLLMModel:
@@ -139,11 +137,14 @@ class FakeLLMModel:
         # StudentSimulator structured output (SimulatedInput)
         if schema is not None:
             try:
-                return schema(
-                    simulated_input=_STUDENT_REPLIES[
-                        self._call_count % len(_STUDENT_REPLIES)
-                    ]
-                ), 0.0
+                return (
+                    schema(
+                        simulated_input=_STUDENT_REPLIES[
+                            self._call_count % len(_STUDENT_REPLIES)
+                        ]
+                    ),
+                    0.0,
+                )
             except Exception:
                 pass
 
@@ -188,12 +189,15 @@ def _mock_llm_resolution():
     """
     fake = FakeLLMModel()
 
-    with patch(
-        "server.eval.ewan_eval.model_resolver.require_ewan_model",
-        return_value=fake,
-    ), patch(
-        "server.eval.ewan_eval.model_resolver.resolve_ewan_model",
-        return_value=fake,
+    with (
+        patch(
+            "server.eval.ewan_eval.model_resolver.require_ewan_model",
+            return_value=fake,
+        ),
+        patch(
+            "server.eval.ewan_eval.model_resolver.resolve_ewan_model",
+            return_value=fake,
+        ),
     ):
         yield fake
 
@@ -313,3 +317,169 @@ def workspace(tmp_path):
     ws = tmp_path / "workspace"
     ws.mkdir()
     return ws
+
+
+# ---------------------------------------------------------------------------
+# 7. FakeTCChecker — controllable TC checker for completion tests.
+# ---------------------------------------------------------------------------
+
+
+class FakeTCChecker:
+    """TC checker that can be configured to report completion on a specific turn.
+
+    Usage::
+
+        checker = FakeTCChecker(["item1", "item2"], complete_on_check=2)
+        # First check() → False, second check() → True (all covered)
+    """
+
+    def __init__(
+        self,
+        tc_items: list[str] | None = None,
+        complete_on_check: int | None = None,
+    ):
+        self.tc_items = tc_items or ["TC1", "TC2", "TC3"]
+        self._complete_on_check = complete_on_check
+        self._check_count = 0
+        self.covered: list[bool] = [False] * len(self.tc_items)
+        self.history: list[dict] = []
+        self.total_cost: float = 0.0
+
+    @property
+    def all_covered(self) -> bool:
+        return all(self.covered)
+
+    @property
+    def coverage_summary(self) -> dict:
+        covered_indices = [i + 1 for i, c in enumerate(self.covered) if c]
+        return {
+            "total": len(self.tc_items),
+            "covered": sum(self.covered),
+            "covered_indices": covered_indices,
+            "items": [
+                {"text": t, "covered": c} for t, c in zip(self.tc_items, self.covered)
+            ],
+        }
+
+    @property
+    def debug_history(self) -> list[dict]:
+        return list(self.history)
+
+    @property
+    def stalled_turns(self) -> int:
+        count = 0
+        for entry in reversed(self.history):
+            if entry.get("newly_covered_indices"):
+                break
+            count += 1
+        return count
+
+    def check(
+        self,
+        conversation,
+        turn_evidence=None,
+        turn_index=None,
+    ) -> bool:
+        self._check_count += 1
+        newly = []
+        if (
+            self._complete_on_check is not None
+            and self._check_count >= self._complete_on_check
+        ):
+            newly = [i + 1 for i, c in enumerate(self.covered) if not c]
+            self.covered = [True] * len(self.tc_items)
+        self.history.append(
+            {
+                "turn_index": turn_index,
+                "covered_before_indices": [],
+                "newly_covered_indices": newly,
+                "covered_after_indices": [
+                    i + 1 for i, c in enumerate(self.covered) if c
+                ],
+            }
+        )
+        return self.all_covered
+
+
+@pytest.fixture
+def fake_tc_checker():
+    """Create a FakeTCChecker. Call with ``complete_on_check=N`` to control."""
+    return FakeTCChecker
+
+
+# ---------------------------------------------------------------------------
+# 8. TutoringSession factory for unit tests.
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def make_session(_mock_llm_resolution):
+    """Factory to build a TutoringSession with controlled dependencies.
+
+    Returns a callable ``(max_turns=10, tc_checker=None, goal_checker=None,
+    deadline=None, workspace_path=None) → TutoringSession``.
+    The session is pre-started (opening injected).
+    """
+    from server.core.session import TutoringSession
+    from server.core.student_sim import StudentSimulator
+
+    def _factory(
+        max_turns=10,
+        tc_checker=None,
+        goal_checker=None,
+        deadline=None,
+        workspace_path=None,
+    ):
+        # Minimal task stub
+        task = types.SimpleNamespace(
+            environment=None,
+            sample_code="",
+            category=types.SimpleNamespace(value="debug"),
+            max_turns=max_turns,
+            student_openings={"intermediate_developer": "Hi, I need help."},
+        )
+        persona = types.SimpleNamespace(
+            persona_id="intermediate_developer",
+            description="A developer learning quantitative finance.",
+        )
+        student_sim = StudentSimulator(
+            scenario="Debug a moving average bug",
+            user_description="Intermediate developer",
+            model=_mock_llm_resolution,
+        )
+        session = TutoringSession(
+            task=task,
+            persona=persona,
+            student_sim=student_sim,
+            tc_checker=tc_checker,
+            max_turns=max_turns,
+            deadline=deadline,
+            goal_checker=goal_checker,
+            workspace_path=workspace_path,
+        )
+        # Inject opening so session is ready for send_message
+        session.inject_student_opening("Hi, I need help.")
+        return session
+
+    return _factory
+
+
+# ---------------------------------------------------------------------------
+# 9. Mock eval pipeline (non-autouse).
+# ---------------------------------------------------------------------------
+
+_FAKE_EVAL_SCORES = {
+    "quant_result": 0.85,
+    "quant_process": 0.70,
+    "tutor_scores": {"D1": 4, "D2": 3, "D3": 4, "D4": 3, "D5": 4, "D6": 3, "D7": 4},
+}
+
+
+@pytest.fixture
+def mock_eval_pipeline():
+    """Patch eval pipeline to return fake scores immediately."""
+    with patch(
+        "server.storage.eval_writer.run_evaluation",
+        return_value=dict(_FAKE_EVAL_SCORES),
+    ) as mock_run:
+        yield mock_run
