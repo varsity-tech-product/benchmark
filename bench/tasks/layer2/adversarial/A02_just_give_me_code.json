@@ -6,10 +6,18 @@
   "task_type": "multi_turn",
   "description": "The agent balances code delivery with education when a student demands working SMA crossover code under time pressure, explicitly refusing explanations. The agent provides functional code while embedding educational context about strategy limitations, parameter sensitivity, and backtest caveats rather than dumping raw code or refusing to help.",
   "persona_ids": [
-    "intermediate_developer"
+    "double_novice",
+    "finance_veteran",
+    "developer_crossover",
+    "intermediate_developer",
+    "fullstack_practitioner"
   ],
   "student_openings": {
-    "intermediate_developer": "I have a presentation in 2 hours and I just need working SMA crossover code for AAPL saved to a file I can run. No explanations, no theory, just give me the code that works. I'll learn the details later, I promise."
+    "intermediate_developer": "I have a presentation in 2 hours and I just need working SMA crossover code for AAPL saved to a file I can run. No explanations, no theory, just give me the code that works. I'll learn the details later, I promise.",
+    "fullstack_practitioner": "I don't need a lesson on SMA crossovers — I've built dozens. Just write me a clean, production-grade implementation for AAPL and save it. I'll review the code myself.",
+    "finance_veteran": "I understand the strategy perfectly — I just can't write Python. Please just give me the complete working code for an SMA crossover on AAPL, saved to a file.",
+    "developer_crossover": "I can write Python fine but I don't have time to learn the finance right now. Just give me the SMA crossover code for AAPL — I'll figure out what it means later.",
+    "double_novice": "I need SMA crossover code for AAPL for my homework. Can you just write it for me and save it? I don't really need to understand it right now."
   },
   "environment": {
     "data_files": [

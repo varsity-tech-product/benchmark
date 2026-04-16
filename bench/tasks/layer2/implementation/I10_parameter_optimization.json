@@ -7,13 +7,17 @@
   "description": "Guide a student to implement a systematic parameter optimization workflow using LEAN's Algorithm Framework. The student must build a parameterized EMA crossover alpha that reads fast_period, slow_period, and signal_threshold from GetParameter(), then run a grid search over ~250 parameter combinations (6 fast × 9 slow × 5 threshold, filtered for fast < slow → 50 valid pairs × 5 thresholds). Results must be collected in a structured table with Sharpe/return/drawdown per combination, and the top-5 configurations identified. Optionally, the student can implement Bayesian optimization (e.g., Optuna) for faster convergence.",
   "persona_ids": [
     "beginner_no_finance",
+    "developer_crossover",
+    "advanced_quant",
     "intermediate_developer",
-    "advanced_quant"
+    "fullstack_practitioner"
   ],
   "student_openings": {
     "beginner_no_finance": "I want to find the best parameters for my EMA crossover strategy — like the best combination of fast period, slow period, and signal threshold. I've heard about grid search and parameter optimization. Can you help me set this up on LEAN?",
     "intermediate_developer": "I'm implementing parameter optimization for a LEAN Algorithm Framework algorithm. I want to use GetParameter() to make the EMA periods and signal threshold configurable, then run a grid search over ~250 combinations. How should I structure the optimization workflow and results collection?",
-    "advanced_quant": "I need a parameter optimization pipeline for a parameterized EMA alpha: grid search over fast_period ∈ {5,10,15,20,25,30}, slow_period ∈ {20..100 step 10}, signal_threshold ∈ {0,0.005,0.01,0.015,0.02}, filtering fast<slow. Collect Sharpe/return/drawdown per combo, rank, optionally add Bayesian optimization. Architecture?"
+    "advanced_quant": "I need a parameter optimization pipeline for a parameterized EMA alpha: grid search over fast_period ∈ {5,10,15,20,25,30}, slow_period ∈ {20..100 step 10}, signal_threshold ∈ {0,0.005,0.01,0.015,0.02}, filtering fast<slow. Collect Sharpe/return/drawdown per combo, rank, optionally add Bayesian optimization. Architecture?",
+    "fullstack_practitioner": "I need to implement a systematic parameter optimization workflow. I've done similar work in Python before — let's focus on getting the architecture and edge cases right.",
+    "developer_crossover": "I need to implement a systematic parameter optimization workflow. I can handle the code, but I don't understand the financial logic behind it. What should this do and why?"
   },
   "environment": {
     "data_files": [

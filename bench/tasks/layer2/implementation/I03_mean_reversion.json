@@ -7,13 +7,17 @@
   "description": "Guide a student to implement an RSI mean-reversion strategy with asymmetric entry/exit thresholds and stop-loss across the full Binance futures universe on LEAN. Unlike I02's simple crossover, this task requires per-symbol entry price tracking, long/short state machines, stop-loss logic, and risk-based position sizing that limits exposure per symbol. At universe scale, the student must manage ~100 independent position state machines concurrently.",
   "persona_ids": [
     "beginner_no_finance",
+    "developer_crossover",
+    "advanced_quant",
     "intermediate_developer",
-    "advanced_quant"
+    "fullstack_practitioner"
   ],
   "student_openings": {
     "beginner_no_finance": "I want to test a buy-low-sell-high strategy with stop-losses on all the crypto futures in my dataset — about 100 of them. How do I manage all those positions at once on LEAN?",
     "intermediate_developer": "I'm implementing a universe-wide RSI mean-reversion strategy on LEAN. Each symbol needs its own state machine for long/short/flat with stop-loss tracking. How do I structure this for ~100 symbols?",
-    "advanced_quant": "I need a production-grade mean-reversion strategy on LEAN across ~100 crypto futures with proper risk management. What's the cleanest architecture?"
+    "advanced_quant": "I need a production-grade mean-reversion strategy on LEAN across ~100 crypto futures with proper risk management. What's the cleanest architecture?",
+    "fullstack_practitioner": "I need to implement an RSI mean-reversion strategy with asymmetric. I've done similar work in Python before — let's focus on getting the architecture and edge cases right.",
+    "developer_crossover": "I need to implement an RSI mean-reversion strategy with asymmetric. I can handle the code, but I don't understand the financial logic behind it. What should this do and why?"
   },
   "environment": {
     "data_files": [

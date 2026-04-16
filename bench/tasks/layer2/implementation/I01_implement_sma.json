@@ -8,12 +8,16 @@
   "persona_ids": [
     "beginner_no_finance",
     "intermediate_developer",
-    "advanced_quant"
+    "advanced_quant",
+    "fullstack_practitioner",
+    "developer_crossover"
   ],
   "student_openings": {
     "beginner_no_finance": "I have access to a trading engine called LEAN with Bitcoin futures data. I want to test a 20-day moving average strategy on BTCUSDT — buy when the price is above the 20-day average, sell when it's below. I've never written C# before. Where do I start?",
     "intermediate_developer": "I need to implement an SMA(20) trend filter on LEAN for BTCUSDT daily bars. I know the concept but I've never used the QuantConnect API. How do I set up the algorithm, register the indicator, and manage positions?",
-    "advanced_quant": "I'm bootstrapping a LEAN environment for the first time. I want to start with the simplest possible strategy — SMA(20) on BTCUSDT daily — to validate my setup end-to-end before scaling to multi-symbol. What's the minimal correct implementation?"
+    "advanced_quant": "I'm bootstrapping a LEAN environment for the first time. I want to start with the simplest possible strategy — SMA(20) on BTCUSDT daily — to validate my setup end-to-end before scaling to multi-symbol. What's the minimal correct implementation?",
+    "fullstack_practitioner": "I've backtested SMA strategies in Python before but need to port one to LEAN C# for production. SMA(20) on BTCUSDT daily as a smoke test. I understand the trading logic — just need help with the LEAN API specifics: AddCrypto, indicator registration, SetHoldings.",
+    "developer_crossover": "I need to write a C# algorithm for a trading engine called LEAN. I'm a Python dev so C# syntax isn't a huge leap, but I have no idea what a 'moving average strategy' is supposed to do. What's the trading logic, and how do I translate it into LEAN's API?"
   },
   "environment": {
     "data_files": [

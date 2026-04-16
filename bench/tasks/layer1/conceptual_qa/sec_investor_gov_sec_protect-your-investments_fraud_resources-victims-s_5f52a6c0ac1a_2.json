@@ -13,5 +13,17 @@
   "tags": [
     "regulatory",
     "investor-education"
-  ]
+  ],
+  "persona_ids": [
+    "finance_veteran",
+    "developer_crossover",
+    "double_novice",
+    "fullstack_practitioner"
+  ],
+  "student_openings": {
+    "fullstack_practitioner": "I want to think through What tips should I follow if I'm using social sentiment rigorously. I'm familiar with the basics — what are the nuances?",
+    "finance_veteran": "I need help with What tips should I follow if I'm using social sentiment. I understand the financial side — can you help me with the computational approach?",
+    "developer_crossover": "I'm trying to understand What tips should I follow if I'm using social sentiment. Code and math are fine for me, but the financial meaning is what I need help with.",
+    "double_novice": "I'm learning about What tips should I follow if I'm using social sentiment. I'm pretty new to both finance and coding — can you help me understand step by step?"
+  }
 }

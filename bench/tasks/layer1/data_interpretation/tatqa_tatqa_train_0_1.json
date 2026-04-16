@@ -13,5 +13,17 @@
   "tags": [
     "tabular-reasoning",
     "financial-documents"
-  ]
+  ],
+  "persona_ids": [
+    "finance_veteran",
+    "developer_crossover",
+    "double_novice",
+    "fullstack_practitioner"
+  ],
+  "student_openings": {
+    "fullstack_practitioner": "I want to think through How much is the 2019 rate of inflation rigorously. I'm familiar with the basics — what are the nuances?",
+    "finance_veteran": "I need help with How much is the 2019 rate of inflation. I understand the financial side — can you help me with the computational approach?",
+    "developer_crossover": "I'm trying to understand How much is the 2019 rate of inflation. Code and math are fine for me, but the financial meaning is what I need help with.",
+    "double_novice": "I'm learning about How much is the 2019 rate of inflation. I'm pretty new to both finance and coding — can you help me understand step by step?"
+  }
 }

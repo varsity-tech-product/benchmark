@@ -7,13 +7,17 @@
   "description": "Guide a student to find and fix a missing short position in a Bollinger Band mean-reversion strategy where the short signal is incorrectly coded as flat (0 instead of -1).",
   "persona_ids": [
     "beginner_no_finance",
+    "developer_crossover",
+    "advanced_quant",
     "intermediate_developer",
-    "advanced_quant"
+    "fullstack_practitioner"
   ],
   "student_openings": {
     "beginner_no_finance": "I wrote a Bollinger Band strategy that should go long and short, but it only seems to make money on the long side. The short side doesn't seem to work at all. Can you help?",
     "intermediate_developer": "My Bollinger Band mean-reversion strategy has zero short_days in the output even though it should short when price is above the upper band. I think there's a bug in the position logic. Can you take a look?",
-    "advanced_quant": "My BB mean-reversion backtest shows asymmetric returns — long-side alpha is present but the short-side contributes nothing. The position breakdown shows short_days=0. Can you help me trace the issue in the signal generation?"
+    "advanced_quant": "My BB mean-reversion backtest shows asymmetric returns — long-side alpha is present but the short-side contributes nothing. The position breakdown shows short_days=0. Can you help me trace the issue in the signal generation?",
+    "fullstack_practitioner": "I'm debugging an issue: find and fix a missing short position in a Bollinger Band. I've narrowed it down but want a second pair of eyes on the root cause.",
+    "developer_crossover": "I'm looking at code that should find and fix a missing short position in a Bollinger Band. The code reads fine to me, but I'm not sure the financial logic is correct. What should it be doing?"
   },
   "environment": {
     "data_files": [

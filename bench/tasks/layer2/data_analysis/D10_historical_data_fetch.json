@@ -7,13 +7,21 @@
   "description": "Guide the student to fetch historical market price and macroeconomic data from public APIs, validate and save both datasets as CSV files, and teach quant data-ingestion caveats including adjusted prices, macro release lag, and point-in-time leakage risk.",
   "persona_ids": [
     "beginner_no_finance",
+    "double_novice",
+    "finance_veteran",
+    "developer_crossover",
+    "advanced_quant",
     "intermediate_developer",
-    "advanced_quant"
+    "fullstack_practitioner"
   ],
   "student_openings": {
     "beginner_no_finance": "Hi! I want to learn how to download historical stock price data and some economic indicators like GDP or interest rates using Python. Where should I start?",
     "intermediate_developer": "I need a clean ingestion script for historical asset prices plus macro indicators using only docs. Also teach me the quant validity checks: adjusted vs raw prices, release lag, revisions, and point-in-time risk.",
-    "advanced_quant": "Let's build a reproducible historical ingestion pipeline from official APIs with schema normalization and CSV persistence, then audit for corporate-action handling and macro point-in-time/revision leakage."
+    "advanced_quant": "Let's build a reproducible historical ingestion pipeline from official APIs with schema normalization and CSV persistence, then audit for corporate-action handling and macro point-in-time/revision leakage.",
+    "fullstack_practitioner": "I want to fetch historical market price and macroeconomic data from rigorously. I know the basics — let's focus on methodology and potential pitfalls.",
+    "finance_veteran": "I need to fetch historical market price and macroeconomic data from in Python. I understand what the data means financially — I just need help with the pandas side.",
+    "developer_crossover": "I need to fetch historical market price and macroeconomic data from. I can use pandas fine — but what do these financial metrics actually mean? Why would a trader care?",
+    "double_novice": "My professor asked us to fetch historical market price and macroeconomic data from. I'm new to both Python and finance — can you start from the basics?"
   },
   "environment": {
     "data_files": [],

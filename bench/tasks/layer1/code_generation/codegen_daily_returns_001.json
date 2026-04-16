@@ -15,5 +15,17 @@
     "pandas",
     "returns",
     "visualization"
-  ]
+  ],
+  "persona_ids": [
+    "finance_veteran",
+    "developer_crossover",
+    "double_novice",
+    "fullstack_practitioner"
+  ],
+  "student_openings": {
+    "fullstack_practitioner": "I need to implement I have a CSV file with columns 'Date' and 'Close'. I know the basics of both — let's discuss the right approach before I code it.",
+    "finance_veteran": "I need to code I have a CSV file with columns 'Date' and 'Close'. I know what the result should look like financially — just need help writing it in Python.",
+    "developer_crossover": "I need to write code for I have a CSV file with columns 'Date' and 'Close'. The coding is easy — but I need to understand what this financial concept actually means first.",
+    "double_novice": "I need to write code for I have a CSV file with columns 'Date' and 'Close'. I'm still learning both Python and finance — can you walk me through it?"
+  }
 }

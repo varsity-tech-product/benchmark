@@ -12,5 +12,17 @@
   "source_dataset": "reddit.personalfinance",
   "tags": [
     "personalfinance"
-  ]
+  ],
+  "persona_ids": [
+    "finance_veteran",
+    "developer_crossover",
+    "double_novice",
+    "fullstack_practitioner"
+  ],
+  "student_openings": {
+    "fullstack_practitioner": "I want to think through I just discovered this sub-reddit a few days ago and I rigorously. I'm familiar with the basics — what are the nuances?",
+    "finance_veteran": "I need help with I just discovered this sub-reddit a few days ago and I. I understand the financial side — can you help me with the computational approach?",
+    "developer_crossover": "I'm trying to understand I just discovered this sub-reddit a few days ago and I. Code and math are fine for me, but the financial meaning is what I need help with.",
+    "double_novice": "I'm learning about I just discovered this sub-reddit a few days ago and I. I'm pretty new to both finance and coding — can you help me understand step by step?"
+  }
 }

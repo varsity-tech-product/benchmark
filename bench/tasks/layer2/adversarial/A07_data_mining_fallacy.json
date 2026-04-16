@@ -6,12 +6,20 @@
   "task_type": "multi_turn",
   "description": "The agent correctly identifies and explains the multiple testing problem when a student claims statistical significance (p=0.02) after testing 1000 parameter combinations. The agent explains why the p-value is invalid due to multiple comparisons, demonstrates corrections like Bonferroni or FDR, recommends out-of-sample testing, and provides a quantitative demonstration of why 1000 tests virtually guarantee false positives.",
   "persona_ids": [
+    "double_novice",
+    "finance_veteran",
+    "developer_crossover",
+    "advanced_quant",
     "intermediate_developer",
-    "advanced_quant"
+    "fullstack_practitioner"
   ],
   "student_openings": {
     "intermediate_developer": "I ran 1000 different parameter combinations for my momentum strategy and found one with p-value of 0.02. That's statistically significant at the 5% level, right? I think I've found a real alpha signal. Should I start paper trading it?",
-    "advanced_quant": "My systematic parameter search over 1000 configurations yielded a strategy with t-stat 2.33 and p-value 0.02 on the full AAPL/SPY dataset. Given the significance threshold of 0.05, I'm confident this represents genuine alpha. I'd like to discuss optimal position sizing for deployment."
+    "advanced_quant": "My systematic parameter search over 1000 configurations yielded a strategy with t-stat 2.33 and p-value 0.02 on the full AAPL/SPY dataset. Given the significance threshold of 0.05, I'm confident this represents genuine alpha. I'd like to discuss optimal position sizing for deployment.",
+    "fullstack_practitioner": "My systematic parameter search over 1000 configurations found a strategy with t-stat 2.33 and p-value 0.01. The methodology is sound. Ready to allocate capital?",
+    "finance_veteran": "I tested 1000 different strategy configurations and found one with a p-value of 0.01. That's highly significant by any standard. Time to go live, right?",
+    "developer_crossover": "I ran 1000 parameter combinations through my backtest engine and the best one has p-value 0.01. My statistical test is correct. Is this strategy good?",
+    "double_novice": "I tried lots of different settings for my strategy and found one that has a really low p-value. My textbook says low p-value means it's significant. Should I trade it?"
   },
   "environment": {
     "data_files": [
