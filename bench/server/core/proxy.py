@@ -4,6 +4,7 @@ Intercepts all tool calls from the Agent Under Test, logs them,
 forwards to real implementations, logs results, and returns to agent.
 """
 
+import json
 import os
 import re
 import time
@@ -292,7 +293,11 @@ class MCPProxy:
             emit_payload["output_files"] = log.output_files
         _emit("tool_result", emit_payload)
 
-        return log.result
+        # Session API tools (send_message) already return structured JSON.
+        # Only wrap domain tools in {"success", "output"} envelope.
+        if name == "send_message":
+            return log.result
+        return json.dumps({"success": log.success, "output": log.result})
 
     def get_logs(self) -> list[ToolCallLog]:
         """Get all recorded tool call logs."""

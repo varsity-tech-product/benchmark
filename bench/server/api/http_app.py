@@ -593,7 +593,11 @@ async def rest_tool_call(request: Request) -> JSONResponse:
         result = await asyncio.to_thread(state.call_domain_tool, name, **body)
     result_preview = str(result)[:150]
     logger.debug("[REST:%s] %s -> %s...", sid[:8], name, result_preview)
-    return JSONResponse({"result": result})
+    try:
+        parsed = json.loads(result)
+    except (json.JSONDecodeError, TypeError):
+        parsed = {"success": True, "output": result}
+    return JSONResponse(parsed)
 
 
 async def rest_send(request: Request) -> JSONResponse:
