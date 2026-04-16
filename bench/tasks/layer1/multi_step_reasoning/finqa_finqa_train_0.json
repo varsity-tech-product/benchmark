@@ -13,5 +13,17 @@
   "tags": [
     "numerical-reasoning",
     "financial-reports"
-  ]
+  ],
+  "persona_ids": [
+    "finance_veteran",
+    "developer_crossover",
+    "double_novice",
+    "fullstack_practitioner"
+  ],
+  "student_openings": {
+    "fullstack_practitioner": "I want to think through what is the the interest expense in 2009 rigorously. I'm familiar with the basics — what are the nuances?",
+    "finance_veteran": "I need help with what is the the interest expense in 2009. I understand the financial side — can you help me with the computational approach?",
+    "developer_crossover": "I'm trying to understand what is the the interest expense in 2009. Code and math are fine for me, but the financial meaning is what I need help with.",
+    "double_novice": "I'm learning about what is the the interest expense in 2009. I'm pretty new to both finance and coding — can you help me understand step by step?"
+  }
 }

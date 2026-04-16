@@ -7,13 +7,17 @@
   "description": "Guide a student to implement a multi-alpha portfolio composition system using LEAN's Algorithm Framework. The student must create three independent AlphaModel classes (trend via SMA crossover, mean-reversion via RSI extremes, momentum via ROC), register them with AddAlpha(), compare InsightWeighting vs EqualWeighting portfolio construction models by running two backtests with different configurations, and analyze the results. On the standalone 12-col pipeline, the alpha models should manage symbol state from the subscribed symbols or from data.Keys and update indicators manually instead of relying on OnSecuritiesChanged auto-registration. This tests multi-model composition, explicit insight weighting, and systematic comparison.",
   "persona_ids": [
     "beginner_no_finance",
+    "developer_crossover",
+    "advanced_quant",
     "intermediate_developer",
-    "advanced_quant"
+    "fullstack_practitioner"
   ],
   "student_openings": {
     "beginner_no_finance": "I want to combine multiple trading strategies into one algorithm — like a trend-following signal, a mean-reversion signal, and a momentum signal — and have the system figure out how to size positions based on all of them together. Is that possible in LEAN?",
     "intermediate_developer": "I'm building a multi-alpha system in LEAN's framework where I register three separate AlphaModel classes using AddAlpha(). I want to compare InsightWeighting vs EqualWeighting portfolio construction. How should I structure the alpha models and the comparison workflow?",
-    "advanced_quant": "I need a multi-alpha architecture: TrendAlpha (SMA 20/50), MeanReversionAlpha (RSI 14), MomentumAlpha (ROC 20), composed via AddAlpha() with A/B comparison of InsightWeighting vs EqualWeighting PCM across ~100 futures. What's the implementation?"
+    "advanced_quant": "I need a multi-alpha architecture: TrendAlpha (SMA 20/50), MeanReversionAlpha (RSI 14), MomentumAlpha (ROC 20), composed via AddAlpha() with A/B comparison of InsightWeighting vs EqualWeighting PCM across ~100 futures. What's the implementation?",
+    "fullstack_practitioner": "I need to implement a multi-alpha portfolio composition system using. I've done similar work in Python before — let's focus on getting the architecture and edge cases right.",
+    "developer_crossover": "I need to implement a multi-alpha portfolio composition system using. I can handle the code, but I don't understand the financial logic behind it. What should this do and why?"
   },
   "environment": {
     "data_files": [

@@ -7,13 +7,21 @@
   "description": "Guide the student to align irregular alternative data with price data, normalize and handle missing values, construct lag-safe merged features, and evaluate information content for predictive signal quality.",
   "persona_ids": [
     "beginner_no_finance",
+    "double_novice",
+    "finance_veteran",
+    "developer_crossover",
+    "advanced_quant",
     "intermediate_developer",
-    "advanced_quant"
+    "fullstack_practitioner"
   ],
   "student_openings": {
     "beginner_no_finance": "I found a sentiment dataset and want to combine it with stock prices. How do I do that without making mistakes?",
     "intermediate_developer": "I need a practical workflow to merge irregular sentiment data with daily OHLCV, apply lags, and test if the signal actually helps.",
-    "advanced_quant": "I'm integrating alt data with uneven timestamps and need as-of alignment, leakage-safe lagging, normalization, and IC analysis for signal value."
+    "advanced_quant": "I'm integrating alt data with uneven timestamps and need as-of alignment, leakage-safe lagging, normalization, and IC analysis for signal value.",
+    "fullstack_practitioner": "I want to align irregular alternative data with price data, normalize rigorously. I know the basics — let's focus on methodology and potential pitfalls.",
+    "finance_veteran": "I need to align irregular alternative data with price data, normalize in Python. I understand what the data means financially — I just need help with the pandas side.",
+    "developer_crossover": "I need to align irregular alternative data with price data, normalize. I can use pandas fine — but what do these financial metrics actually mean? Why would a trader care?",
+    "double_novice": "My professor asked us to align irregular alternative data with price data, normalize. I'm new to both Python and finance — can you start from the basics?"
   },
   "environment": {
     "data_files": [

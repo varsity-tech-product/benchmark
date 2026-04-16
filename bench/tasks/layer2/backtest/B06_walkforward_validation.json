@@ -7,13 +7,17 @@
   "description": "Guide a student to build a walk-forward validation framework on top of a backtest engine for a parameterized BTCUSDT moving-average crossover strategy, using rolling train and test windows with out-of-sample reporting.",
   "persona_ids": [
     "beginner_no_finance",
+    "finance_veteran",
+    "advanced_quant",
     "intermediate_developer",
-    "advanced_quant"
+    "fullstack_practitioner"
   ],
   "student_openings": {
     "beginner_no_finance": "I tried different moving average settings and found one that works amazingly well. But I'm worried I just got lucky. Is there a way to properly test whether my parameters are actually good?",
     "intermediate_developer": "I want to build a walk-forward optimization framework for my backtester. I understand rolling train and test windows, but I'm not sure how to structure it cleanly on top of my existing engine.",
-    "advanced_quant": "I need a walk-forward validation harness for my futures backtest engine. I want to systematically test whether my optimized parameters generalize. What's the cleanest architecture?"
+    "advanced_quant": "I need a walk-forward validation harness for my futures backtest engine. I want to systematically test whether my optimized parameters generalize. What's the cleanest architecture?",
+    "fullstack_practitioner": "I want to build a walk-forward validation framework on top of a properly. I've run basic backtests before — what methodology issues should I watch for?",
+    "finance_veteran": "I need to build a walk-forward validation framework on top of a. I know what good backtesting looks like from experience — can you help me implement it in code?"
   },
   "environment": {
     "data_files": [

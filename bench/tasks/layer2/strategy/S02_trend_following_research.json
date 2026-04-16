@@ -7,13 +7,21 @@
   "description": "Guide a student to conduct systematic alpha research on trend-following patterns in BTCUSDT daily data.",
   "persona_ids": [
     "beginner_no_finance",
+    "double_novice",
+    "finance_veteran",
+    "developer_crossover",
+    "advanced_quant",
     "intermediate_developer",
-    "advanced_quant"
+    "fullstack_practitioner"
   ],
   "student_openings": {
     "beginner_no_finance": "I have Bitcoin price data from the last few years. People say 'the trend is your friend' - is that actually true? How would I even check if trends exist in this data?",
     "intermediate_developer": "I want to research trend-following signals on BTC daily data. I can code in Python, but I've never done systematic signal research before. What's the right process?",
-    "advanced_quant": "I'm researching trend-following alpha in crypto. I want to go beyond simple MA crossovers - autocorrelation structure, return persistence, and a properly evaluated signal with IC analysis. Where should I start with this dataset?"
+    "advanced_quant": "I'm researching trend-following alpha in crypto. I want to go beyond simple MA crossovers - autocorrelation structure, return persistence, and a properly evaluated signal with IC analysis. Where should I start with this dataset?",
+    "fullstack_practitioner": "I'm exploring how to conduct systematic alpha research on trend-following. I have experience with simpler strategies — what are the key trade-offs here?",
+    "finance_veteran": "I want to conduct systematic alpha research on trend-following. I understand the strategy logic from my trading experience — but I need help coding and backtesting it.",
+    "developer_crossover": "I want to conduct systematic alpha research on trend-following. I can write the code — but I need to understand the trading logic first. Why does this work?",
+    "double_novice": "I heard about how to conduct systematic alpha research on trend-following in class and want to try it. I'm new to both coding and trading — can you walk me through it step by step?"
   },
   "environment": {
     "data_files": [

@@ -13,5 +13,17 @@
   "tags": [
     "numerical-reasoning",
     "financial-reports"
-  ]
+  ],
+  "persona_ids": [
+    "finance_veteran",
+    "developer_crossover",
+    "double_novice",
+    "fullstack_practitioner"
+  ],
+  "student_openings": {
+    "fullstack_practitioner": "I want to think through what was the total operating expenses in 2018 in millions rigorously. I'm familiar with the basics — what are the nuances?",
+    "finance_veteran": "I need help with what was the total operating expenses in 2018 in millions. I understand the financial side — can you help me with the computational approach?",
+    "developer_crossover": "I'm trying to understand what was the total operating expenses in 2018 in millions. Code and math are fine for me, but the financial meaning is what I need help with.",
+    "double_novice": "I'm learning about what was the total operating expenses in 2018 in millions. I'm pretty new to both finance and coding — can you help me understand step by step?"
+  }
 }

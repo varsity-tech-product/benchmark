@@ -7,13 +7,21 @@
   "description": "Guide the student to build a feature-engineering pipeline from OHLCV data, then diagnose multicollinearity and look-ahead leakage risks.",
   "persona_ids": [
     "beginner_no_finance",
+    "double_novice",
+    "finance_veteran",
+    "developer_crossover",
+    "advanced_quant",
     "intermediate_developer",
-    "advanced_quant"
+    "fullstack_practitioner"
   ],
   "student_openings": {
     "beginner_no_finance": "I have OHLCV data and want to create useful features for a model. Where should I start and what mistakes should I avoid?",
     "intermediate_developer": "I need a systematic feature pipeline from OHLCV: multi-horizon returns, rolling volatility, indicators, and correlation checks.",
-    "advanced_quant": "I want a leakage-safe feature engineering pipeline with explicit shift discipline, collinearity diagnostics, and clear train/test boundaries."
+    "advanced_quant": "I want a leakage-safe feature engineering pipeline with explicit shift discipline, collinearity diagnostics, and clear train/test boundaries.",
+    "fullstack_practitioner": "I want to build a feature-engineering pipeline from OHLCV data, then rigorously. I know the basics — let's focus on methodology and potential pitfalls.",
+    "finance_veteran": "I need to build a feature-engineering pipeline from OHLCV data, then in Python. I understand what the data means financially — I just need help with the pandas side.",
+    "developer_crossover": "I need to build a feature-engineering pipeline from OHLCV data, then. I can use pandas fine — but what do these financial metrics actually mean? Why would a trader care?",
+    "double_novice": "My professor asked us to build a feature-engineering pipeline from OHLCV data, then. I'm new to both Python and finance — can you start from the basics?"
   },
   "environment": {
     "data_files": [

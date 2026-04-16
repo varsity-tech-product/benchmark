@@ -7,13 +7,21 @@
   "description": "Guide the student to aggregate tick-level data into OHLCV bars, save the result as a CSV file, and apply proper timestamp handling and microstructure quality checks.",
   "persona_ids": [
     "beginner_no_finance",
+    "double_novice",
+    "finance_veteran",
+    "developer_crossover",
+    "advanced_quant",
     "intermediate_developer",
-    "advanced_quant"
+    "fullstack_practitioner"
   ],
   "student_openings": {
     "beginner_no_finance": "I got a file with lots of tiny tick updates. How do I turn that into normal candle bars?",
     "intermediate_developer": "I need a pandas recipe to resample tick data into OHLCV bars and validate timestamp ordering/duplicates.",
-    "advanced_quant": "I want a robust tick-to-bar aggregation workflow with microstructure sanity checks (ordering, stale ticks, session boundaries)."
+    "advanced_quant": "I want a robust tick-to-bar aggregation workflow with microstructure sanity checks (ordering, stale ticks, session boundaries).",
+    "fullstack_practitioner": "I want to aggregate tick-level data into OHLCV bars, save the result rigorously. I know the basics — let's focus on methodology and potential pitfalls.",
+    "finance_veteran": "I need to aggregate tick-level data into OHLCV bars, save the result in Python. I understand what the data means financially — I just need help with the pandas side.",
+    "developer_crossover": "I need to aggregate tick-level data into OHLCV bars, save the result. I can use pandas fine — but what do these financial metrics actually mean? Why would a trader care?",
+    "double_novice": "My professor asked us to aggregate tick-level data into OHLCV bars, save the result. I'm new to both Python and finance — can you start from the basics?"
   },
   "environment": {
     "data_files": [

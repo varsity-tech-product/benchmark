@@ -7,13 +7,17 @@
   "description": "Guide a student to implement a dual moving average crossover strategy as a LEAN C# algorithm using daily bars that runs across the Binance futures universe loaded from universe.json. Unlike a single-symbol backtest, the student must dynamically subscribe to the symbols, manage per-symbol indicator state, implement equal-weight position sizing across active positions, and produce both per-symbol and universe-level aggregated results. This is how institutional trend-following strategies are actually tested.",
   "persona_ids": [
     "beginner_no_finance",
+    "developer_crossover",
+    "advanced_quant",
     "intermediate_developer",
-    "advanced_quant"
+    "fullstack_practitioner"
   ],
   "student_openings": {
     "beginner_no_finance": "I have access to a trading engine called LEAN with daily data for hundreds of crypto futures listed in universe.json. I want to test an SMA(10)/SMA(30) dual crossover strategy on all of them at once — buy when the fast average crosses above the slow one, sell when it crosses below. I've never written C# before — where do I start?",
     "intermediate_developer": "I need to implement an SMA(10)/SMA(30) dual crossover strategy on LEAN across the full Binance futures universe (universe.json) using daily bars. How do I manage per-symbol indicators and positions for that many symbols in a single algorithm?",
-    "advanced_quant": "I'm implementing a universe-wide SMA(10)/SMA(30) trend-following backtest on LEAN for all Binance futures in universe.json on daily resolution. What's the cleanest way to structure a multi-symbol algorithm with equal-weight position sizing?"
+    "advanced_quant": "I'm implementing a universe-wide SMA(10)/SMA(30) trend-following backtest on LEAN for all Binance futures in universe.json on daily resolution. What's the cleanest way to structure a multi-symbol algorithm with equal-weight position sizing?",
+    "fullstack_practitioner": "I need to implement a dual moving average crossover strategy as a. I've done similar work in Python before — let's focus on getting the architecture and edge cases right.",
+    "developer_crossover": "I need to implement a dual moving average crossover strategy as a. I can handle the code, but I don't understand the financial logic behind it. What should this do and why?"
   },
   "environment": {
     "data_files": [

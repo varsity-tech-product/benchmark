@@ -7,13 +7,17 @@
   "description": "Guide a student to find and fix a missing warm-up period in a LEAN EMA crossover algorithm. Without SetWarmUp and IsWarmingUp guard, the EMA indicators compute on insufficient history, causing incorrect early signals.",
   "persona_ids": [
     "beginner_no_finance",
+    "developer_crossover",
+    "advanced_quant",
     "intermediate_developer",
-    "advanced_quant"
+    "fullstack_practitioner"
   ],
   "student_openings": {
     "beginner_no_finance": "I wrote an EMA crossover strategy in LEAN C# but the first few trades seem wrong. The strategy enters positions right at the start of the backtest when it shouldn't. Can you help me figure out what's going on?",
     "intermediate_developer": "My LEAN EMA(20/50) crossover algorithm generates spurious trades in the first few weeks of the backtest. I suspect the indicators aren't properly initialized but I'm not sure how to fix it. Can you review my code?",
-    "advanced_quant": "My EMA crossover algo shows front-loaded false signals that contaminate the backtest results. I believe the indicator warm-up period is misconfigured, causing the EMAs to emit values before they've converged. Can you help me diagnose the initialization issue?"
+    "advanced_quant": "My EMA crossover algo shows front-loaded false signals that contaminate the backtest results. I believe the indicator warm-up period is misconfigured, causing the EMAs to emit values before they've converged. Can you help me diagnose the initialization issue?",
+    "fullstack_practitioner": "I'm debugging an issue: find and fix a missing warm-up period in a LEAN EMA. I've narrowed it down but want a second pair of eyes on the root cause.",
+    "developer_crossover": "I'm looking at code that should find and fix a missing warm-up period in a LEAN EMA. The code reads fine to me, but I'm not sure the financial logic is correct. What should it be doing?"
   },
   "environment": {
     "data_files": [

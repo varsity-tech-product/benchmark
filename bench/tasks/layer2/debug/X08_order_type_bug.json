@@ -7,13 +7,17 @@
   "description": "Guide a student to find and fix an order type bug in a LEAN momentum strategy where LimitOrder at current price is used instead of MarketOrder, causing most orders to go unfilled in trending markets.",
   "persona_ids": [
     "beginner_no_finance",
+    "developer_crossover",
+    "advanced_quant",
     "intermediate_developer",
-    "advanced_quant"
+    "fullstack_practitioner"
   ],
   "student_openings": {
     "beginner_no_finance": "My LEAN momentum strategy barely makes any trades even though the signals are firing. I'm placing orders but they don't seem to get filled. What am I doing wrong?",
     "intermediate_developer": "I have a ROCP-based momentum strategy in LEAN that generates correct signals but the trade count is extremely low. I'm using LimitOrder with the current price. Could the order type be the issue?",
-    "advanced_quant": "My momentum strategy has a severe fill-rate problem — most orders expire unfilled. I'm placing limit orders at the last close price but in a trending market the price gaps away. I need help identifying the correct order execution approach."
+    "advanced_quant": "My momentum strategy has a severe fill-rate problem — most orders expire unfilled. I'm placing limit orders at the last close price but in a trending market the price gaps away. I need help identifying the correct order execution approach.",
+    "fullstack_practitioner": "I'm debugging an issue: find and fix an order type bug in a LEAN momentum strategy. I've narrowed it down but want a second pair of eyes on the root cause.",
+    "developer_crossover": "I'm looking at code that should find and fix an order type bug in a LEAN momentum strategy. The code reads fine to me, but I'm not sure the financial logic is correct. What should it be doing?"
   },
   "environment": {
     "data_files": [

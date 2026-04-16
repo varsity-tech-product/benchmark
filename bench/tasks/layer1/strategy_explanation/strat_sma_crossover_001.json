@@ -14,5 +14,17 @@
     "strategy",
     "trend-following",
     "moving-averages"
-  ]
+  ],
+  "persona_ids": [
+    "finance_veteran",
+    "developer_crossover",
+    "double_novice",
+    "fullstack_practitioner"
+  ],
+  "student_openings": {
+    "fullstack_practitioner": "I want to go deeper on what a moving average crossover strategy is and how it. I have some experience — what are the trade-offs most people miss?",
+    "finance_veteran": "I know what a moving average crossover strategy is and how it from practice — but how would I implement it computationally?",
+    "developer_crossover": "I want to understand what a moving average crossover strategy is and how it. I'm a developer — I can implement anything, I just need to understand the financial reasoning.",
+    "double_novice": "My class is covering what a moving average crossover strategy is and how it. I'm new to trading — can you explain it simply?"
+  }
 }

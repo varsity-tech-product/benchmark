@@ -7,13 +7,17 @@
   "description": "Guide a student to implement a multi-timeframe strategy on LEAN that uses 4h bars for trend direction and 1h bars for precise entry timing, applied across ~20 liquid crypto futures. The student must learn to use LEAN's Consolidate() to build 4h bars from 1h data, manage per-symbol dual-timeframe indicator state, and ensure 4h indicators only update on 4h bar completion. Running this at scale across 20 symbols with 3 years of hourly data tests both correctness and performance.",
   "persona_ids": [
     "beginner_no_finance",
+    "developer_crossover",
+    "advanced_quant",
     "intermediate_developer",
-    "advanced_quant"
+    "fullstack_practitioner"
   ],
   "student_openings": {
     "beginner_no_finance": "I heard professional traders use multiple timeframes. I have hourly data for 20 crypto futures and I want to use a 4-hour trend to guide my hourly entries. How do I set this up on LEAN?",
     "intermediate_developer": "I need to implement a multi-timeframe strategy on LEAN across ~20 symbols: 4h EMA for trend, 1h RSI for entries. How do I set up consolidators for multiple symbols simultaneously?",
-    "advanced_quant": "I'm implementing a multi-timeframe strategy on LEAN across 20 futures that combines signals from different bar resolutions. What's the right architecture?"
+    "advanced_quant": "I'm implementing a multi-timeframe strategy on LEAN across 20 futures that combines signals from different bar resolutions. What's the right architecture?",
+    "fullstack_practitioner": "I need to implement a multi-timeframe strategy on LEAN that uses 4h. I've done similar work in Python before — let's focus on getting the architecture and edge cases right.",
+    "developer_crossover": "I need to implement a multi-timeframe strategy on LEAN that uses 4h. I can handle the code, but I don't understand the financial logic behind it. What should this do and why?"
   },
   "environment": {
     "data_files": [

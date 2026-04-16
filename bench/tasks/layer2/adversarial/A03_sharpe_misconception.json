@@ -6,12 +6,20 @@
   "task_type": "multi_turn",
   "description": "The agent identifies and corrects a student's misconception about an unrealistically high Sharpe ratio obtained through data mining. The student tested 200 parameter combinations and found a Sharpe of 5.0, believing the strategy is ready for live trading. The agent flags the unrealistic metric, explains overfitting and data mining bias, recommends out-of-sample validation, and demonstrates with data why the result is misleading.",
   "persona_ids": [
+    "double_novice",
+    "finance_veteran",
+    "developer_crossover",
+    "advanced_quant",
     "intermediate_developer",
-    "advanced_quant"
+    "fullstack_practitioner"
   ],
   "student_openings": {
     "intermediate_developer": "I tested 200 different parameter combinations for my SMA crossover on AAPL and found one with a Sharpe ratio of 5.0! I think my strategy is ready for live trading. Can you help me set up the execution pipeline?",
-    "advanced_quant": "After an exhaustive parameter sweep of 200 configurations on AAPL and SPY, my best SMA crossover yields a Sharpe of 5.0 in-sample. I'm confident in the statistical significance. What's the best way to scale this for production deployment?"
+    "advanced_quant": "After an exhaustive parameter sweep of 200 configurations on AAPL and SPY, my best SMA crossover yields a Sharpe of 5.0 in-sample. I'm confident in the statistical significance. What's the best way to scale this for production deployment?",
+    "fullstack_practitioner": "My parameter sweep over 200 SMA configurations found one with Sharpe 2.8 on AAPL. Statistical significance looks solid. I'm ready to deploy — any final checks?",
+    "finance_veteran": "After testing 200 parameter combinations, I found an SMA crossover with Sharpe 2.8. In my experience, that's very strong. Should I increase position size?",
+    "developer_crossover": "I ran a grid search over 200 SMA parameters and the best one has a Sharpe ratio of 2.8. My code is correct — is this a good result?",
+    "double_novice": "I tested 200 different settings for my trading strategy and one of them has something called a Sharpe ratio of 2.8. My friend says that's really good. Is it?"
   },
   "environment": {
     "data_files": [

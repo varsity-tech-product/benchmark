@@ -7,13 +7,17 @@
   "description": "Guide a student to build a futures backtest engine with realistic execution simulation for a BTCUSDT breakout strategy, report gross versus net performance showing each cost component separately, and explain why execution simulation matters for strategy viability.",
   "persona_ids": [
     "beginner_no_finance",
+    "finance_veteran",
+    "advanced_quant",
     "intermediate_developer",
-    "advanced_quant"
+    "fullstack_practitioner"
   ],
   "student_openings": {
     "beginner_no_finance": "I built a simple backtester but someone told me I'm ignoring trading fees and slippage. What are those and how do I add them?",
     "intermediate_developer": "I need to add realistic execution simulation to my futures backtester: slippage, maker and taker fees, and funding rates. How should I structure the fill model?",
-    "advanced_quant": "I'm building a futures backtest engine with a full execution simulator. I want to understand the true cost of trading. What's the architecture?"
+    "advanced_quant": "I'm building a futures backtest engine with a full execution simulator. I want to understand the true cost of trading. What's the architecture?",
+    "fullstack_practitioner": "I want to build a futures backtest engine with realistic execution properly. I've run basic backtests before — what methodology issues should I watch for?",
+    "finance_veteran": "I need to build a futures backtest engine with realistic execution. I know what good backtesting looks like from experience — can you help me implement it in code?"
   },
   "environment": {
     "data_files": [
