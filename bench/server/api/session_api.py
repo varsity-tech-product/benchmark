@@ -241,7 +241,10 @@ class SessionState:
         from server.core.student_sim import StudentSimulator
         from server.core.tc_checker import TCChecker, parse_tc_items
         from server.data_manager import ensure_data
-        from server.eval.ewan_eval.model_resolver import require_ewan_model
+        from server.eval.ewan_eval.model_resolver import (
+            require_ewan_model,
+            require_student_model,
+        )
 
         self._closed = False
 
@@ -306,9 +309,8 @@ class SessionState:
 
             load_server_env(self.bench_root)
             try:
-                resolved_sim_model = require_ewan_model(
+                resolved_sim_model = require_student_model(
                     SIMULATOR_DEFAULT_MODEL,
-                    purpose="student simulator",
                 )
             except RuntimeError as exc:
                 return {"accepted": False, "error": str(exc)}
@@ -454,15 +456,13 @@ class SessionState:
             )
 
             # Keep protocol traffic in raw logs; downstream reports decide what to hide.
+            from server.api.protocol import SEND_MESSAGE_TOOL
+
             self.proxy.register_tool(
                 name="send_message",
                 func=self.session.handle_send_message,
-                description="Send a message to the student.",
-                params={
-                    "type": "object",
-                    "properties": {"text": {"type": "string"}},
-                    "required": ["text"],
-                },
+                description=SEND_MESSAGE_TOOL.description,
+                params=SEND_MESSAGE_TOOL.inputSchema,
             )
 
             self._start_time = time.time()
@@ -498,8 +498,10 @@ class SessionState:
     # send_message (routed through proxy for logging)
     # ------------------------------------------------------------------
 
-    def handle_send_message(self, text: str) -> str:
-        """Handle ``send_message(text)``.
+    def handle_send_message(
+        self, text: str, attachments: list[str] | None = None
+    ) -> str:
+        """Handle ``send_message(text, attachments?)``.
 
         Routes through ``proxy.call_tool`` so the call is logged.
         Detects session completion and triggers result saving.
@@ -510,7 +512,9 @@ class SessionState:
         if self._closed:
             return json.dumps({"error": "Session is closed", "status": "closed"})
 
-        result = self.proxy.call_tool("send_message", text=text)
+        result = self.proxy.call_tool(
+            "send_message", text=text, attachments=attachments or []
+        )
 
         # Check for session completion
         try:
@@ -703,13 +707,25 @@ class SessionState:
 
         if name == "send_message":
             text = arguments.get("text", "")
+            attachments = arguments.get("attachments") or []
+            if not isinstance(attachments, list):
+                return [TextContent(type="text", text=json.dumps(
+                    {"error": "attachments must be an array of file paths"}
+                ))]
+            if len(attachments) > 3:
+                return [TextContent(type="text", text=json.dumps(
+                    {"error": "Maximum 3 attachments allowed"}
+                ))]
             logger.info(
-                "[%s] send_message (turn %d): %s...",
+                "[%s] send_message (turn %d, %d attachments): %s...",
                 self.session_id[:8],
                 self.session.turn if self.session else 0,
+                len(attachments),
                 text[:100],
             )
-            result = await asyncio.to_thread(self.handle_send_message, text)
+            result = await asyncio.to_thread(
+                self.handle_send_message, text, attachments=attachments
+            )
             # Log student reply
             try:
                 data = json.loads(result)

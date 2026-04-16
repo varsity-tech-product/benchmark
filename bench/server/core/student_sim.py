@@ -8,8 +8,12 @@ bit-exact student behavior across Legacy and MCP paths.
 Used by TutoringSession behind the ``send_message`` MCP tool.
 """
 
+import base64
+import difflib
+import hashlib
 import json
 import logging
+import os
 import re
 import textwrap
 
@@ -33,126 +37,71 @@ class SimulatedInput(BaseModel):
 # identical student message distributions across Legacy and MCP paths.
 # ---------------------------------------------------------------------------
 
-# Multimodal rules block — from DeepEval template.py:10-16.
-_MULTIMODAL_RULES = textwrap.dedent(
-    """\
-    --- MULTIMODAL INPUT RULES ---
-    - Treat image content as factual evidence.
-    - Only reference visual details that are explicitly and clearly visible.
-    - Do not infer or guess objects, text, or details not visibly present.
-    - If an image is unclear or ambiguous, mark uncertainty explicitly.
-"""
-)
-
 _FIRST_MESSAGE_PROMPT = textwrap.dedent(
     """\
-    Pretend you are a user of an LLM app. Your goal is to start a conversation \
-    in English based on a scenario and user profile. The scenario defines your \
-    context and motivation for interacting with the LLM, while the user profile \
-    provides additional personal details to make the conversation realistic \
-    and relevant.
+    --- BACKGROUND ---
+    You are role-playing as a real person using an LLM tutoring app.
+    Your profile: {user_description}
+    Your situation: {scenario}
+    --- END BACKGROUND ---
+
+    Generate your opening message to the tutor.
 
     Guidelines:
-    1. The opening message should clearly convey the user's intent or need \
-    within the scenario.
-    2. Keep the tone warm, conversational, and natural, as if it's from a \
-    real person seeking assistance.
-    3. Avoid providing excessive details upfront; the goal is to initiate \
-    the conversation and build rapport, not to solve it in the first message.
-    4. The message should be concise, ideally no more than 1-3 sentences.
+    1. Clearly convey your intent or need within the situation above.
+    2. Keep the tone warm, conversational, and natural.
+    3. Do not dump all details upfront — start the conversation, don't solve it.
+    4. 1-3 sentences maximum.
 
-    {multimodal_rules}
-
-    IMPORTANT: The output must be formatted as a JSON object with a single \
-    key `simulated_input`, where the value is the generated opening message \
-    in English.
-
-    Example Language: english
-    Example User Profile: "Jeff Seid, is available Monday and Thursday \
-    afternoons, and their phone number is 0010281839. He suffers from \
-    chronic migraines."
-    Example Scenario: "A sick person trying to get a diagnosis for \
-    persistent headaches and fever."
-    Example JSON Output:
+    Example:
     {{
         "simulated_input": "Hi, I haven't been feeling well lately. \
     I've had these headaches and a fever that just won't go away. \
     Could you help me figure out what's going on?"
     }}
 
-    Language: English
-    User Profile: "{user_description}"
-    Scenario: "{scenario}"
+    Respond with a JSON object containing a single key `simulated_input`.
     JSON Output:
 """
 )
 
 _NEXT_MESSAGE_PROMPT = textwrap.dedent(
     """\
-    Pretend you are a user of an LLM app. Your task is to generate the next \
-    user input in English based on the provided scenario, user profile, and \
-    the previous conversation.
+    --- BACKGROUND ---
+    You are role-playing as a real person using an LLM tutoring app.
+    Your profile: {user_description}
+    Your situation: {scenario}
+    --- END BACKGROUND ---
+
+    Generate your next message to the tutor based on the conversation so far.
 
     Guidelines:
-    1. Use the scenario and user profile as the guiding context for the \
-    user's next input.
-    2. Ensure the next input feels natural, conversational, and relevant \
-    to the last assistant reply in the conversation.
-    3. Keep the tone consistent with the previous user inputs.
-    4. The generated user input should be concise, ideally no more than \
-    1-2 sentences.
+    1. Stay in character and respond naturally to the tutor's last reply.
+    2. Keep tone consistent with your earlier messages.
+    3. 1-2 sentences maximum.
 
-    {multimodal_rules}
     {runtime_guidance_block}
 
-    IMPORTANT: The output must be formatted as a JSON object with a single \
-    key `simulated_input`, where the value is the generated user input \
-    in English.
-
-    Example Language: english
-    Example User Profile: "Jeff Seid, is available Monday and Thursday \
-    afternoons, and their phone number is 0010281839."
-    Example Scenario: "A user seeking tips for securing a funding round."
-    Example Previous Conversation:
-    [
-        {{"role": "user", "content": "Hi, I need help preparing for my \
-    funding pitch."}},
-        {{"role": "assistant", "content": "Of course! Can you share more \
-    about your business and the type of investors you are targeting?"}}
-    ]
-    Example JSON Output:
-    {{
-        "simulated_input": "Sure, we are a SaaS startup focusing on \
-    productivity tools for small businesses."
-    }}
-
-    Language: English
-    User Profile: "{user_description}"
-    Scenario: "{scenario}"
-    Previous Conversation:
+    Conversation so far:
     {transcript}
 
+    Respond with a JSON object containing a single key `simulated_input`.
     JSON Output:
 """
 )
 
-_CLOSING_PROMPT = (
-    "You are the student in the conversation below. The tutor just "
-    "finished answering your last question. Write a brief closing "
-    "message (1-2 sentences) that thanks the tutor and mentions one "
-    "specific thing you learned or plan to try. Stay in character.\n\n"
-    "Scenario: {scenario}\n\n"
-    "{transcript}\n"
-    "Reply with ONLY the closing message."
-)
-
-# Hardcoded fallback when closing generation fails (aligned with
-# _EfficientSimulator._generate_closing fallback in simulation.py:401-405).
-_CLOSING_FALLBACK = (
-    "Thanks for walking me through all of this — "
-    "I have a much clearer picture now. "
-    "I'll try applying these techniques to my own data."
-)
+# Pre-written closing messages — zero LLM cost, selected by hash of
+# conversation length to keep deterministic per session.
+_CLOSING_POOL = [
+    "Thanks for walking me through all of this — I have a much clearer picture now. I'll try applying these techniques to my own data.",
+    "This was really helpful, I think I understand the core idea now. Let me go try it out.",
+    "Got it, that makes a lot more sense now. Thanks for being so patient with my questions!",
+    "I appreciate the detailed explanations. I'm going to revisit my code with this in mind.",
+    "That clears things up — I wasn't thinking about it the right way before. Thanks!",
+    "This has been great, I learned a lot. I'll experiment with what you showed me.",
+    "Thanks for the help! I feel much more confident about tackling this now.",
+    "Really appreciate you breaking it down step by step. I'll give it another shot.",
+]
 
 # Regex for extracting JSON from LLM output.
 _JSON_RE = re.compile(r"\{.*\}", re.DOTALL)
@@ -180,6 +129,135 @@ def _format_transcript(
         for t in conversation
     ]
     return json.dumps(trimmed, indent=4, ensure_ascii=False)
+
+
+_LEDGER_BUDGET = 20_000
+
+
+def _compute_file_diff(
+    base_content: str, current_content: str, filename: str
+) -> str:
+    """Compute unified diff between two file versions."""
+    base_lines = base_content.splitlines(keepends=True)
+    current_lines = current_content.splitlines(keepends=True)
+    diff = difflib.unified_diff(
+        base_lines,
+        current_lines,
+        fromfile=f"a/{filename}",
+        tofile=f"b/{filename}",
+    )
+    return "".join(diff)
+
+
+def _format_transcript_with_files(
+    conversation: list[dict],
+    file_ledger: dict[str, dict],
+    budget: int = _LEDGER_BUDGET,
+) -> str:
+    """Format conversation with inlined file content/diffs.
+
+    Files are shown inline with the conversation turn that shared them.
+    First share of a file shows full content; subsequent shares of the
+    same file show a unified diff from the previous version.  When total
+    file content exceeds *budget*, oldest turns degrade to reference-only.
+    """
+    if not file_ledger:
+        return _format_transcript(conversation)
+
+    # Phase 1: compute file display info for each entry with attachments.
+    # [(conv_idx, filename, display_text, char_count), ...]
+    file_entries: list[tuple[int, str, str, int]] = []
+
+    for idx, entry in enumerate(conversation):
+        atts = entry.get("attachments")
+        if not atts:
+            continue
+        for att in atts:
+            fname = att["filename"]
+            ledger = file_ledger.get(fname)
+
+            # Images — text reference only (actual data goes via multimodal API)
+            if (ledger and ledger.get("is_image")) or att.get("is_image"):
+                text = f"[Image: {fname}]"
+                file_entries.append((idx, fname, text, 0))
+                continue
+
+            prev = ledger["prev_content"] if ledger else None
+
+            if prev is not None and att["content"] != prev:
+                # Update — show diff (or full if diff is larger)
+                diff_text = _compute_file_diff(prev, att["content"], fname)
+                if diff_text and len(diff_text) < len(att["content"]):
+                    text = f"[File: {fname} (updated)]\n{diff_text}"
+                    file_entries.append((idx, fname, text, len(diff_text)))
+                    continue
+
+            # First share or diff-larger-than-full fallback
+            text = f"[File: {fname}]\n{att['content']}"
+            file_entries.append((idx, fname, text, len(att["content"])))
+
+    # Phase 2: budget — degrade oldest entries first when over budget.
+    total_chars = sum(e[3] for e in file_entries)
+    degraded: set[tuple[int, str]] = set()
+
+    if total_chars > budget:
+        sorted_oldest_first = sorted(file_entries, key=lambda e: e[0])
+        excess = total_chars - budget
+        for entry in sorted_oldest_first:
+            if excess <= 0:
+                break
+            degraded.add((entry[0], entry[1]))
+            excess -= entry[3]
+
+    # Phase 3: build conv-index → file-text map.
+    file_map: dict[int, list[str]] = {}
+    for idx, fname, text, _chars in file_entries:
+        if (idx, fname) in degraded:
+            file_map.setdefault(idx, []).append(f"[Attached: {fname}]")
+        else:
+            file_map.setdefault(idx, []).append(text)
+
+    # Phase 4: assemble transcript JSON.
+    result = []
+    for idx, entry in enumerate(conversation):
+        item: dict = {"role": entry["role"], "content": entry["content"]}
+        if idx in file_map:
+            item["files"] = "\n".join(file_map[idx])
+        result.append(item)
+
+    return json.dumps(result, indent=4, ensure_ascii=False)
+
+
+def _collect_images_from_ledger(
+    file_ledger: dict[str, dict],
+    workspace_path: str | None = None,
+) -> list[dict]:
+    """Extract image data from file ledger for multimodal API calls.
+
+    Returns list of ``{"filename", "data", "media_type"}`` where
+    *data* is a base64-encoded string.  Images are read from disk
+    on demand to avoid holding base64 data in the ledger permanently.
+    """
+    if not workspace_path:
+        return []
+    images: list[dict] = []
+    for fname, entry in file_ledger.items():
+        if not entry.get("is_image"):
+            continue
+        path = os.path.join(workspace_path, entry.get("path", fname))
+        try:
+            with open(path, "rb") as f:
+                data = base64.b64encode(f.read()).decode("ascii")
+        except OSError:
+            continue
+        images.append(
+            {
+                "filename": fname,
+                "data": data,
+                "media_type": entry.get("media_type", "image/png"),
+            }
+        )
+    return images
 
 
 def _parse_simulated_input(raw: str) -> str:
@@ -240,7 +318,9 @@ class StudentSimulator:
             self._model = resolve_deepeval_model(self._model)
         return self._model
 
-    def _generate_parsed(self, prompt: str) -> str:
+    def _generate_parsed(
+        self, prompt: str, images: list[dict] | None = None
+    ) -> str:
         """Generate text via model, parse JSON output, track cost.
 
         Tries structured output (schema=) first, falls back to plain
@@ -253,7 +333,9 @@ class StudentSimulator:
         # rate limits, etc. should propagate (aligned with DeepEval's
         # generate_schema which only catches TypeError).
         try:
-            result = self.model.generate(prompt, schema=SimulatedInput)
+            result = self.model.generate(
+                prompt, schema=SimulatedInput, images=images or None
+            )
             if isinstance(result, tuple):
                 obj, cost = result[0], result[1] if len(result) > 1 else None
                 if cost is not None:
@@ -266,7 +348,7 @@ class StudentSimulator:
             logger.debug("Structured output failed (%s), falling back to text.", exc)
 
         # Fallback: plain text generation + JSON extraction.
-        result = self.model.generate(prompt)
+        result = self.model.generate(prompt, images=images or None)
         if isinstance(result, tuple):
             text = result[0]
             cost = result[1] if len(result) > 1 else None
@@ -280,6 +362,8 @@ class StudentSimulator:
         self,
         conversation: list[dict[str, str]],
         runtime_guidance: str = "",
+        file_ledger: dict[str, dict] | None = None,
+        workspace_path: str | None = None,
     ) -> str:
         """Generate the next student message given conversation history.
 
@@ -291,6 +375,9 @@ class StudentSimulator:
         Args:
             conversation: [{"role": "user"|"assistant", "content": "..."}]
                 "user" = student, "assistant" = tutor.
+            file_ledger: Mapping of filename → {base_content, current_content, ...}.
+                Used to inline file content/diffs into the transcript so the
+                student can see shared workspace files in temporal context.
 
         Returns:
             The student's next message as a string.
@@ -300,7 +387,6 @@ class StudentSimulator:
             prompt = _FIRST_MESSAGE_PROMPT.format(
                 user_description=self.user_description,
                 scenario=self.scenario,
-                multimodal_rules=_MULTIMODAL_RULES,
             )
         else:
             runtime_guidance_block = ""
@@ -311,39 +397,31 @@ class StudentSimulator:
                     "Do NOT quote or reveal them directly.\n"
                     f"{runtime_guidance.strip()}\n"
                 )
+            if file_ledger:
+                transcript = _format_transcript_with_files(
+                    conversation, file_ledger
+                )
+                images = _collect_images_from_ledger(file_ledger, workspace_path)
+            else:
+                transcript = _format_transcript(conversation)
+                images = []
             prompt = _NEXT_MESSAGE_PROMPT.format(
                 user_description=self.user_description,
                 scenario=self.scenario,
-                transcript=_format_transcript(conversation),
-                multimodal_rules=_MULTIMODAL_RULES,
+                transcript=transcript,
                 runtime_guidance_block=runtime_guidance_block,
             )
-        return self._generate_parsed(prompt)
+        return self._generate_parsed(prompt, images=images or None)
 
     def generate_closing(
         self,
         conversation: list[dict[str, str]],
     ) -> str:
-        """Generate a natural closing message from the student.
+        """Select a pre-written closing message. Zero LLM cost.
 
-        Closing uses a simpler prompt (no JSON output) aligned with
-        _EfficientSimulator._generate_closing (simulation.py:372-405).
+        Uses a hash of the last message for even distribution across
+        the pool while remaining deterministic per session.
         """
-        prompt = _CLOSING_PROMPT.format(
-            scenario=self.scenario[:400],
-            transcript=_format_transcript(conversation[-4:], max_chars=300),
-        )
-        try:
-            result = self.model.generate(prompt)
-            if isinstance(result, tuple):
-                text = result[0]
-                cost = result[1] if len(result) > 1 else None
-                if cost is not None:
-                    self.total_cost += cost
-            else:
-                text = result
-            if text and text.strip():
-                return text.strip()
-        except Exception as exc:
-            logger.warning("Failed to generate closing: %s", exc)
-        return _CLOSING_FALLBACK
+        last = conversation[-1]["content"] if conversation else ""
+        seed = hashlib.md5(last.encode()).digest()[0]
+        return _CLOSING_POOL[seed % len(_CLOSING_POOL)]

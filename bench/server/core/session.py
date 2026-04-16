@@ -12,8 +12,10 @@ Defense layers aligned with Legacy path (simulation.py create_model_callback):
 - Max-turns student closing (aligned with _append_student_closing)
 """
 
+import base64
 import json
 import logging
+import os
 import re
 import textwrap
 import time
@@ -27,14 +29,6 @@ from server.core.workspace_delta import scan_workspace_snapshot
 
 logger = logging.getLogger(__name__)
 
-# Hardcoded closing fallback — aligned with _EfficientSimulator._generate_closing
-# (simulation.py:401-405) and StudentSimulator._CLOSING_FALLBACK.
-_CLOSING_FALLBACK = (
-    "Thanks for walking me through all of this — "
-    "I have a much clearer picture now. "
-    "I'll try applying these techniques to my own data."
-)
-
 # Fallback student message when generate_message() fails — aligned with
 # model_callback exception handler (simulation.py:586).
 _STUDENT_FALLBACK = "Could you explain that in a bit more detail?"
@@ -42,11 +36,6 @@ _STUDENT_FALLBACK = "Could you explain that in a bit more detail?"
 # Repeat detection threshold — aligned with model_callback _MAX_REPEATS
 # (simulation.py:493).
 _MAX_REPEATS = 2
-_FILE_LIMIT_RE = re.compile(
-    r"(can't|cannot|can not|do not|don't|unable to).{0,40}"
-    r"(file|files|artifact|artifacts|workspace|open|access|see|read|paste)",
-    re.IGNORECASE,
-)
 # ---------------------------------------------------------------------------
 # Session background builder — factual environment description, no directives
 # ---------------------------------------------------------------------------
@@ -107,11 +96,144 @@ def build_background(task) -> str:
     return "\n\n".join(parts)
 
 
-_HIDDEN_ARTIFACT_RE = re.compile(
-    r"(/workspace|saved to|written to|created (?:a|an)? file|see the file|"
-    r"open the file|report file|artifact file|workspace artifact)",
-    re.IGNORECASE,
+# ---------------------------------------------------------------------------
+# Attachment support
+# ---------------------------------------------------------------------------
+
+_ATTACHMENT_MAX_FILES = 3
+_ATTACHMENT_MAX_CHARS = 4_000
+
+_IMAGE_EXTENSIONS = frozenset({".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp"})
+_IMAGE_MAX_BYTES = 5 * 1024 * 1024  # 5 MB raw before base64
+_IMAGE_LEDGER_MAX = 5               # max images in ledger across session
+
+_BINARY_EXTENSIONS = frozenset(
+    {
+        ".ico", ".svg",
+        ".pdf", ".zip", ".gz", ".tar", ".7z", ".pkl", ".pickle",
+        ".npy", ".npz", ".pyc", ".so", ".dylib", ".dll", ".exe",
+        ".whl", ".class", ".o",
+    }
 )
+
+_MEDIA_TYPES = {
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".gif": "image/gif",
+    ".bmp": "image/bmp",
+    ".webp": "image/webp",
+}
+
+
+def _safe_open(real: str, mode: str = "rb", encoding: str | None = None):
+    """Open a file rejecting symlinks (O_NOFOLLOW) to close TOCTOU gaps."""
+    try:
+        fd = os.open(real, os.O_RDONLY | os.O_NOFOLLOW)
+    except OSError:
+        raise ValueError(f"Cannot open (symlink or inaccessible): {real}")
+    return os.fdopen(fd, mode, encoding=encoding) if encoding else os.fdopen(fd, mode)
+
+
+def _read_attachment(workspace_path: str, filename: str) -> dict:
+    """Read a single workspace file for attachment.
+
+    Returns a dict with at least ``filename``, ``content``, ``truncated``,
+    and ``is_image``.  Image attachments also include ``media_type``.
+    Raises ``ValueError`` on validation failure.
+    """
+    if not workspace_path:
+        raise ValueError("No workspace available")
+
+    # ── Filename validation (C3) ──
+    if not filename or not filename.strip():
+        raise ValueError("Empty filename")
+    if "\x00" in filename:
+        raise ValueError("Filename contains null byte")
+
+    resolved = os.path.join(workspace_path, filename)
+    real = os.path.realpath(resolved)
+    workspace_real = os.path.realpath(workspace_path)
+
+    if not real.startswith(workspace_real + os.sep):
+        raise ValueError(f"Path outside workspace: {filename}")
+
+    if not os.path.isfile(real):
+        raise ValueError(f"File not found: {filename}")
+
+    _, ext = os.path.splitext(real)
+    ext_lower = ext.lower()
+
+    # ── Image files ──
+    if ext_lower in _IMAGE_EXTENSIONS:
+        size = os.path.getsize(real)
+        if size > _IMAGE_MAX_BYTES:
+            raise ValueError(
+                f"Image too large: {filename} "
+                f"({size:,} bytes, max {_IMAGE_MAX_BYTES:,})"
+            )
+        with _safe_open(real, "rb") as f:
+            data = base64.b64encode(f.read()).decode("ascii")
+        return {
+            "filename": filename,
+            "content": data,
+            "truncated": False,
+            "is_image": True,
+            "media_type": _MEDIA_TYPES[ext_lower],
+        }
+
+    # ── Remaining binary files — rejected ──
+    if ext_lower in _BINARY_EXTENSIONS:
+        raise ValueError(f"Binary file not supported: {filename}")
+
+    # ── Text files ──
+    try:
+        with _safe_open(real, "r", encoding="utf-8") as f:
+            content = f.read()
+    except UnicodeDecodeError:
+        raise ValueError(f"Cannot read as text: {filename}")
+
+    truncated = len(content) > _ATTACHMENT_MAX_CHARS
+    if truncated:
+        head = _ATTACHMENT_MAX_CHARS * 2 // 3
+        tail = _ATTACHMENT_MAX_CHARS // 3
+        content = (
+            content[:head]
+            + f"\n\n... [{len(content):,} chars total, showing first "
+            f"{head:,} + last {tail:,}] ...\n\n"
+            + content[-tail:]
+        )
+
+    return {
+        "filename": filename,
+        "content": content,
+        "truncated": truncated,
+        "is_image": False,
+    }
+
+
+def _resolve_attachments(
+    workspace_path: str | None, raw_paths: list[str]
+) -> tuple[list[dict], list[str]]:
+    """Resolve and read attachment files.
+
+    Returns ``(attachments, errors)``.
+    """
+    if not raw_paths:
+        return [], []
+
+    if len(raw_paths) > _ATTACHMENT_MAX_FILES:
+        return [], [f"Maximum {_ATTACHMENT_MAX_FILES} attachments allowed"]
+
+    attachments: list[dict] = []
+    errors: list[str] = []
+    for path in raw_paths:
+        try:
+            attachments.append(_read_attachment(workspace_path or "", path))
+        except ValueError as exc:
+            errors.append(str(exc))
+
+    return attachments, errors
 
 
 # ---------------------------------------------------------------------------
@@ -242,6 +364,11 @@ class TutoringSession:
         self._done: bool = False
         self._session_info_called: bool = False
         self._completion_reason: str | None = None
+
+        # File ledger — tracks all files shared via attachments.
+        # Key: filename, Value: {base_content, base_turn, current_content, current_turn}
+        # Same-name files are deduped (latest version replaces current_content).
+        self._file_ledger: dict[str, dict] = {}
         self._workspace_snapshot = scan_workspace_snapshot(workspace_path)
         self._artifact_debug_history: list[dict] = []
         self._pending_visibility_gap: dict[str, object] = {
@@ -282,7 +409,9 @@ class TutoringSession:
             }
         )
 
-    def handle_send_message(self, text: str) -> str:
+    def handle_send_message(
+        self, text: str, attachments: list[str] | None = None
+    ) -> str:
         """Process agent message, generate student reply.
 
         Execution order aligned with Legacy model_callback
@@ -290,13 +419,14 @@ class TutoringSession:
         (conversation_simulator.py:226-272):
 
         1. Pre-checks (done, empty)
-        2. Repeat detection (model_callback:606-624)
-        3. Record + advance turn
-        4. TC check (_EfficientSimulator.stop_conversation)
-        5. Goal check (DeepEval stop_conversation + stop_simulation)
-        6. Deadline check
-        7. Max turns (_append_student_closing:642-678)
-        8. Generate student reply (generate_next_user_input)
+        2. Resolve attachments
+        3. Repeat detection (model_callback:606-624)
+        4. Record + advance turn
+        5. TC check (_EfficientSimulator.stop_conversation)
+        6. Goal check (DeepEval stop_conversation + stop_simulation)
+        7. Deadline check
+        8. Max turns (_append_student_closing:642-678)
+        9. Generate student reply (generate_next_user_input)
 
         Returns JSON: {student_message, status[, reason]}
         """
@@ -314,6 +444,37 @@ class TutoringSession:
                 }
             )
 
+        # ── Resolve attachments ──
+        resolved_attachments, attach_errors = _resolve_attachments(
+            self._workspace_path, attachments or []
+        )
+        if attach_errors:
+            return json.dumps(
+                {
+                    "error": "Attachment errors: " + "; ".join(attach_errors),
+                    "status": "active",
+                }
+            )
+
+        # ── Image ledger limit ──
+        new_images = sum(1 for a in resolved_attachments if a.get("is_image"))
+        if new_images:
+            existing_images = sum(
+                1 for e in self._file_ledger.values() if e.get("is_image")
+            )
+            # Don't count images that will be overwritten (same filename)
+            overwrites = sum(
+                1 for a in resolved_attachments
+                if a.get("is_image") and a["filename"] in self._file_ledger
+            )
+            if existing_images + new_images - overwrites > _IMAGE_LEDGER_MAX:
+                return json.dumps(
+                    {
+                        "error": f"Maximum {_IMAGE_LEDGER_MAX} images per session",
+                        "status": "active",
+                    }
+                )
+
         # ── Repeat detection ──  (aligned: model_callback:606-624)
         if text == self._last_agent_msg:
             self._repeat_count += 1
@@ -330,8 +491,33 @@ class TutoringSession:
         self._last_agent_msg = text
 
         # ── Record agent message + advance turn ──
-        self._conversation.append({"role": "assistant", "content": text})
+        msg_entry: dict = {"role": "assistant", "content": text}
+        if resolved_attachments:
+            msg_entry["attachments"] = resolved_attachments
+        self._conversation.append(msg_entry)
         self._turn += 1
+
+        # ── Update file ledger ──
+        for att in resolved_attachments:
+            fname = att["filename"]
+            is_image = att.get("is_image", False)
+            if fname not in self._file_ledger:
+                self._file_ledger[fname] = {
+                    # Text: store content for diff. Images: store None (read from disk on demand).
+                    "prev_content": att["content"] if not is_image else None,
+                    "prev_turn": self._turn,
+                    "current_content": att["content"] if not is_image else None,
+                    "current_turn": self._turn,
+                    "is_image": is_image,
+                    "media_type": att.get("media_type", ""),
+                    "path": fname,  # workspace-relative, used for on-demand image reads
+                }
+            else:
+                if not is_image:
+                    # Shift current → prev so diff shows incremental changes
+                    self._file_ledger[fname]["prev_content"] = self._file_ledger[fname]["current_content"]
+                    self._file_ledger[fname]["current_content"] = att["content"]
+                self._file_ledger[fname]["current_turn"] = self._turn
 
         # Update proxy turn index for tool log attribution
         if self._proxy is not None:
@@ -339,7 +525,8 @@ class TutoringSession:
 
         tc_turn_index = self._current_tool_turn_index()
         turn_evidence = self._build_turn_evidence(tc_turn_index)
-        artifact_digest = self._build_artifact_digest(text)
+        attached_filenames = frozenset(a["filename"] for a in resolved_attachments)
+        artifact_digest = self._build_artifact_digest(text, attached_filenames)
 
         # ── TC check ──  (aligned: _EfficientSimulator.stop_conversation)
         try:
@@ -409,6 +596,8 @@ class TutoringSession:
                     text,
                     artifact_digest,
                 ),
+                file_ledger=self._file_ledger,
+                workspace_path=self._workspace_path,
             )
         except Exception as exc:
             logger.warning("StudentSimulator.generate_message failed: %s", exc)
@@ -457,6 +646,11 @@ class TutoringSession:
         if self._tc_checker is None:
             return None
         return self._tc_checker.coverage_summary
+
+    @property
+    def file_ledger(self) -> dict[str, dict]:
+        """All files shared via attachments — latest versions, keyed by filename."""
+        return dict(self._file_ledger)
 
     @property
     def artifact_debug_history(self) -> list[dict]:
@@ -529,7 +723,11 @@ class TutoringSession:
             logger.debug("Failed to build TC turn evidence: %s", exc)
             return None
 
-    def _build_artifact_digest(self, latest_agent_text: str) -> dict:
+    def _build_artifact_digest(
+        self,
+        latest_agent_text: str,
+        shared_filenames: frozenset[str] = frozenset(),
+    ) -> dict:
         latest_student_text = ""
         if len(self._conversation) >= 2 and self._conversation[-2]["role"] == "user":
             latest_student_text = self._conversation[-2]["content"]
@@ -540,6 +738,7 @@ class TutoringSession:
                 previous_snapshot=self._workspace_snapshot,
                 latest_student_text=latest_student_text,
                 latest_agent_text=latest_agent_text,
+                shared_filenames=shared_filenames,
             )
         except Exception as exc:
             logger.debug("Failed to build artifact digest: %s", exc)
@@ -622,22 +821,20 @@ class TutoringSession:
             },
         }
 
-    def _recent_student_mentions_file_limit(self) -> bool:
-        recent_users = [
-            msg["content"]
-            for msg in reversed(self._conversation[:-1])
-            if msg["role"] == "user"
-        ][:3]
-        return any(_FILE_LIMIT_RE.search(text) for text in recent_users)
-
-    def _assistant_refers_to_hidden_artifacts(self, text: str) -> bool:
-        return bool(_HIDDEN_ARTIFACT_RE.search(text or ""))
-
     def _build_student_runtime_guidance(
         self,
         latest_agent_text: str,
         artifact_digest: Optional[dict] = None,
     ) -> str:
+        """Build steering notes for conversation pacing only.
+
+        Artifact visibility signals (B1-B4) are intentionally excluded.
+        The student should not be coached to request code/output — if the
+        agent fails to share artifacts, that is the agent's fault and
+        should be penalised in evaluation, not compensated at runtime.
+        Artifact digest data is still recorded in ``_artifact_debug_history``
+        for the evaluation pipeline to consume.
+        """
         if self._tc_checker is None:
             return ""
 
@@ -659,34 +856,6 @@ class TutoringSession:
             signals.append(
                 "- The session is nearing its natural limit. Prioritize one final concrete clarification over opening a brand-new branch."
             )
-        if (
-            self._recent_student_mentions_file_limit()
-            and self._assistant_refers_to_hidden_artifacts(latest_agent_text)
-        ):
-            signals.append(
-                "- The tutor may be relying on files or artifacts you cannot access directly. Ask once for the key literal code, output, or number in the chat, then keep the next request narrow."
-            )
-
-        artifact_signals = (artifact_digest or {}).get("steering_signals", {})
-        request_signals = (artifact_digest or {}).get("request_signals", {})
-        if artifact_signals.get("artifact_ready_but_not_shown"):
-            signals.append(
-                "- The tutor appears to have generated a relevant artifact already, but has not shown the key part directly in chat. Keep your next message focused on asking for the smallest literal code block or concrete output inline."
-            )
-        if artifact_signals.get("student_should_request_literal_code"):
-            signals.append(
-                "- Ask for the exact minimal code snippet directly in the chat instead of accepting more file references."
-            )
-        if artifact_signals.get("student_should_request_literal_output"):
-            signals.append(
-                "- Ask for the specific output table, number, or printed result directly in the chat."
-            )
-        if artifact_signals.get("avoid_new_branch") and not request_signals.get(
-            "asks_for_comparison"
-        ):
-            signals.append(
-                "- Stay on the same concrete example rather than opening a new library, tool, or advanced side branch."
-            )
 
         if not signals:
             return ""
@@ -699,17 +868,8 @@ class TutoringSession:
         )
 
     def _safe_closing(self) -> str:
-        """Generate student closing with fallback on failure.
-
-        Aligned with _EfficientSimulator._generate_closing (simulation.py:372-405).
-        """
-        try:
-            closing = self._student_sim.generate_closing(self._conversation)
-            if closing and closing.strip():
-                return closing.strip()
-        except Exception as exc:
-            logger.warning("Failed to generate closing: %s", exc)
-        return _CLOSING_FALLBACK
+        """Select a pre-written student closing message."""
+        return self._student_sim.generate_closing(self._conversation)
 
     def inject_student_opening(self, opening: str) -> None:
         """Inject the student opening into conversation without start_session.

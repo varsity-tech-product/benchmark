@@ -103,12 +103,23 @@ def build_visible_artifact_digest(
     previous_snapshot: Optional[dict[str, dict]],
     latest_student_text: str,
     latest_agent_text: str,
+    shared_filenames: frozenset[str] = frozenset(),
 ) -> tuple[dict[str, dict], dict]:
-    """Return ``(new_snapshot, artifact_digest)`` for the current tutor turn."""
+    """Return ``(new_snapshot, artifact_digest)`` for the current tutor turn.
+
+    *shared_filenames* contains workspace-relative paths that the agent
+    attached this turn.  These files are already visible to the student
+    via the file ledger and should not be flagged as hidden artifacts.
+    """
     current_snapshot = scan_workspace_snapshot(workspace_path)
     delta = diff_workspace_snapshot(previous_snapshot, current_snapshot)
 
-    candidate_files = list(delta["created"]) + list(delta["modified"])
+    # Exclude files the agent explicitly shared via attachments.
+    candidate_files = [
+        f
+        for f in list(delta["created"]) + list(delta["modified"])
+        if f["path"] not in shared_filenames
+    ]
     artifact_entries: list[dict] = []
 
     has_new_code_artifact = False
