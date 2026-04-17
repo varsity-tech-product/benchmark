@@ -418,10 +418,10 @@ def make_session(_mock_llm_resolution):
             sample_code="",
             category=types.SimpleNamespace(value="debug"),
             max_turns=max_turns,
-            student_openings={"intermediate_developer": "Hi, I need help."},
+            student_openings={"fullstack_practitioner": "Hi, I need help."},
         )
         persona = types.SimpleNamespace(
-            persona_id="intermediate_developer",
+            persona_id="fullstack_practitioner",
             description="A developer learning quantitative finance.",
         )
         student_sim = StudentSimulator(

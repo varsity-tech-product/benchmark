@@ -11,7 +11,7 @@ import httpx
 # Default task for tests — lightweight debug task, 3 personas, no LEAN needed.
 DEFAULT_TASK_ID = "X01_ma_offbyone"
 DEFAULT_TASK_LABEL = "X01"
-DEFAULT_PERSONA_ID = "intermediate_developer"
+DEFAULT_PERSONA_ID = "fullstack_practitioner"
 
 # A second task for multi-task tests.
 SECOND_TASK_ID = "D01_load_inspect_ohlcv"
