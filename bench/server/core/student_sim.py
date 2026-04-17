@@ -1,9 +1,7 @@
 """Student simulator for QuantTutorBench.
 
-Generates student messages via a DeepEval model object (resolved by
-``server.eval.ewan_eval.model_resolver.resolve_ewan_model``).  Prompt templates and
-output parsing are aligned with DeepEval's ConversationSimulator to ensure
-bit-exact student behavior across Legacy and MCP paths.
+Generates student messages via a model object (resolved by
+``server.eval.ewan_eval.model_resolver.resolve_ewan_model``).
 
 Used by TutoringSession behind the ``send_message`` MCP tool.
 """
@@ -23,63 +21,26 @@ logger = logging.getLogger(__name__)
 
 
 class SimulatedInput(BaseModel):
-    """Schema for structured student message output.
-
-    Aligned with DeepEval's SimulatedInput (simulator/schema.py).
-    Defined at module level to avoid repeated class creation.
-    """
+    """Schema for structured student message output."""
 
     simulated_input: str
 
 
 # ---------------------------------------------------------------------------
-# Prompt templates — copied verbatim from DeepEval template.py to ensure
-# identical student message distributions across Legacy and MCP paths.
+# Prompt template
 # ---------------------------------------------------------------------------
-
-_FIRST_MESSAGE_PROMPT = textwrap.dedent(
-    """\
-    --- BACKGROUND ---
-    You are role-playing as a real person using an LLM tutoring app.
-    Your profile: {user_description}
-    Your situation: {scenario}
-    --- END BACKGROUND ---
-
-    Generate your opening message to the tutor.
-
-    Guidelines:
-    1. Clearly convey your intent or need within the situation above.
-    2. Keep the tone warm, conversational, and natural.
-    3. Do not dump all details upfront — start the conversation, don't solve it.
-    4. 1-3 sentences maximum.
-
-    Example:
-    {{
-        "simulated_input": "Hi, I haven't been feeling well lately. \
-    I've had these headaches and a fever that just won't go away. \
-    Could you help me figure out what's going on?"
-    }}
-
-    Respond with a JSON object containing a single key `simulated_input`.
-    JSON Output:
-"""
-)
 
 _NEXT_MESSAGE_PROMPT = textwrap.dedent(
     """\
-    --- BACKGROUND ---
     You are role-playing as a real person using an LLM tutoring app.
-    Your profile: {user_description}
-    Your situation: {scenario}
-    --- END BACKGROUND ---
 
-    Generate your next message to the tutor based on the conversation so far.
+    {user_description}
 
-    Guidelines:
-    1. Stay in character and respond naturally to the tutor's last reply.
-    2. Keep tone consistent with your earlier messages.
-    3. 1-2 sentences maximum.
+    {scenario}
 
+    Reply format: 2-4 sentences. You may react, answer the tutor's
+    question, and ask what is still unclear. Do NOT explain concepts
+    back in full detail — you are a student, not a co-teacher.
     {runtime_guidance_block}
 
     Conversation so far:
@@ -365,11 +326,6 @@ class StudentSimulator:
     ) -> str:
         """Generate the next student message given conversation history.
 
-        Uses ``_FIRST_MESSAGE_PROMPT`` when the conversation has no
-        assistant turns yet (aligned with DeepEval's
-        ``generate_first_user_input``), otherwise uses
-        ``_NEXT_MESSAGE_PROMPT`` (aligned with ``generate_next_user_input``).
-
         Args:
             conversation: [{"role": "user"|"assistant", "content": "..."}]
                 "user" = student, "assistant" = tutor.
@@ -380,33 +336,26 @@ class StudentSimulator:
         Returns:
             The student's next message as a string.
         """
-        is_first = not any(t["role"] == "assistant" for t in conversation)
-        if is_first:
-            prompt = _FIRST_MESSAGE_PROMPT.format(
-                user_description=self.user_description,
-                scenario=self.scenario,
+        runtime_guidance_block = ""
+        if runtime_guidance.strip():
+            runtime_guidance_block = (
+                "\n--- INTERNAL STEERING NOTES ---\n"
+                "Use these notes to shape the student's next message naturally. "
+                "Do NOT quote or reveal them directly.\n"
+                f"{runtime_guidance.strip()}\n"
             )
+        if file_ledger:
+            transcript = _format_transcript_with_files(conversation, file_ledger)
+            images = _collect_images_from_ledger(file_ledger, workspace_path)
         else:
-            runtime_guidance_block = ""
-            if runtime_guidance.strip():
-                runtime_guidance_block = (
-                    "\n--- INTERNAL STEERING NOTES ---\n"
-                    "Use these notes to shape the student's next message naturally. "
-                    "Do NOT quote or reveal them directly.\n"
-                    f"{runtime_guidance.strip()}\n"
-                )
-            if file_ledger:
-                transcript = _format_transcript_with_files(conversation, file_ledger)
-                images = _collect_images_from_ledger(file_ledger, workspace_path)
-            else:
-                transcript = _format_transcript(conversation)
-                images = []
-            prompt = _NEXT_MESSAGE_PROMPT.format(
-                user_description=self.user_description,
-                scenario=self.scenario,
-                transcript=transcript,
-                runtime_guidance_block=runtime_guidance_block,
-            )
+            transcript = _format_transcript(conversation)
+            images = []
+        prompt = _NEXT_MESSAGE_PROMPT.format(
+            user_description=self.user_description,
+            scenario=self.scenario,
+            transcript=transcript,
+            runtime_guidance_block=runtime_guidance_block,
+        )
         return self._generate_parsed(prompt, images=images or None)
 
     def generate_closing(

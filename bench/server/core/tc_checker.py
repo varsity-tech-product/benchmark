@@ -308,9 +308,9 @@ class TCChecker:
                 self.total_input_tokens += inp
                 self.total_output_tokens += out
                 # Estimate cost (pricing for the configured TC model)
-                from server.config.pricing import MODEL_PRICING
+                from server.config.pricing import _resolve_pricing
 
-                rate = MODEL_PRICING.get(self.model)
+                rate = _resolve_pricing(self.model)
                 if rate:
                     self.total_cost += inp * rate[0] + out * rate[1]
 

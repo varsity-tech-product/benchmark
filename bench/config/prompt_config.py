@@ -370,9 +370,23 @@ def build_tutor_context(
     parts.append(f"Background: {persona.description}")
 
     if persona.known_concepts:
-        parts.append(f"Known concepts: {', '.join(persona.known_concepts)}")
+        if isinstance(persona.known_concepts, dict):
+            all_known = [
+                c for domain in persona.known_concepts.values() for c in domain
+            ]
+        else:
+            all_known = persona.known_concepts
+        if all_known:
+            parts.append(f"Known concepts: {', '.join(all_known)}")
     if persona.unknown_concepts:
-        parts.append(f"Concepts to teach: {', '.join(persona.unknown_concepts)}")
+        if isinstance(persona.unknown_concepts, dict):
+            all_unknown = [
+                c for domain in persona.unknown_concepts.values() for c in domain
+            ]
+        else:
+            all_unknown = persona.unknown_concepts
+        if all_unknown:
+            parts.append(f"Concepts to teach: {', '.join(all_unknown)}")
     if persona.emotional_profile:
         parts.append(f"Emotional profile: {persona.emotional_profile}")
         parts.append(
@@ -598,9 +612,23 @@ def build_user_description(
     ]
 
     if persona.known_concepts:
-        parts.append(f"- You know: {', '.join(persona.known_concepts)}")
+        if isinstance(persona.known_concepts, dict):
+            all_known = [
+                c for domain in persona.known_concepts.values() for c in domain
+            ]
+        else:
+            all_known = persona.known_concepts
+        if all_known:
+            parts.append(f"- You know: {', '.join(all_known)}")
     if persona.unknown_concepts:
-        parts.append(f"- You do NOT know: {', '.join(persona.unknown_concepts)}")
+        if isinstance(persona.unknown_concepts, dict):
+            all_unknown = [
+                c for domain in persona.unknown_concepts.values() for c in domain
+            ]
+        else:
+            all_unknown = persona.unknown_concepts
+        if all_unknown:
+            parts.append(f"- You do NOT know: {', '.join(all_unknown)}")
     if persona.emotional_profile:
         expanded = EMOTIONAL_PROFILE_DESCRIPTIONS.get(
             persona.emotional_profile,

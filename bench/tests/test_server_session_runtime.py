@@ -101,16 +101,16 @@ class PersonaPinTests(unittest.TestCase):
             "os.environ",
             {
                 "QTB_TEST_PERSONA_PIN_JSON": json.dumps(
-                    {"X09_alpha_conflict": "intermediate_developer"}
+                    {"X09_alpha_conflict": "developer_crossover"}
                 )
             },
             clear=False,
         ):
             chosen = _resolve_persona_pin(
                 "X09_alpha_conflict",
-                ["beginner_no_finance", "intermediate_developer"],
+                ["fullstack_practitioner", "developer_crossover"],
             )
-        self.assertEqual(chosen, "intermediate_developer")
+        self.assertEqual(chosen, "developer_crossover")
 
     def test_session_random_seed_is_stable_with_internal_override(self):
         with mock.patch.dict(

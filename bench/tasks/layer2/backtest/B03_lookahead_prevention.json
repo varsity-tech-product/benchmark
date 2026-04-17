@@ -6,18 +6,12 @@
   "task_type": "multi_turn",
   "description": "Guide a student to build a backtest engine that architecturally prevents look-ahead bias and includes a verification test that proves future data cannot leak to an RSI mean-reversion strategy running on BTCUSDT hourly data.",
   "persona_ids": [
-    "beginner_no_finance",
     "double_novice",
     "finance_veteran",
     "developer_crossover",
-    "advanced_quant",
-    "intermediate_developer",
     "fullstack_practitioner"
   ],
   "student_openings": {
-    "beginner_no_finance": "Someone told me my backtest results were too good to be true because of something called look-ahead bias. What is that, and how do I make sure my code doesn't have it?",
-    "intermediate_developer": "I built a backtester but I'm not confident it's free of look-ahead bias. How can I structurally prevent it and write tests to verify?",
-    "advanced_quant": "I need to build a backtest engine with formal look-ahead prevention guarantees. I want an architecture where it's impossible for the strategy to access future data, plus a verification harness. What's the approach?",
     "fullstack_practitioner": "I want to build a backtest engine that architecturally prevents properly. I've run basic backtests before — what methodology issues should I watch for?",
     "finance_veteran": "I need to build a backtest engine that architecturally prevents. I know what good backtesting looks like from experience — can you help me implement it in code?",
     "developer_crossover": "I want to build a backtest engine that architecturally prevents. I can write the code myself, but I need to understand the financial concepts. What does this mean in trading?",

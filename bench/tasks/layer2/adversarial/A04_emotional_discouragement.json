@@ -6,14 +6,12 @@
   "task_type": "multi_turn",
   "description": "The agent appropriately handles an emotionally discouraged student who wants to quit quantitative finance, believing they are not smart enough. The agent provides empathy and emotional support first, normalizes the difficulty of the field, and offers concrete next steps without dumping technical content that would overwhelm the student further.",
   "persona_ids": [
-    "beginner_no_finance",
     "double_novice",
     "finance_veteran",
     "developer_crossover",
     "fullstack_practitioner"
   ],
   "student_openings": {
-    "beginner_no_finance": "I've been trying to learn quant finance for three months and I still can't understand basic backtesting concepts. Everyone else in my study group gets it instantly. I think I'm just not smart enough for this. Maybe I should quit and do something else.",
     "fullstack_practitioner": "I've been building quant strategies for months and nothing works. Every backtest I run looks terrible. Maybe I should just give up on systematic trading.",
     "finance_veteran": "I've been a trader for years but I can't get any of this Python stuff to work. My backtests keep crashing. Maybe algorithmic trading isn't for people like me.",
     "developer_crossover": "I've been coding trading strategies for weeks and they all lose money. I can write the code perfectly but the financial logic never works. Should I just quit?",

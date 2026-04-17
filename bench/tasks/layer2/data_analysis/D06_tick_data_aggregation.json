@@ -6,18 +6,12 @@
   "task_type": "multi_turn",
   "description": "Guide the student to aggregate tick-level data into OHLCV bars, save the result as a CSV file, and apply proper timestamp handling and microstructure quality checks.",
   "persona_ids": [
-    "beginner_no_finance",
     "double_novice",
     "finance_veteran",
     "developer_crossover",
-    "advanced_quant",
-    "intermediate_developer",
     "fullstack_practitioner"
   ],
   "student_openings": {
-    "beginner_no_finance": "I got a file with lots of tiny tick updates. How do I turn that into normal candle bars?",
-    "intermediate_developer": "I need a pandas recipe to resample tick data into OHLCV bars and validate timestamp ordering/duplicates.",
-    "advanced_quant": "I want a robust tick-to-bar aggregation workflow with microstructure sanity checks (ordering, stale ticks, session boundaries).",
     "fullstack_practitioner": "I want to aggregate tick-level data into OHLCV bars, save the result rigorously. I know the basics — let's focus on methodology and potential pitfalls.",
     "finance_veteran": "I need to aggregate tick-level data into OHLCV bars, save the result in Python. I understand what the data means financially — I just need help with the pandas side.",
     "developer_crossover": "I need to aggregate tick-level data into OHLCV bars, save the result. I can use pandas fine — but what do these financial metrics actually mean? Why would a trader care?",
@@ -58,7 +52,8 @@
     ],
     "quant_validation": {
       "eval_script": "evaluation/test_scripts/data_analysis/D06_tick_data_aggregation.py"
-    }
+    },
+    "termination_criteria": "(1) Showed actual resampling or aggregation output converting tick-level data into OHLCV bars using pandas resample, groupby, or equivalent code, and saved the result as a CSV file in the workspace. (2) Demonstrated concrete timestamp handling such as sorting, deduplication, or timezone normalization on the tick data, with before-and-after output showing the fix. (3) Responded to a student follow-up with one additional quality check or microstructure caveat on the aggregated bars, such as checking for empty bars, volume consistency, or session boundary alignment. Once all 3 steps have been computationally demonstrated, the session is complete."
   },
   "requires_code": true,
   "sample_code": null,

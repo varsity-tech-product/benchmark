@@ -6,16 +6,10 @@
   "task_type": "multi_turn",
   "description": "Guide a student to implement and compare risk management models in LEAN's Algorithm Framework. The student must build a framework algorithm with EMA-based alpha on hourly data, then run three configurations: (1) no risk management, (2) built-in models (MaximumDrawdownPercentPerSecurity + TrailingStop), (3) a custom RiskManagementModel that limits total portfolio exposure. The student compares drawdown and performance across all three runs, demonstrating understanding of the risk management pipeline stage.",
   "persona_ids": [
-    "beginner_no_finance",
     "developer_crossover",
-    "advanced_quant",
-    "intermediate_developer",
     "fullstack_practitioner"
   ],
   "student_openings": {
-    "beginner_no_finance": "I want to add risk controls to my LEAN framework algorithm — like automatic stop-losses and position limits. I also want to see how much difference it makes compared to having no risk management. How do I set this up?",
-    "intermediate_developer": "I'm implementing risk management in LEAN's Algorithm Framework. I want to compare three configurations: no risk management, built-in models (MaximumDrawdownPercentPerSecurity + TrailingStop), and a custom RiskManagementModel. How should I structure the comparison using GetParameter()?",
-    "advanced_quant": "I need to implement a custom RiskManagementModel (total exposure cap at 40%) alongside built-in risk models, compare three risk configurations via parameterized runs on hourly EMA alpha, and analyze the drawdown impact across configs. Architecture?",
     "fullstack_practitioner": "I need to implement and compare risk management models in LEAN's. I've done similar work in Python before — let's focus on getting the architecture and edge cases right.",
     "developer_crossover": "I need to implement and compare risk management models in LEAN's. I can handle the code, but I don't understand the financial logic behind it. What should this do and why?"
   },

@@ -6,16 +6,10 @@
   "task_type": "multi_turn",
   "description": "Guide a student to implement a composite multi-signal strategy across the full Binance futures universe on LEAN, then run a systematic parameter sweep over signal weights. The student must implement three signal components per symbol (trend via SMA crossover, mean-reversion via RSI, and carry via 1-day momentum proxy), implement cross-sectional position sizing (not per-symbol independent sizing), and structure a sweep workflow that runs 19 backtests over weight combinations. This is the most complex I-series task, testing everything: multi-signal construction, universe-scale, portfolio construction, and systematic optimization.",
   "persona_ids": [
-    "beginner_no_finance",
     "developer_crossover",
-    "advanced_quant",
-    "intermediate_developer",
     "fullstack_practitioner"
   ],
   "student_openings": {
-    "beginner_no_finance": "I want to combine different trading signals — like trend, mean-reversion, and momentum — and test many parameter combinations across all the crypto futures in my dataset. How do I set this up on LEAN?",
-    "intermediate_developer": "I'm implementing a composite signal strategy on LEAN across ~100 crypto futures, combining trend, mean-reversion, and carry signals. I need to run a parameter sweep over the signal weights. How should I structure the universe-wide algorithm and the sweep workflow?",
-    "advanced_quant": "I'm building a multi-signal alpha on LEAN across ~100 futures and I need to sweep over parameter combinations to find the best config. What's the architecture?",
     "fullstack_practitioner": "I need to implement a composite multi-signal strategy across the full. I've done similar work in Python before — let's focus on getting the architecture and edge cases right.",
     "developer_crossover": "I need to implement a composite multi-signal strategy across the full. I can handle the code, but I don't understand the financial logic behind it. What should this do and why?"
   },

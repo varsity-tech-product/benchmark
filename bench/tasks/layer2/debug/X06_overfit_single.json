@@ -6,16 +6,10 @@
   "task_type": "multi_turn",
   "description": "Guide a student to diagnose overfitting in a 12-parameter trading strategy that performs well in-sample (2020-2022) but poorly out-of-sample (2023-2024). This is a conceptual diagnosis task — no single-line fix exists.",
   "persona_ids": [
-    "beginner_no_finance",
     "developer_crossover",
-    "advanced_quant",
-    "intermediate_developer",
     "fullstack_practitioner"
   ],
   "student_openings": {
-    "beginner_no_finance": "I spent weeks tuning my trading strategy with 12 parameters and it has an amazing Sharpe ratio on the training data! But when I test it on new data, the performance drops a lot. Is there a bug somewhere?",
-    "intermediate_developer": "My multi-indicator strategy (12 parameters) shows a big Sharpe ratio decay between training (2020-2022) and test (2023-2024) periods. I've verified the code is correct — no bugs. What's happening?",
-    "advanced_quant": "I'm seeing classic in-sample/out-of-sample degradation in my 12-parameter strategy. The Sharpe drops significantly. I suspect I've over-specified the model but I'd like help diagnosing the degrees-of-freedom issue and identifying remedies.",
     "fullstack_practitioner": "I'm debugging an issue: diagnose overfitting in a 12-parameter trading strategy. I've narrowed it down but want a second pair of eyes on the root cause.",
     "developer_crossover": "I'm looking at code that should diagnose overfitting in a 12-parameter trading strategy. The code reads fine to me, but I'm not sure the financial logic is correct. What should it be doing?"
   },

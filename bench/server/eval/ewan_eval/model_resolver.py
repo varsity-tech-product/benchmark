@@ -17,7 +17,7 @@ from server.config.llm_config import (
     OPENROUTER_BASE_URL,
     STUDENT_MODEL_POOL_ALL,
 )
-from server.config.pricing import MODEL_PRICING
+from server.config.pricing import _resolve_pricing
 from server.eval.ewan_eval.llm_client import EwanLLMClient
 
 log = logging.getLogger(__name__)
@@ -48,7 +48,7 @@ def resolve_ewan_model(model=None, *, temperature=EVAL_JUDGE_TEMPERATURE):
     openrouter_key = os.environ.get("OPENROUTER_API_KEY", "")
     if openrouter_key:
         or_model = model if "/" in model else f"openai/{model}"
-        pricing = MODEL_PRICING.get(or_model, (0.0, 0.0))
+        pricing = _resolve_pricing(or_model) or (0.0, 0.0)
         return EwanLLMClient(
             model=or_model,
             api_key=openrouter_key,

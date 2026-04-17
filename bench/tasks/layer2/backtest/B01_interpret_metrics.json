@@ -6,18 +6,12 @@
   "task_type": "multi_turn",
   "description": "Guide a student to interpret basic backtest metrics from a completed backtest, understand what each metric means, and assess whether a strategy is promising or problematic.",
   "persona_ids": [
-    "beginner_no_finance",
     "double_novice",
     "finance_veteran",
     "developer_crossover",
-    "advanced_quant",
-    "intermediate_developer",
     "fullstack_practitioner"
   ],
   "student_openings": {
-    "beginner_no_finance": "I ran a backtest and got a bunch of numbers back — Sharpe ratio, max drawdown, total return. I have no idea what any of these mean. Can you help me understand if my strategy is any good?",
-    "intermediate_developer": "I have backtest results with Sharpe 1.8, annual return 22%, and max drawdown -15%. How should I interpret these in context? What benchmarks should I compare against?",
-    "advanced_quant": "I'm reviewing backtest metrics across multiple parameter sets. I want to discuss the interplay between Sharpe, Sortino, Calmar, and max drawdown — specifically how to detect overfitting from the metric surface. What's your framework?",
     "fullstack_practitioner": "I want to interpret basic backtest metrics from a completed backtest, properly. I've run basic backtests before — what methodology issues should I watch for?",
     "finance_veteran": "I need to interpret basic backtest metrics from a completed backtest,. I know what good backtesting looks like from experience — can you help me implement it in code?",
     "developer_crossover": "I want to interpret basic backtest metrics from a completed backtest,. I can write the code myself, but I need to understand the financial concepts. What does this mean in trading?",

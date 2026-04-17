@@ -13,14 +13,14 @@ Workflow:
 
     3. Promote the best run to a reference:
        python -m reference_generator.generate_reference promote \
-           --from bench/results/run-single/openai/.../D01_load_csv/beginner_no_finance
+           --from bench/results/run-single/openai/.../D01_load_csv/developer_crossover
 
     4. Future evaluations will use this reference for comparison.
 
 Usage:
     # Promote a run_state.json to reference
     python -m reference_generator.generate_reference promote \
-        --from results/run-single/openai/gpt-5.2/data_handling/D01_load_csv/beginner_no_finance
+        --from results/run-single/openai/gpt-5.2/data_handling/D01_load_csv/developer_crossover
 
     # List existing references
     python -m reference_generator.generate_reference list

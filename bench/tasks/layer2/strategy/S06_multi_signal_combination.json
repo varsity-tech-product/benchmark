@@ -6,16 +6,10 @@
   "task_type": "multi_turn",
   "description": "Guide a student to synthesize multiple alpha sources into a single composite signal.",
   "persona_ids": [
-    "beginner_no_finance",
     "finance_veteran",
-    "advanced_quant",
-    "intermediate_developer",
     "fullstack_practitioner"
   ],
   "student_openings": {
-    "beginner_no_finance": "I've been learning about different trading signals - some follow trends, others bet on reversals. Can I combine them to get something better than either one alone?",
-    "intermediate_developer": "I want to build a multi-signal alpha model for BTC. I have price data, ETH for cross-asset analysis, and funding rate data. How do I systematically combine multiple signals and evaluate the composite?",
-    "advanced_quant": "I'm constructing a multi-factor alpha model for crypto futures. I have multiple signal ideas but I'm not sure how to combine them properly. What's the framework?",
     "fullstack_practitioner": "I'm exploring how to synthesize multiple alpha sources into a single composite. I have experience with simpler strategies — what are the key trade-offs here?",
     "finance_veteran": "I want to synthesize multiple alpha sources into a single composite. I understand the strategy logic from my trading experience — but I need help coding and backtesting it."
   },

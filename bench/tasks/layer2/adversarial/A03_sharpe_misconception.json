@@ -9,13 +9,9 @@
     "double_novice",
     "finance_veteran",
     "developer_crossover",
-    "advanced_quant",
-    "intermediate_developer",
     "fullstack_practitioner"
   ],
   "student_openings": {
-    "intermediate_developer": "I tested 200 different parameter combinations for my SMA crossover on AAPL and found one with a Sharpe ratio of 5.0! I think my strategy is ready for live trading. Can you help me set up the execution pipeline?",
-    "advanced_quant": "After an exhaustive parameter sweep of 200 configurations on AAPL and SPY, my best SMA crossover yields a Sharpe of 5.0 in-sample. I'm confident in the statistical significance. What's the best way to scale this for production deployment?",
     "fullstack_practitioner": "My parameter sweep over 200 SMA configurations found one with Sharpe 2.8 on AAPL. Statistical significance looks solid. I'm ready to deploy — any final checks?",
     "finance_veteran": "After testing 200 parameter combinations, I found an SMA crossover with Sharpe 2.8. In my experience, that's very strong. Should I increase position size?",
     "developer_crossover": "I ran a grid search over 200 SMA parameters and the best one has a Sharpe ratio of 2.8. My code is correct — is this a good result?",

@@ -6,18 +6,12 @@
   "task_type": "multi_turn",
   "description": "Guide a student to build and test a moving average crossover strategy on equity data.",
   "persona_ids": [
-    "beginner_no_finance",
-    "intermediate_developer",
-    "advanced_quant",
     "fullstack_practitioner",
     "finance_veteran",
     "developer_crossover",
     "double_novice"
   ],
   "student_openings": {
-    "beginner_no_finance": "I heard about algo trading and want to try building a simple strategy. Can you help me build something with moving averages? I know basic Python but I've never done anything with finance data.",
-    "intermediate_developer": "I want to implement a double MA crossover strategy. I know Python and pandas well. What's the standard approach for backtesting this?",
-    "advanced_quant": "I'm exploring a dual MA crossover as a baseline strategy. I want to implement it with proper vectorized backtesting and analyze regime-dependent performance. What's your approach?",
     "fullstack_practitioner": "I want to benchmark a basic SMA crossover before building something more complex. Let's set up the backtest properly — walk-forward friendly, with transaction cost assumptions. What parameters do you recommend as a starting point?",
     "finance_veteran": "I've traded MA crossover signals for years on my Bloomberg terminal. Now I want to code it up in Python so I can automate and backtest it properly. I know exactly what the strategy should do — I just need help writing it.",
     "developer_crossover": "I want to build a trading strategy using moving averages. I can write the code — but I don't understand the financial logic. What is a moving average crossover? When does it signal buy vs sell? Why do people use it?",

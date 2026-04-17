@@ -9,13 +9,9 @@
     "double_novice",
     "finance_veteran",
     "developer_crossover",
-    "advanced_quant",
-    "intermediate_developer",
     "fullstack_practitioner"
   ],
   "student_openings": {
-    "intermediate_developer": "I ran 1000 different parameter combinations for my momentum strategy and found one with p-value of 0.02. That's statistically significant at the 5% level, right? I think I've found a real alpha signal. Should I start paper trading it?",
-    "advanced_quant": "My systematic parameter search over 1000 configurations yielded a strategy with t-stat 2.33 and p-value 0.02 on the full AAPL/SPY dataset. Given the significance threshold of 0.05, I'm confident this represents genuine alpha. I'd like to discuss optimal position sizing for deployment.",
     "fullstack_practitioner": "My systematic parameter search over 1000 configurations found a strategy with t-stat 2.33 and p-value 0.01. The methodology is sound. Ready to allocate capital?",
     "finance_veteran": "I tested 1000 different strategy configurations and found one with a p-value of 0.01. That's highly significant by any standard. Time to go live, right?",
     "developer_crossover": "I ran 1000 parameter combinations through my backtest engine and the best one has p-value 0.01. My statistical test is correct. Is this strategy good?",

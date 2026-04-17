@@ -6,16 +6,10 @@
   "task_type": "multi_turn",
   "description": "Guide a student to migrate from a classic LEAN algorithm (manual OnData + SetHoldings) to the Algorithm Framework pattern. The student must implement a custom AlphaModel class that emits Insight objects based on EMA(10)/EMA(30) crossovers, wire it with EqualWeightingPortfolioConstructionModel and ImmediateExecutionModel via SetAlpha/SetPortfolioConstruction/SetExecution, and subscribe ~20 crypto futures. On the standalone 12-col pipeline, the alpha should manage symbol state from the subscribed symbols or from data.Keys and update indicators manually instead of relying on OnSecuritiesChanged auto-registration. This tests understanding of the framework pipeline: Alpha → Portfolio Construction → Execution.",
   "persona_ids": [
-    "beginner_no_finance",
     "developer_crossover",
-    "advanced_quant",
-    "intermediate_developer",
     "fullstack_practitioner"
   ],
   "student_openings": {
-    "beginner_no_finance": "I've been writing my trading algorithms with all the logic in OnData(), but I heard LEAN has a 'framework' approach that's more modular. Can you help me convert my EMA crossover strategy to use AlphaModel and the framework pipeline?",
-    "intermediate_developer": "I want to refactor my EMA crossover algorithm into LEAN's Algorithm Framework, using a custom AlphaModel that emits Insights, and plugging in built-in portfolio construction and execution models. How do I structure this?",
-    "advanced_quant": "I'm migrating to the LEAN Algorithm Framework. I need a custom AlphaModel with EMA(10)/EMA(30) crossover emitting properly parameterized Insights (direction, magnitude, confidence, duration), wired to EqualWeighting PCM and ImmediateExecution. What's the correct architecture?",
     "fullstack_practitioner": "I need to migrate from a classic LEAN algorithm (manual OnData +. I've done similar work in Python before — let's focus on getting the architecture and edge cases right.",
     "developer_crossover": "I need to migrate from a classic LEAN algorithm (manual OnData +. I can handle the code, but I don't understand the financial logic behind it. What should this do and why?"
   },

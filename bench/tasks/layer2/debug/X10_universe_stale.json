@@ -6,16 +6,10 @@
   "task_type": "multi_turn",
   "description": "Guide a student to diagnose and fix survivorship bias and stale universe issues in a LEAN multi-symbol momentum strategy that subscribes all symbols statically without listing-date checks and uses end-of-period volume averages.",
   "persona_ids": [
-    "beginner_no_finance",
     "developer_crossover",
-    "advanced_quant",
-    "intermediate_developer",
     "fullstack_practitioner"
   ],
   "student_openings": {
-    "beginner_no_finance": "My LEAN momentum strategy trades 30 crypto futures but the backtest results seem unrealistically good. Someone told me it might have 'survivorship bias' but I don't understand what that means. Can you help?",
-    "intermediate_developer": "I built a multi-symbol momentum strategy in LEAN that subscribes 30 symbols in Initialize(). The results look inflated — I think some symbols weren't available at backtest start. Also my volume filter uses the full-period average instead of trailing. Can you help me fix these issues?",
-    "advanced_quant": "My momentum strategy has two data snooping issues: (1) static universe subscription includes symbols that listed after backtest start (survivorship bias), and (2) volume ranking uses the full-backtest average instead of point-in-time trailing volume. I need help implementing proper look-ahead-free universe construction.",
     "fullstack_practitioner": "I'm debugging an issue: diagnose and fix survivorship bias and stale universe. I've narrowed it down but want a second pair of eyes on the root cause.",
     "developer_crossover": "I'm looking at code that should diagnose and fix survivorship bias and stale universe. The code reads fine to me, but I'm not sure the financial logic is correct. What should it be doing?"
   },

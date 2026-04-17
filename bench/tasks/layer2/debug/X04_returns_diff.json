@@ -6,16 +6,10 @@
   "task_type": "multi_turn",
   "description": "Guide a student to find and fix a returns calculation bug where .diff() is used instead of .pct_change(), producing dollar-scale absolute differences instead of percentage returns.",
   "persona_ids": [
-    "beginner_no_finance",
     "developer_crossover",
-    "advanced_quant",
-    "intermediate_developer",
     "fullstack_practitioner"
   ],
   "student_openings": {
-    "beginner_no_finance": "I computed AAPL daily returns and the mean daily return is showing as like 0.14, which seems way too high. Also the annualized return is crazy. Can you help me figure out what's going on?",
-    "intermediate_developer": "My daily return statistics look wrong — the mean is around 0.14 and the annualized return is enormous. I'm using diff() to compute returns. Is there something wrong with my approach?",
-    "advanced_quant": "My return distribution has unrealistic moments — mean ~0.14, vol ~4.0. These look like they're in dollar-space, not return-space. Can you help me verify my return computation methodology?",
     "fullstack_practitioner": "I'm debugging an issue: find and fix a returns calculation bug where. I've narrowed it down but want a second pair of eyes on the root cause.",
     "developer_crossover": "I'm looking at code that should find and fix a returns calculation bug where. The code reads fine to me, but I'm not sure the financial logic is correct. What should it be doing?"
   },

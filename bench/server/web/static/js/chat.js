@@ -248,7 +248,18 @@
           }
         }
 
-        container.appendChild(createInlineToolEl(block, result, fullLog, markdownImageRefs));
+        // send_message: render the delivered text as a bubble instead of a tool card
+        if (block.name === 'send_message') {
+          var smText = (block.input && block.input.text) || '';
+          if (smText) {
+            var smBubble = document.createElement('div');
+            smBubble.className = 'bubble';
+            smBubble.innerHTML = QTB.renderMarkdown(smText);
+            container.appendChild(smBubble);
+          }
+        } else {
+          container.appendChild(createInlineToolEl(block, result, fullLog, markdownImageRefs));
+        }
       } else if (block.type === 'text') {
         var bubble = document.createElement('div');
         bubble.className = 'bubble';
@@ -308,47 +319,58 @@
   function showSendMessageModal(event) {
     if (!window._qtbShowModal) return;
 
-    var status = String(event.status || 'active');
-    var humanStatus = titleCaseToken(status);
-    var humanReason = event.reason ? titleCaseToken(event.reason) : '';
+    var ok = event.success !== false;
     var duration = event.duration_ms ? Math.round(event.duration_ms) + 'ms' : '';
+
+    // Header — same format as domain tool modals
     var html =
-      '<div style="margin-bottom:16px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">' +
+      '<div style="margin-bottom:16px;display:flex;align-items:center;gap:10px">' +
         '<span style="font-family:var(--font-mono);font-size:16px;font-weight:700;color:var(--accent)">send_message</span>' +
-        '<span class="tool-status ' + ((status === 'completed' || status === 'active') ? 'success' : 'failed') + '">' +
-          QTB.escapeHtml(humanStatus) +
-        '</span>' +
-        (humanReason ? '<span style="color:var(--text-muted);font-size:13px">' + QTB.escapeHtml(humanReason) + '</span>' : '') +
+        '<span class="tool-status ' + (ok ? 'success' : 'failed') + '">' + (ok ? 'ok' : 'fail') + '</span>' +
         (duration ? '<span style="color:var(--text-muted);font-size:13px;font-family:var(--font-mono)">' + duration + '</span>' : '') +
       '</div>';
 
-    if (event.request_text) {
+    // Arguments — rebuild from event fields, show all input params
+    var args = {};
+    if (event.request_text) args.text = event.request_text;
+    if (event.reasoning) args.reasoning = event.reasoning;
+    if (event.attachments && event.attachments.length) args.attachments = event.attachments;
+    // Include any extra input fields stored in raw_args
+    if (event.raw_args && typeof event.raw_args === 'object') {
+      var extraKeys = Object.keys(event.raw_args);
+      for (var i = 0; i < extraKeys.length; i++) {
+        var k = extraKeys[i];
+        if (!(k in args) && event.raw_args[k] != null && event.raw_args[k] !== '') {
+          args[k] = event.raw_args[k];
+        }
+      }
+    }
+
+    if (Object.keys(args).length > 0) {
       html += '<div style="margin-bottom:12px">' +
-        '<div style="font-size:12px;font-weight:600;color:var(--text-muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.05em">Tutor Message</div>' +
-        '<pre>' + QTB.escapeHtml(event.request_text) + '</pre>' +
+        '<div style="font-size:12px;font-weight:600;color:var(--text-muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.05em">Arguments</div>' +
+        '<pre>' + QTB.escapeHtml(JSON.stringify(args, null, 2)) + '</pre>' +
       '</div>';
     }
 
-    if (event.student_message) {
-      html += '<div style="margin-bottom:12px">' +
-        '<div style="font-size:12px;font-weight:600;color:var(--text-muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.05em">Student Reply</div>' +
-        '<pre>' + QTB.escapeHtml(event.student_message) + '</pre>' +
-      '</div>';
+    // Result — show raw result JSON (student_message, status, reason, etc.)
+    var result = {};
+    if (event.student_message) result.student_message = event.student_message;
+    if (event.status) result.status = event.status;
+    if (event.reason) result.reason = event.reason;
+    if (event.error) result.error = event.error;
+    // Include raw_result if available for full fidelity
+    if (event.raw_result) {
+      try {
+        var parsed = typeof event.raw_result === 'string' ? JSON.parse(event.raw_result) : event.raw_result;
+        if (typeof parsed === 'object' && parsed) result = parsed;
+      } catch (e) { /* keep constructed result */ }
     }
 
-    if (event.attachments && event.attachments.length) {
-      html += '<div style="margin-bottom:12px">' +
-        '<div style="font-size:12px;font-weight:600;color:var(--text-muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.05em">Attachments</div>' +
-        '<div class="protocol-attachment-list">' +
-          event.attachments.map(renderAttachmentModalItem).join('') +
-        '</div>' +
-      '</div>';
-    }
-
-    if (event.error) {
+    if (Object.keys(result).length > 0) {
       html += '<div>' +
-        '<div style="font-size:12px;font-weight:600;color:var(--text-muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.05em">Error</div>' +
-        '<pre>' + QTB.escapeHtml(event.error) + '</pre>' +
+        '<div style="font-size:12px;font-weight:600;color:var(--text-muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:0.05em">Result</div>' +
+        '<pre>' + QTB.escapeHtml(JSON.stringify(result, null, 2)) + '</pre>' +
       '</div>';
     }
 

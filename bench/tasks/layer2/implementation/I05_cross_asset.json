@@ -6,16 +6,10 @@
   "task_type": "multi_turn",
   "description": "Guide a student to implement a pairs trading strategy on LEAN that (1) uses a pre-computed candidate pairs file (I05_candidate_pairs.json) listing top-10 correlated pairs from the 20-symbol universe, (2) implements spread mean-reversion trading on the selected pairs with z-score entry/exit rules, and (3) manages multi-leg positions with proper exposure caps. The student should understand pair selection concepts but does not need to compute pairwise statistics from scratch. This is how institutional stat-arb strategies work — the pair discovery phase is provided so the task focuses on implementation of spread trading and multi-pair portfolio management.",
   "persona_ids": [
-    "beginner_no_finance",
     "developer_crossover",
-    "advanced_quant",
-    "intermediate_developer",
     "fullstack_practitioner"
   ],
   "student_openings": {
-    "beginner_no_finance": "I have price data for 20 crypto futures and I heard you can trade pairs that move together. How do I find the best pairs and trade them automatically on LEAN?",
-    "intermediate_developer": "I need to implement a pairs trading scanner on LEAN that screens all pair combinations across 20 symbols, selects the best ones, and trades spread mean-reversion. How do I structure the pair selection and multi-leg position management?",
-    "advanced_quant": "I'm implementing a cross-asset stat-arb strategy on LEAN across ~20 crypto futures. What's the best architecture for pairs-based trading?",
     "fullstack_practitioner": "I need to implement a pairs trading strategy on LEAN that (1) uses a. I've done similar work in Python before — let's focus on getting the architecture and edge cases right.",
     "developer_crossover": "I need to implement a pairs trading strategy on LEAN that (1) uses a. I can handle the code, but I don't understand the financial logic behind it. What should this do and why?"
   },

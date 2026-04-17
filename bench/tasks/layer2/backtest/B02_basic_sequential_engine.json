@@ -6,18 +6,12 @@
   "task_type": "multi_turn",
   "description": "Guide a student to build a basic backtest system with proper architecture: a data replay module that feeds BTCUSDT daily bars sequentially, a backtest engine that handles position tracking and PnL accounting, and a strategy module that implements a dual moving average crossover as cleanly separated components.",
   "persona_ids": [
-    "beginner_no_finance",
     "double_novice",
     "finance_veteran",
     "developer_crossover",
-    "advanced_quant",
-    "intermediate_developer",
     "fullstack_practitioner"
   ],
   "student_openings": {
-    "beginner_no_finance": "I have some Bitcoin price data and I want to test a moving average strategy on it. I've never built a backtester before. Where do I start?",
-    "intermediate_developer": "I need to build a backtest engine for crypto futures. I know Python well, but I want to make sure the architecture is right. How should I structure the components?",
-    "advanced_quant": "I'm building a backtest framework for USDT-M futures. I want an architecture that guarantees no look-ahead. What's a good design?",
     "fullstack_practitioner": "I want to build a basic backtest system with proper architecture: a properly. I've run basic backtests before — what methodology issues should I watch for?",
     "finance_veteran": "I need to build a basic backtest system with proper architecture: a. I know what good backtesting looks like from experience — can you help me implement it in code?",
     "developer_crossover": "I want to build a basic backtest system with proper architecture: a. I can write the code myself, but I need to understand the financial concepts. What does this mean in trading?",

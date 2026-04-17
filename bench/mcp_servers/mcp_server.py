@@ -4,7 +4,7 @@ Wraps the benchmark environment (proxy + session) as a standard MCP server.
 Third-party agents connect via stdio transport and interact through tool calls.
 
 Usage (standalone):
-    python -m mcp_servers.mcp_server --task S01_ma_crossover --persona intermediate_developer
+    python -m mcp_servers.mcp_server --task S01_ma_crossover --persona developer_crossover
 
 Usage (from orchestrator):
     from mcp_servers.mcp_server import create_mcp_server, run_server_stdio
@@ -261,7 +261,7 @@ def main():
     parser = argparse.ArgumentParser(description="QuantTutorBench MCP Server")
     parser.add_argument("--task", required=True, help="Task ID (e.g. S01_ma_crossover)")
     parser.add_argument(
-        "--persona", required=True, help="Persona ID (e.g. intermediate_developer)"
+        "--persona", required=True, help="Persona ID (e.g. developer_crossover)"
     )
     parser.add_argument("--no-docker", action="store_true", help="Run without Docker")
     args = parser.parse_args()

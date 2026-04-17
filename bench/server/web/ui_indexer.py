@@ -205,6 +205,12 @@ class ResultIndexer:
             ),
             "eval_history": self._load_eval_history(result_dir),
             "agent_cost": agent_cost,
+            "simulator_cost": self._coerce_float(
+                run_state.get("simulator_cost"), default=None
+            ),
+            "tc_checker_cost": self._coerce_float(
+                run_state.get("tc_checker_cost"), default=None
+            ),
             "requires_code": task_meta.get("requires_code", False),
             "max_turns": task_meta.get("max_turns"),
         }
@@ -591,6 +597,7 @@ class ResultIndexer:
             "success": success,
             "duration_ms": self._coerce_float(log.get("duration_ms"), default=None),
             "timestamp": log.get("timestamp"),
+            "raw_args": args,
             "raw_result": raw_result,
         }
 

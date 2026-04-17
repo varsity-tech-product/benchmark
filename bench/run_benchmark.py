@@ -11,7 +11,7 @@ Usage:
     python run_benchmark.py run --agent openai --condition agent --layer 2          # Layer 2 only
     python run_benchmark.py run --agent openai --condition pure_llm --layer 1       # Layer 1 only
     python run_benchmark.py run --agent openai --layer all --l1-max-items 100       # Cap Layer 1
-    python run_benchmark.py run-single --task S01_ma_crossover --persona beginner_no_finance
+    python run_benchmark.py run-single --task S01_ma_crossover --persona developer_crossover
     python run_benchmark.py run-single --task D01 --workers 3                       # All personas
     python run_benchmark.py run-group --group data_analysis --docker --workers 3
     python run_benchmark.py run-layer2 --agent openai --docker --workers 3

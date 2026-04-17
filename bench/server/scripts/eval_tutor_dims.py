@@ -7,7 +7,7 @@ No custom evaluation logic -- only I/O glue.
 Usage:
     # Single result (D3+D4 only)
     python -m server.scripts.eval_tutor_dims \
-        --result-dir results/run-single/anthropic/claude-sonnet-4-6/backtest/B01_.../intermediate_developer_run1 \
+        --result-dir results/run-single/anthropic/claude-sonnet-4-6/backtest/B01_.../developer_crossover_run1 \
         --dims D3_scaffolding_calibration D4_domain_accuracy \
         --eval-model anthropic/claude-sonnet-4-6
 

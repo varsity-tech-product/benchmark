@@ -284,8 +284,7 @@
             var turnPill = document.getElementById('myagent-turn-pill');
             if (turnPill) turnPill.textContent = 'Turn ' + data.turn;
           }
-          _renderConversation(data.conversation || []);
-          _renderToolLogs(data.recent_tool_logs || []);
+          _renderLiveData(data.conversation || [], data.recent_tool_logs || []);
 
           if (data.run_status === 'completed' || data.run_status === 'failed' || data.run_status === 'cancelled') {
             _stopPolling();
@@ -327,19 +326,80 @@
 
   var _lastConvLen = 0;
   var _lastToolLen = 0;
+  var _lastSendLen = 0;
 
-  function _renderConversation(conversation) {
+  /**
+   * Split tool logs into domain tools and send_message events.
+   * Mirrors ui_indexer.py _split_tool_logs() logic.
+   */
+  function _splitLogs(logs) {
+    var domainTools = [];
+    var sendEvents = [];
+    var sendIndex = 0;
+    (logs || []).forEach(function (log) {
+      if (log.name === 'send_message') {
+        sendEvents.push(_buildSendEvent(log, sendIndex));
+        sendIndex += 1;
+      } else {
+        domainTools.push(log);
+      }
+    });
+    return { tools: domainTools, sends: sendEvents };
+  }
+
+  /**
+   * Build a send_message event object from a raw tool log.
+   * Mirrors ui_indexer.py _build_send_message_event().
+   * @param {object} log - raw tool log entry
+   * @param {number} index - 0-based index among send_message events (maps to assistant turn)
+   */
+  function _buildSendEvent(log, index) {
+    var args = log.args || {};
+    var rawResult = log.result;
+    var parsed = {};
+    if (typeof rawResult === 'string') {
+      try { parsed = JSON.parse(rawResult); } catch (e) { parsed = {}; }
+    } else if (typeof rawResult === 'object' && rawResult) {
+      parsed = rawResult;
+    }
+    return {
+      name: 'send_message',
+      request_text: args.text || '',
+      attachments: args.attachments || [],
+      student_message: parsed.student_message || '',
+      status: parsed.status || 'active',
+      reason: parsed.reason || '',
+      error: parsed.error || '',
+      success: log.success !== false,
+      duration_ms: log.duration_ms || null,
+      timestamp: log.timestamp || null,
+      turn_index: (typeof log.turn_index === 'number') ? log.turn_index : index,
+      raw_args: args,
+      raw_result: rawResult
+    };
+  }
+
+  function _renderLiveData(conversation, rawLogs) {
+    var split = _splitLogs(rawLogs);
+    _renderConversation(conversation, split.sends);
+    _renderDomainTools(split.tools);
+  }
+
+  function _renderConversation(conversation, sendEvents) {
     var el = document.getElementById('myagent-conversation');
-    if (!el || !conversation.length) return;
+    if (!el) return;
+
+    var convChanged = conversation.length !== _lastConvLen;
+    var sendChanged = sendEvents.length !== _lastSendLen;
+    if (!convChanged && !sendChanged) return;
+
+    _lastConvLen = conversation.length;
+    _lastSendLen = sendEvents.length;
 
     // Use chat.js buildConversationReplay for full rendering
     if (window.QTB && typeof window.QTB.buildConversationReplay === 'function') {
-      // Only re-render if conversation changed
-      if (conversation.length !== _lastConvLen) {
-        _lastConvLen = conversation.length;
-        el.innerHTML = '';
-        window.QTB.buildConversationReplay(el, conversation, [], []);
-      }
+      el.innerHTML = '';
+      window.QTB.buildConversationReplay(el, conversation, [], sendEvents);
     } else {
       // Fallback: simple text display
       el.innerHTML = conversation.map(function (msg) {
@@ -352,27 +412,30 @@
     el.scrollTop = el.scrollHeight;
   }
 
-  function _renderToolLogs(logs) {
+  function _renderDomainTools(tools) {
     var el = document.getElementById('myagent-tools');
-    if (!el || !logs.length) return;
+    if (!el) return;
 
-    // Use tools.js buildToolReplay for rich rendering
+    // Use tools.js buildToolReplay for rich rendering (domain tools only)
     if (window.QTB && typeof window.QTB.buildToolReplay === 'function') {
-      if (logs.length !== _lastToolLen) {
-        _lastToolLen = logs.length;
+      if (tools.length !== _lastToolLen) {
+        _lastToolLen = tools.length;
         el.innerHTML = '';
-        window.QTB.buildToolReplay(el, logs);
+        window.QTB.buildToolReplay(el, tools);
       }
     } else {
       // Fallback: simple list
-      el.innerHTML = logs.map(function (log) {
-        var icon = log.success !== false ? '✓' : '✗';
-        var dur = log.duration_ms != null ? ' (' + Math.round(log.duration_ms) + 'ms)' : '';
-        return '<div class="tool-event">' +
-          '<span class="tool-icon">' + icon + '</span> ' +
-          '<strong>' + escapeHtml(log.name) + '</strong>' + dur +
-          '</div>';
-      }).join('');
+      if (tools.length !== _lastToolLen) {
+        _lastToolLen = tools.length;
+        el.innerHTML = tools.map(function (log) {
+          var icon = log.success !== false ? '✓' : '✗';
+          var dur = log.duration_ms != null ? ' (' + Math.round(log.duration_ms) + 'ms)' : '';
+          return '<div class="tool-event">' +
+            '<span class="tool-icon">' + icon + '</span> ' +
+            '<strong>' + escapeHtml(log.name) + '</strong>' + dur +
+            '</div>';
+        }).join('');
+      }
     }
   }
 
@@ -381,6 +444,7 @@
     _runId = null;
     _lastConvLen = 0;
     _lastToolLen = 0;
+    _lastSendLen = 0;
   }
 
   // Allow app.js to reset mode

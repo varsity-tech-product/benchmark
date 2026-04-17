@@ -6,18 +6,12 @@
   "task_type": "multi_turn",
   "description": "Guide the student through diagnosing multiple simultaneous data-feed issues in OHLCV data and building a systematic remediation checklist.",
   "persona_ids": [
-    "beginner_no_finance",
     "double_novice",
     "finance_veteran",
     "developer_crossover",
-    "advanced_quant",
-    "intermediate_developer",
     "fullstack_practitioner"
   ],
   "student_openings": {
-    "beginner_no_finance": "My backtest results look weird and I think my data might be broken. Can you help me figure out what's wrong step by step?",
-    "intermediate_developer": "I need a structured diagnosis of a suspicious OHLCV feed with outliers, missing rows, and possible bad corporate-action handling.",
-    "advanced_quant": "I'm validating a new vendor feed and suspect interacting issues (missingness, split artifacts, timezone drift). I want a forensic diagnosis workflow.",
     "fullstack_practitioner": "I want to diagnosing multiple simultaneous data-feed issues in OHLCV rigorously. I know the basics — let's focus on methodology and potential pitfalls.",
     "finance_veteran": "I need to diagnosing multiple simultaneous data-feed issues in OHLCV in Python. I understand what the data means financially — I just need help with the pandas side.",
     "developer_crossover": "I need to diagnosing multiple simultaneous data-feed issues in OHLCV. I can use pandas fine — but what do these financial metrics actually mean? Why would a trader care?",
@@ -59,7 +53,8 @@
     ],
     "quant_validation": {
       "eval_script": "evaluation/test_scripts/data_analysis/D07_broken_data_feed_diagnosis.py"
-    }
+    },
+    "termination_criteria": "(1) Showed actual diagnostic output identifying at least two distinct data-feed issues in the OHLCV dataset, such as missing rows, duplicate timestamps, price outliers, or volume spikes. (2) Mapped at least one concrete anomaly to a plausible root cause using evidence from the data, such as distinguishing a corporate action from a feed error or a timezone shift from a gap. (3) Responded to a student follow-up by producing a concrete remediation step or validation check on the diagnosed issue, such as a corrected output, a filter rule, or a before-and-after comparison. Once all 3 steps have been computationally demonstrated, the session is complete."
   },
   "requires_code": true,
   "sample_code": null,

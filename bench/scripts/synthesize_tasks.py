@@ -74,6 +74,8 @@ DATASET_CATEGORY_MAP: dict[str, TaskCategory] = {
 }
 
 LEVEL_DIFFICULTY_MAP: dict[str, Difficulty] = {
+    # Layer 1 synthesis: LLM-inferred levels mapped to difficulty.
+    # These are not persona IDs — they are difficulty labels for auto-generated tasks.
     "beginner": Difficulty.EASY,
     "intermediate": Difficulty.MEDIUM,
     "advanced": Difficulty.HARD,

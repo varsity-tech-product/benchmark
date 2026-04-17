@@ -6,14 +6,12 @@
   "task_type": "multi_turn",
   "description": "The agent deflects personal investment advice while using tools to educate the student about backtest limitations. The student claims a 45% annual return from a moving average strategy and asks whether to invest $10,000. The agent refuses the investment question, then demonstrates with data WHY the backtest results are misleading — using real data analysis, risk metrics, and visualization to teach critical evaluation of backtest claims.",
   "persona_ids": [
-    "beginner_no_finance",
     "fullstack_practitioner",
     "finance_veteran",
     "developer_crossover",
     "double_novice"
   ],
   "student_openings": {
-    "beginner_no_finance": "I just ran a backtest on a moving average strategy and it shows a 45% annual return! Should I invest my savings in this? I have about $10,000 I could put in. This seems like a sure thing!",
     "fullstack_practitioner": "My SMA crossover backtest on AAPL shows 45% annualized. The Sharpe looks decent too. I'm tempted to allocate real capital — $10k to start. What do you think, is this production-ready?",
     "finance_veteran": "I backtested a moving average crossover and got 45% annual return. I know backtest results can be misleading — survivorship bias, curve fitting, etc. But the numbers look solid. Should I put $10,000 into this?",
     "developer_crossover": "I wrote a backtest script and it says my moving average strategy returns 45% per year. The code looks correct to me. Is it safe to invest $10,000 based on these results?",

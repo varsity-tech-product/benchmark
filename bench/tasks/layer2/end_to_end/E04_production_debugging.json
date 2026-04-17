@@ -6,16 +6,10 @@
   "task_type": "multi_turn",
   "description": "Guide a student through systematically debugging a LEAN C# EMA crossover algorithm with three interacting bugs: inverted signal logic, missing warm-up, and excessive leverage. The agent must diagnose each bug, explain root causes, apply fixes, and verify improved performance.",
   "persona_ids": [
-    "beginner_no_finance",
     "developer_crossover",
-    "advanced_quant",
-    "intermediate_developer",
     "fullstack_practitioner"
   ],
   "student_openings": {
-    "beginner_no_finance": "I wrote an EMA crossover strategy in LEAN C# but it's losing a lot of money. I thought EMA crossovers were supposed to be a decent baseline strategy. The code compiles and runs fine, but the results are terrible. Can you help me figure out what's wrong?",
-    "intermediate_developer": "My LEAN EMA(20/50) crossover algorithm is producing large systematic losses. The code runs without errors but performance is terrible. I suspect there might be multiple issues interacting with each other. Can you help me systematically debug it?",
-    "advanced_quant": "I have a LEAN EMA crossover algo that's hemorrhaging capital. Initial analysis suggests compound issues — the signal timing looks wrong, there may be initialization problems, and the position sizing seems aggressive. I need to systematically isolate and fix each bug. The buggy code is at /data/E04_compound_bug.cs.",
     "fullstack_practitioner": "I need to systematically debugging a LEAN C# EMA crossover algorithm. I've done similar work in Python before — let's focus on getting the architecture and edge cases right.",
     "developer_crossover": "I need to systematically debugging a LEAN C# EMA crossover algorithm. I can handle the code, but I don't understand the financial logic behind it. What should this do and why?"
   },

@@ -1364,6 +1364,48 @@ h1 {
   letter-spacing: 0.08em;
 }
 
+/* ── Modal info sections ── */
+
+.modal-body .info-section {
+  margin-bottom: 18px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border-light);
+}
+
+.modal-body .info-section:last-child {
+  margin-bottom: 0;
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+/* ── Server Detail Modal ── */
+
+.server-modal-content {
+  max-width: 1240px;
+  max-height: 90vh;
+}
+
+.server-modal-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 20px 24px;
+  line-height: 1.6;
+}
+
+.server-modal-body .workspace-explorer {
+  height: 480px;
+  min-height: 0;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.server-modal-body .workspace-sidebar,
+.server-modal-body .workspace-preview-pane {
+  overflow-y: auto;
+}
+
 .detail-meta-item {
   display: flex;
   flex-direction: column;

@@ -6,16 +6,10 @@
   "task_type": "multi_turn",
   "description": "Guide a student through building a complete moving average crossover trading system from scratch — from loading data, computing indicators, generating signals, running a backtest, to interpreting results and iterating on parameters.",
   "persona_ids": [
-    "beginner_no_finance",
     "developer_crossover",
-    "advanced_quant",
-    "intermediate_developer",
     "fullstack_practitioner"
   ],
   "student_openings": {
-    "beginner_no_finance": "I want to build my first trading strategy from scratch. I've heard moving averages are a good starting point. I know basic Python but nothing about finance or backtesting. Where do I even begin?",
-    "intermediate_developer": "I want to build a complete MA crossover system — data loading, signal generation, backtest, and performance analysis. I'm comfortable with Python and pandas. What's a clean architecture for this?",
-    "advanced_quant": "I'm building a reference MA crossover system as a baseline for more complex strategies. I want clean modular code, vectorized backtest, transaction cost modeling, and proper walk-forward validation. Let's architect this properly.",
     "fullstack_practitioner": "I need to building a complete moving average crossover trading system. I've done similar work in Python before — let's focus on getting the architecture and edge cases right.",
     "developer_crossover": "I need to building a complete moving average crossover trading system. I can handle the code, but I don't understand the financial logic behind it. What should this do and why?"
   },

@@ -6,18 +6,12 @@
   "task_type": "multi_turn",
   "description": "Guide the student to compute and interpret core OHLCV summary statistics, including distribution diagnostics and volume behavior.",
   "persona_ids": [
-    "beginner_no_finance",
     "double_novice",
     "finance_veteran",
     "developer_crossover",
-    "advanced_quant",
-    "intermediate_developer",
     "fullstack_practitioner"
   ],
   "student_openings": {
-    "beginner_no_finance": "Can you show me how to summarize stock data in a way I can actually understand?",
-    "intermediate_developer": "I need a concise OHLCV stats pass in pandas (describe, quantiles, ranges, volume behavior) with interpretation guidance.",
-    "advanced_quant": "I want a fast summary-statistics diagnostic for OHLCV with distribution/outlier checks before feature work.",
     "fullstack_practitioner": "I want to compute and interpret core OHLCV summary statistics, rigorously. I know the basics — let's focus on methodology and potential pitfalls.",
     "finance_veteran": "I need to compute and interpret core OHLCV summary statistics, in Python. I understand what the data means financially — I just need help with the pandas side.",
     "developer_crossover": "I need to compute and interpret core OHLCV summary statistics,. I can use pandas fine — but what do these financial metrics actually mean? Why would a trader care?",

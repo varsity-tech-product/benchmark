@@ -1183,6 +1183,10 @@ class SessionState:
 
         Partial-result persistence is opt-in so user-triggered cancellation
         does not silently write incomplete sessions to the results store.
+
+        When the session is still active (not completed) and has conversation
+        content, the agent abandoned the session prematurely — we record
+        this as ``agent_abandoned`` so it can be penalized during evaluation.
         """
         self._closed = True
         if (
@@ -1193,8 +1197,12 @@ class SessionState:
             and self.phase in (SessionPhase.IN_SESSION, SessionPhase.REGISTERED)
         ):
             try:
+                # Mark session as agent-abandoned (session never reached
+                # "completed" but the agent disconnected).
+                self.session.force_complete("agent_abandoned", append_closing=False)
                 logger.info(
-                    "Session %s: saving partial results before cleanup", self.session_id
+                    "Session %s: agent abandoned — saving partial results",
+                    self.session_id,
                 )
                 self._save_results()
             except Exception as exc:

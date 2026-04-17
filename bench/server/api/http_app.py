@@ -271,7 +271,7 @@ class BenchSessionManager:
             if session_id and session_id in self._transports:
                 transport = self._transports[session_id]
                 await transport.handle_request(scope, receive, send)
-                await self._cleanup_session(session_id)
+                await self._cleanup_session(session_id, persist_partial=True)
                 return
             resp = Response(status_code=404, content="Session not found")
             await resp(scope, receive, send)

@@ -63,7 +63,7 @@ STUDENT_MODEL_POOL_ALL: frozenset[str] = frozenset(
     model for tier in STUDENT_MODEL_POOL.values() for model in tier
 )
 
-SIMULATOR_DEFAULT_MODEL = "openai/gpt-5.2"  # must be in STUDENT_MODEL_POOL_ALL
+SIMULATOR_DEFAULT_MODEL = "openai/gpt-5.4"  # must be in STUDENT_MODEL_POOL_ALL
 EVAL_DEFAULT_MODELS: list[str] = [
     "anthropic/claude-sonnet-4-6",
     # "anthropic/claude-haiku-4.5",

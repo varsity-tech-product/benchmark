@@ -1369,61 +1369,22 @@
       metaItem('Overall Score', detail.overall_score == null ? '—' : formatScore(detail.overall_score))
     ].join('');
 
-    var model = [
-      metaItem('Model', detail.model || 'Unknown'),
-      metaItem('Agent Name', detail.agent_name || 'Unknown'),
-      metaItem('Content Blocks', detail.has_content_blocks ? 'Yes' : 'No'),
-      metaItem('Client Trace', detail.has_client_trace ? 'Present' : 'Missing'),
-      metaItem('Agent Files', detail.has_agent_files ? 'Present' : 'Missing'),
-      metaItem('Requires Code', detail.requires_code ? 'Yes' : 'No'),
-      metaItem('Max Turns', detail.max_turns == null ? '—' : String(detail.max_turns))
-    ].join('');
-
-    var cost = '';
-    if (detail.agent_cost) {
-      cost = buildInfoSection('Agent Cost', [
-        metaItem('Input Tokens', formatInteger(detail.agent_cost.input_tokens)),
-        metaItem('Output Tokens', formatInteger(detail.agent_cost.output_tokens)),
-        metaItem('API Calls', formatInteger(detail.agent_cost.api_calls)),
-        metaItem('Cost', formatCost(detail.agent_cost.cost_usd))
-      ].join(''));
-    }
-
-    var distractors = buildInfoSection(
-      'Distractors',
-      (detail.distractor_names && detail.distractor_names.length)
-        ? '<div class="detail-chip-list">' + detail.distractor_names.map(function (name) {
-          return '<span class="detail-chip">' + escapeHtml(name) + '</span>';
-        }).join('') + '</div>'
-        : '<p class="detail-empty-note">No distractor tools were registered for this task.</p>'
-    );
-
-    var evalHistory = buildInfoSection(
-      'Eval History',
-      (detail.eval_history && detail.eval_history.length)
-        ? '<div class="detail-history-list">' + detail.eval_history.map(renderEvalHistoryItem).join('') + '</div>'
-        : '<p class="detail-empty-note">No archived evaluation history was found for this session yet.</p>'
-    );
-
-    return [
-      buildInfoSection('Summary', summary),
-      buildInfoSection('Model & Trace', model),
-      cost,
-      buildWorkspaceSummarySection(detail),
-      distractors,
-      evalHistory
-    ].join('');
+    return buildInfoSection('Summary', summary);
   }
 
   function buildDetailActions(detail) {
     var buttons = [];
-    if (detail.has_agent_files && detail.workspace_files && detail.workspace_files.length) {
-      buttons.push(
-        '<button class="detail-report-btn" id="detail-workspace-btn">Workspace (' +
-        escapeHtml(String(detail.workspace_files.length)) +
-        ')</button>'
-      );
+    // Server / Client / Eval History
+    buttons.push('<button class="detail-report-btn" id="detail-server-btn">Server</button>');
+    buttons.push(
+      '<button class="detail-report-btn" id="detail-client-btn"' +
+      (detail.has_client_trace ? '' : ' disabled title="No client trace"') +
+      '>Client</button>'
+    );
+    if (detail.eval_history && detail.eval_history.length) {
+      buttons.push('<button class="detail-report-btn" id="detail-eval-history-btn">Eval History</button>');
     }
+    // Eval reports
     if (detail.scores_md) {
       buttons.push('<button class="detail-report-btn" id="detail-score-btn">Score Report</button>');
     }
@@ -1432,9 +1393,6 @@
     }
     if (detail.trace_md) {
       buttons.push('<button class="detail-report-btn" id="detail-trace-btn">Trace Report</button>');
-    }
-    if (!buttons.length) {
-      buttons.push('<span class="meta-chip">No evaluation report</span>');
     }
     return buttons.join('');
   }
@@ -1714,17 +1672,181 @@
     });
   }
 
+  // ── Server Detail Modal ──
+
+  function openServerModal(detail) {
+    var taskConfig = [
+      metaItem('Requires Code', detail.requires_code ? 'Yes' : 'No'),
+      metaItem('Max Turns', detail.max_turns == null ? '—' : String(detail.max_turns))
+    ].join('');
+
+    var distractorsHtml = (detail.distractor_names && detail.distractor_names.length)
+      ? '<div class="detail-chip-list">' + detail.distractor_names.map(function (name) {
+        return '<span class="detail-chip">' + escapeHtml(name) + '</span>';
+      }).join('') + '</div>'
+      : '<p class="detail-empty-note">No distractor tools registered.</p>';
+
+    var serverCost = [
+      metaItem('Simulator Cost', detail.simulator_cost != null ? formatCost(detail.simulator_cost) : '—'),
+      metaItem('TC Checker Cost', detail.tc_checker_cost != null ? formatCost(detail.tc_checker_cost) : '—'),
+      metaItem('Duration', formatDuration(detail.duration_seconds))
+    ].join('');
+
+    var hasWorkspace = detail.has_agent_files && detail.workspace_files && detail.workspace_files.length;
+
+    var html =
+      buildInfoSection('Task Config', taskConfig) +
+      buildInfoSection('Distractors', distractorsHtml) +
+      buildInfoSection('Server Cost', serverCost) +
+      (hasWorkspace
+        ? buildInfoSection('Workspace (' + detail.workspace_files.length + ')', '<div id="server-workspace-mount"></div>')
+        : buildInfoSection('Workspace', '<p class="detail-empty-note">No workspace files archived.</p>'));
+
+    showModal('Server Detail', html, {
+      contentClass: 'server-modal-content',
+      bodyClass: 'server-modal-body'
+    });
+
+    // Mount workspace explorer into the placeholder if available
+    if (hasWorkspace) {
+      var mount = document.getElementById('server-workspace-mount');
+      if (mount) {
+        mount.innerHTML = buildWorkspaceModalShell();
+        _bindWorkspaceExplorer(detail, mount);
+      }
+    }
+  }
+
+  function _bindWorkspaceExplorer(detail, scope) {
+    var searchInput = scope.querySelector('#workspace-search-input');
+    var summaryEl = scope.querySelector('#workspace-summary');
+    var listEl = scope.querySelector('#workspace-file-list');
+    var previewHeaderEl = scope.querySelector('#workspace-preview-header');
+    var previewBodyEl = scope.querySelector('#workspace-preview-body');
+    var currentSelection = null;
+    var workspaceIndex = null;
+
+    function renderFileList() {
+      if (!listEl) return;
+      var query = searchInput ? String(searchInput.value || '').trim().toLowerCase() : '';
+      var files = (workspaceIndex && workspaceIndex.files ? workspaceIndex.files : []).filter(function (file) {
+        if (!query) return true;
+        return String(file.path || '').toLowerCase().indexOf(query) !== -1;
+      });
+      if (!files.length) {
+        listEl.innerHTML = '<div class="workspace-empty">No files match the current filter.</div>';
+        if (previewHeaderEl) previewHeaderEl.innerHTML = '';
+        if (previewBodyEl) previewBodyEl.innerHTML = '<div class="workspace-empty">Select a file to inspect.</div>';
+        return;
+      }
+      listEl.innerHTML = files.map(function (file) {
+        var activeClass = file.path === currentSelection ? ' active' : '';
+        return '<button type="button" class="workspace-file-item' + activeClass + '" data-path="' + escapeHtml(file.path) + '">' +
+          '<span class="workspace-file-main"><span class="workspace-file-path">' + escapeHtml(file.path) + '</span>' +
+          '<span class="workspace-file-meta">' + escapeHtml(titleCase(file.kind || 'file')) + ' · ' + escapeHtml(formatBytes(file.size_bytes)) + '</span></span></button>';
+      }).join('');
+      Array.prototype.forEach.call(listEl.querySelectorAll('.workspace-file-item'), function (button) {
+        button.addEventListener('click', function () { loadPreview(button.getAttribute('data-path') || ''); });
+      });
+      var stillVisible = files.some(function (f) { return f.path === currentSelection; });
+      if (!stillVisible && files.length) loadPreview(files[0].path);
+    }
+
+    function loadPreview(relativePath) {
+      if (!relativePath) return;
+      if (relativePath === currentSelection && previewHeaderEl && previewHeaderEl.innerHTML) { renderFileList(); return; }
+      currentSelection = relativePath;
+      renderFileList();
+      if (previewHeaderEl) previewHeaderEl.innerHTML = '';
+      if (previewBodyEl) previewBodyEl.innerHTML = '<div class="workspace-empty">Loading preview…</div>';
+      ensureWorkspacePreview(detail.session_id, relativePath).then(function (preview) {
+        if (currentSelection !== relativePath) return;
+        renderWorkspacePreview(preview, detail.session_id);
+      }).catch(function (error) {
+        if (currentSelection !== relativePath) return;
+        if (previewBodyEl) previewBodyEl.innerHTML = '<div class="workspace-empty">Unable to load preview: ' + escapeHtml(error && error.message ? error.message : String(error)) + '</div>';
+      });
+    }
+
+    if (searchInput) searchInput.addEventListener('input', renderFileList);
+    ensureWorkspaceIndex(detail.session_id).then(function (indexPayload) {
+      workspaceIndex = indexPayload;
+      if (summaryEl) {
+        var topExt = (indexPayload.top_extensions || []).map(function (ext) { return ext === '[no_ext]' ? 'no extension' : ext.replace(/^\./, ''); });
+        summaryEl.innerHTML = '<strong>' + escapeHtml(String(indexPayload.file_count || 0)) + '</strong> file(s)' +
+          (topExt.length ? '<span> · ' + escapeHtml(topExt.join(' / ')) + '</span>' : '');
+      }
+      renderFileList();
+    }).catch(function (error) {
+      if (summaryEl) summaryEl.textContent = 'Unable to load workspace.';
+      if (listEl) listEl.innerHTML = '<div class="workspace-empty">' + escapeHtml(error && error.message ? error.message : String(error)) + '</div>';
+    });
+  }
+
+  // ── Client Detail Modal ──
+
+  function openClientModal(detail) {
+    if (!detail.has_client_trace) {
+      showModal('Client Detail', '<p class="detail-empty-note">No client trace was uploaded for this session.</p>');
+      return;
+    }
+
+    var traceInfo = [
+      metaItem('Model', detail.model || '—'),
+      metaItem('Agent Name', detail.agent_name || '—'),
+      metaItem('Content Blocks', detail.has_content_blocks ? 'Yes' : 'No'),
+      metaItem('Client Trace', 'Present')
+    ].join('');
+
+    var costHtml = '';
+    if (detail.agent_cost) {
+      costHtml = [
+        metaItem('Input Tokens', formatInteger(detail.agent_cost.input_tokens)),
+        metaItem('Output Tokens', formatInteger(detail.agent_cost.output_tokens)),
+        metaItem('API Calls', formatInteger(detail.agent_cost.api_calls)),
+        metaItem('Cost', formatCost(detail.agent_cost.cost_usd))
+      ].join('');
+    } else {
+      costHtml = '<p class="detail-empty-note">No agent cost data in client trace.</p>';
+    }
+
+    showModal('Client Detail',
+      buildInfoSection('Model & Trace', traceInfo) +
+      buildInfoSection('Agent Cost', costHtml)
+    );
+  }
+
+  // ── Eval History Modal ──
+
+  function openEvalHistoryModal(detail) {
+    var history = detail.eval_history || [];
+    var scoresHtml = history.length
+      ? '<div class="detail-history-list">' + history.map(renderEvalHistoryItem).join('') + '</div>'
+      : '<p class="detail-empty-note">No evaluation history found.</p>';
+
+    var costHtml = detail.cost_md
+      ? safeRenderMarkdown(detail.cost_md)
+      : '<p class="detail-empty-note">No evaluation cost report available.</p>';
+
+    showModal('Eval History',
+      buildInfoSection('Scores', scoresHtml) +
+      buildInfoSection('Eval Cost', costHtml)
+    );
+  }
+
+  // ── Bind action buttons ──
+
   function bindDetailActionButtons(detail) {
-    var workspaceBtn = document.getElementById('detail-workspace-btn');
+    var serverBtn = document.getElementById('detail-server-btn');
+    var clientBtn = document.getElementById('detail-client-btn');
+    var evalHistoryBtn = document.getElementById('detail-eval-history-btn');
     var scoreBtn = document.getElementById('detail-score-btn');
     var costBtn = document.getElementById('detail-cost-btn');
     var traceBtn = document.getElementById('detail-trace-btn');
 
-    if (workspaceBtn) {
-      workspaceBtn.addEventListener('click', function () {
-        openWorkspaceModal(detail);
-      });
-    }
+    if (serverBtn) serverBtn.addEventListener('click', function () { openServerModal(detail); });
+    if (clientBtn) clientBtn.addEventListener('click', function () { openClientModal(detail); });
+    if (evalHistoryBtn) evalHistoryBtn.addEventListener('click', function () { openEvalHistoryModal(detail); });
 
     if (scoreBtn) {
       scoreBtn.addEventListener('click', function () {

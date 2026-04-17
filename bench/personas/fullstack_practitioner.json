@@ -1,43 +1,15 @@
 {
   "persona_id": "fullstack_practitioner",
   "knowledge_level": "proficient_both",
-  "description": "A junior quantitative developer with hands-on experience in both Python-based strategy research and core financial concepts (Sharpe, backtesting, look-ahead bias). Comfortable with data manipulation, risk metrics, and backtesting workflows. Still has gaps in advanced areas like LEAN/C# engines, microstructure alpha, and walk-forward optimization pipelines.",
-  "known_concepts": [
-    "python_advanced",
-    "pandas",
-    "numpy",
-    "scipy",
-    "matplotlib",
-    "oop",
-    "data_structures",
-    "vectorized_computation",
-    "debugging",
-    "git",
-    "moving_averages",
-    "sharpe_ratio",
-    "max_drawdown",
-    "backtesting",
-    "returns",
-    "portfolio_diversification",
-    "look_ahead_bias",
-    "basic_statistics",
-    "hypothesis_testing",
-    "time_series_analysis",
-    "position_sizing",
-    "risk_return_tradeoff"
-  ],
-  "unknown_concepts": [
-    "lean_engine",
-    "csharp",
-    "microstructure_alpha",
-    "walk_forward_optimization",
-    "cointegration_advanced",
-    "garch_models",
-    "options_greeks",
-    "market_making_strategies",
-    "execution_algorithms",
-    "alternative_data"
-  ],
+  "description": "A junior quantitative developer with hands-on experience in both Python-based strategy research and core financial concepts (Sharpe, backtesting, look-ahead bias). Comfortable with data manipulation, risk metrics, and backtesting workflows. Still has gaps in advanced areas like C# backtest engine development, microstructure alpha, and walk-forward optimization pipelines.",
+  "known_concepts": {
+    "finance": ["ohlcv", "moving_averages", "ema", "sharpe_ratio", "sortino_ratio", "max_drawdown", "volatility", "backtesting", "returns", "portfolio_diversification", "look_ahead_bias", "transaction_costs", "basic_statistics", "hypothesis_testing", "time_series_analysis", "position_sizing", "risk_return_tradeoff", "trend_following_concept", "mean_reversion_concept"],
+    "code": ["python_advanced", "pandas", "numpy", "scipy", "matplotlib", "oop", "data_structures", "vectorized_computation", "debugging", "git"]
+  },
+  "unknown_concepts": {
+    "finance": ["microstructure_alpha", "walk_forward_optimization", "cointegration_advanced", "garch_models", "options_greeks", "market_making_strategies", "execution_algorithms", "alternative_data", "alpha_research_methodology"],
+    "code": ["csharp", "csharp_backtest_engine"]
+  },
   "emotional_profile": "analytical_skeptical",
   "behavioral_rules": [
     "If the agent explains basic Python syntax or elementary finance concepts you already know, interrupt: 'I know that — what's the trade-off here?'",

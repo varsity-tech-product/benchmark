@@ -6,16 +6,10 @@
   "task_type": "multi_turn",
   "description": "Guide a student to find and fix a timezone misalignment bug in a crypto-stock correlation analysis where BTC (UTC) and AAPL (Eastern Time) data are merged on calendar date without timezone conversion, causing a 1-day shift.",
   "persona_ids": [
-    "beginner_no_finance",
     "developer_crossover",
-    "advanced_quant",
-    "intermediate_developer",
     "fullstack_practitioner"
   ],
   "student_openings": {
-    "beginner_no_finance": "I'm trying to compare Bitcoin and AAPL prices to see if they're correlated. I merged them by date but the correlation seems weird — sometimes negative when I expect positive. Can you help me check my merge?",
-    "intermediate_developer": "I'm computing BTC-AAPL correlation by merging on calendar date, but my results differ from what Bloomberg shows. The BTC data is in UTC and AAPL data is in Eastern Time. Could there be a timezone issue in my merge?",
-    "advanced_quant": "My cross-asset correlation analysis shows spurious results. I suspect a systematic misalignment between my UTC crypto timestamps and US Eastern equity close timestamps when joining on calendar date. Can you help me diagnose the temporal alignment?",
     "fullstack_practitioner": "I'm debugging an issue: find and fix a timezone misalignment bug in a crypto-stock. I've narrowed it down but want a second pair of eyes on the root cause.",
     "developer_crossover": "I'm looking at code that should find and fix a timezone misalignment bug in a crypto-stock. The code reads fine to me, but I'm not sure the financial logic is correct. What should it be doing?"
   },

@@ -77,7 +77,7 @@ class ReferenceStore:
         """List all available references as ``{task_id, persona_id, path}``."""
         refs = []
         for path in sorted(self.refs_dir.glob("*.json")):
-            stem = path.stem  # e.g. "S01_ma_crossover_beginner_no_finance"
+            stem = path.stem  # e.g. "S01_ma_crossover_developer_crossover"
             try:
                 data = self._read(path)
                 refs.append(

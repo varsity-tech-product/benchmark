@@ -103,8 +103,8 @@ class StudentPersona(BaseModel):
     persona_id: str
     knowledge_level: str
     description: str
-    known_concepts: list[str] = Field(default_factory=list)
-    unknown_concepts: list[str] = Field(default_factory=list)
+    known_concepts: dict[str, list[str]] | list[str] = Field(default_factory=dict)
+    unknown_concepts: dict[str, list[str]] | list[str] = Field(default_factory=dict)
     emotional_profile: str = ""
     behavioral_rules: list[str] = Field(default_factory=list)
 

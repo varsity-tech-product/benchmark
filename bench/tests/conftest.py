@@ -263,9 +263,16 @@ BENCH_ROOT = _BENCH_ROOT
 
 
 @pytest.fixture
-def bench_root():
-    """Real bench root for loading tasks/personas JSON files."""
-    return BENCH_ROOT
+def bench_root(tmp_path):
+    """Isolated bench root: tasks/personas via symlink, results in tmp_path.
+
+    Ensures tests never write to the real results/ directory.
+    """
+    real_bench = BENCH_ROOT
+    (tmp_path / "tasks").symlink_to(real_bench / "tasks")
+    (tmp_path / "personas").symlink_to(real_bench / "personas")
+    (tmp_path / "server").symlink_to(real_bench / "server")
+    return tmp_path
 
 
 @pytest.fixture
@@ -274,6 +281,7 @@ def app(bench_root):
 
     Uses ``use_docker=False`` so no Docker daemon is required.
     Auto-eval is disabled to keep tests fast and deterministic.
+    Results are written to an isolated tmp directory via bench_root.
 
     Usage with httpx::
 

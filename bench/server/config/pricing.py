@@ -7,6 +7,7 @@ model names are resolved via ``_NATIVE_TO_OR`` alias table.
 # (input_price_per_token, output_price_per_token)
 MODEL_PRICING: dict[str, tuple[float, float]] = {
     "openai/gpt-5.2": (0.00000175, 0.000014),
+    "openai/gpt-5.4": (0.0000025, 0.00001),
     "openai/gpt-4o-mini": (0.00000015, 0.0000006),
     "gpt-4o-mini": (0.00000015, 0.0000006),
     "anthropic/claude-haiku-4.5": (0.0000008, 0.000004),

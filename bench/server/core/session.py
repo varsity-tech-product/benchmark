@@ -66,8 +66,11 @@ def build_background(task) -> str:
         "To communicate with the student, you MUST use the send_message "
         "tool. This is the only way your words reach the student. Your "
         "text output outside of send_message is NOT visible to them. "
-        "The student also cannot see your tool calls, file operations, "
-        "or raw command output.",
+        "The student cannot see your tool calls, file operations, "
+        "raw command output, or files in your workspace. If you generate "
+        "charts, code files, or other artifacts the student should see, "
+        "include their file paths in the 'attachments' parameter of "
+        "send_message.",
     ]
 
     if is_lean:
@@ -166,7 +169,16 @@ def _read_attachment(workspace_path: str, filename: str) -> dict:
     if "\x00" in filename:
         raise ValueError("Filename contains null byte")
 
-    resolved = os.path.join(workspace_path, filename)
+    # Agents often use container-absolute paths ("/workspace/foo.py") or
+    # prefixed relative paths ("workspace/foo.py").  Strip the prefix so
+    # the join below resolves correctly against the real workspace root.
+    cleaned = filename.strip()
+    for prefix in ("/workspace/", "workspace/"):
+        if cleaned.startswith(prefix):
+            cleaned = cleaned[len(prefix) :]
+            break
+
+    resolved = os.path.join(workspace_path, cleaned)
     real = os.path.realpath(resolved)
     workspace_real = os.path.realpath(workspace_path)
 
@@ -411,7 +423,9 @@ class TutoringSession:
             return json.dumps({"error": "Session already started"})
 
         opening = self._get_student_opening()
-        self._conversation.append({"role": "user", "content": opening, "ts": time.time()})
+        self._conversation.append(
+            {"role": "user", "content": opening, "ts": time.time()}
+        )
         self._session_info_called = True
 
         background = build_background(self._task)
@@ -579,7 +593,9 @@ class TutoringSession:
         if tc_met:
             closing = self._safe_closing()
             if closing:
-                self._conversation.append({"role": "user", "content": closing, "ts": time.time()})
+                self._conversation.append(
+                    {"role": "user", "content": closing, "ts": time.time()}
+                )
             self._done = True
             self._completion_reason = "objectives_met"
             logger.info("TC fully covered at turn %d.", self._turn)
@@ -597,7 +613,9 @@ class TutoringSession:
         if goals_met:
             closing = self._safe_closing()
             if closing:
-                self._conversation.append({"role": "user", "content": closing, "ts": time.time()})
+                self._conversation.append(
+                    {"role": "user", "content": closing, "ts": time.time()}
+                )
             self._done = True
             self._completion_reason = "goals_met"
             logger.info("Goals met at turn %d.", self._turn)
@@ -612,7 +630,9 @@ class TutoringSession:
             logger.info("Session timed out at turn %d.", self._turn)
             closing = self._safe_closing()
             if closing:
-                self._conversation.append({"role": "user", "content": closing, "ts": time.time()})
+                self._conversation.append(
+                    {"role": "user", "content": closing, "ts": time.time()}
+                )
             return self._result(closing, "completed", reason="timeout")
 
         # ── Max turns check ──  (aligned: _append_student_closing:642-678)
@@ -622,7 +642,9 @@ class TutoringSession:
             logger.info("Max turns (%d) reached.", self._max_turns)
             closing = self._safe_closing()
             if closing:
-                self._conversation.append({"role": "user", "content": closing, "ts": time.time()})
+                self._conversation.append(
+                    {"role": "user", "content": closing, "ts": time.time()}
+                )
             return self._result(closing, "completed", reason="max_turns")
 
         # ── Generate student reply ──  (aligned: generate_next_user_input)
@@ -721,7 +743,9 @@ class TutoringSession:
         ):
             closing = self._safe_closing()
             if closing:
-                self._conversation.append({"role": "user", "content": closing, "ts": time.time()})
+                self._conversation.append(
+                    {"role": "user", "content": closing, "ts": time.time()}
+                )
                 return closing
         return ""
 
@@ -915,7 +939,9 @@ class TutoringSession:
         agent's bootstrap prompt.
         """
         if not self._session_info_called and not self._conversation:
-            self._conversation.append({"role": "user", "content": opening, "ts": time.time()})
+            self._conversation.append(
+                {"role": "user", "content": opening, "ts": time.time()}
+            )
             self._session_info_called = True
 
     def _get_student_opening(self) -> str:

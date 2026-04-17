@@ -35,8 +35,8 @@ from run_benchmark import _collect_remote_endpoints
 
 def _make_persona() -> StudentPersona:
     return StudentPersona(
-        persona_id="intermediate_developer",
-        knowledge_level="intermediate",
+        persona_id="developer_crossover",
+        knowledge_level="proficient_code",
         description="Comfortable with Python and basic quant workflows.",
     )
 
@@ -47,9 +47,9 @@ def _make_task(*, requires_code: bool) -> QuantTutorTask:
         difficulty=Difficulty.HARD,
         category=TaskCategory.IMPLEMENTATION,
         description="Implement and verify a parameter optimization workflow.",
-        persona_ids=["intermediate_developer"],
+        persona_ids=["developer_crossover"],
         student_openings={
-            "intermediate_developer": "How should I implement the optimization workflow?"
+            "developer_crossover": "How should I implement the optimization workflow?"
         },
         environment=EnvironmentConfig(
             data_files=["universe.json"],
@@ -194,9 +194,7 @@ class PromptRegressionTests(unittest.TestCase):
         self.assertNotIn("usable workspace artifacts", context)
 
     def test_code_tasks_push_student_back_to_implementation(self):
-        scenario = build_scenario(
-            _make_task(requires_code=True), "intermediate_developer"
-        )
+        scenario = build_scenario(_make_task(requires_code=True), "developer_crossover")
         self.assertIn("IMPLEMENTATION TRACKING", scenario)
         self.assertIn("WHEN THE TUTOR STAYS ABSTRACT", scenario)
 
