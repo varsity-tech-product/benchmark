@@ -1,37 +1,67 @@
-# QuantTutorBench 新架构进展报告
+# QuantTutorBench 新架构文档
 
-> 更新日期：2026-04-15
+> 更新日期：2026-04-16
 > 分支：ewan
-> 对标文档：overall_architecture.md, architecture_implementation_plan.md, stage_report.md
+> 本文档是新架构的唯一权威文档，合并了设计原则、功能详解、实现状态。
 
 ---
 
-## 一、新架构概览：从"一体化 Harness"到"考场-考生分离"
+## 一、设计原则
 
-### 1.1 架构转型的核心目标
+### 1.1 考试隐喻
 
-QuantTutorBench 正在从 **Legacy 一体化 Harness**（orchestrator 内嵌 adapter + 评分）迁移到 **Client-Server 解耦架构**（Server 是考场，Client 是考生）。
+Server 是考场，Client 是考生。考场提供试卷（任务）、文具（工具）、监考（学生模拟器+TC）、打分（评分链）。考生可以带小抄（system prompt）、查资料（外部知识库）、用更好的笔（更强的 LLM）——考场不管也管不了。
+
+**考场管的是：答题纸格式对不对、考试流程有没有遵守、最终交卷内容能不能评分。**
+
+### 1.2 解耦边界
 
 ```
-旧架构（Legacy Harness）:
-┌──────────────────────────────────────────────────────────────┐
-│ orchestrator.py                                              │
-│  持有 adapter 引用 → 调 generate_response → 管理 session → 评分  │
-│  Agent 和 Benchmark 在同一个进程中                              │
-└──────────────────────────────────────────────────────────────┘
-
-新架构（Client-Server）:
-┌── Server（bench/server/）──────────┐     ┌── Client（bench/client/）───────┐
-│  考场设施（不可替换）:               │     │  任意 MCP/REST client:          │
-│  ├ 任务定义 + 学生模拟器            │     │  ├ Baseline adapter（跑实验）    │
-│  ├ Docker 沙箱 + domain tools      │◄─MCP/REST─►│  ├ Claude Code / GPT agent     │
-│  ├ TC/Goal 终止判定                │     │  ├ 人类（Web UI）                │
-│  ├ 结果保存                        │     │  └ 任何第三方 agent              │
-│  └ 评分流水线                      │     └────────────────────────────────┘
-└────────────────────────────────────┘
+┌─ Server（bench/server/）─────────────┐  ┌─ Client（可替换）────────────────┐
+│                                       │  │                                 │
+│  考场设施（不可替换）:                  │  │  任何 MCP/REST client:            │
+│  ├ 任务定义 + 学生人格                 │  │  ├ Baseline adapter（跑实验）      │
+│  ├ Docker 沙箱 + domain tools        │  │  ├ Claude Code / GPT agent       │
+│  ├ send_message + get_background     │◄─MCP/REST─►├ 人类（Web UI）         │
+│  ├ StudentSimulator（学生行为）        │  │  └ 任何第三方 agent               │
+│  ├ TC/GoalChecker（终止判定）         │  │                                 │
+│  ├ 结果保存（run_state.json）         │  │  考生自带（不受限）:               │
+│  └ 评分流水线（QR + QP + Tutor 7D）   │  │  ├ system prompt（任意）          │
+│                                       │  │  ├ 外部知识库                     │
+│  Server 不知道 Client 是谁，          │  │  ├ Docker 外的工具                │
+│  不持有 adapter 引用，                 │  │  └ 任何 LLM / 推理引擎            │
+│  不调用 generate_response()           │  │                                 │
+└───────────────────────────────────────┘  └─────────────────────────────────┘
 ```
 
-### 1.2 为什么要做这个转型
+### 1.3 控制权划分
+
+```
+Server 控制（不可替换）:                Client 控制（可替换）:
+├ 学生消息由谁生成 → StudentSimulator   ├ 每次 send_message 说什么
+├ 对话何时终止 → TC/Goal/max_turns     ├ 两次 send_message 之间调哪些工具
+├ 学生回复内容 → Client 只读            ├ 自己的 system prompt
+├ tool_logs 格式 → MCPProxy 控制        └ 自己的推理过程
+└ run_state.json 结构 → Client 无法篡改
+```
+
+### 1.4 三条核心设计原则
+
+**原则一：Server 提供环境事实，不提供行为指导。** 如果 Agent 在收到环境背景后仍然不探索环境、不使用回测工具、不回复学生，这是 Agent（Client）的能力问题——这正是 benchmark 要测量的。Server 不应通过更积极的引导来弥补 Agent 的能力缺陷，否则会泄漏评分标准、降低 benchmark 的区分度。
+
+**原则二：Server 验证格式，不验证内容。** Server 检查 agent_name 非空、max_steps 不超硬上限、JSON schema 合规——但不检查 system prompt 内容、不限制 model 选择、不审查 Client 是否使用了推荐 prompt。这是开卷考试——考场提供参考资料，用不用是考生的事。
+
+**原则三：对话推进和终止由 Server 控制，Client 只决定说什么和做什么。** 无论通过 MCP 还是 REST，conversation 和 tool_logs 由 Server 侧的 TutoringSession 和 MCPProxy 控制，Client 只能影响 assistant message 的文本内容和调哪些工具——这正是评分要评的。
+
+---
+
+## 二、架构概览
+
+### 2.1 架构转型
+
+QuantTutorBench 已从 **Legacy 一体化 Harness**（orchestrator 内嵌 adapter + 评分）迁移到 **Client-Server 解耦架构**（Server 是考场，Client 是考生）。
+
+### 2.2 为什么要做这个转型
 
 | 问题 | Legacy 的局限 | 新架构的解决方案 |
 |------|-------------|----------------|
@@ -43,13 +73,13 @@ QuantTutorBench 正在从 **Legacy 一体化 Harness**（orchestrator 内嵌 ada
 
 ---
 
-## 二、新架构功能详解
+## 三、功能详解
 
-### 2.1 Server：考场设施
+### 3.1 Server：考场设施
 
 Server 是 benchmark 的核心，提供考场的全部功能。通过 `python -m server --port 8000 --docker` 启动。
 
-#### 2.1.1 双协议接入（MCP + REST）
+#### 3.1.1 双协议接入（MCP + REST）
 
 Server 同时暴露两个等价的接入协议：
 
@@ -60,7 +90,7 @@ Server 同时暴露两个等价的接入协议：
 
 两个协议共享同一套 Server 逻辑、同一套权限规则、同一套评分流水线。
 
-#### 2.1.2 会话状态机
+#### 3.1.2 会话状态机
 
 Server 通过 4 阶段状态机严格管控会话生命周期：
 
@@ -75,7 +105,7 @@ UNREGISTERED ──register_session()──→ REGISTERED ──start_session()�
 | **IN_SESSION** | send_message, get_background, domain tools | register, start, evaluate |
 | **COMPLETED** | request_evaluation, get_results, get_scores | register, start, send, tools |
 
-#### 2.1.3 Session Background（环境背景）
+#### 3.1.3 Session Background（环境背景）
 
 Server 在 `start_session` 时**强制返回**一份环境背景描述（`background` 字段），内容根据任务环境动态生成。同时提供 `get_background` 工具供 Agent 在对话中随时重读。
 
@@ -94,7 +124,7 @@ Server 在 `start_session` 时**强制返回**一份环境背景描述（`backgr
 
 Background **不包含**：任务类别、学生水平、回测预算数字、行为指导、评分标准。Agent 需要通过 `get_environment_info` 和对话来发现这些细节。
 
-#### 2.1.4 工具管理与执行
+#### 3.1.4 工具管理与执行
 
 **工具分类**：
 - **Core tools**：任务必需的领域工具（shell_exec, file_read, run_lean_backtest 等）
@@ -111,14 +141,14 @@ Agent tool call → MCPProxy（日志+截断12K） → ContainerManager → tool
 
 **安全限制**：per-turn 步数限制、deadline enforcement、cancel event、结果截断
 
-#### 2.1.5 学生模拟器
+#### 3.1.5 学生模拟器
 
 - Prompt 模板与 DeepEval ConversationSimulator **逐字对齐**，确保与 Legacy 行为一致
-- 支持 3 个 persona 级别（beginner / intermediate / advanced）
+- 当前支持 3 个 persona 级别（beginner / intermediate / advanced）；人格体系正在重构为 {Finance, Code} × {听说未实践, 精通} 四象限矩阵（[Issue #12](https://github.com/varsity-tech-product/benchmark/issues/12)）
 - 多层 fallback：结构化 JSON 输出 → 纯文本 + JSON 提取 → 硬编码兜底
 - 独立成本追踪
 
-#### 2.1.6 评分流水线（独立运行）
+#### 3.1.6 评分流水线（独立运行）
 
 新架构的评分流水线完全独立于 orchestrator，可以异步触发：
 
@@ -143,7 +173,7 @@ evaluate_task(run_state)
 
 **去 DeepEval 化**：Server 的评分引擎（`server/eval/ewan_eval/`）不依赖 DeepEval 类，使用 `EwanLLMClient` 通过 OpenRouter 调用 LLM API（已删除 OAuth 路径）。
 
-#### 2.1.7 Web UI
+#### 3.1.7 Web UI
 
 Server 内嵌 Web UI（`/ui/*`），提供：
 - 已完成会话的浏览和索引
@@ -151,18 +181,18 @@ Server 内嵌 Web UI（`/ui/*`），提供：
 - Client trace 的 best-effort 加载：若 `results/client/{session_id}/client_trace.json` 存在则合并展示（thinking blocks 等），不存在则纯展示 Server 侧对话
 - 评分结果查看
 
-#### 2.1.8 会话清理
+#### 3.1.8 会话清理
 
 后台 sweeper 任务定期检查空闲会话：
 - UNREGISTERED/REGISTERED：5 分钟空闲后清理
 - COMPLETED：1 小时后清理
 - 含 Docker 容器的销毁和临时工作区清理
 
-### 2.2 Client：Baseline Runner
+### 3.2 Client：Baseline Runner
 
 Client 是一个轻量级的 baseline 运行器。通过 `python -m client --server http://localhost:8000/mcp --task X01` 启动。
 
-#### 2.2.1 核心架构
+#### 3.2.1 核心架构
 
 Client 只做 session setup，整个教学对话由 Anthropic BetaToolRunner 在单次调用中自主完成：
 
@@ -178,7 +208,7 @@ Runner: connect → register → start_session（获取 background）→ list_to
 
 **没有外层对话循环**。Agent 通过 `send_message` 工具自主控制对话节奏，BetaToolRunner 管理完整的 tool-use loop。
 
-#### 2.2.2 Adapter
+#### 3.2.2 Adapter
 
 | 模式 | 实现 | 说明 |
 |------|------|------|
@@ -187,15 +217,15 @@ Runner: connect → register → start_session（获取 background）→ list_to
 
 支持 OpenRouter 代理转发、Extended Thinking (COT)。SDK 内置的 compaction（40K token 阈值）和 context management（保留最近 6 个 tool_use、1 个 thinking turn）由 SDK 原生管理。
 
-#### 2.2.3 产出物
+#### 3.2.3 产出物
 
 `client_trace.json` / `client_trace.md`：完整的 agent 行为记录（thinking blocks、content blocks、tool calls、agent cost）
 
-#### 2.2.4 并发支持
+#### 3.2.4 并发支持
 
 `--workers N` 参数支持多任务并行，使用 semaphore 控制并发数。默认 `--agent-max-steps 200`（单次 BetaToolRunner 的 iteration 上限）。
 
-### 2.3 Spec：用户文档
+### 3.3 Spec：用户文档
 
 | 文档 | 内容 |
 |------|------|
@@ -204,9 +234,9 @@ Runner: connect → register → start_session（获取 background）→ list_to
 
 ---
 
-## 三、新旧架构对比
+## 四、新旧架构对比
 
-### 3.1 架构层面
+### 4.1 架构层面
 
 | 维度 | Legacy Harness | 新架构（Server + Client） |
 |------|---------------|--------------------------|
@@ -222,7 +252,7 @@ Runner: connect → register → start_session（获取 background）→ list_to
 | **DeepEval 依赖** | 深度依赖 | 完全去依赖（ewan_eval，OpenRouter） |
 | **结果存储** | `results/{task_id}/{timestamp}/` | `results/server/{task_id}/{persona_id}/{timestamp}_{session_id}/` |
 
-### 3.2 执行流程对比
+### 4.2 执行流程对比
 
 **Legacy（5 Phase）**：
 ```
@@ -249,7 +279,7 @@ Client 侧:
   → 保存 client_trace.json
 ```
 
-### 3.3 依赖隔离
+### 4.3 依赖隔离
 
 ```
 server/  只 import → server/ 内部 + scripts/data_manager + 外部库
@@ -263,9 +293,9 @@ client/  只 import → client/ 内部 + 外部库
 
 ---
 
-## 四、已完成的工作
+## 五、已完成的工作
 
-### 4.1 Server 核心功能
+### 5.1 Server 核心功能
 
 | 模块 | 状态 | 说明 |
 |------|------|------|
@@ -285,7 +315,7 @@ client/  只 import → client/ 内部 + 外部库
 | `server/storage/` | ✅ | run_state.json + eval_meta.json |
 | `server/web/` | ✅ | Web UI 回放，client trace best-effort 合并 |
 
-### 4.2 Client 核心功能
+### 5.2 Client 核心功能
 
 | 模块 | 状态 | 说明 |
 |------|------|------|
@@ -296,7 +326,7 @@ client/  只 import → client/ 内部 + 外部库
 | `client/cost_tracker.py` | ✅ | Token 计费 |
 | `client/trace_writer.py` | ✅ | 客户端 trace 输出 |
 
-### 4.3 Spec 文档
+### 5.3 Spec 文档
 
 | 文档 | 状态 | 说明 |
 |------|------|------|
@@ -305,9 +335,9 @@ client/  只 import → client/ 内部 + 外部库
 
 ---
 
-## 五、待验证与残留问题
+## 六、待验证与残留问题
 
-### 5.1 核心验证项
+### 6.1 核心验证项
 
 | 项目 | 优先级 | 状态 | 说明 |
 |------|--------|------|------|
@@ -316,7 +346,7 @@ client/  只 import → client/ 内部 + 外部库
 | **新旧评分一致性** | P0 | 🔴 未开始 | ewan_eval（OpenRouter）与 Legacy eval（DeepEval）在同一对话上的评分是否一致 |
 | **全量任务覆盖** | P0 | 🔴 未开始 | 65 个任务在 Server 路径下是否都能正常运行和评分 |
 
-### 5.2 工程收尾
+### 6.2 工程收尾
 
 | 项目 | 优先级 | 说明 |
 |------|--------|------|
@@ -326,9 +356,9 @@ client/  只 import → client/ 内部 + 外部库
 
 ---
 
-## 六、评分体系同步改进
+## 七、评分体系同步改进
 
-### 6.1 评分公式与权重调整
+### 7.1 评分公式与权重调整
 
 **Implementation 类任务权重重平衡**：behavioral_score 0.60→0.45，code_patterns 0.05→0.10-0.15。
 
@@ -336,29 +366,29 @@ client/  只 import → client/ 内部 + 外部库
 
 **Result judge 新增准则**：Guideline 5 "CODE MUST BE EXECUTED TO COUNT"。
 
-### 6.2 Tutor 评分优化
+### 7.2 Tutor 评分优化
 
 **Phase 1 缓存**：ConversationalGEval 的 evaluation steps 按 (model, dim) 缓存，节省 `(num_judge_runs - 1) × dims` 次 LLM 调用。
 
 **Per-run raw scores 追踪**：记录每次 shuffled run 的原始分数。
 
-### 6.3 TC 扩展
+### 7.3 TC 扩展
 
 增量 TC 检查类别从 `{strategy, backtest, implementation}` 扩展到包含 `debug` 和 `data_analysis`。
 
-### 6.4 消融实验
+### 7.4 消融实验
 
 Tutor 评分粒度消融：D1-D7 clamp 到 5 档后 Cohen's d 从 1.745 变为 1.816（+4.1%），证明区分度来源于真实能力差距。
 
 ---
 
-## 七、总结
+## 八、总结
 
-### 7.1 当前状态
+### 8.1 当前状态
 
 > **新架构核心功能和基础设施已全部实现。Server 工程稳定性已通过多轮实际执行确认。当前阶段的核心工作是验证：在 Server 仅提供环境事实（不提供行为指导）的设计下，Agent 能否通过协议传达的约束正确完成任务。**
 
-### 7.2 关键里程碑
+### 8.2 关键里程碑
 
 ```
 ✅ 已完成:
@@ -374,9 +404,3 @@ Tutor 评分粒度消融：D1-D7 clamp 到 5 档后 Cohen's d 从 1.745 变为 1
    新旧评分引擎一致性
    65 任务全量覆盖
 ```
-
-### 7.3 设计原则确认
-
-在多轮调查中确立了一个重要设计原则：
-
-> **Server 提供环境事实，不提供行为指导。** 如果 Agent 在收到环境背景后仍然不探索环境、不使用回测工具、不回复学生，这是 Agent（Client）的能力问题——这正是 benchmark 要测量的。Server 不应通过更积极的引导来弥补 Agent 的能力缺陷，否则会泄漏评分标准、降低 benchmark 的区分度。

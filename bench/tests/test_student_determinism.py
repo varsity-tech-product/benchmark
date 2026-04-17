@@ -38,7 +38,7 @@ def _find_run_states():
     return list(selected.values())
 
 
-def test_determinism(task_name, state_path, n_repeats=5, truncate_after_turn=2):
+def check_determinism(task_name, state_path, n_repeats=5, truncate_after_turn=2):
     """Fixed conversation history → generate next student message N times."""
     from config.llm_config import SIMULATOR_DEFAULT_MODEL
     from config.model_resolver import resolve_deepeval_model
@@ -167,7 +167,7 @@ if __name__ == "__main__":
     results = []
     for task_name, state_path in run_states:
         print(f"\n--- Testing: {task_name} ---")
-        result = test_determinism(
+        result = check_determinism(
             task_name, state_path, n_repeats=5, truncate_after_turn=2
         )
         if result is not None:

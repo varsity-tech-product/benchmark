@@ -1,0 +1,1907 @@
+(function () {
+  'use strict';
+
+  var app = document.getElementById('app');
+  if (!app) return;
+
+  var state = {
+    results: null,
+    tasksPayload: null,
+    detailCache: {},
+    workspaceIndexCache: {},
+    workspacePreviewCache: {},
+    activeSessionId: null,
+    run: {
+      mode: '',
+      taskId: '',
+      personaId: 'auto',
+      sessionId: null,
+      phase: 'idle',
+      action: 'idle',
+      background: '',
+      messages: [],
+      tools: [],
+      toolEvents: [],
+      error: '',
+      busy: false,
+      agentMaxSteps: 200,
+      startedAt: null,
+      completedAt: null
+    },
+    filters: {
+      category: 'all',
+      evalStatus: 'all',
+      model: 'all',
+      search: ''
+    }
+  };
+
+  function escapeHtml(value) {
+    return String(value == null ? '' : value)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  function safeRenderMarkdown(markdown) {
+    if (!markdown) return '<p>No report available.</p>';
+    if (window.QTB && typeof window.QTB.renderMarkdown === 'function') {
+      return window.QTB.renderMarkdown(markdown);
+    }
+    return '<pre>' + escapeHtml(markdown) + '</pre>';
+  }
+
+  function api(path) {
+    return fetch('/ui' + path).then(function (response) {
+      if (!response.ok) {
+        return response.text().then(function (text) {
+          throw new Error(text || ('HTTP ' + response.status));
+        });
+      }
+      return response.json();
+    });
+  }
+
+  function restApi(path, options) {
+    options = options || {};
+    options.headers = Object.assign(
+      {'Content-Type': 'application/json'},
+      options.headers || {}
+    );
+    return fetch(path, options).then(function (response) {
+      return response.text().then(function (text) {
+        var payload = {};
+        if (text) {
+          try {
+            payload = JSON.parse(text);
+          } catch (error) {
+            payload = {raw: text};
+          }
+        }
+        if (!response.ok) {
+          var message = payload.error || payload.raw || ('HTTP ' + response.status);
+          throw new Error(message);
+        }
+        return payload;
+      });
+    });
+  }
+
+  function formatDuration(value) {
+    if (typeof value !== 'number' || !isFinite(value) || value <= 0) return '0s';
+    if (value >= 3600) return (value / 3600).toFixed(1) + 'h';
+    if (value >= 60) return (value / 60).toFixed(1) + 'm';
+    return Math.round(value) + 's';
+  }
+
+  function formatTimestamp(value) {
+    if (!value) return 'Unknown time';
+    var date = new Date(value);
+    if (isNaN(date.getTime())) return String(value);
+    return date.toLocaleString();
+  }
+
+  function formatScore(value) {
+    if (typeof value !== 'number' || !isFinite(value)) return '—';
+    return value.toFixed(2);
+  }
+
+  function formatBytes(value) {
+    if (typeof value !== 'number' || !isFinite(value) || value < 0) return '—';
+    if (value >= 1024 * 1024 * 1024) return (value / (1024 * 1024 * 1024)).toFixed(1) + ' GB';
+    if (value >= 1024 * 1024) return (value / (1024 * 1024)).toFixed(1) + ' MB';
+    if (value >= 1024) return (value / 1024).toFixed(1) + ' KB';
+    return value + ' B';
+  }
+
+  function formatInteger(value) {
+    if (typeof value !== 'number' || !isFinite(value)) return '—';
+    return Math.round(value).toLocaleString();
+  }
+
+  function formatCost(value) {
+    if (typeof value !== 'number' || !isFinite(value)) return '—';
+    return '$' + value.toFixed(4);
+  }
+
+  function titleCase(value) {
+    return String(value || '')
+      .split(/[_\s-]+/)
+      .filter(Boolean)
+      .map(function (part) {
+        return part.charAt(0).toUpperCase() + part.slice(1);
+      })
+      .join(' ');
+  }
+
+  function sortedUnique(values) {
+    var map = {};
+    values.forEach(function (value) {
+      if (value == null || value === '') return;
+      map[String(value)] = true;
+    });
+    return Object.keys(map).sort();
+  }
+
+  function routeFromHash() {
+    var hash = location.hash.slice(1);
+    return hash || '/results';
+  }
+
+  function setAppDetailMode(enabled) {
+    if (enabled) app.classList.add('app-detail');
+    else app.classList.remove('app-detail');
+  }
+
+  function setActiveNav(route) {
+    var current;
+    if (route.indexOf('/tasks') === 0) current = 'tasks';
+    else if (route === '/runs') current = 'runs';
+    else if (route.indexOf('/run') === 0) current = 'run';
+    else current = 'results';
+    var links = document.querySelectorAll('.nav-link');
+    Array.prototype.forEach.call(links, function (link) {
+      if (link.getAttribute('data-route') === current) link.classList.add('active');
+      else link.classList.remove('active');
+    });
+  }
+
+  function renderLoading(title, description) {
+    app.innerHTML =
+      '<section class="loading-state">' +
+        '<p class="eyebrow">Loading</p>' +
+        '<h1>' + escapeHtml(title) + '</h1>' +
+        '<p>' + escapeHtml(description) + '</p>' +
+      '</section>';
+  }
+
+  function renderError(title, error) {
+    app.innerHTML =
+      '<section class="error-state">' +
+        '<p class="eyebrow">Error</p>' +
+        '<h1>' + escapeHtml(title) + '</h1>' +
+        '<p><strong>Unable to load data.</strong></p>' +
+        '<p>' + escapeHtml(error && error.message ? error.message : String(error || 'Unknown error')) + '</p>' +
+      '</section>';
+  }
+
+  function ensureResults() {
+    if (state.results) return Promise.resolve(state.results);
+    return api('/results').then(function (payload) {
+      state.results = payload.results || [];
+      return state.results;
+    });
+  }
+
+  function ensureTasks() {
+    if (state.tasksPayload) return Promise.resolve(state.tasksPayload);
+    return api('/tasks').then(function (payload) {
+      state.tasksPayload = payload;
+      return payload;
+    });
+  }
+
+  function ensureDetail(sessionId) {
+    if (state.detailCache[sessionId]) return Promise.resolve(state.detailCache[sessionId]);
+    return api('/results/' + encodeURIComponent(sessionId)).then(function (payload) {
+      state.detailCache[sessionId] = payload;
+      return payload;
+    });
+  }
+
+  function ensureWorkspaceIndex(sessionId) {
+    if (state.workspaceIndexCache[sessionId]) return Promise.resolve(state.workspaceIndexCache[sessionId]);
+    return api('/results/' + encodeURIComponent(sessionId) + '/workspace').then(function (payload) {
+      state.workspaceIndexCache[sessionId] = payload;
+      return payload;
+    });
+  }
+
+  function ensureWorkspacePreview(sessionId, relativePath) {
+    var cacheKey = sessionId + '::' + relativePath;
+    if (state.workspacePreviewCache[cacheKey]) return Promise.resolve(state.workspacePreviewCache[cacheKey]);
+    return api(
+      '/results/' + encodeURIComponent(sessionId) + '/workspace/preview/' +
+      encodePathPreservingSlashes(relativePath)
+    ).then(function (payload) {
+      state.workspacePreviewCache[cacheKey] = payload;
+      return payload;
+    });
+  }
+
+  function closeModal() {
+    var el = document.getElementById('qtb-modal');
+    if (el) el.remove();
+    document.removeEventListener('keydown', modalEscHandler);
+  }
+
+  function modalEscHandler(event) {
+    if (event.key === 'Escape') closeModal();
+  }
+
+  function showModal(title, htmlContent, options) {
+    options = options || {};
+    closeModal();
+    var overlay = document.createElement('div');
+    overlay.className = 'modal-overlay' + (options.overlayClass ? ' ' + options.overlayClass : '');
+    overlay.id = 'qtb-modal';
+    overlay.innerHTML =
+      '<div class="modal-content' + (options.contentClass ? ' ' + options.contentClass : '') + '">' +
+        '<div class="modal-header' + (options.headerClass ? ' ' + options.headerClass : '') + '">' +
+          '<span class="modal-title">' + escapeHtml(title) + '</span>' +
+          '<button class="modal-close" id="modal-close-btn" aria-label="Close dialog">&times;</button>' +
+        '</div>' +
+        '<div class="modal-body' + (options.bodyClass ? ' ' + options.bodyClass : '') + '">' + htmlContent + '</div>' +
+      '</div>';
+    overlay.addEventListener('click', function (event) {
+      if (event.target === overlay) closeModal();
+    });
+    document.body.appendChild(overlay);
+    var closeBtn = document.getElementById('modal-close-btn');
+    if (closeBtn) closeBtn.addEventListener('click', closeModal);
+    document.addEventListener('keydown', modalEscHandler);
+    if (state.activeSessionId) rewriteImages(overlay, state.activeSessionId);
+  }
+
+  window._qtbShowModal = showModal;
+
+  function buildSummaryPill(label, value) {
+    return '<span class="summary-pill"><strong>' + escapeHtml(label) + '</strong> ' + escapeHtml(value) + '</span>';
+  }
+
+  function filteredResults(results) {
+    return results.filter(function (item) {
+      if (state.filters.category !== 'all' && item.category !== state.filters.category) return false;
+      if (state.filters.evalStatus !== 'all' && item.evaluation_status !== state.filters.evalStatus) return false;
+      if (state.filters.model !== 'all' && (item.model || '') !== state.filters.model) return false;
+      if (state.filters.search) {
+        var haystack = [item.task_id, item.session_id, item.persona_id, item.model || '']
+          .join(' ')
+          .toLowerCase();
+        if (haystack.indexOf(state.filters.search) === -1) return false;
+      }
+      return true;
+    });
+  }
+
+  function renderResultsList(results) {
+    var categories = sortedUnique(results.map(function (item) { return item.category; }));
+    var statuses = sortedUnique(results.map(function (item) { return item.evaluation_status; }));
+    var models = sortedUnique(results.map(function (item) { return item.model; }).filter(Boolean));
+    var visible = filteredResults(results);
+
+    app.innerHTML =
+      '<section class="page">' +
+        '<header class="page-header">' +
+          '<div class="page-title-wrap">' +
+            '<p class="eyebrow">Results</p>' +
+            '<h1>Archived sessions, rebuilt around the new session model.</h1>' +
+            '<p class="subtitle">This view reads from the isolated <code>bench/server/web/</code> stack, not the legacy <code>bench/web/</code> app.</p>' +
+          '</div>' +
+          '<div class="summary-strip">' +
+            buildSummaryPill('Sessions', String(results.length)) +
+            buildSummaryPill('Client traces', String(results.filter(function (item) { return item.has_client_trace; }).length)) +
+            buildSummaryPill('Models', String(models.length || 0)) +
+          '</div>' +
+        '</header>' +
+        buildFilterBar(categories, statuses, models) +
+        '<div class="results-meta">' +
+          '<div class="results-count">' + escapeHtml(String(visible.length)) + ' result(s) shown</div>' +
+        '</div>' +
+        (visible.length ? '<div class="results-grid">' + visible.map(renderResultCard).join('') + '</div>' : renderEmptyInline('No sessions match the current filters.')) +
+      '</section>';
+
+    bindResultsFilters();
+    setFilterControlValues();
+  }
+
+  function buildFilterBar(categories, statuses, models) {
+    return '' +
+      '<section class="panel filter-bar">' +
+        buildSelectField('Category', 'filter-category', categories, state.filters.category) +
+        buildSelectField('Eval Status', 'filter-eval-status', statuses, state.filters.evalStatus) +
+        buildSelectField('Model', 'filter-model', models, state.filters.model) +
+        '<label class="filter-field">' +
+          '<span class="filter-label">Search</span>' +
+          '<input id="filter-search" class="filter-input" type="search" placeholder="task_id, session_id, persona..." value="' + escapeHtml(state.filters.search) + '">' +
+        '</label>' +
+      '</section>';
+  }
+
+  function buildSelectField(label, id, values, selected) {
+    var options = ['<option value="all">All</option>'].concat(values.map(function (value) {
+      var isSelected = value === selected ? ' selected' : '';
+      return '<option value="' + escapeHtml(value) + '"' + isSelected + '>' + escapeHtml(titleCase(value)) + '</option>';
+    }));
+
+    return '' +
+      '<label class="filter-field">' +
+        '<span class="filter-label">' + escapeHtml(label) + '</span>' +
+        '<select id="' + escapeHtml(id) + '" class="filter-select">' + options.join('') + '</select>' +
+      '</label>';
+  }
+
+  function renderResultCard(item) {
+    var scoreChip = item.overall_score == null
+      ? '<span class="meta-chip unknown-chip">OAS —</span>'
+      : '<span class="meta-chip score-chip">OAS ' + escapeHtml(formatScore(item.overall_score)) + '</span>';
+    var model = item.model || 'Unknown';
+
+    return '' +
+      '<a class="session-card" href="#/results/' + encodeURIComponent(item.session_id) + '">' +
+        '<div class="session-top">' +
+          '<div>' +
+            '<h2 class="session-title">' +
+              '<span>' + escapeHtml(item.task_id) + '</span>' +
+              '<span class="badge">' + escapeHtml(titleCase(item.category)) + '</span>' +
+              '<span class="badge">' + escapeHtml(titleCase(item.difficulty)) + '</span>' +
+            '</h2>' +
+            '<p class="session-subtitle">' +
+              'Persona <code>' + escapeHtml(item.persona_id) + '</code> · Model <code>' + escapeHtml(model) + '</code> · ' + escapeHtml(formatTimestamp(item.timestamp)) +
+            '</p>' +
+          '</div>' +
+          '<span class="status-pill ' + escapeHtml(item.evaluation_status) + '">' + escapeHtml(titleCase(item.evaluation_status)) + '</span>' +
+        '</div>' +
+        '<div class="session-meta-row">' +
+          '<span class="meta-chip">' + escapeHtml(item.turn_count + ' turns') + '</span>' +
+          '<span class="meta-chip">' + escapeHtml(item.tool_count + ' tools') + '</span>' +
+          '<span class="meta-chip">' + escapeHtml(item.step_count + ' steps') + '</span>' +
+          '<span class="meta-chip">' + escapeHtml(formatDuration(item.duration_seconds)) + '</span>' +
+          '<span class="meta-chip">' + escapeHtml(item.has_content_blocks ? 'content blocks' : 'plain replay') + '</span>' +
+          scoreChip +
+        '</div>' +
+      '</a>';
+  }
+
+  function bindResultsFilters() {
+    bindFilter('filter-category', 'category');
+    bindFilter('filter-eval-status', 'evalStatus');
+    bindFilter('filter-model', 'model');
+
+    var searchInput = document.getElementById('filter-search');
+    if (searchInput) {
+      searchInput.addEventListener('input', function (event) {
+        state.filters.search = String(event.target.value || '').trim().toLowerCase();
+        showResultsList();
+      });
+    }
+  }
+
+  function bindFilter(id, key) {
+    var el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener('change', function (event) {
+      state.filters[key] = event.target.value || 'all';
+      showResultsList();
+    });
+  }
+
+  function setFilterControlValues() {
+    var category = document.getElementById('filter-category');
+    var evalStatus = document.getElementById('filter-eval-status');
+    var model = document.getElementById('filter-model');
+    var search = document.getElementById('filter-search');
+    if (category) category.value = state.filters.category;
+    if (evalStatus) evalStatus.value = state.filters.evalStatus;
+    if (model) model.value = state.filters.model;
+    if (search) search.value = state.filters.search;
+  }
+
+  function renderTasksPage(payload) {
+    var tasks = payload.tasks || [];
+    var grouped = {};
+
+    tasks.forEach(function (task) {
+      var category = task.category || 'unknown';
+      if (!grouped[category]) grouped[category] = [];
+      grouped[category].push(task);
+    });
+
+    var categories = Object.keys(grouped).sort();
+    var groupsHtml = categories.map(function (category) {
+      var items = grouped[category];
+      return '' +
+        '<section class="tasks-group">' +
+          '<header class="tasks-group-header">' +
+            '<h2 class="tasks-group-title">' + escapeHtml(titleCase(category)) + '</h2>' +
+            '<span class="summary-pill"><strong>Tasks</strong> ' + escapeHtml(String(items.length)) + '</span>' +
+          '</header>' +
+          '<div class="tasks-grid">' + items.map(renderTaskCard).join('') + '</div>' +
+        '</section>';
+    }).join('');
+
+    app.innerHTML =
+      '<section class="page">' +
+        '<header class="page-header">' +
+          '<div class="page-title-wrap">' +
+            '<p class="eyebrow">Tasks</p>' +
+            '<h1>Task inventory for the new session-centric UI.</h1>' +
+            '<p class="subtitle">Grouped by benchmark category and served from the new isolated API layer.</p>' +
+          '</div>' +
+          '<div class="summary-strip">' +
+            buildSummaryPill('Tasks', String(tasks.length)) +
+            buildSummaryPill('Personas', String((payload.personas || []).length)) +
+            buildSummaryPill('Categories', String(categories.length)) +
+          '</div>' +
+        '</header>' +
+        groupsHtml +
+      '</section>';
+  }
+
+  function renderTaskCard(task) {
+    var personaCount = (task.persona_ids || []).length;
+    var requiresCode = task.requires_code ? 'Requires code' : 'No code required';
+
+    return '' +
+      '<article class="task-card">' +
+        '<h3>' + escapeHtml(task.task_id) + '</h3>' +
+        '<div class="task-meta-row">' +
+          '<span class="badge">' + escapeHtml(titleCase(task.difficulty || 'unknown')) + '</span>' +
+          '<span class="meta-chip">' + escapeHtml((task.max_turns || 0) + ' max turns') + '</span>' +
+          '<span class="meta-chip">' + escapeHtml(personaCount + ' persona' + (personaCount === 1 ? '' : 's')) + '</span>' +
+        '</div>' +
+        '<p class="task-description">' + escapeHtml(task.description || 'No description available.') + '</p>' +
+        '<div class="task-meta-row">' +
+          '<span class="meta-chip">' + escapeHtml(requiresCode) + '</span>' +
+        '</div>' +
+      '</article>';
+  }
+
+  function getRunTask(tasks) {
+    if (!tasks || !tasks.length) return null;
+    var taskId = state.run.taskId || tasks[0].task_id;
+    for (var index = 0; index < tasks.length; index += 1) {
+      if (tasks[index].task_id === taskId) return tasks[index];
+    }
+    return tasks[0];
+  }
+
+  function personasForTask(task, personas) {
+    var allowed = task && task.persona_ids ? task.persona_ids : [];
+    if (!allowed.length) return personas || [];
+    return (personas || []).filter(function (persona) {
+      return allowed.indexOf(persona.persona_id) !== -1;
+    });
+  }
+
+  function publicTaskLabel(taskId) {
+    var value = String(taskId || '').trim();
+    var match = value.match(/^[A-Za-z]\d{2}/);
+    return match ? match[0].toUpperCase() : (value || 'Task');
+  }
+
+  function runIsBusy() {
+    return !!state.run.busy || !!(state.run.action && state.run.action !== 'idle');
+  }
+
+  function runCanSend() {
+    return state.run.mode === 'human' &&
+      state.run.sessionId &&
+      state.run.phase === 'in_session' &&
+      !runIsBusy();
+  }
+
+  function runStatusLabel() {
+    if (state.run.action && state.run.action !== 'idle') return titleCase(state.run.action);
+    if (!state.run.mode) return 'Choose Mode';
+    if (!state.run.sessionId) return 'Not Started';
+    return titleCase(state.run.phase || 'unknown');
+  }
+
+  function runModeLabel() {
+    if (state.run.mode === 'agent') return 'Agent Test';
+    if (state.run.mode === 'human') return 'Human Test';
+    return 'Unselected';
+  }
+
+  function setRunAction(action) {
+    state.run.action = action || 'idle';
+    state.run.busy = state.run.action !== 'idle';
+  }
+
+  function addRunToolEvent(name, status, detail) {
+    state.run.toolEvents = state.run.toolEvents || [];
+    state.run.toolEvents.push({
+      name: name,
+      status: status || 'ok',
+      detail: detail || '',
+      timestamp: new Date().toISOString()
+    });
+    if (state.run.toolEvents.length > 20) {
+      state.run.toolEvents = state.run.toolEvents.slice(state.run.toolEvents.length - 20);
+    }
+  }
+
+  function renderRunMessage(message) {
+    var role = message.role === 'tutor' ? 'tutor' : 'student';
+    var label = role === 'tutor' ? 'Tutor' : 'Student';
+    var body = window.QTB && typeof window.QTB.renderMarkdown === 'function'
+      ? window.QTB.renderMarkdown(message.content || '')
+      : '<pre>' + escapeHtml(message.content || '') + '</pre>';
+    var attachments = message.attachments && message.attachments.length
+      ? '<div class="run-message-attachments">' + message.attachments.map(function (item) {
+        return '<span class="meta-chip">' + escapeHtml(item) + '</span>';
+      }).join('') + '</div>'
+      : '';
+
+    return '' +
+      '<article class="run-message ' + role + '">' +
+        '<div class="run-message-label">' + escapeHtml(label) + '</div>' +
+        '<div class="run-message-bubble">' + body + attachments + '</div>' +
+      '</article>';
+  }
+
+  function renderRunTools() {
+    if (!state.run.tools || !state.run.tools.length) {
+      return '<p class="detail-empty-note">Visible tools will appear after the session starts.</p>';
+    }
+    return '<div class="run-tool-list">' + state.run.tools.map(function (tool) {
+      var isProtocol = tool.name === 'send_message' || tool.name === 'get_background';
+      return '' +
+        '<div class="run-tool-chip ' + (isProtocol ? 'protocol' : 'domain') + '">' +
+          '<span>' + escapeHtml(tool.name || 'unknown') + '</span>' +
+          '<small>' + escapeHtml(isProtocol ? 'protocol' : 'domain') + '</small>' +
+        '</div>';
+    }).join('') + '</div>';
+  }
+
+  function renderRunToolEvents() {
+    var events = state.run.toolEvents || [];
+    if (!events.length) {
+      return '<p class="detail-empty-note">Live tool activity will appear here while this browser-driven session runs.</p>';
+    }
+    return '<div class="run-event-list">' + events.slice().reverse().map(function (event) {
+      return '' +
+        '<article class="run-event ' + escapeHtml(event.status || 'ok') + '">' +
+          '<div class="run-event-head">' +
+            '<strong>' + escapeHtml(event.name || 'event') + '</strong>' +
+            '<span>' + escapeHtml(formatTimestamp(event.timestamp)) + '</span>' +
+          '</div>' +
+          (event.detail ? '<p>' + escapeHtml(event.detail) + '</p>' : '') +
+        '</article>';
+    }).join('') + '</div>';
+  }
+
+  // ── Run list / history page ──
+
+  var runsState = {
+    runs: null,
+    statusFilter: 'all'
+  };
+
+  function ensureRuns(force) {
+    if (runsState.runs && !force) return Promise.resolve(runsState.runs);
+    return fetch('/ui/runs').then(function (r) { return r.json(); })
+      .then(function (data) {
+        runsState.runs = data.runs || [];
+        return runsState.runs;
+      });
+  }
+
+  function filteredRuns(runs) {
+    if (runsState.statusFilter === 'all') return runs;
+    return runs.filter(function (r) { return r.status === runsState.statusFilter; });
+  }
+
+  function renderRunCard(run) {
+    var statusLabels = {
+      waiting: '● Waiting',
+      claimed: '● Claimed',
+      active: '● Active',
+      completed: '✓ Completed',
+      failed: '✗ Failed',
+      cancelled: '— Cancelled'
+    };
+    var label = run.public_task_label || '—';
+    var statusText = statusLabels[run.status] || run.status;
+    var isTerminal = run.status === 'completed' || run.status === 'failed' || run.status === 'cancelled';
+    var href;
+    if (run.status === 'completed' && run.session_id) {
+      href = '#/results/' + encodeURIComponent(run.session_id);
+    } else if (!isTerminal) {
+      href = '#/run';
+    } else {
+      href = 'javascript:void(0)';
+    }
+
+    return '' +
+      '<a class="run-card" href="' + href + '">' +
+        '<div class="run-card-top">' +
+          '<span class="run-card-label">' + escapeHtml(label) + '</span>' +
+          '<span class="summary-pill run-status-' + escapeHtml(run.status) + '">' + escapeHtml(statusText) + '</span>' +
+        '</div>' +
+        '<div class="run-card-mode">' + escapeHtml(run.mode || 'agent') + '</div>' +
+        '<div class="run-card-meta">' +
+          (run.persona_id ? '<span class="meta-chip">' + escapeHtml(run.persona_id) + '</span>' : '') +
+          (run.eval_status && run.eval_status !== 'pending' ? '<span class="meta-chip">Eval: ' + escapeHtml(run.eval_status) + '</span>' : '') +
+        '</div>' +
+        '<div class="run-card-time">' +
+          escapeHtml(formatTimestamp(run.created_at)) +
+          (run.completed_at ? ' → ' + escapeHtml(formatTimestamp(run.completed_at)) : '') +
+        '</div>' +
+      '</a>';
+  }
+
+  function renderRunsListPage(runs) {
+    var statuses = sortedUnique(runs.map(function (r) { return r.status; }));
+    var visible = filteredRuns(runs);
+
+    var statusOptions = ['<option value="all">All</option>'].concat(statuses.map(function (s) {
+      var sel = s === runsState.statusFilter ? ' selected' : '';
+      return '<option value="' + escapeHtml(s) + '"' + sel + '>' + escapeHtml(titleCase(s)) + '</option>';
+    }));
+
+    app.innerHTML =
+      '<section class="page">' +
+        '<header class="page-header">' +
+          '<div class="page-title-wrap">' +
+            '<p class="eyebrow">Runs</p>' +
+            '<h1>Run history and active sessions.</h1>' +
+            '<p class="subtitle">All runs created through the Run layer, with real-time status tracking.</p>' +
+          '</div>' +
+          '<div class="summary-strip">' +
+            buildSummaryPill('Total', String(runs.length)) +
+            buildSummaryPill('Active', String(runs.filter(function (r) { return r.status === 'active'; }).length)) +
+            buildSummaryPill('Completed', String(runs.filter(function (r) { return r.status === 'completed'; }).length)) +
+          '</div>' +
+        '</header>' +
+        '<section class="panel filter-bar">' +
+          '<label class="filter-field">' +
+            '<span class="filter-label">Status</span>' +
+            '<select id="runs-status-filter" class="filter-select">' + statusOptions.join('') + '</select>' +
+          '</label>' +
+        '</section>' +
+        '<div class="results-meta">' +
+          '<div class="results-count">' + escapeHtml(String(visible.length)) + ' run(s) shown</div>' +
+        '</div>' +
+        (visible.length
+          ? '<div class="runs-grid">' + visible.map(renderRunCard).join('') + '</div>'
+          : renderEmptyInline('No runs match the current filter.')) +
+      '</section>';
+
+    var filterEl = document.getElementById('runs-status-filter');
+    if (filterEl) {
+      filterEl.addEventListener('change', function (e) {
+        runsState.statusFilter = e.target.value || 'all';
+        renderRunsListPage(runs);
+      });
+    }
+  }
+
+  function showRuns() {
+    state.activeSessionId = null;
+    setAppDetailMode(false);
+    renderLoading('Loading runs', 'Fetching run history from the /ui/runs endpoint.');
+    ensureRuns(true).then(renderRunsListPage).catch(function (error) {
+      renderError('Runs unavailable', error);
+    });
+  }
+
+  function renderRunPage(payload) {
+    var tasks = payload.tasks || [];
+    var selectedTask = getRunTask(tasks);
+    if (selectedTask && !state.run.taskId) state.run.taskId = selectedTask.task_id;
+
+    if (!state.run.mode) {
+      renderRunModePicker(payload);
+      return;
+    }
+
+    if (state.run.mode === 'agent') {
+      if (window.QTB && typeof window.QTB.renderMyAgentPage === 'function') {
+        window.QTB.renderMyAgentPage(app, state, payload);
+      } else {
+        renderAgentRunPage(payload);
+      }
+      return;
+    }
+
+    renderHumanRunPage(payload);
+  }
+
+  function renderRunModePicker(payload) {
+    var tasks = payload.tasks || [];
+    app.innerHTML =
+      '<section class="page run-page">' +
+        '<header class="page-header">' +
+          '<div class="page-title-wrap">' +
+            '<p class="eyebrow">Run</p>' +
+            '<h1>Choose how to run the benchmark.</h1>' +
+            '<p class="subtitle">Connect your own agent, try it yourself in the browser, or watch the baseline agent run.</p>' +
+          '</div>' +
+          '<div class="summary-strip">' +
+            buildSummaryPill('Mode', runModeLabel()) +
+            buildSummaryPill('Tasks', String(tasks.length)) +
+          '</div>' +
+        '</header>' +
+        '<div class="run-mode-grid">' +
+          '<article class="panel run-mode-card">' +
+            '<p class="eyebrow">Your Agent</p>' +
+            '<h2>My Agent</h2>' +
+            '<p>Create a run and get connection details (MCP URL + token or REST endpoints). Connect your own agent to execute the benchmark.</p>' +
+            '<button class="btn btn-primary" id="run-mode-agent" type="button">My Agent</button>' +
+          '</article>' +
+          '<article class="panel run-mode-card">' +
+            '<p class="eyebrow">Manual</p>' +
+            '<h2>Try it myself</h2>' +
+            '<p>Use the browser-driven REST harness to manually tutor the student. Useful for understanding the benchmark tasks.</p>' +
+            '<button class="btn btn-secondary" id="run-mode-human" type="button">Try it myself</button>' +
+          '</article>' +
+          '<article class="panel run-mode-card">' +
+            '<p class="eyebrow">Demo</p>' +
+            '<h2>Watch Baseline</h2>' +
+            '<p>Watch the baseline agent (Claude) complete the task automatically. Server starts the agent — just observe.</p>' +
+            '<button class="btn btn-secondary" id="run-mode-baseline" type="button" disabled title="Coming soon">Watch Baseline</button>' +
+          '</article>' +
+        '</div>' +
+      '</section>';
+    bindRunModeControls();
+  }
+
+  function renderAgentRunPage(payload) {
+    var tasks = payload.tasks || [];
+    var personas = payload.personas || [];
+    var selectedTask = getRunTask(tasks);
+    var visiblePersonas = personasForTask(selectedTask, personas);
+    var selectedPersona = state.run.personaId || 'auto';
+    var isBusy = runIsBusy();
+    var taskOptions = tasks.map(function (task) {
+      return '<option value="' + escapeHtml(task.task_id) + '"' + (task.task_id === state.run.taskId ? ' selected' : '') + '>' +
+        escapeHtml(publicTaskLabel(task.task_id)) +
+      '</option>';
+    }).join('');
+    var personaOptions =
+      '<option value="auto"' + (selectedPersona === 'auto' ? ' selected' : '') + '>Auto select</option>' +
+      visiblePersonas.map(function (persona) {
+        return '<option value="' + escapeHtml(persona.persona_id) + '"' + (persona.persona_id === selectedPersona ? ' selected' : '') + '>' +
+          escapeHtml(persona.persona_id) +
+        '</option>';
+      }).join('');
+
+    app.innerHTML =
+      '<section class="page run-page">' +
+        '<header class="page-header run-sticky-header">' +
+          '<div class="page-title-wrap">' +
+            '<p class="eyebrow">Run · Agent Test</p>' +
+            '<h1>Automated client benchmark flow.</h1>' +
+            '<p class="subtitle">Agent run module (run-agent.js) failed to load. This is a fallback page — refresh to retry.</p>' +
+          '</div>' +
+          '<div class="summary-strip">' +
+            buildSummaryPill('Mode', runModeLabel()) +
+            buildSummaryPill('Status', 'Module Missing') +
+            buildSummaryPill('Task', publicTaskLabel(state.run.taskId || (selectedTask && selectedTask.task_id))) +
+          '</div>' +
+        '</header>' +
+        '<div class="run-agent-grid">' +
+          '<aside class="panel run-control-panel">' +
+            '<h2>Agent Setup</h2>' +
+            '<label class="filter-field">' +
+              '<span class="filter-label">Task</span>' +
+              '<select id="run-task-select" class="filter-select"' + (isBusy ? ' disabled' : '') + '>' + taskOptions + '</select>' +
+            '</label>' +
+            '<label class="filter-field">' +
+              '<span class="filter-label">Persona Control</span>' +
+              '<select id="run-persona-select" class="filter-select"' + (isBusy ? ' disabled' : '') + '>' + personaOptions + '</select>' +
+            '</label>' +
+            '<label class="filter-field">' +
+              '<span class="filter-label">Max Agent Steps</span>' +
+              '<input id="run-agent-steps-input" class="filter-input" type="number" min="0" value="' + escapeHtml(state.run.agentMaxSteps || 200) + '"' + (isBusy ? ' disabled' : '') + '>' +
+            '</label>' +
+            '<div class="run-actions">' +
+              '<button class="btn btn-primary" type="button" disabled>Start Agent Run</button>' +
+              '<button class="btn btn-secondary" id="run-mode-reset-btn" type="button">Change Mode</button>' +
+            '</div>' +
+          '</aside>' +
+          '<section class="panel run-conversation-panel run-agent-main">' +
+            '<div class="run-panel-header">' +
+              '<div>' +
+                '<h2>Execution Boundary</h2>' +
+                '<p>The automated flow is not a chat form. It should be a backend job that launches the client runner, polls job state, captures stdout/stderr, and links to the archived result when the client trace is written.</p>' +
+              '</div>' +
+            '</div>' +
+            '<ol class="run-flow-list">' +
+              '<li><strong>register_session</strong> with the internal full task id and optional persona id.</li>' +
+              '<li><strong>start_session</strong> returns the client-visible background and student opening.</li>' +
+              '<li><strong>list_tools</strong> exposes <code>send_message</code>, <code>get_background</code>, and domain tools to the agent.</li>' +
+              '<li><strong>adapter.generate_response</strong> runs once; the tool runner handles domain tools and student communication.</li>' +
+              '<li><strong>save_client_trace</strong> writes <code>results/client/{session_id}/client_trace.json</code>, then Results can render the merged replay.</li>' +
+            '</ol>' +
+            '<div class="run-status-note">' +
+              '<strong>Required before enabling this button:</strong> add server endpoints for creating/cancelling agent jobs, safe subprocess lifecycle, result-dir wiring, live log/tool polling, and completion mapping back to Results.' +
+            '</div>' +
+          '</section>' +
+          '<aside class="panel run-tools-panel">' +
+            '<h2>Live Tools</h2>' +
+            '<p class="detail-empty-note">Agent tool events cannot be streamed here until the backend job layer exposes them. Result detail already renders them after archive creation.</p>' +
+          '</aside>' +
+        '</div>' +
+      '</section>';
+    bindRunControls(tasks);
+  }
+
+  function renderHumanRunPage(payload) {
+    var tasks = payload.tasks || [];
+    var personas = payload.personas || [];
+    var selectedTask = getRunTask(tasks);
+    var visiblePersonas = personasForTask(selectedTask, personas);
+    var selectedPersona = state.run.personaId || 'auto';
+    var isBusy = runIsBusy();
+    var isLocked = !!state.run.sessionId || isBusy;
+    var taskOptions = tasks.map(function (task) {
+      return '<option value="' + escapeHtml(task.task_id) + '"' + (task.task_id === state.run.taskId ? ' selected' : '') + '>' +
+        escapeHtml(publicTaskLabel(task.task_id)) +
+      '</option>';
+    }).join('');
+    var personaOptions =
+      '<option value="auto"' + (selectedPersona === 'auto' ? ' selected' : '') + '>Auto select</option>' +
+      visiblePersonas.map(function (persona) {
+        return '<option value="' + escapeHtml(persona.persona_id) + '"' + (persona.persona_id === selectedPersona ? ' selected' : '') + '>' +
+          escapeHtml(persona.persona_id) +
+        '</option>';
+      }).join('');
+    var messagesHtml = state.run.messages.length
+      ? state.run.messages.map(renderRunMessage).join('')
+      : '<div class="run-empty-conversation">Start a human test session to see the student opening message here.</div>';
+    var sessionMeta = state.run.sessionId
+      ? [
+        metaItem('Session ID', state.run.sessionId),
+        metaItem('Phase', runStatusLabel()),
+        metaItem('Task', publicTaskLabel(state.run.taskId)),
+        metaItem('Client Context', state.run.background ? 'Loaded' : 'Waiting')
+      ].join('')
+      : '<p class="detail-empty-note">No active run yet. This panel will only show client-visible runtime context after start_session.</p>';
+    var actionButton = state.run.sessionId
+      ? '<button class="btn btn-secondary" id="run-refresh-btn" type="button"' + (isBusy ? ' disabled' : '') + '>Refresh</button>'
+      : '<button class="btn btn-primary" id="run-start-btn" type="button"' + (isBusy || !selectedTask ? ' disabled' : '') + '>Create & Start Session</button>';
+    var openResult = state.run.sessionId && state.run.phase === 'completed'
+      ? '<a class="btn btn-secondary" href="#/results/' + encodeURIComponent(state.run.sessionId) + '">Open Result</a>'
+      : '';
+    var cancelButton = state.run.sessionId && state.run.phase !== 'completed'
+      ? '<button class="btn btn-secondary" id="run-cancel-btn" type="button"' + (isBusy ? ' disabled' : '') + '>Cancel</button>'
+      : '';
+
+    app.innerHTML =
+      '<section class="page run-page">' +
+        '<header class="page-header run-sticky-header">' +
+          '<div class="page-title-wrap">' +
+            '<p class="eyebrow">Run · Human Test</p>' +
+            '<h1>Browser-driven REST session harness.</h1>' +
+            '<p class="subtitle">Manual mode is kept for human testing. The visible task label and info panel avoid exposing hidden task metadata during execution.</p>' +
+          '</div>' +
+          '<div class="summary-strip">' +
+            buildSummaryPill('Mode', runModeLabel()) +
+            buildSummaryPill('Status', runStatusLabel()) +
+            buildSummaryPill('Task', publicTaskLabel(state.run.taskId || (selectedTask && selectedTask.task_id))) +
+            buildSummaryPill('Tools', String(state.run.tools.length)) +
+          '</div>' +
+        '</header>' +
+        (state.run.error ? '<section class="run-error">' + escapeHtml(state.run.error) + '</section>' : '') +
+        '<div class="run-grid">' +
+          '<aside class="panel run-control-panel">' +
+            '<h2>Info</h2>' +
+            '<label class="filter-field">' +
+              '<span class="filter-label">Task</span>' +
+              '<select id="run-task-select" class="filter-select"' + (isLocked ? ' disabled' : '') + '>' + taskOptions + '</select>' +
+            '</label>' +
+            '<label class="filter-field">' +
+              '<span class="filter-label">Persona Control</span>' +
+              '<select id="run-persona-select" class="filter-select"' + (isLocked ? ' disabled' : '') + '>' + personaOptions + '</select>' +
+            '</label>' +
+            '<div class="run-actions">' + actionButton + openResult + cancelButton +
+              '<button class="btn btn-secondary" id="run-reset-btn" type="button"' + (isBusy ? ' disabled' : '') + '>Reset UI</button>' +
+              '<button class="btn btn-secondary" id="run-mode-reset-btn" type="button"' + (isBusy ? ' disabled' : '') + '>Change Mode</button>' +
+            '</div>' +
+            '<section class="run-meta-block">' +
+              '<h3>Client-Visible State</h3>' +
+              sessionMeta +
+            '</section>' +
+            '<section class="run-meta-block">' +
+              '<h3>Client Context</h3>' +
+              (state.run.background
+                ? '<div class="run-background-text">' + safeRenderMarkdown(state.run.background) + '</div>'
+                : '<p class="detail-empty-note">The background returned by start_session appears here. Hidden task metadata is not shown.</p>') +
+            '</section>' +
+          '</aside>' +
+          '<section class="panel run-conversation-panel">' +
+            '<div class="run-panel-header">' +
+              '<div>' +
+                '<h2>Conversation</h2>' +
+                '<p>Student messages returned by <code>start_session</code> and <code>send_message</code>. This column intentionally takes most of the width.</p>' +
+              '</div>' +
+            '</div>' +
+            '<div id="run-conversation" class="run-conversation">' + messagesHtml + '</div>' +
+            '<form id="run-send-form" class="run-send-form">' +
+              '<label class="filter-field">' +
+                '<span class="filter-label">Tutor Message</span>' +
+                '<textarea id="run-message-input" class="run-textarea" rows="5" placeholder="Write a message that will be delivered through send_message..."' + (!runCanSend() ? ' disabled' : '') + '></textarea>' +
+              '</label>' +
+              '<label class="filter-field">' +
+                '<span class="filter-label">Attachments</span>' +
+                '<input id="run-attachments-input" class="filter-input" type="text" placeholder="Optional: strategy.py, plots/chart.png" ' + (!runCanSend() ? ' disabled' : '') + '>' +
+              '</label>' +
+              '<button class="btn btn-primary" type="submit"' + (!runCanSend() ? ' disabled' : '') + '>' + (state.run.action === 'sending' ? 'Sending...' : 'Send Message') + '</button>' +
+            '</form>' +
+          '</section>' +
+          '<aside class="panel run-tools-panel">' +
+            '<h2>Tools</h2>' +
+            '<section class="run-meta-block compact">' +
+              '<h3>Visible To Client</h3>' +
+              renderRunTools() +
+            '</section>' +
+            '<section class="run-meta-block compact">' +
+              '<h3>Live Activity</h3>' +
+              renderRunToolEvents() +
+            '</section>' +
+          '</aside>' +
+        '</div>' +
+      '</section>';
+
+    bindRunControls(tasks);
+  }
+
+  function bindRunModeControls() {
+    var agentBtn = document.getElementById('run-mode-agent');
+    var humanBtn = document.getElementById('run-mode-human');
+    var baselineBtn = document.getElementById('run-mode-baseline');
+
+    // Allow run-agent.js to reset back to mode picker
+    if (window.QTB) {
+      window.QTB._resetRunMode = function () {
+        state.run.mode = '';
+        state.run.error = '';
+        renderRunPage(state.tasksPayload || {tasks: [], personas: []});
+      };
+    }
+    if (agentBtn) {
+      agentBtn.addEventListener('click', function () {
+        state.run.mode = 'agent';
+        state.run.error = '';
+        renderRunPage(state.tasksPayload || {tasks: [], personas: []});
+      });
+    }
+    if (humanBtn) {
+      humanBtn.addEventListener('click', function () {
+        state.run.mode = 'human';
+        state.run.error = '';
+        renderRunPage(state.tasksPayload || {tasks: [], personas: []});
+      });
+    }
+  }
+
+  function bindRunControls(tasks) {
+    var taskSelect = document.getElementById('run-task-select');
+    var personaSelect = document.getElementById('run-persona-select');
+    var agentStepsInput = document.getElementById('run-agent-steps-input');
+    var startBtn = document.getElementById('run-start-btn');
+    var refreshBtn = document.getElementById('run-refresh-btn');
+    var cancelBtn = document.getElementById('run-cancel-btn');
+    var resetBtn = document.getElementById('run-reset-btn');
+    var modeResetBtn = document.getElementById('run-mode-reset-btn');
+    var sendForm = document.getElementById('run-send-form');
+
+    if (taskSelect) {
+      taskSelect.addEventListener('change', function (event) {
+        state.run.taskId = event.target.value;
+        state.run.personaId = 'auto';
+        renderRunPage(state.tasksPayload || {tasks: tasks, personas: []});
+      });
+    }
+    if (personaSelect) {
+      personaSelect.addEventListener('change', function (event) {
+        state.run.personaId = event.target.value || 'auto';
+      });
+    }
+    if (agentStepsInput) {
+      agentStepsInput.addEventListener('change', function (event) {
+        var value = parseInt(event.target.value, 10);
+        state.run.agentMaxSteps = isFinite(value) && value >= 0 ? value : 200;
+      });
+    }
+    if (startBtn) startBtn.addEventListener('click', startRunSession);
+    if (refreshBtn) refreshBtn.addEventListener('click', refreshRunStatus);
+    if (cancelBtn) cancelBtn.addEventListener('click', cancelRunSession);
+    if (resetBtn) resetBtn.addEventListener('click', resetRunState);
+    if (modeResetBtn) modeResetBtn.addEventListener('click', resetRunMode);
+    if (sendForm) {
+      sendForm.addEventListener('submit', function (event) {
+        event.preventDefault();
+        sendRunMessage();
+      });
+    }
+
+    var conversationEl = document.getElementById('run-conversation');
+    if (conversationEl) conversationEl.scrollTop = conversationEl.scrollHeight;
+  }
+
+  function setRunBusy(busy) {
+    setRunAction(busy ? 'working' : 'idle');
+    renderRunPage(state.tasksPayload || {tasks: [], personas: []});
+  }
+
+  function startRunSession() {
+    var taskId = state.run.taskId;
+    if (!taskId || state.run.mode !== 'human' || runIsBusy()) return;
+    setRunAction('registering');
+    state.run.error = '';
+    renderRunPage(state.tasksPayload || {tasks: [], personas: []});
+
+    var registerBody = {task_id: taskId};
+    if (state.run.personaId && state.run.personaId !== 'auto') {
+      registerBody.persona_id = state.run.personaId;
+    }
+
+    restApi('/session/register', {
+      method: 'POST',
+      body: JSON.stringify(registerBody)
+    }).then(function (registered) {
+      if (!registered.accepted) {
+        throw new Error(registered.error || 'Session registration rejected.');
+      }
+      state.run.sessionId = registered.session_id;
+      state.run.phase = 'registered';
+      state.run.startedAt = new Date().toISOString();
+      addRunToolEvent('register_session', 'ok', 'REST session registered.');
+      setRunAction('starting');
+      renderRunPage(state.tasksPayload || {tasks: [], personas: []});
+      return restApi('/session/' + encodeURIComponent(registered.session_id) + '/start', {
+        method: 'POST',
+        body: JSON.stringify({})
+      });
+    }).then(function (started) {
+      state.run.phase = 'in_session';
+      state.run.background = started.background || '';
+      state.run.messages = [];
+      if (started.student_message) {
+        state.run.messages.push({role: 'student', content: started.student_message});
+      }
+      addRunToolEvent('start_session', 'ok', started.student_message ? 'Student opening received.' : 'Session started.');
+      return refreshRunStatus({silent: true, preserveAction: true});
+    }).catch(function (error) {
+      state.run.error = error && error.message ? error.message : String(error || 'Unknown error');
+      addRunToolEvent('run_start', 'error', state.run.error);
+    }).then(function () {
+      setRunAction('idle');
+      renderRunPage(state.tasksPayload || {tasks: [], personas: []});
+    });
+  }
+
+  function refreshRunStatus(options) {
+    options = options || {};
+    if (!state.run.sessionId) return Promise.resolve();
+    if (!options.silent) setRunAction('refreshing');
+    if (!options.silent) renderRunPage(state.tasksPayload || {tasks: [], personas: []});
+
+    return restApi('/session/' + encodeURIComponent(state.run.sessionId), {
+      method: 'GET',
+      headers: {}
+    }).then(function (status) {
+      state.run.phase = status.phase || state.run.phase;
+      state.run.personaId = status.persona_id || state.run.personaId;
+      return restApi('/session/' + encodeURIComponent(state.run.sessionId) + '/tools', {
+        method: 'GET',
+        headers: {}
+      }).catch(function () {
+        return {tools: []};
+      });
+    }).then(function (toolsPayload) {
+      state.run.tools = toolsPayload.tools || [];
+      state.run.error = '';
+      if (!options.silent) addRunToolEvent('list_tools', 'ok', state.run.tools.length + ' visible tools.');
+    }).catch(function (error) {
+      state.run.error = error && error.message ? error.message : String(error || 'Unknown error');
+      if (!options.silent) addRunToolEvent('refresh', 'error', state.run.error);
+    }).then(function () {
+      if (!options.preserveAction) setRunAction('idle');
+      if (!options.silent) renderRunPage(state.tasksPayload || {tasks: [], personas: []});
+    });
+  }
+
+  function parseRunAttachments(value) {
+    return String(value || '')
+      .split(/[,\n]/)
+      .map(function (item) { return item.trim(); })
+      .filter(Boolean)
+      .slice(0, 3);
+  }
+
+  function sendRunMessage() {
+    if (!runCanSend()) return;
+    var messageInput = document.getElementById('run-message-input');
+    var attachmentsInput = document.getElementById('run-attachments-input');
+    var text = messageInput ? String(messageInput.value || '').trim() : '';
+    var attachments = attachmentsInput ? parseRunAttachments(attachmentsInput.value) : [];
+    if (!text) {
+      state.run.error = 'Message text is required.';
+      renderRunPage(state.tasksPayload || {tasks: [], personas: []});
+      return;
+    }
+
+    setRunAction('sending');
+    state.run.error = '';
+    renderRunPage(state.tasksPayload || {tasks: [], personas: []});
+
+    restApi('/session/' + encodeURIComponent(state.run.sessionId) + '/send', {
+      method: 'POST',
+      body: JSON.stringify({text: text, attachments: attachments})
+    }).then(function (reply) {
+      if (reply.error) {
+        throw new Error(reply.error);
+      }
+      state.run.messages.push({role: 'tutor', content: text, attachments: attachments});
+      if (reply.student_message) {
+        state.run.messages.push({role: 'student', content: reply.student_message});
+      }
+      state.run.phase = reply.status === 'completed' ? 'completed' : 'in_session';
+      addRunToolEvent(
+        'send_message',
+        'ok',
+        (attachments.length ? attachments.length + ' attachment(s). ' : '') +
+          'Student status: ' + (reply.status || state.run.phase) + '.'
+      );
+      if (reply.status === 'completed') {
+        state.run.completedAt = new Date().toISOString();
+        state.results = null;
+        state.detailCache = {};
+      }
+      return refreshRunStatus({silent: true, preserveAction: true});
+    }).catch(function (error) {
+      state.run.error = error && error.message ? error.message : String(error || 'Unknown error');
+      addRunToolEvent('send_message', 'error', state.run.error);
+    }).then(function () {
+      setRunAction('idle');
+      renderRunPage(state.tasksPayload || {tasks: [], personas: []});
+    });
+  }
+
+  function cancelRunSession() {
+    if (!state.run.sessionId || runIsBusy()) return;
+    setRunAction('cancelling');
+    state.run.error = '';
+    renderRunPage(state.tasksPayload || {tasks: [], personas: []});
+    restApi('/session/' + encodeURIComponent(state.run.sessionId), {
+      method: 'DELETE',
+      headers: {}
+    }).then(function () {
+      state.run.phase = 'cancelled';
+      state.run.tools = [];
+      addRunToolEvent('cancel_session', 'ok', 'Session cancelled by UI.');
+    }).catch(function (error) {
+      state.run.error = error && error.message ? error.message : String(error || 'Unknown error');
+      addRunToolEvent('cancel_session', 'error', state.run.error);
+    }).then(function () {
+      setRunAction('idle');
+      renderRunPage(state.tasksPayload || {tasks: [], personas: []});
+    });
+  }
+
+  function resetRunState() {
+    state.run = {
+      mode: state.run.mode,
+      taskId: state.run.taskId,
+      personaId: 'auto',
+      sessionId: null,
+      phase: 'idle',
+      action: 'idle',
+      background: '',
+      messages: [],
+      tools: [],
+      toolEvents: [],
+      error: '',
+      busy: false,
+      agentMaxSteps: state.run.agentMaxSteps || 200,
+      startedAt: null,
+      completedAt: null
+    };
+    renderRunPage(state.tasksPayload || {tasks: [], personas: []});
+  }
+
+  function resetRunMode() {
+    if (runIsBusy()) return;
+    resetRunState();
+    state.run.mode = '';
+    renderRunPage(state.tasksPayload || {tasks: [], personas: []});
+  }
+
+  function metaItem(label, value) {
+    return '' +
+      '<div class="detail-meta-item">' +
+        '<span class="dm-label">' + escapeHtml(label) + '</span>' +
+        '<span class="dm-value">' + escapeHtml(value) + '</span>' +
+      '</div>';
+  }
+
+  function encodePathPreservingSlashes(path) {
+    return String(path || '')
+      .split('/')
+      .filter(Boolean)
+      .map(function (segment) {
+        return encodeURIComponent(segment);
+      })
+      .join('/');
+  }
+
+  function decodePathPreservingSlashes(path) {
+    return String(path || '')
+      .split('/')
+      .map(function (segment) {
+        try {
+          return decodeURIComponent(segment);
+        } catch (error) {
+          return segment;
+        }
+      })
+      .join('/');
+  }
+
+  function normalizeAssetPath(src) {
+    if (!src) return '';
+    var clean = String(src).trim().split('#')[0].split('?')[0];
+    if (!clean) return '';
+    if (/^(https?:|data:|blob:)/i.test(clean)) return '';
+    if (clean.indexOf('/ui/results/') === 0) return '';
+    if (clean.indexOf('/api/results/') === 0) return '';
+    clean = clean.replace(/^\/api\/files\/live\//, '');
+    clean = clean.replace(/^api\/files\/live\//, '');
+    clean = clean.replace(/^\/workspace\//, '');
+    clean = clean.replace(/^workspace\//, '');
+    clean = clean.replace(/^\.\//, '');
+    clean = clean.replace(/^\/+/, '');
+    return decodePathPreservingSlashes(clean);
+  }
+
+  function buildSessionAssetUrl(sessionId, src) {
+    var relativePath = normalizeAssetPath(src);
+    if (!relativePath) return null;
+    return '/ui/results/' + encodeURIComponent(sessionId) + '/files/' + encodePathPreservingSlashes(relativePath);
+  }
+
+  function rewriteImages(container, sessionId) {
+    if (!container || !sessionId) return;
+    var images = container.querySelectorAll('img');
+    Array.prototype.forEach.call(images, function (img) {
+      var rawSrc = img.getAttribute('src') || '';
+      var nextSrc = buildSessionAssetUrl(sessionId, rawSrc);
+      if (!nextSrc) return;
+      img.setAttribute('src', nextSrc);
+      img.setAttribute('loading', 'lazy');
+    });
+  }
+
+  function buildInfoSection(title, bodyHtml) {
+    return '<section class="info-section"><h2>' + escapeHtml(title) + '</h2>' + bodyHtml + '</section>';
+  }
+
+  function summarizeWorkspaceTypes(paths) {
+    var counts = {};
+    (paths || []).forEach(function (path) {
+      var normalized = String(path || '').trim();
+      if (!normalized) return;
+      var slash = normalized.lastIndexOf('/');
+      var name = slash >= 0 ? normalized.slice(slash + 1) : normalized;
+      var dot = name.lastIndexOf('.');
+      var ext = dot >= 0 ? name.slice(dot).toLowerCase() : '[no_ext]';
+      counts[ext] = (counts[ext] || 0) + 1;
+    });
+    return Object.keys(counts).sort(function (left, right) {
+      if (counts[right] !== counts[left]) return counts[right] - counts[left];
+      return left.localeCompare(right);
+    }).slice(0, 4);
+  }
+
+  function buildWorkspaceSummarySection(detail) {
+    var files = detail.workspace_files || [];
+    if (!files.length) {
+      return buildInfoSection(
+        'Workspace',
+        '<p class="detail-empty-note">No archived workspace files were recorded for this session.</p>'
+      );
+    }
+
+    var types = summarizeWorkspaceTypes(files).map(function (ext) {
+      return ext === '[no_ext]' ? 'no extension' : ext.replace(/^\./, '');
+    });
+
+    return buildInfoSection('Workspace', [
+      metaItem('File Count', String(files.length)),
+      metaItem('Primary Types', types.length ? types.join(' / ') : 'mixed'),
+      '<p class="detail-empty-note">Use the Workspace button in the top-right corner to browse archived artifacts without leaving this result page.</p>'
+    ].join(''));
+  }
+
+  function extractEvalHistoryScore(entry) {
+    if (!entry || typeof entry !== 'object') return null;
+    if (typeof entry.overall_score === 'number') return entry.overall_score;
+    if (typeof entry.oas === 'number') return entry.oas;
+    if (typeof entry.score === 'number') return entry.score;
+    return null;
+  }
+
+  function renderEvalHistoryItem(entry) {
+    var score = extractEvalHistoryScore(entry);
+    var label = entry.eval_dir || entry.timestamp || 'Evaluation';
+    var timestamp = formatTimestamp(entry.timestamp);
+    return '' +
+      '<div class="detail-history-item">' +
+        '<strong>' + escapeHtml(label) + '</strong>' +
+        '<div class="detail-history-meta">' +
+          'Time: ' + escapeHtml(timestamp) +
+          (score == null ? '' : ' · OAS ' + escapeHtml(formatScore(score))) +
+        '</div>' +
+      '</div>';
+  }
+
+  function buildInfoPanel(detail) {
+    var summary = [
+      metaItem('Session ID', detail.session_id),
+      metaItem('Task ID', detail.task_id),
+      metaItem('Persona', detail.persona_id),
+      metaItem('Category', titleCase(detail.category)),
+      metaItem('Difficulty', titleCase(detail.difficulty)),
+      metaItem('Timestamp', formatTimestamp(detail.timestamp)),
+      metaItem('Duration', formatDuration(detail.duration_seconds)),
+      metaItem('Turns', String(detail.turn_count)),
+      metaItem('Tool Calls', String(detail.tool_count)),
+      metaItem('Send Messages', String(detail.send_message_count || 0)),
+      metaItem('Steps', String(detail.step_count)),
+      metaItem('Evaluation Status', titleCase(detail.evaluation_status)),
+      metaItem('Overall Score', detail.overall_score == null ? '—' : formatScore(detail.overall_score))
+    ].join('');
+
+    var model = [
+      metaItem('Model', detail.model || 'Unknown'),
+      metaItem('Agent Name', detail.agent_name || 'Unknown'),
+      metaItem('Content Blocks', detail.has_content_blocks ? 'Yes' : 'No'),
+      metaItem('Client Trace', detail.has_client_trace ? 'Present' : 'Missing'),
+      metaItem('Agent Files', detail.has_agent_files ? 'Present' : 'Missing'),
+      metaItem('Requires Code', detail.requires_code ? 'Yes' : 'No'),
+      metaItem('Max Turns', detail.max_turns == null ? '—' : String(detail.max_turns))
+    ].join('');
+
+    var cost = '';
+    if (detail.agent_cost) {
+      cost = buildInfoSection('Agent Cost', [
+        metaItem('Input Tokens', formatInteger(detail.agent_cost.input_tokens)),
+        metaItem('Output Tokens', formatInteger(detail.agent_cost.output_tokens)),
+        metaItem('API Calls', formatInteger(detail.agent_cost.api_calls)),
+        metaItem('Cost', formatCost(detail.agent_cost.cost_usd))
+      ].join(''));
+    }
+
+    var distractors = buildInfoSection(
+      'Distractors',
+      (detail.distractor_names && detail.distractor_names.length)
+        ? '<div class="detail-chip-list">' + detail.distractor_names.map(function (name) {
+          return '<span class="detail-chip">' + escapeHtml(name) + '</span>';
+        }).join('') + '</div>'
+        : '<p class="detail-empty-note">No distractor tools were registered for this task.</p>'
+    );
+
+    var evalHistory = buildInfoSection(
+      'Eval History',
+      (detail.eval_history && detail.eval_history.length)
+        ? '<div class="detail-history-list">' + detail.eval_history.map(renderEvalHistoryItem).join('') + '</div>'
+        : '<p class="detail-empty-note">No archived evaluation history was found for this session yet.</p>'
+    );
+
+    return [
+      buildInfoSection('Summary', summary),
+      buildInfoSection('Model & Trace', model),
+      cost,
+      buildWorkspaceSummarySection(detail),
+      distractors,
+      evalHistory
+    ].join('');
+  }
+
+  function buildDetailActions(detail) {
+    var buttons = [];
+    if (detail.has_agent_files && detail.workspace_files && detail.workspace_files.length) {
+      buttons.push(
+        '<button class="detail-report-btn" id="detail-workspace-btn">Workspace (' +
+        escapeHtml(String(detail.workspace_files.length)) +
+        ')</button>'
+      );
+    }
+    if (detail.scores_md) {
+      buttons.push('<button class="detail-report-btn" id="detail-score-btn">Score Report</button>');
+    }
+    if (detail.cost_md) {
+      buttons.push('<button class="detail-report-btn" id="detail-cost-btn">Cost Report</button>');
+    }
+    if (detail.trace_md) {
+      buttons.push('<button class="detail-report-btn" id="detail-trace-btn">Trace Report</button>');
+    }
+    if (!buttons.length) {
+      buttons.push('<span class="meta-chip">No evaluation report</span>');
+    }
+    return buttons.join('');
+  }
+
+  function bindPanelControl(scope, options) {
+    var panel = scope.querySelector(options.panelSelector);
+    var tab = scope.querySelector('#' + options.tabId);
+    if (!panel) return;
+
+    var openArrow = options.isLeft ? '\u25C0' : '\u25B6';
+    var closedArrow = options.isLeft ? '\u25B6' : '\u25C0';
+
+    function rememberExpandedWidth() {
+      var width = panel.getBoundingClientRect().width;
+      if (width > 40) {
+        panel.dataset.expandedWidth = String(width);
+      }
+    }
+
+    function getExpandedWidth() {
+      var remembered = parseFloat(panel.dataset.expandedWidth || '');
+      if (isFinite(remembered) && remembered > 0) return remembered;
+      var liveWidth = panel.getBoundingClientRect().width || panel.offsetWidth;
+      return liveWidth > 0 ? liveWidth : 0;
+    }
+
+    function sync() {
+      var collapsed = panel.classList.contains('collapsed');
+      if (!collapsed) rememberExpandedWidth();
+      if (tab) {
+        var tabArrow = tab.querySelector('.tab-arrow');
+        if (tabArrow) tabArrow.textContent = collapsed ? closedArrow : openArrow;
+        tab.classList.toggle('is-collapsed', collapsed);
+        tab.classList.toggle('is-expanded', !collapsed);
+        if (options.isLeft) {
+          tab.style.left = (collapsed ? 0 : getExpandedWidth()) + 'px';
+          tab.style.right = 'auto';
+          tab.style.transform = 'translateY(-50%)';
+        } else {
+          tab.style.left = 'auto';
+          tab.style.right = (collapsed ? 0 : getExpandedWidth()) + 'px';
+          tab.style.transform = 'translateY(-50%)';
+        }
+        tab.setAttribute('aria-expanded', String(!collapsed));
+        tab.setAttribute('title', (collapsed ? 'Expand ' : 'Collapse ') + options.label);
+        tab.setAttribute('aria-label', (collapsed ? 'Expand ' : 'Collapse ') + options.label);
+      }
+    }
+
+    function toggle() {
+      if (!panel.classList.contains('collapsed')) {
+        rememberExpandedWidth();
+      }
+      panel.classList.toggle('collapsed');
+      sync();
+    }
+
+    if (tab) tab.addEventListener('click', toggle);
+    panel.addEventListener('transitionend', function () {
+      rememberExpandedWidth();
+      sync();
+    });
+    window.addEventListener('resize', sync);
+    sync();
+  }
+
+  function buildWorkspaceModalShell() {
+    return '' +
+      '<div class="workspace-explorer">' +
+        '<aside class="workspace-sidebar">' +
+          '<div class="workspace-sidebar-head">' +
+            '<input id="workspace-search-input" class="workspace-search-input" type="search" placeholder="Search files...">' +
+            '<div id="workspace-summary" class="workspace-summary">Loading workspace…</div>' +
+          '</div>' +
+          '<div id="workspace-file-list" class="workspace-file-list">' +
+            '<div class="workspace-empty">Loading archived files…</div>' +
+          '</div>' +
+        '</aside>' +
+        '<section class="workspace-preview-pane">' +
+          '<div id="workspace-preview-header" class="workspace-preview-header"></div>' +
+          '<div id="workspace-preview-body" class="workspace-preview-body">' +
+            '<div class="workspace-empty">Select a file to inspect its archived contents.</div>' +
+          '</div>' +
+        '</section>' +
+      '</div>';
+  }
+
+  function buildWorkspacePreviewHeader(file) {
+    var actionLinks = '';
+    if (file.raw_url) {
+      actionLinks =
+        '<div class="workspace-preview-actions">' +
+          '<a class="workspace-preview-link" href="' + escapeHtml(file.raw_url) + '" target="_blank" rel="noreferrer">Open Raw</a>' +
+          '<a class="workspace-preview-link" href="' + escapeHtml(file.raw_url) + '" download="' + escapeHtml(file.name || 'artifact') + '">Download</a>' +
+        '</div>';
+    }
+
+    return '' +
+      '<div class="workspace-preview-meta">' +
+        '<div class="workspace-preview-path">' + escapeHtml(file.path || file.name || 'workspace file') + '</div>' +
+        '<div class="workspace-preview-submeta">' +
+          '<span>' + escapeHtml(titleCase(file.kind || 'file')) + '</span>' +
+          '<span>' + escapeHtml(formatBytes(file.size_bytes)) + '</span>' +
+          (file.mime_type ? '<span>' + escapeHtml(file.mime_type) + '</span>' : '') +
+          (file.truncated ? '<span class="workspace-truncate-chip">Preview truncated</span>' : '') +
+        '</div>' +
+      '</div>' +
+      actionLinks;
+  }
+
+  function renderWorkspacePreview(preview, sessionId) {
+    var headerEl = document.getElementById('workspace-preview-header');
+    var bodyEl = document.getElementById('workspace-preview-body');
+    if (!headerEl || !bodyEl) return;
+
+    headerEl.innerHTML = buildWorkspacePreviewHeader(preview);
+
+    if (preview.kind === 'image') {
+      bodyEl.innerHTML =
+        '<div class="workspace-image-wrap">' +
+          '<img src="' + escapeHtml(preview.raw_url || '') + '" alt="' + escapeHtml(preview.path || preview.name || 'workspace image') + '" class="workspace-preview-image">' +
+        '</div>';
+      rewriteImages(bodyEl, sessionId);
+      return;
+    }
+
+    if (preview.kind === 'markdown') {
+      bodyEl.innerHTML =
+        (preview.truncated ? '<div class="workspace-banner">Preview truncated to the first archived segment of this file.</div>' : '') +
+        '<div class="workspace-markdown">' + safeRenderMarkdown(preview.content_text || '') + '</div>';
+      rewriteImages(bodyEl, sessionId);
+      return;
+    }
+
+    if (preview.kind === 'csv') {
+      var columns = preview.columns || [];
+      var rows = preview.rows || [];
+      if (!columns.length && !rows.length) {
+        bodyEl.innerHTML = '<div class="workspace-empty">Preview unavailable for this tabular file.</div>';
+        return;
+      }
+      var headerRow = columns.map(function (value) {
+        return '<th>' + escapeHtml(value) + '</th>';
+      }).join('');
+      var bodyRows = rows.map(function (row) {
+        return '<tr>' + row.map(function (cell) {
+          return '<td>' + escapeHtml(cell) + '</td>';
+        }).join('') + '</tr>';
+      }).join('');
+      bodyEl.innerHTML =
+        (preview.truncated ? '<div class="workspace-banner">Preview truncated to the first archived segment of this file.</div>' : '') +
+        '<div class="workspace-table-wrap">' +
+          '<table class="workspace-table">' +
+            (headerRow ? '<thead><tr>' + headerRow + '</tr></thead>' : '') +
+            '<tbody>' + bodyRows + '</tbody>' +
+          '</table>' +
+        '</div>';
+      return;
+    }
+
+    if (preview.kind === 'binary') {
+      bodyEl.innerHTML =
+        '<div class="workspace-empty">' +
+          '<p>This file type is not previewed inline.</p>' +
+          '<p>Use <strong>Open Raw</strong> or <strong>Download</strong> to inspect it directly.</p>' +
+        '</div>';
+      return;
+    }
+
+    bodyEl.innerHTML =
+      (preview.truncated ? '<div class="workspace-banner">Preview truncated to the first archived segment of this file.</div>' : '') +
+      '<pre class="workspace-code"><code>' + escapeHtml(preview.content_text || '') + '</code></pre>';
+  }
+
+  function openWorkspaceModal(detail) {
+    showModal('Workspace', buildWorkspaceModalShell(), {
+      contentClass: 'workspace-modal-content',
+      bodyClass: 'workspace-modal-body'
+    });
+
+    var overlay = document.getElementById('qtb-modal');
+    if (!overlay) return;
+
+    var searchInput = overlay.querySelector('#workspace-search-input');
+    var summaryEl = overlay.querySelector('#workspace-summary');
+    var listEl = overlay.querySelector('#workspace-file-list');
+    var previewHeaderEl = overlay.querySelector('#workspace-preview-header');
+    var previewBodyEl = overlay.querySelector('#workspace-preview-body');
+    var currentSelection = null;
+    var workspaceIndex = null;
+
+    function renderFileList() {
+      if (!listEl) return;
+      var query = searchInput ? String(searchInput.value || '').trim().toLowerCase() : '';
+      var files = (workspaceIndex && workspaceIndex.files ? workspaceIndex.files : []).filter(function (file) {
+        if (!query) return true;
+        return String(file.path || '').toLowerCase().indexOf(query) !== -1;
+      });
+
+      if (!files.length) {
+        listEl.innerHTML = '<div class="workspace-empty">No files match the current filter.</div>';
+        if (previewHeaderEl) previewHeaderEl.innerHTML = '';
+        if (previewBodyEl) previewBodyEl.innerHTML = '<div class="workspace-empty">Select a file to inspect its archived contents.</div>';
+        return;
+      }
+
+      listEl.innerHTML = files.map(function (file) {
+        var activeClass = file.path === currentSelection ? ' active' : '';
+        return '' +
+          '<button type="button" class="workspace-file-item' + activeClass + '" data-path="' + escapeHtml(file.path) + '">' +
+            '<span class="workspace-file-main">' +
+              '<span class="workspace-file-path">' + escapeHtml(file.path) + '</span>' +
+              '<span class="workspace-file-meta">' + escapeHtml(titleCase(file.kind || 'file')) + ' · ' + escapeHtml(formatBytes(file.size_bytes)) + '</span>' +
+            '</span>' +
+          '</button>';
+      }).join('');
+
+      Array.prototype.forEach.call(listEl.querySelectorAll('.workspace-file-item'), function (button) {
+        button.addEventListener('click', function () {
+          loadPreview(button.getAttribute('data-path') || '');
+        });
+      });
+
+      var stillVisible = files.some(function (file) { return file.path === currentSelection; });
+      if (!stillVisible && files.length) {
+        loadPreview(files[0].path);
+      }
+    }
+
+    function loadPreview(relativePath) {
+      if (!relativePath) return;
+      if (relativePath === currentSelection && previewHeaderEl && previewHeaderEl.innerHTML) {
+        renderFileList();
+        return;
+      }
+      currentSelection = relativePath;
+      renderFileList();
+      if (previewHeaderEl) previewHeaderEl.innerHTML = '';
+      if (previewBodyEl) previewBodyEl.innerHTML = '<div class="workspace-empty">Loading preview…</div>';
+
+      ensureWorkspacePreview(detail.session_id, relativePath).then(function (preview) {
+        if (currentSelection !== relativePath) return;
+        renderWorkspacePreview(preview, detail.session_id);
+      }).catch(function (error) {
+        if (currentSelection !== relativePath) return;
+        if (previewHeaderEl) previewHeaderEl.innerHTML = '';
+        if (previewBodyEl) {
+          previewBodyEl.innerHTML = '<div class="workspace-empty">Unable to load preview: ' +
+            escapeHtml(error && error.message ? error.message : String(error || 'Unknown error')) +
+            '</div>';
+        }
+      });
+    }
+
+    if (searchInput) {
+      searchInput.addEventListener('input', renderFileList);
+    }
+
+    ensureWorkspaceIndex(detail.session_id).then(function (indexPayload) {
+      workspaceIndex = indexPayload;
+      if (summaryEl) {
+        var topExtensions = (indexPayload.top_extensions || []).map(function (ext) {
+          return ext === '[no_ext]' ? 'no extension' : ext.replace(/^\./, '');
+        });
+        summaryEl.innerHTML =
+          '<strong>' + escapeHtml(String(indexPayload.file_count || 0)) + '</strong> archived file(s)' +
+          (topExtensions.length ? '<span> · ' + escapeHtml(topExtensions.join(' / ')) + '</span>' : '');
+      }
+      renderFileList();
+    }).catch(function (error) {
+      if (summaryEl) summaryEl.textContent = 'Unable to load workspace.';
+      if (listEl) {
+        listEl.innerHTML = '<div class="workspace-empty">Unable to load workspace: ' +
+          escapeHtml(error && error.message ? error.message : String(error || 'Unknown error')) +
+          '</div>';
+      }
+    });
+  }
+
+  function bindDetailActionButtons(detail) {
+    var workspaceBtn = document.getElementById('detail-workspace-btn');
+    var scoreBtn = document.getElementById('detail-score-btn');
+    var costBtn = document.getElementById('detail-cost-btn');
+    var traceBtn = document.getElementById('detail-trace-btn');
+
+    if (workspaceBtn) {
+      workspaceBtn.addEventListener('click', function () {
+        openWorkspaceModal(detail);
+      });
+    }
+
+    if (scoreBtn) {
+      scoreBtn.addEventListener('click', function () {
+        showModal('Score Report', safeRenderMarkdown(detail.scores_md));
+      });
+    }
+
+    if (costBtn) {
+      costBtn.addEventListener('click', function () {
+        showModal('Cost Report', safeRenderMarkdown(detail.cost_md));
+      });
+    }
+
+    if (traceBtn) {
+      traceBtn.addEventListener('click', function () {
+        showModal('Trace Report', safeRenderMarkdown(detail.trace_md));
+      });
+    }
+  }
+
+  function renderDetailPage(detail) {
+    var overallScoreTag = detail.overall_score == null
+      ? '<span class="detail-tag detail-tag-status">OAS —</span>'
+      : '<span class="detail-tag detail-tag-status">OAS ' + escapeHtml(formatScore(detail.overall_score)) + '</span>';
+
+    app.innerHTML =
+      '<section class="page-run">' +
+        '<div class="detail-header">' +
+          '<a class="detail-back" href="#/results">\u2190 Back</a>' +
+          '<div class="detail-title-block">' +
+            '<div class="detail-task-id">' + escapeHtml(detail.task_id) + '</div>' +
+            '<div class="detail-tags">' +
+              '<span class="detail-tag detail-tag-agent">' + escapeHtml(titleCase(detail.category)) + '</span>' +
+              '<span class="detail-tag detail-tag-model">' + escapeHtml(detail.model || 'Unknown model') + '</span>' +
+              '<span class="detail-tag detail-tag-persona">' + escapeHtml(detail.persona_id) + '</span>' +
+              '<span class="detail-tag detail-tag-status">' + escapeHtml(titleCase(detail.evaluation_status)) + '</span>' +
+              overallScoreTag +
+            '</div>' +
+          '</div>' +
+          '<div class="detail-actions">' + buildDetailActions(detail) + '</div>' +
+        '</div>' +
+        '<div class="run-layout">' +
+          '<aside class="run-config">' +
+            '<div class="panel-header"><span class="panel-header-title">Info</span></div>' +
+            '<div class="panel-body" id="detail-meta"></div>' +
+          '</aside>' +
+          '<div class="run-main">' +
+            '<div class="run-chat-panel">' +
+              '<div class="panel-header">Conversation</div>' +
+              '<div id="detail-chat" class="chat-area"></div>' +
+            '</div>' +
+            '<div class="run-tool-panel">' +
+              '<div class="panel-header"><span class="panel-header-title">Tools</span></div>' +
+              '<div id="detail-tools" class="tool-area"></div>' +
+            '</div>' +
+          '</div>' +
+          '<div class="panel-reopen-tab tab-left" id="reopen-detail-info">' +
+            '<span class="tab-arrow">\u25C0</span><span class="tab-label">Info</span>' +
+          '</div>' +
+          '<div class="panel-reopen-tab tab-right" id="reopen-detail-tools">' +
+            '<span class="tab-arrow">\u25B6</span><span class="tab-label">Tools</span>' +
+          '</div>' +
+        '</div>' +
+      '</section>';
+
+    var metaEl = document.getElementById('detail-meta');
+    if (metaEl) {
+      metaEl.innerHTML = buildInfoPanel(detail);
+    }
+
+    bindPanelControl(app, {
+      panelSelector: '.run-config',
+      tabId: 'reopen-detail-info',
+      isLeft: true,
+      label: 'Info'
+    });
+    bindPanelControl(app, {
+      panelSelector: '.run-tool-panel',
+      tabId: 'reopen-detail-tools',
+      isLeft: false,
+      label: 'Tools'
+    });
+    bindDetailActionButtons(detail);
+
+    var toolLogs = detail.tool_logs || [];
+    var sendMessageEvents = detail.send_message_events || [];
+    var chatEl = document.getElementById('detail-chat');
+    var toolsEl = document.getElementById('detail-tools');
+
+    if (chatEl && window.QTB && typeof window.QTB.buildConversationReplay === 'function') {
+      window.QTB.buildConversationReplay(chatEl, detail.conversation || [], toolLogs, sendMessageEvents);
+      rewriteImages(chatEl, detail.session_id);
+    } else if (chatEl) {
+      chatEl.innerHTML = '<div class="empty-state">Replay renderer unavailable.</div>';
+    }
+
+    if (toolsEl && window.QTB && typeof window.QTB.buildToolReplay === 'function') {
+      window.QTB.buildToolReplay(toolsEl, toolLogs);
+      rewriteImages(toolsEl, detail.session_id);
+    } else if (toolsEl) {
+      toolsEl.innerHTML = '<div class="empty-state">Tool renderer unavailable.</div>';
+    }
+  }
+
+  function renderEmptyInline(message) {
+    return '<section class="empty-state"><p class="eyebrow">Empty</p><h1>No results to show.</h1><p>' + escapeHtml(message) + '</p></section>';
+  }
+
+  function showResultsList() {
+    state.activeSessionId = null;
+    setAppDetailMode(false);
+    renderLoading('Loading archived sessions', 'Fetching merged session summaries from the isolated /ui/results endpoint.');
+    ensureResults().then(renderResultsList).catch(function (error) {
+      renderError('Results unavailable', error);
+    });
+  }
+
+  function showTasks() {
+    state.activeSessionId = null;
+    setAppDetailMode(false);
+    renderLoading('Loading task catalog', 'Fetching task and persona metadata from the isolated /ui/tasks endpoint.');
+    ensureTasks().then(renderTasksPage).catch(function (error) {
+      renderError('Tasks unavailable', error);
+    });
+  }
+
+  function showRun() {
+    state.activeSessionId = null;
+    setAppDetailMode(false);
+    renderLoading('Loading run harness', 'Fetching task and persona metadata before choosing Human or Agent test mode.');
+    ensureTasks().then(renderRunPage).catch(function (error) {
+      renderError('Run unavailable', error);
+    });
+  }
+
+  function showResultDetail(sessionId) {
+    state.activeSessionId = sessionId;
+    setAppDetailMode(true);
+    renderLoading('Loading session detail', 'Fetching merged detail JSON, then rebuilding conversation replay and tool history.');
+    ensureDetail(sessionId).then(renderDetailPage).catch(function (error) {
+      renderError('Detail unavailable', error);
+    });
+  }
+
+  function onRouteChange() {
+    var route = routeFromHash();
+    setActiveNav(route);
+    closeModal();
+
+    if (route === '/' || route === '/results') {
+      showResultsList();
+      return;
+    }
+
+    if (route === '/runs') {
+      showRuns();
+      return;
+    }
+
+    if (route === '/run') {
+      showRun();
+      return;
+    }
+
+    if (route === '/tasks') {
+      showTasks();
+      return;
+    }
+
+    if (route.indexOf('/results/') === 0) {
+      showResultDetail(decodeURIComponent(route.slice('/results/'.length)));
+      return;
+    }
+
+    location.hash = '#/results';
+  }
+
+  window.addEventListener('hashchange', onRouteChange);
+  window.addEventListener('load', onRouteChange);
+})();

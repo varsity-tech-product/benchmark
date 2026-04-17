@@ -1,45 +1,265 @@
 """Task runner for QuantTutorBench baseline client.
 
-Minimal orchestration layer:
-1. Connect → register → start_session → list_tools
-2. Inject background + student opening into conversation
-3. Single adapter.generate_response() call — BetaToolRunner manages
-   the full session (tool calls, send_message, multi-turn dialogue)
-4. Save client trace
+Two entry points:
+- ``run_via_attach``: Run flow (create run → claim → connect → session)
+- ``run_single_task``: Legacy direct flow (kept for internal testing only)
 
-The agent sees ALL domain tools including send_message and get_background.
-It autonomously decides when to use tools and when to message the student.
+Both use the SessionTransport abstraction for protocol-agnostic execution.
 """
 
 import asyncio
 import json
 import logging
 import time
-import urllib.error
-import urllib.request
 from pathlib import Path
 from typing import Callable, Optional
 
-from mcp.client.session import ClientSession
-from mcp.client.streamable_http import streamablehttp_client
+import httpx
 
 from .cost_tracker import aggregate_cost
-from .tool_bridge import ToolBridge, convert_mcp_tools
 from .trace_writer import save_client_trace
+from .transports.base import SessionTransport
+from .transports.mcp_transport import MCPTransport
+from .transports.rest_transport import RESTTransport
 
 logger = logging.getLogger(__name__)
 
-# Session setup/teardown tools — not part of the teaching interaction.
-# These are called by the runner before/after the agent loop.
-_PROTOCOL_TOOLS = frozenset(
-    {
-        "register_session",
-        "start_session",
-        "request_evaluation",
-        "get_results",
-        "get_scores",
+
+# ---------------------------------------------------------------------------
+# Run flow: create run → claim/start → connect → session
+# ---------------------------------------------------------------------------
+
+
+async def run_via_attach(
+    server_base_url: str,
+    token: str,
+    adapter_factory: Callable,
+    result_dir: Optional[Path] = None,
+    agent_max_steps: Optional[int] = 200,
+    protocol: str = "mcp",
+) -> dict:
+    """Execute a benchmark session by attaching to an existing run.
+
+    The run must already be in CLAIMED state (token obtained from
+    /ui/runs or /client/runs/start).
+    """
+    adapter = adapter_factory()
+    session_id = None
+    task_label = ""
+    start_time = time.time()
+    terminal_error: Optional[str] = None
+
+    transport = _create_transport(protocol)
+
+    try:
+        # 1. Claim (if not already claimed — /client/runs/claim)
+        base = server_base_url.rstrip("/")
+        async with httpx.AsyncClient(base_url=base, timeout=30.0) as http:
+            resp = await http.post(
+                "/client/runs/claim",
+                json={
+                    "run_token": token,
+                    "client": {"name": "baseline_client", "version": "0.1.0"},
+                },
+            )
+            if resp.status_code == 401:
+                # Already claimed (by /client/runs/start) — resolve run info
+                # Try the token to find the run
+                pass
+            elif resp.status_code != 200:
+                raise RuntimeError(f"Claim failed: {resp.text}")
+
+            claim_data = resp.json() if resp.status_code == 200 else {}
+            mcp_url = claim_data.get("mcp_url", f"{base}/mcp")
+            task_label = claim_data.get("public_task_label", "")
+
+        # 2. Connect transport
+        auth_headers = {"Authorization": f"Bearer {token}"}
+        if protocol == "mcp":
+            await transport.connect(mcp_url, headers=auth_headers)
+        else:
+            await transport.connect(base, headers=auth_headers)
+
+        # 3. Register session (task_id resolved from run on server side)
+        reg = await transport.register_session()
+        if reg.get("error"):
+            raise RuntimeError(f"Registration failed: {reg['error']}")
+        session_id = reg.get("session_id")
+        logger.info("[%s] Registered: session=%s", task_label, session_id)
+
+        # 4. Start session
+        start = await transport.start_session()
+        background = start.get("background", "")
+        opening = start.get("student_message", "")
+        logger.info("[%s] Session started: %s...", task_label, opening[:80])
+
+        # 5. List tools
+        domain_tools = await transport.list_tools()
+        logger.info("[%s] %d domain tools", task_label, len(domain_tools))
+
+        # 6. Build initial conversation
+        conversation = []
+        if background:
+            conversation.append(
+                {"role": "user", "content": f"[Session Background]\n{background}"}
+            )
+            conversation.append({"role": "assistant", "content": "Understood."})
+        conversation.append({"role": "user", "content": opening})
+
+        # 7. Run agent
+        if agent_max_steps is not None and agent_max_steps > 0:
+            adapter.set_agent_max_steps(agent_max_steps)
+
+        if protocol == "mcp" and isinstance(transport, MCPTransport):
+            bridge = transport.create_tool_bridge()
+            response = await asyncio.to_thread(
+                adapter.generate_response,
+                messages=conversation,
+                available_tools=domain_tools,
+                tool_callback=bridge.call,
+            )
+        else:
+            # REST transport: create a sync bridge over the async transport
+            bridge = _RESTToolBridge(transport, asyncio.get_running_loop())
+            response = await asyncio.to_thread(
+                adapter.generate_response,
+                messages=conversation,
+                available_tools=domain_tools,
+                tool_callback=bridge.call,
+            )
+
+        logger.info(
+            "[%s] Session complete (%d chars final text)",
+            task_label,
+            len(response or ""),
+        )
+
+    except Exception as exc:
+        terminal_error = str(exc)
+        logger.error("[%s] Task failed: %s", task_label, exc, exc_info=True)
+    finally:
+        try:
+            await transport.close()
+        except Exception:
+            pass
+
+    duration = time.time() - start_time
+
+    # Save client trace
+    agent_cost = {}
+    try:
+        records = adapter.get_token_records()
+        agent_cost = aggregate_cost(records) if records else {}
+        if result_dir and session_id:
+            save_client_trace(
+                result_dir=result_dir,
+                session_id=session_id,
+                task_id=task_label,
+                duration_seconds=duration,
+                agent_cost=agent_cost,
+                thinking_trace=adapter.get_thinking_trace(),
+                content_blocks=adapter.get_content_blocks(),
+            )
+    except Exception as exc:
+        logger.warning("[%s] Failed to save client trace: %s", task_label, exc)
+
+    try:
+        adapter.close()
+    except Exception:
+        pass
+
+    result = {
+        "task_id": task_label,
+        "session_id": session_id,
+        "agent_cost": agent_cost,
+        "duration_seconds": round(duration, 2),
     }
-)
+    if terminal_error:
+        result["error"] = terminal_error
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Convenience: create run + attach in one call
+# ---------------------------------------------------------------------------
+
+
+async def run_task(
+    server_base_url: str,
+    task: str,
+    adapter_factory: Callable,
+    result_dir: Optional[Path] = None,
+    agent_max_steps: Optional[int] = 200,
+    protocol: str = "mcp",
+) -> dict:
+    """Create a run + claim + execute. One-step convenience entry point.
+
+    Calls POST /client/runs/start to get a token, then run_via_attach.
+    """
+    base = server_base_url.rstrip("/")
+    async with httpx.AsyncClient(base_url=base, timeout=30.0) as http:
+        resp = await http.post(
+            "/client/runs/start",
+            json={
+                "task": task,
+                "client": {"name": "baseline_client", "version": "0.1.0"},
+            },
+        )
+        if resp.status_code != 200:
+            return {"task_id": task, "error": f"Create run failed: {resp.text}"}
+        data = resp.json()
+        token = data["token"]
+        logger.info("[%s] Run created: %s", task, data.get("run_id", "?"))
+
+    return await run_via_attach(
+        server_base_url=server_base_url,
+        token=token,
+        adapter_factory=adapter_factory,
+        result_dir=result_dir,
+        agent_max_steps=agent_max_steps,
+        protocol=protocol,
+    )
+
+
+async def run_multiple_tasks(
+    server_base_url: str,
+    tasks: list[str],
+    adapter_factory: Callable,
+    workers: int = 1,
+    result_dir: Optional[Path] = None,
+    agent_max_steps: Optional[int] = 200,
+    protocol: str = "mcp",
+) -> list[dict]:
+    """Run multiple tasks with bounded concurrency."""
+    semaphore = asyncio.Semaphore(workers)
+
+    async def _run_with_sem(task: str) -> dict:
+        async with semaphore:
+            return await run_task(
+                server_base_url,
+                task,
+                adapter_factory,
+                result_dir,
+                agent_max_steps,
+                protocol,
+            )
+
+    coros = [_run_with_sem(t) for t in tasks]
+    results = await asyncio.gather(*coros, return_exceptions=True)
+
+    out = []
+    for task, r in zip(tasks, results):
+        if isinstance(r, Exception):
+            logger.error("[%s] Exception: %s", task, r)
+            out.append({"task_id": task, "error": str(r)})
+        else:
+            out.append(r)
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Legacy: direct MCP connection (used only by old tests internally)
+# ---------------------------------------------------------------------------
 
 
 async def run_single_task(
@@ -50,70 +270,58 @@ async def run_single_task(
     agent_max_steps: Optional[int] = 200,
     persona_id: Optional[str] = None,
 ) -> dict:
-    """Run a single benchmark task end-to-end.
+    """Legacy: run a task via direct MCP connection (no Run layer).
 
-    Flow:
-        1. Connect to server via MCP StreamableHTTP
-        2. register_session(task_id) → session_id
-        3. start_session() → background + student opening message
-        4. list_tools() → all tools (send_message visible to agent)
-        5. Single adapter.generate_response() — agent autonomously
-           calls tools, sends messages to student, handles replies
-        6. Save client trace (client_trace.json + client_trace.md)
+    Kept for backward compatibility with existing test infrastructure.
+    New code should use run_task() or run_via_attach().
     """
+    from mcp.client.session import ClientSession
+    from mcp.client.streamable_http import streamablehttp_client
+
+    from .tool_bridge import ToolBridge, convert_mcp_tools
+
+    _PROTOCOL_TOOLS = frozenset(
+        {
+            "register_session",
+            "start_session",
+            "request_evaluation",
+            "get_results",
+            "get_scores",
+        }
+    )
+
     adapter = adapter_factory()
     session_id = None
     start_time = time.time()
     terminal_error: Optional[str] = None
-    needs_session_cleanup = False
 
     try:
         async with streamablehttp_client(server_url) as (read, write, get_sid):
             async with ClientSession(read, write) as mcp:
                 await mcp.initialize()
 
-                # 1. Register
                 register_args = {"task_id": task_id}
                 if persona_id:
                     register_args["persona_id"] = persona_id
-                reg_result = await mcp.call_tool(
-                    "register_session",
-                    register_args,
-                )
+                reg_result = await mcp.call_tool("register_session", register_args)
                 reg = _parse_tool_result(reg_result)
-                if not reg.get("accepted"):
+                if not reg.get("accepted") and not reg.get("session_id"):
                     raise RuntimeError(
                         f"Registration failed: {reg.get('error', 'unknown')}"
                     )
                 session_id = reg["session_id"]
-                logger.info("[%s] Registered: session=%s", task_id, session_id)
 
-                # 2. Start session — returns background + student opening
                 start_result = await mcp.call_tool("start_session", {})
                 start = _parse_tool_result(start_result)
                 background = start.get("background", "")
                 opening = start.get("student_message", "")
-                logger.info(
-                    "[%s] Session started: %s...",
-                    task_id,
-                    opening[:80],
-                )
 
-                # 3. List tools — agent sees everything including
-                #    send_message and get_background
                 tools_result = await mcp.list_tools()
                 all_tools = convert_mcp_tools(tools_result)
                 domain_tools = [
                     t for t in all_tools if t["name"] not in _PROTOCOL_TOOLS
                 ]
-                logger.info(
-                    "[%s] %d domain tools (filtered from %d total)",
-                    task_id,
-                    len(domain_tools),
-                    len(all_tools),
-                )
 
-                # 4. Build initial conversation
                 conversation = []
                 if background:
                     conversation.append(
@@ -125,41 +333,27 @@ async def run_single_task(
                     conversation.append({"role": "assistant", "content": "Understood."})
                 conversation.append({"role": "user", "content": opening})
 
-                # 5. Single agent run — BetaToolRunner handles the full
-                #    session including send_message calls to the student
                 bridge = ToolBridge(mcp, asyncio.get_running_loop())
                 if agent_max_steps is not None and agent_max_steps > 0:
                     adapter.set_agent_max_steps(agent_max_steps)
 
-                response = await asyncio.to_thread(
+                await asyncio.to_thread(
                     adapter.generate_response,
                     messages=conversation,
                     available_tools=domain_tools,
                     tool_callback=bridge.call,
                 )
 
-                logger.info(
-                    "[%s] Session complete (%d chars final text)",
-                    task_id,
-                    len(response or ""),
-                )
-
     except Exception as exc:
         terminal_error = str(exc)
-        needs_session_cleanup = session_id is not None
         logger.error("[%s] Task failed: %s", task_id, exc, exc_info=True)
-
-    if needs_session_cleanup and session_id:
-        await _delete_mcp_session(server_url, session_id)
 
     duration = time.time() - start_time
 
-    # 6. Save client-side trace
     agent_cost = {}
     try:
         records = adapter.get_token_records()
         agent_cost = aggregate_cost(records) if records else {}
-
         if result_dir and session_id:
             save_client_trace(
                 result_dir=result_dir,
@@ -189,40 +383,30 @@ async def run_single_task(
     return result
 
 
-async def run_multiple_tasks(
-    server_url: str,
-    task_ids: list[str],
-    adapter_factory: Callable,
-    workers: int = 1,
-    result_dir: Optional[Path] = None,
-    agent_max_steps: Optional[int] = 200,
-    persona_id: Optional[str] = None,
-) -> list[dict]:
-    """Run multiple tasks with bounded concurrency."""
-    semaphore = asyncio.Semaphore(workers)
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
 
-    async def _run_with_sem(tid: str) -> dict:
-        async with semaphore:
-            return await run_single_task(
-                server_url,
-                tid,
-                adapter_factory,
-                result_dir,
-                agent_max_steps,
-                persona_id,
-            )
 
-    tasks = [_run_with_sem(tid) for tid in task_ids]
-    results = await asyncio.gather(*tasks, return_exceptions=True)
+def _create_transport(protocol: str) -> SessionTransport:
+    if protocol == "rest":
+        return RESTTransport()
+    return MCPTransport()
 
-    out = []
-    for tid, r in zip(task_ids, results):
-        if isinstance(r, Exception):
-            logger.error("[%s] Exception: %s", tid, r)
-            out.append({"task_id": tid, "error": str(r)})
-        else:
-            out.append(r)
-    return out
+
+class _RESTToolBridge:
+    """Sync bridge for REST transport, matching ToolBridge interface."""
+
+    def __init__(self, transport: RESTTransport, loop: asyncio.AbstractEventLoop):
+        self._transport = transport
+        self._loop = loop
+
+    def call(self, tool_name: str, **kwargs) -> str:
+        future = asyncio.run_coroutine_threadsafe(
+            self._transport.call_tool(tool_name, kwargs),
+            self._loop,
+        )
+        return future.result(timeout=600)
 
 
 def _parse_tool_result(result) -> dict:
@@ -236,28 +420,3 @@ def _parse_tool_result(result) -> dict:
         if isinstance(text, str) and text.strip().startswith("Error:"):
             return {"error": text}
         return {"raw": text}
-
-
-async def _delete_mcp_session(server_url: str, session_id: str) -> None:
-    """Best-effort MCP session cleanup for failed runs."""
-    await asyncio.to_thread(_delete_mcp_session_sync, server_url, session_id)
-
-
-def _delete_mcp_session_sync(server_url: str, session_id: str) -> None:
-    req = urllib.request.Request(
-        server_url,
-        method="DELETE",
-        headers={"mcp-session-id": session_id},
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=5):
-            return
-    except urllib.error.HTTPError as exc:
-        if exc.code != 404:
-            logger.debug(
-                "Failed to delete MCP session %s: HTTP %s",
-                session_id[:8],
-                exc.code,
-            )
-    except Exception as exc:
-        logger.debug("Failed to delete MCP session %s: %s", session_id[:8], exc)

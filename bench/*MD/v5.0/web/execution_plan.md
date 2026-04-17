@@ -3,7 +3,7 @@
 > 日期：2026-04-13
 > 目标：为新 Client-Server 架构搭建可视化前端，结果展示与 legacy 版本一致
 > 执行者：Codex
-> 版本：v3（基于 review feedback 二次修订）
+> 版本：v4（2026-04-16 同步本地实现状态与新架构变化）
 
 ---
 
@@ -20,6 +20,17 @@
 - Results 详情（三栏布局：Info + Conversation + Tools）
 - Score / Cost / Trace Report 弹窗
 - Tasks 浏览页
+
+### 当前实现状态（2026-04-16）
+
+首轮交付范围已经落地在新的隔离路径 `bench/server/web/`，并且已经额外完成以下扩展：
+
+- 左侧 `Info`、中间 `Conversation`、右侧 `Tools` 三栏详情页；状态栏固定在顶部，左右栏支持 legacy 风格的侧边展开/收起。
+- `send_message` 已从普通 domain tool 中拆出，作为协议通信事件在 Conversation 中独立展示；右侧 `Tools` 仅展示真正的 domain tools。
+- 右上角 `Workspace` Explorer 已实现，支持列表、搜索、类型统计、markdown/json/csv/code/text/image 预览，并保留 raw/download 入口。
+- `ResultIndexer` 已合并 server `run_state`、client `client_trace`、task/persona metadata、evaluation reports，并对缺失 client trace 做降级。
+- `Run` 页面已拆分为 `Agent Test` / `Human Test` 入口：Human 继续使用 REST session harness；Agent 只展示真实 MCP client runner 流程和后端 job launcher 缺口，不把自动化 agent 测试伪装成人工聊天。
+- `bench/tests/test_server_web_ui.py` 已覆盖 indexer、UI routes、workspace preview、静态挂载和 `send_message` 拆分。
 
 **不包含**（后续阶段）：
 - Dashboard 统计页
@@ -117,6 +128,8 @@ def ui_routes(manager) -> list[Route]:
         Route("/ui/tasks", list_tasks),
         Route("/ui/results", list_results),
         Route("/ui/results/{session_id}", get_detail),
+        Route("/ui/results/{session_id}/workspace", get_workspace),
+        Route("/ui/results/{session_id}/workspace/preview/{path:path}", get_workspace_preview),
         Route("/ui/results/{session_id}/files/{path:path}", get_file),
     ]
 ```
@@ -138,8 +151,9 @@ def ui_routes(manager) -> list[Route]:
 | `persona_id` | run_state.json → `persona_id` | — | "unknown" |
 | `duration_seconds` | run_state.json → `duration_seconds` | — | 0 |
 | `turn_count` | `len([t for t in conversation if t["role"]=="assistant"])` | — | 0 |
-| `tool_count` | `len(run_state["tool_logs"])` | — | 0 |
-| `step_count` | run_state.json → `step_count` | `tool_count` | 0 |
+| `tool_count` | `len(domain_tool_logs)` after filtering out `send_message` | — | 0 |
+| `send_message_count` | `len(send_message_events)` split from raw `tool_logs` | — | 0 |
+| `step_count` | run_state.json → `step_count`（substantive steps，由 `result_writer` 排除 non-substantive tools） | `len(raw_tool_logs)` | 0 |
 | `evaluation_status` | run_state.json → `evaluation_status` | `_resolve_latest_eval_dir()` 存在则 "completed" | "pending" |
 | `overall_score` | `_resolve_latest_eval_dir()` / eval_meta.json → `overall_score` | — | `null`（前端显示 "—"） |
 | `model` | client_trace.json → `agent_cost.model` | — | `null`（前端显示 "Unknown"） |
@@ -151,6 +165,17 @@ def ui_routes(manager) -> list[Route]:
 | `scores_md` | `_resolve_latest_eval_dir()` / scores.md | — | `null`（前端隐藏 Score Report 按钮） |
 | `cost_md` | `_resolve_latest_eval_dir()` / cost.md | — | `null`（前端隐藏 Cost Report 按钮） |
 | `trace_md` | `_resolve_latest_eval_dir()` / trace.md | — | `null`（前端隐藏 Trace Report 按钮） |
+
+#### `tool_logs` 口径
+
+新架构中 `send_message` 是 agent 可见、通过 proxy 记录的通信工具，因此会出现在原始 `run_state["tool_logs"]` 中。但 UI 展示时必须拆分：
+
+- `all_tool_logs`：原始日志，保留审计/调试完整性。
+- `tool_logs`：过滤掉 `send_message` 后的 domain tool 日志，用于右侧 Tools 面板和 `tool_count`。
+- `send_message_events`：从 `send_message` 日志解析出的通信事件，用于 Conversation 中的独立协议卡片。
+- `send_message_count`：通信事件数量，用于 Info 面板和结果摘要。
+
+不要再使用 `len(run_state["tool_logs"])` 作为右侧工具数量，否则协议通信会混入 domain tools。
 
 #### `_resolve_latest_eval_dir()` 实现
 
@@ -309,7 +334,10 @@ def load_eval_history(result_dir: Path) -> list[dict]:
     {"role": "assistant", "content": "...", "content_blocks": [{...}, ...]}
   ],
 
-  "tool_logs": [...],
+  "tool_logs": [...],               // domain tools only; excludes send_message
+  "all_tool_logs": [...],           // raw run_state tool_logs
+  "send_message_events": [...],     // protocol communication events
+  "send_message_count": 3,
   "workspace_files": [...],
   "distractor_names": [...],
 
@@ -322,7 +350,7 @@ def load_eval_history(result_dir: Path) -> list[dict]:
 }
 ```
 
-**注意**：detail response 也直接返回 `turn_count` / `tool_count` / `step_count`。不要让 `buildInfoPanel(data)` 在前端重复推导这些值，避免列表页与详情页口径不一致。
+**注意**：detail response 也直接返回 `turn_count` / `tool_count` / `send_message_count` / `step_count`。不要让 `buildInfoPanel(data)` 在前端重复推导这些值，避免列表页与详情页口径不一致。
 
 ### 3.6 `GET /ui/results/{session_id}/files/{path:path}`
 
@@ -353,6 +381,50 @@ async def get_file(request):
 ```
 
 **注意**：不要用 `if ".." in file_path` 做字符串检查——这能挡住常见输入但不够严格（如 symlink / prefix confusion）。必须用 `resolve()` + `relative_to()`（或 `os.path.commonpath()`）确认最终路径在 `agent_files/` 内。
+
+### 3.6.1 `GET /ui/results/{session_id}/workspace`
+
+当前实现已经新增 Workspace Explorer 数据端点。它不是 raw file 下载接口，而是为右上角 Workspace 弹窗提供文件索引：
+
+```json
+{
+  "session_id": "abc123",
+  "file_count": 3,
+  "top_extensions": [".py", ".csv", ".png"],
+  "files": [
+    {
+      "path": "reports/chart.png",
+      "name": "chart.png",
+      "extension": ".png",
+      "size_bytes": 12345,
+      "mime_type": "image/png",
+      "kind": "image",
+      "raw_url": "/ui/results/abc123/files/reports/chart.png"
+    }
+  ]
+}
+```
+
+实现要点：
+
+- 优先使用 `run_state["workspace_files"]`，缺失时扫描 `agent_files/`。
+- `kind` 当前支持 `image` / `markdown` / `json` / `csv` / `code` / `text` / `binary`。
+- raw 文件仍通过 `/ui/results/{session_id}/files/{path:path}` 读取。
+
+### 3.6.2 `GET /ui/results/{session_id}/workspace/preview/{path:path}`
+
+Workspace 预览端点用于弹窗内展示文件内容，避免点击文件时打开新的 HTML 页面。
+
+当前实现：
+
+- 图片：返回 metadata + `raw_url`，前端 inline `<img>` 展示。
+- Markdown：返回 `content_text`，前端走 `QTB.renderMarkdown()`。
+- JSON：小文件 pretty print；过大文件按文本截断。
+- CSV/TSV：返回 `columns` + `rows`，前端表格展示，限制前 100 行、24 列。
+- Code/Text：返回 `content_text`，前端 `<pre><code>` 展示。
+- Binary：返回不可预览说明，只保留 raw/download。
+
+该端点与 raw file 一样必须使用 `resolve()` + `relative_to()` 做路径逃逸保护。
 
 ### 3.7 索引缓存策略
 
@@ -407,6 +479,18 @@ def sanitize_for_json(obj):
 ```
 
 在 `list_results` 和 `get_detail` 返回 JSON 前调用。
+
+### 3.9 新 Client-Server 架构更新
+
+当前本地代码相较最初执行计划有几处架构变化，后续实现必须以这些变化为准：
+
+1. `send_message` 是 agent 可见工具，不是 server 内部私有调用。`SessionState.get_visible_tools()` 在 `IN_SESSION` 阶段返回 `[send_message, get_background] + domain_tools`。
+2. client runner 只过滤 `register_session` / `start_session` / `request_evaluation` / `get_results` / `get_scores`，因此 agent 可以在一次 `adapter.generate_response()` 内自主调用 `send_message`、`get_background` 和 domain tools。
+3. `send_message` 通过 proxy 调用并进入 raw `tool_logs`，以保证审计完整；UI/报告层负责把它从 domain tools 中拆出。
+4. `send_message` 已支持 `attachments`：最多 3 个 workspace 文件；文本会截断读取，图片会进入 file ledger；学生只看到通过 `send_message` 发送的文字和附件，不会看到 agent 普通文本输出、工具调用或 raw command output。
+5. `start_session` 返回 `background + student_message`。client 把 background 注入本地 agent context，但 server 保存的正式 conversation 从学生 opening 开始，不包含这个 synthetic background turn。
+6. server 保存结果时可能把 `run_state.session_id` 写成 `{uuid}_{task_prefix}`，而 client trace 目录通常仍按原始 `{uuid}` 保存。UI 合并 client trace 时必须兼容两种 session id 口径，至少要支持先按完整 id、再按去除 `_{A00}` 后缀的 id 查找。
+7. `client/trace_writer.py` 已增加 `content_blocks_mode`，并会在 whole-session capture 场景下按成功的 `send_message` 工具调用切分 content blocks。UI merge 层应优先消费已切好的 per-turn blocks；遇到旧 trace 或无法对齐的 trace 时降级为纯文本，不能错位渲染。
 
 ---
 
@@ -754,36 +838,47 @@ function showResultDetail(sessionId) {
 
 ### 功能验收
 
-- [ ] 访问 `http://localhost:8000/` 进入首页，默认展示 Results 列表
-- [ ] Results 列表正确显示所有 `results/server/` 下的 archived 结果
-- [ ] filter bar 按 category / eval_status 过滤生效
-- [ ] 搜索框按 task_id 模糊匹配生效
-- [ ] 点击结果进入详情页，三栏布局正确
-- [ ] 中栏对话正确回放（含 content_blocks inline rendering）
-- [ ] 有 client_trace 时 thinking block 可折叠展开
-- [ ] 无 client_trace 时降级为纯文本回放（不报错）
-- [ ] 右栏工具列表正确显示（含 success/fail 状态）
-- [ ] 工具卡片点击弹窗显示完整 args/result（有滚动条）
-- [ ] 图片在 tool result 和 inline 中正确显示（非 404）
-- [ ] 图片在弹窗中也正确显示
-- [ ] Score Report 弹窗正确渲染 markdown（含 `<details>` 折叠）
-- [ ] Cost / Trace Report 弹窗正确显示
-- [ ] Tasks 页面按 category 分组展示
-- [ ] 导航栏 Results / Tasks 切换正常
+- [x] 访问 `http://localhost:8000/` 进入首页，默认展示 Results 列表
+- [x] Results 列表正确显示所有 `results/server/` 下的 archived 结果
+- [x] filter bar 按 category / eval_status 过滤生效
+- [x] 搜索框按 task_id 模糊匹配生效
+- [x] 点击结果进入详情页，三栏布局正确
+- [x] 中栏对话正确回放（含 content_blocks inline rendering）
+- [x] 有 client_trace 时 thinking block 可折叠展开
+- [x] 无 client_trace 时降级为纯文本回放（不报错）
+- [x] 右栏工具列表正确显示（含 success/fail 状态）
+- [x] `send_message` 不再混入右栏 Tools，而是在 Conversation 中单独作为协议通信事件展示
+- [x] 工具卡片点击弹窗显示完整 args/result（有滚动条）
+- [x] 图片在 tool result 和 inline 中正确显示（非 404）
+- [x] 图片在弹窗中也正确显示
+- [x] Score Report 弹窗正确渲染 markdown（含 `<details>` 折叠）
+- [x] Cost / Trace Report 弹窗正确显示
+- [x] Workspace Explorer 通过右上角按钮打开，文件在弹窗内预览而不是跳转新 HTML 页面
+- [x] Tasks 页面按 category 分组展示
+- [x] 导航栏 Results / Tasks 切换正常
 
 ### 视觉验收
 
-- [ ] 暖色主题一致（amber/brown/beige）
-- [ ] 消息气泡样式一致（tutor 左、student 右）
-- [ ] 工具卡片样式一致
-- [ ] 导航栏样式一致
+- [x] 暖色主题一致（amber/brown/beige）
+- [x] 消息气泡样式一致（tutor 左、student 右）
+- [x] 工具卡片样式一致
+- [x] 导航栏样式一致
+- [x] 左侧 Info 与右侧 Tools 均为侧边可展开/收起面板，收起条位置贴合侧栏
+- [x] 顶部详情状态栏固定，Info / Conversation / Tools 三个板块各自滚动
 
 ### 技术验收
 
-- [ ] 无 JavaScript 控制台错误
-- [ ] JSON 中的 NaN/Infinity 不导致解析失败
-- [ ] 路径遍历攻击被阻止（`resolve()` + `relative_to()` 后不能逃出 `agent_files/` 根目录）
-- [ ] 弹窗长内容有滚动条
+- [ ] 浏览器人工 smoke：无 JavaScript 控制台错误
+- [x] JSON 中的 NaN/Infinity 不导致解析失败
+- [x] 路径遍历攻击被阻止（`resolve()` + `relative_to()` 后不能逃出 `agent_files/` 根目录）
+- [x] 弹窗长内容有滚动条
+- [x] Workspace preview 对 markdown/json/csv/code/text/image/binary 做类型化展示或安全降级
+
+### 已发现的后续补强项
+
+- [x] `ResultIndexer._load_client_trace()` 需要兼容 server `session_id={uuid}_{task_prefix}` 与 client trace 目录 `{uuid}` 的映射，避免新存储 id 口径下误判 `has_client_trace=false`。
+- [x] `send_message_events` 需要继续补充附件展示：当前 server conversation 已记录 attachment metadata，但 UI 的协议卡片还没有显式展示附件列表/预览入口。
+- [x] `bench/server/web/README.md` 需要同步 Workspace routes 与 `send_message` 拆分后的 read model。
 
 ---
 
@@ -833,6 +928,8 @@ function showResultDetail(sessionId) {
 
 ### Phase 1：后端骨架与静态挂载
 
+**状态：已完成。**
+
 **目标**：
 - 建立 `bench/server/web/` 目录
 - 完成 `http_app.py` 中的 Starlette 接线
@@ -852,6 +949,8 @@ function showResultDetail(sessionId) {
 
 ### Phase 2：`ResultIndexer` 与 `/ui/*` 真正数据层
 
+**状态：已完成。**
+
 **目标**：
 - 实现 `ui_indexer.py`
 - `/ui/tasks` 返回真实任务/人格数据
@@ -870,6 +969,8 @@ function showResultDetail(sessionId) {
 
 ### Phase 3：前端 Shell 与 Results/Tasks 列表
 
+**状态：已完成。**
+
 **目标**：
 - 建立最小 `app.js`
 - 建立导航、Results 列表页、Tasks 页
@@ -887,6 +988,8 @@ function showResultDetail(sessionId) {
 - report modal 深度适配
 
 ### Phase 4：详情页与 legacy 回放组件迁移
+
+**状态：已完成，并已额外完成 send_message 协议事件拆分、左右栏 legacy 风格折叠、Workspace Explorer。**
 
 **目标**：
 - 迁移 `render.js`、`chat.js`、`tools.js`
@@ -908,6 +1011,8 @@ function showResultDetail(sessionId) {
 
 ### Phase 5：收尾、验证与文档回填
 
+**状态：基本完成。剩余项见第 9 节“已发现的后续补强项”。**
+
 **目标**：
 - 做样式清理与小问题修正
 - 补充报错处理、空态、按钮显隐
@@ -924,12 +1029,62 @@ function showResultDetail(sessionId) {
 - 不新增 Evaluate/Re-evaluate
 - 不新增 live monitoring
 
+### Phase 6：Run 界面（先于 Eval）
+
+**状态：第一版 REST session harness 已实现，并已完成 Human / Agent 模式拆分。**
+
+**目标**：
+- 在新隔离前端中新增 Run 页面，支持从 task/persona 创建并启动新 client-server session。
+- Run 页面优先复刻 legacy 的任务选择、人格选择、运行状态、对话/工具/信息布局，但不复用 legacy 路径或 legacy run/eval 逻辑。
+- Run 页面需要以新架构为准：`register_session` / `start_session` / `send_message` / domain tools 都走 `/session/*` 或 MCP-compatible server API，不直接读写 legacy `results/run-single/`。
+- 运行过程产生的结果仍落到 `results/server/` 与 `results/client/`，完成后可跳转到现有 Results detail 页面继续查看 workspace、reports、trace。
+
+**当前第一版边界**：
+- 进入 Run 时必须先选择 `Human Test` 或 `Agent Test`。
+- `Human Test` 是浏览器侧 REST session harness：注册、启动、显示 client-visible background/student opening、发送 tutor 消息/附件、刷新状态/tools、取消、完成后跳 Results。
+- `Agent Test` 对齐 `bench/client/runner.py` 的真实 MCP 流程，但当前只展示执行边界和配置入口，`Start Agent Run` 保持禁用。
+- 第一版不启动 `bench/client/runner.py`，也不管理本地 agent 子进程；autonomous client launch 需要单独设计后端进程管理和安全边界。
+- Run 执行界面只显示公开 task label（如 `D01` / `X09`），不暴露完整 task id、category、difficulty、description；Info 栏只显示 client-visible runtime context。
+
+**已完成**：
+- 新增 `#/run` SPA route 和导航入口。
+- 复用 `/ui/tasks` 读取 task/persona catalog。
+- 接入 `/session/register`、`/session/{sid}/start`、`/session/{sid}`、`/session/{sid}/tools`、`/session/{sid}/send`、`DELETE /session/{sid}`。
+- 前端维护本轮运行的 conversation preview，完成后提供跳转 Results detail。
+- Run 入口拆为 Agent / Human；Human 模式保留可执行 REST harness，Agent 模式明确等待后端 job launcher。
+- Run 布局改为左 Info / 中 Conversation / 右 Tools，Conversation 占主宽度，实时工具可见性与 live activity 放在右侧。
+- 增加 action 状态机（registering / starting / refreshing / sending / cancelling），执行中锁定 start/send/refresh/cancel/reset/mode 切换等按钮，避免重复点击。
+
+**本轮只关注**：
+- Human Test 的 REST session lifecycle 闭环。
+- Agent Test 的真实流程说明与禁用态边界，不在前端硬启 client runner。
+- 最小可用的运行状态展示、按钮锁定与完成后跳转。
+- 确保 Run 视图不泄漏 hidden task metadata。
+
+**暂不做**：
+- Evaluate / Re-evaluate UI。
+- Dashboard。
+- 完整 live monitoring/SSE。第一版 Run 页面可以用轮询或手动刷新状态，避免先把实时系统做复杂。
+- Web 启动自动化 agent job。需要新增后端 job manager、subprocess 生命周期、日志/工具事件轮询或 SSE、取消与结果映射后再开启。
+
+### Phase 7：Evaluation / Re-evaluation UI
+
+**状态：Phase 6 完成后再做。**
+
+**目标**：
+- 在 Results detail 或独立 Eval 面板中接入 `POST /session/{sid}/evaluate?force=true&eval_mode=...&tutor_dims=...`。
+- 支持 eval history、latest report 切换、eval_mode/tutor_dims 参数展示与触发。
+- 对齐新的 rubric/eval pipeline，不再按旧 eval UI 假设实现。
+
 ### 建议的对话节奏
 
-1. 对话 1：只做 Phase 1
-2. 对话 2：只做 Phase 2
-3. 对话 3：只做 Phase 3
-4. 对话 4：只做 Phase 4
-5. 对话 5：只做 Phase 5
+1. 对话 1：Phase 1 已完成
+2. 对话 2：Phase 2 已完成
+3. 对话 3：Phase 3 已完成
+4. 对话 4：Phase 4 已完成
+5. 对话 5：Phase 5 基本完成
+6. 对话 6：先修复第 9 节中影响 Run/Results 串联的补强项，然后实现 Phase 6 Run 页面最小闭环
+7. 对话 7：Run 页面 polish 与人工视觉审核
+8. 对话 8：进入 Phase 7 Evaluation / Re-evaluation UI
 
 如果某一轮实现量超出预期，优先在该 phase 内再拆一轮，而不是把下一 phase 提前混进来。

@@ -43,6 +43,8 @@ def save_run_state(
     tc_coverage: Optional[dict] = None,
     tc_debug_history: Optional[list[dict]] = None,
     artifact_debug_history: Optional[list[dict]] = None,
+    run_id: str = "",
+    public_task_label: str = "",
 ) -> Path:
     """Save ``run_state.json`` + ``run_state.md``."""
     result_dir = Path(result_dir)
@@ -96,6 +98,8 @@ def save_run_state(
     fmt_ok, fmt_errors = _validate(fmt_state)
 
     state = {
+        "run_id": run_id,
+        "public_task_label": public_task_label,
         "task_id": task_id,
         "session_id": session_id,
         "persona_id": persona_id,

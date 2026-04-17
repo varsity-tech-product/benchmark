@@ -1,0 +1,254 @@
+"""RunService — protocol-agnostic business logic for Run operations.
+
+All REST handlers call this service. No HTTP/MCP concerns here.
+"""
+
+import hashlib
+import logging
+import secrets
+from datetime import datetime, timedelta, timezone
+from typing import Optional
+from uuid import uuid4
+
+from .catalog import TaskCatalog
+from .models import TERMINAL_STATUSES, RunAssignment, RunStatus
+from .store import RunStore
+
+logger = logging.getLogger(__name__)
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _token_expired(expires_at: str) -> bool:
+    if not expires_at:
+        return False
+    try:
+        exp = datetime.fromisoformat(expires_at)
+        return datetime.now(timezone.utc) > exp
+    except ValueError:
+        return False
+
+
+class RunService:
+    """Protocol-agnostic Run business logic."""
+
+    def __init__(self, catalog: TaskCatalog, store: RunStore):
+        self._catalog = catalog
+        self._store = store
+
+    @property
+    def catalog(self) -> TaskCatalog:
+        return self._catalog
+
+    def create_run(
+        self,
+        task: str,
+        mode: str = "agent",
+        persona_policy: str = "auto",
+        token_ttl_minutes: int = 30,
+    ) -> tuple[RunAssignment, str]:
+        """Create a RunAssignment + generate token.
+
+        Returns (assignment, raw_token). raw_token is only available here.
+        """
+        entry = self._catalog.resolve(task)
+        if entry is None:
+            raise ValueError(f"Unknown task: {task}")
+
+        raw_token = f"qtb_{secrets.token_urlsafe(24)}"
+        token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
+        token_hint = raw_token[:12]
+
+        now = _now_iso()
+        expires_at = ""
+        if token_ttl_minutes > 0:
+            exp = datetime.now(timezone.utc) + timedelta(minutes=token_ttl_minutes)
+            expires_at = exp.isoformat()
+
+        assignment = RunAssignment(
+            run_id=f"run_{uuid4().hex}",
+            mode=mode,
+            public_task_label=entry.public_label,
+            task_id=entry.task_id,
+            status=RunStatus.WAITING,
+            token_hint=token_hint,
+            token_hash=token_hash,
+            token_expires_at=expires_at,
+            persona_policy=persona_policy,
+            created_at=now,
+            updated_at=now,
+        )
+        self._store.save(assignment)
+        logger.info(
+            "Run created: %s task=%s token=%s...",
+            assignment.run_id,
+            entry.public_label,
+            token_hint,
+        )
+        return assignment, raw_token
+
+    def create_and_claim(
+        self,
+        task: str,
+        client_info: Optional[dict] = None,
+        mode: str = "agent",
+        persona_policy: str = "auto",
+    ) -> tuple[RunAssignment, str]:
+        """Create + immediately claim. For client-initiated runs.
+
+        Returns (assignment, raw_token) with status already CLAIMED.
+        """
+        assignment, raw_token = self.create_run(
+            task=task, mode=mode, persona_policy=persona_policy
+        )
+        now = _now_iso()
+        assignment.status = RunStatus.CLAIMED
+        assignment.client_info = client_info
+        assignment.claimed_at = now
+        assignment.updated_at = now
+        self._store.save(assignment)
+        logger.info("Run auto-claimed: %s", assignment.run_id)
+        return assignment, raw_token
+
+    def claim_run(
+        self,
+        raw_token: str,
+        client_info: Optional[dict] = None,
+    ) -> RunAssignment:
+        """Client claims a run with token. WAITING -> CLAIMED.
+
+        Raises ValueError on invalid/expired token or wrong state.
+        Thread-safe: RunStore.save uses internal lock.
+        """
+        token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
+        assignment = self._store.find_by_token_hash(token_hash)
+
+        if assignment is None:
+            raise ValueError("Invalid token")
+
+        if _token_expired(assignment.token_expires_at):
+            raise ValueError("Token expired")
+
+        if assignment.status != RunStatus.WAITING:
+            raise ValueError(
+                f"Run {assignment.run_id} is in '{assignment.status.value}' state, "
+                f"expected 'waiting'"
+            )
+
+        now = _now_iso()
+        assignment.status = RunStatus.CLAIMED
+        assignment.client_info = client_info
+        assignment.claimed_at = now
+        assignment.updated_at = now
+        self._store.save(assignment)
+        logger.info("Run claimed: %s by %s", assignment.run_id, client_info)
+        return assignment
+
+    def bind_session(self, run_id: str, session_id: str) -> RunAssignment:
+        """Bind a session to a run. CLAIMED -> ACTIVE."""
+        assignment = self._get_or_raise(run_id)
+        if assignment.status != RunStatus.CLAIMED:
+            raise ValueError(
+                f"Run {run_id} is '{assignment.status.value}', expected 'claimed'"
+            )
+        assignment.status = RunStatus.ACTIVE
+        assignment.session_id = session_id
+        assignment.updated_at = _now_iso()
+        self._store.save(assignment)
+        logger.info("Run active: %s session=%s", run_id, session_id[:8])
+        return assignment
+
+    def mark_completed(
+        self, run_id: str, result_dir: Optional[str] = None
+    ) -> RunAssignment:
+        """Session completed. ACTIVE -> COMPLETED."""
+        assignment = self._get_or_raise(run_id)
+        if assignment.status != RunStatus.ACTIVE:
+            logger.warning(
+                "mark_completed on %s in '%s' (expected active)",
+                run_id,
+                assignment.status.value,
+            )
+        now = _now_iso()
+        assignment.status = RunStatus.COMPLETED
+        assignment.result_dir = result_dir
+        assignment.completed_at = now
+        assignment.updated_at = now
+        self._store.save(assignment)
+        logger.info("Run completed: %s", run_id)
+        return assignment
+
+    def mark_failed(self, run_id: str, error: str) -> RunAssignment:
+        """Execution failed. Any non-terminal -> FAILED."""
+        assignment = self._get_or_raise(run_id)
+        if assignment.status in TERMINAL_STATUSES:
+            logger.warning(
+                "mark_failed on %s in terminal '%s' — skipping",
+                run_id,
+                assignment.status.value,
+            )
+            return assignment
+        assignment.status = RunStatus.FAILED
+        assignment.error = error
+        assignment.updated_at = _now_iso()
+        self._store.save(assignment)
+        logger.info("Run failed: %s error=%s", run_id, error)
+        return assignment
+
+    def cancel_run(self, run_id: str) -> RunAssignment:
+        """Cancel a run. Any non-terminal -> CANCELLED.
+
+        Note: session cleanup is handled by BenchSessionManager, not here.
+        This method only updates run status.
+        """
+        assignment = self._get_or_raise(run_id)
+        if assignment.status in TERMINAL_STATUSES:
+            raise ValueError(
+                f"Run {run_id} is already in terminal state '{assignment.status.value}'"
+            )
+        assignment.status = RunStatus.CANCELLED
+        assignment.updated_at = _now_iso()
+        self._store.save(assignment)
+        logger.info("Run cancelled: %s", run_id)
+        return assignment
+
+    def update_eval_status(self, run_id: str, eval_status: str) -> None:
+        """Mirror SessionState._eval_status into RunAssignment."""
+        assignment = self._store.get(run_id)
+        if assignment is None:
+            return
+        assignment.eval_status = eval_status
+        assignment.updated_at = _now_iso()
+        self._store.save(assignment)
+
+    def get_run(self, run_id: str) -> Optional[RunAssignment]:
+        return self._store.get(run_id)
+
+    def list_runs(
+        self,
+        status: Optional[str] = None,
+        task: Optional[str] = None,
+    ) -> list[RunAssignment]:
+        status_enum = RunStatus(status) if status else None
+        runs = self._store.list_runs(status=status_enum)
+        if task:
+            runs = [r for r in runs if r.public_task_label == task]
+        return runs
+
+    def resolve_token(self, raw_token: str) -> Optional[RunAssignment]:
+        """Find a run by raw token. Does NOT change state."""
+        token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
+        assignment = self._store.find_by_token_hash(token_hash)
+        if assignment is None:
+            return None
+        if _token_expired(assignment.token_expires_at):
+            return None
+        return assignment
+
+    def _get_or_raise(self, run_id: str) -> RunAssignment:
+        assignment = self._store.get(run_id)
+        if assignment is None:
+            raise ValueError(f"Run not found: {run_id}")
+        return assignment

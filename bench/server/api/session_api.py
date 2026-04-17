@@ -165,6 +165,16 @@ class SessionState:
         # Used to send tools/list_changed notifications on phase transitions.
         self._mcp_server: Optional["Server"] = None
 
+        # Run layer binding (set by http_app when connected via run token).
+        self.run_id: Optional[str] = None
+        self._run_task_id: Optional[str] = None  # task_id from RunAssignment
+        # Callback invoked after successful register(). Used by http_app to
+        # bind the session to a RunAssignment without injecting RunService
+        # into SessionState.
+        self._on_registered: Optional[callable] = None
+        # Callback invoked after session completion + result save.
+        self._on_completed: Optional[callable] = None
+
         # Evaluation state (guarded by _eval_lock)
         self._eval_lock = threading.Lock()
         self._eval_status: str = "pending"  # pending | running | completed | failed
@@ -563,12 +573,25 @@ class SessionState:
             self.phase = SessionPhase.REGISTERED
 
             logger.info(
-                "Session %s registered: task=%s persona=%s docker=%s",
+                "Session %s registered: task=%s persona=%s docker=%s run=%s",
                 self.session_id,
                 task_id,
                 self.persona_id,
                 self.use_docker,
+                self.run_id or "none",
             )
+
+            # Notify Run layer (if connected via run token).
+            if self._on_registered:
+                try:
+                    self._on_registered(self.session_id)
+                except Exception as exc:
+                    logger.warning(
+                        "Session %s _on_registered callback failed: %s",
+                        self.session_id,
+                        exc,
+                    )
+
             return {"session_id": self.session_id}
         except Exception as exc:
             logger.exception("Session %s register failed", self.session_id)
@@ -636,6 +659,18 @@ class SessionState:
                     self.session_id,
                     data.get("reason", "unknown"),
                 )
+                # Notify Run layer
+                if self._on_completed:
+                    try:
+                        self._on_completed(
+                            str(self._result_dir) if self._result_dir else None
+                        )
+                    except Exception as exc:
+                        logger.warning(
+                            "Session %s _on_completed callback failed: %s",
+                            self.session_id,
+                            exc,
+                        )
                 # Server-side auto_eval
                 if self.auto_eval:
                     with self._eval_lock:
@@ -797,6 +832,20 @@ class SessionState:
         if name == "register_session":
             task_id = arguments.get("task_id", "")
             persona_id = arguments.get("persona_id")
+            # Run-bound: task_id from RunAssignment overrides client argument
+            if self.run_id and self._run_task_id:
+                task_id = self._run_task_id
+            if not task_id:
+                return [
+                    TextContent(
+                        type="text",
+                        text=json.dumps(
+                            {
+                                "error": "task_id required when not connected via run token"
+                            }
+                        ),
+                    )
+                ]
             result = await asyncio.to_thread(self.register, task_id, persona_id)
             if "session_id" in result:
                 await self._notify_tools_changed()
@@ -884,12 +933,16 @@ class SessionState:
     # ------------------------------------------------------------------
 
     def _storage_session_id(self) -> str:
-        """Session ID with task prefix suffix for optimized storage lookup.
+        """Session ID for result storage.
 
-        Format: ``{uuid}_{task_prefix}`` e.g. ``48ad0019…_D01``.
-        The suffix lets ``find_archived_result_dir`` narrow the search to
-        matching task directories instead of scanning all of them.
+        When bound to a Run (``run_id`` set): returns raw UUID — the
+        ``run_id`` serves as the primary index key.
+
+        Legacy (no run_id): returns ``{uuid}_{task_prefix}`` for O(1)
+        lookup in ``find_archived_result_dir``.
         """
+        if self.run_id:
+            return self.session_id
         prefix = self.task_id.split("_")[0] if self.task_id else ""
         return f"{self.session_id}_{prefix}" if prefix else self.session_id
 
@@ -945,6 +998,8 @@ class SessionState:
             artifact_debug_history=(
                 self.session.artifact_debug_history if self.session else None
             ),
+            run_id=self.run_id or "",
+            public_task_label=(self.task_id.split("_")[0] if self.task_id else ""),
         )
         logger.info("Results saved: %s", result_dir)
 

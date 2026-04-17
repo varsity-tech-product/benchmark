@@ -107,9 +107,10 @@ class TestMultipleSessions:
 
 class TestMalformedRequests:
     @pytest.mark.asyncio
-    async def test_register_no_body(self, client):
+    async def test_register_no_token(self, client):
+        """Register without Authorization header should be rejected."""
         resp = await client.post("/session/register")
-        assert resp.status_code in (400, 422)
+        assert resp.status_code == 401
 
     @pytest.mark.asyncio
     async def test_send_no_text_field(self, client):

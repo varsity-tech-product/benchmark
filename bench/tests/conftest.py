@@ -78,24 +78,6 @@ if "mcp" not in sys.modules:
     sys.modules["mcp.server"] = _mcp_server
     sys.modules["mcp.server.streamable_http"] = _mcp_streamable
 
-# ---------------------------------------------------------------------------
-# Stub ``server.web.ui_app`` — the module is planned but not yet implemented.
-# Without this, ``from server.web.ui_app import ui_routes`` crashes on import.
-# ---------------------------------------------------------------------------
-
-_server_web = types.ModuleType("server.web")
-_server_web_ui = types.ModuleType("server.web.ui_app")
-
-
-def _stub_ui_routes(*_args, **_kwargs):
-    return []
-
-
-_server_web_ui.ui_routes = _stub_ui_routes
-_server_web.ui_app = _server_web_ui
-sys.modules["server.web"] = _server_web
-sys.modules["server.web.ui_app"] = _server_web_ui
-
 # Ensure bench/ is on sys.path so ``import server.*`` works.
 _BENCH_ROOT = Path(__file__).resolve().parents[1]
 if str(_BENCH_ROOT) not in sys.path:

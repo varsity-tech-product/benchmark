@@ -107,7 +107,14 @@ class DynamicTool(BetaBuiltinFunctionTool if ANTHROPIC_SDK_AVAILABLE else object
 
     def call(self, input: object) -> str:
         """Auto-executed by BetaToolRunner when Claude calls this tool."""
-        kwargs = dict(input) if isinstance(input, dict) else {}
+        if isinstance(input, dict):
+            kwargs = input
+        elif hasattr(input, "model_dump"):
+            kwargs = input.model_dump()
+        elif hasattr(input, "__dict__"):
+            kwargs = {k: v for k, v in input.__dict__.items() if not k.startswith("_")}
+        else:
+            kwargs = dict(input) if input else {}
         result = self._callback(self._name, **kwargs)
         return str(result)
 

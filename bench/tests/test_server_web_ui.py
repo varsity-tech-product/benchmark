@@ -64,14 +64,28 @@ class ResultIndexerTests(unittest.TestCase):
                     "duration_seconds": 123.4,
                     "conversation": [
                         {"role": "user", "content": "Question"},
-                        {"role": "assistant", "content": "Answer 1"},
+                        {
+                            "role": "assistant",
+                            "content": "Answer 1",
+                            "attachments": [
+                                {
+                                    "filename": "notes.md",
+                                    "content": "hello",
+                                    "truncated": False,
+                                    "is_image": False,
+                                }
+                            ],
+                        },
                         {"role": "assistant", "content": "Answer 2"},
                     ],
                     "tool_logs": [
                         {"name": "tool_a", "args": {}, "result": "ok", "turn_index": 0},
                         {
                             "name": "send_message",
-                            "args": {"text": "Rendered answer"},
+                            "args": {
+                                "text": "Rendered answer",
+                                "attachments": ["notes.md"],
+                            },
                             "result": json.dumps(
                                 {
                                     "student_message": "Thanks, that helps.",
@@ -106,7 +120,10 @@ class ResultIndexerTests(unittest.TestCase):
                             {"type": "tool_use", "name": "tool_a", "input": {}},
                             {"type": "tool_result", "content": "ok", "is_error": False},
                             {"type": "text", "text": "Rendered answer"},
-                        ]
+                        ],
+                        "1": [
+                            {"type": "text", "text": "Answer 2"},
+                        ],
                     },
                 },
             )
@@ -203,10 +220,78 @@ class ResultIndexerTests(unittest.TestCase):
             )
             self.assertEqual(detail["send_message_events"][0]["status"], "active")
             self.assertEqual(
+                detail["send_message_events"][0]["attachments"][0]["filename"],
+                "notes.md",
+            )
+            self.assertEqual(
+                detail["send_message_events"][0]["attachments"][0]["content"],
+                "hello",
+            )
+            self.assertEqual(
                 detail["conversation"][1]["content_blocks"][0]["type"], "thinking"
             )
             self.assertEqual(
                 detail["conversation"][1]["content_blocks"][1]["type"], "tool_use"
+            )
+
+    def test_client_trace_loads_with_original_id_when_server_id_has_task_suffix(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            base_session_id = "48ad001952494420bf83cc3f5be94c3f"
+            stored_session_id = f"{base_session_id}_D01"
+            run_dir = (
+                root
+                / "results"
+                / "server"
+                / "D01_demo"
+                / "beginner_persona"
+                / f"20260416_120000_{base_session_id[:8]}"
+            )
+            _write_json(
+                run_dir / "run_state.json",
+                {
+                    "session_id": stored_session_id,
+                    "task_id": "D01_demo",
+                    "persona_id": "beginner_persona",
+                    "conversation": [
+                        {"role": "user", "content": "Question"},
+                        {"role": "assistant", "content": "Answer"},
+                    ],
+                    "tool_logs": [],
+                },
+            )
+            _write_json(
+                root / "results" / "client" / base_session_id / "client_trace.json",
+                {
+                    "timestamp": "2026-04-16T12:00:00Z",
+                    "agent_cost": {
+                        "model": "anthropic/claude-sonnet-4-6",
+                        "input_tokens": 10,
+                        "output_tokens": 20,
+                        "cost_usd": 0.01,
+                        "api_calls": 1,
+                    },
+                    "content_blocks": {
+                        "0": [
+                            {"type": "thinking", "text": "mapped"},
+                            {"type": "text", "text": "Answer"},
+                        ],
+                    },
+                },
+            )
+
+            indexer = ResultIndexer(root)
+            summary = indexer.list_results()[0]
+            detail = indexer.get_detail(stored_session_id)
+
+            self.assertEqual(summary["session_id"], stored_session_id)
+            self.assertTrue(summary["has_client_trace"])
+            self.assertEqual(summary["model"], "anthropic/claude-sonnet-4-6")
+            self.assertEqual(detail["session_id"], stored_session_id)
+            self.assertTrue(detail["has_content_blocks"])
+            self.assertEqual(
+                detail["conversation"][1]["content_blocks"][0]["text"],
+                "mapped",
             )
 
     def test_resolve_agent_file_supports_nested_paths_and_blocks_traversal(self):
@@ -428,7 +513,10 @@ class HttpAppSmokeTests(unittest.TestCase):
         self.assertEqual(render_response.status_code, 200)
         self.assertIn("/static/js/chat.js", index_response.text)
         self.assertIn("/static/js/tools.js", index_response.text)
-        self.assertIn("/static/js/app.js?v=20260414l", index_response.text)
+        self.assertIn("/static/js/app.js", index_response.text)
+        self.assertIn("/static/js/run-agent.js", index_response.text)
+        self.assertIn('href="#/run"', index_response.text)
+        self.assertIn('data-route="run"', index_response.text)
         self.assertIn("Isolated UI", index_response.text)
 
 

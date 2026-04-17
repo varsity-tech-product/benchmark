@@ -260,9 +260,81 @@ when a session completes. Clients can still explicitly call `request_evaluation`
 
 ---
 
-## 7. Result Storage
+## 7. Run Layer (Control Plane)
 
-Results are persisted at `results/server/{task_id}/{session_id}/`:
+All benchmark executions go through the Run layer. A **Run** is an assignment
+that binds a task, a token, and a session together.
+
+### 7.1 Create a Run
+
+**From website** (user clicks "My Agent"):
+```
+POST /ui/runs  {"task": "D01", "mode": "agent"}
+-> {"run_id": "run_...", "token": "qtb_...", "mcp_url": "http://...", "launch_command": "..."}
+```
+
+**From client** (one-step create + claim):
+```
+POST /client/runs/start  {"task": "D01", "client": {"name": "my_agent", "version": "1.0"}}
+-> {"run_id": "run_...", "token": "qtb_...", "mcp_url": "http://..."}
+```
+
+### 7.2 Claim a Run (if created separately)
+
+```
+POST /client/runs/claim  {"run_token": "qtb_...", "client": {"name": "my_agent"}}
+-> {"run_id": "run_...", "mcp_url": "http://...", "public_task_label": "D01"}
+```
+
+### 7.3 Connect and Execute
+
+After claiming, connect to the MCP endpoint or use REST with the token:
+
+**MCP:**
+```
+Connect to mcp_url with header: Authorization: Bearer <token>
+Then: register_session() → start_session() → tools + send_message loop
+```
+
+**REST:**
+```
+POST /session/register  (Authorization: Bearer <token>)
+POST /session/{sid}/start
+POST /session/{sid}/send  {"text": "..."}
+POST /session/{sid}/tool/shell_exec  {"command": "..."}
+```
+
+`register_session` does not require `task_id` — the server resolves it from the Run.
+
+### 7.4 Monitor and Cancel
+
+```
+GET /ui/runs/{run_id}         -> run status
+GET /ui/runs/{run_id}/live    -> real-time conversation + tool logs
+POST /ui/runs/{run_id}/cancel -> cancel at any stage
+```
+
+### 7.5 Task Catalog
+
+```
+GET /ui/tasks/catalog
+-> {"tasks": [{"label": "D01", "category": "data_analysis", "difficulty": "easy"}, ...]}
+```
+
+Only public labels + category + difficulty. No internal details.
+
+### 7.6 Run Lifecycle
+
+```
+WAITING → (client claims) → CLAIMED → (session registers) → ACTIVE → COMPLETED / FAILED
+Any non-terminal state can be cancelled → CANCELLED
+```
+
+---
+
+## 8. Result Storage
+
+Results are persisted at `results/server/{task_id}/{persona_id}/{timestamp}_{session_id}/`:
 
 ```
 results/server/X01_ma_offbyone/abc123/

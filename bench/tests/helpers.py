@@ -2,21 +2,41 @@
 
 Provides reusable helpers for creating sessions, seeding workspace files,
 and building request payloads. Modelled after backend-service/tests/helpers.py.
+
+All session registration goes through the Run layer: create run → claim → register.
 """
 
 import httpx
 
 # Default task for tests — lightweight debug task, 3 personas, no LEAN needed.
 DEFAULT_TASK_ID = "X01_ma_offbyone"
+DEFAULT_TASK_LABEL = "X01"
 DEFAULT_PERSONA_ID = "intermediate_developer"
 
 # A second task for multi-task tests.
 SECOND_TASK_ID = "D01_load_inspect_ohlcv"
+SECOND_TASK_LABEL = "D01"
 
 
 # ---------------------------------------------------------------------------
-# Session lifecycle helpers
+# Run + Session lifecycle helpers
 # ---------------------------------------------------------------------------
+
+
+async def create_run(
+    client: httpx.AsyncClient,
+    task: str = DEFAULT_TASK_LABEL,
+) -> tuple[str, str]:
+    """Create a run via /client/runs/start. Returns (run_id, token)."""
+    resp = await client.post(
+        "/client/runs/start",
+        json={"task": task},
+    )
+    assert resp.status_code == 200, f"Create run failed: {resp.text}"
+    body = resp.json()
+    assert "run_id" in body, f"Create run failed: {body}"
+    assert "token" in body, f"Create run failed: {body}"
+    return body["run_id"], body["token"]
 
 
 async def register_session(
@@ -24,14 +44,30 @@ async def register_session(
     task_id: str = DEFAULT_TASK_ID,
     persona_id: str | None = DEFAULT_PERSONA_ID,
 ) -> str:
-    """Register a new session and return the session_id.
+    """Create run + register session. Returns session_id.
 
-    Raises AssertionError if registration fails.
+    Goes through the full Run flow: /client/runs/start → /session/register.
+    The task_id parameter is used to derive the public label for run creation;
+    if it's a full task_id like 'X01_ma_offbyone', the label 'X01' is extracted.
     """
-    payload: dict = {"task_id": task_id}
+    # Extract public label from task_id (e.g. "X01_ma_offbyone" → "X01")
+    import re
+
+    m = re.match(r"^([A-Z]\d{2})_?", task_id)
+    label = m.group(1) if m else task_id
+
+    # 1. Create run + claim
+    _run_id, token = await create_run(client, task=label)
+
+    # 2. Register session with token
+    payload: dict = {}
     if persona_id:
         payload["persona_id"] = persona_id
-    resp = await client.post("/session/register", json=payload)
+    resp = await client.post(
+        "/session/register",
+        json=payload,
+        headers={"Authorization": f"Bearer {token}"},
+    )
     assert resp.status_code == 200, f"Register failed: {resp.text}"
     body = resp.json()
     assert "session_id" in body, f"Register failed: {body}"
@@ -67,9 +103,7 @@ async def get_tools(client: httpx.AsyncClient, sid: str) -> list[dict]:
     return resp.json()["tools"]
 
 
-async def call_tool(
-    client: httpx.AsyncClient, sid: str, name: str, **kwargs
-) -> dict:
+async def call_tool(client: httpx.AsyncClient, sid: str, name: str, **kwargs) -> dict:
     """Call a domain tool and return the response body."""
     resp = await client.post(f"/session/{sid}/tool/{name}", json=kwargs)
     assert resp.status_code == 200, f"Tool call {name} failed: {resp.text}"
@@ -99,9 +133,7 @@ async def register_and_start(
 # ---------------------------------------------------------------------------
 
 
-def seed_workspace_file(
-    workspace_path: str, filename: str, content: str
-) -> str:
+def seed_workspace_file(workspace_path: str, filename: str, content: str) -> str:
     """Write a file into a workspace directory. Returns the full path."""
     import os
 

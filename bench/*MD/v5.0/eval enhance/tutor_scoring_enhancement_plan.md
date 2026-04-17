@@ -1,10 +1,11 @@
 # Tutor 评分体系增强方案：基于文献调研与统计指标分析的五项改进
 
-> 版本：v2.0 | 日期：2026-04-15
+> 版本：v3.0 | 日期：2026-04-16
 > 基于论文调研：TutorBench (2510.02663), MathTutorBench (2502.18940), EduBench (2505.16160)
 > 对标文档：stage_report.md, judge_comparison_analysis.md
 > 状态：实现规格文档（可直接用于开发）
 > v2.0 变更：新增方案五（统计指标增强）；基于论文指标深度调研重构方案四；统一验证指标体系
+> v3.0 变更：标注方案二因人格体系重构而作废；新增人格体系重构说明（§0.5）
 
 ---
 
@@ -60,6 +61,41 @@
 ```
 
 五个方案独立实施、渐进叠加，不互相依赖。方案四可在现有数据上立即执行，方案五依赖专家招募。
+
+### 0.5 人格体系重构对本文档的影响
+
+> **关联决策**：[Issue #12 — Restructure persona system from 3-level proficiency to Finance×Code binary matrix](https://github.com/varsity-tech-product/benchmark/issues/12)
+
+人格体系将从三级 proficiency（Beginner / Intermediate / Advanced）重构为 {Finance, Code} × {听说未实践, 精通} 的四象限矩阵。对本文档五个方案的影响：
+
+| 方案 | 影响 |
+|------|------|
+| **方案一**（Task-Specific Checklist） | 方法论有效。Checklist 条目需按四象限重新设计，但 pass/fail 判定机制不变 |
+| **方案二**（D3/D4 Rubric 修改） | **作废。** 修改对象是旧三人格的 rubric 文本，四象限重构后全部 rubric 将重写。Plan 2 子目录已删除 |
+| **方案三**（对话长度退化分析） | 不受影响。分析方法与人格体系正交 |
+| **方案四**（统计指标增强） | 不受影响。统计方法与人格体系正交。已实施 |
+| **方案五**（Human Calibration） | 不受影响。校准方法论不依赖具体人格定义，但实验设计需适配四象限 |
+
+### 0.6 维度体系重构：7D → 6D
+
+> **关联文档**：[6d_dimension_restructure.md](6d_dimension_restructure.md)
+
+基于 2×2 人格矩阵和旧 D1-D3 维度间 r > 0.92 的实证数据，TEI 维度从 7D 重构为 6D：
+
+| 新维度 | 来源 | 变动说明 |
+|--------|------|---------|
+| D1 Finance-Axis Adaptation | 旧 D1/D2/D3 在金融轴的部分 | 按知识轴切分，非按交付模态 |
+| D2 Code-Axis Adaptation | 旧 D1/D2/D3 在代码轴的部分 | 同上 |
+| D3 Pedagogical Method | 旧 D3 的过程质量部分 | 新增独立维度：教学过程的响应性与结构化 |
+| D4 Instructional Accuracy | 旧 D4 重新定义 | 范围收窄为对话中解释的事实正确性 |
+| D5 Empathetic Response | 旧 D6 | 重编号，定义不变 |
+| D6 Safety & Boundaries | 旧 D7 | 重编号，定义不变 |
+| ~~D5 Code Teaching~~ | **已删除** | 代码适配 → D2；代码质量 → QR/QP |
+
+对五个方案的额外影响：
+- **方案一**：checklist tag taxonomy 需更新（旧 `scaffolding` 拆分为 `finance_adaptation` / `code_adaptation` / `pedagogical_method`）
+- **方案三**：退化分析维度名称更新为 6D
+- **方案五**：评分表从 7D 更新为 6D
 
 ---
 
@@ -391,92 +427,7 @@ Respond in JSON format:
 
 ---
 
-## 方案二：D3/D4 Rubric 修改
-
-> **目标**：在不增加维度、不改代码的前提下，通过修改 rubric JSON 覆盖 Autonomy Preservation 和 Error Diagnosis
-> **优先级**：P1 | **工程成本**：极低（改 3 个 JSON 文件） | **论文价值**：低
-
-### 2.1 D3 Scaffolding Calibration -- 增加 Autonomy Preservation 标准
-
-#### 2.1.1 Beginner 级别修改
-
-**当前 Score 1**:
-> "Agent dumps a complete solution with no explanation of individual steps. No scaffolding at all. (Note: using tools to prepare data before explaining is NOT dumping -- dumping means presenting results without any pedagogical structure.)"
-
-**修改为**:
-> "Agent dumps a complete solution with no explanation of individual steps. No scaffolding at all. Agent provides complete code blocks or full answers without any attempt to guide the student through the reasoning process. (Note: using tools to prepare data before explaining is NOT dumping -- dumping means presenting results without any pedagogical structure.)"
-
-**当前 Score 7**:
-> "Agent provides clear scaffolding with a logical sequence. Each step is preceded by context ('Now we will...') and followed by a comprehension check ('Does this make sense?'). When tools are used, the results are explained step by step."
-
-**修改为**:
-> "Agent provides clear scaffolding with a logical sequence. Each step is preceded by context ('Now we will...') and followed by a comprehension check ('Does this make sense?'). When tools are used, the results are explained step by step. Agent uses guiding questions to help the student think through problems rather than immediately providing complete solutions."
-
-**当前 Score 9**:
-> "Agent creates explicit learning milestones. Periodically summarizes progress ('So far we have covered X, Y, Z -- next we will look at W'). Each new concept is connected to the overall learning goal. When tools are used, their results are woven into the teaching narrative rather than presented as raw output."
-
-**修改为**:
-> "Agent creates explicit learning milestones. Periodically summarizes progress ('So far we have covered X, Y, Z -- next we will look at W'). Each new concept is connected to the overall learning goal. When tools are used, their results are woven into the teaching narrative rather than presented as raw output. Agent actively protects student autonomy -- asks the student to attempt solutions before providing them, and adjusts the level of guidance based on whether the student is making progress independently."
-
-#### 2.1.2 Intermediate 级别修改
-
-**当前 Score 1** 增加:
-> "...or Agent provides complete implementation code without giving the developer a chance to write any code themselves."
-
-**当前 Score 8** 增加:
-> "Agent respects the developer's ability to code independently -- provides conceptual guidance on quant-specific patterns while letting the student handle the implementation, intervening only when the student is stuck."
-
-#### 2.1.3 Advanced 级别修改
-
-**当前 Score 9-10** 增加:
-> "Agent guides the student toward developing their own problem-solving methodology -- e.g., teaching systematic debugging approaches, how to evaluate strategy robustness, or how to decompose unfamiliar quant problems -- rather than only addressing the immediate question. This metacognitive scaffolding helps the advanced learner become self-sufficient."
-
-### 2.2 D4 Domain Accuracy -- 扩展为包含 Error Diagnosis
-
-#### 2.2.1 所有级别的 Criteria 修改
-
-**当前**:
-> "The agent provides factually correct information about financial concepts, formulas, and trading mechanics. Regardless of the level of simplification or depth used, the core facts must be accurate. No misleading statements, incorrect formulas, or factual errors."
-
-**修改为**:
-> "The agent provides factually correct information about financial concepts, formulas, and trading mechanics. Regardless of the level of simplification or depth used, the core facts must be accurate. No misleading statements, incorrect formulas, or factual errors. **Additionally, when the student expresses misconceptions or makes factual errors, the agent should identify and address them accurately.**"
-
-#### 2.2.2 Scoring Guidance 修改（所有级别通用）
-
-**当前 Score 7**:
-> "Agent is accurate across all core concepts. Simplified explanations preserve the essential truth without introducing errors."
-
-**修改为**:
-> "Agent is accurate across all core concepts. Simplified explanations preserve the essential truth without introducing errors. When the student expresses a misconception, the agent identifies the specific error and provides a correct explanation."
-
-**当前 Score 9**:
-> "Agent is highly accurate with excellent attention to detail. Correctly handles edge cases and boundary conditions..."
-
-**修改为**:
-> "Agent is highly accurate with excellent attention to detail. Correctly handles edge cases and boundary conditions... When the student expresses misconceptions, the agent not only corrects the surface error but diagnoses the underlying conceptual gap -- explaining *why* the student's reasoning led to the wrong conclusion."
-
-**当前 Score 10** 增加:
-> "...When student misconceptions arise, the agent treats them as teaching opportunities -- diagnosing the root cause, connecting the correction to the broader conceptual framework, and verifying the student has understood the correction."
-
-### 2.3 实施步骤
-
-```bash
-# 需要修改的文件：
-bench/evaluation/rubrics/rubric_beginner.json      # D3 + D4
-bench/evaluation/rubrics/rubric_intermediate.json   # D3 + D4
-bench/evaluation/rubrics/rubric_advanced.json       # D3 + D4 + metacognitive scaffolding
-```
-
-### 2.4 修改前后对比验证
-
-在 ICC 数据上对比修改前后的 Tutor 分数分布变化：
-
-| 验证项 | 预期结果 |
-|--------|---------|
-| 对"直接给答案"行为的 D3 分数 | 修改后应下降 |
-| 对"识别学生错误"行为的 D4 分数 | 修改后高质量对话应上升 |
-| 整体 Cohen's d | 预期微增（因为区分了"引导式教学" vs "灌输式教学"） |
-| Cross-judge r | 预期不变（仍是 1-10 主观打分，rubric 文本修改不改变评分机制） |
+## ~~方案二~~ [已作废，被 6D 重构取代]
 
 ---
 
@@ -602,85 +553,11 @@ DEGRADATION_MIN_TURNS = 15            # 至少 15 轮才做分段分析
 
 ---
 
-## 方案四：统计指标增强（已实施）
+## ~~方案四~~ [已完成]
 
-> **目标**：在现有 ICC 数据上补齐论文级统计证据，填补三篇参照论文均未覆盖的指标空白
-> **优先级**：P0 | **工程成本**：极低（~100 行代码） | **论文价值**：高
-> **状态**：已实施，输出 `bench/*MD/v5.0/judge_comparison_analysis_v2.md`
-
-### 4.1 指标体系设计原则
-
-评估可靠性的证据分三层，**指标选择必须匹配论文主张**：
-
-| 证据层 | 回答的问题 | 正确指标 | 不适合的指标 |
-|--------|-----------|---------|------------|
-| **区分度稳健性（核心）** | Sonnet > Haiku 的效应量是否统计上稳健？ | Cohen's d [Bootstrap CI]、Wilcoxon p | -- |
-| **Within-judge 可复现性（核心）** | 同一 judge 多次评估同一任务，分数是否稳定？ | CV (变异系数) | Kappa（需 3+ rater） |
-| **Cross-judge 排名稳健性（辅助）** | 换 judge 后模型排名是否改变？ | Pearson r、Spearman ρ、Kendall τ、Bland-Altman | Kappa、Agreement Rate（见下） |
-
-**Kappa / Agreement Rate 的适用场景**：这两个指标衡量"绝对分数档位一致性"，在当前 2-judge cross-judge 场景下主要反映 Haiku judge 的校准偏差（已知 Tutor bias=0.198），而非评估体系的内在可靠性。它们的正确用途是**方案五（多模型 + 人类的多 rater 一致性分析）**，届时不存在先验的系统偏差假设。
-
-### 4.2 完整指标矩阵
-
-| 指标 | 衡量什么 | 适用场景 | 报告值 | 论文定位 |
-|------|---------|---------|--------|---------|
-| **Pearson r [Bootstrap CI]** | 排序相关 | cross-judge 排名 | 0.676-0.872 | §1.1 主要 |
-| **Spearman ρ** | 排序相关（抗异常值） | cross-judge 排名 | 0.620-0.812 | §1.1 主要 |
-| **Kendall τ** | 排序一致性 | cross-judge 排名 | 0.45-0.63 | §1.1 主要 |
-| **ICC(3,1)** | 排名+绝对值一致性 | cross-judge / within-judge | 0.567-0.854 | §1.1 / §2 |
-| **Bland-Altman** | 偏差分解（系统 vs 随机） | cross-judge 分歧来源 | Tutor: bias=0.198, random=0.238 | §1.3 |
-| **Cohen's d [Bootstrap CI]** | 效应量 + 不确定性 | 区分度核心证据 | Tutor: +1.694 [1.17, 2.49] | §3 **核心** |
-| **Wilcoxon p** | 配对显著性 | 区分度核心证据 | 0.0078-0.74 | §3 **核心** |
-| **CV (变异系数)** | 多 run 稳定性 | within-judge 可复现性 | 0%-43.9% per task | §2 **核心** |
-| **维度间 Pearson r** | 维度独立性 | 构念效度 | QR-Tutor r=0.25 | §4 |
-| **粒度消融 d** | 排除量尺伪影 | 鲁棒性 | 10档 d=1.75 vs 5档 d=1.82 | §5 |
-| **Weighted Kappa** | 绝对分数档位一致性 | **多 rater（方案五）** | cross-judge 参考值: 0.231-0.733 | §1.2 参考 |
-| **Agreement Rate** | 与 TutorBench 可比 | **多 rater（方案五）** | cross-judge 参考值: 15.9%-98.1% | §1.2 参考 |
-
-### 4.3 实施结果与关键发现
-
-已实施，代码见 `bench/scripts/analyze_judge_comparison.py`，报告见 `bench/*MD/v5.0/judge_comparison_analysis_v2.md`。
-
-#### 4.3.1 区分度稳健性（核心发现）
-
-| Dim | Cohen's d | Bootstrap 95% CI | CI 含 0？ | 结论 |
-|-----|-----------|-------------------|----------|------|
-| Tutor | +1.694 | [+1.17, +2.49] | 否 | **区分度稳健** |
-| QP | +1.105 | [+0.65, +1.62] | 否 | 区分度稳健 |
-| OAS | +0.987 | [+0.49, +1.56] | 否 | 区分度稳健 |
-| QR | +0.236 | [-0.24, +0.82] | **是** | QR 上两模型差距不显著 |
-
-QR 的 CI 包含 0，意味着 Sonnet 与 Haiku 在结果质量上的差距**统计上不显著**。这强化了论文核心叙事：两个模型"算得一样好，但教得不一样好"。
-
-#### 4.3.2 Cross-judge 排名稳健性
-
-| Dim | Pearson r [CI] | Spearman ρ | Kendall τ | Bias | 方向一致性 |
-|-----|---------------|------------|-----------|------|-----------|
-| QR | 0.872 [0.74, 0.94] | 0.752 | 0.611 | +0.025 | -- |
-| QP | 0.806 [0.68, 0.89] | 0.812 | 0.631 | -0.021 | -- |
-| Tutor | 0.676 [0.53, 0.79] | 0.676 | 0.487 | -0.198 | -- |
-| OAS | 0.571 [0.39, 0.73] | 0.620 | 0.450 | -0.085 | 8/8 S>H |
-
-排名方向 100% 一致：两个 judge 下 Sonnet agent 均优于 Haiku agent。Tutor 虽然 r 最低、bias 最大，但排序方向仍然一致。
-
-#### 4.3.3 Bland-Altman 偏差分解
-
-| Dim | 系统偏差 | 随机分散 | LOA 宽度 |
-|-----|---------|---------|---------|
-| Tutor | 0.198 | 0.238 | 0.436 |
-| OAS | 0.085 | 0.251 | 0.336 |
-| QR | 0.025 | 0.266 | 0.292 |
-| QP | 0.021 | 0.137 | 0.158 |
-
-Tutor 的 cross-judge 分歧中，系统偏差（0.198）和随机分散（0.238）各占约一半。系统偏差是 Haiku judge 校准点偏高（可通过选定 Sonnet judge 消除），不代表评估体系本身不可靠。
-
-#### 4.3.4 Kappa / Agreement Rate（参考值，适用于方案五）
-
-在当前 2-judge cross-judge 场景下，Kappa 和 Agreement Rate 主要反映 Haiku judge 的校准偏差：
-- Tutor: Kappa=0.231, Agreement=15.9% — 由 bias=0.198 > threshold=0.1 驱动，不含额外信息
-- QR: Kappa=0.733, Agreement=84.6% — bias 小，绝对一致性高
-
-这些值作为 baseline 记录，其真正用途是在方案五（多模型 + 人类的多 rater 一致性分析）中作为对比。在多 rater 场景下不存在先验的系统偏差假设，Kappa 才是衡量绝对分数一致性的正确指标。
+> 已实施。代码：`bench/scripts/analyze_judge_comparison.py`。报告：`bench/*MD/v5.0/judge_comparison_analysis_v2.md`。
+>
+> 关键发现：Tutor Cohen's d = +1.694 [1.17, 2.49]（区分度稳健）；Cross-judge Pearson r = 0.676（Tutor 最低）；旧 D1-D3 维度间 r > 0.92（维度不独立，驱动了 6D 重构决策）。
 
 ---
 
@@ -880,9 +757,9 @@ def compute_agreement_rate(scores_a: list[float], scores_b: list[float], thresho
 |------|------|------|------|
 | 1 | 确定评分员（3 人） | 1 周 | -- |
 | 2 | 选择 40 个对话样本 | 1 天 | ICC 数据 |
-| 3 | 准备评分材料（导出对话 + rubric + 评分表） | 1 天 | 步骤 2 |
+| 3 | 准备评分材料（导出对话 + 6D rubric + 评分表） | 1 天 | 步骤 2 + 6D rubric 完成 |
 | 4 | 评分员培训 + 2 个校准样本 | 0.5 天 | 步骤 3 |
-| 5 | 正式评分（40 对话 x 7 维度 x 3 人） | 2-3 天 | 步骤 4 |
+| 5 | 正式评分（40 对话 x **6 维度** x 3 人） | 2-3 天 | 步骤 4 |
 | 6 | 收集数据 + 计算完整指标矩阵（Kappa, Alpha, Agreement, CI, 逐维度分析） | 1 天 | 步骤 5 |
 | 7 | 撰写论文 section | 1 天 | 步骤 6 |
 | **合计** | | **~2 周** | |
@@ -897,126 +774,29 @@ def compute_agreement_rate(scores_a: list[float], scores_b: list[float], thresho
 
 ---
 
-## 附录 A：三篇论文统计方法论深度对比
-
-### A.1 一致性指标对比
-
-| 指标 | 定义 | 是否校正偶然一致 | 谁用了 | 报告值 | 适用场景 |
-|------|------|----------------|-------|--------|---------|
-| **Simple agreement rate** | 判定一致的比例 | **否** | TutorBench | 0.75 (人类间), 0.78 (LLM-human) | 二分类 |
-| **Kendall's W** | 多 rater 排序一致性系数 | **是**（基于排名） | EduBench | 0.55-0.74 | 多 rater x 有序评分 |
-| **Pearson r** | 线性相关 | **否** | 我们 | 0.676-0.872 | 两个 rater x 连续评分 |
-| **ICC** | 考虑系统偏差的一致性 | **是** | 我们 | 0.567-0.854 | 两个+ rater x 连续评分 |
-| **Kendall tau** | 两组排序的一致性 | **是**（基于排名） | 我们 | 0.45-0.63 | 两个 rater x 有序评分 |
-| **Weighted Cohen's Kappa** | 校正偶然一致的有序评分一致性 | **是** | **新增** (方案四) | 待计算 | 两个 rater x 有序评分 |
-| **Krippendorff's Alpha** | 通用多 rater 一致性 | **是** | **新增** (方案五) | 待计算 | 任意场景 |
-
-### A.2 区分度指标对比
-
-| 指标 | 定义 | 谁用了 | 报告值 |
-|------|------|-------|--------|
-| **Cohen's d** | (mu1-mu2)/s_pooled | 我们 | 0.24-1.69 |
-| **Pairwise ranking accuracy** | 偏好"好"样本的比例 | MathTutorBench | 0.84 |
-| **Win rate** | A>B 的比例 | EduBench | 9:1 (reasoning vs normal) |
-| **分数范围展示** | 仅列出分数表 | TutorBench | -- |
-| **Bootstrap 95% CI** | 效应量的置信区间 | **新增** (方案四) | 待计算 |
-
-### A.3 各论文缺失指标汇总
-
-| 缺失指标 | TutorBench | MathTutorBench | EduBench | 我们(方案四/五后) |
-|---------|-----------|----------------|----------|-----------------|
-| 偶然一致校正 (Kappa/Alpha) | 缺失 | 缺失 | 缺失 | **有** |
-| 标准化效应量 (Cohen's d) | 缺失 | 缺失 | 缺失 | **有** |
-| 置信区间 (Bootstrap CI) | 方法不明 | 缺失 | 缺失 | **有** |
-| 多 run 稳定性 (CV) | 缺失 | 缺失 | 缺失 | **有** |
-| 维度独立性分析 | 缺失 | 定性 | 缺失 | **有** |
-| 评分粒度消融 | 缺失 | 缺失 | 缺失 | **有** |
-| 人类验证 | 69人/agreement | 间接 | 3人/W | **3人/Kappa+Alpha+CI** |
-
-## 附录 B：论文有效性论证策略
-
-整合五个方案后，论文的有效性论证结构：
-
-```
-Section 5.3: Evaluation Reliability
-  |
-  +-- 5.3.1 Cross-Judge Consistency (已有数据 + 方案四增强)
-  |     "两个独立 judge 下排名 100% 一致"
-  |     指标：Pearson r, ICC, Kendall tau, Weighted Kappa [新增], Spearman rho [新增]
-  |     "Weighted Cohen's Kappa ranges from {min} to {max}, chance-corrected"
-  |     附：Bootstrap 95% CI [新增], Bland-Altman plot [新增]
-  |
-  +-- 5.3.2 Programmatic Anchoring Effect (已有数据)
-  |     "程序化占比越高，cross-judge Kappa 越高"
-  |     QR (90% programmatic): Kappa={k_qr} >> Tutor (0% programmatic): Kappa={k_tutor}
-  |
-  +-- 5.3.3 Human Calibration (方案五)  <-- 最关键
-  |     核心：Weighted Kappa = {X} [95% CI], Krippendorff Alpha = {Y}
-  |     可比：Agreement Rate = {Z} (cf. TutorBench 0.78)
-  |     创新："Unlike prior work, we report chance-corrected metrics (Kappa, Alpha)"
-  |
-  +-- 5.3.4 Checklist as Reliability Anchor (方案一)
-  |     "Adding task-specific checklist raises Tutor Kappa from {old} to {new}"
-  |     Checklist Kappa = {k_cl} (pass/fail 二分判定一致性更高)
-  |
-  +-- 5.3.5 Construct Validity (已有数据)
-  |     "QR-Tutor Pearson r = 0.25, confirming dimensional independence"
-  |     "解题能力 != 教学能力" (印证 MathTutorBench 核心发现)
-  |
-  +-- 5.3.6 Scoring Granularity Ablation (已有数据)
-        "Clamping D1-D7 to 5-point scale: d 1.75 -> 1.82, negligible impact"
-        "Effect size reflects genuine ability differences, not measurement granularity"
-```
-
-## 附录 C：三篇论文关键方法论对比
-
-| 维度 | TutorBench | MathTutorBench | EduBench | **QuantTutorBench (ours)** |
-|------|-----------|----------------|----------|---------------------------|
-| **评估对象** | 单轮 tutor 回复 | 多轮对话 | 多场景 LLM 输出 | 多轮对话（交互式） |
-| **评分方法** | Sample-specific rubric pass/fail | Pedagogical reward model | 12 维 LLM 评估 | D1-D7 ConversationalGEval + Checklist (proposed) |
-| **Judge** | Claude Sonnet 4 | Trained reward model | LLM | Multi-model (Sonnet/Haiku) cross-validation |
-| **人类验证** | 69 experts, agreement 0.78 (无 Kappa) | Expert/novice distinction (间接) | 3 annotators, W 0.63 | **Planned: 3 experts, 40 samples, Kappa + Alpha + CI** |
-| **一致性指标** | Simple agreement rate | 无 | Kendall's W | Pearson r + ICC + tau + **Kappa + Alpha** |
-| **区分度指标** | 无 | Pairwise accuracy 0.84 | Win rate (定性) | Cohen's d + Wilcoxon p + **Bootstrap CI** |
-| **程序化成分** | Rubric 权重系统 | -- | -- | Programmatic eval + code_eval + **Checklist (proposed)** |
-| **学生** | 真人学生数据 (archived) | 真人学生数据 | 合成数据 | LLM 模拟学生 (3 personas) |
-| **缺失维度处理** | N/A (不适用的 rubric 跳过) | -- | -- | N/A checklist 项不计入分数 |
-| **负面行为惩罚** | negative-critical weight -5 | -- | -- | **negative_critical checklist (proposed)** |
-
-## 附录 D：快速实施检查清单
-
-### 方案四：统计指标增强（立即可做，~3.5h）
-- [ ] 在 ICC 数据上计算 Weighted Cohen's Kappa (cross-judge, 逐维度)
-- [ ] 计算 Spearman rho (cross-judge)
-- [ ] 计算 Simple Agreement Rate (threshold=0.1, 与 TutorBench 可比)
-- [ ] 为 Cohen's d 和 Pearson r 加 Bootstrap 95% CI
-- [ ] 生成 Bland-Altman plot (附录用)
-- [ ] 更新 judge_comparison_analysis.md 报告
-
-### 方案二：D3/D4 Rubric 修改（立即可做，~2h）
-- [ ] 修改 `rubric_beginner.json` -- D3 score 1, 7, 9 + D4 criteria, score 7, 9, 10
-- [ ] 修改 `rubric_intermediate.json` -- D3 score 1, 8 + D4 criteria, score 7, 9, 10
-- [ ] 修改 `rubric_advanced.json` -- D3 score 1, 9-10 (metacognitive) + D4 criteria, score 7, 9, 10
-- [ ] 在 ICC 数据上 dry-run 验证分数分布变化
+## 附录：快速实施检查清单
 
 ### 方案一：Task-Specific Checklist（1-2 周）
 - [ ] 定义 checklist JSON schema，更新 task JSON validation
+- [ ] 更新 `persona_scope` 为四象限 tag（A/B/C/D）
+- [ ] 更新 tag taxonomy：旧 `scaffolding` → `finance_adaptation` / `code_adaptation` / `pedagogical_method`
 - [ ] 为 8 个 ICC 任务编写 checklist
 - [ ] 实现 `checklist_eval.py`（judge prompt + scoring logic）
 - [ ] 在 ICC 数据上跑 checklist，计算 cross-judge Kappa 提升
-- [ ] 确认 Kappa 提升后，为剩余 57 个任务编写 checklist
+- [ ] 确认 Kappa 提升后，为剩余任务编写 checklist
 - [ ] 整合到 `tutor_conv_geval.py` 和 `score_report.py`
 
 ### 方案三：对话长度退化分析（1-2 天）
 - [ ] 实现对话分段逻辑
 - [ ] 实现 degradation index 计算（含 Wilcoxon 检验和效应量）
-- [ ] 在 score_report 增加 degradation section
+- [ ] 在 score_report 增加 degradation section（6D 维度名）
 - [ ] 在 ICC 数据上生成 degradation 分析
 
 ### 方案五：Human Calibration（2 周，可与方案一并行）
 - [ ] 招募 3 位评分员
 - [ ] 选择 40 个对话样本，导出评分材料
+- [ ] 准备 **6D** rubric 评分表
 - [ ] 评分员培训 + 校准
-- [ ] 正式评分收集
+- [ ] 正式评分收集（40 对话 × 6 维度 × 3 人）
 - [ ] 计算完整指标矩阵（Kappa, Alpha, Agreement, tau, Bootstrap CI, 逐维度分析）
 - [ ] 撰写论文 evaluation reliability section

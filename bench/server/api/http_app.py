@@ -30,7 +30,9 @@ from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
 from server.config.bootstrap import load_server_env
-from server.web.ui_app import ui_routes
+from server.run import RunService, RunStore, TaskCatalog
+from server.run.models import RunStatus
+from server.web.ui_app import extract_bearer_token, resolve_run_from_token, ui_routes
 
 from .protocol import (
     TOOL_ENDPOINT_BLOCKED,
@@ -88,6 +90,11 @@ class BenchSessionManager:
         self._sessions: dict[str, SessionState] = {}
         self._transports: dict[str, StreamableHTTPServerTransport] = {}
         self._task_group: anyio.abc.TaskGroup | None = None
+
+        # Run layer
+        self._catalog = TaskCatalog(self.bench_root)
+        self._run_store = RunStore(self.bench_root / "results" / "runs")
+        self._run_service = RunService(self._catalog, self._run_store)
 
     @contextlib.asynccontextmanager
     async def run(self) -> AsyncIterator[None]:
@@ -182,6 +189,68 @@ class BenchSessionManager:
 
                 except Exception as exc:
                     logger.warning("Sweeper error for session %s: %s", sid, exc)
+
+            # Run-level timeout checks
+            try:
+                self._sweep_runs(now)
+            except Exception as exc:
+                logger.warning("Run sweeper error: %s", exc)
+
+    def _sweep_runs(self, now: float) -> None:
+        """Check for timed-out runs (waiting with expired token, claimed too long)."""
+        from datetime import datetime, timezone
+
+        _CLAIMED_IDLE_TIMEOUT = 300  # 5 minutes
+
+        for run in self._run_service.list_runs():
+            try:
+                if run.status == RunStatus.WAITING and run.token_expires_at:
+                    try:
+                        exp = datetime.fromisoformat(run.token_expires_at)
+                        if datetime.now(timezone.utc) > exp:
+                            self._run_service.mark_failed(run.run_id, "Token expired")
+                            logger.info(
+                                "Run %s: token expired — marked failed", run.run_id
+                            )
+                    except ValueError:
+                        pass
+
+                elif run.status == RunStatus.CLAIMED and run.claimed_at:
+                    try:
+                        claimed = datetime.fromisoformat(run.claimed_at)
+                        age = (datetime.now(timezone.utc) - claimed).total_seconds()
+                        if age > _CLAIMED_IDLE_TIMEOUT:
+                            self._run_service.mark_failed(
+                                run.run_id, "Client did not connect within timeout"
+                            )
+                            logger.info(
+                                "Run %s: claimed timeout — marked failed",
+                                run.run_id,
+                            )
+                    except ValueError:
+                        pass
+            except Exception as exc:
+                logger.warning("Run sweeper error for %s: %s", run.run_id, exc)
+
+    # ------------------------------------------------------------------
+    # Run-level cancel (串联 RunService + Session cleanup)
+    # ------------------------------------------------------------------
+
+    async def cancel_run(self, run_id: str) -> None:
+        """Cancel a run. For active runs, also cancels the session."""
+        run = self._run_service.get_run(run_id)
+        if run is None:
+            raise ValueError(f"Run not found: {run_id}")
+
+        # Update run status FIRST (before cleanup, which would mark_failed)
+        self._run_service.cancel_run(run_id)
+
+        # Active run: then cancel the session
+        if run.status == RunStatus.ACTIVE and run.session_id:
+            state = self.get_session(run.session_id)
+            if state and state.proxy and state.proxy._cancel_event:
+                state.proxy._cancel_event.set()
+            await self._cleanup_session(run.session_id, persist_partial=True)
 
     # ------------------------------------------------------------------
     # MCP request routing
@@ -279,6 +348,29 @@ class BenchSessionManager:
             await resp(scope, receive, send)
             return
 
+        # Token verification — all MCP connections require a run token
+        raw_token = extract_bearer_token(request)
+        if not raw_token:
+            resp = Response(
+                status_code=401, content="Authorization: Bearer <token> required"
+            )
+            await resp(scope, receive, send)
+            return
+
+        run = resolve_run_from_token(self._run_service, raw_token)
+        if run is None:
+            resp = Response(status_code=401, content="Invalid or expired token")
+            await resp(scope, receive, send)
+            return
+
+        if run.status != RunStatus.CLAIMED:
+            resp = Response(
+                status_code=409,
+                content=f"Run {run.run_id} is '{run.status.value}', expected 'claimed'",
+            )
+            await resp(scope, receive, send)
+            return
+
         new_id = uuid4().hex
         state = SessionState(
             session_id=new_id,
@@ -286,6 +378,15 @@ class BenchSessionManager:
             bench_root=self.bench_root,
             eval_model=self.eval_model,
             auto_eval=self.auto_eval,
+        )
+        # Bind to Run
+        state.run_id = run.run_id
+        state._run_task_id = run.task_id
+        state._on_registered = lambda sid: self._run_service.bind_session(
+            run.run_id, sid
+        )
+        state._on_completed = lambda result_dir: self._run_service.mark_completed(
+            run.run_id, result_dir
         )
         self._sessions[new_id] = state
 
@@ -366,12 +467,30 @@ class BenchSessionManager:
         *,
         persist_partial: bool = False,
     ):
-        """Remove session state and free resources."""
+        """Remove session state and free resources.
+
+        If the session is bound to a Run that is still active (not in a
+        terminal state), mark the run as failed — the client disconnected
+        without completing the session.
+        """
         state = self._sessions.get(session_id)
         if not state:
             self._transports.pop(session_id, None)
             logger.info("Session %s removed", session_id)
             return
+
+        # Mark associated run as failed if session didn't complete normally
+        if state.run_id and state.phase != SessionPhase.COMPLETED:
+            try:
+                run = self._run_service.get_run(state.run_id)
+                if run and run.status.value not in ("completed", "failed", "cancelled"):
+                    self._run_service.mark_failed(state.run_id, "Client disconnected")
+                    logger.info(
+                        "Run %s marked failed (client disconnected)",
+                        state.run_id,
+                    )
+            except Exception as exc:
+                logger.warning("Failed to mark run %s as failed: %s", state.run_id, exc)
 
         async with state._request_lock:
             self._sessions.pop(session_id, None)
@@ -582,31 +701,60 @@ class BenchSessionManager:
 
 
 async def rest_register(request: Request) -> JSONResponse:
-    """``POST /session/register``"""
+    """``POST /session/register``
+
+    Requires ``Authorization: Bearer <token>`` header. The task_id is
+    resolved from the RunAssignment — body only needs optional persona_id.
+    """
     manager: BenchSessionManager = request.app.state.manager
+
+    # Token verification
+    raw_token = extract_bearer_token(request)
+    if not raw_token:
+        return JSONResponse({"error": "Authorization: Bearer <token> required"}, 401)
+
+    run = resolve_run_from_token(manager._run_service, raw_token)
+    if run is None:
+        return JSONResponse({"error": "Invalid or expired token"}, 401)
+
+    if run.status != RunStatus.CLAIMED:
+        return JSONResponse(
+            {"error": f"Run {run.run_id} is '{run.status.value}', expected 'claimed'"},
+            409,
+        )
+
     try:
         body = await request.json()
     except Exception:
-        return JSONResponse({"error": "Invalid JSON body"}, 400)
+        body = {}
 
-    task_id = body.get("task_id", "")
     persona_id = body.get("persona_id")
-    if not task_id:
-        return JSONResponse(
-            {"error": "Missing required field: task_id"}, 400
-        )
+    task_id = run.task_id  # Always from RunAssignment
 
-    logger.info("[REST] register task_id=%s persona=%s", task_id, persona_id or "auto")
+    logger.info(
+        "[REST] register run=%s task=%s persona=%s",
+        run.run_id,
+        task_id,
+        persona_id or "auto",
+    )
     state = manager.create_rest_session()
+    state.run_id = run.run_id
+    state._run_task_id = run.task_id
+    state._on_completed = lambda result_dir: manager._run_service.mark_completed(
+        run.run_id, result_dir
+    )
     result = await asyncio.to_thread(state.register, task_id, persona_id)
 
     if "session_id" in result:
         manager.register_rest_session(state)
+        # Bind session to run
+        manager._run_service.bind_session(run.run_id, state.session_id)
         logger.info(
-            "[REST] registered session=%s task=%s persona=%s",
+            "[REST] registered session=%s task=%s persona=%s run=%s",
             state.session_id[:8],
             task_id,
             state.persona_id,
+            run.run_id,
         )
         return JSONResponse(result)
     else:

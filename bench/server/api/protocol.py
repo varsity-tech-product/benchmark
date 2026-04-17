@@ -33,6 +33,8 @@ REGISTER_SESSION_TOOL = Tool(
     description=(
         "Register a task for benchmarking. Server creates a sandbox environment "
         "and assigns a student persona. Returns session_id on success. "
+        "When connected via run token, task_id is optional — the server "
+        "resolves it from the run assignment. "
         "If persona_id is omitted, the server selects one automatically."
     ),
     inputSchema={
@@ -41,8 +43,8 @@ REGISTER_SESSION_TOOL = Tool(
             "task_id": {
                 "type": "string",
                 "description": (
-                    "Task identifier (e.g. X01_ma_offbyone). "
-                    "See TASKS.md for the full list."
+                    "Task identifier (e.g. D01 or D01_load_inspect_ohlcv). "
+                    "Optional when connected via run token."
                 ),
             },
             "persona_id": {
@@ -53,7 +55,7 @@ REGISTER_SESSION_TOOL = Tool(
                 ),
             },
         },
-        "required": ["task_id"],
+        "required": [],
     },
 )
 
