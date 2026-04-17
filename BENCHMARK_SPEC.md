@@ -128,7 +128,7 @@ env.close()
 |--------|---------|--------|
 | `env.reset(task_id, persona_id?)` | `Observation` | Creates sandbox, returns student opening + tools |
 | `env.call_tool(name, **kwargs)` | `str` | Executes tool in sandbox. **Does not advance conversation.** |
-| `env.send_message(text)` | `Observation` | Sends agent reply → student responds → TC checked |
+| `env.send_message(text, attachments?, reasoning?)` | `Observation` | Sends agent reply → student responds → TC checked. `reasoning` is an optional private rationale recorded for trace analysis (never shown to the student). |
 | `env.evaluate()` | `Scores` | Runs post-hoc evaluation on completed conversation |
 | `env.close()` | `None` | Destroys sandbox, releases resources |
 

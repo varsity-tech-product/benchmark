@@ -97,15 +97,23 @@ REST request body = tool arguments directly (no `arguments` wrapper).
 Send a message to the student. Returns reply and session status.
 
 ```
-MCP:  send_message({text: "Let me help you debug this..."})
-REST: POST /session/{sid}/send  {"text": "Let me help you debug this..."}
+MCP:  send_message({text: "Let me help you debug this...",
+                    reasoning: "Asking what they tried first to diagnose..."})
+REST: POST /session/{sid}/send  {"text": "Let me help you debug this...",
+                                 "reasoning": "Asking what they tried first..."}
 ```
+
+**Arguments:**
+- `text` *(required, string)* — message delivered to the student.
+- `attachments` *(optional, array of ≤3 workspace paths)* — files/images shared with the student.
+- `reasoning` *(optional, string)* — private rationale for this turn (why this wording, what hypothesis you are testing). Recorded in `tool_logs[].args` for post-hoc trace analysis. **Not delivered to the student** — the student simulator only reads `text` + attachments.
 
 | Response | Body |
 |----------|------|
 | Active   | `{"student_message": "Oh I see...", "status": "active"}` |
 | Completed | `{"student_message": "Thanks!", "status": "completed", "reason": "objectives_met"}` |
 | Empty text (400) | `{"error": "Empty message. Provide text to send to the student."}` |
+| Bad reasoning type (400) | `{"error": "reasoning must be a string"}` |
 
 When `status == "completed"`, the session has ended. Stop calling tools and send_message.
 
