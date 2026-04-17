@@ -200,8 +200,15 @@ class TutoringSession:
             }
         )
 
-    def handle_send_message(self, text: str) -> str:
+    def handle_send_message(
+        self, text: str, reasoning: str | None = None
+    ) -> str:
         """Process agent message, generate student reply.
+
+        ``reasoning`` is the agent's private rationale for this turn.
+        It is stored as metadata on the conversation entry for trace
+        analysis but is NEVER passed to the student simulator (which
+        only reads ``entry["content"]``).
 
         Execution order aligned with Legacy model_callback
         (simulation.py:495-637) and DeepEval _simulate_single_conversation
@@ -247,7 +254,12 @@ class TutoringSession:
         self._last_agent_msg = text
 
         # ── Record agent message + advance turn ──
-        self._conversation.append({"role": "assistant", "content": text})
+        msg_entry: dict = {"role": "assistant", "content": text}
+        # Stash private rationale on the entry for trace analysis. Student
+        # simulator reads only ``content``, so this never leaks.
+        if reasoning and reasoning.strip():
+            msg_entry["reasoning"] = reasoning.strip()
+        self._conversation.append(msg_entry)
         self._turn += 1
         self.reset_step_count()  # New turn starts with fresh step budget
 

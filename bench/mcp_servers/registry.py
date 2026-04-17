@@ -225,7 +225,10 @@ def register_session_tools(
         description=(
             "Send a message to the student. Returns the student's reply "
             "and session status. Use this to communicate with the student "
-            "during the tutoring session."
+            "during the tutoring session. "
+            "Optionally include 'reasoning' to record your private rationale "
+            "for this turn — it is logged for analysis and is NOT shown to "
+            "the student."
         ),
         params={
             "type": "object",
@@ -233,7 +236,16 @@ def register_session_tools(
                 "text": {
                     "type": "string",
                     "description": "Your message to the student.",
-                }
+                },
+                "reasoning": {
+                    "type": "string",
+                    "description": (
+                        "Private rationale for this turn — why you chose this "
+                        "wording, what you expect to learn from the reply, or "
+                        "what hypothesis you are testing. Recorded in tool logs "
+                        "for post-hoc analysis. Not delivered to the student."
+                    ),
+                },
             },
             "required": ["text"],
         },

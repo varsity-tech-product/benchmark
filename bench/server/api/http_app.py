@@ -884,17 +884,25 @@ async def rest_send(request: Request) -> JSONResponse:
     if len(attachments) > 3:
         return JSONResponse({"error": "Maximum 3 attachments allowed"}, 400)
 
+    reasoning = body.get("reasoning")
+    if reasoning is not None and not isinstance(reasoning, str):
+        return JSONResponse({"error": "reasoning must be a string"}, 400)
+
     logger.info(
-        "[REST:%s] send_message (turn %d, %d attachments): %s...",
+        "[REST:%s] send_message (turn %d, %d attachments, reasoning=%s): %s...",
         sid[:8],
         state.session.turn if state.session else 0,
         len(attachments),
+        "yes" if reasoning else "no",
         text[:100],
     )
     async with state._request_lock:
         state._last_activity = time.time()
         result = await asyncio.to_thread(
-            state.handle_send_message, text, attachments=attachments
+            state.handle_send_message,
+            text,
+            attachments=attachments,
+            reasoning=reasoning,
         )
     data = json.loads(result)
     logger.info(

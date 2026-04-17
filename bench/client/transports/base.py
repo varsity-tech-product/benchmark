@@ -32,8 +32,17 @@ class SessionTransport(ABC):
         """Call a domain tool. Returns result string."""
 
     @abstractmethod
-    async def send_message(self, text: str, attachments: Optional[list] = None) -> dict:
-        """Send message to student. Returns {"student_message": ..., "status": ...}."""
+    async def send_message(
+        self,
+        text: str,
+        attachments: Optional[list] = None,
+        reasoning: Optional[str] = None,
+    ) -> dict:
+        """Send message to student. Returns {"student_message": ..., "status": ...}.
+
+        ``reasoning`` is an optional private rationale recorded server-side
+        for trace analysis. It is NOT delivered to the student.
+        """
 
     @abstractmethod
     async def close(self) -> None:
