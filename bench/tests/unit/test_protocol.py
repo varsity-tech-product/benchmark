@@ -92,3 +92,16 @@ class TestToolSchema:
         required = SEND_MESSAGE_TOOL.inputSchema["required"]
         assert "attachments" not in required
         assert "text" in required
+
+    def test_send_message_has_reasoning_field(self):
+        from server.api.protocol import SEND_MESSAGE_TOOL
+
+        props = SEND_MESSAGE_TOOL.inputSchema["properties"]
+        assert "reasoning" in props
+        assert props["reasoning"]["type"] == "string"
+
+    def test_reasoning_not_required(self):
+        from server.api.protocol import SEND_MESSAGE_TOOL
+
+        required = SEND_MESSAGE_TOOL.inputSchema["required"]
+        assert "reasoning" not in required

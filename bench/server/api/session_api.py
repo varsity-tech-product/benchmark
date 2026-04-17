@@ -630,12 +630,19 @@ class SessionState:
     # ------------------------------------------------------------------
 
     def handle_send_message(
-        self, text: str, attachments: list[str] | None = None
+        self,
+        text: str,
+        attachments: list[str] | None = None,
+        reasoning: str | None = None,
     ) -> str:
-        """Handle ``send_message(text, attachments?)``.
+        """Handle ``send_message(text, attachments?, reasoning?)``.
 
         Routes through ``proxy.call_tool`` so the call is logged.
         Detects session completion and triggers result saving.
+
+        ``reasoning`` is forwarded to the proxy (which records it in the
+        tool log ``args``) and to the underlying session. It is never
+        delivered to the student.
 
         Returns:
             Raw JSON string from TutoringSession (via proxy).
@@ -643,9 +650,10 @@ class SessionState:
         if self._closed:
             return json.dumps({"error": "Session is closed", "status": "closed"})
 
-        result = self.proxy.call_tool(
-            "send_message", text=text, attachments=attachments or []
-        )
+        proxy_kwargs: dict = {"text": text, "attachments": attachments or []}
+        if reasoning:
+            proxy_kwargs["reasoning"] = reasoning
+        result = self.proxy.call_tool("send_message", **proxy_kwargs)
 
         # Check for session completion
         try:
@@ -865,6 +873,7 @@ class SessionState:
         if name == "send_message":
             text = arguments.get("text", "")
             attachments = arguments.get("attachments") or []
+            reasoning = arguments.get("reasoning")
             if not isinstance(attachments, list):
                 return [
                     TextContent(
@@ -882,14 +891,18 @@ class SessionState:
                     )
                 ]
             logger.info(
-                "[%s] send_message (turn %d, %d attachments): %s...",
+                "[%s] send_message (turn %d, %d attachments, reasoning=%s): %s...",
                 self.session_id[:8],
                 self.session.turn if self.session else 0,
                 len(attachments),
+                "yes" if reasoning else "no",
                 text[:100],
             )
             result = await asyncio.to_thread(
-                self.handle_send_message, text, attachments=attachments
+                self.handle_send_message,
+                text,
+                attachments=attachments,
+                reasoning=reasoning,
             )
             # Log student reply
             try:

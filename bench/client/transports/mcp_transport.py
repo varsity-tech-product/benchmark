@@ -84,10 +84,17 @@ class MCPTransport(SessionTransport):
                 parts.append(block.text)
         return "\n".join(parts) if parts else ""
 
-    async def send_message(self, text: str, attachments: Optional[list] = None) -> dict:
+    async def send_message(
+        self,
+        text: str,
+        attachments: Optional[list] = None,
+        reasoning: Optional[str] = None,
+    ) -> dict:
         args = {"text": text}
         if attachments:
             args["attachments"] = attachments
+        if reasoning:
+            args["reasoning"] = reasoning
         result = await self._mcp.call_tool("send_message", args)
         return _parse_tool_result(result)
 

@@ -78,7 +78,9 @@ SEND_MESSAGE_TOOL = Tool(
         "only messages sent through this tool reach them. "
         "Each call advances the conversation by one turn and cannot be undone. "
         "Returns the student's reply and session status. "
-        "When status is 'completed', the session has ended."
+        "When status is 'completed', the session has ended. "
+        "Optionally include 'reasoning' to record your private rationale "
+        "for this turn — it is logged for analysis and is NOT shown to the student."
     ),
     inputSchema={
         "type": "object",
@@ -97,6 +99,15 @@ SEND_MESSAGE_TOOL = Tool(
                 ),
                 "items": {"type": "string"},
                 "maxItems": 3,
+            },
+            "reasoning": {
+                "type": "string",
+                "description": (
+                    "Private rationale for this turn — why you chose this "
+                    "wording, what you expect to learn from the reply, or "
+                    "what hypothesis you are testing. Recorded in tool logs "
+                    "for post-hoc analysis. Not delivered to the student."
+                ),
             },
         },
         "required": ["text"],

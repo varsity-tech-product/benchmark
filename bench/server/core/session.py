@@ -423,9 +423,17 @@ class TutoringSession:
         )
 
     def handle_send_message(
-        self, text: str, attachments: list[str] | None = None
+        self,
+        text: str,
+        attachments: list[str] | None = None,
+        reasoning: str | None = None,
     ) -> str:
         """Process agent message, generate student reply.
+
+        ``reasoning`` is the agent's private rationale for this turn.
+        It is stored as metadata on the conversation entry for trace
+        analysis but is NEVER passed to the student simulator (which
+        only reads ``entry["content"]``).
 
         Execution order aligned with Legacy model_callback
         (simulation.py:495-637) and DeepEval _simulate_single_conversation
@@ -506,6 +514,10 @@ class TutoringSession:
 
         # ── Record agent message + advance turn ──
         msg_entry: dict = {"role": "assistant", "content": text, "ts": time.time()}
+        # Stash private rationale on the entry for trace analysis. Student
+        # simulator reads only ``content``, so this never leaks.
+        if reasoning and reasoning.strip():
+            msg_entry["reasoning"] = reasoning.strip()
         if resolved_attachments:
             # Store metadata only — strip base64 content from images to avoid
             # unbounded memory growth in conversation history.

@@ -85,6 +85,7 @@ class RESTTransport(SessionTransport):
             result = await self.send_message(
                 text=arguments.get("text", ""),
                 attachments=arguments.get("attachments"),
+                reasoning=arguments.get("reasoning"),
             )
             return json.dumps(result)
 
@@ -95,10 +96,17 @@ class RESTTransport(SessionTransport):
         # REST returns parsed JSON directly; convert back to string for adapter
         return json.dumps(data)
 
-    async def send_message(self, text: str, attachments: Optional[list] = None) -> dict:
+    async def send_message(
+        self,
+        text: str,
+        attachments: Optional[list] = None,
+        reasoning: Optional[str] = None,
+    ) -> dict:
         payload = {"text": text}
         if attachments:
             payload["attachments"] = attachments
+        if reasoning:
+            payload["reasoning"] = reasoning
         resp = await self._client.post(
             f"/session/{self._session_id}/send", json=payload
         )
