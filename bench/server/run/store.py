@@ -51,8 +51,20 @@ class RunStore:
             logger.warning("RunStore: corrupt run.json for %s: %s", run_id, exc)
             return None
 
-    def find_by_token_hash(self, token_hash: str) -> Optional[RunAssignment]:
-        """Find a run by token hash. Scans all run.json files."""
+    def find_by_token_hash(
+        self, token_hash: str, token_type: str = "run"
+    ) -> Optional[RunAssignment]:
+        """Find a run by token hash. Scans all run.json files.
+
+        ``token_type`` selects which stored hash to compare against:
+        ``"run"`` (default) → ``token_hash``; ``"control"`` →
+        ``control_token_hash``. A run_token will never match a
+        control_token_hash and vice versa.
+        """
+        if token_type not in ("run", "control"):
+            raise ValueError(f"Unknown token_type: {token_type}")
+        field = "token_hash" if token_type == "run" else "control_token_hash"
+
         if not self._runs_dir.is_dir():
             return None
         for run_dir in self._runs_dir.iterdir():
@@ -63,7 +75,8 @@ class RunStore:
                 continue
             try:
                 data = json.loads(path.read_text(encoding="utf-8"))
-                if data.get("token_hash") == token_hash:
+                stored = data.get(field)
+                if stored and stored == token_hash:
                     return RunAssignment.from_dict(data)
             except (json.JSONDecodeError, KeyError, TypeError):
                 continue
