@@ -67,6 +67,5 @@
   "requires_code": true,
   "sample_code": "student_code/alpha_conflict.cs",
   "max_turns": 15,
-  "agent_max_steps": 15,
   "timeout_minutes": 15
 }

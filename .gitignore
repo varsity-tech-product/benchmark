@@ -72,6 +72,9 @@ bench/scripts/parity/results/
 checkpoints/
 *.checkpoint.json
 
+# Survey / review PDFs
+bench/*MD/v5.0/tutor survey/
+
 # Separate projects
 ccc/
 Ewan openclaw/

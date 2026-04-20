@@ -35,7 +35,6 @@ async def run_via_attach(
     token: str,
     adapter_factory: Callable,
     result_dir: Optional[Path] = None,
-    agent_max_steps: Optional[int] = 200,
     protocol: str = "mcp",
 ) -> dict:
     """Execute a benchmark session by attaching to an existing run.
@@ -107,9 +106,6 @@ async def run_via_attach(
         conversation.append({"role": "user", "content": opening})
 
         # 7. Run agent
-        if agent_max_steps is not None and agent_max_steps > 0:
-            adapter.set_agent_max_steps(agent_max_steps)
-
         if protocol == "mcp" and isinstance(transport, MCPTransport):
             bridge = transport.create_tool_bridge()
             response = await asyncio.to_thread(
@@ -189,7 +185,6 @@ async def run_task(
     task: str,
     adapter_factory: Callable,
     result_dir: Optional[Path] = None,
-    agent_max_steps: Optional[int] = 200,
     protocol: str = "mcp",
 ) -> dict:
     """Create a run + claim + execute. One-step convenience entry point.
@@ -216,7 +211,6 @@ async def run_task(
         token=token,
         adapter_factory=adapter_factory,
         result_dir=result_dir,
-        agent_max_steps=agent_max_steps,
         protocol=protocol,
     )
 
@@ -227,7 +221,6 @@ async def run_multiple_tasks(
     adapter_factory: Callable,
     workers: int = 1,
     result_dir: Optional[Path] = None,
-    agent_max_steps: Optional[int] = 200,
     protocol: str = "mcp",
 ) -> list[dict]:
     """Run multiple tasks with bounded concurrency."""
@@ -240,7 +233,6 @@ async def run_multiple_tasks(
                 task,
                 adapter_factory,
                 result_dir,
-                agent_max_steps,
                 protocol,
             )
 
@@ -267,7 +259,6 @@ async def run_single_task(
     task_id: str,
     adapter_factory: Callable,
     result_dir: Optional[Path] = None,
-    agent_max_steps: Optional[int] = 200,
     persona_id: Optional[str] = None,
 ) -> dict:
     """Legacy: run a task via direct MCP connection (no Run layer).
@@ -334,8 +325,6 @@ async def run_single_task(
                 conversation.append({"role": "user", "content": opening})
 
                 bridge = ToolBridge(mcp, asyncio.get_running_loop())
-                if agent_max_steps is not None and agent_max_steps > 0:
-                    adapter.set_agent_max_steps(agent_max_steps)
 
                 await asyncio.to_thread(
                     adapter.generate_response,

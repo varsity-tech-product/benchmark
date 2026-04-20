@@ -52,7 +52,6 @@ def _cmd_attach(args):
             token=args.run_token,
             adapter_factory=adapter_factory,
             result_dir=result_dir,
-            agent_max_steps=args.agent_max_steps,
             protocol=args.protocol,
         )
     )
@@ -90,7 +89,6 @@ def _cmd_run(args):
                 task=tasks[0],
                 adapter_factory=adapter_factory,
                 result_dir=result_dir,
-                agent_max_steps=args.agent_max_steps,
                 protocol=args.protocol,
             )
         )
@@ -103,7 +101,6 @@ def _cmd_run(args):
                 adapter_factory=adapter_factory,
                 workers=args.workers,
                 result_dir=result_dir,
-                agent_max_steps=args.agent_max_steps,
                 protocol=args.protocol,
             )
         )
@@ -191,12 +188,6 @@ def _add_common_args(parser: argparse.ArgumentParser):
         "--system-prompt",
         default="",
         help="Override system prompt",
-    )
-    parser.add_argument(
-        "--agent-max-steps",
-        type=int,
-        default=200,
-        help="Agent loop iteration cap (default: 200)",
     )
     parser.add_argument(
         "--log-level",

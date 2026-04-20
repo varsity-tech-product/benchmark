@@ -54,11 +54,11 @@
     ],
     "quant_validation": {
       "eval_script": "evaluation/test_scripts/debug/X02_lookahead.py"
-    }
+    },
+    "termination_criteria": "The tutor has completed the following steps with computational evidence (not just verbal discussion): (1) Reviewed the student's code and identified the look-ahead bias where Position = Signal without shift(1), meaning today's trade uses today's signal which includes information from the current bar's close. (2) Explained why this constitutes look-ahead bias, such as how using the current bar's signal to trade at the current bar's close gives the strategy impossible foreknowledge of the price it trades at. (3) Showed the corrected code with shift(1) applied to the position assignment and presented execution results demonstrating the fix, such as returns decreasing (expected behavior when look-ahead is removed). (4) Responded to the student's follow-up about the look-ahead bias or the fix with additional explanation or analysis beyond the initial demonstration. Once all four steps have been computationally demonstrated, the session is complete."
   },
   "requires_code": true,
   "sample_code": "student_code/lookahead.py",
   "max_turns": 10,
-  "agent_max_steps": 8,
   "timeout_minutes": 15
 }

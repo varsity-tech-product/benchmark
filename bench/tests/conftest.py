@@ -99,7 +99,7 @@ _CLOSING_MESSAGE = "Thanks for all the help! I understand the issue much better 
 
 
 class FakeLLMModel:
-    """Deterministic LLM stand-in for StudentSimulator / GoalChecker.
+    """Deterministic LLM stand-in for StudentSimulator.
 
     Cycles through canned replies. Returns (text, 0.0) cost tuples
     to match the real model interface.
@@ -110,11 +110,6 @@ class FakeLLMModel:
 
     def generate(self, prompt: str, schema=None, images=None):
         self._call_count += 1
-
-        # GoalChecker uses ConversationCompletion schema
-        if schema is not None and hasattr(schema, "model_fields"):
-            if "is_complete" in schema.model_fields:
-                return schema(is_complete=False, reason="still in progress"), 0.0
 
         # StudentSimulator structured output (SimulatedInput)
         if schema is not None:
@@ -165,7 +160,7 @@ class FakeTCModel:
 def _mock_llm_resolution():
     """Replace ``require_ewan_model`` / ``resolve_ewan_model`` globally.
 
-    Every component that resolves a model (StudentSimulator, GoalChecker,
+    Every component that resolves a model (StudentSimulator,
     evaluation pipeline) will get a FakeLLMModel instead of calling
     OpenRouter.
     """
@@ -406,7 +401,7 @@ def fake_tc_checker():
 def make_session(_mock_llm_resolution):
     """Factory to build a TutoringSession with controlled dependencies.
 
-    Returns a callable ``(max_turns=10, tc_checker=None, goal_checker=None,
+    Returns a callable ``(max_turns=10, tc_checker=None,
     deadline=None, workspace_path=None) → TutoringSession``.
     The session is pre-started (opening injected).
     """
@@ -416,7 +411,6 @@ def make_session(_mock_llm_resolution):
     def _factory(
         max_turns=10,
         tc_checker=None,
-        goal_checker=None,
         deadline=None,
         workspace_path=None,
     ):
@@ -444,7 +438,6 @@ def make_session(_mock_llm_resolution):
             tc_checker=tc_checker,
             max_turns=max_turns,
             deadline=deadline,
-            goal_checker=goal_checker,
             workspace_path=workspace_path,
         )
         # Inject opening so session is ready for send_message

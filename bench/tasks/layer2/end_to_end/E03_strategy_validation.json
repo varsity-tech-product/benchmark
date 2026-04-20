@@ -59,11 +59,11 @@
     ],
     "quant_validation": {
       "eval_script": "evaluation/test_scripts/end_to_end/E03_strategy_validation.py"
-    }
+    },
+    "termination_criteria": "The tutor has completed the following steps with computational evidence (not just verbal discussion): (1) Showed code and output for exploratory data analysis and a formalized momentum signal definition with computed values. (2) Showed code and output for a train/test split backtest that reports in-sample and out-of-sample metrics separately. (3) Discussed overfitting risk or signal robustness using concrete evidence from the IS vs OOS comparison. (4) Responded to the student's follow-up with additional validation analysis or robustness discussion. Once all four steps have been computationally demonstrated, the session is complete."
   },
   "requires_code": true,
   "sample_code": null,
-  "max_turns": 35,
-  "agent_max_steps": 10,
+  "max_turns": 20,
   "timeout_minutes": 25
 }

@@ -341,7 +341,7 @@ class SessionState:
         from server.core.container import ContainerManager
         from server.core.proxy import MCPProxy
         from server.core.registry import populate_proxy_for_task
-        from server.core.session import GoalChecker, TutoringSession
+        from server.core.session import TutoringSession
         from server.core.staging import create_staged_dirs, create_staged_sample_code
         from server.core.student_sim import StudentSimulator
         from server.core.tc_checker import TCChecker, parse_tc_items
@@ -525,21 +525,6 @@ class SessionState:
             )
 
             tc_checker = TCChecker(tc_items) if tc_items else None
-            goal_checker = None
-            if tc_items is None and task.ground_truth:
-                gt = task.ground_truth
-                if gt.termination_criteria:
-                    if task.category.value in ("implementation", "end_to_end", "debug"):
-                        expected_outcome = (
-                            f"{gt.expected_outcome}\n\n"
-                            f"Observable completion criteria:\n{gt.termination_criteria}"
-                        )
-                    else:
-                        expected_outcome = gt.termination_criteria
-                else:
-                    expected_outcome = gt.expected_outcome
-                if expected_outcome:
-                    goal_checker = GoalChecker(expected_outcome, resolved_sim_model)
 
             effective_timeout = task.timeout_minutes
             deadline = None
@@ -555,7 +540,6 @@ class SessionState:
                 max_turns=task.max_turns,
                 deadline=deadline,
                 proxy=self.proxy,
-                goal_checker=goal_checker,
                 workspace_path=self.container.workspace_path,
             )
 

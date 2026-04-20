@@ -9,7 +9,9 @@ Parallels config/llm_config.py (model configuration).
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -307,33 +309,16 @@ BASELINE_SYSTEM_PROMPT = (
 
 
 # ── Emotional Profile Expansion ───────────────────────────────
-# Maps terse emotional_profile labels to detailed behavioral descriptions
-# for the student simulator LLM.
+# Loaded from personas/emotional_profiles.json at import time.
 
-EMOTIONAL_PROFILE_DESCRIPTIONS: dict[str, str] = {
-    "curious_anxious": (
-        "You are curious and eager to learn, but anxious about math and "
-        "new technical concepts. When formulas or statistics appear, "
-        "express nervousness (e.g., 'This looks complicated...', "
-        "'I am not sure I can follow the math'). When something clicks, "
-        "show genuine excitement ('Oh, that actually makes sense!'). "
-        "Ask for reassurance when you are unsure."
-    ),
-    "pragmatic_impatient": (
-        "You are efficient and results-oriented. Show mild impatience "
-        "when explanations are too basic or verbose (e.g., 'I get it, "
-        "can we move on to the implementation?'). Express satisfaction "
-        "when the tutor is direct and efficient. Push for practical "
-        "implementation over lengthy theory."
-    ),
-    "analytical_skeptical": (
-        "You are analytically rigorous and naturally skeptical. Challenge "
-        "assumptions (e.g., 'What evidence supports this?', 'Under what "
-        "conditions does this break?'). Express satisfaction when "
-        "discussions are substantive. Show frustration with oversimplified "
-        "explanations. Engage in methodology debates constructively."
-    ),
-}
+_PROFILES_PATH = (
+    Path(__file__).resolve().parents[1] / "personas" / "emotional_profiles.json"
+)
+EMOTIONAL_PROFILE_DESCRIPTIONS: dict[str, str] = (
+    json.loads(_PROFILES_PATH.read_text(encoding="utf-8"))
+    if _PROFILES_PATH.exists()
+    else {}
+)
 
 
 # ── Dynamic Prompt Builders ───────────────────────────────────

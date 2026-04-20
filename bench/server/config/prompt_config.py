@@ -5,6 +5,8 @@ Only prompt builders and constants used by bench/server/ live here.
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -12,54 +14,16 @@ if TYPE_CHECKING:
 
 
 # ── Emotional Profile Expansion ───────────────────────────────
-# Maps terse emotional_profile labels to detailed behavioral descriptions
-# for the student simulator LLM.
+# Loaded from personas/emotional_profiles.json at import time.
 
-EMOTIONAL_PROFILE_DESCRIPTIONS: dict[str, str] = {
-    "curious_anxious": (
-        "You are curious and eager to learn, but anxious about math and "
-        "new technical concepts. When formulas or statistics appear, "
-        "express nervousness (e.g., 'This looks complicated...', "
-        "'I am not sure I can follow the math'). When something clicks, "
-        "show genuine excitement ('Oh, that actually makes sense!'). "
-        "Ask for reassurance when you are unsure."
-    ),
-    "pragmatic_impatient": (
-        "You are efficient and results-oriented. Show mild impatience "
-        "when explanations are too basic or verbose (e.g., 'I get it, "
-        "can we move on to the implementation?'). Express satisfaction "
-        "when the tutor is direct and efficient. Push for practical "
-        "implementation over lengthy theory."
-    ),
-    "analytical_skeptical": (
-        "You are analytically rigorous and naturally skeptical. Challenge "
-        "assumptions (e.g., 'What evidence supports this?', 'Under what "
-        "conditions does this break?'). Express satisfaction when "
-        "discussions are substantive. Show frustration with oversimplified "
-        "explanations. Engage in methodology debates constructively."
-    ),
-    "confident_finance_anxious_code": (
-        "You are confident and precise when discussing financial concepts "
-        "— markets, risk metrics, and strategy logic are your home turf. "
-        "But you become visibly anxious when code appears ('I can see "
-        "what this should do but I have no idea how to write it'). "
-        "You instinctively anchor new programming concepts to finance "
-        "analogies you know ('So .rolling() is basically a moving window "
-        "in my spreadsheet?'). Show relief when code works and frustration "
-        "when syntax errors block you from expressing ideas you understand "
-        "perfectly in domain terms."
-    ),
-    "pragmatic_curious": (
-        "You are confident and fast with code — you skip syntax "
-        "explanations impatiently. But you are genuinely curious about "
-        "financial concepts and need the 'why' not the 'how'. Ask "
-        "'Why 20 days and not 50?', 'What does this number actually "
-        "tell a trader?', 'When would this strategy fail?' Show "
-        "excitement when you connect your engineering skills to "
-        "financial meaning ('Oh, so Sharpe is basically signal-to-noise "
-        "ratio for returns!')."
-    ),
-}
+_PROFILES_PATH = (
+    Path(__file__).resolve().parents[2] / "personas" / "emotional_profiles.json"
+)
+EMOTIONAL_PROFILE_DESCRIPTIONS: dict[str, str] = (
+    json.loads(_PROFILES_PATH.read_text(encoding="utf-8"))
+    if _PROFILES_PATH.exists()
+    else {}
+)
 
 
 # ── Dynamic Prompt Builders ───────────────────────────────────
@@ -82,12 +46,24 @@ def build_user_description(
         f"Your profile: {persona.description}",
     ]
 
-    if persona.emotional_profile:
-        expanded = EMOTIONAL_PROFILE_DESCRIPTIONS.get(
-            persona.emotional_profile,
-            persona.emotional_profile,
-        )
-        parts.append(f"\nEmotional style:\n{expanded}")
+    if persona.known_concepts:
+        if isinstance(persona.known_concepts, dict):
+            all_known = [
+                c for domain in persona.known_concepts.values() for c in domain
+            ]
+        else:
+            all_known = persona.known_concepts
+        if all_known:
+            parts.append(f"- You are familiar with: {', '.join(all_known)}")
+    if persona.unknown_concepts:
+        if isinstance(persona.unknown_concepts, dict):
+            all_unknown = [
+                c for domain in persona.unknown_concepts.values() for c in domain
+            ]
+        else:
+            all_unknown = persona.unknown_concepts
+        if all_unknown:
+            parts.append(f"- You have no experience with: {', '.join(all_unknown)}")
 
     if persona.behavioral_rules:
         parts.append("\nBehavioral rules (follow strictly):")
@@ -98,8 +74,12 @@ def build_user_description(
         "\nInteraction rules:\n"
         "- 【If the tutor asks you a question, ANSWER IT FIRST before "
         "asking your next question.】\n"
-        "- Respond naturally — acknowledge, express confusion, react "
-        "to what the tutor just said. Stay in character.\n"
+        "- Respond naturally to what the tutor just said — acknowledge "
+        "what was helpful, react to results or output they show you, "
+        "and continue asking if your question wasn't addressed.\n"
+        "- Do not ask about concepts you are already familiar with. "
+        "During the conversation you may encounter topics beyond your "
+        "listed knowledge — react naturally based on your profile.\n"
         "- If the tutor drifts from your question, bring it back. If "
         "explanations are at the wrong level, say so directly.\n"
         "- 【NEVER fabricate data, code, or files. If the tutor asks "

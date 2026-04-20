@@ -16,12 +16,8 @@ import base64
 import json
 import logging
 import os
-import re
-import textwrap
 import time
 from typing import Optional
-
-from pydantic import BaseModel
 
 from server.core.artifact_digest import build_visible_artifact_digest
 from server.core.tc_evidence import build_turn_evidence
@@ -262,88 +258,6 @@ def _resolve_attachments(
 
 
 # ---------------------------------------------------------------------------
-# GoalChecker — for non-TC categories that still use outcome-level completion.
-# ---------------------------------------------------------------------------
-
-
-class ConversationCompletion(BaseModel):
-    """Schema for GoalChecker LLM response."""
-
-    is_complete: bool
-    reason: str = ""
-
-
-class GoalChecker:
-    """Goal-based termination for non-incremental-TC categories.
-
-    Replicates DeepEval's ``stop_conversation()`` behavior: each turn,
-    sends the full conversation + expected_outcome to an LLM that judges
-    whether the conversation should end.
-
-    Prompt is copied verbatim from deepeval/simulator/template.py:105-140.
-    """
-
-    _STOP_PROMPT = textwrap.dedent(
-        """\
-        You are a Conversation Completion Checker.
-        Your task is to determine whether the conversation has achieved \
-        the expected outcome and should be terminated.
-
-        Guidelines:
-        1. Review the entire conversation and decide if the expected \
-        outcome has been met and the conversation has ended.
-        2. If the expected outcome has been met, mark the conversation \
-        as complete.
-        3. If not, mark it as incomplete and briefly describe what \
-        remains to be done.
-
-        IMPORTANT: The output must be formatted as a JSON object with \
-        two keys: `is_complete` (a boolean) and `reason` (a string).
-
-        Expected Outcome: "{expected_outcome}"
-        Conversation History:
-        {previous_conversation}
-        JSON Output:
-    """
-    )
-
-    def __init__(self, expected_outcome: str, model):
-        self.expected_outcome = expected_outcome
-        self._model = model
-
-    def check(self, conversation: list[dict]) -> bool:
-        """Return True if the expected outcome has been achieved."""
-        if not self.expected_outcome:
-            return False
-        conv_json = json.dumps(conversation, indent=4, ensure_ascii=False)
-        prompt = self._STOP_PROMPT.format(
-            expected_outcome=self.expected_outcome,
-            previous_conversation=conv_json,
-        )
-        try:
-            result = self._model.generate(prompt, schema=ConversationCompletion)
-            obj = result[0] if isinstance(result, tuple) else result
-            if hasattr(obj, "is_complete"):
-                return obj.is_complete
-            return False
-        except (TypeError, AttributeError):
-            # Fallback: plain text + JSON extraction.
-            try:
-                result = self._model.generate(prompt)
-                text = result[0] if isinstance(result, tuple) else result
-                match = re.search(r"\{.*\}", text or "", re.DOTALL)
-                if match:
-                    data = json.loads(match.group())
-                    return bool(data.get("is_complete", False))
-            except Exception:
-                pass
-            return False
-        except Exception as exc:
-            logger.debug("GoalChecker failed: %s", exc)
-            return False
-
-
-# ---------------------------------------------------------------------------
 # TutoringSession
 # ---------------------------------------------------------------------------
 
@@ -356,8 +270,7 @@ class TutoringSession:
 
     - Maintains the conversation history
     - Generates student replies via StudentSimulator
-    - Checks termination criteria via TCChecker (incremental-TC categories)
-    - Checks goal achievement via GoalChecker (remaining outcome-level categories)
+    - Checks termination criteria via TCChecker
     - Tracks turn count and enforces limits
     - Detects stuck agents (repeat detection)
     """
@@ -371,14 +284,12 @@ class TutoringSession:
         max_turns: int,
         deadline: Optional[float] = None,
         proxy=None,
-        goal_checker: Optional[GoalChecker] = None,
         workspace_path: Optional[str] = None,
     ):
         self._task = task
         self._persona = persona
         self._student_sim = student_sim
-        self._tc_checker = tc_checker  # None if category doesn't use incremental TC
-        self._goal_checker = goal_checker  # None if category uses incremental TC
+        self._tc_checker = tc_checker
         self._max_turns = max_turns
         self._deadline = deadline
         self._proxy = proxy  # For set_turn() calls
@@ -458,8 +369,7 @@ class TutoringSession:
         3. Repeat detection (model_callback:606-624)
         4. Record + advance turn
         5. TC check (_EfficientSimulator.stop_conversation)
-        6. Goal check (DeepEval stop_conversation + stop_simulation)
-        7. Deadline check
+        6. Deadline check
         8. Max turns (_append_student_closing:642-678)
         9. Generate student reply (generate_next_user_input)
 
@@ -601,28 +511,8 @@ class TutoringSession:
             logger.info("TC fully covered at turn %d.", self._turn)
             return self._result(closing, "completed", reason="objectives_met")
 
-        # ── Goal check ──  (aligned: DeepEval stop_conversation + stop_simulation)
-        try:
-            goals_met = self._goal_checker is not None and self._goal_checker.check(
-                self._conversation
-            )
-        except Exception as exc:
-            logger.warning("GoalChecker failed: %s", exc)
-            goals_met = False
-
-        if goals_met:
-            closing = self._safe_closing()
-            if closing:
-                self._conversation.append(
-                    {"role": "user", "content": closing, "ts": time.time()}
-                )
-            self._done = True
-            self._completion_reason = "goals_met"
-            logger.info("Goals met at turn %d.", self._turn)
-            return self._result(closing, "completed", reason="goals_met")
-
         # ── Deadline check ──
-        # Let the just-sent tutor message contribute to TC / goal completion
+        # Let the just-sent tutor message contribute to TC completion
         # before converting the session into a timeout.
         if self._deadline is not None and time.time() > self._deadline:
             self._done = True

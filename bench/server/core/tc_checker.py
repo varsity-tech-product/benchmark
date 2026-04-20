@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 
 _INCREMENTAL_CATEGORIES = frozenset(
-    {"strategy", "backtest", "implementation", "debug", "data_analysis"}
+    {"strategy", "backtest", "implementation", "debug", "data_analysis", "end_to_end"}
 )
 
 

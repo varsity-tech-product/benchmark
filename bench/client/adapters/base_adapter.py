@@ -165,15 +165,6 @@ class BaseAgentAdapter(ABC):
         """Return accumulated token usage records for cost tracking."""
         return list(self._token_records)
 
-    def set_agent_max_steps(self, n: int):
-        """Set the max tool-call steps per conversation turn.
-
-        Adapters with internal agentic loops (OpenAI SDK, Claude SDK) override
-        this to limit how many LLM→tool→LLM cycles happen within a single
-        generate_response() call. Adapters without agentic loops ignore this.
-        """
-        pass
-
     def get_thinking_trace(self) -> list[dict]:
         """Return accumulated thinking/COT blocks from the agent loop.
 
