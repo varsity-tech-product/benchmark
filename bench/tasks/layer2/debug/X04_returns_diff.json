@@ -51,11 +51,11 @@
     ],
     "quant_validation": {
       "eval_script": "evaluation/test_scripts/debug/X04_returns_diff.py"
-    }
+    },
+    "termination_criteria": "The tutor has completed the following steps with computational evidence (not just verbal discussion): (1) Reviewed the student's returns computation code and identified that .diff() is used instead of .pct_change(), producing absolute dollar changes instead of percentage returns. (2) Explained why dollar-scale values corrupt all downstream metrics, such as Sharpe ratio, cumulative returns, or volatility becoming scale-dependent on price level rather than proportional. (3) Showed the corrected code using .pct_change() and presented execution results demonstrating the fix, such as return magnitudes becoming realistic (mean absolute value < 0.01). (4) Responded to the student's follow-up about the returns calculation or the fix with additional explanation or analysis beyond the initial demonstration. Once all four steps have been computationally demonstrated, the session is complete."
   },
   "requires_code": true,
   "sample_code": "student_code/returns_diff.py",
   "max_turns": 10,
-  "agent_max_steps": 8,
   "timeout_minutes": 15
 }

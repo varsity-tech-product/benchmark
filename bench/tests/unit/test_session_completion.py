@@ -164,44 +164,6 @@ class TestDeadlineCompletion:
 
 
 # ---------------------------------------------------------------------------
-# GoalChecker Completion
-# ---------------------------------------------------------------------------
-
-
-class TestGoalCheckerCompletion:
-    def test_goal_met_returns_completed(self, make_session, _mock_llm_resolution):
-        """Override FakeLLMModel to return is_complete=True for GoalChecker."""
-        from server.core.session import GoalChecker
-
-        # Build a GoalChecker with a model that always says complete
-        class _CompleteModel:
-            def generate(self, prompt, schema=None, images=None):
-                if schema and hasattr(schema, "model_fields"):
-                    return schema(is_complete=True, reason="done"), 0.0
-                return '{"is_complete": true, "reason": "done"}', 0.0
-
-        goal_checker = GoalChecker(
-            expected_outcome="Student understands the bug",
-            model=_CompleteModel(),
-        )
-        session = make_session(goal_checker=goal_checker)
-        result = _send(session)
-        assert result["status"] == "completed"
-        assert result["reason"] == "goals_met"
-
-    def test_goal_not_met_stays_active(self, make_session, _mock_llm_resolution):
-        from server.core.session import GoalChecker
-
-        goal_checker = GoalChecker(
-            expected_outcome="Student understands the bug",
-            model=_mock_llm_resolution,  # FakeLLMModel always returns is_complete=False
-        )
-        session = make_session(goal_checker=goal_checker)
-        result = _send(session)
-        assert result["status"] == "active"
-
-
-# ---------------------------------------------------------------------------
 # force_complete
 # ---------------------------------------------------------------------------
 

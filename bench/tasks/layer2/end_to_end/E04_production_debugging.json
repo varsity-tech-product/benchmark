@@ -53,11 +53,11 @@
     ],
     "quant_validation": {
       "eval_script": "evaluation/test_scripts/end_to_end/E04_production_debugging.py"
-    }
+    },
+    "termination_criteria": "The tutor has completed the following steps with computational evidence (not just verbal discussion): (1) Reviewed the student's buggy LEAN C# code and identified at least two of the three bugs (inverted signal logic, missing warm-up, excessive leverage). (2) Explained the root cause and downstream impact of each identified bug. (3) Showed corrected code addressing the identified bugs and attempted to verify the fix through backtest execution or logical analysis. (4) Responded to the student's follow-up with additional explanation or analysis beyond the initial fix. Once all four steps have been computationally demonstrated, the session is complete."
   },
   "requires_code": true,
   "sample_code": "data/E04_compound_bug.cs",
-  "max_turns": 40,
-  "agent_max_steps": 10,
+  "max_turns": 25,
   "timeout_minutes": 30
 }

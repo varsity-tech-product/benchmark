@@ -195,7 +195,7 @@ class ClaudeAgentAdapter(BaseAgentAdapter):
         model: str = ANTHROPIC_AGENT_MODEL,
         system_prompt: str = "",
         agent_name: str = "claude_agent_sdk",
-        max_agent_turns: int = 10,
+        max_agent_turns: int = 200,
     ):
         super().__init__(agent_name=agent_name)
         self.model = model
@@ -251,10 +251,6 @@ class ClaudeAgentAdapter(BaseAgentAdapter):
     def set_task_context(self, context: str):
         """Override: clear state for a new task."""
         super().set_task_context(context)
-
-    def set_agent_max_steps(self, n: int):
-        """Limit how many LLM→tool→LLM cycles per generate_response() call."""
-        self.max_agent_turns = n
 
     def reset(self):
         """Reset internal state between tasks."""

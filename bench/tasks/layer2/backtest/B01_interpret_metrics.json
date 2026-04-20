@@ -65,6 +65,5 @@
   "requires_code": false,
   "sample_code": null,
   "max_turns": 12,
-  "agent_max_steps": 8,
   "timeout_minutes": 25
 }

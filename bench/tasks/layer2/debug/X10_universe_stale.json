@@ -65,6 +65,5 @@
   "requires_code": true,
   "sample_code": "student_code/universe_stale.cs",
   "max_turns": 15,
-  "agent_max_steps": 15,
   "timeout_minutes": 25
 }

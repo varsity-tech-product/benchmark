@@ -59,6 +59,5 @@
   "requires_code": true,
   "sample_code": "student_code/overfit_single.py",
   "max_turns": 10,
-  "agent_max_steps": 8,
   "timeout_minutes": 15
 }

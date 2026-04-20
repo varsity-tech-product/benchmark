@@ -64,6 +64,5 @@
   "requires_code": true,
   "sample_code": "student_code/order_type_bug.cs",
   "max_turns": 10,
-  "agent_max_steps": 12,
   "timeout_minutes": 20
 }
