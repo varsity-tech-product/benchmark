@@ -4,7 +4,9 @@
   "outputDirectory": "public",
   "rewrites": [
     { "source": "/", "destination": "https://217-15-165-83.sslip.io/" },
+    { "source": "/health", "destination": "https://217-15-165-83.sslip.io/health" },
     { "source": "/session/:path*", "destination": "https://217-15-165-83.sslip.io/session/:path*" },
+    { "source": "/client/:path*", "destination": "https://217-15-165-83.sslip.io/client/:path*" },
     { "source": "/ui/:path*", "destination": "https://217-15-165-83.sslip.io/ui/:path*" },
     { "source": "/static/:path*", "destination": "https://217-15-165-83.sslip.io/static/:path*" },
     { "source": "/mcp/:path*", "destination": "https://217-15-165-83.sslip.io/mcp/:path*" },
