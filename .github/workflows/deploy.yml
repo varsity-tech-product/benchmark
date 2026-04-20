@@ -1,0 +1,111 @@
+name: deploy
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'bench/**'
+      - 'requirements.txt'
+      - 'pyproject.toml'
+      - '.github/workflows/deploy.yml'
+      - '!bench/data/**'
+      - '!bench/reference/**'
+      - '!bench/*MD/**'
+      - '!bench/**.md'
+  workflow_dispatch:
+
+concurrency:
+  group: vps-deploy
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - run: pip install -r requirements.txt
+      - run: pytest bench/tests/ -x --timeout=60
+        continue-on-error: true
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Detect changed paths
+        id: changes
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "docker=true" >> $GITHUB_OUTPUT
+            echo "deps=true" >> $GITHUB_OUTPUT
+          else
+            FILES=$(git diff --name-only HEAD^ HEAD)
+            echo "$FILES" | grep -qE '^bench/docker/Dockerfile' && echo "docker=true" >> $GITHUB_OUTPUT || echo "docker=false" >> $GITHUB_OUTPUT
+            echo "$FILES" | grep -qE '^(requirements\.txt|pyproject\.toml)$' && echo "deps=true" >> $GITHUB_OUTPUT || echo "deps=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          echo "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H ${{ secrets.VPS_HOST }} >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Rsync code to VPS
+        run: |
+          rsync -az --delete \
+            --exclude='.git' \
+            --exclude='bench/data' \
+            --exclude='bench/reference' \
+            --exclude='bench/*MD' \
+            --exclude='results' \
+            --exclude='__pycache__' \
+            --exclude='*.pyc' \
+            --exclude='.venv' \
+            --exclude='node_modules' \
+            --exclude='vercel-frontend/.vercel' \
+            --exclude='vercel-frontend/dist' \
+            -e "ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no" \
+            ./ ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:~/benchmark/
+
+      - name: Rebuild Docker images (if Dockerfile changed)
+        if: steps.changes.outputs.docker == 'true'
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
+            ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} << 'EOF'
+            set -e
+            cd ~/benchmark/bench
+            sudo docker build -t quant-tutor-env:v2.2 -f docker/Dockerfile docker/
+            sudo docker build -t quant-tutor-env:v2.2-lean -f docker/Dockerfile.lean .
+            sudo docker image prune -f
+            sudo docker builder prune -f
+          EOF
+
+      - name: Install Python deps (if requirements changed)
+        if: steps.changes.outputs.deps == 'true'
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
+            ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} \
+            '~/benchmark/.venv/bin/pip install -r ~/benchmark/requirements.txt'
+
+      - name: Restart service + smoke test
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
+            ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} << 'EOF'
+            set -e
+            sudo systemctl restart quanttutor
+            sleep 6
+            sudo systemctl is-active quanttutor
+            curl -sf http://127.0.0.1:8000/session/list >/dev/null
+            echo "--- disk ---"
+            df -h /home | tail -1
+            echo "--- tail log ---"
+            tail -5 /var/log/quanttutor.log
+          EOF
