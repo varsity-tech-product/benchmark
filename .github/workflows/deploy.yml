@@ -72,13 +72,13 @@ jobs:
             --exclude='node_modules' \
             --exclude='vercel-frontend/.vercel' \
             --exclude='vercel-frontend/dist' \
-            -e "ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no" \
+            -e "ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -o ServerAliveCountMax=120" \
             ./ ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:~/benchmark/
 
       - name: Rebuild Docker images (if Dockerfile changed)
         if: steps.changes.outputs.docker == 'true'
         run: |
-          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -o ServerAliveCountMax=120 \
             ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} << 'EOF'
             set -e
             cd ~/benchmark/bench
@@ -91,13 +91,13 @@ jobs:
       - name: Install Python deps (if requirements changed)
         if: steps.changes.outputs.deps == 'true'
         run: |
-          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -o ServerAliveCountMax=120 \
             ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} \
             '~/benchmark/.venv/bin/pip install -r ~/benchmark/requirements.txt'
 
       - name: Restart service + smoke test
         run: |
-          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -o ServerAliveCountMax=120 \
             ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} << 'EOF'
             set -e
             sudo systemctl restart quanttutor
