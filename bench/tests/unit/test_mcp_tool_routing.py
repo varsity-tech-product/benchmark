@@ -283,23 +283,76 @@ class TestMCPPhaseTransitions:
         assert session_state.phase == SessionPhase.IN_SESSION
 
     @pytest.mark.asyncio
-    async def test_visible_tools_change_per_phase(self, session_state):
-        # UNREGISTERED — only register
+    async def test_visible_tools_static_lifecycle_union(self, session_state):
+        """Lifecycle tools are visible from UNREGISTERED onward.
+
+        See issue #25: frozen-registry MCP clients cache ``list_tools`` at
+        connect time, so the full lifecycle catalogue must be in the first
+        response. Phase permissions are enforced at call time.
+        """
+        from server.api.protocol import LIFECYCLE_TOOL_NAMES
+
+        # UNREGISTERED — full lifecycle already present, no domain tools yet
         tools = session_state.get_visible_tools()
-        names = [t.name for t in tools]
-        assert "register_session" in names
-        assert "send_message" not in names
+        names = {t.name for t in tools}
+        for lifecycle in LIFECYCLE_TOOL_NAMES:
+            assert lifecycle in names, f"{lifecycle} missing from UNREGISTERED list"
 
         await _register(session_state)
-        # REGISTERED — only start
+        # REGISTERED — lifecycle still present; domain tools appear from proxy
         tools = session_state.get_visible_tools()
-        names = [t.name for t in tools]
-        assert "start_session" in names
-        assert "send_message" not in names
+        names = {t.name for t in tools}
+        for lifecycle in LIFECYCLE_TOOL_NAMES:
+            assert lifecycle in names
+        assert len(tools) > len(LIFECYCLE_TOOL_NAMES), "expected domain tools after register"
 
         await _start(session_state)
-        # IN_SESSION — send_message + domain tools
+        # IN_SESSION — same static lifecycle set
         tools = session_state.get_visible_tools()
-        names = [t.name for t in tools]
-        assert "send_message" in names
-        assert "register_session" not in names
+        names = {t.name for t in tools}
+        for lifecycle in LIFECYCLE_TOOL_NAMES:
+            assert lifecycle in names
+
+    @pytest.mark.asyncio
+    async def test_register_response_carries_next_allowed(self, session_state):
+        result = await _register(session_state)
+        assert result.get("current_phase") == "registered"
+        assert result.get("next_allowed") == ["start_session"]
+
+    @pytest.mark.asyncio
+    async def test_start_response_carries_next_allowed(self, session_state):
+        await _register(session_state)
+        result = await _start(session_state)
+        assert result.get("current_phase") == "in_session"
+        assert result.get("next_allowed") == ["send_message"]
+
+    @pytest.mark.asyncio
+    async def test_wrong_phase_error_is_imperative(self, session_state):
+        # Calling start_session before register — frozen-registry clients rely
+        # on this error to learn the next hop.
+        result = await _call(session_state, "start_session", {})
+        assert "error" in result
+        assert result.get("current_phase") == "unregistered"
+        assert "register_session" in result.get("allowed", [])
+        assert "register_session" in result.get("error", "")
+
+    def test_visible_tools_with_logs_only_proxy(self, session_state):
+        """Restored sessions stub ``self.proxy`` as a logs-only
+        ``SimpleNamespace`` (no ``get_available_tools``). ``list_tools``
+        must still succeed by falling through to the preload path.
+        """
+        from types import SimpleNamespace
+
+        from server.api.protocol import LIFECYCLE_TOOL_NAMES, SessionPhase
+
+        session_state.proxy = SimpleNamespace(
+            get_logs=lambda: [],
+            get_distractor_names=lambda: [],
+        )
+        session_state.task_id = DEFAULT_TASK_ID
+        session_state.phase = SessionPhase.COMPLETED
+
+        tools = session_state.get_visible_tools()
+        names = {t.name for t in tools}
+        for lifecycle in LIFECYCLE_TOOL_NAMES:
+            assert lifecycle in names

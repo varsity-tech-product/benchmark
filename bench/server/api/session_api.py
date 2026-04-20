@@ -46,6 +46,7 @@ from .protocol import (
     SessionPhase,
     check_permission,
     make_error_response,
+    next_allowed_for_phase,
 )
 
 logger = logging.getLogger(__name__)
@@ -577,7 +578,11 @@ class SessionState:
                         exc,
                     )
 
-            return {"session_id": self.session_id}
+            return {
+                "session_id": self.session_id,
+                "current_phase": self.phase.value,
+                "next_allowed": next_allowed_for_phase(self.phase),
+            }
         except Exception as exc:
             logger.exception("Session %s register failed", self.session_id)
             self._reset_registration_state()
@@ -608,6 +613,8 @@ class SessionState:
             }
             for t in self.get_visible_tools()
         ]
+        data["current_phase"] = self.phase.value
+        data["next_allowed"] = next_allowed_for_phase(self.phase)
         return data
 
     # ------------------------------------------------------------------
@@ -640,48 +647,51 @@ class SessionState:
             proxy_kwargs["reasoning"] = reasoning
         result = self.proxy.call_tool("send_message", **proxy_kwargs)
 
-        # Check for session completion
+        # Parse once: drives completion handling and next_allowed injection.
         try:
             data = json.loads(result)
-            if data.get("status") == "completed":
-                self.phase = SessionPhase.COMPLETED
-                self._save_results()
-                self._destroy_container()
-                logger.info(
-                    "Session %s completed: reason=%s",
-                    self.session_id,
-                    data.get("reason", "unknown"),
-                )
-                # Notify Run layer
-                if self._on_completed:
-                    try:
-                        self._on_completed(
-                            str(self._result_dir) if self._result_dir else None
-                        )
-                    except Exception as exc:
-                        logger.warning(
-                            "Session %s _on_completed callback failed: %s",
-                            self.session_id,
-                            exc,
-                        )
-                # Server-side auto_eval
-                if self.auto_eval:
-                    with self._eval_lock:
-                        if self._eval_status == "pending":
-                            self._eval_status = "running"
-                            threading.Thread(
-                                target=self._run_evaluation,
-                                daemon=True,
-                                name=f"autoeval-{self.session_id[:8]}",
-                            ).start()
-                            logger.info(
-                                "Session %s auto_eval started",
-                                self.session_id,
-                            )
-        except (json.JSONDecodeError, KeyError):
-            pass
+        except (json.JSONDecodeError, TypeError):
+            return result
 
-        return result
+        if data.get("status") == "completed":
+            self.phase = SessionPhase.COMPLETED
+            self._save_results()
+            self._destroy_container()
+            logger.info(
+                "Session %s completed: reason=%s",
+                self.session_id,
+                data.get("reason", "unknown"),
+            )
+            # Notify Run layer
+            if self._on_completed:
+                try:
+                    self._on_completed(
+                        str(self._result_dir) if self._result_dir else None
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "Session %s _on_completed callback failed: %s",
+                        self.session_id,
+                        exc,
+                    )
+            # Server-side auto_eval
+            if self.auto_eval:
+                with self._eval_lock:
+                    if self._eval_status == "pending":
+                        self._eval_status = "running"
+                        threading.Thread(
+                            target=self._run_evaluation,
+                            daemon=True,
+                            name=f"autoeval-{self.session_id[:8]}",
+                        ).start()
+                        logger.info(
+                            "Session %s auto_eval started",
+                            self.session_id,
+                        )
+
+        data.setdefault("current_phase", self.phase.value)
+        data.setdefault("next_allowed", next_allowed_for_phase(self.phase))
+        return json.dumps(data)
 
     # ------------------------------------------------------------------
     # request_evaluation
@@ -695,7 +705,11 @@ class SessionState:
         Failed evals can be retried.
         """
         if self._closed:
-            return {"status": "failed", "error": "Session is closed"}
+            return {
+                "status": "failed",
+                "error": "Session is closed",
+                "current_phase": self.phase.value,
+            }
         with self._eval_lock:
             if self._eval_status == "pending":
                 self._eval_status = "running"
@@ -704,13 +718,19 @@ class SessionState:
                     daemon=True,
                     name=f"eval-{self.session_id[:8]}",
                 ).start()
-                return {"status": "running", "message": "Evaluation started."}
+                return self._decorate_eval_payload(
+                    {"status": "running", "message": "Evaluation started."}
+                )
 
             if self._eval_status == "running":
-                return {"status": "running", "message": "Evaluation in progress."}
+                return self._decorate_eval_payload(
+                    {"status": "running", "message": "Evaluation in progress."}
+                )
 
             if self._eval_status == "completed":
-                return {"status": "completed", "scores": self._eval_results}
+                return self._decorate_eval_payload(
+                    {"status": "completed", "scores": self._eval_results}
+                )
 
             if self._eval_status == "failed":
                 self._eval_status = "running"
@@ -719,9 +739,20 @@ class SessionState:
                     daemon=True,
                     name=f"eval-{self.session_id[:8]}",
                 ).start()
-                return {"status": "running", "message": "Retrying evaluation."}
+                return self._decorate_eval_payload(
+                    {"status": "running", "message": "Retrying evaluation."}
+                )
 
-        return {"status": "unknown"}
+        return self._decorate_eval_payload({"status": "unknown"})
+
+    def _decorate_eval_payload(self, payload: dict) -> dict:
+        """Attach state-machine hints to a ``request_evaluation`` response."""
+        payload.setdefault("current_phase", self.phase.value)
+        if payload.get("status") == "completed":
+            payload.setdefault("next_allowed", ["get_scores", "get_results"])
+        else:
+            payload.setdefault("next_allowed", ["request_evaluation"])
+        return payload
 
     # ------------------------------------------------------------------
     # Domain tool calls
@@ -738,30 +769,104 @@ class SessionState:
     # ------------------------------------------------------------------
 
     def get_visible_tools(self) -> list[Tool]:
-        """Return MCP Tool list for the current phase.
+        """Return MCP Tool list — static union for frozen-registry clients.
 
-        | Phase       | list_tools returns                              |
-        |-------------|--------------------------------------------------|
-        | UNREGISTERED| [register_session]                               |
-        | REGISTERED  | [start_session]                                  |
-        | IN_SESSION  | [send_message] + all domain tools                |
-        | COMPLETED   | [request_evaluation, get_results, get_scores]    |
+        All lifecycle tools are visible from UNREGISTERED onward so a
+        frozen-registry MCP client (which caches ``list_tools`` at connect
+        time and ignores ``tools/list_changed``) can still drive the full
+        state machine. Phase permissions are enforced at call time via
+        ``check_permission``; wrong-phase calls return an imperative error
+        naming the next hop.
+
+        Domain tools are appended whenever a task is bound to this session
+        — either via ``register_session`` (proxy-resolved, includes live
+        distractors) or via a run-token binding before register (preloaded
+        from the task definition using the same deterministic seed as
+        ``populate_proxy_for_task``, so the initial ``list_tools`` already
+        contains the full catalogue).
         """
-        if self.phase == SessionPhase.UNREGISTERED:
-            return [REGISTER_SESSION_TOOL]
+        lifecycle = [
+            REGISTER_SESSION_TOOL,
+            START_SESSION_TOOL,
+            SEND_MESSAGE_TOOL,
+            GET_BACKGROUND_TOOL,
+            REQUEST_EVALUATION_TOOL,
+            GET_RESULTS_TOOL,
+            GET_SCORES_TOOL,
+        ]
+        return lifecycle + self._resolve_domain_tools()
 
-        domain_tools = self._get_domain_tools()
+    def _resolve_domain_tools(self) -> list[Tool]:
+        """Return task-specific domain tools, preloading when necessary.
 
-        if self.phase == SessionPhase.REGISTERED:
-            return [START_SESSION_TOOL]
+        If the proxy exposes live tool schemas (post-register), they are
+        authoritative. Otherwise — UNREGISTERED on a run-token connection,
+        or a completed session restored from storage where the proxy is a
+        logs-only stub — synthesize schemas from task metadata so
+        ``list_tools`` still returns the full catalogue.
+        """
+        if self.proxy is not None and hasattr(self.proxy, "get_available_tools"):
+            return self._get_domain_tools()
 
-        if self.phase == SessionPhase.IN_SESSION:
-            return [SEND_MESSAGE_TOOL, GET_BACKGROUND_TOOL] + domain_tools
+        task_id = self.task_id or self._run_task_id or ""
+        if not task_id:
+            return []
+        return self._preload_domain_tools_for_task(task_id)
 
-        if self.phase == SessionPhase.COMPLETED:
-            return [REQUEST_EVALUATION_TOOL, GET_RESULTS_TOOL, GET_SCORES_TOOL]
+    def _preload_domain_tools_for_task(self, task_id: str) -> list[Tool]:
+        """Synthesize domain Tool objects from task metadata without a container.
 
-        return []
+        Called in UNREGISTERED phase when a run-token has bound the session
+        to a task but register_session hasn't run yet. Distractor selection
+        mirrors ``populate_proxy_for_task`` (same seed, same pool math) so
+        the preloaded catalogue matches the post-register list.
+        """
+        import random
+
+        from server.core.distractors.distractor_tools import DISTRACTOR_TOOLS
+        from server.core.registry import _TOTAL_TOOL_SLOTS
+        from server.tooling import (
+            get_task_tool_specs,
+            render_agent_tool_description,
+        )
+
+        task = self.task or self._load_task(task_id)
+        if task is None:
+            return []
+
+        core_names = list(
+            task.environment.core_mcp_tools if task.environment else []
+        )
+        convenient_names = list(
+            task.ground_truth.convenient_tools if task.ground_truth else []
+        )
+
+        seed = _session_random_seed(task_id, self.session_id, task.seed)
+        rng = random.Random(seed)
+        excluded = set(core_names) | set(convenient_names)
+        pool = [d for d in DISTRACTOR_TOOLS if d not in excluded]
+        n_slots = max(
+            0,
+            min(
+                _TOTAL_TOOL_SLOTS - len(core_names) - len(convenient_names),
+                len(pool),
+            ),
+        )
+        distractor_names = rng.sample(pool, n_slots) if n_slots > 0 else []
+
+        specs = get_task_tool_specs(
+            core_tool_names=core_names,
+            convenient_tool_names=convenient_names,
+            distractor_tool_names=distractor_names,
+        )
+        return [
+            Tool(
+                name=name,
+                description=render_agent_tool_description(spec),
+                inputSchema=spec.input_schema,
+            )
+            for name, spec in specs.items()
+        ]
 
     # ------------------------------------------------------------------
     # Unified MCP call_tool handler
@@ -813,7 +918,9 @@ class SessionState:
             return [
                 TextContent(
                     type="text",
-                    text=make_error_response(error, allowed_ops),
+                    text=make_error_response(
+                        error, allowed_ops, current_phase=self.phase
+                    ),
                 )
             ]
 
