@@ -899,7 +899,10 @@ async def rest_start(request: Request) -> JSONResponse:
     allowed, error, ops = check_permission(state.phase, "start_session")
     if not allowed:
         logger.debug("[REST:%s] DENIED start in phase %s", sid[:8], state.phase.value)
-        return JSONResponse({"error": error, "allowed": ops}, 403)
+        return JSONResponse(
+            {"error": error, "allowed": ops, "current_phase": state.phase.value},
+            403,
+        )
 
     async with state._request_lock:
         state._last_activity = time.time()
@@ -955,7 +958,10 @@ async def rest_tool_call(request: Request) -> JSONResponse:
         logger.debug(
             "[REST:%s] DENIED %s in phase %s", sid[:8], name, state.phase.value
         )
-        return JSONResponse({"error": error, "allowed": ops}, 403)
+        return JSONResponse(
+            {"error": error, "allowed": ops, "current_phase": state.phase.value},
+            403,
+        )
 
     try:
         body = await request.json()
@@ -1109,7 +1115,10 @@ async def rest_send(request: Request) -> JSONResponse:
     allowed, error, ops = check_permission(state.phase, "send_message")
     if not allowed:
         logger.debug("[REST:%s] DENIED send in phase %s", sid[:8], state.phase.value)
-        return JSONResponse({"error": error, "allowed": ops}, 403)
+        return JSONResponse(
+            {"error": error, "allowed": ops, "current_phase": state.phase.value},
+            403,
+        )
 
     try:
         body = await request.json()
@@ -1173,7 +1182,10 @@ async def rest_evaluate(request: Request) -> JSONResponse:
         logger.debug(
             "[REST:%s] DENIED evaluate in phase %s", sid[:8], state.phase.value
         )
-        return JSONResponse({"error": error, "allowed": ops}, 403)
+        return JSONResponse(
+            {"error": error, "allowed": ops, "current_phase": state.phase.value},
+            403,
+        )
 
     # Parse eval parameters from query string
     eval_mode = request.query_params.get("eval_mode", "full")
