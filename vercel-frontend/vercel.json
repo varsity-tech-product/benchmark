@@ -1,7 +1,7 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "buildCommand": null,
-  "outputDirectory": "dist",
+  "outputDirectory": "public",
   "rewrites": [
     { "source": "/", "destination": "https://217-15-165-83.sslip.io/" },
     { "source": "/session/:path*", "destination": "https://217-15-165-83.sslip.io/session/:path*" },
