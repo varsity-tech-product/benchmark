@@ -15,6 +15,9 @@ import asyncio
 import contextlib
 import json
 import logging
+import os
+import shutil
+import subprocess
 import time
 from pathlib import Path
 from typing import AsyncIterator
@@ -30,10 +33,16 @@ from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
 from server.config.bootstrap import load_server_env
-from server.run import RunService, RunStore, TaskCatalog
+from server.run import JobStore, RunService, RunStore, TaskCatalog
+from server.run.jobs import (
+    JOB_STATUS_COMPLETED,
+    JOB_STATUS_FAILED,
+    JOB_STATUS_RUNNING,
+)
 from server.run.models import RunStatus
 from server.web.ui_app import extract_bearer_token, resolve_run_from_token, ui_routes
 
+from .limits import HEAVY_TOOLS, backtest_sem
 from .protocol import (
     TOOL_ENDPOINT_BLOCKED,
     SessionPhase,
@@ -96,9 +105,23 @@ class BenchSessionManager:
         self._run_store = RunStore(self.bench_root / "results" / "runs")
         self._run_service = RunService(self._catalog, self._run_store)
 
+        # Job layer — async tool dispatch (slice 2)
+        self._job_store = JobStore(self.bench_root / "results" / "jobs")
+        # Strong refs for background tasks so the event loop does not GC them
+        # mid-flight (asyncio.create_task caveat).
+        self._job_tasks: dict[str, asyncio.Task] = {}
+
     @contextlib.asynccontextmanager
     async def run(self) -> AsyncIterator[None]:
         """Lifespan context — manages task group for all sessions."""
+        # Any pending/running jobs on disk at startup lost their worker when
+        # the previous process died; fail them cleanly so clients polling a
+        # stale job_id get a terminal state instead of timing out.
+        orphans = await asyncio.to_thread(self._job_store.mark_orphans_failed)
+        if orphans:
+            logger.warning(
+                "Startup: failed %d orphan tool job(s) from previous run", orphans
+            )
         async with anyio.create_task_group() as tg:
             self._task_group = tg
             tg.start_soon(self._session_sweeper)
@@ -177,6 +200,32 @@ class BenchSessionManager:
                                     exc_info=True,
                                 )
                             state._destroy_container()
+                            # Notify Run layer so run status tracks the
+                            # force-completion. Swallow ValueError from
+                            # mark_completed guards (e.g. run was cancelled
+                            # between the deadline check and here).
+                            if state.run_id:
+                                result_dir = (
+                                    str(state._result_dir)
+                                    if getattr(state, "_result_dir", None)
+                                    else None
+                                )
+                                try:
+                                    self._run_service.mark_completed(
+                                        state.run_id, result_dir
+                                    )
+                                except ValueError as exc:
+                                    logger.info(
+                                        "Run %s mark_completed skipped in sweep: %s",
+                                        state.run_id,
+                                        exc,
+                                    )
+                                except Exception:
+                                    logger.warning(
+                                        "Run %s mark_completed failed in sweep",
+                                        state.run_id,
+                                        exc_info=True,
+                                    )
 
                     elif (
                         state.phase == SessionPhase.COMPLETED
@@ -700,6 +749,80 @@ class BenchSessionManager:
 # ---------------------------------------------------------------------------
 
 
+_HEALTH_DISK_MIN_GB = 5.0
+_HEALTH_LEAN_IMAGE_DEFAULT = "quant-tutor-env:v2.2-lean"
+
+
+def _health_check_docker() -> dict:
+    try:
+        proc = subprocess.run(
+            ["docker", "info"], capture_output=True, timeout=3
+        )
+        return {"ok": proc.returncode == 0}
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError) as exc:
+        return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+
+
+def _health_check_lean_image() -> dict:
+    image = os.environ.get("QTB_LEAN_IMAGE", _HEALTH_LEAN_IMAGE_DEFAULT)
+    try:
+        proc = subprocess.run(
+            ["docker", "image", "inspect", image],
+            capture_output=True,
+            timeout=3,
+        )
+        return {"ok": proc.returncode == 0, "image": image}
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError) as exc:
+        return {
+            "ok": False,
+            "image": image,
+            "error": f"{type(exc).__name__}: {exc}",
+        }
+
+
+def _health_check_disk() -> dict:
+    try:
+        usage = shutil.disk_usage("/home")
+        free_gb = usage.free / (1024**3)
+        return {
+            "ok": free_gb >= _HEALTH_DISK_MIN_GB,
+            "free_gb": round(free_gb, 2),
+            "percent_free": round(usage.free / usage.total * 100, 1),
+        }
+    except OSError as exc:
+        return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+
+
+async def rest_health(request: Request) -> JSONResponse:
+    """``GET /health`` — deep liveness probe.
+
+    In Docker mode validates Docker daemon, LEAN backtest image, and disk
+    headroom. In no-docker mode only disk is checked so a supported local
+    deployment is not reported unhealthy for a missing Docker daemon.
+    Returns 200 when all applicable checks pass, 503 otherwise so uptime
+    monitors and the deploy smoke test can detect real outages.
+    """
+    manager: BenchSessionManager = request.app.state.manager
+    checks: dict[str, dict] = {}
+    if manager.use_docker:
+        docker, image, disk = await asyncio.gather(
+            asyncio.to_thread(_health_check_docker),
+            asyncio.to_thread(_health_check_lean_image),
+            asyncio.to_thread(_health_check_disk),
+        )
+        checks["docker"] = docker
+        checks["lean_image"] = image
+        checks["disk"] = disk
+    else:
+        checks["mode"] = {"ok": True, "docker": False}
+        checks["disk"] = await asyncio.to_thread(_health_check_disk)
+    ok = all(c.get("ok") for c in checks.values())
+    return JSONResponse(
+        {"status": "ok" if ok else "down", "checks": checks},
+        status_code=200 if ok else 503,
+    )
+
+
 async def rest_register(request: Request) -> JSONResponse:
     """``POST /session/register``
 
@@ -841,6 +964,45 @@ async def rest_tool_call(request: Request) -> JSONResponse:
 
     logger.debug("[REST:%s] tool_call: %s", sid[:8], name)
     state._last_activity = time.time()
+
+    if name in HEAVY_TOOLS:
+        # Async dispatch — return 202 immediately so the client is not
+        # holding an HTTP connection open for the full backtest window.
+        #
+        # Reserve the session lock synchronously before returning so any
+        # request (DELETE, send, another tool) arriving on a parallel
+        # connection after the 202 waits behind the accepted backtest
+        # instead of racing the background task's first timeslice.
+        # Ownership transfers to ``_execute_tool_job``, which releases
+        # it in a ``finally`` once the tool has run.
+        await state._request_lock.acquire()
+        try:
+            job = manager._job_store.create(sid, name, body)
+            task = asyncio.create_task(
+                _execute_tool_job(manager, state, job["job_id"], name, body)
+            )
+        except BaseException:
+            state._request_lock.release()
+            raise
+        manager._job_tasks[job["job_id"]] = task
+        task.add_done_callback(
+            lambda _t, jid=job["job_id"]: manager._job_tasks.pop(jid, None)
+        )
+        logger.info(
+            "[REST:%s] enqueued job %s for %s",
+            sid[:8],
+            job["job_id"][:8],
+            name,
+        )
+        return JSONResponse(
+            {
+                "job_id": job["job_id"],
+                "status": job["status"],
+                "poll_url": f"/session/{sid}/tool/jobs/{job['job_id']}",
+            },
+            status_code=202,
+        )
+
     async with state._request_lock:
         result = await asyncio.to_thread(state.call_domain_tool, name, **body)
     result_preview = str(result)[:150]
@@ -850,6 +1012,90 @@ async def rest_tool_call(request: Request) -> JSONResponse:
     except (json.JSONDecodeError, TypeError):
         parsed = {"success": True, "output": result}
     return JSONResponse(parsed)
+
+
+async def _execute_tool_job(
+    manager: "BenchSessionManager",
+    state: SessionState,
+    job_id: str,
+    name: str,
+    body: dict,
+) -> None:
+    """Background worker for heavy tool invocations.
+
+    Inherits ownership of ``state._request_lock`` from the request
+    handler that accepted the job (see rest_tool_call). The lock is
+    released in the ``finally`` below, after the tool has run, so
+    ordering with later same-session requests matches the synchronous
+    pre-slice-2 path.
+    """
+    store = manager._job_store
+    sid = state.session_id
+    try:
+        async with backtest_sem():
+            store.update(
+                job_id, status=JOB_STATUS_RUNNING, started_at=time.time()
+            )
+            state._last_activity = time.time()
+            result = await asyncio.to_thread(
+                state.call_domain_tool, name, **body
+            )
+        try:
+            parsed = json.loads(result)
+        except (json.JSONDecodeError, TypeError):
+            parsed = {"success": True, "output": result}
+        store.update(
+            job_id,
+            status=JOB_STATUS_COMPLETED,
+            completed_at=time.time(),
+            result=parsed,
+        )
+        logger.info(
+            "[REST:%s] job %s (%s) completed", sid[:8], job_id[:8], name
+        )
+    except Exception as exc:
+        logger.exception("[REST:%s] job %s failed", sid[:8], job_id[:8])
+        store.update(
+            job_id,
+            status=JOB_STATUS_FAILED,
+            completed_at=time.time(),
+            error=f"{type(exc).__name__}: {exc}",
+        )
+    finally:
+        state._request_lock.release()
+
+
+async def rest_tool_job_status(request: Request) -> JSONResponse:
+    """``GET /session/{sid}/tool/jobs/{job_id}``
+
+    Returns the current status of an async tool job. The job_id must
+    belong to ``sid`` — a client cannot probe other sessions' jobs.
+
+    Deliberately does not require the session to still be in memory:
+    after a restart, sessions are gone but the JobStore still holds the
+    job record (possibly marked ``failed`` by ``mark_orphans_failed``),
+    and clients polling a stale job_id need to be able to see that
+    terminal state instead of a generic 404.
+    """
+    manager: BenchSessionManager = request.app.state.manager
+    sid = request.path_params["sid"]
+    job_id = request.path_params["job_id"]
+    job = manager._job_store.get(job_id)
+    if job is None or job.get("session_id") != sid:
+        return JSONResponse({"error": "Job not found"}, 404)
+    # Trim the echoed arguments — they can be large (full source files).
+    return JSONResponse(
+        {
+            "job_id": job["job_id"],
+            "tool_name": job["tool_name"],
+            "status": job["status"],
+            "created_at": job["created_at"],
+            "started_at": job["started_at"],
+            "completed_at": job["completed_at"],
+            "result": job["result"],
+            "error": job["error"],
+        }
+    )
 
 
 async def rest_send(request: Request) -> JSONResponse:
@@ -1063,6 +1309,13 @@ def create_app(
         Route("/session/{sid}", rest_session_status, methods=["GET", "DELETE"]),
         Route("/session/{sid}/start", rest_start, methods=["POST"]),
         Route("/session/{sid}/tools", rest_tools, methods=["GET"]),
+        # More-specific /tool/jobs/{job_id} must precede /tool/{name}
+        # or Starlette would bind "jobs" as the tool name.
+        Route(
+            "/session/{sid}/tool/jobs/{job_id}",
+            rest_tool_job_status,
+            methods=["GET"],
+        ),
         Route("/session/{sid}/tool/{name}", rest_tool_call, methods=["POST"]),
         Route("/session/{sid}/send", rest_send, methods=["POST"]),
         Route("/session/{sid}/evaluate", rest_evaluate, methods=["POST"]),
@@ -1080,6 +1333,7 @@ def create_app(
 
     all_routes = [
         Route("/", serve_index, methods=["GET"]),
+        Route("/health", rest_health, methods=["GET"]),
         *ui_routes(manager),
         *rest_routes,
         Mount(

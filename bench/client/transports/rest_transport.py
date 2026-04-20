@@ -4,6 +4,7 @@ Validates that the server's REST API is fully functional as an
 alternative to MCP. Uses httpx for async HTTP.
 """
 
+import asyncio
 import json
 import logging
 from typing import Optional
@@ -13,6 +14,13 @@ import httpx
 from .base import SessionTransport
 
 logger = logging.getLogger(__name__)
+
+# Poll cadence for async tool jobs (heavy tools return 202 + job_id).
+_JOB_POLL_INTERVAL_S = 5.0
+# Upper bound so a wedged server cannot hang the client forever; the
+# server's own tool timeout (600s for backtests) will terminate the job
+# well before this.
+_JOB_POLL_MAX_S = 900.0
 
 
 class RESTTransport(SessionTransport):
@@ -92,9 +100,50 @@ class RESTTransport(SessionTransport):
         resp = await self._client.post(
             f"/session/{self._session_id}/tool/{name}", json=arguments
         )
+
+        # Heavy tools (run_backtest, run_lean_backtest) return 202 with a
+        # job_id to avoid holding a 10-minute HTTP connection open. Poll
+        # until the job reaches a terminal state, then return its result
+        # as if the call had been synchronous.
+        if resp.status_code == 202:
+            data = resp.json()
+            job_id = data.get("job_id")
+            if not job_id:
+                return json.dumps(data)
+            return await self._await_job(job_id)
+
         data = resp.json()
         # REST returns parsed JSON directly; convert back to string for adapter
         return json.dumps(data)
+
+    async def _await_job(self, job_id: str) -> str:
+        """Poll an async tool job until it completes and return its payload."""
+        url = f"/session/{self._session_id}/tool/jobs/{job_id}"
+        deadline = asyncio.get_event_loop().time() + _JOB_POLL_MAX_S
+        while True:
+            resp = await self._client.get(url)
+            if resp.status_code != 200:
+                return json.dumps(
+                    {"error": f"Job poll failed: HTTP {resp.status_code}"}
+                )
+            data = resp.json()
+            status = data.get("status")
+            if status == "completed":
+                return json.dumps(data.get("result") or {})
+            if status == "failed":
+                return json.dumps(
+                    {"error": data.get("error") or "job failed"}
+                )
+            if asyncio.get_event_loop().time() >= deadline:
+                return json.dumps(
+                    {
+                        "error": (
+                            f"Client gave up polling job {job_id} after "
+                            f"{_JOB_POLL_MAX_S:.0f}s"
+                        )
+                    }
+                )
+            await asyncio.sleep(_JOB_POLL_INTERVAL_S)
 
     async def send_message(
         self,

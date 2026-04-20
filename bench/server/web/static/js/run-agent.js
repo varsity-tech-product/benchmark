@@ -17,6 +17,48 @@
   var _pollTimer = null;
   var _livePollTimer = null;
 
+  // ── Owner-token store ──
+  // Keyed by run_id so multiple tabs/runs can coexist. Persisted in
+  // sessionStorage under 'qtb_run_tokens' so a reload keeps monitoring.
+  var _TOKEN_STORAGE_KEY = 'qtb_run_tokens';
+
+  function _loadTokens() {
+    try {
+      var raw = sessionStorage.getItem(_TOKEN_STORAGE_KEY);
+      return raw ? JSON.parse(raw) : {};
+    } catch (e) { return {}; }
+  }
+
+  function _saveTokens(tokens) {
+    try {
+      sessionStorage.setItem(_TOKEN_STORAGE_KEY, JSON.stringify(tokens));
+    } catch (e) { /* quota/permission — ignore */ }
+  }
+
+  function _rememberControlToken(runId, controlToken) {
+    if (!runId || !controlToken) return;
+    var t = _loadTokens();
+    t[runId] = controlToken;
+    _saveTokens(t);
+  }
+
+  function _forgetControlToken(runId) {
+    if (!runId) return;
+    var t = _loadTokens();
+    if (runId in t) { delete t[runId]; _saveTokens(t); }
+  }
+
+  function _ownerFetch(url, options) {
+    options = options || {};
+    options.headers = options.headers || {};
+    var tokens = _loadTokens();
+    var tok = _runId ? tokens[_runId] : null;
+    if (tok) {
+      options.headers['Authorization'] = 'Bearer ' + tok;
+    }
+    return fetch(url, options);
+  }
+
   function escapeHtml(value) {
     return String(value == null ? '' : value)
       .replace(/&/g, '&amp;')
@@ -38,7 +80,7 @@
 
   function loadCatalog(callback) {
     if (_catalog) { callback(_catalog); return; }
-    fetch('/ui/tasks/catalog')
+    fetch('/ui/tasks/catalog/labels')
       .then(function (r) { return r.json(); })
       .then(function (data) {
         _catalog = data.tasks || [];
@@ -65,7 +107,7 @@
   function _renderCreatePage(app, tasks) {
     var taskOptions = tasks.map(function (t) {
       return '<option value="' + escapeHtml(t.label) + '">' +
-        escapeHtml(t.label) + ' (' + escapeHtml(t.category) + ')' +
+        escapeHtml(t.label) +
         '</option>';
     }).join('');
 
@@ -130,6 +172,9 @@
             return;
           }
           _runId = data.run_id;
+          if (data.control_token) {
+            _rememberControlToken(data.run_id, data.control_token);
+          }
           _renderMonitorPage(app, data);
         })
         .catch(function (err) {
@@ -224,7 +269,7 @@
       cancelBtn.addEventListener('click', function () {
         if (!_runId) return;
         cancelBtn.disabled = true;
-        fetch('/ui/runs/' + _runId + '/cancel', {method: 'POST'})
+        _ownerFetch('/ui/runs/' + _runId + '/cancel', {method: 'POST'})
           .then(function () {
             _cleanup();
             _updateStatus('cancelled');
@@ -243,9 +288,17 @@
     if (_pollTimer) clearInterval(_pollTimer);
     _pollTimer = setInterval(function () {
       if (!_runId) return;
-      fetch('/ui/runs/' + _runId)
-        .then(function (r) { return r.json(); })
+      _ownerFetch('/ui/runs/' + _runId)
+        .then(function (r) {
+          if (r.status === 401) {
+            _stopPolling();
+            _showTokenLostMessage();
+            return null;
+          }
+          return r.json();
+        })
         .then(function (data) {
+          if (data == null) return;
           _updateStatus(data.status);
           if (data.status === 'active') {
             _startLivePoll();
@@ -276,9 +329,17 @@
     if (_livePollTimer) clearInterval(_livePollTimer);
     _livePollTimer = setInterval(function () {
       if (!_runId) return;
-      fetch('/ui/runs/' + _runId + '/live')
-        .then(function (r) { return r.json(); })
+      _ownerFetch('/ui/runs/' + _runId + '/live')
+        .then(function (r) {
+          if (r.status === 401) {
+            _stopPolling();
+            _showTokenLostMessage();
+            return null;
+          }
+          return r.json();
+        })
         .then(function (data) {
+          if (data == null) return;
           _updateStatus(data.run_status);
           if (data.turn != null) {
             var turnPill = document.getElementById('myagent-turn-pill');
@@ -307,6 +368,22 @@
   function _stopPolling() {
     if (_pollTimer) { clearInterval(_pollTimer); _pollTimer = null; }
     if (_livePollTimer) { clearInterval(_livePollTimer); _livePollTimer = null; }
+  }
+
+  function _showTokenLostMessage() {
+    var pill = document.getElementById('myagent-status-pill');
+    if (pill) pill.textContent = '● Access expired';
+    var cancelBtn = document.getElementById('myagent-cancel-btn');
+    if (cancelBtn) cancelBtn.style.display = 'none';
+    var connectPanel = document.getElementById('myagent-connect-panel');
+    if (connectPanel) {
+      var msg = document.createElement('div');
+      msg.className = 'run-token-lost';
+      msg.textContent =
+        'Run access expired or token lost. Cannot resume monitoring. ' +
+        'Results will still appear under Results once the run completes.';
+      connectPanel.appendChild(msg);
+    }
   }
 
   function _updateStatus(status) {
