@@ -107,7 +107,8 @@ jobs:
             sudo systemctl restart quanttutor
             sleep 6
             sudo systemctl is-active quanttutor
-            curl -sf http://127.0.0.1:8000/session/list >/dev/null
+            # /health deep probe: docker daemon + LEAN image + disk (returns 503 on any failure)
+            curl -sf http://127.0.0.1:8000/health >/dev/null
             echo "--- disk ---"
             df -h /home | tail -1
             echo "--- tail log ---"

@@ -73,10 +73,32 @@ if "mcp" not in sys.modules:
     _mcp_streamable.StreamableHTTPServerTransport = _StreamableHTTPServerTransport
     _mcp_server.streamable_http = _mcp_streamable
 
+    # Stub mcp.client.* so client.transports package can import without
+    # the real SDK present (e.g. REST transport unit tests).
+    _mcp_client = types.ModuleType("mcp.client")
+    _mcp_client_session = types.ModuleType("mcp.client.session")
+    _mcp_client_streamable = types.ModuleType("mcp.client.streamable_http")
+
+    class _ClientSession:
+        def __init__(self, *args, **kwargs):
+            pass
+
+    async def _streamablehttp_client(*args, **kwargs):  # pragma: no cover
+        raise RuntimeError("mcp.client stubbed — real SDK not installed")
+
+    _mcp_client_session.ClientSession = _ClientSession
+    _mcp_client_streamable.streamablehttp_client = _streamablehttp_client
+    _mcp_client.session = _mcp_client_session
+    _mcp_client.streamable_http = _mcp_client_streamable
+    _mcp.client = _mcp_client
+
     sys.modules["mcp"] = _mcp
     sys.modules["mcp.types"] = _mcp_types
     sys.modules["mcp.server"] = _mcp_server
     sys.modules["mcp.server.streamable_http"] = _mcp_streamable
+    sys.modules["mcp.client"] = _mcp_client
+    sys.modules["mcp.client.session"] = _mcp_client_session
+    sys.modules["mcp.client.streamable_http"] = _mcp_client_streamable
 
 # Ensure bench/ is on sys.path so ``import server.*`` works.
 _BENCH_ROOT = Path(__file__).resolve().parents[1]
