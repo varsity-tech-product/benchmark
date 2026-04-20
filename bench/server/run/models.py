@@ -32,10 +32,14 @@ class RunAssignment:
     task_id: str  # "D01_load_inspect_ohlcv" (internal)
     status: RunStatus
 
-    # Token
+    # Run token (for the external agent / client)
     token_hint: str = ""  # first 12 chars for logs
     token_hash: str = ""  # SHA-256 hex digest
     token_expires_at: str = ""  # ISO 8601, empty = no expiry
+
+    # Control token (for the browser owner — poll/live/cancel)
+    control_token_hint: str = ""
+    control_token_hash: str = ""
 
     # Binding (set after claim)
     client_info: Optional[dict] = None
@@ -66,10 +70,17 @@ class RunAssignment:
 
     @classmethod
     def from_dict(cls, d: dict) -> "RunAssignment":
-        """Deserialize from JSON storage."""
-        d = dict(d)  # shallow copy
-        d["status"] = RunStatus(d["status"])
-        return cls(**d)
+        """Deserialize from JSON storage.
+
+        Tolerates old run.json files that predate newer fields (e.g. the
+        ``control_token_*`` pair added in v6.0). Unknown keys are dropped.
+        """
+        import dataclasses
+
+        fields = {f.name for f in dataclasses.fields(cls)}
+        clean = {k: v for k, v in d.items() if k in fields}
+        clean["status"] = RunStatus(clean["status"])
+        return cls(**clean)
 
     def public_dict(self) -> dict:
         """Safe subset for UI/client responses. No token_hash, no task_id."""

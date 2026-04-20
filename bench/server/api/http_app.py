@@ -177,6 +177,32 @@ class BenchSessionManager:
                                     exc_info=True,
                                 )
                             state._destroy_container()
+                            # Notify Run layer so run status tracks the
+                            # force-completion. Swallow ValueError from
+                            # mark_completed guards (e.g. run was cancelled
+                            # between the deadline check and here).
+                            if state.run_id:
+                                result_dir = (
+                                    str(state._result_dir)
+                                    if getattr(state, "_result_dir", None)
+                                    else None
+                                )
+                                try:
+                                    self._run_service.mark_completed(
+                                        state.run_id, result_dir
+                                    )
+                                except ValueError as exc:
+                                    logger.info(
+                                        "Run %s mark_completed skipped in sweep: %s",
+                                        state.run_id,
+                                        exc,
+                                    )
+                                except Exception:
+                                    logger.warning(
+                                        "Run %s mark_completed failed in sweep",
+                                        state.run_id,
+                                        exc_info=True,
+                                    )
 
                     elif (
                         state.phase == SessionPhase.COMPLETED
