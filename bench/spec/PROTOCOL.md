@@ -17,14 +17,30 @@ register_session          start_session           status="completed"
  UNREGISTERED ──────→ REGISTERED ──────→ IN_SESSION ──────→ COMPLETED
 ```
 
-| Phase        | Allowed                              | Rejected                                      |
-|--------------|--------------------------------------|-----------------------------------------------|
-| UNREGISTERED | register_session                     | start, send, tools, evaluate, results, scores |
-| REGISTERED   | start_session, list_tools            | register, send, tools, evaluate               |
-| IN_SESSION   | send_message, domain tools           | register, start, evaluate                     |
-| COMPLETED    | request_evaluation, get_results, get_scores | register, start, send, domain tools    |
+Phase enforcement is at call time. `list_tools` returns the static union
+of all lifecycle tools every phase (plus task-specific domain tools once
+a task is bound); the catalogue does not shrink or grow between phases.
+Frozen-registry MCP clients that cache `list_tools` at connect time see
+the full catalogue immediately and drive the state machine from response
+hints rather than tool-list mutation.
 
-Rejected calls return: `{"error": "description", "allowed": ["permitted_operations"]}`
+| Phase        | Callable                                    | Out-of-phase behaviour |
+|--------------|---------------------------------------------|------------------------|
+| UNREGISTERED | register_session                            | Everything else returns `{"error", "allowed", "current_phase"}` |
+| REGISTERED   | start_session                               | Same error shape, `allowed = ["start_session"]` |
+| IN_SESSION   | send_message, domain tools                  | Same error shape, `allowed = ["send_message", "(domain tools)"]` |
+| COMPLETED    | request_evaluation, get_results, get_scores | Same error shape, `allowed = ["request_evaluation", "get_results", "get_scores"]` |
+
+Phase-denial payload:
+```json
+{"error": "Wrong phase. Call start_session next.",
+ "allowed": ["start_session"],
+ "current_phase": "registered"}
+```
+
+Successful lifecycle responses carry `next_allowed` + `current_phase` so the
+agent can advance without re-reading `list_tools` — useful when the client
+ignores `tools/list_changed`.
 
 ---
 
@@ -41,13 +57,14 @@ REST: POST /session/register  {"task_id": "X01_ma_offbyone"}
 
 | Response | Body |
 |----------|------|
-| Success  | `{"accepted": true, "session_id": "a1b2c3d4e5f6"}` |
-| Bad request (400) | `{"accepted": false, "error": "Missing required field: task_id"}` |
-| Not found (404)   | `{"accepted": false, "error": "Task not found: INVALID_ID"}` |
+| Success  | `{"session_id": "a1b2c3d4e5f6", "current_phase": "registered", "next_allowed": ["start_session"]}` |
+| Bad request (400) | `{"error": "Missing required field: task_id"}` |
+| Not found (404)   | `{"error": "Task not found: INVALID_ID"}` |
 
 ### 2.2 start_session
 
-Start the tutoring session. Returns the student's first message. Can only be called once.
+Start the tutoring session. Returns the student's first message plus the
+task-specific tool catalogue. Can only be called once.
 
 ```
 MCP:  start_session()
@@ -56,12 +73,15 @@ REST: POST /session/{sid}/start
 
 | Response | Body |
 |----------|------|
-| Success  | `{"student_message": "I wrote a moving average crossover strategy but..."}` |
-| Wrong phase (403) | `{"error": "...", "allowed": ["start_session"]}` |
+| Success  | `{"student_message": "...", "tools": [...], "current_phase": "in_session", "next_allowed": ["send_message"]}` |
+| Wrong phase (403) | `{"error": "...", "allowed": ["start_session"], "current_phase": "..."}` |
 
 ### 2.3 list_tools / tools
 
-Discover available tools. Tool set varies by task and changes with phase.
+Discover available tools. The catalogue is the **static union** of all
+lifecycle tools plus any task-specific domain tools bound to this
+session; the set does not mutate per phase. Phase enforcement is at call
+time in `handle_tool_call`.
 
 ```
 MCP:  list_tools()                    (standard MCP operation)
@@ -70,7 +90,10 @@ REST: GET /session/{sid}/tools
 
 REST response: `{"tools": [{"name": "shell_exec", "description": "...", "inputSchema": {...}}, ...]}`
 
-Read-only query. Available in any phase.
+Read-only query. Available in any phase. MCP emits `tools/list_changed`
+after phase transitions as a progressive-enhancement for compliant
+clients, but frozen-registry clients are fully supported via the static
+catalogue and response-payload `next_allowed` hints.
 
 ### 2.4 Domain tool call
 
@@ -110,12 +133,14 @@ REST: POST /session/{sid}/send  {"text": "Let me help you debug this...",
 
 | Response | Body |
 |----------|------|
-| Active   | `{"student_message": "Oh I see...", "status": "active"}` |
-| Completed | `{"student_message": "Thanks!", "status": "completed", "reason": "objectives_met"}` |
+| Active   | `{"student_message": "Oh I see...", "status": "active", "current_phase": "in_session", "next_allowed": ["send_message"]}` |
+| Completed | `{"student_message": "Thanks!", "status": "completed", "reason": "objectives_met", "current_phase": "completed", "next_allowed": ["request_evaluation"]}` |
 | Empty text (400) | `{"error": "Empty message. Provide text to send to the student."}` |
 | Bad reasoning type (400) | `{"error": "reasoning must be a string"}` |
 
-When `status == "completed"`, the session has ended. Stop calling tools and send_message.
+When `status == "completed"`, the session has ended. Follow `next_allowed`
+(`request_evaluation`); further `send_message` / domain-tool calls will be
+rejected with the phase-denial shape.
 
 ### 2.6 request_evaluation
 
@@ -128,10 +153,10 @@ REST: POST /session/{sid}/evaluate[?force=true]
 
 | Response | Body |
 |----------|------|
-| Started  | `{"status": "running", "message": "Evaluation started."}` |
-| In progress | `{"status": "running", "message": "Evaluation in progress."}` |
-| Done     | `{"status": "completed", "scores": {"overall": 0.72, ...}}` |
-| Failed   | `{"status": "failed", "error": "..."}` |
+| Started  | `{"status": "running", "message": "Evaluation started.", "current_phase": "completed", "next_allowed": ["request_evaluation"]}` |
+| In progress | `{"status": "running", "message": "Evaluation in progress.", "current_phase": "completed", "next_allowed": ["request_evaluation"]}` |
+| Done     | `{"status": "completed", "scores": {...}, "current_phase": "completed", "next_allowed": ["get_scores", "get_results"]}` |
+| Failed   | `{"status": "failed", "error": "...", "current_phase": "completed"}` |
 
 `?force=true` (REST) resets and re-runs evaluation.
 
@@ -248,7 +273,7 @@ GET /session/abc123/scores
 | Response format | JSON string in TextContent (client must `json.loads`) | Direct JSON object |
 | DELETE response | Per MCP spec | `{"status": "cancelled"}` (HTTP 200) |
 | Session creation | `initialize` creates UNREGISTERED, then `register_session` tool | `POST /session/register` atomic (directly REGISTERED) |
-| Tool discovery | `list_tools` + automatic `tools/list_changed` notification | `GET /tools` on demand; phase change visible in response semantics |
+| Tool discovery | Static union at `list_tools`; `tools/list_changed` emitted after phase transitions as progressive enhancement for compliant clients | `GET /tools` on demand |
 | Error format | JSON-RPC error envelope | HTTP status code + JSON body |
 
 These differences are transport-level only. Same session state, same permission rules, same scoring.
