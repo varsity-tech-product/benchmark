@@ -15,6 +15,9 @@ import asyncio
 import contextlib
 import json
 import logging
+import os
+import shutil
+import subprocess
 import time
 from pathlib import Path
 from typing import AsyncIterator
@@ -34,6 +37,7 @@ from server.run import RunService, RunStore, TaskCatalog
 from server.run.models import RunStatus
 from server.web.ui_app import extract_bearer_token, resolve_run_from_token, ui_routes
 
+from .limits import HEAVY_TOOLS, backtest_sem
 from .protocol import (
     TOOL_ENDPOINT_BLOCKED,
     SessionPhase,
@@ -726,6 +730,80 @@ class BenchSessionManager:
 # ---------------------------------------------------------------------------
 
 
+_HEALTH_DISK_MIN_GB = 5.0
+_HEALTH_LEAN_IMAGE_DEFAULT = "quant-tutor-env:v2.2-lean"
+
+
+def _health_check_docker() -> dict:
+    try:
+        proc = subprocess.run(
+            ["docker", "info"], capture_output=True, timeout=3
+        )
+        return {"ok": proc.returncode == 0}
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError) as exc:
+        return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+
+
+def _health_check_lean_image() -> dict:
+    image = os.environ.get("QTB_LEAN_IMAGE", _HEALTH_LEAN_IMAGE_DEFAULT)
+    try:
+        proc = subprocess.run(
+            ["docker", "image", "inspect", image],
+            capture_output=True,
+            timeout=3,
+        )
+        return {"ok": proc.returncode == 0, "image": image}
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError) as exc:
+        return {
+            "ok": False,
+            "image": image,
+            "error": f"{type(exc).__name__}: {exc}",
+        }
+
+
+def _health_check_disk() -> dict:
+    try:
+        usage = shutil.disk_usage("/home")
+        free_gb = usage.free / (1024**3)
+        return {
+            "ok": free_gb >= _HEALTH_DISK_MIN_GB,
+            "free_gb": round(free_gb, 2),
+            "percent_free": round(usage.free / usage.total * 100, 1),
+        }
+    except OSError as exc:
+        return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+
+
+async def rest_health(request: Request) -> JSONResponse:
+    """``GET /health`` — deep liveness probe.
+
+    In Docker mode validates Docker daemon, LEAN backtest image, and disk
+    headroom. In no-docker mode only disk is checked so a supported local
+    deployment is not reported unhealthy for a missing Docker daemon.
+    Returns 200 when all applicable checks pass, 503 otherwise so uptime
+    monitors and the deploy smoke test can detect real outages.
+    """
+    manager: BenchSessionManager = request.app.state.manager
+    checks: dict[str, dict] = {}
+    if manager.use_docker:
+        docker, image, disk = await asyncio.gather(
+            asyncio.to_thread(_health_check_docker),
+            asyncio.to_thread(_health_check_lean_image),
+            asyncio.to_thread(_health_check_disk),
+        )
+        checks["docker"] = docker
+        checks["lean_image"] = image
+        checks["disk"] = disk
+    else:
+        checks["mode"] = {"ok": True, "docker": False}
+        checks["disk"] = await asyncio.to_thread(_health_check_disk)
+    ok = all(c.get("ok") for c in checks.values())
+    return JSONResponse(
+        {"status": "ok" if ok else "down", "checks": checks},
+        status_code=200 if ok else 503,
+    )
+
+
 async def rest_register(request: Request) -> JSONResponse:
     """``POST /session/register``
 
@@ -868,7 +946,11 @@ async def rest_tool_call(request: Request) -> JSONResponse:
     logger.debug("[REST:%s] tool_call: %s", sid[:8], name)
     state._last_activity = time.time()
     async with state._request_lock:
-        result = await asyncio.to_thread(state.call_domain_tool, name, **body)
+        if name in HEAVY_TOOLS:
+            async with backtest_sem():
+                result = await asyncio.to_thread(state.call_domain_tool, name, **body)
+        else:
+            result = await asyncio.to_thread(state.call_domain_tool, name, **body)
     result_preview = str(result)[:150]
     logger.debug("[REST:%s] %s -> %s...", sid[:8], name, result_preview)
     try:
@@ -1106,6 +1188,7 @@ def create_app(
 
     all_routes = [
         Route("/", serve_index, methods=["GET"]),
+        Route("/health", rest_health, methods=["GET"]),
         *ui_routes(manager),
         *rest_routes,
         Mount(

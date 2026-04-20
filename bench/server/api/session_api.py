@@ -33,6 +33,7 @@ from mcp.types import TextContent, Tool
 if TYPE_CHECKING:
     from mcp.server import Server
 
+from .limits import HEAVY_TOOLS, backtest_sem
 from .protocol import (
     GET_BACKGROUND_TOOL,
     GET_RESULTS_TOOL,
@@ -920,7 +921,13 @@ class SessionState:
             return [TextContent(type="text", text=json.dumps(result))]
 
         # Domain tool — route through proxy
-        result = await asyncio.to_thread(self.call_domain_tool, name, **arguments)
+        if name in HEAVY_TOOLS:
+            async with backtest_sem():
+                result = await asyncio.to_thread(
+                    self.call_domain_tool, name, **arguments
+                )
+        else:
+            result = await asyncio.to_thread(self.call_domain_tool, name, **arguments)
         result_preview = str(result)[:150]
         logger.debug("[%s] %s -> %s...", self.session_id[:8], name, result_preview)
         return [TextContent(type="text", text=str(result))]
