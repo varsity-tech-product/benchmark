@@ -2,19 +2,10 @@
 """CLI entry point for student simulator stability experiment.
 
 Usage:
-    # Run everything (generate + evaluate + report)
-    python -m experiments.student_sim_stability.run all
-
-    # Run phases individually
-    python -m experiments.student_sim_stability.run phase1        # Scripted tutor
-    python -m experiments.student_sim_stability.run phase2        # Live tutor
-    python -m experiments.student_sim_stability.run control       # Control group
-    python -m experiments.student_sim_stability.run evaluate      # Run D1-D4 evaluation
-    python -m experiments.student_sim_stability.run report        # Generate report only
-
-    # Options
-    python -m experiments.student_sim_stability.run all --output-dir results/my_run
-    python -m experiments.student_sim_stability.run all --dry-run  # Print trial count only
+    python -m experiments.student_sim_stability.run dry-run         # Print scale
+    python -m experiments.student_sim_stability.run generate        # Run all trials
+    python -m experiments.student_sim_stability.run generate -w 3   # With 3 workers
+    python -m experiments.student_sim_stability.run report          # Generate report
 """
 
 import argparse
@@ -22,7 +13,6 @@ import logging
 import sys
 from pathlib import Path
 
-# Ensure bench root is on sys.path
 BENCH_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(BENCH_ROOT))
 
@@ -33,14 +23,17 @@ def main():
     )
     parser.add_argument(
         "command",
-        choices=["all", "phase1", "phase2", "control", "evaluate", "report", "dry-run"],
-        help="Which stage(s) to run",
+        choices=["generate", "report", "dry-run"],
+        help="Which stage to run",
     )
     parser.add_argument(
-        "--output-dir",
+        "-w",
+        "--workers",
+        type=int,
         default=None,
-        help="Override output directory",
+        help="Number of parallel workers (default: config.MAX_WORKERS)",
     )
+    parser.add_argument("--output-dir", default=None)
     parser.add_argument(
         "--log-level",
         default="INFO",
@@ -55,46 +48,46 @@ def main():
     )
 
     if args.command == "dry-run":
-        from experiments.student_sim_stability.config import compute_trial_count
+        from experiments.student_sim_stability.config import (
+            STUDENT_MODELS,
+            TUTOR_MODEL,
+            TUTOR_TEMPERATURES,
+            compute_trial_count,
+        )
 
         counts = compute_trial_count()
         print("=== Experiment Scale ===")
-        print(f"  Phase 1 (scripted): {counts['scripted']} trials")
-        print(f"  Phase 2 (live):     {counts['live']} trials")
-        print(f"  Control group:      {counts['control']} trials")
+        print(
+            f"  Student models:     {', '.join(m.split('/')[-1] for m in STUDENT_MODELS)}"
+        )
+        print(f"  Tutor model:        {TUTOR_MODEL}")
+        print(f"  Tutor temperatures: {TUTOR_TEMPERATURES}")
+        print(f"  Live trials:        {counts['live']}")
+        print(f"  Control trials:     {counts['control']}")
         print(f"  Total trials:       {counts['total']}")
-        print(f"  Total messages:     {counts['total_messages']}")
+        print(f"  Student messages:   {counts['student_messages']}")
+        print(f"  Tutor messages:     {counts['tutor_messages']}")
+        print(
+            f"  Total API calls:    {counts['student_messages'] + counts['tutor_messages']}"
+        )
         return
 
-    from experiments.student_sim_stability.runner import ExperimentRunner
+    if args.command == "generate":
+        from experiments.student_sim_stability.config import MAX_WORKERS
+        from experiments.student_sim_stability.runner import ExperimentRunner
 
-    runner = ExperimentRunner(output_dir=args.output_dir)
+        runner = ExperimentRunner(output_dir=args.output_dir)
+        workers = args.workers or MAX_WORKERS
+        runner.run_generate(max_workers=workers)
 
-    if args.command == "all":
-        runner.run_all()
-        # Generate report after evaluation
-        from experiments.student_sim_stability.report import ReportGenerator
-
-        eval_path = runner.eval_dir / "all_evaluations.json"
-        if eval_path.exists():
-            gen = ReportGenerator(str(eval_path), str(runner.output_dir / "report"))
-            report_path = gen.generate()
-            print(f"\nReport: {report_path}")
-    elif args.command == "phase1":
-        runner.run_phase1()
-    elif args.command == "phase2":
-        runner.run_phase2()
-    elif args.command == "control":
-        runner.run_control()
-    elif args.command == "evaluate":
-        runner.run_evaluation()
     elif args.command == "report":
         from experiments.student_sim_stability.report import ReportGenerator
+        from experiments.student_sim_stability.runner import ExperimentRunner
 
+        runner = ExperimentRunner(output_dir=args.output_dir)
         eval_path = runner.eval_dir / "all_evaluations.json"
         if not eval_path.exists():
-            print(f"ERROR: No evaluation results found at {eval_path}")
-            print("Run 'evaluate' first.")
+            print(f"ERROR: No evaluation results at {eval_path}")
             sys.exit(1)
         gen = ReportGenerator(str(eval_path), str(runner.output_dir / "report"))
         report_path = gen.generate()

@@ -1,7 +1,9 @@
-"""Main experiment runner for student simulator stability testing.
+"""Experiment runner for student simulator stability testing.
 
-Orchestrates Phase 1 (scripted tutor), Phase 2 (live tutor), and
-control group experiments. Calls evaluator for D1-D4 scoring.
+Single-phase design with parallel execution:
+  - Tutor: gpt-4.1-nano via OpenRouter (live, context-aware)
+  - Student: 3 models under test via OpenRouter
+  - Judge: Claude Code post-hoc (not in this module)
 """
 
 import json
@@ -9,7 +11,7 @@ import logging
 import os
 import sys
 import time
-from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 # Ensure bench root is on sys.path
@@ -19,20 +21,15 @@ sys.path.insert(0, str(BENCH_ROOT))
 from experiments.student_sim_stability.config import (
     EXPERIMENT_TASKS,
     FIXED_TURNS,
-    JUDGE_MODEL,
-    JUDGE_TEMPERATURE,
+    MAX_WORKERS,
     OUTPUT_DIR,
     REPEATS,
     STUDENT_MODELS,
     TASK_PERSONA_MAP,
     TEMPERATURE,
     TUTOR_MODEL,
-    TUTOR_TEMPERATURE,
+    TUTOR_TEMPERATURES,
     TrialKey,
-)
-from experiments.student_sim_stability.evaluator import StabilityEvaluator
-from experiments.student_sim_stability.scripted_tutor import (
-    load_or_generate_scripted_plans,
 )
 from server.config.llm_config import OPENROUTER_BASE_URL
 from server.config.pricing import _resolve_pricing
@@ -44,27 +41,26 @@ from server.schemas import QuantTutorTask, StudentPersona
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Live tutor prompt
+# Tutor prompt
 # ---------------------------------------------------------------------------
 
-_LIVE_TUTOR_PROMPT = """\
-You are a quantitative finance tutor. A student is asking for help.
+_TUTOR_SYSTEM = (
+    "You are a quantitative finance tutor. Be helpful, patient, and concrete. "
+    "Adapt your explanation level to what the student seems to know. "
+    "Include code snippets or numerical examples where appropriate. "
+    "Keep responses to 3-8 sentences."
+)
 
+_TUTOR_USER = """\
 Task context: {task_description}
-
-The student has just said:
-"{student_message}"
 
 Conversation so far:
 {transcript}
 
-Respond as a helpful, patient tutor. Adapt your explanation level to what \
-the student seems to know. Include concrete examples, code snippets, or \
-numerical results where appropriate. Keep your response focused and \
-3-8 sentences long.
+The student just said:
+"{student_message}"
 
-Your response:
-"""
+Your response as tutor:"""
 
 # No-persona prompt for control group
 _CONTROL_USER_DESCRIPTION = (
@@ -80,7 +76,6 @@ _CONTROL_USER_DESCRIPTION = (
 
 
 def _make_client(model: str, temperature: float = 0.0) -> EwanLLMClient:
-    """Create an EwanLLMClient for the given model."""
     api_key = os.environ.get("OPENROUTER_API_KEY", "")
     if not api_key:
         raise RuntimeError("OPENROUTER_API_KEY not set")
@@ -97,69 +92,51 @@ def _make_client(model: str, temperature: float = 0.0) -> EwanLLMClient:
 
 
 def _load_task(task_cfg: dict) -> QuantTutorTask:
-    """Load a task JSON file."""
     path = BENCH_ROOT / "tasks" / "layer2" / task_cfg["path"]
     with open(path) as f:
         return QuantTutorTask(**json.load(f))
 
 
 def _load_persona(persona_id: str) -> StudentPersona:
-    """Load a persona JSON file."""
     path = BENCH_ROOT / "personas" / f"{persona_id}.json"
     with open(path) as f:
         return StudentPersona(**json.load(f))
 
 
-def _generate_live_tutor_response(
+def _generate_tutor_response(
     tutor_client: EwanLLMClient,
     task_description: str,
     conversation: list[dict],
 ) -> str:
-    """Generate a tutor response using the live model."""
     student_msg = conversation[-1]["content"] if conversation else ""
-    transcript = json.dumps(conversation[-6:], indent=2, ensure_ascii=False)
+    # Keep last 6 turns for context
+    recent = conversation[-6:]
+    transcript = json.dumps(recent, indent=2, ensure_ascii=False)
 
-    prompt = _LIVE_TUTOR_PROMPT.format(
-        task_description=task_description,
-        student_message=student_msg[:500],
+    prompt = _TUTOR_USER.format(
+        task_description=task_description[:500],
         transcript=transcript,
+        student_message=student_msg[:500],
     )
     result = tutor_client.generate(prompt)
     text = result[0] if isinstance(result, tuple) else result
-    return text.strip()
+    return (text or "").strip()
 
 
 # ---------------------------------------------------------------------------
-# Single trial runner
+# Single trial
 # ---------------------------------------------------------------------------
 
 
 def run_single_trial(
-    phase: str,
     task: QuantTutorTask,
     persona: StudentPersona,
     student_model: str,
-    scripted_tutor_messages: list[str] | None,
-    tutor_client: EwanLLMClient | None,
+    tutor_client: EwanLLMClient,
     n_turns: int = FIXED_TURNS,
     use_persona: bool = True,
 ) -> list[dict]:
-    """Run a single conversation trial.
-
-    Args:
-        phase: "scripted", "live", or "control"
-        task: Task definition
-        persona: Student persona (used for sim prompt even in control)
-        student_model: Model name for student simulator
-        scripted_tutor_messages: Pre-generated tutor messages (Phase 1 only)
-        tutor_client: Live tutor LLM client (Phase 2 only)
-        n_turns: Number of conversation turns
-        use_persona: If False, use generic description (control group)
-
-    Returns:
-        Conversation as list of {role, content} dicts
-    """
-    # Build student simulator
+    """Run one conversation trial. Returns conversation list."""
     student_client = _make_client(student_model, temperature=TEMPERATURE)
     persona_id = persona.persona_id
 
@@ -176,47 +153,33 @@ def run_single_trial(
         model=student_client,
     )
 
-    # Get student opening
     opening = (task.student_openings or {}).get(
         persona_id, "Hi, I need help with this topic."
     )
     conversation: list[dict] = [{"role": "user", "content": opening}]
 
     for turn_idx in range(n_turns):
-        # Generate tutor response
-        if phase == "scripted" and scripted_tutor_messages:
-            if turn_idx < len(scripted_tutor_messages):
-                tutor_msg = scripted_tutor_messages[turn_idx]
-            else:
-                tutor_msg = "Let me know if you have any other questions."
-        elif tutor_client is not None:
-            tutor_msg = _generate_live_tutor_response(
-                tutor_client, task.description, conversation
-            )
-        else:
-            raise ValueError(f"No tutor source for phase={phase}")
-
+        # Tutor responds
+        tutor_msg = _generate_tutor_response(
+            tutor_client, task.description, conversation
+        )
         conversation.append({"role": "assistant", "content": tutor_msg})
 
-        # Generate student response (except after last tutor turn)
+        # Student responds (except after last tutor turn)
         if turn_idx < n_turns - 1:
-            try:
-                student_msg = sim.generate_message(conversation)
-            except Exception as exc:
-                logger.warning("Student sim failed at turn %d: %s", turn_idx, exc)
-                student_msg = "Could you explain that in a bit more detail?"
+            student_msg = sim.generate_message(conversation)
             conversation.append({"role": "user", "content": student_msg})
 
     return conversation
 
 
 # ---------------------------------------------------------------------------
-# Full experiment orchestrator
+# Orchestrator
 # ---------------------------------------------------------------------------
 
 
 class ExperimentRunner:
-    """Runs the full stability experiment."""
+    """Runs the full experiment with parallel execution."""
 
     def __init__(self, output_dir: str | None = None):
         self.output_dir = Path(output_dir or OUTPUT_DIR)
@@ -226,19 +189,12 @@ class ExperimentRunner:
         self.eval_dir = self.output_dir / "evaluations"
         self.eval_dir.mkdir(exist_ok=True)
 
-        # Load tasks and personas
         self.tasks: dict[str, QuantTutorTask] = {}
         self.personas: dict[str, StudentPersona] = {}
         self._load_data()
 
-        # Clients (lazy init)
-        self._tutor_client: EwanLLMClient | None = None
-        self._judge_client: EwanLLMClient | None = None
-        self._scripted_gen_client: EwanLLMClient | None = None
-
     def _load_data(self):
-        """Load all task and persona definitions."""
-        loaded_personas = set()
+        loaded_personas: set[str] = set()
         for task_cfg in EXPERIMENT_TASKS:
             task = _load_task(task_cfg)
             self.tasks[task.task_id] = task
@@ -247,295 +203,118 @@ class ExperimentRunner:
                     self.personas[pid] = _load_persona(pid)
                     loaded_personas.add(pid)
 
-    @property
-    def tutor_client(self) -> EwanLLMClient:
-        if self._tutor_client is None:
-            self._tutor_client = _make_client(TUTOR_MODEL, TUTOR_TEMPERATURE)
-        return self._tutor_client
-
-    @property
-    def judge_client(self) -> EwanLLMClient:
-        if self._judge_client is None:
-            self._judge_client = _make_client(JUDGE_MODEL, JUDGE_TEMPERATURE)
-        return self._judge_client
-
-    @property
-    def scripted_gen_client(self) -> EwanLLMClient:
-        if self._scripted_gen_client is None:
-            self._scripted_gen_client = _make_client(TUTOR_MODEL, 0.3)
-        return self._scripted_gen_client
+    def _conv_path(self, key: str) -> Path:
+        return self.conversations_dir / f"{key}.json"
 
     def _save_conversation(self, key: str, conversation: list[dict]):
-        path = self.conversations_dir / f"{key}.json"
-        with open(path, "w") as f:
+        with open(self._conv_path(key), "w") as f:
             json.dump(conversation, f, indent=2, ensure_ascii=False)
 
-    def _load_conversation(self, key: str) -> list[dict] | None:
-        path = self.conversations_dir / f"{key}.json"
-        if path.exists():
-            with open(path) as f:
-                return json.load(f)
-        return None
+    def _exists(self, key: str) -> bool:
+        return self._conv_path(key).exists()
 
-    # ----- Phase 1: Scripted tutor -----
+    def _run_trial_wrapped(self, trial: TrialKey, use_persona: bool = True) -> str:
+        """Run a single trial (wrapper for parallel execution). Returns trial key."""
+        if self._exists(trial.key):
+            return f"SKIP {trial.key}"
 
-    def run_phase1(self):
-        """Run Phase 1: scripted tutor for reproducibility testing."""
-        logger.info("=== Phase 1: Scripted Tutor ===")
+        task = self.tasks[trial.task_id]
+        persona = self.personas[trial.persona_id]
+        tutor_client = _make_client(TUTOR_MODEL, trial.tutor_temperature)
 
-        # Generate scripted tutor plans
-        scripted_plans = load_or_generate_scripted_plans(
-            tasks=list(self.tasks.values()),
-            personas=self.personas,
-            task_persona_map=TASK_PERSONA_MAP,
-            model_client=self.scripted_gen_client,
-            cache_dir=str(self.output_dir),
-            n_turns=FIXED_TURNS,
-        )
+        try:
+            conv = run_single_trial(
+                task=task,
+                persona=persona,
+                student_model=trial.student_model,
+                tutor_client=tutor_client,
+                use_persona=use_persona,
+            )
+            self._save_conversation(trial.key, conv)
+            return f"OK   {trial.key}"
+        except Exception as exc:
+            # Log error detail; StudentSimError carries attempt history
+            from server.core.student_sim import StudentSimError
 
-        for task_id, task in self.tasks.items():
-            persona_ids = TASK_PERSONA_MAP.get(task_id, [])
-            for pid in persona_ids:
-                plan_key = f"{task_id}__{pid}"
-                tutor_msgs = scripted_plans.get(plan_key)
-                if not tutor_msgs:
-                    logger.warning("No scripted plan for %s, skipping", plan_key)
-                    continue
-
-                for model in STUDENT_MODELS:
-                    for repeat in range(REPEATS):
-                        trial = TrialKey("scripted", task_id, pid, model, repeat)
-                        # Skip if already run
-                        if self._load_conversation(trial.key):
-                            logger.info("Skipping (cached): %s", trial.key)
-                            continue
-
-                        logger.info("Running: %s", trial.key)
-                        conv = run_single_trial(
-                            phase="scripted",
-                            task=task,
-                            persona=self.personas[pid],
-                            student_model=model,
-                            scripted_tutor_messages=tutor_msgs,
-                            tutor_client=None,
-                        )
-                        self._save_conversation(trial.key, conv)
-
-    # ----- Phase 2: Live tutor -----
-
-    def run_phase2(self):
-        """Run Phase 2: live tutor for real-scenario testing."""
-        logger.info("=== Phase 2: Live Tutor ===")
-
-        for task_id, task in self.tasks.items():
-            persona_ids = TASK_PERSONA_MAP.get(task_id, [])
-            for pid in persona_ids:
-                for model in STUDENT_MODELS:
-                    for repeat in range(REPEATS):
-                        trial = TrialKey("live", task_id, pid, model, repeat)
-                        if self._load_conversation(trial.key):
-                            logger.info("Skipping (cached): %s", trial.key)
-                            continue
-
-                        logger.info("Running: %s", trial.key)
-                        conv = run_single_trial(
-                            phase="live",
-                            task=task,
-                            persona=self.personas[pid],
-                            student_model=model,
-                            scripted_tutor_messages=None,
-                            tutor_client=self.tutor_client,
-                        )
-                        self._save_conversation(trial.key, conv)
-
-    # ----- Control group -----
-
-    def run_control(self):
-        """Run control group: no persona description."""
-        logger.info("=== Control Group ===")
-
-        # Use scripted tutor plans (first persona available) for consistency
-        scripted_plans = load_or_generate_scripted_plans(
-            tasks=list(self.tasks.values()),
-            personas=self.personas,
-            task_persona_map=TASK_PERSONA_MAP,
-            model_client=self.scripted_gen_client,
-            cache_dir=str(self.output_dir),
-            n_turns=FIXED_TURNS,
-        )
-
-        for task_id, task in self.tasks.items():
-            persona_ids = TASK_PERSONA_MAP.get(task_id, [])
-            if not persona_ids:
-                continue
-            pid = persona_ids[0]  # Use first persona's tutor plan
-            plan_key = f"{task_id}__{pid}"
-            tutor_msgs = scripted_plans.get(plan_key)
-            if not tutor_msgs:
-                continue
-
-            for model in STUDENT_MODELS:
-                trial = TrialKey("control", task_id, pid, model, 0)
-                if self._load_conversation(trial.key):
-                    logger.info("Skipping (cached): %s", trial.key)
-                    continue
-
-                logger.info("Running: %s", trial.key)
-                conv = run_single_trial(
-                    phase="scripted",
-                    task=task,
-                    persona=self.personas[pid],
-                    student_model=model,
-                    scripted_tutor_messages=tutor_msgs,
-                    tutor_client=None,
-                    use_persona=False,
+            if isinstance(exc, StudentSimError):
+                logger.error(
+                    "Trial %s aborted (%s, %d attempts): %s",
+                    trial.key,
+                    exc.error_type,
+                    len(exc.attempts),
+                    exc,
                 )
-                self._save_conversation(trial.key, conv)
+            else:
+                logger.error("Trial %s failed: %s", trial.key, exc)
+            return f"FAIL {trial.key}: {exc}"
 
-    # ----- Evaluation -----
+    def run_generate(self, max_workers: int = MAX_WORKERS):
+        """Generate all conversations (live + control) in parallel."""
+        trials: list[tuple[TrialKey, bool]] = []
 
-    def run_evaluation(self):
-        """Run D1-D4 evaluation on all collected conversations."""
-        logger.info("=== Running Evaluation ===")
-        evaluator = StabilityEvaluator(self.judge_client)
-        all_results: dict[str, list] = defaultdict(list)
+        # Main experiment — all tutor temperatures
+        for task_id in self.tasks:
+            for pid in TASK_PERSONA_MAP.get(task_id, []):
+                for model in STUDENT_MODELS:
+                    for repeat in range(REPEATS):
+                        for tutor_t in TUTOR_TEMPERATURES:
+                            t = TrialKey("live", task_id, pid, model, repeat, tutor_t)
+                            trials.append((t, True))
 
-        for phase in ("scripted", "live"):
-            for task_id, task in self.tasks.items():
-                persona_ids = TASK_PERSONA_MAP.get(task_id, [])
-                for pid in persona_ids:
-                    persona = self.personas[pid]
-
-                    # Collect conversations for this (task, persona) group
-                    model_runs: dict[str, list[list[dict]]] = defaultdict(list)
-                    for model in STUDENT_MODELS:
-                        for repeat in range(REPEATS):
-                            trial = TrialKey(phase, task_id, pid, model, repeat)
-                            conv = self._load_conversation(trial.key)
-                            if conv:
-                                model_runs[model].append(conv)
-
-                    # D1: Per-message persona adherence (sample: first run per model)
-                    for model, runs in model_runs.items():
-                        if runs:
-                            d1_results = evaluator.eval_d1_conversation(
-                                runs[0], persona
-                            )
-                            for r in d1_results:
-                                r.metadata.update(
-                                    {
-                                        "phase": phase,
-                                        "task_id": task_id,
-                                        "persona_id": pid,
-                                        "model": model,
-                                    }
-                                )
-                            all_results["D1"].extend(d1_results)
-
-                    # D2: Cross-run reproducibility (per model, needs 3 runs)
-                    for model, runs in model_runs.items():
-                        if len(runs) >= 2:
-                            d2 = evaluator.eval_d2(runs, persona, task)
-                            d2.metadata.update(
-                                {
-                                    "phase": phase,
-                                    "task_id": task_id,
-                                    "persona_id": pid,
-                                    "model": model,
-                                    "n_runs": len(runs),
-                                }
-                            )
-                            all_results["D2"].append(d2)
-
-                    # D3: Cross-model consistency (one conv per model)
-                    model_convs = {m: runs[0] for m, runs in model_runs.items() if runs}
-                    if len(model_convs) >= 2:
-                        d3 = evaluator.eval_d3(model_convs, persona, task)
-                        d3.metadata.update(
-                            {
-                                "phase": phase,
-                                "task_id": task_id,
-                                "persona_id": pid,
-                            }
-                        )
-                        all_results["D3"].append(d3)
-
-                    # D4: Drift detection (all conversations)
-                    for model, runs in model_runs.items():
-                        for i, conv in enumerate(runs):
-                            d4 = evaluator.eval_d4(conv, persona)
-                            d4.metadata.update(
-                                {
-                                    "phase": phase,
-                                    "task_id": task_id,
-                                    "persona_id": pid,
-                                    "model": model,
-                                    "repeat": i,
-                                }
-                            )
-                            all_results["D4"].append(d4)
-
-        # Control group evaluation
-        for task_id, task in self.tasks.items():
+        # Control group — tutor t=0 only
+        for task_id in self.tasks:
             persona_ids = TASK_PERSONA_MAP.get(task_id, [])
             if not persona_ids:
                 continue
             pid = persona_ids[0]
-            persona = self.personas[pid]
-
             for model in STUDENT_MODELS:
-                control_trial = TrialKey("control", task_id, pid, model, 0)
-                control_conv = self._load_conversation(control_trial.key)
+                t = TrialKey("control", task_id, pid, model, 0, tutor_temperature=0.0)
+                trials.append((t, False))
 
-                # Compare with scripted phase first run
-                persona_trial = TrialKey("scripted", task_id, pid, model, 0)
-                persona_conv = self._load_conversation(persona_trial.key)
-
-                if control_conv and persona_conv:
-                    ctrl = evaluator.eval_control(persona_conv, control_conv, persona)
-                    ctrl.metadata.update(
-                        {
-                            "task_id": task_id,
-                            "persona_id": pid,
-                            "model": model,
-                        }
-                    )
-                    all_results["control"].append(ctrl)
-
-        # Save evaluation results
-        serializable = {}
-        for dim, results in all_results.items():
-            serializable[dim] = [
-                {
-                    "dimension": r.dimension,
-                    "scores": r.scores,
-                    "reasoning": r.reasoning,
-                    "metadata": r.metadata,
-                }
-                for r in results
-            ]
-
-        eval_path = self.eval_dir / "all_evaluations.json"
-        with open(eval_path, "w") as f:
-            json.dump(serializable, f, indent=2, ensure_ascii=False)
+        # Filter out already completed
+        pending = [(t, p) for t, p in trials if not self._exists(t.key)]
+        total = len(trials)
+        done = total - len(pending)
 
         logger.info(
-            "Evaluation complete. Judge calls: %d, cost: $%.4f",
-            evaluator.total_calls,
-            evaluator.total_cost,
+            "Total trials: %d, already done: %d, pending: %d",
+            total,
+            done,
+            len(pending),
         )
-        logger.info("Results saved to %s", eval_path)
-        return serializable
 
-    # ----- Run all -----
+        if not pending:
+            logger.info("All trials already completed.")
+            return
 
-    def run_all(self):
-        """Run complete experiment: Phase 1 + Phase 2 + Control + Evaluation."""
         start = time.time()
-        self.run_phase1()
-        self.run_phase2()
-        self.run_control()
-        results = self.run_evaluation()
+        completed = 0
+        failed = 0
+
+        with ThreadPoolExecutor(max_workers=max_workers) as pool:
+            futures = {
+                pool.submit(self._run_trial_wrapped, t, p): t for t, p in pending
+            }
+            for future in as_completed(futures):
+                result = future.result()
+                completed += 1
+                if result.startswith("FAIL"):
+                    failed += 1
+                # Progress update every 10 trials
+                if completed % 10 == 0 or completed == len(pending):
+                    elapsed = time.time() - start
+                    logger.info(
+                        "Progress: %d/%d (%.0fs elapsed, %d failed)",
+                        completed,
+                        len(pending),
+                        elapsed,
+                        failed,
+                    )
+
         elapsed = time.time() - start
-        logger.info("Total experiment time: %.1f minutes", elapsed / 60)
-        return results
+        logger.info(
+            "Done. %d trials in %.1f min (%d failed)",
+            completed,
+            elapsed / 60,
+            failed,
+        )
