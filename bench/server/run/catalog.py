@@ -110,6 +110,14 @@ class TaskCatalog:
             key=lambda x: x["label"],
         )
 
+    def list_labels_only(self) -> list[dict]:
+        """Return labels only — used by Run/exam UI where category and
+        difficulty must not be revealed to the student before selection."""
+        return sorted(
+            [{"label": e.public_label} for e in self._entries.values()],
+            key=lambda x: x["label"],
+        )
+
     def __len__(self) -> int:
         return len(self._entries)
 

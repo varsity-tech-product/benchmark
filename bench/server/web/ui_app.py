@@ -9,9 +9,11 @@ Provides:
 
 from __future__ import annotations
 
+import hmac
 import json
 import logging
 import math
+import os
 from dataclasses import asdict
 
 from starlette.requests import Request
@@ -40,6 +42,46 @@ def extract_bearer_token(request: Request) -> str | None:
 def resolve_run_from_token(run_service, raw_token: str):
     """Find RunAssignment by raw token. Returns None if invalid/expired."""
     return run_service.resolve_token(raw_token)
+
+
+def _authorize_control_token(
+    request: Request, run_service, run_id: str
+):
+    """Return the RunAssignment if the request carries a valid control token.
+
+    Returns a ``(JSONResponse, None)`` tuple for the error path and
+    ``(None, assignment)`` for the success path so callers can short-circuit
+    with a single check.
+    """
+    raw = extract_bearer_token(request)
+    if not raw:
+        return JSONResponse(
+            {"error": "Authorization: Bearer <control_token> required"}, 401
+        ), None
+    try:
+        assignment = run_service.verify_control_token(run_id, raw)
+    except PermissionError:
+        return JSONResponse({"error": "Invalid control token"}, 401), None
+    except ValueError:
+        return JSONResponse({"error": "Run not found"}, 404), None
+    return None, assignment
+
+
+def _authorize_admin_token(request: Request):
+    """Compare the bearer token against ``QTB_ADMIN_TOKEN``.
+
+    If the env var is unset we allow the request (local-dev convenience);
+    this lets existing test/CI flows keep working without setting the var.
+    """
+    expected = os.environ.get("QTB_ADMIN_TOKEN", "")
+    if not expected:
+        return None  # no enforcement
+    raw = extract_bearer_token(request) or ""
+    if not raw or not hmac.compare_digest(expected, raw):
+        return JSONResponse(
+            {"error": "Authorization: Bearer <admin_token> required"}, 401
+        )
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -136,12 +178,23 @@ def ui_routes(manager) -> list[Route]:
     # -----------------------------------------------------------------------
 
     async def task_catalog(request: Request) -> JSONResponse:
-        """Public task catalog — labels + category + difficulty only."""
+        """Public task catalog — labels + category + difficulty.
+
+        Used by Results UI. Do not wire this into the Run/exam UI.
+        """
         _ = request
         run_service = getattr(manager, "_run_service", None)
         if run_service is None:
             return JSONResponse({"error": "Run service not initialized"}, 503)
         return JSONResponse({"tasks": run_service.catalog.list_public()})
+
+    async def task_catalog_labels(request: Request) -> JSONResponse:
+        """Run/exam-mode catalog — labels only, no category or difficulty."""
+        _ = request
+        run_service = getattr(manager, "_run_service", None)
+        if run_service is None:
+            return JSONResponse({"error": "Run service not initialized"}, 503)
+        return JSONResponse({"tasks": run_service.catalog.list_labels_only()})
 
     # -----------------------------------------------------------------------
     # New: /ui/runs/*
@@ -167,7 +220,7 @@ def ui_routes(manager) -> list[Route]:
         token_ttl = body.get("token_ttl_minutes", 30)
 
         try:
-            assignment, raw_token = run_service.create_run(
+            assignment, raw_token, raw_control_token = run_service.create_run(
                 task=task,
                 mode=mode,
                 persona_policy=persona_policy,
@@ -186,6 +239,7 @@ def ui_routes(manager) -> list[Route]:
                 "status": assignment.status.value,
                 "public_task_label": assignment.public_task_label,
                 "token": raw_token,
+                "control_token": raw_control_token,
                 "token_expires_at": assignment.token_expires_at,
                 "mcp_url": mcp_url,
                 "launch_command": (
@@ -197,10 +251,18 @@ def ui_routes(manager) -> list[Route]:
         )
 
     async def list_runs(request: Request) -> JSONResponse:
-        """``GET /ui/runs`` — list runs with optional filters."""
+        """``GET /ui/runs`` — list runs with optional filters.
+
+        Requires ``Authorization: Bearer <admin_token>`` when
+        ``QTB_ADMIN_TOKEN`` is set; otherwise allowed (local dev).
+        """
         run_service = getattr(manager, "_run_service", None)
         if run_service is None:
             return JSONResponse({"error": "Run service not initialized"}, 503)
+
+        err = _authorize_admin_token(request)
+        if err is not None:
+            return err
 
         status = request.query_params.get("status")
         task = request.query_params.get("task")
@@ -208,15 +270,15 @@ def ui_routes(manager) -> list[Route]:
         return JSONResponse({"runs": [r.public_dict() for r in runs]})
 
     async def get_run(request: Request) -> JSONResponse:
-        """``GET /ui/runs/{run_id}`` — query run status."""
+        """``GET /ui/runs/{run_id}`` — query run status. Owner-only."""
         run_service = getattr(manager, "_run_service", None)
         if run_service is None:
             return JSONResponse({"error": "Run service not initialized"}, 503)
 
         run_id = request.path_params["run_id"]
-        run = run_service.get_run(run_id)
-        if run is None:
-            return JSONResponse({"error": "Run not found"}, 404)
+        err, run = _authorize_control_token(request, run_service, run_id)
+        if err is not None:
+            return err
         return JSONResponse(run.public_dict())
 
     async def get_run_live(request: Request) -> JSONResponse:
@@ -226,9 +288,9 @@ def ui_routes(manager) -> list[Route]:
             return JSONResponse({"error": "Run service not initialized"}, 503)
 
         run_id = request.path_params["run_id"]
-        run = run_service.get_run(run_id)
-        if run is None:
-            return JSONResponse({"error": "Run not found"}, 404)
+        err, run = _authorize_control_token(request, run_service, run_id)
+        if err is not None:
+            return err
 
         # Terminal or pre-active states
         if run.status.value in (
@@ -291,8 +353,15 @@ def ui_routes(manager) -> list[Route]:
         )
 
     async def cancel_run(request: Request) -> JSONResponse:
-        """``POST /ui/runs/{run_id}/cancel`` — cancel at any non-terminal state."""
+        """``POST /ui/runs/{run_id}/cancel`` — owner-only cancel."""
+        run_service = getattr(manager, "_run_service", None)
+        if run_service is None:
+            return JSONResponse({"error": "Run service not initialized"}, 503)
+
         run_id = request.path_params["run_id"]
+        err, _ = _authorize_control_token(request, run_service, run_id)
+        if err is not None:
+            return err
         try:
             await manager.cancel_run(run_id)
         except ValueError as exc:
@@ -301,7 +370,7 @@ def ui_routes(manager) -> list[Route]:
             logger.error("cancel_run %s failed: %s", run_id, exc, exc_info=True)
             return JSONResponse({"error": f"Cancel failed: {exc}"}, 500)
 
-        run = manager._run_service.get_run(run_id)
+        run = run_service.get_run(run_id)
         return JSONResponse(run.public_dict() if run else {"status": "cancelled"})
 
     # -----------------------------------------------------------------------
@@ -360,7 +429,7 @@ def ui_routes(manager) -> list[Route]:
         client_info = body.get("client")
 
         try:
-            assignment, raw_token = run_service.create_and_claim(
+            assignment, raw_token, raw_control_token = run_service.create_and_claim(
                 task=task, client_info=client_info, mode=mode
             )
         except ValueError as exc:
@@ -372,6 +441,7 @@ def ui_routes(manager) -> list[Route]:
             {
                 "run_id": assignment.run_id,
                 "token": raw_token,
+                "control_token": raw_control_token,
                 "mcp_url": f"{base_url}/mcp",
                 "public_task_label": assignment.public_task_label,
                 "status": assignment.status.value,
@@ -427,6 +497,7 @@ def ui_routes(manager) -> list[Route]:
         Route("/ui/results/{session_id}/files/{path:path}", get_file, methods=["GET"]),
         # New: public task catalog
         Route("/ui/tasks/catalog", task_catalog, methods=["GET"]),
+        Route("/ui/tasks/catalog/labels", task_catalog_labels, methods=["GET"]),
         # New: Run management (UI)
         Route("/ui/runs", create_run, methods=["POST"]),
         Route("/ui/runs", list_runs, methods=["GET"]),

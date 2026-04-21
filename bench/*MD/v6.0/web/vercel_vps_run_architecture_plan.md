@@ -2,9 +2,41 @@
 
 > Date: 2026-04-20
 > Author: Codex + Claude review
-> Status: Executable implementation plan
+> Status: Tier 1+2 shipped on master · deployment live · Tier 3/4 deferred
 > Scope: `bench/server`, `bench/client`, `bench/server/web`
 > Deployment target: frontend on Vercel, backend on VPS
+> Live: frontend `https://benchmark-liard.vercel.app`, backend `https://217-15-165-83.sslip.io`
+
+---
+
+## Implementation Status (2026-04-20)
+
+Hosted MVP is live on the single-VPS setup and has been externally verified end-to-end.
+
+### What shipped on master
+
+| Scope | Commit / PR | Notes |
+|---|---|---|
+| Vercel edge rewrites (`/session`, `/ui`, `/static`, `/mcp`) | `c2c85e1` (prior) | Makes browser-origin calls same-origin — architecturally replaces Step 1 CORS and Step 2 `apiFetch` helper. |
+| Vercel rewrites extended to `/health`, `/client/*` | PR #22 | External uptime monitors and CLI clients can now target the canonical domain. |
+| Label-only Run catalog + run state transition hardening + `control_token` | `3b0b48f` (PR #20, via #18/#17) | Implements plan Step 3 + Step 5. |
+| GHA deploy workflow (rsync + systemd restart + smoke) | `2f7a6b4`, `5ac2b65`, `176ac8c` | VPS auto-deploys on push to master. |
+| `/health` deep probe (docker, LEAN image, disk) + backtest semaphore cap | `5e5da19` (PR #20) | Deploy smoke gate + OOM protection. `QTB_MAX_CONCURRENT_BACKTESTS` (default 2). |
+| Async job pattern for heavy tools (202 + `/tool/jobs/{job_id}`) | `c4d6fa5` (PR #20) | Removes 10-minute open-HTTP exposure for `run_lean_backtest` / `run_backtest`; restart-safe via `mark_orphans_failed`. |
+| External availability smoke (`bench/scripts/prod_smoke.py`) | PR #22 | T0–T7 single-flow smoke over 22 endpoints. |
+
+### External verification (2026-04-20)
+
+`python bench/scripts/prod_smoke.py --base-url https://217-15-165-83.sslip.io` → **22/22 PASS** on `master@7ed0f99`. Every public HTTP endpoint reachable and non-5xx inside the per-request deadline: liveness, public metadata, run creation (authed via `control_token`), session lifecycle, sync tool dispatch, async 202 + poll, results/scores, UI read paths, clean cancel + DELETE teardown. Covers the Section 1.4 auth matrix for the currently-enforced tier.
+
+### Where the plan deviates from what shipped
+
+- **Step 1 (CORS) and Step 2 (`apiFetch`/`config.js`)**: not implemented and no longer needed. Vercel edge rewrites make the browser see a same-origin API, so there's no CORS preflight and the frontend uses relative URLs only. The outcome the plan wanted (browser can call the VPS from the hosted frontend) is achieved via `vercel-frontend/vercel.json` instead.
+- **Heavy-tool transport**: the original plan did not specify how long-running backtests would behave end-to-end through a Vercel edge proxy. The shipped design returns 202 + `job_id` in under a second and the client polls, avoiding edge idle-timeout entirely. See `bench/server/run/jobs.py` and `_execute_tool_job` in `http_app.py`.
+
+### Tier 3/4 still deferred
+
+Scope for Tier 3 (session-endpoint `run_token` enforcement, MCP `register_session` body-task-id handling, frontend Run UI `control_token` wiring) and Tier 4 (trace upload auth, `/client/runs/start` admin gate, Phase 5 hardening) is unchanged. See Sections 8.3–8.4 and the checklist in Section 9.
 
 ---
 
@@ -990,15 +1022,15 @@ These steps add restrictions and features for multi-user hosted scenarios. They 
 ## 9. Implementation Checklist
 
 ### Tier 1 — Now (zero risk)
-- [ ] Step 1: Backend CORS (Starlette middleware + MCP endpoint CORS headers)
-- [ ] Step 2: Frontend API base URL helper (`QTB.apiFetch`, `config.js`)
-- [ ] Step 5: Label-only Run catalog endpoint
-- [ ] Verify: `pytest bench/tests/ -x -v` all pass
+- [x] ~~Step 1: Backend CORS (Starlette middleware + MCP endpoint CORS headers)~~ — architecturally replaced by Vercel edge rewrites in `vercel-frontend/vercel.json`; same-origin from the browser.
+- [x] ~~Step 2: Frontend API base URL helper (`QTB.apiFetch`, `config.js`)~~ — architecturally replaced; frontend uses relative URLs.
+- [x] Step 5: Label-only Run catalog endpoint (`3b0b48f`, merged via PR #20)
+- [x] Verify: `pytest bench/tests/ -x -v` all pass — 94/94 on `master@7ed0f99`.
 
 ### Tier 2 — Soon (safe, needs verification)
-- [ ] Step 3: Run state transition hardening (terminal guards, bind rollback, sweeper fix)
-- [ ] Verify: `pytest bench/tests/ -x -v` all pass
-- [ ] Verify: `python -m client run --server http://localhost:8000 --task X01` completes normally
+- [x] Step 3: Run state transition hardening (terminal guards, bind rollback, sweeper fix) (`3b0b48f`, merged via PR #20)
+- [x] Verify: `pytest bench/tests/ -x -v` all pass — 94/94 on `master@7ed0f99`.
+- [x] Verify: external availability smoke against the live VPS — 22/22 PASS via `bench/scripts/prod_smoke.py` (PR #22).
 
 ### Tier 3 — Before Vercel deployment (one atomic batch)
 - [ ] Step 4: control_token on RunAssignment and RunService + endpoint auth

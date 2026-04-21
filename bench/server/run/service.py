@@ -4,6 +4,7 @@ All REST handlers call this service. No HTTP/MCP concerns here.
 """
 
 import hashlib
+import hmac
 import logging
 import secrets
 from datetime import datetime, timedelta, timezone
@@ -48,10 +49,12 @@ class RunService:
         mode: str = "agent",
         persona_policy: str = "auto",
         token_ttl_minutes: int = 30,
-    ) -> tuple[RunAssignment, str]:
-        """Create a RunAssignment + generate token.
+    ) -> tuple[RunAssignment, str, str]:
+        """Create a RunAssignment + generate both tokens.
 
-        Returns (assignment, raw_token). raw_token is only available here.
+        Returns ``(assignment, raw_run_token, raw_control_token)``.
+        Neither raw token is persisted — only their SHA-256 hashes. Both
+        are surfaced once here and must be stored by the caller.
         """
         entry = self._catalog.resolve(task)
         if entry is None:
@@ -60,6 +63,10 @@ class RunService:
         raw_token = f"qtb_{secrets.token_urlsafe(24)}"
         token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
         token_hint = raw_token[:12]
+
+        raw_control_token = f"qtc_{secrets.token_urlsafe(24)}"
+        control_token_hash = hashlib.sha256(raw_control_token.encode()).hexdigest()
+        control_token_hint = raw_control_token[:12]
 
         now = _now_iso()
         expires_at = ""
@@ -76,18 +83,21 @@ class RunService:
             token_hint=token_hint,
             token_hash=token_hash,
             token_expires_at=expires_at,
+            control_token_hint=control_token_hint,
+            control_token_hash=control_token_hash,
             persona_policy=persona_policy,
             created_at=now,
             updated_at=now,
         )
         self._store.save(assignment)
         logger.info(
-            "Run created: %s task=%s token=%s...",
+            "Run created: %s task=%s token=%s... control=%s...",
             assignment.run_id,
             entry.public_label,
             token_hint,
+            control_token_hint,
         )
-        return assignment, raw_token
+        return assignment, raw_token, raw_control_token
 
     def create_and_claim(
         self,
@@ -95,12 +105,13 @@ class RunService:
         client_info: Optional[dict] = None,
         mode: str = "agent",
         persona_policy: str = "auto",
-    ) -> tuple[RunAssignment, str]:
+    ) -> tuple[RunAssignment, str, str]:
         """Create + immediately claim. For client-initiated runs.
 
-        Returns (assignment, raw_token) with status already CLAIMED.
+        Returns ``(assignment, raw_run_token, raw_control_token)`` with
+        status already CLAIMED.
         """
-        assignment, raw_token = self.create_run(
+        assignment, raw_token, raw_control_token = self.create_run(
             task=task, mode=mode, persona_policy=persona_policy
         )
         now = _now_iso()
@@ -110,7 +121,7 @@ class RunService:
         assignment.updated_at = now
         self._store.save(assignment)
         logger.info("Run auto-claimed: %s", assignment.run_id)
-        return assignment, raw_token
+        return assignment, raw_token, raw_control_token
 
     def claim_run(
         self,
@@ -123,7 +134,7 @@ class RunService:
         Thread-safe: RunStore.save uses internal lock.
         """
         token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
-        assignment = self._store.find_by_token_hash(token_hash)
+        assignment = self._store.find_by_token_hash(token_hash, token_type="run")
 
         if assignment is None:
             raise ValueError("Invalid token")
@@ -147,29 +158,63 @@ class RunService:
         return assignment
 
     def bind_session(self, run_id: str, session_id: str) -> RunAssignment:
-        """Bind a session to a run. CLAIMED -> ACTIVE."""
+        """Bind a session to a run. CLAIMED -> ACTIVE.
+
+        On store-level failure, rolls back to CLAIMED with no session bound so
+        the client can retry, then re-raises.
+        """
         assignment = self._get_or_raise(run_id)
         if assignment.status != RunStatus.CLAIMED:
             raise ValueError(
                 f"Run {run_id} is '{assignment.status.value}', expected 'claimed'"
             )
-        assignment.status = RunStatus.ACTIVE
-        assignment.session_id = session_id
-        assignment.updated_at = _now_iso()
-        self._store.save(assignment)
+        prev_status = assignment.status
+        prev_session_id = assignment.session_id
+        prev_updated_at = assignment.updated_at
+        try:
+            assignment.status = RunStatus.ACTIVE
+            assignment.session_id = session_id
+            assignment.updated_at = _now_iso()
+            self._store.save(assignment)
+        except Exception:
+            assignment.status = prev_status
+            assignment.session_id = prev_session_id
+            assignment.updated_at = prev_updated_at
+            try:
+                self._store.save(assignment)
+            except Exception:
+                logger.exception(
+                    "Run %s bind rollback failed to persist — in-memory state restored",
+                    run_id,
+                )
+            raise
         logger.info("Run active: %s session=%s", run_id, session_id[:8])
         return assignment
 
     def mark_completed(
         self, run_id: str, result_dir: Optional[str] = None
     ) -> RunAssignment:
-        """Session completed. ACTIVE -> COMPLETED."""
+        """Session completed. ACTIVE -> COMPLETED.
+
+        Idempotent if called again with the same ``result_dir`` on an already-
+        COMPLETED run. Rejects any other terminal state (FAILED/CANCELLED) and
+        any non-ACTIVE active state.
+        """
         assignment = self._get_or_raise(run_id)
+        if assignment.status in TERMINAL_STATUSES:
+            if (
+                assignment.status == RunStatus.COMPLETED
+                and assignment.result_dir == result_dir
+            ):
+                return assignment
+            raise ValueError(
+                f"Cannot complete run {run_id} in terminal state "
+                f"'{assignment.status.value}'"
+            )
         if assignment.status != RunStatus.ACTIVE:
-            logger.warning(
-                "mark_completed on %s in '%s' (expected active)",
-                run_id,
-                assignment.status.value,
+            raise ValueError(
+                f"Cannot complete run {run_id} in state "
+                f"'{assignment.status.value}' (expected 'active')"
             )
         now = _now_iso()
         assignment.status = RunStatus.COMPLETED
@@ -238,13 +283,29 @@ class RunService:
         return runs
 
     def resolve_token(self, raw_token: str) -> Optional[RunAssignment]:
-        """Find a run by raw token. Does NOT change state."""
+        """Find a run by raw run_token. Does NOT change state."""
         token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
-        assignment = self._store.find_by_token_hash(token_hash)
+        assignment = self._store.find_by_token_hash(token_hash, token_type="run")
         if assignment is None:
             return None
         if _token_expired(assignment.token_expires_at):
             return None
+        return assignment
+
+    def verify_control_token(
+        self, run_id: str, raw_control_token: str
+    ) -> RunAssignment:
+        """Return the assignment iff the control token matches.
+
+        Raises PermissionError on any mismatch or missing stored hash.
+        """
+        assignment = self._get_or_raise(run_id)
+        expected = assignment.control_token_hash
+        if not expected:
+            raise PermissionError("Run has no control token")
+        actual = hashlib.sha256(raw_control_token.encode()).hexdigest()
+        if not hmac.compare_digest(expected, actual):
+            raise PermissionError("Invalid control token")
         return assignment
 
     def _get_or_raise(self, run_id: str) -> RunAssignment:

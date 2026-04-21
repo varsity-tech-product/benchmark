@@ -68,15 +68,20 @@ class TestCompletedPhasePermissions:
 class TestCompletedPhaseTools:
     @pytest.mark.asyncio
     async def test_tools_shows_eval_tools(self, client, completed_session):
+        """Static-union visibility (issue #25): all lifecycle tools remain
+        listed in COMPLETED; calling an out-of-phase one returns the
+        imperative phase-denial error rather than disappearing from the
+        catalogue."""
         sid = completed_session
         tools = await get_tools(client, sid)
         names = [t["name"] for t in tools]
         assert "request_evaluation" in names
         assert "get_results" in names
         assert "get_scores" in names
-        # Session tools should NOT be visible
-        assert "send_message" not in names
-        assert "start_session" not in names
+        # Lifecycle tools stay visible so frozen-registry clients can still
+        # drive the state machine via error guidance.
+        assert "send_message" in names
+        assert "start_session" in names
 
 
 # ---------------------------------------------------------------------------

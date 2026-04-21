@@ -395,7 +395,11 @@ class _RESTToolBridge:
             self._transport.call_tool(tool_name, kwargs),
             self._loop,
         )
-        return future.result(timeout=600)
+        # Heavy tools now queue behind a process-wide semaphore and then
+        # run up to the server's 600s backtest timeout, so the bridge
+        # must allow strictly more than RESTTransport._JOB_POLL_MAX_S
+        # (900s) plus a small network slop.
+        return future.result(timeout=960)
 
 
 def _parse_tool_result(result) -> dict:

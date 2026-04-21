@@ -7,10 +7,18 @@ State transitions:
     REGISTERED    --start_session-->     IN_SESSION
     IN_SESSION    --status=completed-->  COMPLETED
 
+Tool discovery strategy (see issue #25): MCP ``list_tools`` returns the
+static union of all lifecycle tools regardless of phase, so frozen-
+registry clients (e.g. Claude Code) can drive the full flow without
+depending on ``tools/list_changed`` refreshes. Phase enforcement lives
+at call time in ``check_permission`` — wrong-phase calls return an
+imperative error naming the correct next hop.
+
 """
 
 import json
 from enum import Enum
+from typing import Optional
 
 from mcp.types import Tool
 
@@ -64,7 +72,10 @@ START_SESSION_TOOL = Tool(
     description=(
         "Start the tutoring session. Returns the session background, "
         "the student's first message, and the list of available tools. "
-        "Can only be called once after register_session."
+        "Precondition: register_session must have succeeded. "
+        "Called out of order, returns "
+        '{"error": ..., "allowed": [...], "current_phase": ...} — '
+        'follow the "allowed" list to decide the next call.'
     ),
     inputSchema={"type": "object", "properties": {}, "required": []},
 )
@@ -78,7 +89,9 @@ SEND_MESSAGE_TOOL = Tool(
         "only messages sent through this tool reach them. "
         "Each call advances the conversation by one turn and cannot be undone. "
         "Returns the student's reply and session status. "
-        "When status is 'completed' or 'failed', the session has ended. "
+        "When status is 'completed' or 'failed', the session has ended; follow "
+        'the returned "next_allowed" hint (request_evaluation). '
+        "Precondition: start_session must have succeeded. "
         "Optionally include 'reasoning' to record your private rationale "
         "for this turn — it is logged for analysis and is NOT shown to the student."
     ),
@@ -181,6 +194,33 @@ _COMPLETED_TOOLS = frozenset(
 TOOL_ENDPOINT_BLOCKED = SESSION_API_TOOLS | _COMPLETED_TOOLS
 
 
+# Lifecycle tools that MCP ``list_tools`` exposes in every phase (static union).
+LIFECYCLE_TOOL_NAMES: tuple[str, ...] = (
+    "register_session",
+    "start_session",
+    "send_message",
+    "get_background",
+    "request_evaluation",
+    "get_results",
+    "get_scores",
+)
+
+
+# Recommended next-hop tool(s) per phase — the state-machine signal the agent
+# should follow to advance.
+_NEXT_ALLOWED: dict[SessionPhase, list[str]] = {
+    SessionPhase.UNREGISTERED: ["register_session"],
+    SessionPhase.REGISTERED: ["start_session"],
+    SessionPhase.IN_SESSION: ["send_message"],
+    SessionPhase.COMPLETED: ["request_evaluation"],
+}
+
+
+def next_allowed_for_phase(phase: SessionPhase) -> list[str]:
+    """Return the recommended next tool(s) to call from ``phase``."""
+    return list(_NEXT_ALLOWED.get(phase, []))
+
+
 # ---------------------------------------------------------------------------
 # Permission checking
 # ---------------------------------------------------------------------------
@@ -198,14 +238,16 @@ def check_permission(
 
     Returns:
         (allowed, error_message, allowed_operations).
-        error_message and allowed_operations are empty when allowed is True.
+        Error messages are imperative — they name the next tool the agent
+        should call — so a frozen-registry MCP client can drive the state
+        machine from error guidance alone.
     """
     if phase == SessionPhase.UNREGISTERED:
         if tool_name == "register_session":
             return True, "", []
         return (
             False,
-            "Session not registered. Call register_session first.",
+            "Wrong phase. Session not registered — call register_session next.",
             ["register_session"],
         )
 
@@ -214,7 +256,7 @@ def check_permission(
             return True, "", []
         return (
             False,
-            "Session not started. Call start_session first.",
+            "Wrong phase. Session registered but not started — call start_session next.",
             ["start_session"],
         )
 
@@ -224,7 +266,10 @@ def check_permission(
             return True, "", []
         return (
             False,
-            f"Cannot call '{tool_name}' during active session.",
+            (
+                f"Wrong phase. Cannot call '{tool_name}' during active session — "
+                "continue with send_message or a domain tool."
+            ),
             ["send_message", "(domain tools)"],
         )
 
@@ -233,13 +278,29 @@ def check_permission(
             return True, "", []
         return (
             False,
-            "Session completed.",
+            (
+                "Wrong phase. Session completed — call request_evaluation, "
+                "then get_results / get_scores."
+            ),
             sorted(_COMPLETED_TOOLS),
         )
 
     return False, "Unknown phase.", []
 
 
-def make_error_response(error: str, allowed: list[str]) -> str:
-    """Build a JSON error response with allowed operations hint."""
-    return json.dumps({"error": error, "allowed": allowed})
+def make_error_response(
+    error: str,
+    allowed: list[str],
+    *,
+    current_phase: Optional[SessionPhase] = None,
+) -> str:
+    """Build a JSON error response with state-machine hints.
+
+    ``allowed`` names the tools the caller may try from the current phase.
+    When ``current_phase`` is provided (phase-denial errors) it is included
+    so the agent can map the error back to the state machine.
+    """
+    payload: dict = {"error": error, "allowed": allowed}
+    if current_phase is not None:
+        payload["current_phase"] = current_phase.value
+    return json.dumps(payload)

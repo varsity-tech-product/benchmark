@@ -63,6 +63,12 @@ COPY docker/lean-config.json /lean/Launcher/config.json
 COPY docker/run_backtest.sh /usr/local/bin/run_backtest
 RUN chmod +x /usr/local/bin/run_backtest
 
+# ── Install shared LEAN config helper ────────────────────────────────
+# Imported by run_backtest.sh (in-container) and by the reference
+# generator (host-side). Same source, same behaviour — prevents the
+# divergence that caused issue #33.
+COPY docker/lean_config.py /lean/helpers/lean_config.py
+
 # ── Install strategy injection script (for custom data mode) ────────
 COPY scripts/inject_strategy.py /opt/bench/scripts/inject_strategy.py
 

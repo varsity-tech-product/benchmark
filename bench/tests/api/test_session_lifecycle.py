@@ -98,7 +98,10 @@ class TestSendMessage:
         sid = await register_session(client)
         resp = await client.post(f"/session/{sid}/send", json={"text": "hello"})
         assert resp.status_code == 403
-        assert "start_session" in resp.json().get("allowed", [])
+        body = resp.json()
+        assert "start_session" in body.get("allowed", [])
+        # Parity with MCP phase-denial envelope.
+        assert body.get("current_phase") == "registered"
 
 
 class TestTools:
