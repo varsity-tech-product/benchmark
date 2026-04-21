@@ -25,6 +25,32 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 
+# Maps internal error-stash keys produced by `pipeline.evaluate_task` onto
+# the short component name exposed in eval_meta.json + the /scores payload.
+# See issue #42 — the tutor path uses `_eval_error` while quant_result /
+# code_eval use `_error`, so an ad-hoc suffix strip would mangle them.
+_EVAL_ERROR_KEYS: dict[str, str] = {
+    "tutor_eval_error": "tutor",
+    "quant_result_error": "quant_result",
+    "code_eval_error": "code_eval",
+    "tool_usage_error": "tool_usage",
+}
+
+
+def _collect_eval_errors(eval_results: dict) -> dict:
+    """Return a component → error-text dict for every silently-failed eval.
+
+    Keys are the short component name so the API surface reads cleanly
+    and callers can tell an empty/zeroed score apart from a genuine zero.
+    """
+    out: dict = {}
+    for internal, public in _EVAL_ERROR_KEYS.items():
+        msg = eval_results.get(internal)
+        if msg:
+            out[public] = str(msg)
+    return out
+
+
 def run_evaluation(
     task,
     persona,
@@ -120,6 +146,11 @@ def run_evaluation(
     )
 
     # --- Write eval_meta.json ---
+    # Collect per-component errors so callers can see *why* a dimension is
+    # empty/zero (see issue #42). `pipeline.evaluate_task` stores each
+    # component's exception text under its own key when that component
+    # silently fell back to an empty/default score.
+    errors = _collect_eval_errors(eval_results)
     meta = {
         "timestamp": ts,
         "eval_model": eval_model,
@@ -130,6 +161,8 @@ def run_evaluation(
         "tutor_scores": eval_results.get("tutor_scores", {}),
         "overall_score": scores.get("overall_score", 0.0),
     }
+    if errors:
+        meta["errors"] = errors
     meta_path = eval_dir / "eval_meta.json"
     meta_path.write_text(json.dumps(meta, indent=2, default=str), encoding="utf-8")
     logger.info("Saved eval_meta.json to %s", meta_path)

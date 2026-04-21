@@ -667,15 +667,16 @@ class BenchSessionManager:
         if latest_meta.exists():
             try:
                 meta = json.loads(latest_meta.read_text(encoding="utf-8"))
-                return {
-                    "status": "completed",
-                    "scores": {
-                        "quant_result": meta.get("quant_result", 0.0),
-                        "quant_process": meta.get("quant_process", 0.0),
-                        "tutor_scores": meta.get("tutor_scores", {}),
-                        "overall": meta.get("overall_score", 0.0),
-                    },
+                scores: dict = {
+                    "quant_result": meta.get("quant_result", 0.0),
+                    "quant_process": meta.get("quant_process", 0.0),
+                    "tutor_scores": meta.get("tutor_scores", {}),
+                    "overall": meta.get("overall_score", 0.0),
                 }
+                meta_errors = meta.get("errors")
+                if meta_errors:
+                    scores["errors"] = meta_errors
+                return {"status": "completed", "scores": scores}
             except Exception:
                 pass
 
