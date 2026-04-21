@@ -20,6 +20,11 @@ openai>=1.0.0
 aiohttp>=3.8.0
 tenacity>=8.0.0
 
+# Eval path needs nest_asyncio to run deepeval metrics inside the running
+# event loop (see bench/evaluation/*/async_utils.py). Previously reached
+# prod as a transitive dep; declared explicitly to stop regressions (#39).
+nest_asyncio>=1.6.0
+
 # Utilities
 python-dotenv>=1.0.0
 tqdm>=4.65.0
