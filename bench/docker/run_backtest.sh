@@ -32,14 +32,14 @@ LEAN_ROOT="${LEAN_ROOT:-/lean}"
 LEAN_LAUNCHER="${LEAN_ROOT}/Launcher"
 LEAN_ALGO_DIR="${LEAN_ROOT}/Algorithm.CSharp"
 LEAN_OUTPUT_DIR="${LEAN_LAUNCHER}/bin/Debug"
-# The Launcher DLL runs from bin/Debug and reads the sibling config.json there.
-# Editing $LEAN_LAUNCHER/config.json (the source copy) has no runtime effect.
-LEAN_CONFIG="${LEAN_OUTPUT_DIR}/config.json"
-# The benchmark-shipped, comment-free config. Dockerfile.lean copies this to
-# ${LEAN_LAUNCHER}/config.json only; bin/Debug/config.json remains the upstream
-# LEAN default (JSON with comments) that python's json.load cannot parse.
-# Used to seed LEAN_CONFIG before patching.
-LEAN_CONFIG_SEED="${LEAN_LAUNCHER}/config.json"
+# LEAN config path the Launcher actually reads. Step 3 runs
+# `dotnet run --no-build -c Debug` with CWD = $LEAN_LAUNCHER, so the engine's
+# relative config.json lookup resolves to the project source copy — NOT
+# bin/Debug/config.json, which is only read when the Launcher is invoked as
+# `dotnet QuantConnect.Lean.Launcher.dll` from bin/Debug (reference generator
+# path). Dockerfile.lean copies the benchmark's comment-free lean-config.json
+# here so json.load succeeds without a seed step.
+LEAN_CONFIG="${LEAN_LAUNCHER}/config.json"
 # Shared helper shipped into the container by Dockerfile.lean. Both the
 # reference generator (host-side) and this runner import the same patch
 # logic so the two code paths cannot drift apart (see issue #33).
@@ -209,13 +209,6 @@ fi
 
 # ── Step 2b: Reset and inject parameters into config.json ─────────────
 echo "[2b/4] Preparing config.json parameters..."
-# Seed the runtime-read config (bin/Debug/config.json, which the Launcher
-# reads) from the benchmark's shipped comment-free copy. Skipped if already
-# identical, so reruns don't thrash.
-if ! cmp -s "$LEAN_CONFIG_SEED" "$LEAN_CONFIG" 2>/dev/null; then
-    cp "$LEAN_CONFIG_SEED" "$LEAN_CONFIG"
-    echo "  -> Seeded $LEAN_CONFIG from $LEAN_CONFIG_SEED"
-fi
 # Write PARAMS_JSON to a temp file to avoid shell injection via heredoc
 _PARAMS_TMPFILE=$(mktemp /tmp/params_XXXXXX.json)
 printf '%s' "$PARAMS_JSON" > "$_PARAMS_TMPFILE"
