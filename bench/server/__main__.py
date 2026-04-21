@@ -49,12 +49,6 @@ def main():
         help="Model for LLM-based evaluation (default: anthropic/claude-haiku-4-5)",
     )
     parser.add_argument(
-        "--auto-eval",
-        action="store_true",
-        default=False,
-        help="Automatically run evaluation when session completes (default: off)",
-    )
-    parser.add_argument(
         "--log-level",
         default="INFO",
         choices=["DEBUG", "INFO", "WARNING", "ERROR"],
@@ -75,7 +69,6 @@ def main():
         use_docker=use_docker,
         bench_root=str(_BENCH_ROOT),
         eval_model=args.eval_model,
-        auto_eval=args.auto_eval,
     )
 
     import uvicorn

@@ -24,6 +24,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import os
 import sys
 import time
 from dataclasses import dataclass, field
@@ -261,10 +262,25 @@ async def run_smoke(base_url: str, task_label: str, jsonl: Optional[str]) -> int
                 await wait_for_job_terminal(client, sid, job_id)
 
             # ------------------------------------------------------------------
-            # T6 — Results + scores (reachable without a completed eval)
+            # T6 — Results + scores (reachable without a completed eval).
+            # Operator surface — bearer the admin token so the smoke check
+            # exercises the actual handlers in secured environments rather
+            # than recording a 401 as PASS under the non-5xx rule.
             # ------------------------------------------------------------------
-            await hit(client, result, "T6", "GET", f"/session/{sid}/results")
-            await hit(client, result, "T6", "GET", f"/session/{sid}/scores")
+            admin_token = os.environ.get("QTB_ADMIN_TOKEN", "").strip()
+            ops_headers = (
+                {"Authorization": f"Bearer {admin_token}"} if admin_token else {}
+            )
+            await hit(
+                client, result, "T6", "GET",
+                f"/ops/session/{sid}/results",
+                headers=ops_headers,
+            )
+            await hit(
+                client, result, "T6", "GET",
+                f"/ops/session/{sid}/scores",
+                headers=ops_headers,
+            )
 
             # ------------------------------------------------------------------
             # T7 — UI read endpoints (no auth)

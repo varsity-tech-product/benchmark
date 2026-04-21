@@ -147,7 +147,7 @@ class TestAttachmentsInResults:
 
         # Get results (session might still be active, but results endpoint
         # should still return current state)
-        resp = await client.get(f"/session/{sid}/results")
+        resp = await client.get(f"/ops/session/{sid}/results")
         if resp.status_code == 200:
             results = resp.json()
             if "conversation" in results:

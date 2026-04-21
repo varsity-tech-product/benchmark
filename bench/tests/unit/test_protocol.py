@@ -53,7 +53,7 @@ class TestInSessionPhase:
             assert ok is True, f"{tool} should be allowed in IN_SESSION"
 
     @pytest.mark.parametrize("tool", [
-        "register_session", "start_session", "request_evaluation",
+        "register_session", "start_session",
     ])
     def test_session_api_tools_denied(self, tool):
         ok, err, ops = check_permission(SessionPhase.IN_SESSION, tool)
@@ -61,20 +61,21 @@ class TestInSessionPhase:
 
 
 class TestCompletedPhase:
-    @pytest.mark.parametrize("tool", [
-        "request_evaluation", "get_results", "get_scores",
-    ])
-    def test_completed_tools_allowed(self, tool):
-        ok, err, ops = check_permission(SessionPhase.COMPLETED, tool)
-        assert ok is True
+    """COMPLETED is terminal for the agent (issue #46 slice 3).
+
+    Evaluation tools moved to the operator surface; every tool call from
+    a COMPLETED session now denies and returns an empty allowed list.
+    """
 
     @pytest.mark.parametrize("tool", [
         "register_session", "start_session", "send_message",
+        "request_evaluation", "get_results", "get_scores",
         "read_file", "shell_exec",
     ])
-    def test_everything_else_denied(self, tool):
+    def test_every_tool_denied(self, tool):
         ok, err, ops = check_permission(SessionPhase.COMPLETED, tool)
         assert ok is False
+        assert ops == []
 
 
 class TestToolSchema:

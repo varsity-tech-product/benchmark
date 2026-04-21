@@ -23,9 +23,6 @@ _PROTOCOL_TOOLS = frozenset(
     {
         "register_session",
         "start_session",
-        "request_evaluation",
-        "get_results",
-        "get_scores",
     }
 )
 

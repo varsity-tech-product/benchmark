@@ -275,9 +275,6 @@ async def run_single_task(
         {
             "register_session",
             "start_session",
-            "request_evaluation",
-            "get_results",
-            "get_scores",
         }
     )
 

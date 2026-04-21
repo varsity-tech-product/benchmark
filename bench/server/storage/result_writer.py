@@ -132,6 +132,10 @@ def save_run_state(
     md_path = result_dir / "run_state.md"
     md_path.write_text(_render_run_state_md(state), encoding="utf-8")
 
+    from server.storage.bundle import write_manifest
+
+    write_manifest(result_dir, state)
+
     logger.info("Saved run_state.json + run_state.md to %s", state_path.parent)
     return state_path
 

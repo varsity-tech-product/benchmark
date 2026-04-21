@@ -133,7 +133,13 @@ class ResultIndexer:
             task_id, self._make_fallback_task_meta(task_id)
         )
         client_trace = self._load_client_trace(session_id)
-        latest_eval_dir = self._resolve_latest_eval_dir(result_dir)
+        bundle_session_id = str(run_state.get("session_id") or session_id)
+        persona_id = str(run_state.get("persona_id") or "")
+        latest_eval_dir = self._resolve_latest_eval_dir(
+            task_id=task_id,
+            persona_id=persona_id,
+            session_id=bundle_session_id,
+        )
         latest_eval_meta = (
             self._load_json(latest_eval_dir / "eval_meta.json")
             if latest_eval_dir
@@ -203,7 +209,11 @@ class ResultIndexer:
                 if latest_eval_dir
                 else None
             ),
-            "eval_history": self._load_eval_history(result_dir),
+            "eval_history": self._load_eval_history(
+                task_id=task_id,
+                persona_id=persona_id,
+                session_id=bundle_session_id,
+            ),
             "agent_cost": agent_cost,
             "simulator_cost": self._coerce_float(
                 run_state.get("simulator_cost"), default=None
@@ -393,7 +403,11 @@ class ResultIndexer:
         )
         session_id = str(run_state.get("session_id") or result_dir.name)
         client_trace = self._load_client_trace(session_id)
-        latest_eval_dir = self._resolve_latest_eval_dir(result_dir)
+        latest_eval_dir = self._resolve_latest_eval_dir(
+            task_id=task_id,
+            persona_id=str(run_state.get("persona_id") or ""),
+            session_id=session_id,
+        )
         latest_eval_meta = (
             self._load_json(latest_eval_dir / "eval_meta.json")
             if latest_eval_dir
@@ -501,36 +515,38 @@ class ResultIndexer:
     # Evaluation loading
     # ------------------------------------------------------------------
 
-    def _resolve_latest_eval_dir(self, result_dir: Path) -> Path | None:
-        eval_root = result_dir / "evaluations"
-        if not eval_root.exists():
-            return None
+    def _resolve_latest_eval_dir(
+        self,
+        *,
+        task_id: str = "",
+        persona_id: str = "",
+        session_id: str = "",
+    ) -> Path | None:
+        from server.evaluator.paths import find_latest_eval_dir
 
-        latest = eval_root / "latest"
-        if latest.exists() and latest.is_dir():
-            return latest.resolve()
-
-        eval_dirs = sorted(
-            [
-                path
-                for path in eval_root.iterdir()
-                if path.is_dir() and path.name.startswith("eval_")
-            ],
-            key=lambda path: path.name,
-            reverse=True,
+        return find_latest_eval_dir(
+            bench_root=self.bench_root,
+            task_id=task_id,
+            persona_id=persona_id,
+            session_id=session_id,
         )
-        return eval_dirs[0] if eval_dirs else None
 
-    def _load_eval_history(self, result_dir: Path) -> list[dict[str, Any]]:
-        eval_root = result_dir / "evaluations"
-        if not eval_root.is_dir():
-            return []
+    def _load_eval_history(
+        self,
+        *,
+        task_id: str = "",
+        persona_id: str = "",
+        session_id: str = "",
+    ) -> list[dict[str, Any]]:
+        from server.evaluator.paths import list_eval_history
 
         history: list[dict[str, Any]] = []
-        for eval_dir in sorted(eval_root.iterdir()):
-            if not eval_dir.is_dir() or not eval_dir.name.startswith("eval_"):
-                continue
-
+        for eval_dir in list_eval_history(
+            bench_root=self.bench_root,
+            task_id=task_id,
+            persona_id=persona_id,
+            session_id=session_id,
+        ):
             meta = self._load_json(eval_dir / "eval_meta.json")
             if not isinstance(meta, dict):
                 continue

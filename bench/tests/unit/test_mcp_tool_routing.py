@@ -25,7 +25,6 @@ def session_state(bench_root):
         use_docker=False,
         bench_root=bench_root,
         eval_model="fake-model",
-        auto_eval=False,
     )
     return state
 
@@ -197,30 +196,38 @@ class TestMCPGetBackground:
 
 
 class TestMCPEvalRouting:
+    """Issue #46 slice 3: evaluation tools no longer reachable via MCP.
+
+    The agent catalogue dropped them, so a misbehaving client that calls
+    them anyway either gets a phase-denial (COMPLETED) or an
+    ``Unknown tool`` failure from the proxy (other phases).
+    """
+
+    @pytest.mark.parametrize(
+        "tool", ["request_evaluation", "get_results", "get_scores"]
+    )
     @pytest.mark.asyncio
-    async def test_eval_denied_in_session(self, session_state):
+    async def test_eval_tools_unknown_in_session(self, session_state, tool):
         await _register(session_state)
         await _start(session_state)
-        result = await _call(session_state, "request_evaluation")
+        result = await _call(session_state, tool)
+        assert result.get("success") is False
+        assert "Unknown tool" in result.get("output", "")
+
+    @pytest.mark.parametrize(
+        "tool", ["request_evaluation", "get_results", "get_scores"]
+    )
+    @pytest.mark.asyncio
+    async def test_eval_tools_denied_after_completion(self, session_state, tool):
+        from server.api.protocol import SessionPhase
+
+        await _register(session_state)
+        await _start(session_state)
+        session_state.phase = SessionPhase.COMPLETED
+        result = await _call(session_state, tool)
         assert "error" in result
-
-    @pytest.mark.asyncio
-    async def test_get_results_in_session_returns_error_or_empty(self, session_state):
-        """get_results/get_scores route through MCP even in IN_SESSION
-        (not blocked by SESSION_API_TOOLS). They return data-level errors
-        (no results yet) rather than permission errors."""
-        await _register(session_state)
-        await _start(session_state)
-        result = await _call(session_state, "get_results")
-        # No results saved yet — returns error at data level
-        assert "error" in result or "Results" in str(result)
-
-    @pytest.mark.asyncio
-    async def test_get_scores_in_session_returns_pending(self, session_state):
-        await _register(session_state)
-        await _start(session_state)
-        result = await _call(session_state, "get_scores")
-        assert result.get("status") == "pending"
+        # Phase-denial: COMPLETED is terminal — empty allowed list.
+        assert result.get("allowed") == []
 
 
 # ---------------------------------------------------------------------------
