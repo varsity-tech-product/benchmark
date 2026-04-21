@@ -78,7 +78,7 @@ SEND_MESSAGE_TOOL = Tool(
         "only messages sent through this tool reach them. "
         "Each call advances the conversation by one turn and cannot be undone. "
         "Returns the student's reply and session status. "
-        "When status is 'completed', the session has ended. "
+        "When status is 'completed' or 'failed', the session has ended. "
         "Optionally include 'reasoning' to record your private rationale "
         "for this turn — it is logged for analysis and is NOT shown to the student."
     ),

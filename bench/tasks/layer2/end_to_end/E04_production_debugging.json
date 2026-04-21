@@ -58,6 +58,6 @@
   },
   "requires_code": true,
   "sample_code": "data/E04_compound_bug.cs",
-  "max_turns": 25,
+  "max_turns": 20,
   "timeout_minutes": 30
 }

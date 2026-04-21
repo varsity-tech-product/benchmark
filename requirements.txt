@@ -25,6 +25,10 @@ python-dotenv>=1.0.0
 tqdm>=4.65.0
 pyyaml>=6.0.0
 
+# Reporting
+numpy>=1.24.0
+matplotlib>=3.7.0
+
 # Hugging Face datasets
 datasets>=2.0.0
 

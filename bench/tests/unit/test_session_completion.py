@@ -111,7 +111,7 @@ class TestRepeatDetection:
         _send(session, same_text)  # 1st — ok
         _send(session, same_text)  # 2nd — repeat_count=1
         result = _send(session, same_text)  # 3rd — repeat_count=2 → stuck
-        assert result["status"] == "completed"
+        assert result["status"] == "failed"
         assert result["reason"] == "agent_stuck"
 
     def test_different_messages_no_stuck(self, make_session):

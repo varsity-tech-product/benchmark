@@ -38,6 +38,16 @@ class StudentSimError(Exception):
             or f"Student sim failed ({error_type}) after {len(attempts)} attempts"
         )
 
+    @property
+    def summary(self) -> dict:
+        """Compact failure summary suitable for serialising into session results."""
+        return {
+            "final_error_type": self.error_type,
+            "attempt_count": len(self.attempts),
+            "error_types": [a.get("error_type") for a in self.attempts],
+            "last_detail": self.attempts[-1].get("detail", "") if self.attempts else "",
+        }
+
 
 class SimulatedInput(BaseModel):
     """Schema for structured student message output."""
@@ -67,6 +77,20 @@ _NEXT_MESSAGE_PROMPT = textwrap.dedent(
 
     Respond with a JSON object containing a single key `simulated_input`.
     JSON Output:
+"""
+)
+
+# Repair prompt sent on parse failure instead of the original prompt.
+# Includes the bad output so the model can see what went wrong.
+_REPAIR_PROMPT = textwrap.dedent(
+    """\
+    Your previous response could not be parsed as a student reply.
+    Your output was:
+    ---
+    {bad_output}
+    ---
+    Return ONLY valid JSON in this exact shape, with no markdown, commentary, or extra keys:
+    {{"simulated_input": "..."}}
 """
 )
 
@@ -240,14 +264,20 @@ def _collect_images_from_ledger(
     return images
 
 
-def _parse_simulated_input_strict(raw: str) -> str:
+def _parse_simulated_input_strict(raw: str) -> tuple[str, str]:
     """Extract ``simulated_input`` from JSON output.
 
-    Returns the extracted text on success.
-    Raises ``ValueError`` if parsing fails.
+    Returns ``(text, parse_method)`` on success where ``parse_method`` is one of:
+    - ``"json"``: extracted from ``simulated_input`` key
+    - ``"json_single_value"``: extracted from the only string value in a JSON object
+    - ``"fallback_text"``: accepted as natural-language student message
+
+    Raises ``ValueError`` if parsing fails.  Empty-output errors have the
+    prefix ``"empty:"`` so callers can distinguish them from structural parse
+    failures.
     """
     if not raw or not raw.strip():
-        raise ValueError("LLM returned empty output")
+        raise ValueError("empty: LLM returned empty output")
 
     match = _JSON_RE.search(raw)
     if match:
@@ -255,16 +285,31 @@ def _parse_simulated_input_strict(raw: str) -> str:
             data = json.loads(match.group())
             text = data.get("simulated_input")
             if text and text.strip():
-                return text.strip()
+                return text.strip(), "json"
+            # simulated_input missing or empty — try single-value fallback
+            # before giving up: if the object has exactly one string value and
+            # it passes the usability check, accept it with a warning.
+            string_values = [
+                v for v in data.values() if isinstance(v, str) and v.strip()
+            ]
+            if len(string_values) == 1 and _is_usable_student_message(
+                string_values[0].strip()
+            ):
+                logger.warning(
+                    "Student sim: simulated_input key missing; "
+                    "accepted single string value from JSON (key drift). raw=%r",
+                    raw[:120],
+                )
+                return string_values[0].strip(), "json_single_value"
         except (json.JSONDecodeError, TypeError):
             pass
-        # JSON found but simulated_input missing/empty — not usable as-is
+        # JSON found but no usable value — not usable as-is
         raise ValueError(f"JSON found but no valid simulated_input: {raw[:120]!r}")
 
     # No JSON — check if raw text is usable as a student message
     stripped = raw.strip()
     if _is_usable_student_message(stripped):
-        return stripped
+        return stripped, "fallback_text"
 
     raise ValueError(f"No JSON and text not usable as student message: {raw[:120]!r}")
 
@@ -281,19 +326,27 @@ _META_PATTERNS = re.compile(
 def _is_usable_student_message(text: str) -> bool:
     """Check if non-JSON text is usable as a student message.
 
-    Accepts natural student text (e.g., when model skips JSON wrapper).
+    Accepts natural student text (e.g., when model skips JSON wrapper),
+    including short replies like "Why?" or "Got it." that a real student
+    might send.
     Rejects prompt leakage, meta content, empty, or degenerate output.
     """
-    if not text or len(text) < 10:
+    if not text or not text.strip():
         return False
     if len(text) > 2000:
         return False
     if _META_PATTERNS.search(text):
         return False
-    # Reject text with excessive special/brace characters (garbled output)
-    alpha_count = sum(c.isalpha() for c in text)
-    if alpha_count / len(text) < 0.4:
+    # Must contain at least one alphabetic character — rejects pure
+    # punctuation, digits, or brace-heavy garbled output.
+    if not any(c.isalpha() for c in text):
         return False
+    # For longer text, also require a minimum alpha density to reject
+    # outputs dominated by special characters or JSON fragments.
+    if len(text) >= 10:
+        alpha_count = sum(c.isalpha() for c in text)
+        if alpha_count / len(text) < 0.4:
+            return False
     return True
 
 
@@ -337,19 +390,26 @@ class StudentSimulator:
     def _generate_parsed(self, prompt: str, images: list[dict] | None = None) -> str:
         """Generate text via model with retry, parse JSON output, track cost.
 
-        Unified retry budget of ``_MAX_GENERATE_ATTEMPTS`` (default 3).
-        Each attempt either fails at the network layer (API error) or at
-        the parse layer (output not usable).  After all attempts are
-        exhausted, raises ``StudentSimError`` with full attempt history.
+        Retry strategy (budget: ``_MAX_GENERATE_ATTEMPTS``):
+        - network error  → retry with original prompt (transient failure)
+        - empty output   → retry once with original prompt, then fail
+        - parse error    → retry with repair prompt containing the bad output
+
+        After all attempts are exhausted, raises ``StudentSimError`` with full
+        attempt history.
         """
         attempts: list[dict] = []
+        # The prompt actually sent on the current attempt.  Starts as the
+        # original prompt; becomes a repair prompt after a parse/empty failure.
+        current_prompt = prompt
+        last_bad_output: str = ""
 
         for attempt_idx in range(_MAX_GENERATE_ATTEMPTS):
             attempt_record: dict = {"attempt": attempt_idx + 1, "ts": time.time()}
 
             # --- Network layer ---
             try:
-                result = self.model.generate(prompt, images=images or None)
+                result = self.model.generate(current_prompt, images=images or None)
             except Exception as exc:
                 attempt_record.update(
                     error_type="network",
@@ -362,6 +422,8 @@ class StudentSimulator:
                     _MAX_GENERATE_ATTEMPTS,
                     exc,
                 )
+                # Network failure — keep original prompt, don't build repair
+                current_prompt = prompt
                 continue
 
             if isinstance(result, tuple):
@@ -376,8 +438,8 @@ class StudentSimulator:
 
             # --- Parse layer ---
             try:
-                parsed = _parse_simulated_input_strict(text)
-                attempt_record.update(error_type=None, parse_method="json")
+                parsed, parse_method = _parse_simulated_input_strict(text)
+                attempt_record.update(error_type=None, parse_method=parse_method)
                 attempts.append(attempt_record)
                 if len(attempts) > 1:
                     logger.info(
@@ -387,17 +449,31 @@ class StudentSimulator:
                     )
                 return parsed
             except ValueError as exc:
-                attempt_record.update(
-                    error_type="parse",
-                    detail=str(exc),
-                )
+                detail = str(exc)
+                # Distinguish empty output from structural parse failure so
+                # downstream filtering and retry logic can treat them differently.
+                error_type = "empty" if detail.startswith("empty:") else "parse"
+                attempt_record.update(error_type=error_type, detail=detail)
                 attempts.append(attempt_record)
                 logger.warning(
-                    "Student sim parse error (attempt %d/%d): %s",
+                    "Student sim %s error (attempt %d/%d): %s",
+                    error_type,
                     attempt_idx + 1,
                     _MAX_GENERATE_ATTEMPTS,
                     exc,
                 )
+                if error_type == "parse":
+                    # Build a repair prompt for the next attempt.
+                    # Include the bad output (truncated) so the model can see
+                    # what it produced and correct course.  Do NOT re-send the
+                    # full original prompt — that wastes tokens and doesn't help.
+                    last_bad_output = (text or "")[:300]
+                    current_prompt = _REPAIR_PROMPT.format(bad_output=last_bad_output)
+                else:
+                    # Empty output — likely a transient API issue.  Retry with
+                    # the original prompt; a repair prompt with nothing to show
+                    # the model would be nonsensical.
+                    current_prompt = prompt
                 continue
 
         # All attempts exhausted

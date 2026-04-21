@@ -1,10 +1,10 @@
 {
   "task_id": "B01_interpret_metrics",
-  "version": "2.2",
+  "version": "2.3",
   "difficulty": "easy",
   "category": "backtest",
   "task_type": "multi_turn",
-  "description": "Guide a student to interpret basic backtest metrics from a completed backtest, understand what each metric means, and assess whether a strategy is promising or problematic.",
+  "description": "Guide a student to compute basic backtest performance metrics such as Sharpe ratio, total return, and maximum drawdown from OHLCV price data, interpret what each metric means, and assess whether a strategy is promising or problematic.",
   "persona_ids": [
     "double_novice",
     "finance_veteran",
@@ -12,10 +12,10 @@
     "fullstack_practitioner"
   ],
   "student_openings": {
-    "fullstack_practitioner": "I want to interpret basic backtest metrics from a completed backtest, properly. I've run basic backtests before — what methodology issues should I watch for?",
-    "finance_veteran": "I need to interpret basic backtest metrics from a completed backtest,. I know what good backtesting looks like from experience — can you help me implement it in code?",
-    "developer_crossover": "I want to interpret basic backtest metrics from a completed backtest,. I can write the code myself, but I need to understand the financial concepts. What does this mean in trading?",
-    "double_novice": "I want to learn about how to interpret basic backtest metrics from a completed backtest,. I'm new to both Python and finance — can you walk me through it from the beginning?"
+    "double_novice": "I want to learn how to compute and interpret basic backtest metrics in Python. I'm new to both coding and finance — can you walk me through it from the very beginning?",
+    "developer_crossover": "I can write Python code but I don't really understand trading metrics like Sharpe ratio or drawdown. Can you help me write a script that computes them and explain what the numbers actually mean?",
+    "finance_veteran": "I know what backtest metrics mean conceptually, but I want to turn this analysis into a reusable Python script so I can run it on any strategy. Can you help me build that?",
+    "fullstack_practitioner": "I want a clean, inspectable Python script that computes key backtest metrics from local price data and saves the results. What's the right structure for something like this?"
   },
   "environment": {
     "data_files": [
@@ -37,13 +37,13 @@
     "network_enabled": false
   },
   "ground_truth": {
-    "expected_outcome": "Tutor guides the student to run or load a backtest to produce performance metrics, explain what Sharpe ratio, total return, and max drawdown mean, assess whether specific metric values are good or bad in context, and recognize common pitfalls such as overfitting.",
+    "expected_outcome": "Tutor guides the student to write and run a small Python script that loads OHLCV price data and computes Sharpe ratio, total return or cumulative return, and maximum drawdown with specific numerical values. The tutor explains what at least two metrics mean, how to judge whether their values are good or bad, and warns about at least one common interpretation pitfall such as overfitting, survivorship bias, or benchmark mismatch. The run should leave a concrete Python script and metrics artifact rather than only a verbal explanation of what each number means.",
     "required_capabilities": [
-      "Run or load a backtest to produce performance metrics",
-      "Explain what Sharpe ratio means and how to interpret its value",
-      "Explain what maximum drawdown means and its significance",
-      "Contextualize metric values against benchmarks or rules of thumb",
-      "Recognize common pitfalls such as overfitting in backtest results"
+      "Write a Python script that loads OHLCV price data and prepares return series",
+      "Compute total return or cumulative return, Sharpe ratio, and maximum drawdown",
+      "Execute the script, present specific numerical metric values, and save the results to a reusable artifact such as JSON or CSV",
+      "Explain what at least two metrics mean and how to interpret their values relative to benchmarks or rules of thumb",
+      "Recognize at least one common pitfall such as overfitting, survivorship bias, or in-sample versus out-of-sample issues"
     ],
     "expected_mcp_tools": [
       "shell_exec",
@@ -52,18 +52,15 @@
     ],
     "convenient_tools": [
       "compute_indicator",
-      "run_backtest",
-      "analyze_backtest_results",
-      "plot_chart",
-      "compare_backtest_results"
+      "plot_chart"
     ],
     "quant_validation": {
       "eval_script": "evaluation/test_scripts/backtest/B01_interpret_metrics.py"
     },
-    "termination_criteria": "The tutor has completed the following steps with computational evidence (not just verbal discussion): (1) Ran or loaded a backtest and presented performance metrics including at least Sharpe ratio, total return, and maximum drawdown with specific numerical values. (2) Explained what at least two of these metrics mean and how to interpret whether their values are good or bad, using benchmarks or rules of thumb. (3) Discussed at least one common pitfall such as overfitting, survivorship bias, or in-sample vs out-of-sample issues in backtest interpretation. Once all three steps have been computationally demonstrated, the session is complete."
+    "termination_criteria": "The tutor has completed the following steps with computational evidence (not just verbal discussion): (1) Created a Python code artifact that loads price data, computes at least Sharpe ratio, total return or cumulative return, and maximum drawdown, and saved the results to a reusable artifact. (2) Executed the code and presented the computed metrics with specific numerical values. (3) Explained what at least two of these metrics mean and how to judge their values using benchmarks or rules of thumb, and discussed at least one common pitfall such as overfitting, survivorship bias, benchmark mismatch, or in-sample versus out-of-sample issues. Once all three steps have been computationally demonstrated, the session is complete."
   },
-  "requires_code": false,
+  "requires_code": true,
   "sample_code": null,
-  "max_turns": 12,
+  "max_turns": 15,
   "timeout_minutes": 25
 }

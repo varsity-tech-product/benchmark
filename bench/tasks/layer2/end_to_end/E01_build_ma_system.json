@@ -63,6 +63,6 @@
   },
   "requires_code": true,
   "sample_code": null,
-  "max_turns": 25,
-  "timeout_minutes": 25
+  "max_turns": 20,
+  "timeout_minutes": 30
 }

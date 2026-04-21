@@ -639,18 +639,26 @@ class SessionState:
             proxy_kwargs["reasoning"] = reasoning
         result = self.proxy.call_tool("send_message", **proxy_kwargs)
 
-        # Check for session completion
+        # Check for session completion or failure
         try:
             data = json.loads(result)
-            if data.get("status") == "completed":
+            session_status = data.get("status")
+            if session_status in ("completed", "failed"):
                 self.phase = SessionPhase.COMPLETED
                 self._save_results()
                 self._destroy_container()
-                logger.info(
-                    "Session %s completed: reason=%s",
-                    self.session_id,
-                    data.get("reason", "unknown"),
-                )
+                if session_status == "failed":
+                    logger.error(
+                        "Session %s failed: reason=%s",
+                        self.session_id,
+                        data.get("reason", "unknown"),
+                    )
+                else:
+                    logger.info(
+                        "Session %s completed: reason=%s",
+                        self.session_id,
+                        data.get("reason", "unknown"),
+                    )
                 # Notify Run layer
                 if self._on_completed:
                     try:
@@ -663,8 +671,9 @@ class SessionState:
                             self.session_id,
                             exc,
                         )
-                # Server-side auto_eval
-                if self.auto_eval:
+                # Server-side auto_eval — only for normal completions, not failures.
+                # Failed sessions (sim error, agent_stuck) are not valid eval inputs.
+                if self.auto_eval and session_status == "completed":
                     with self._eval_lock:
                         if self._eval_status == "pending":
                             self._eval_status = "running"
