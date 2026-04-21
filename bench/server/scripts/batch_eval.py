@@ -20,6 +20,7 @@ Usage:
 
 import argparse
 import json
+import os
 import sys
 import time
 import urllib.error
@@ -33,14 +34,21 @@ DIMS = "D4_domain_accuracy"
 EVAL_MODE = "tutor_only"
 
 
+def _ops_headers() -> dict[str, str]:
+    """Bearer for the operator surface; empty when QTB_ADMIN_TOKEN unset."""
+    token = os.environ.get("QTB_ADMIN_TOKEN", "").strip()
+    return {"Authorization": f"Bearer {token}"} if token else {}
+
+
 def evaluate_session(sid: str, tag: str, phase1_cache_path: str = "") -> dict:
     """Send evaluate request and poll until completion."""
     params = f"force=true&eval_mode={EVAL_MODE}&tutor_dims={DIMS}"
     if phase1_cache_path:
         params += f"&phase1_cache={phase1_cache_path}"
 
-    url = f"{SERVER_URL}/session/{sid}/evaluate?{params}"
-    req = urllib.request.Request(url, method="POST", data=b"")
+    headers = _ops_headers()
+    url = f"{SERVER_URL}/ops/session/{sid}/evaluate?{params}"
+    req = urllib.request.Request(url, method="POST", data=b"", headers=headers)
 
     try:
         with urllib.request.urlopen(req, timeout=10) as resp:
@@ -55,9 +63,11 @@ def evaluate_session(sid: str, tag: str, phase1_cache_path: str = "") -> dict:
     for _ in range(60):
         time.sleep(2)
         try:
-            with urllib.request.urlopen(
-                f"{SERVER_URL}/session/{sid}/scores", timeout=10
-            ) as resp:
+            scores_req = urllib.request.Request(
+                f"{SERVER_URL}/ops/session/{sid}/scores",
+                headers=headers,
+            )
+            with urllib.request.urlopen(scores_req, timeout=10) as resp:
                 result = json.loads(resp.read())
             if result.get("status") == "completed":
                 tutor = result.get("scores", {}).get("tutor_scores", {})

@@ -1185,22 +1185,34 @@ async def rest_send(request: Request) -> JSONResponse:
     return JSONResponse(data)
 
 
-async def rest_evaluate(request: Request) -> JSONResponse:
-    """``POST /session/{sid}/evaluate[?force=true&eval_mode=tutor_only&tutor_dims=D3,D4]``"""
+async def ops_evaluate(request: Request) -> JSONResponse:
+    """``POST /ops/session/{sid}/evaluate[?force=true&eval_mode=tutor_only&tutor_dims=D3,D4]``
+
+    Operator-only. Issue #46 slice 3 cut this off the agent surface — agents
+    finish at COMPLETED and never trigger their own scoring.
+    """
+    from server.web.ui_app import _authorize_admin_token
+
+    auth_err = _authorize_admin_token(request)
+    if auth_err is not None:
+        return auth_err
+
     manager: BenchSessionManager = request.app.state.manager
     sid = request.path_params["sid"]
     state = manager.get_or_restore_session(sid)
     if not state:
         return JSONResponse({"error": "Session not found"}, 404)
 
-    allowed, error, ops = check_permission(state.phase, "request_evaluation")
-    if not allowed:
-        logger.debug(
-            "[REST:%s] DENIED evaluate in phase %s", sid[:8], state.phase.value
-        )
+    if state.phase != SessionPhase.COMPLETED:
         return JSONResponse(
-            {"error": error, "allowed": ops, "current_phase": state.phase.value},
-            403,
+            {
+                "error": (
+                    "Session not yet completed — operator evaluation is only "
+                    "permitted on COMPLETED bundles."
+                ),
+                "current_phase": state.phase.value,
+            },
+            409,
         )
 
     # Parse eval parameters from query string
@@ -1217,7 +1229,7 @@ async def rest_evaluate(request: Request) -> JSONResponse:
         with state._eval_lock:
             if state._eval_status in ("completed", "failed"):
                 state._eval_status = "pending"
-                logger.info("[REST:%s] evaluate force reset", sid[:8])
+                logger.info("[OPS:%s] evaluate force reset", sid[:8])
 
     # Set eval parameters before triggering
     state._eval_mode = eval_mode
@@ -1226,12 +1238,18 @@ async def rest_evaluate(request: Request) -> JSONResponse:
     async with state._request_lock:
         state._last_activity = time.time()
         result = await asyncio.to_thread(state.request_evaluation)
-    logger.info("[REST:%s] evaluate: %s", sid[:8], result.get("status"))
+    logger.info("[OPS:%s] evaluate: %s", sid[:8], result.get("status"))
     return JSONResponse(result)
 
 
-async def rest_results(request: Request) -> JSONResponse:
-    """``GET /session/{sid}/results``"""
+async def ops_results(request: Request) -> JSONResponse:
+    """``GET /ops/session/{sid}/results`` — operator-only."""
+    from server.web.ui_app import _authorize_admin_token
+
+    auth_err = _authorize_admin_token(request)
+    if auth_err is not None:
+        return auth_err
+
     manager: BenchSessionManager = request.app.state.manager
     state = manager.get_or_restore_session(request.path_params["sid"])
     if not state:
@@ -1243,8 +1261,14 @@ async def rest_results(request: Request) -> JSONResponse:
     return JSONResponse(data)
 
 
-async def rest_scores(request: Request) -> JSONResponse:
-    """``GET /session/{sid}/scores[?history=true]``"""
+async def ops_scores(request: Request) -> JSONResponse:
+    """``GET /ops/session/{sid}/scores[?history=true]`` — operator-only."""
+    from server.web.ui_app import _authorize_admin_token
+
+    auth_err = _authorize_admin_token(request)
+    if auth_err is not None:
+        return auth_err
+
     manager: BenchSessionManager = request.app.state.manager
     history = request.query_params.get("history", "false").lower() == "true"
     state = manager.get_or_restore_session(request.path_params["sid"])
@@ -1346,9 +1370,11 @@ def create_app(
         ),
         Route("/session/{sid}/tool/{name}", rest_tool_call, methods=["POST"]),
         Route("/session/{sid}/send", rest_send, methods=["POST"]),
-        Route("/session/{sid}/evaluate", rest_evaluate, methods=["POST"]),
-        Route("/session/{sid}/results", rest_results, methods=["GET"]),
-        Route("/session/{sid}/scores", rest_scores, methods=["GET"]),
+        # Operator-only evaluation surface (issue #46 slice 3 — no longer
+        # reachable from the agent's MCP/REST catalogue).
+        Route("/ops/session/{sid}/evaluate", ops_evaluate, methods=["POST"]),
+        Route("/ops/session/{sid}/results", ops_results, methods=["GET"]),
+        Route("/ops/session/{sid}/scores", ops_scores, methods=["GET"]),
     ]
 
     web_dir = Path(manager.bench_root) / "server" / "web"

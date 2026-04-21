@@ -48,9 +48,14 @@ The MCP tool catalogue + REST permission model live in
 `bench/server/api/protocol.py`: phase machine
 `UNREGISTERED → REGISTERED → IN_SESSION → COMPLETED` plus per-phase tool
 allowlists. `check_permission(phase, tool_name)` enforces transitions at
-call time. Issue #46 will shrink the agent-visible catalogue (drop
-`request_evaluation`/`get_results`/`get_scores`) once the producer/consumer
-split lands.
+call time. As of issue #46 slice 3 the catalogue is
+`register_session / start_session / send_message / get_background` —
+COMPLETED is terminal for the agent (`next_allowed: []`). Evaluation
+runs out-of-band on the operator surface
+(`POST /ops/session/{sid}/evaluate`, `GET /ops/session/{sid}/results`,
+`GET /ops/session/{sid}/scores`), gated by
+`Authorization: Bearer <QTB_ADMIN_TOKEN>` (no enforcement when the env
+var is unset, for local-dev convenience).
 
 ## Session lifecycle
 
@@ -246,6 +251,14 @@ Slice 2 (landed): `bench/server/evaluator/` extracted with
 delegates to the new driver; readers go through
 `paths.find_latest_eval_dir` with legacy-fallback for old runs.
 
-Slices 3–5 cut the agent-visible eval catalogue, delete the in-session
-eval thread, and remove the legacy-fallback path. Issue #47 (batch
-evaluator) is now unblocked — its CLI sits on top of `score_bundle`.
+Slice 3 (landed): agent catalogue cut — `request_evaluation` /
+`get_results` / `get_scores` removed from MCP `tools/list` and the agent
+REST surface. Their REST routes moved to `/ops/session/{sid}/...` with
+operator-token auth. COMPLETED is now terminal from the agent's
+perspective (`next_allowed: []`). Internal-only break — no external
+agents existed at the time.
+
+Slices 4–5 will delete the in-session `_run_evaluation` thread plus
+`SessionState`'s eval state machine, and remove the legacy-fallback
+path in `paths.find_latest_eval_dir`. Issue #47 (batch evaluator) is
+now unblocked — its CLI sits on top of `score_bundle`.

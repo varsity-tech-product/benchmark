@@ -36,10 +36,7 @@ if TYPE_CHECKING:
 from .limits import HEAVY_TOOLS, backtest_sem
 from .protocol import (
     GET_BACKGROUND_TOOL,
-    GET_RESULTS_TOOL,
-    GET_SCORES_TOOL,
     REGISTER_SESSION_TOOL,
-    REQUEST_EVALUATION_TOOL,
     SEND_MESSAGE_TOOL,
     SESSION_API_TOOLS,
     START_SESSION_TOOL,
@@ -804,9 +801,6 @@ class SessionState:
             START_SESSION_TOOL,
             SEND_MESSAGE_TOOL,
             GET_BACKGROUND_TOOL,
-            REQUEST_EVALUATION_TOOL,
-            GET_RESULTS_TOOL,
-            GET_SCORES_TOOL,
         ]
         return lifecycle + self._resolve_domain_tools()
 
@@ -1024,22 +1018,6 @@ class SessionState:
             if self.phase == SessionPhase.COMPLETED:
                 await self._notify_tools_changed()
             return [TextContent(type="text", text=str(result))]
-
-        if name == "request_evaluation":
-            result = await asyncio.to_thread(self.request_evaluation)
-            logger.info(
-                "[%s] request_evaluation: %s", self.session_id[:8], result.get("status")
-            )
-            return [TextContent(type="text", text=json.dumps(result))]
-
-        if name == "get_results":
-            result = self.get_run_results()
-            return [TextContent(type="text", text=json.dumps(result))]
-
-        if name == "get_scores":
-            history = arguments.get("history", False)
-            result = self.get_eval_scores(history=history)
-            return [TextContent(type="text", text=json.dumps(result))]
 
         # Domain tool — route through proxy
         if name in HEAVY_TOOLS:

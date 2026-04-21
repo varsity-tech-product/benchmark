@@ -72,9 +72,6 @@ class RESTTransport(SessionTransport):
         protocol = {
             "register_session",
             "start_session",
-            "request_evaluation",
-            "get_results",
-            "get_scores",
         }
         # Normalize key names: REST returns "inputSchema", adapter expects "input_schema"
         normalized = []

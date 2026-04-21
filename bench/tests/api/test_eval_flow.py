@@ -43,7 +43,7 @@ class TestRequestEvaluation:
     @pytest.mark.asyncio
     async def test_evaluate_returns_running(self, app, client, mock_eval_pipeline):
         sid = await _complete_session(client, app)
-        resp = await client.post(f"/session/{sid}/evaluate")
+        resp = await client.post(f"/ops/session/{sid}/evaluate")
         assert resp.status_code == 200
         body = resp.json()
         assert body["status"] in ("running", "completed")
@@ -51,15 +51,16 @@ class TestRequestEvaluation:
     @pytest.mark.asyncio
     async def test_evaluate_denied_before_completion(self, client):
         sid, _ = await register_and_start(client)
-        resp = await client.post(f"/session/{sid}/evaluate")
-        assert resp.status_code == 403
+        resp = await client.post(f"/ops/session/{sid}/evaluate")
+        # Operator surface returns 409 when bundle is not yet COMPLETED.
+        assert resp.status_code == 409
 
     @pytest.mark.asyncio
     async def test_evaluate_completes_with_scores(
         self, app, client, mock_eval_pipeline
     ):
         sid = await _complete_session(client, app)
-        resp = await client.post(f"/session/{sid}/evaluate")
+        resp = await client.post(f"/ops/session/{sid}/evaluate")
         assert resp.status_code == 200
 
         # Wait for background eval thread
@@ -78,7 +79,7 @@ class TestRequestEvaluation:
         sid = await _complete_session(client, app)
 
         # First eval
-        await client.post(f"/session/{sid}/evaluate")
+        await client.post(f"/ops/session/{sid}/evaluate")
         state = _get_state(app, sid)
         for _ in range(50):
             with state._eval_lock:
@@ -87,7 +88,7 @@ class TestRequestEvaluation:
             time.sleep(0.1)
 
         # Force re-eval
-        resp = await client.post(f"/session/{sid}/evaluate?force=true")
+        resp = await client.post(f"/ops/session/{sid}/evaluate?force=true")
         assert resp.status_code == 200
         body = resp.json()
         assert body["status"] == "running"
@@ -102,21 +103,21 @@ class TestEvalParameters:
     @pytest.mark.asyncio
     async def test_eval_mode_passed(self, app, client, mock_eval_pipeline):
         sid = await _complete_session(client, app)
-        await client.post(f"/session/{sid}/evaluate?eval_mode=tutor_only")
+        await client.post(f"/ops/session/{sid}/evaluate?eval_mode=tutor_only")
         state = _get_state(app, sid)
         assert state._eval_mode == "tutor_only"
 
     @pytest.mark.asyncio
     async def test_tutor_dims_passed(self, app, client, mock_eval_pipeline):
         sid = await _complete_session(client, app)
-        await client.post(f"/session/{sid}/evaluate?tutor_dims=D3,D4")
+        await client.post(f"/ops/session/{sid}/evaluate?tutor_dims=D3,D4")
         state = _get_state(app, sid)
         assert state._tutor_dims == ["D3", "D4"]
 
     @pytest.mark.asyncio
     async def test_default_eval_mode_full(self, app, client, mock_eval_pipeline):
         sid = await _complete_session(client, app)
-        await client.post(f"/session/{sid}/evaluate")
+        await client.post(f"/ops/session/{sid}/evaluate")
         state = _get_state(app, sid)
         assert state._eval_mode == "full"
 
@@ -130,14 +131,14 @@ class TestGetScores:
     @pytest.mark.asyncio
     async def test_scores_pending_before_eval(self, app, client):
         sid = await _complete_session(client, app)
-        resp = await client.get(f"/session/{sid}/scores")
+        resp = await client.get(f"/ops/session/{sid}/scores")
         assert resp.status_code == 200
         assert resp.json()["status"] == "pending"
 
     @pytest.mark.asyncio
     async def test_scores_completed_after_eval(self, app, client, mock_eval_pipeline):
         sid = await _complete_session(client, app)
-        await client.post(f"/session/{sid}/evaluate")
+        await client.post(f"/ops/session/{sid}/evaluate")
 
         state = _get_state(app, sid)
         for _ in range(50):
@@ -146,7 +147,7 @@ class TestGetScores:
                     break
             time.sleep(0.1)
 
-        resp = await client.get(f"/session/{sid}/scores")
+        resp = await client.get(f"/ops/session/{sid}/scores")
         assert resp.status_code == 200
         data = resp.json()
         assert data["status"] == "completed"
@@ -162,7 +163,7 @@ class TestGetResults:
     @pytest.mark.asyncio
     async def test_results_after_completion(self, app, client):
         sid = await _complete_session(client, app)
-        resp = await client.get(f"/session/{sid}/results")
+        resp = await client.get(f"/ops/session/{sid}/results")
         # Results should be saved after completion
         if resp.status_code == 200:
             data = resp.json()
@@ -170,5 +171,5 @@ class TestGetResults:
 
     @pytest.mark.asyncio
     async def test_results_not_found_before_register(self, client):
-        resp = await client.get("/session/nonexistent/results")
+        resp = await client.get("/ops/session/nonexistent/results")
         assert resp.status_code == 404

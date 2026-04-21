@@ -89,8 +89,8 @@ SEND_MESSAGE_TOOL = Tool(
         "only messages sent through this tool reach them. "
         "Each call advances the conversation by one turn and cannot be undone. "
         "Returns the student's reply and session status. "
-        "When status is 'completed', the session has ended; follow "
-        "the returned \"next_allowed\" hint (request_evaluation). "
+        "When status is 'completed', the session has ended and the agent's "
+        "lifecycle is over — evaluation runs out-of-band on the operator surface. "
         "Precondition: start_session must have succeeded. "
         "Optionally include 'reasoning' to record your private rationale "
         "for this turn — it is logged for analysis and is NOT shown to the student."
@@ -138,60 +138,20 @@ GET_BACKGROUND_TOOL = Tool(
     inputSchema={"type": "object", "properties": {}, "required": []},
 )
 
-REQUEST_EVALUATION_TOOL = Tool(
-    name="request_evaluation",
-    description=(
-        "Request evaluation of the completed session. "
-        "First call triggers evaluation; subsequent calls return status or results."
-    ),
-    inputSchema={"type": "object", "properties": {}, "required": []},
-)
-
-GET_RESULTS_TOOL = Tool(
-    name="get_results",
-    description="Return the session run_state (conversation, tool_logs, metrics).",
-    inputSchema={"type": "object", "properties": {}, "required": []},
-)
-
-GET_SCORES_TOOL = Tool(
-    name="get_scores",
-    description=(
-        "Return evaluation scores. "
-        "Set history=true to return all evaluation runs instead of just the latest."
-    ),
-    inputSchema={
-        "type": "object",
-        "properties": {
-            "history": {
-                "type": "boolean",
-                "description": "If true, return all evaluation history.",
-            },
-        },
-        "required": [],
-    },
-)
-
-# Names of the four session API tools (benchmark interaction).
+# Names of the session API tools agents drive directly.
+# Evaluation tools (request_evaluation / get_results / get_scores) were
+# removed in issue #46 slice 3 — scoring runs out-of-band on the operator
+# surface, so the agent's lifecycle terminates at COMPLETED.
 SESSION_API_TOOLS = frozenset(
     {
         "register_session",
         "start_session",
         "send_message",
-        "request_evaluation",
-    }
-)
-
-# Tools allowed in COMPLETED phase.
-_COMPLETED_TOOLS = frozenset(
-    {
-        "request_evaluation",
-        "get_results",
-        "get_scores",
     }
 )
 
 # Tool names that REST /tool/{name} must reject (use dedicated endpoints instead).
-TOOL_ENDPOINT_BLOCKED = SESSION_API_TOOLS | _COMPLETED_TOOLS
+TOOL_ENDPOINT_BLOCKED = SESSION_API_TOOLS
 
 
 # Lifecycle tools that MCP ``list_tools`` exposes in every phase (static union).
@@ -200,19 +160,16 @@ LIFECYCLE_TOOL_NAMES: tuple[str, ...] = (
     "start_session",
     "send_message",
     "get_background",
-    "request_evaluation",
-    "get_results",
-    "get_scores",
 )
 
 
 # Recommended next-hop tool(s) per phase — the state-machine signal the agent
-# should follow to advance.
+# should follow to advance. COMPLETED is terminal from the agent's perspective.
 _NEXT_ALLOWED: dict[SessionPhase, list[str]] = {
     SessionPhase.UNREGISTERED: ["register_session"],
     SessionPhase.REGISTERED: ["start_session"],
     SessionPhase.IN_SESSION: ["send_message"],
-    SessionPhase.COMPLETED: ["request_evaluation"],
+    SessionPhase.COMPLETED: [],
 }
 
 
@@ -274,15 +231,14 @@ def check_permission(
         )
 
     if phase == SessionPhase.COMPLETED:
-        if tool_name in _COMPLETED_TOOLS:
-            return True, "", []
+        # COMPLETED is terminal for agents — evaluation runs out-of-band.
         return (
             False,
             (
-                "Wrong phase. Session completed — call request_evaluation, "
-                "then get_results / get_scores."
+                "Wrong phase. Session completed — the agent lifecycle is "
+                "over. No further tools to call."
             ),
-            sorted(_COMPLETED_TOOLS),
+            [],
         )
 
     return False, "Unknown phase.", []

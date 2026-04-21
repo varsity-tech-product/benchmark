@@ -269,13 +269,15 @@
   // ── Scripted flow ───────────────────────────────────────────────────
 
   function runScript() {
+    // The agent's lifecycle ends at COMPLETED. Evaluation runs out-of-band
+    // on the operator surface (/ops/session/{sid}/evaluate) and is not
+    // demoed here — see issue #46 slice 3.
     return stepStartRun()
       .then(stepRegister)
       .then(stepListTools)
       .then(stepStartSession)
       .then(function () { return stepSend(TUTOR_TURNS[0]); })
-      .then(function () { return stepSend(TUTOR_TURNS[1]); })
-      .then(stepEvaluate);
+      .then(function () { return stepSend(TUTOR_TURNS[1]); });
   }
 
   function stepStartRun() {
@@ -339,18 +341,6 @@
         state.messages.push({role: 'student', content: resp.student_message});
       }
       render();
-    });
-  }
-
-  function stepEvaluate() {
-    state.status = 'evaluating';
-    render();
-    return call(
-      'POST',
-      '/session/' + encodeURIComponent(state.sessionId) + '/evaluate',
-      {}
-    ).then(function () {
-      state.phase = 'completed';
     });
   }
 

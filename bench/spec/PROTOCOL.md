@@ -29,7 +29,7 @@ hints rather than tool-list mutation.
 | UNREGISTERED | register_session                            | Everything else returns `{"error", "allowed", "current_phase"}` |
 | REGISTERED   | start_session                               | Same error shape, `allowed = ["start_session"]` |
 | IN_SESSION   | send_message, domain tools                  | Same error shape, `allowed = ["send_message", "(domain tools)"]` |
-| COMPLETED    | request_evaluation, get_results, get_scores | Same error shape, `allowed = ["request_evaluation", "get_results", "get_scores"]` |
+| COMPLETED    | (none — terminal for the agent)             | Same error shape, `allowed = []`. Evaluation runs out-of-band on the operator surface (`/ops/session/{sid}/...`). |
 
 Phase-denial payload:
 ```json
@@ -112,8 +112,10 @@ REST request body = tool arguments directly (no `arguments` wrapper).
 | Wrong phase (403) | `{"error": "...", "allowed": ["..."]}` |
 | Blocked name (400) | `{"error": "Use the dedicated /session/{sid}/send endpoint instead."}` |
 
-**Blocked names**: `register_session`, `start_session`, `send_message`, `request_evaluation`,
-`get_results`, `get_scores` cannot be called via `/tool/{name}`. Use their dedicated endpoints.
+**Blocked names**: `register_session`, `start_session`, `send_message` cannot be
+called via `/tool/{name}`. Use their dedicated endpoints. Evaluation tools
+(`request_evaluation`, `get_results`, `get_scores`) were removed from the agent
+catalogue in issue #46 — scoring lives on the operator surface (§2.6).
 
 ### 2.5 send_message
 
@@ -134,55 +136,36 @@ REST: POST /session/{sid}/send  {"text": "Let me help you debug this...",
 | Response | Body |
 |----------|------|
 | Active   | `{"student_message": "Oh I see...", "status": "active", "current_phase": "in_session", "next_allowed": ["send_message"]}` |
-| Completed | `{"student_message": "Thanks!", "status": "completed", "reason": "objectives_met", "current_phase": "completed", "next_allowed": ["request_evaluation"]}` |
+| Completed | `{"student_message": "Thanks!", "status": "completed", "reason": "objectives_met", "current_phase": "completed", "next_allowed": []}` |
 | Empty text (400) | `{"error": "Empty message. Provide text to send to the student."}` |
 | Bad reasoning type (400) | `{"error": "reasoning must be a string"}` |
 
-When `status == "completed"`, the session has ended. Follow `next_allowed`
-(`request_evaluation`); further `send_message` / domain-tool calls will be
-rejected with the phase-denial shape.
+When `status == "completed"`, the session has ended. The agent's lifecycle is
+over (`next_allowed: []`); further `send_message` / domain-tool calls return
+the phase-denial shape. Scoring runs out-of-band on the operator surface.
 
-### 2.6 request_evaluation
+### 2.6 Operator evaluation surface
 
-Request scoring. Only available after session completes.
-
-```
-MCP:  request_evaluation()
-REST: POST /session/{sid}/evaluate[?force=true]
-```
-
-| Response | Body |
-|----------|------|
-| Started  | `{"status": "running", "message": "Evaluation started.", "current_phase": "completed", "next_allowed": ["request_evaluation"]}` |
-| In progress | `{"status": "running", "message": "Evaluation in progress.", "current_phase": "completed", "next_allowed": ["request_evaluation"]}` |
-| Done     | `{"status": "completed", "scores": {...}, "current_phase": "completed", "next_allowed": ["get_scores", "get_results"]}` |
-| Failed   | `{"status": "failed", "error": "...", "current_phase": "completed"}` |
-
-`?force=true` (REST) resets and re-runs evaluation.
-
-### 2.7 get_results
-
-Return session run_state (conversation, tool_logs, metrics). Only available after session completes.
+Out of scope for the agent. Operators (UI, CI, scoring jobs) drive
+evaluation off the COMPLETED bundle via `/ops/session/{sid}/...`,
+gated by `Authorization: Bearer <QTB_ADMIN_TOKEN>`.
 
 ```
-MCP:  get_results()
-REST: GET /session/{sid}/results
+POST /ops/session/{sid}/evaluate[?force=true&eval_mode=full&tutor_dims=D3,D4]
+GET  /ops/session/{sid}/results
+GET  /ops/session/{sid}/scores[?history=true]
 ```
 
-Returns the full `run_state.json` content.
-
-### 2.8 get_scores
-
-Return evaluation scores. Only available after session completes.
+The same scoring driver runs offline:
 
 ```
-MCP:  get_scores({history: false})
-REST: GET /session/{sid}/scores[?history=true]
+python -m server.evaluator --bundle <path-to-bundle>
 ```
 
-Default: latest evaluation result. `history=true`: all evaluation runs.
+See `bench/server/storage/BUNDLE_SCHEMA.md` and
+`bench/server/evaluator/__main__.py`.
 
-### 2.9 Session status
+### 2.7 Session status
 
 ```
 REST: GET /session/{sid}
@@ -241,14 +224,14 @@ POST /session/abc123/send  {"text": "I see the issue. The window calculation..."
 POST /session/abc123/send  {"text": "Exactly. Here's the corrected version..."}
 -> {"student_message": "Thanks!", "status": "completed", "reason": "objectives_met"}
 
-# 6. Get results and request evaluation
-GET /session/abc123/results
+# 6. Agent's lifecycle is over. Operator scores the bundle out-of-band.
+GET /ops/session/abc123/results              # Authorization: Bearer <admin_token>
 -> {"task_id": "X01", "session_id": "abc123", "conversation": [...], ...}
 
-POST /session/abc123/evaluate
+POST /ops/session/abc123/evaluate
 -> {"status": "running", "message": "Evaluation started."}
 
-GET /session/abc123/scores
+GET /ops/session/abc123/scores
 -> {"status": "completed", "scores": {"overall": 0.72, ...}}
 ```
 
@@ -288,8 +271,10 @@ python -m server --port 8000 --docker --auto-eval        # auto-evaluate on comp
 python -m server --port 8000 --no-docker --log-level DEBUG
 ```
 
-`--auto-eval` is a server-side setting. When enabled, evaluation starts automatically
-when a session completes. Clients can still explicitly call `request_evaluation`.
+`--auto-eval` is a server-side setting. When enabled, evaluation starts
+automatically when a session completes (writing scores to the sibling
+`evaluations/server/...` tree). Otherwise scoring is operator-triggered
+via `/ops/session/{sid}/evaluate` or `python -m server.evaluator`.
 
 ---
 

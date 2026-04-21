@@ -130,11 +130,13 @@ class TestPostCompletion:
         state.session._max_turns = 1
         await send_message(client, sid, "Done.")
 
-        # REST permission check blocks send in COMPLETED phase
+        # REST permission check blocks send in COMPLETED phase.
+        # COMPLETED is terminal for the agent (issue #46 slice 3) so
+        # the allowed list is empty.
         resp = await client.post(f"/session/{sid}/send", json={"text": "More stuff"})
         assert resp.status_code == 403
         body = resp.json()
-        assert "request_evaluation" in body.get("allowed", [])
+        assert body.get("allowed") == []
 
     @pytest.mark.asyncio
     async def test_results_available_after_completion(self, app, client):
@@ -143,7 +145,7 @@ class TestPostCompletion:
         state.session._max_turns = 1
         await send_message(client, sid, "Done.")
 
-        resp = await client.get(f"/session/{sid}/results")
+        resp = await client.get(f"/ops/session/{sid}/results")
         # Results should be available (200) or at least attempted
         if resp.status_code == 200:
             data = resp.json()
