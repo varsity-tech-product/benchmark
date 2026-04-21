@@ -39,9 +39,9 @@ def _resolve_pricing(model: str) -> tuple[float, float] | None:
     return pricing
 
 
-def get_deepeval_cost_kwargs(model: str) -> dict:
+def get_llm_cost_kwargs(model: str) -> dict:
     """Return ``cost_per_input_token`` / ``cost_per_output_token`` kwargs
-    suitable for ``deepeval.models.llms.openai_model.GPTModel``."""
+    suitable for ``EwanLLMClient``."""
     pricing = _resolve_pricing(model)
     if pricing is None:
         return {}

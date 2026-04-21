@@ -17,7 +17,6 @@ from typing import Optional
 
 from server.eval.ewan_eval.llm_client import (
     EwanLLMClient,
-    calculate_weighted_score,
     extract_json_from_response,
 )
 
@@ -124,7 +123,7 @@ class EwanConvGEval:
         criteria: str,
         threshold: float = 0.5,
         model: EwanLLMClient | None = None,
-        max_score: int = 10,
+        max_score: int = 5,
         **kwargs,
     ):
         self.name = name
@@ -153,12 +152,9 @@ class EwanConvGEval:
             max_score=self.max_score,
         )
 
-        # Call LLM with logprobs for optional weighted scoring
-        completion, cost = await self.model.a_generate_raw(prompt)
+        response_text, cost = await self.model.a_generate(prompt)
         self.evaluation_cost += cost
 
-        # Parse JSON response
-        response_text = completion.choices[0].message.content or ""
         parsed = extract_json_from_response(response_text)
 
         if "score" not in parsed:
@@ -170,11 +166,6 @@ class EwanConvGEval:
         raw_score = float(parsed["score"])
         self.reason = parsed.get("reason", "")
         self.evidence = parsed.get("evidence", [])
-
-        # logprobs-weighted scoring (if available)
-        weighted = calculate_weighted_score(completion)
-        if weighted is not None:
-            raw_score = weighted
 
         # Normalize 1-{max_score} → 0-1
         self.score = max(0.0, min(1.0, raw_score / float(self.max_score)))

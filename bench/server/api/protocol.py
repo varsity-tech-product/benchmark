@@ -74,8 +74,8 @@ START_SESSION_TOOL = Tool(
         "the student's first message, and the list of available tools. "
         "Precondition: register_session must have succeeded. "
         "Called out of order, returns "
-        "{\"error\": ..., \"allowed\": [...], \"current_phase\": ...} — "
-        "follow the \"allowed\" list to decide the next call."
+        '{"error": ..., "allowed": [...], "current_phase": ...} — '
+        'follow the "allowed" list to decide the next call.'
     ),
     inputSchema={"type": "object", "properties": {}, "required": []},
 )
@@ -89,8 +89,8 @@ SEND_MESSAGE_TOOL = Tool(
         "only messages sent through this tool reach them. "
         "Each call advances the conversation by one turn and cannot be undone. "
         "Returns the student's reply and session status. "
-        "When status is 'completed', the session has ended; follow "
-        "the returned \"next_allowed\" hint (request_evaluation). "
+        "When status is 'completed' or 'failed', the session has ended; follow "
+        'the returned "next_allowed" hint (request_evaluation). '
         "Precondition: start_session must have succeeded. "
         "Optionally include 'reasoning' to record your private rationale "
         "for this turn — it is logged for analysis and is NOT shown to the student."

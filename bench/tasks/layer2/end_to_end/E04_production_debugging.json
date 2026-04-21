@@ -10,8 +10,8 @@
     "fullstack_practitioner"
   ],
   "student_openings": {
-    "fullstack_practitioner": "I need to systematically debugging a LEAN C# EMA crossover algorithm. I've done similar work in Python before — let's focus on getting the architecture and edge cases right.",
-    "developer_crossover": "I need to systematically debugging a LEAN C# EMA crossover algorithm. I can handle the code, but I don't understand the financial logic behind it. What should this do and why?"
+    "fullstack_practitioner": "I need to systematically debug a LEAN C# EMA crossover algorithm that has multiple issues. I've done similar work in Python before — let's focus on getting the architecture and edge cases right.",
+    "developer_crossover": "I need to systematically debug a LEAN C# EMA crossover algorithm. I can handle the code, but I don't understand the financial logic behind it. What should this do and why?"
   },
   "environment": {
     "data_files": [
@@ -58,6 +58,6 @@
   },
   "requires_code": true,
   "sample_code": "data/E04_compound_bug.cs",
-  "max_turns": 25,
+  "max_turns": 20,
   "timeout_minutes": 30
 }

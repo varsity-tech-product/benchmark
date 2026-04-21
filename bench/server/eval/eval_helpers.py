@@ -1,7 +1,7 @@
 """Shared helpers for populating TaskResult after evaluation."""
 
 _EVAL_STAGES = [
-    ("Tutor 7D", "tutor_scores"),
+    ("Tutor 6D", "tutor_scores"),
     ("Process Metrics", "process_metrics"),
     ("Result Judge", "result_judge"),
 ]

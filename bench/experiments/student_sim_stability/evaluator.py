@@ -5,10 +5,17 @@ Four evaluation dimensions:
   D2 - Cross-run Reproducibility: Are repeated runs consistent?
   D3 - Cross-model Consistency: Do different models preserve persona traits?
   D4 - Drift Detection: Does persona fidelity degrade over turns?
+
+Design principles:
+  - No model names in prompts (anonymized as System A/B/C)
+  - No experiment-intent leakage in prompt framing
+  - Reasoning-first JSON output (judge reasons before scoring)
+  - Randomized ordering where applicable
 """
 
 import json
 import logging
+import random
 import re
 from dataclasses import dataclass, field
 
@@ -20,8 +27,8 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 _D1_PROMPT = """\
-You are evaluating whether a simulated student message is consistent with \
-the student's persona definition.
+You are evaluating whether a student message is consistent with the \
+student's persona definition.
 
 ## Persona Definition
 Description: {persona_description}
@@ -38,14 +45,19 @@ Previous tutor message: "{tutor_message}"
 ## Student Message to Evaluate
 "{student_message}"
 
+## Important
+The tutor message above may have just taught the student a new concept. \
+If the student is clearly echoing or paraphrasing what the tutor just \
+explained, this is normal learning behavior — do NOT count it as a \
+knowledge boundary violation.
+
 ## Scoring Criteria (1-5 scale)
-5 = Perfectly in-character: respects knowledge boundaries, follows behavioral \
-    rules, emotional tone matches profile
-4 = Mostly in-character with minor deviations (e.g., slightly too knowledgeable \
-    or slightly wrong tone)
+5 = Perfectly in-character: respects knowledge boundaries, follows \
+    behavioral rules, emotional tone matches profile
+4 = Mostly in-character with minor deviations
 3 = Partially in-character: some traits match but noticeable inconsistencies
-2 = Mostly out-of-character: significant knowledge boundary violations or \
-    wrong emotional tone
+2 = Mostly out-of-character: significant knowledge boundary violations \
+    or wrong emotional tone
 1 = Completely out-of-character: acts like a different persona entirely
 
 ## Evaluation Axes
@@ -55,8 +67,9 @@ Score each axis independently:
 - behavioral_rules: Are the behavioral rules followed when applicable?
 - overall: Holistic persona adherence score
 
-Return a JSON object:
-{{"knowledge_boundary": <1-5>, "emotional_tone": <1-5>, "behavioral_rules": <1-5>, "overall": <1-5>, "reasoning": "<brief explanation>"}}
+Think step by step before scoring. Return a JSON object with reasoning FIRST:
+{{"reasoning": "<your step-by-step analysis>", "knowledge_boundary": <1-5>, \
+"emotional_tone": <1-5>, "behavioral_rules": <1-5>, "overall": <1-5>}}
 
 JSON Output:
 """
@@ -67,8 +80,8 @@ JSON Output:
 # ---------------------------------------------------------------------------
 
 _D2_PROMPT = """\
-You are evaluating the reproducibility of a student simulator across \
-multiple runs with identical setup conditions.
+You are evaluating the behavioral consistency of a student across \
+multiple conversation runs under identical conditions.
 
 ## Persona
 {persona_description}
@@ -76,7 +89,7 @@ multiple runs with identical setup conditions.
 ## Task
 {task_description}
 
-## Three conversation runs (same task, persona, and model)
+## Three conversation runs
 {runs_text}
 
 ## Evaluation Criteria
@@ -91,22 +104,24 @@ Assess how consistent the student's behavior is across the 3 runs:
 4 = Very similar with minor variations in phrasing
 3 = Same general direction but noticeable differences in topic order or depth
 2 = Significant behavioral differences across runs
-1 = Completely different behaviors — unreproducible
+1 = Completely different behaviors
 
-Return a JSON object:
-{{"topic_trajectory": <1-5>, "knowledge_display": <1-5>, "emotional_consistency": <1-5>, "question_patterns": <1-5>, "overall_reproducibility": <1-5>, "reasoning": "<brief explanation>"}}
+Think step by step before scoring. Return a JSON object with reasoning FIRST:
+{{"reasoning": "<your step-by-step analysis>", "topic_trajectory": <1-5>, \
+"knowledge_display": <1-5>, "emotional_consistency": <1-5>, \
+"question_patterns": <1-5>, "overall_reproducibility": <1-5>}}
 
 JSON Output:
 """
 
 
 # ---------------------------------------------------------------------------
-# D3: Cross-model Consistency (model comparison)
+# D3: Cross-model Consistency (model comparison, anonymized)
 # ---------------------------------------------------------------------------
 
 _D3_PROMPT = """\
-You are evaluating whether different LLM models produce consistent student \
-behavior when given the same persona definition.
+You are evaluating whether three student conversation sets show \
+consistent persona behavior.
 
 ## Persona
 {persona_description}
@@ -117,25 +132,30 @@ Unknown concepts: {unknown_concepts}
 ## Task
 {task_description}
 
-## Conversations from different models
+## Three conversation sets
 {models_text}
 
 ## Evaluation Criteria
-Assess how well each model preserves the core persona traits:
-- knowledge_boundary_preserved: Do all models respect the same knowledge limits? (1-5)
-- emotional_profile_preserved: Do all models produce similar emotional tone? (1-5)
-- behavioral_rules_preserved: Do all models follow the behavioral rules? (1-5)
+Assess how consistently the core persona traits are preserved:
+- knowledge_boundary_preserved: Do all sets respect the same knowledge limits? (1-5)
+- emotional_profile_preserved: Do all sets produce similar emotional tone? (1-5)
+- behavioral_rules_preserved: Do all sets follow the behavioral rules? (1-5)
 - persona_distinguishability: Would you identify these as the same persona? (1-5)
-- overall_cross_model: Overall consistency across models (1-5)
+- overall_cross_model: Overall consistency across the three sets (1-5)
 
-5 = All models produce virtually the same persona behavior
-4 = Minor model-specific stylistic differences but same persona
-3 = Noticeable differences — some models capture persona better than others
-2 = Significant inconsistencies — persona varies substantially by model
-1 = Different models produce entirely different student behaviors
+5 = Virtually the same persona behavior across all sets
+4 = Minor stylistic differences but same persona
+3 = Noticeable differences — some sets capture persona better than others
+2 = Significant inconsistencies
+1 = Entirely different student behaviors
 
-Return a JSON object:
-{{"knowledge_boundary_preserved": <1-5>, "emotional_profile_preserved": <1-5>, "behavioral_rules_preserved": <1-5>, "persona_distinguishability": <1-5>, "overall_cross_model": <1-5>, "reasoning": "<brief explanation>", "best_model": "<model that best captures the persona>", "worst_model": "<model that least captures the persona>"}}
+Think step by step before scoring. Return a JSON object with reasoning FIRST:
+{{"reasoning": "<your step-by-step analysis>", \
+"knowledge_boundary_preserved": <1-5>, "emotional_profile_preserved": <1-5>, \
+"behavioral_rules_preserved": <1-5>, "persona_distinguishability": <1-5>, \
+"overall_cross_model": <1-5>, \
+"best_set": "<label of set that best captures the persona>", \
+"worst_set": "<label of set that least captures the persona>"}}
 
 JSON Output:
 """
@@ -147,7 +167,7 @@ JSON Output:
 
 _D4_PROMPT = """\
 You are detecting persona drift in a tutoring conversation. The student \
-simulator should maintain consistent persona traits throughout.
+should maintain consistent persona traits throughout.
 
 ## Persona Definition
 Description: {persona_description}
@@ -158,6 +178,11 @@ Emotional profile: {emotional_profile}
 ## Full Conversation (student messages only, in order)
 {student_messages_text}
 
+## Important
+Student messages may echo concepts the tutor introduced in preceding \
+turns. This is normal learning behavior — only flag knowledge that \
+appears without any prior tutor explanation as a knowledge leak.
+
 ## Drift Detection Criteria
 For each student message (turn 1 through {total_turns}), score:
 - persona_fidelity: How well does this message match the persona? (1-5)
@@ -166,48 +191,59 @@ For each student message (turn 1 through {total_turns}), score:
 - co_teacher_drift: Does the student start explaining concepts like a \
   teacher instead of asking like a student? (0=no, 1=minor, 2=significant)
 
-Return a JSON object:
-{{"per_turn": [{{"turn": 1, "persona_fidelity": <1-5>, "knowledge_leak": <0-3>, "co_teacher_drift": <0-2>}}, ...], "overall_drift_score": <1-5>, "drift_onset_turn": <turn number where drift first appears, or null>, "reasoning": "<explanation of any drift patterns>"}}
-
 5 = No drift — persona perfectly maintained throughout
 4 = Minimal drift — slight changes in later turns
 3 = Moderate drift — noticeable persona weakening after midpoint
 2 = Significant drift — persona breaks down in later half
 1 = Severe drift — persona lost early in conversation
 
+Think step by step before scoring. Return a JSON object with reasoning FIRST:
+{{"reasoning": "<explanation of any drift patterns>", \
+"per_turn": [{{"turn": 1, "persona_fidelity": <1-5>, "knowledge_leak": <0-3>, \
+"co_teacher_drift": <0-2>}}, ...], \
+"overall_drift_score": <1-5>, \
+"drift_onset_turn": <turn number where drift first appears, or null>}}
+
 JSON Output:
 """
 
 
 # ---------------------------------------------------------------------------
-# Control group: Persona Distinguishability
+# Control group: Persona Distinguishability (randomized A/B order)
 # ---------------------------------------------------------------------------
 
 _DISTINGUISH_PROMPT = """\
-You are evaluating whether two sets of student conversations — one with a \
-persona definition and one without — show meaningfully different behavior.
+You are evaluating whether two sets of student conversations show \
+meaningfully different behavior.
 
-## Persona Definition (used in Set A, absent in Set B)
-{persona_description}
+{set_description}
 
-## Set A: With Persona
-{persona_conversation}
+## Set A
+{set_a_conversation}
 
-## Set B: Without Persona (control)
-{control_conversation}
+## Set B
+{set_b_conversation}
 
 ## Evaluation
 - distinctiveness: How different are the two sets? (1-5)
-  5 = Completely different behavior, persona clearly shapes the student
+  5 = Completely different behavior
   3 = Some differences but also many similarities
-  1 = Indistinguishable — persona definition has no effect
-- persona_value_add: What specific behaviors does the persona add? (free text)
+  1 = Indistinguishable
+- persona_value_add: What specific behaviors differentiate Set A from Set B? (free text)
 
-Return a JSON object:
-{{"distinctiveness": <1-5>, "persona_value_add": "<explanation>", "reasoning": "<brief analysis>"}}
+Think step by step before scoring. Return a JSON object with reasoning FIRST:
+{{"reasoning": "<your step-by-step analysis>", "distinctiveness": <1-5>, \
+"persona_value_add": "<explanation>"}}
 
 JSON Output:
 """
+
+
+# ---------------------------------------------------------------------------
+# Anonymization
+# ---------------------------------------------------------------------------
+
+_SYSTEM_LABELS = ["System A", "System B", "System C", "System D", "System E"]
 
 
 # ---------------------------------------------------------------------------
@@ -223,16 +259,6 @@ class EvalResult:
     scores: dict = field(default_factory=dict)
     reasoning: str = ""
     metadata: dict = field(default_factory=dict)
-
-
-def _call_judge(model_client, prompt: str) -> dict:
-    """Call the LLM judge and parse JSON response."""
-    result = model_client.generate(prompt)
-    text = result[0] if isinstance(result, tuple) else result
-    match = re.search(r"\{.*\}", text, re.DOTALL)
-    if match:
-        return json.loads(match.group())
-    raise ValueError(f"Judge returned non-JSON: {text[:300]}")
 
 
 class StabilityEvaluator:
@@ -309,7 +335,6 @@ class StabilityEvaluator:
         total = len(student_turns)
 
         for turn_idx, (conv_idx, turn) in enumerate(student_turns):
-            # Find preceding tutor message
             tutor_msg = ""
             if conv_idx > 0 and conversation[conv_idx - 1]["role"] == "assistant":
                 tutor_msg = conversation[conv_idx - 1]["content"]
@@ -367,7 +392,7 @@ class StabilityEvaluator:
             logger.warning("D2 eval failed: %s", exc)
             return EvalResult(dimension="D2", scores={}, reasoning=str(exc))
 
-    # ----- D3: Cross-model Consistency -----
+    # ----- D3: Cross-model Consistency (anonymized) -----
 
     def eval_d3(
         self,
@@ -377,19 +402,25 @@ class StabilityEvaluator:
     ) -> EvalResult:
         """Evaluate consistency across different student models.
 
-        Args:
-            model_conversations: {model_name: conversation} — one representative
-                conversation per model (e.g., first run).
+        Model names are anonymized in the prompt (System A/B/C).
+        The mapping is stored in metadata for de-anonymization.
         """
         known = json.dumps(persona.known_concepts, ensure_ascii=False)
         unknown = json.dumps(persona.unknown_concepts, ensure_ascii=False)
 
+        # Randomize order to prevent position bias (seeded for reproducibility)
+        model_items = list(model_conversations.items())
+        seed = f"{task.task_id}__{persona.persona_id}"
+        random.Random(seed).shuffle(model_items)
+
+        label_to_model: dict[str, str] = {}
         models_parts = []
-        for model_name, conv in model_conversations.items():
+        for idx, (model_name, conv) in enumerate(model_items):
+            label = _SYSTEM_LABELS[idx]
+            label_to_model[label] = model_name
             student_msgs = [t["content"] for t in conv if t["role"] == "user"]
-            short_name = model_name.split("/")[-1]
             models_parts.append(
-                f"### Model: {short_name}\n"
+                f"### {label}\n"
                 + "\n".join(
                     f'  Student turn {j+1}: "{m[:200]}"'
                     for j, m in enumerate(student_msgs)
@@ -406,6 +437,9 @@ class StabilityEvaluator:
         )
         try:
             data = self._judge(prompt)
+            # De-anonymize best/worst
+            best_label = data.get("best_set", "")
+            worst_label = data.get("worst_set", "")
             return EvalResult(
                 dimension="D3",
                 scores={
@@ -425,8 +459,9 @@ class StabilityEvaluator:
                 },
                 reasoning=data.get("reasoning", ""),
                 metadata={
-                    "best_model": data.get("best_model", ""),
-                    "worst_model": data.get("worst_model", ""),
+                    "label_to_model": label_to_model,
+                    "best_model": label_to_model.get(best_label, best_label),
+                    "worst_model": label_to_model.get(worst_label, worst_label),
                 },
             )
         except Exception as exc:
@@ -479,7 +514,7 @@ class StabilityEvaluator:
             logger.warning("D4 eval failed: %s", exc)
             return EvalResult(dimension="D4", scores={}, reasoning=str(exc))
 
-    # ----- Control: Persona Distinguishability -----
+    # ----- Control: Persona Distinguishability (randomized) -----
 
     def eval_control(
         self,
@@ -487,22 +522,42 @@ class StabilityEvaluator:
         control_conversation: list[dict],
         persona,
     ) -> EvalResult:
-        """Evaluate persona vs no-persona distinctiveness."""
+        """Evaluate persona vs no-persona distinctiveness.
+
+        A/B ordering is randomized to prevent position bias.
+        """
         persona_msgs = "\n".join(
-            f"  Turn {i+1}: \"{t['content'][:200]}\""
+            f'  Turn {i+1}: "{t["content"][:200]}"'
             for i, t in enumerate(persona_conversation)
             if t["role"] == "user"
         )
         control_msgs = "\n".join(
-            f"  Turn {i+1}: \"{t['content'][:200]}\""
+            f'  Turn {i+1}: "{t["content"][:200]}"'
             for i, t in enumerate(control_conversation)
             if t["role"] == "user"
         )
 
+        # Randomize which is Set A vs Set B
+        persona_is_a = random.choice([True, False])
+        if persona_is_a:
+            set_a, set_b = persona_msgs, control_msgs
+            set_desc = (
+                "One set was produced with a detailed persona definition. "
+                "The other used a generic student description. "
+                "You do not know which is which."
+            )
+        else:
+            set_a, set_b = control_msgs, persona_msgs
+            set_desc = (
+                "One set was produced with a detailed persona definition. "
+                "The other used a generic student description. "
+                "You do not know which is which."
+            )
+
         prompt = _DISTINGUISH_PROMPT.format(
-            persona_description=persona.description,
-            persona_conversation=persona_msgs,
-            control_conversation=control_msgs,
+            set_description=set_desc,
+            set_a_conversation=set_a,
+            set_b_conversation=set_b,
         )
         try:
             data = self._judge(prompt)
@@ -510,7 +565,10 @@ class StabilityEvaluator:
                 dimension="control",
                 scores={"distinctiveness": data.get("distinctiveness", 0)},
                 reasoning=data.get("reasoning", ""),
-                metadata={"persona_value_add": data.get("persona_value_add", "")},
+                metadata={
+                    "persona_value_add": data.get("persona_value_add", ""),
+                    "persona_is_set_a": persona_is_a,
+                },
             )
         except Exception as exc:
             logger.warning("Control eval failed: %s", exc)

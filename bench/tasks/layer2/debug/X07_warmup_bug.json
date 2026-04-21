@@ -10,8 +10,8 @@
     "fullstack_practitioner"
   ],
   "student_openings": {
-    "fullstack_practitioner": "I'm debugging an issue: find and fix a missing warm-up period in a LEAN EMA. I've narrowed it down but want a second pair of eyes on the root cause.",
-    "developer_crossover": "I'm looking at code that should find and fix a missing warm-up period in a LEAN EMA. The code reads fine to me, but I'm not sure the financial logic is correct. What should it be doing?"
+    "fullstack_practitioner": "I'm debugging an issue: find and fix a missing warm-up period in a LEAN EMA crossover algorithm. I've narrowed it down but want a second pair of eyes on the root cause.",
+    "developer_crossover": "I'm looking at code for a LEAN EMA crossover algorithm that might be missing a warm-up period. The code reads fine to me, but I'm not sure the financial logic is correct. What should it be doing?"
   },
   "environment": {
     "data_files": [

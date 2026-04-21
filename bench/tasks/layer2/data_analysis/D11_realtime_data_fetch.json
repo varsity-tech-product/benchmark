@@ -12,10 +12,10 @@
     "fullstack_practitioner"
   ],
   "student_openings": {
-    "fullstack_practitioner": "I want to collect realtime market updates from a streaming or polling rigorously. I know the basics — let's focus on methodology and potential pitfalls.",
-    "finance_veteran": "I need to collect realtime market updates from a streaming or polling in Python. I understand what the data means financially — I just need help with the pandas side.",
-    "developer_crossover": "I need to collect realtime market updates from a streaming or polling. I can use pandas fine — but what do these financial metrics actually mean? Why would a trader care?",
-    "double_novice": "My professor asked us to collect realtime market updates from a streaming or polling. I'm new to both Python and finance — can you start from the basics?"
+    "fullstack_practitioner": "I want to collect realtime market updates from a streaming or polling endpoint and store them properly. I know the basics — let's focus on methodology and potential pitfalls.",
+    "finance_veteran": "I need to collect realtime market updates from a streaming or polling endpoint and save them as a CSV. I understand what the data means financially — I just need help with the pandas side.",
+    "developer_crossover": "I need to collect realtime market updates from a streaming or polling endpoint. I can use pandas fine — but what do these financial metrics actually mean? Why would a trader care?",
+    "double_novice": "My professor asked us to collect realtime market updates from a streaming or polling endpoint. I'm new to both Python and finance — can you start from the basics?"
   },
   "environment": {
     "data_files": [],

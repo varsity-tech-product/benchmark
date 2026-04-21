@@ -71,7 +71,7 @@ def evaluate_task(
         cancel_event: Optional threading.Event for cancellation.
         eval_mode: "full" | "qr_only" | "qp_only" | "tutor_only".
         tutor_dims: Optional list of tutor dimensions to evaluate
-            (e.g. ["D3_scaffolding_calibration", "D4_domain_accuracy"]).
+            (e.g. ["D3_pedagogical_method", "D4_instructional_accuracy"]).
             If None, evaluates all dimensions with non-zero weight.
 
     Returns:
@@ -246,14 +246,9 @@ def evaluate_task(
             evaluate_tutor_dimensions,
         )
 
-        # Multi-tier conversation enrichment:
-        # - Full: D4/D5/D7 (tool names + truncated args + truncated results)
-        # - Lightweight: D3 (tool names + status only, no content)
+        # Enriched conversation: D4/D6 need tool execution results
         enriched_conv = _enrich_conversation_with_tools(
             conversation, _logs, mode="full"
-        )
-        enriched_conv_lightweight = _enrich_conversation_with_tools(
-            conversation, _logs, mode="lightweight"
         )
 
         _tutor_kwargs = {}
@@ -263,8 +258,7 @@ def evaluate_task(
         tutor_scores = evaluate_tutor_dimensions(
             conversation_turns=conversation,
             enriched_conversation_turns=enriched_conv,
-            enriched_conversation_turns_lightweight=enriched_conv_lightweight,
-            persona_level=persona.knowledge_level,
+            persona_id=persona.persona_id,
             scenario=build_scenario(task, persona.persona_id),
             expected_outcome=task.ground_truth.expected_outcome,
             user_description=build_user_description(persona),

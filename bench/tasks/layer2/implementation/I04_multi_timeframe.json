@@ -10,8 +10,8 @@
     "fullstack_practitioner"
   ],
   "student_openings": {
-    "fullstack_practitioner": "I need to implement a multi-timeframe strategy on LEAN that uses 4h. I've done similar work in Python before — let's focus on getting the architecture and edge cases right.",
-    "developer_crossover": "I need to implement a multi-timeframe strategy on LEAN that uses 4h. I can handle the code, but I don't understand the financial logic behind it. What should this do and why?"
+    "fullstack_practitioner": "I need to implement a multi-timeframe strategy on LEAN that uses 4h bars for trend and 1h bars for entry timing. I've done similar work in Python before — let's focus on getting the architecture and edge cases right.",
+    "developer_crossover": "I need to implement a multi-timeframe strategy on LEAN that combines 4h and 1h bars. I can handle the code, but I don't understand the financial logic behind it. What should this do and why?"
   },
   "environment": {
     "data_files": [
