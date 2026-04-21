@@ -68,13 +68,15 @@ the deadline expires (sweeper-driven), or `max_turns` is hit.
 the API layer:
 
 - `task`, `persona`, `session` (TutoringSession), `proxy`, `container_manager`
-- Eval state (legacy, pre-split): `_eval_lock`, `_eval_status`,
-  `_eval_results`, `_run_evaluation` (background-thread target),
-  `auto_eval` (whether to fire eval automatically when session completes)
 - `_save_results()` calls `result_writer.save_run_state()` to write the
-  bundle, then optionally enqueues evaluation
+  bundle when the session reaches COMPLETED. Nothing else fires — scoring
+  runs out-of-band (issue #46 slice 4 removed the in-session eval
+  thread, the `_eval_*` state machine, and the `auto_eval` flag).
 - `restore_from_storage()` rebuilds a `COMPLETED` SessionState from
-  `run_state.json` so deferred eval can run against an old session
+  `run_state.json` so the operator surface can read disposed sessions.
+- `get_run_results()` / `get_eval_scores()` are thin disk readers
+  (`run_state.json` and the sibling `evaluations/server/...` tree); they
+  back the `/ops/session/{sid}/...` REST routes.
 
 ## Storage layer (`bench/server/storage/`)
 
@@ -83,7 +85,7 @@ the API layer:
 | `result_writer.py::save_run_state` | Writes `run_state.json` + `run_state.md`, copies workspace to `agent_files/`, then writes `manifest.json` via `bundle.write_manifest`. |
 | `bundle.py` | Bundle contract: `BUNDLE_SCHEMA_VERSION`, `write_manifest`, `load_bundle → LoadedBundle`. Owns the producer/consumer interface. |
 | `BUNDLE_SCHEMA.md` | Spec for the on-disk bundle: layout, `manifest.json` shape, `run_state.json` fields the evaluator reads. |
-| `eval_writer.py::run_evaluation` | Compat shim around `server.evaluator.score_bundle` for the in-session caller; also exports `_save_reports` + `_collect_eval_errors` consumed by the new evaluator module. |
+| `eval_writer.py` | Owns the shared report writers (`_save_reports`, `_collect_eval_errors`) the evaluator imports back. The pre-slice-4 in-session compat shim is gone — there is no in-session caller. |
 | `format_validator.py` | Validates `run_state.json` shape before persistence. |
 
 Bundle layout on disk:
@@ -121,10 +123,12 @@ bundles and writes to the sibling tree:
 | `paths.py` | `eval_run_dir`, `new_eval_run_id`, `find_latest_eval_dir`, `list_eval_history` — single source of truth for eval output locations, with legacy-fallback. |
 | `__main__.py` | CLI: `python -m server.evaluator --bundle <path> [--eval-mode …] [--eval-model …]`. Issue #47 will add batch flags on top. |
 
-The in-session `eval_writer.run_evaluation` is now a thin shim that
-delegates to `score_bundle`. All readers (session API, archived-session
-REST, UI indexer) go through `paths.find_latest_eval_dir` so the on-disk
-layout is decided in one place.
+`score_bundle` is the single scoring entry point. The operator REST
+handler (`http_app.ops_evaluate`) calls it synchronously via
+`asyncio.to_thread`; the CLI calls it directly. All readers (session
+API `get_eval_scores`, archived-session REST, UI indexer) go through
+`paths.find_latest_eval_dir` so the on-disk layout is decided in one
+place.
 
 ## Evaluation pipeline (`bench/server/eval/`)
 
@@ -258,7 +262,17 @@ operator-token auth. COMPLETED is now terminal from the agent's
 perspective (`next_allowed: []`). Internal-only break — no external
 agents existed at the time.
 
-Slices 4–5 will delete the in-session `_run_evaluation` thread plus
-`SessionState`'s eval state machine, and remove the legacy-fallback
-path in `paths.find_latest_eval_dir`. Issue #47 (batch evaluator) is
-now unblocked — its CLI sits on top of `score_bundle`.
+Slice 4 (landed): in-session eval machinery deleted. `_eval_lock`,
+`_eval_status`, `_eval_results`, `_eval_error`, `_eval_mode`,
+`_tutor_dims`, `_run_evaluation` thread, the `auto_eval` flag (CLI +
+manager + state), and the `eval_writer.run_evaluation` compat shim are
+all gone. `ops_evaluate` calls `score_bundle` synchronously; `get_eval_scores`
+re-reads the bundle's eval tree on every call. Restore-from-storage no
+longer hydrates eval state.
+
+Slice 5 (TBD): remove the legacy in-bundle fallback in
+`paths.find_latest_eval_dir` and the manifest backfill in
+`score_bundle._ensure_manifest` once internal test data has aged out.
+
+Issue #47 (batch evaluator) is unblocked — its CLI sits on top of
+`score_bundle`.

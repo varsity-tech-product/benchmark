@@ -296,9 +296,10 @@ def bench_root(tmp_path):
 def app(bench_root):
     """Create a QuantTutorBench ASGI app for in-process testing.
 
-    Uses ``use_docker=False`` so no Docker daemon is required.
-    Auto-eval is disabled to keep tests fast and deterministic.
-    Results are written to an isolated tmp directory via bench_root.
+    Uses ``use_docker=False`` so no Docker daemon is required. Results
+    land in an isolated tmp directory via ``bench_root``. Evaluation is
+    operator-triggered (see ``bench/server/evaluator``) and does not fire
+    automatically from session completion any more.
 
     Usage with httpx::
 
@@ -314,7 +315,6 @@ def app(bench_root):
         use_docker=False,
         bench_root=str(bench_root),
         eval_model="fake-model",
-        auto_eval=False,
     )
 
 
@@ -482,9 +482,43 @@ _FAKE_EVAL_SCORES = {
 
 @pytest.fixture
 def mock_eval_pipeline():
-    """Patch eval pipeline to return fake scores immediately."""
+    """Stub the offline scorer used by the operator REST surface.
+
+    Replaces ``server.evaluator.score_bundle`` so the ops_evaluate
+    handler returns fake scores instantly without spinning up the LLM
+    judges. The fake writes ``eval_meta.json`` to the real sibling tree
+    so that subsequent ``/ops/.../scores`` reads find the completed run.
+    """
+    import json
+
+    from server.evaluator.paths import eval_run_dir, new_eval_run_id
+    from server.storage.bundle import load_bundle
+
+    def _fake_score_bundle(*, bundle_dir, bench_root, **_kwargs) -> dict:
+        bundle = load_bundle(bundle_dir)
+        run_id = new_eval_run_id()
+        run_dir = eval_run_dir(
+            bench_root,
+            task_id=bundle.task_id,
+            persona_id=bundle.persona_id,
+            session_id=bundle.session_id,
+            eval_run_id=run_id,
+        )
+        run_dir.mkdir(parents=True, exist_ok=True)
+        meta = dict(_FAKE_EVAL_SCORES)
+        meta["overall_score"] = 0.78
+        meta["eval_run_id"] = run_id
+        (run_dir / "eval_meta.json").write_text(
+            json.dumps(meta), encoding="utf-8"
+        )
+        return {
+            **dict(_FAKE_EVAL_SCORES),
+            "_eval_run_id": run_id,
+            "_eval_run_dir": run_dir,
+        }
+
     with patch(
-        "server.storage.eval_writer.run_evaluation",
-        return_value=dict(_FAKE_EVAL_SCORES),
-    ) as mock_run:
-        yield mock_run
+        "server.evaluator.score_bundle",
+        side_effect=_fake_score_bundle,
+    ) as mock_score:
+        yield mock_score

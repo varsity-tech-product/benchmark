@@ -25,7 +25,6 @@ def session_state(bench_root):
         use_docker=False,
         bench_root=bench_root,
         eval_model="fake-model",
-        auto_eval=False,
     )
     return state
 

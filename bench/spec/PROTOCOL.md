@@ -266,15 +266,15 @@ These differences are transport-level only. Same session state, same permission 
 ## 6. Server Configuration
 
 ```bash
-python -m server --port 8000 --docker                    # default: auto_eval off
-python -m server --port 8000 --docker --auto-eval        # auto-evaluate on completion
+python -m server --port 8000 --docker
 python -m server --port 8000 --no-docker --log-level DEBUG
 ```
 
-`--auto-eval` is a server-side setting. When enabled, evaluation starts
-automatically when a session completes (writing scores to the sibling
-`evaluations/server/...` tree). Otherwise scoring is operator-triggered
-via `/ops/session/{sid}/evaluate` or `python -m server.evaluator`.
+Scoring is always operator-triggered — either via
+`POST /ops/session/{sid}/evaluate` (synchronous, bearer-gated) or via
+the offline CLI (`python -m server.evaluator --bundle <path>`). The
+`--auto-eval` flag was removed in issue #46 slice 4 because session
+completion no longer triggers any in-process evaluator thread.
 
 ---
 

@@ -87,14 +87,12 @@ class BenchSessionManager:
         use_docker: bool = True,
         bench_root: str | Path | None = None,
         eval_model: str = "anthropic/claude-haiku-4-5",
-        auto_eval: bool = False,
     ):
         self.use_docker = use_docker
         self.bench_root = (
             Path(bench_root) if bench_root else Path(__file__).parent.parent.parent
         )
         self.eval_model = eval_model
-        self.auto_eval = auto_eval
 
         self._sessions: dict[str, SessionState] = {}
         self._transports: dict[str, StreamableHTTPServerTransport] = {}
@@ -125,7 +123,7 @@ class BenchSessionManager:
         async with anyio.create_task_group() as tg:
             self._task_group = tg
             tg.start_soon(self._session_sweeper)
-            logger.info("BenchSessionManager started (auto_eval=%s)", self.auto_eval)
+            logger.info("BenchSessionManager started")
             try:
                 yield
             finally:
@@ -426,7 +424,6 @@ class BenchSessionManager:
             use_docker=self.use_docker,
             bench_root=self.bench_root,
             eval_model=self.eval_model,
-            auto_eval=self.auto_eval,
         )
         # Bind to Run
         state.run_id = run.run_id
@@ -723,7 +720,6 @@ class BenchSessionManager:
             use_docker=self.use_docker,
             bench_root=self.bench_root,
             eval_model=self.eval_model,
-            auto_eval=self.auto_eval,
         )
         return state
 
@@ -1215,7 +1211,6 @@ async def ops_evaluate(request: Request) -> JSONResponse:
             409,
         )
 
-    # Parse eval parameters from query string
     eval_mode = request.query_params.get("eval_mode", "full")
     tutor_dims_raw = request.query_params.get("tutor_dims", "")
     tutor_dims = (
@@ -1224,22 +1219,60 @@ async def ops_evaluate(request: Request) -> JSONResponse:
         else None
     )
 
-    force = request.query_params.get("force", "false").lower() == "true"
-    if force:
-        with state._eval_lock:
-            if state._eval_status in ("completed", "failed"):
-                state._eval_status = "pending"
-                logger.info("[OPS:%s] evaluate force reset", sid[:8])
+    # ``?force=true`` is a no-op now that scoring is synchronous — every
+    # POST scores a fresh ``eval_run_id`` under the sibling tree. Accept
+    # the param for compat with existing operator scripts (#46 slice 4).
 
-    # Set eval parameters before triggering
-    state._eval_mode = eval_mode
-    state._tutor_dims = tutor_dims
+    if not state._result_dir:
+        return JSONResponse(
+            {"error": "No bundle on disk for this session — cannot score."},
+            409,
+        )
+
+    from server.evaluator import score_bundle
+    from server.storage.eval_writer import _collect_eval_errors
 
     async with state._request_lock:
         state._last_activity = time.time()
-        result = await asyncio.to_thread(state.request_evaluation)
-    logger.info("[OPS:%s] evaluate: %s", sid[:8], result.get("status"))
-    return JSONResponse(result)
+        try:
+            eval_results = await asyncio.to_thread(
+                score_bundle,
+                bundle_dir=state._result_dir,
+                task=state.task,
+                persona=state.persona,
+                bench_root=str(state.bench_root),
+                eval_model=state.eval_model,
+                eval_mode=eval_mode,
+                tutor_dims=tutor_dims,
+            )
+        except Exception as exc:
+            logger.error("[OPS:%s] evaluate failed: %s", sid[:8], exc, exc_info=True)
+            return JSONResponse(
+                {"status": "failed", "error": str(exc)}, 500
+            )
+
+    scores: dict = {
+        "quant_result": eval_results.get("quant_result", 0.0),
+        "quant_process": eval_results.get("quant_process", 0.0),
+        "tutor_scores": eval_results.get("tutor_scores", {}),
+        "overall": eval_results.get("_overall_score", 0.0),
+    }
+    errors = _collect_eval_errors(eval_results)
+    if errors:
+        scores["errors"] = errors
+    # ``_eval_run_dir`` is a Path — stringify so JSON encoding succeeds.
+    eval_run_dir = eval_results.get("_eval_run_dir")
+    logger.info(
+        "[OPS:%s] evaluate complete: %s", sid[:8], eval_results.get("_eval_run_id")
+    )
+    return JSONResponse(
+        {
+            "status": "completed",
+            "scores": scores,
+            "eval_run_id": eval_results.get("_eval_run_id"),
+            "eval_run_dir": str(eval_run_dir) if eval_run_dir else None,
+        }
+    )
 
 
 async def ops_results(request: Request) -> JSONResponse:
@@ -1338,7 +1371,6 @@ def create_app(
     use_docker: bool = True,
     bench_root: str | Path | None = None,
     eval_model: str = "anthropic/claude-haiku-4-5",
-    auto_eval: bool = False,
 ) -> _ServerApp:
     """Create the QuantTutorBench ASGI application."""
     load_server_env(bench_root)
@@ -1346,7 +1378,6 @@ def create_app(
         use_docker=use_docker,
         bench_root=bench_root,
         eval_model=eval_model,
-        auto_eval=auto_eval,
     )
 
     @contextlib.asynccontextmanager

@@ -47,11 +47,14 @@ class TestCompletedPhasePermissions:
         assert resp.status_code == 403
 
     @pytest.mark.asyncio
-    async def test_evaluate_allowed_after_completion(self, client, completed_session):
+    async def test_evaluate_allowed_after_completion(
+        self, client, completed_session, mock_eval_pipeline
+    ):
         sid = completed_session
         resp = await client.post(f"/ops/session/{sid}/evaluate", json={})
-        # Should be 200 (accepted) — eval starts in background
+        # Synchronous scoring on the operator surface (#46 slice 4).
         assert resp.status_code == 200
+        assert resp.json()["status"] == "completed"
 
     @pytest.mark.asyncio
     async def test_status_shows_completed(self, client, completed_session):

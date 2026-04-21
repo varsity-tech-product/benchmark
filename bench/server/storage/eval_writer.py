@@ -1,16 +1,13 @@
-"""Evaluation runner + persistence for QuantTutorBench Server.
+"""Shared report writers for the evaluator.
 
-Output layout (post-#46 split): see ``server.evaluator.paths`` —
+Output layout: see ``server.evaluator.paths`` —
 ``evaluations/server/{task_id}/{persona_id}/{sid8}/{eval_run_id}/``.
 
-This module is now a thin compat shim around
-``server.evaluator.score_bundle`` plus the shared report writers
-(``_save_reports``, ``_collect_eval_errors``) the evaluator imports back.
-The legacy in-bundle ``evaluations/`` subdir is no longer written; readers
-fall back to it via ``paths.find_latest_eval_dir`` for old runs only.
+After issue #46 slice 4 this module owns only the shared helpers
+``score_bundle`` reuses (``_save_reports``, ``_collect_eval_errors``);
+the prior in-session compat shim is gone since nothing calls it.
 """
 
-import json
 import logging
 from pathlib import Path
 
@@ -41,41 +38,6 @@ def _collect_eval_errors(eval_results: dict) -> dict:
         if msg:
             out[public] = str(msg)
     return out
-
-
-def run_evaluation(
-    task,
-    persona,
-    result_dir: Path,
-    bench_root: str,
-    eval_model: str,
-    cancel_event=None,
-    eval_mode: str = "full",
-    tutor_dims: list[str] | None = None,
-) -> dict:
-    """Score the bundle at ``result_dir`` and persist outputs.
-
-    Compat shim around :func:`server.evaluator.score_bundle` for the
-    in-session call site (``SessionState._run_evaluation``). Output goes
-    to the new ``evaluations/server/...`` sibling tree; the legacy
-    in-bundle ``evaluations/`` subdir is no longer written.
-
-    Conversation, tool_logs, and distractor_names are read from the
-    bundle on disk via ``load_bundle`` — the producer (``_save_results``)
-    runs first, so the data is always there.
-    """
-    from server.evaluator import score_bundle
-
-    return score_bundle(
-        bundle_dir=Path(result_dir),
-        task=task,
-        persona=persona,
-        bench_root=bench_root,
-        eval_model=eval_model,
-        eval_mode=eval_mode,
-        tutor_dims=tutor_dims,
-        cancel_event=cancel_event,
-    )
 
 
 def _save_reports(

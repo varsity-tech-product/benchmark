@@ -174,4 +174,5 @@ def score_bundle(
 
     eval_results["_eval_run_id"] = run_id
     eval_results["_eval_run_dir"] = out_dir
+    eval_results["_overall_score"] = scores.get("overall_score", 0.0)
     return eval_results
