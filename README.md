@@ -220,6 +220,113 @@ python scripts/05_upload/upload_to_huggingface.py \
 
 ---
 
+## Step 8: LEAN Backtest Reproduction
+
+The I-series and most X-series tasks evaluate C# algorithms inside a
+LEAN Docker sandbox. Two runners share the sandbox:
+
+- **Reference generator** (`bench/reference_generator/generate_lean_reference.py`) —
+  host-side Python. Builds a fresh LEAN config, mounts it `:ro` into a
+  one-shot container, runs the reference `.cs`, and writes expected
+  trades/signals/summary to `bench/data/reference/`. Used to produce the
+  ground-truth artefacts shipped on HuggingFace.
+- **Session runner** (`bench/docker/run_backtest.sh`) — runs **inside** the
+  long-lived benchmark container. Seeds the Launcher's runtime config
+  from the benchmark-shipped `lean-config.json`, compiles the agent's
+  algorithm with `dotnet build`, discovers the output DLL, patches
+  `algorithm-type-name` + `algorithm-location` + fees + parameters, and
+  launches LEAN. Used by `run_lean_backtest` during a live tutoring
+  session.
+
+Both runners call the same patch helper at `bench/docker/lean_config.py`
+(shipped into the image at `/lean/helpers/lean_config.py`) so they
+cannot drift on which keys steer the Launcher.
+
+### Container layout knobs
+
+If your image installs LEAN at a non-default path (e.g. capitalised
+`/Lean` or a custom fork), override these env vars before invoking
+`run_backtest`:
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `LEAN_ROOT` | `/lean` | Root of the LEAN install. Everything else derives from it. |
+| `LEAN_HELPERS_DIR` | `${LEAN_ROOT}/helpers` | Where `lean_config.py` was copied. |
+| `LEAN_RUN_TIMEOUT` | `300` | Per-backtest wall-clock timeout (seconds). Exit 124 = killed. |
+
+### Minimal reproduction recipe (SMA baseline on BTCUSDT daily)
+
+```bash
+# 1. Build the base image first (Dockerfile.lean inherits from it).
+docker build -f bench/docker/Dockerfile -t quant-tutor-env:v2.2 bench/
+
+# 2. Build the LEAN image (one-time, ~10–20 min, produces ~27.5 GB).
+docker build -f bench/docker/Dockerfile.lean -t quant-tutor-env:lean bench/
+
+# 3. Drop a single-SMA algorithm into a workspace.
+#    Note: run_backtest.sh injects a 12-col custom-data reader and shadows
+#    AddCrypto so the subscription lands in Slice as custom BaseData rather
+#    than a TradeBar. Use `data.ContainsKey(_btc)` + `data[_btc].Value`, not
+#    `data.Bars[_btc].Close` — Bars stays empty for the injected feed.
+mkdir -p /tmp/qtb-workspace
+cat >/tmp/qtb-workspace/strategy.cs <<'CS'
+using QuantConnect.Algorithm;
+using QuantConnect.Data;
+using QuantConnect.Indicators;
+
+namespace QuantConnect.Algorithm.CSharp
+{
+    public class SmaBaseline : QCAlgorithm
+    {
+        private Symbol _btc;
+        private SimpleMovingAverage _sma;
+
+        public override void Initialize()
+        {
+            SetStartDate(2022, 1, 1);
+            SetEndDate(2025, 12, 31);
+            SetCash(100000);
+            _btc = AddCrypto("BTCUSDT", Resolution.Daily, Market.Binance).Symbol;
+            _sma = SMA(_btc, 20, Resolution.Daily);
+            SetWarmUp(20, Resolution.Daily);
+        }
+
+        public override void OnData(Slice data)
+        {
+            if (IsWarmingUp || !_sma.IsReady) return;
+            if (!data.ContainsKey(_btc)) return;
+            var price = data[_btc].Value;
+            if (price > _sma && !Portfolio[_btc].Invested) SetHoldings(_btc, 1.0);
+            else if (price < _sma && Portfolio[_btc].Invested) Liquidate(_btc);
+        }
+    }
+}
+CS
+
+# 4. Run inside the container (mount the workspace, mount the HuggingFace
+#    dataset's `lean/` tree as /Lean/Data, and the 12-col CSVs as
+#    /data/custom). --class-name is required so the Launcher resolves
+#    QuantConnect.Algorithm.CSharp.SmaBaseline; without it the runner falls
+#    back to an `Algorithm` type name that won't exist in the compiled DLL.
+#    Results land in /tmp/qtb-workspace/results/sma_baseline.
+docker run --rm \
+  -v /tmp/qtb-workspace:/workspace \
+  -v /path/to/hf-dataset/lean:/Lean/Data \
+  -v /path/to/hf-dataset/custom:/data/custom:ro \
+  quant-tutor-env:lean \
+  run_backtest /workspace/strategy.cs --run-id sma_baseline --class-name SmaBaseline
+
+# 5. Inspect summary + orders.
+jq '.statistics' /tmp/qtb-workspace/results/sma_baseline/summary.json
+jq 'length' /tmp/qtb-workspace/results/sma_baseline/orders.json
+```
+
+See `bench/docker/Dockerfile.lean` for the full image build, and
+[issue #33](https://github.com/varsity-tech-product/benchmark/issues/33)
+for the runner's architectural history.
+
+---
+
 ## Evaluation System (`bench/`)
 
 The `bench/` directory contains the QuantTutorBench evaluation framework -- a two-axis benchmark that evaluates agents on both **quantitative finance expertise** (70%) and **tutoring effectiveness** (30%).
