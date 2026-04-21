@@ -136,7 +136,6 @@ class ResultIndexer:
         bundle_session_id = str(run_state.get("session_id") or session_id)
         persona_id = str(run_state.get("persona_id") or "")
         latest_eval_dir = self._resolve_latest_eval_dir(
-            result_dir,
             task_id=task_id,
             persona_id=persona_id,
             session_id=bundle_session_id,
@@ -211,7 +210,6 @@ class ResultIndexer:
                 else None
             ),
             "eval_history": self._load_eval_history(
-                result_dir,
                 task_id=task_id,
                 persona_id=persona_id,
                 session_id=bundle_session_id,
@@ -406,7 +404,6 @@ class ResultIndexer:
         session_id = str(run_state.get("session_id") or result_dir.name)
         client_trace = self._load_client_trace(session_id)
         latest_eval_dir = self._resolve_latest_eval_dir(
-            result_dir,
             task_id=task_id,
             persona_id=str(run_state.get("persona_id") or ""),
             session_id=session_id,
@@ -520,7 +517,6 @@ class ResultIndexer:
 
     def _resolve_latest_eval_dir(
         self,
-        result_dir: Path,
         *,
         task_id: str = "",
         persona_id: str = "",
@@ -530,7 +526,6 @@ class ResultIndexer:
 
         return find_latest_eval_dir(
             bench_root=self.bench_root,
-            bundle_dir=result_dir,
             task_id=task_id,
             persona_id=persona_id,
             session_id=session_id,
@@ -538,7 +533,6 @@ class ResultIndexer:
 
     def _load_eval_history(
         self,
-        result_dir: Path,
         *,
         task_id: str = "",
         persona_id: str = "",
@@ -549,7 +543,6 @@ class ResultIndexer:
         history: list[dict[str, Any]] = []
         for eval_dir in list_eval_history(
             bench_root=self.bench_root,
-            bundle_dir=result_dir,
             task_id=task_id,
             persona_id=persona_id,
             session_id=session_id,

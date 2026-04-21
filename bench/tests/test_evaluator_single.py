@@ -196,97 +196,64 @@ def test_score_bundle_marks_run_state_completed(tmp_path, stubbed_pipeline):
     assert run_state["evaluation_status"] == "completed"
 
 
-def test_find_latest_eval_dir_prefers_sibling_tree(tmp_path):
+def test_find_latest_eval_dir_returns_newest_run(tmp_path):
     bench_root = tmp_path / "bench"
-    bundle_dir = (
-        bench_root
-        / "results"
-        / "server"
-        / "X01"
-        / "fullstack_practitioner"
-        / "20260421_120000_abcd1234"
+    older = paths.eval_run_dir(
+        bench_root,
+        task_id="X01",
+        persona_id="fullstack_practitioner",
+        session_id="abcd1234efgh5678",
+        eval_run_id="eval_20260101_000000",
     )
-    bundle_dir.mkdir(parents=True)
+    older.mkdir(parents=True)
+    (older / "eval_meta.json").write_text("{}", encoding="utf-8")
 
-    legacy = bundle_dir / "evaluations" / "eval_20260101_000000"
-    legacy.mkdir(parents=True)
-    (legacy / "eval_meta.json").write_text("{}", encoding="utf-8")
-
-    sibling = paths.eval_run_dir(
+    newer = paths.eval_run_dir(
         bench_root,
         task_id="X01",
         persona_id="fullstack_practitioner",
         session_id="abcd1234efgh5678",
         eval_run_id="eval_20260421_010101",
     )
-    sibling.mkdir(parents=True)
-    (sibling / "eval_meta.json").write_text("{}", encoding="utf-8")
+    newer.mkdir(parents=True)
+    (newer / "eval_meta.json").write_text("{}", encoding="utf-8")
 
     latest = paths.find_latest_eval_dir(
         bench_root=bench_root,
-        bundle_dir=bundle_dir,
         task_id="X01",
         persona_id="fullstack_practitioner",
         session_id="abcd1234efgh5678",
     )
-    assert latest == sibling
+    assert latest == newer
 
 
-def test_find_latest_eval_dir_falls_back_to_legacy(tmp_path):
-    bench_root = tmp_path / "bench"
-    bundle_dir = (
-        bench_root
-        / "results"
-        / "server"
-        / "X01"
-        / "fullstack_practitioner"
-        / "20260421_120000_abcd1234"
-    )
-    bundle_dir.mkdir(parents=True)
-
-    legacy = bundle_dir / "evaluations" / "eval_20260101_000000"
-    legacy.mkdir(parents=True)
-    (legacy / "eval_meta.json").write_text("{}", encoding="utf-8")
-
+def test_find_latest_eval_dir_returns_none_when_empty(tmp_path):
+    """No sibling tree → ``None``. The legacy in-bundle fallback is
+    gone (issue #46 slice 5)."""
     latest = paths.find_latest_eval_dir(
-        bench_root=bench_root,
-        bundle_dir=bundle_dir,
+        bench_root=tmp_path / "bench",
         task_id="X01",
         persona_id="fullstack_practitioner",
         session_id="abcd1234efgh5678",
     )
-    assert latest == legacy
+    assert latest is None
 
 
-def test_list_eval_history_merges_sibling_and_legacy(tmp_path):
+def test_list_eval_history_returns_runs_newest_first(tmp_path):
     bench_root = tmp_path / "bench"
-    bundle_dir = (
-        bench_root
-        / "results"
-        / "server"
-        / "X01"
-        / "fullstack_practitioner"
-        / "20260421_120000_abcd1234"
-    )
-    bundle_dir.mkdir(parents=True)
-
-    legacy = bundle_dir / "evaluations" / "eval_20260101_000000"
-    legacy.mkdir(parents=True)
-    (legacy / "eval_meta.json").write_text("{}", encoding="utf-8")
-
-    sibling = paths.eval_run_dir(
-        bench_root,
-        task_id="X01",
-        persona_id="fullstack_practitioner",
-        session_id="abcd1234efgh5678",
-        eval_run_id="eval_20260421_010101",
-    )
-    sibling.mkdir(parents=True)
-    (sibling / "eval_meta.json").write_text("{}", encoding="utf-8")
+    for run_id in ("eval_20260101_000000", "eval_20260421_010101"):
+        run = paths.eval_run_dir(
+            bench_root,
+            task_id="X01",
+            persona_id="fullstack_practitioner",
+            session_id="abcd1234efgh5678",
+            eval_run_id=run_id,
+        )
+        run.mkdir(parents=True)
+        (run / "eval_meta.json").write_text("{}", encoding="utf-8")
 
     history = paths.list_eval_history(
         bench_root=bench_root,
-        bundle_dir=bundle_dir,
         task_id="X01",
         persona_id="fullstack_practitioner",
         session_id="abcd1234efgh5678",
@@ -295,11 +262,9 @@ def test_list_eval_history_merges_sibling_and_legacy(tmp_path):
     assert names == ["eval_20260421_010101", "eval_20260101_000000"]
 
 
-def test_score_bundle_backfills_manifest_for_legacy_bundle(tmp_path, stubbed_pipeline):
-    """Pre-slice-1 bundles only have run_state.json + agent_files/.
-
-    Re-scoring them must not fail; backfill the manifest on the fly.
-    """
+def test_score_bundle_requires_manifest(tmp_path, stubbed_pipeline):
+    """Slice 5 dropped the manifest backfill — bundles must carry a
+    ``manifest.json`` (any bundle written since slice 1 does)."""
     bench_root = tmp_path / "bench"
     bundle_dir = (
         bench_root
@@ -310,18 +275,17 @@ def test_score_bundle_backfills_manifest_for_legacy_bundle(tmp_path, stubbed_pip
         / "20260101_010101_abcd1234"
     )
     _make_bundle(bundle_dir)
-    # Simulate a legacy bundle: delete the manifest the producer wrote.
+    # Simulate a pre-slice-1 bundle: delete the manifest.
     (bundle_dir / "manifest.json").unlink()
 
-    score_bundle(
-        bundle_dir=bundle_dir,
-        task=_stub_task(),
-        persona=_stub_persona(),
-        bench_root=bench_root,
-        eval_model="fake-model",
-    )
-
-    assert (bundle_dir / "manifest.json").is_file()
+    with pytest.raises(FileNotFoundError, match="manifest.json"):
+        score_bundle(
+            bundle_dir=bundle_dir,
+            task=_stub_task(),
+            persona=_stub_persona(),
+            bench_root=bench_root,
+            eval_model="fake-model",
+        )
 
 
 def test_score_bundle_marks_failed_on_pipeline_exception(tmp_path):
@@ -416,7 +380,6 @@ def test_cli_scores_bundle_end_to_end(tmp_path, stubbed_pipeline):
     bundle = load_bundle(bundle_dir)
     latest = paths.find_latest_eval_dir(
         bench_root=bench_root,
-        bundle_dir=bundle_dir,
         task_id=bundle.task_id,
         persona_id=bundle.persona_id,
         session_id=bundle.session_id,

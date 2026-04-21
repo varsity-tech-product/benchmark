@@ -8,12 +8,6 @@ Eval output lives in a parallel sibling tree to the raw bundle::
 The split keeps the bundle directory free of evaluator-produced files (the
 producer/consumer contract from issue #46) and lets a single bundle hold
 multiple eval runs side-by-side (re-score campaigns, judge A/B, etc.).
-
-A single helper, :func:`find_latest_eval_dir`, resolves the newest eval
-output for a given bundle. It checks the new sibling tree first and falls
-back to the legacy in-bundle ``evaluations/`` subdirectory so existing
-data stays visible until it ages out — the fallback can be deleted in
-slice 5 of the migration.
 """
 
 from __future__ import annotations
@@ -60,7 +54,14 @@ def eval_run_dir(
     return eval_session_dir(bench_root, task_id, persona_id, session_id) / eval_run_id
 
 
-def _latest_in(eval_root: Path) -> Path | None:
+def find_latest_eval_dir(
+    bench_root: Path | str,
+    task_id: str,
+    persona_id: str,
+    session_id: str,
+) -> Path | None:
+    """Return the newest eval-run directory for a session, or ``None``."""
+    eval_root = eval_session_dir(bench_root, task_id, persona_id, session_id)
     if not eval_root.is_dir():
         return None
     candidates = [
@@ -72,63 +73,18 @@ def _latest_in(eval_root: Path) -> Path | None:
     return candidates[0]
 
 
-def find_latest_eval_dir(
-    bench_root: Path | str,
-    bundle_dir: Path,
-    task_id: str,
-    persona_id: str,
-    session_id: str,
-) -> Path | None:
-    """Return the newest eval-run directory for a bundle, or ``None``.
-
-    Prefers the new sibling tree; falls back to the legacy in-bundle
-    ``evaluations/`` subdirectory so historical data remains visible.
-    """
-    sibling = _latest_in(
-        eval_session_dir(bench_root, task_id, persona_id, session_id)
-    )
-    if sibling is not None:
-        return sibling
-    legacy_root = Path(bundle_dir) / "evaluations"
-    legacy = _latest_in(legacy_root)
-    if legacy is not None:
-        return legacy
-    legacy_symlink = legacy_root / "latest"
-    if legacy_symlink.exists() and legacy_symlink.is_dir():
-        return legacy_symlink.resolve()
-    return None
-
-
 def list_eval_history(
     bench_root: Path | str,
-    bundle_dir: Path,
     task_id: str,
     persona_id: str,
     session_id: str,
 ) -> list[Path]:
-    """All eval-run directories for a bundle, newest first.
-
-    Merges the sibling tree and the legacy in-bundle location; deduplicates
-    by ``eval_run_id`` (sibling wins on collision).
-    """
-    seen: set[str] = set()
-    out: list[Path] = []
-
-    sibling_root = eval_session_dir(bench_root, task_id, persona_id, session_id)
-    if sibling_root.is_dir():
-        for p in sibling_root.iterdir():
-            if p.is_dir() and EVAL_RUN_ID_RE.match(p.name):
-                seen.add(p.name)
-                out.append(p)
-
-    legacy_root = Path(bundle_dir) / "evaluations"
-    if legacy_root.is_dir():
-        for p in legacy_root.iterdir():
-            if not p.is_dir() or not EVAL_RUN_ID_RE.match(p.name):
-                continue
-            if p.name in seen:
-                continue
-            out.append(p)
-
+    """All eval-run directories for a session, newest first."""
+    eval_root = eval_session_dir(bench_root, task_id, persona_id, session_id)
+    if not eval_root.is_dir():
+        return []
+    out = [
+        p for p in eval_root.iterdir() if p.is_dir() and EVAL_RUN_ID_RE.match(p.name)
+    ]
     out.sort(key=lambda p: p.name, reverse=True)
     return out

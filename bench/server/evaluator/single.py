@@ -19,30 +19,9 @@ from pathlib import Path
 from typing import Optional
 
 from server.evaluator.paths import EVAL_RUN_ID_RE, eval_run_dir, new_eval_run_id
-from server.storage.bundle import load_bundle, write_manifest
-from server.storage.bundle import RUN_STATE_FILENAME, MANIFEST_FILENAME
+from server.storage.bundle import load_bundle
 
 logger = logging.getLogger(__name__)
-
-
-def _ensure_manifest(bundle_dir: Path) -> None:
-    """Backfill ``manifest.json`` for legacy bundles that predate slice 1.
-
-    Older runs on disk only have ``run_state.json`` + ``agent_files/``.
-    Re-scoring them via the new evaluator would otherwise raise on
-    ``load_bundle``; backfill is one-time, idempotent, and lossless.
-    """
-    if (bundle_dir / MANIFEST_FILENAME).exists():
-        return
-    run_state_path = bundle_dir / RUN_STATE_FILENAME
-    if not run_state_path.is_file():
-        return
-    try:
-        run_state = json.loads(run_state_path.read_text(encoding="utf-8"))
-    except Exception:
-        return
-    write_manifest(bundle_dir, run_state)
-    logger.info("Backfilled manifest.json for legacy bundle %s", bundle_dir)
 
 
 def score_bundle(
@@ -60,8 +39,8 @@ def score_bundle(
     """Score one bundle and persist the result tree.
 
     Args:
-        bundle_dir: Path to the bundle directory. ``manifest.json`` is
-            backfilled on-the-fly for legacy bundles.
+        bundle_dir: Path to the bundle directory. Must contain
+            ``manifest.json`` (any bundle written since slice 1 of #46).
         task: ``QuantTutorTask`` looked up by ``task_id`` upstream.
         persona: ``StudentPersona`` looked up by ``persona_id`` upstream.
         bench_root: Repo root used to locate eval scripts and to anchor the
@@ -89,7 +68,6 @@ def score_bundle(
             "so the UI and REST readers can discover the result."
         )
 
-    _ensure_manifest(bundle_path)
     bundle = load_bundle(bundle_path)
 
     update_evaluation_status(bundle_path, "running")

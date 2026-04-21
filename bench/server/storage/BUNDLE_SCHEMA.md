@@ -20,11 +20,10 @@ results/server/{task_id}/{persona_id}/{YYYYMMDD_HHMMSS}_{session_id[:8]}/
 ```
 
 Evaluator output lives in a parallel tree under
-`evaluations/server/{task_id}/{persona_id}/{session_id[:8]}/{eval_run_id}/`
-so a raw bundle contains zero evaluator-produced files. New scoring (both
-in-session and offline) writes there exclusively; the in-bundle
-`evaluations/` subdirectory is only read as a fallback for historical
-runs and will be dropped once slice 5 of the migration lands.
+`evaluations/server/{task_id}/{persona_id}/{session_id[:8]}/{eval_run_id}/`.
+A raw bundle directory contains zero evaluator-produced files. The in-bundle
+`evaluations/` subdirectory the legacy in-session writer used is no longer
+read or written — slice 5 of the migration removed the fallback.
 
 ## `manifest.json`
 

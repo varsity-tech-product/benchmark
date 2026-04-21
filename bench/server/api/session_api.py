@@ -1029,7 +1029,6 @@ class SessionState:
 
         latest = find_latest_eval_dir(
             bench_root=self.bench_root,
-            bundle_dir=self._result_dir,
             task_id=self.task_id,
             persona_id=self.persona_id,
             session_id=self.session_id,
@@ -1060,11 +1059,7 @@ class SessionState:
         return {"status": "completed", "scores": scores}
 
     def _read_eval_history(self) -> dict:
-        """Read all eval_meta.json files for this session, newest first.
-
-        Spans the new sibling tree and the legacy in-bundle dir
-        transparently via ``paths.list_eval_history``.
-        """
+        """Read all eval_meta.json files for this session, newest first."""
         if not self._result_dir:
             return {"session_id": self.session_id, "evaluations": []}
         from server.evaluator.paths import list_eval_history
@@ -1072,7 +1067,6 @@ class SessionState:
         entries = []
         for sub in list_eval_history(
             bench_root=self.bench_root,
-            bundle_dir=self._result_dir,
             task_id=self.task_id,
             persona_id=self.persona_id,
             session_id=self.session_id,

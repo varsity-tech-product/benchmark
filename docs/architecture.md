@@ -108,9 +108,10 @@ evaluations/server/{task_id}/{persona_id}/{session_id[:8]}/{eval_run_id}/
     cost.md
 ```
 
-Old runs may still carry an in-bundle `evaluations/eval_*/` subdirectory;
-`server.evaluator.paths.find_latest_eval_dir` falls back to it
-transparently. That fallback gets removed in slice 5.
+`server.evaluator.paths.find_latest_eval_dir` is the single resolver and
+reads only that tree. Bundles must carry `manifest.json` (any bundle
+written since slice 1 does); `score_bundle` rejects bundles that lack
+one. The legacy in-bundle `evaluations/` fallback was removed in slice 5.
 
 ## Evaluator driver (`bench/server/evaluator/`)
 
@@ -270,9 +271,12 @@ all gone. `ops_evaluate` calls `score_bundle` synchronously; `get_eval_scores`
 re-reads the bundle's eval tree on every call. Restore-from-storage no
 longer hydrates eval state.
 
-Slice 5 (TBD): remove the legacy in-bundle fallback in
-`paths.find_latest_eval_dir` and the manifest backfill in
-`score_bundle._ensure_manifest` once internal test data has aged out.
+Slice 5 (landed): legacy in-bundle fallback removed from
+`paths.find_latest_eval_dir` / `list_eval_history`, plus the manifest
+backfill in `score_bundle`. Bundle reads/writes are now exclusively
+in the sibling `evaluations/server/...` tree, and bundles must carry
+`manifest.json` — `load_bundle` is the single source of truth for
+"what's in a bundle". The producer/consumer split is complete.
 
 Issue #47 (batch evaluator) is unblocked — its CLI sits on top of
 `score_bundle`.

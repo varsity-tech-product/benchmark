@@ -652,7 +652,6 @@ class BenchSessionManager:
             entries = []
             for sub in list_eval_history(
                 bench_root=self.bench_root,
-                bundle_dir=result_dir,
                 task_id=task_id,
                 persona_id=persona_id,
                 session_id=bundle_session_id,
@@ -670,7 +669,6 @@ class BenchSessionManager:
 
         latest_dir = find_latest_eval_dir(
             bench_root=self.bench_root,
-            bundle_dir=result_dir,
             task_id=task_id,
             persona_id=persona_id,
             session_id=bundle_session_id,
