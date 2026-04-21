@@ -22,17 +22,8 @@ import re
 from typing import Optional
 
 from server.eval.ewan_eval._scoring_utils import extract_json_from_response
-from server.eval.ewan_eval.model_resolver import (
-    resolve_ewan_model as resolve_deepeval_model,
-)
-
-try:
-    from server.eval.ewan_eval.llm_client import EwanLLMClient as GPTModel
-
-    DEEPEVAL_AVAILABLE = True
-except ImportError:
-    DEEPEVAL_AVAILABLE = False
-
+from server.eval.ewan_eval.llm_client import EwanLLMClient
+from server.eval.ewan_eval.model_resolver import resolve_ewan_model
 
 # ──────────────────────────────────────────────────────────────
 # Code execution detection (Python + C#)
@@ -432,9 +423,6 @@ async def evaluate_code_process_llm(
 
     Returns dict with per-dimension scores and combined LLM score.
     """
-    if not DEEPEVAL_AVAILABLE:
-        return {"score": 0.5, "reason": "deepeval not available", "applicable": True}
-
     activity_trace = _build_code_activity_trace(logs)
 
     if activity_trace.strip() == "(no code activity)":
@@ -446,11 +434,11 @@ async def evaluate_code_process_llm(
         actual_output=actual_output,
     )
 
-    model_obj = resolve_deepeval_model(model)
+    model_obj = resolve_ewan_model(model)
     if isinstance(model_obj, str):
-        from server.config.pricing import get_deepeval_cost_kwargs
+        from server.config.pricing import get_llm_cost_kwargs
 
-        model_obj = GPTModel(model=model_obj, **get_deepeval_cost_kwargs(model_obj))
+        model_obj = EwanLLMClient(model=model_obj, **get_llm_cost_kwargs(model_obj))
     response_text, call_cost = await model_obj.a_generate(prompt)
     result = extract_json_from_response(response_text)
 

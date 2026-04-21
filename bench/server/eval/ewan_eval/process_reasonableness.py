@@ -21,18 +21,9 @@ Uses 5-point ordinal scale: {0.0, 0.25, 0.5, 0.75, 1.0}.
 import json as _json
 
 from server.eval.ewan_eval._scoring_utils import extract_json_from_response
-from server.eval.ewan_eval.model_resolver import (
-    resolve_ewan_model as resolve_deepeval_model,
-)
+from server.eval.ewan_eval.llm_client import EwanLLMClient
+from server.eval.ewan_eval.model_resolver import resolve_ewan_model
 from server.tool_filters import NON_SUBSTANTIVE_TOOLS
-
-try:
-    from server.eval.ewan_eval.llm_client import EwanLLMClient as GPTModel
-
-    DEEPEVAL_AVAILABLE = True
-except ImportError:
-    DEEPEVAL_AVAILABLE = False
-
 
 # ──────────────────────────────────────────────────────────────
 # Per-category path tolerance (Amplifying.ai consistency data)
@@ -144,12 +135,12 @@ def _clamp_ordinal(val, default=0.5) -> float:
 
 
 async def _call_llm(model, prompt: str) -> dict:
-    """Call LLM via GPTModel and parse JSON response."""
-    model_obj = resolve_deepeval_model(model)
+    """Call LLM via EwanLLMClient and parse JSON response."""
+    model_obj = resolve_ewan_model(model)
     if isinstance(model_obj, str):
-        from server.config.pricing import get_deepeval_cost_kwargs
+        from server.config.pricing import get_llm_cost_kwargs
 
-        model_obj = GPTModel(model=model_obj, **get_deepeval_cost_kwargs(model_obj))
+        model_obj = EwanLLMClient(model=model_obj, **get_llm_cost_kwargs(model_obj))
     response_text, call_cost = await model_obj.a_generate(prompt)
     result = extract_json_from_response(response_text)
     result["_eval_cost"] = float(call_cost) if call_cost else 0.0
@@ -277,9 +268,6 @@ async def async_eval_process_reasonableness(
     Returns:
         Dict with score, sub_scores, and reason.
     """
-    if not DEEPEVAL_AVAILABLE:
-        return {"score": 0.5, "reason": "deepeval not available", "passed": True}
-
     agent_trace = _build_agent_trace_for_prompt(proxy_logs)
     prompt = _build_process_reasonableness_prompt(
         task=task_description,
@@ -407,9 +395,6 @@ async def async_eval_process_alignment(
     Returns:
         Dict with score, sub_scores, path_tolerance, and reason.
     """
-    if not DEEPEVAL_AVAILABLE:
-        return {"score": 0.5, "reason": "deepeval not available", "passed": True}
-
     path_tolerance = CATEGORY_PATH_TOLERANCE.get(category, 0.5)
     agent_trace = _build_agent_trace_for_prompt(proxy_logs)
     agent_step_count = sum(

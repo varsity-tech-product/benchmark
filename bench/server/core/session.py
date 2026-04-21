@@ -549,8 +549,22 @@ class TutoringSession:
                 workspace_path=self._workspace_path,
             )
         except Exception as exc:
-            logger.warning("StudentSimulator.generate_message failed: %s", exc)
-            reply = _STUDENT_FALLBACK
+            from server.core.student_sim import StudentSimError
+
+            error_type = (
+                exc.error_type
+                if isinstance(exc, StudentSimError)
+                else type(exc).__name__
+            )
+            reason = f"student_sim_error:{error_type}"
+            logger.error(
+                "Student simulator failed at turn %d, terminating session: %s",
+                self._turn,
+                exc,
+            )
+            self._done = True
+            self._completion_reason = reason
+            return self._result("", "completed", reason=reason)
         self._conversation.append({"role": "user", "content": reply, "ts": time.time()})
 
         return self._result(reply, "active")

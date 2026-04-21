@@ -8,13 +8,13 @@ Usage:
     # Single result (D3+D4 only)
     python -m server.scripts.eval_tutor_dims \
         --result-dir results/run-single/anthropic/claude-sonnet-4-6/backtest/B01_.../developer_crossover_run1 \
-        --dims D3_scaffolding_calibration D4_domain_accuracy \
+        --dims D3_pedagogical_method D4_instructional_accuracy \
         --eval-model anthropic/claude-sonnet-4-6
 
     # Batch: scan all ICC data
     python -m server.scripts.eval_tutor_dims \
         --scan-dir results/run-single/anthropic \
-        --dims D3_scaffolding_calibration D4_domain_accuracy \
+        --dims D3_pedagogical_method D4_instructional_accuracy \
         --eval-model anthropic/claude-sonnet-4-6 \
         --output results/rubric_comparison/post_d3d4.json
 """
@@ -109,7 +109,7 @@ def eval_dims_on_result(
     tutor_scores = evaluate_tutor_dimensions(
         conversation_turns=conversation,
         enriched_conversation_turns=enriched_conv,
-        persona_level=persona.knowledge_level,
+        persona_id=persona.persona_id,
         scenario=scenario,
         expected_outcome=expected_outcome,
         user_description=user_description,
@@ -158,7 +158,7 @@ def main():
     parser.add_argument(
         "--dims",
         nargs="+",
-        default=["D3_scaffolding_calibration", "D4_domain_accuracy"],
+        default=["D3_pedagogical_method", "D4_instructional_accuracy"],
     )
     parser.add_argument("--eval-model", default="anthropic/claude-sonnet-4-6")
     parser.add_argument("--output", type=str, help="Save results JSON")

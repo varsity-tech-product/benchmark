@@ -1,10 +1,10 @@
 """Custom conversational metrics: RoleAdherence + TopicAdherence.
 
 Replaces DeepEval's built-in RoleAdherenceMetric and TopicAdherenceMetric
-with direct GPTModel calls using prompts designed for tool-use tutoring agents.
+with direct EwanLLMClient calls using prompts designed for tool-use tutoring agents.
 
 Independent module — does NOT import from process_metrics.py.
-Uses GPTModel + _call_llm pattern from process_reasonableness.py.
+Uses EwanLLMClient + _call_llm pattern from process_reasonableness.py.
 
 Test with: cd bench && python -m evaluation.test_custom_conv_metrics
 """
@@ -12,9 +12,7 @@ Test with: cd bench && python -m evaluation.test_custom_conv_metrics
 import re
 
 from server.eval.ewan_eval._scoring_utils import extract_json_from_response
-from server.eval.ewan_eval.model_resolver import (
-    resolve_ewan_model as resolve_deepeval_model,
-)
+from server.eval.ewan_eval.model_resolver import resolve_ewan_model
 
 # ──────────────────────────────────────────────────────────────
 # Conversation preprocessing — strip code blocks from assistant
@@ -34,13 +32,7 @@ def _strip_code_blocks(content: str) -> str:
     return _CODE_FENCE_RE.sub("[code snippet]", content)
 
 
-try:
-    from server.eval.ewan_eval.llm_client import EwanLLMClient as GPTModel
-
-    DEEPEVAL_AVAILABLE = True
-except ImportError:
-    DEEPEVAL_AVAILABLE = False
-
+from server.eval.ewan_eval.llm_client import EwanLLMClient
 
 # ──────────────────────────────────────────────────────────────
 # Shared helpers (same patterns as process_reasonableness.py)
@@ -55,12 +47,12 @@ def _normalize_score(val, default=0.5) -> float:
 
 
 async def _call_llm(model, prompt: str) -> dict:
-    """Call LLM via GPTModel and parse JSON response."""
-    model_obj = resolve_deepeval_model(model)
+    """Call LLM via EwanLLMClient and parse JSON response."""
+    model_obj = resolve_ewan_model(model)
     if isinstance(model_obj, str):
-        from server.config.pricing import get_deepeval_cost_kwargs
+        from server.config.pricing import get_llm_cost_kwargs
 
-        model_obj = GPTModel(model=model_obj, **get_deepeval_cost_kwargs(model_obj))
+        model_obj = EwanLLMClient(model=model_obj, **get_llm_cost_kwargs(model_obj))
     response_text, call_cost = await model_obj.a_generate(prompt)
     result = extract_json_from_response(response_text)
     result["_eval_cost"] = float(call_cost) if call_cost else 0.0
@@ -183,7 +175,7 @@ async def eval_role_adherence(
     model: str,
     threshold: float = 0.5,
 ) -> dict:
-    """Evaluate role adherence using direct GPTModel call.
+    """Evaluate role adherence using direct EwanLLMClient call.
 
     Args:
         turns: Conversation as list of {"role": "user"/"assistant", "content": "..."}.
@@ -193,9 +185,6 @@ async def eval_role_adherence(
     Returns:
         Dict with score, reason, sub_scores, passed, _eval_cost.
     """
-    if not DEEPEVAL_AVAILABLE:
-        return {"score": 0.5, "reason": "deepeval not available", "passed": True}
-
     turns_text = _build_turns_text(turns)
     prompt = _ROLE_ADHERENCE_PROMPT.format(turns_text=turns_text)
 
@@ -288,7 +277,7 @@ async def eval_topic_adherence(
     relevant_topics: list[str] | None = None,
     threshold: float = 0.5,
 ) -> dict:
-    """Evaluate topic adherence using direct GPTModel call.
+    """Evaluate topic adherence using direct EwanLLMClient call.
 
     Args:
         turns: Conversation as list of {"role": "user"/"assistant", "content": "..."}.
@@ -300,9 +289,6 @@ async def eval_topic_adherence(
     Returns:
         Dict with score, reason, sub_scores, passed, _eval_cost.
     """
-    if not DEEPEVAL_AVAILABLE:
-        return {"score": 0.5, "reason": "deepeval not available", "passed": True}
-
     from server.eval.ewan_eval.process_metrics import QUANT_TUTOR_TOPICS
 
     topics = relevant_topics or QUANT_TUTOR_TOPICS

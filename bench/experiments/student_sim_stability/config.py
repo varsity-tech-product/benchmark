@@ -1,7 +1,7 @@
 """Experiment configuration for student simulator stability testing.
 
 Single-phase design: live tutor (gpt-4.1-nano) + student sim (3 models under test).
-Judge evaluation done by Claude Code post-hoc.
+Judge evaluation via OpenRouter (default: claude-sonnet-4-6).
 """
 
 from dataclasses import dataclass
@@ -25,7 +25,19 @@ FIXED_TURNS: int = 8
 REPEATS: int = 3
 TEMPERATURE: float = 0.0  # Matches production (EVAL_JUDGE_TEMPERATURE)
 TUTOR_TEMPERATURES: list[float] = [0.0, 1.0]  # Ablation: consistent vs diverse tutor
-MAX_WORKERS: int = 6  # Parallel trial execution
+MAX_WORKERS: int = 100  # Parallel trial execution (OpenRouter paid = no rate limit)
+
+# ---------------------------------------------------------------------------
+# Judge configuration
+# ---------------------------------------------------------------------------
+JUDGE_MODEL: str = "anthropic/claude-sonnet-4-6"
+JUDGE_TEMPERATURE: float = 0.0
+JUDGE_MAX_WORKERS: int = 6
+
+# D1 is sampled for the final report because D1 is a per-message persona
+# adherence check. The full rendered D1 prompt set can still be generated for
+# audit, but the judged/reporting sample is live tutor t=0, repeat 0.
+D1_SAMPLE_POLICY: str = "live-r0-tt0"
 
 # ---------------------------------------------------------------------------
 # Task selection
@@ -78,7 +90,7 @@ TASK_PERSONA_MAP: dict[str, list[str]] = {
 # ---------------------------------------------------------------------------
 # Paths (relative to bench/)
 # ---------------------------------------------------------------------------
-OUTPUT_DIR = "bench/experiments/student_sim_stability/results"
+OUTPUT_DIR = "experiments/student_sim_stability/results"
 
 
 @dataclass

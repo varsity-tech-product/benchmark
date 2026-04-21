@@ -44,14 +44,12 @@ logger = logging.getLogger(__name__)
 # Tutor prompt
 # ---------------------------------------------------------------------------
 
-_TUTOR_SYSTEM = (
-    "You are a quantitative finance tutor. Be helpful, patient, and concrete. "
-    "Adapt your explanation level to what the student seems to know. "
-    "Include code snippets or numerical examples where appropriate. "
-    "Keep responses to 3-8 sentences."
-)
+_TUTOR_PROMPT = """\
+You are a quantitative finance tutor. Be helpful, patient, and concrete. \
+Adapt your explanation level to what the student seems to know. \
+Include code snippets or numerical examples where appropriate. \
+Keep responses to 3-8 sentences.
 
-_TUTOR_USER = """\
 Task context: {task_description}
 
 Conversation so far:
@@ -113,7 +111,7 @@ def _generate_tutor_response(
     recent = conversation[-6:]
     transcript = json.dumps(recent, indent=2, ensure_ascii=False)
 
-    prompt = _TUTOR_USER.format(
+    prompt = _TUTOR_PROMPT.format(
         task_description=task_description[:500],
         transcript=transcript,
         student_message=student_msg[:500],
@@ -182,7 +180,10 @@ class ExperimentRunner:
     """Runs the full experiment with parallel execution."""
 
     def __init__(self, output_dir: str | None = None):
-        self.output_dir = Path(output_dir or OUTPUT_DIR)
+        out = Path(output_dir or OUTPUT_DIR)
+        if not out.is_absolute():
+            out = BENCH_ROOT / out
+        self.output_dir = out
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.conversations_dir = self.output_dir / "conversations"
         self.conversations_dir.mkdir(exist_ok=True)
@@ -248,8 +249,13 @@ class ExperimentRunner:
                 logger.error("Trial %s failed: %s", trial.key, exc)
             return f"FAIL {trial.key}: {exc}"
 
-    def run_generate(self, max_workers: int = MAX_WORKERS):
-        """Generate all conversations (live + control) in parallel."""
+    def run_generate(self, max_workers: int = MAX_WORKERS, limit: int | None = None):
+        """Generate conversations in parallel.
+
+        Args:
+            max_workers: Thread pool size.
+            limit: If set, run at most this many pending trials then stop.
+        """
         trials: list[tuple[TrialKey, bool]] = []
 
         # Main experiment — all tutor temperatures
@@ -271,8 +277,10 @@ class ExperimentRunner:
                 t = TrialKey("control", task_id, pid, model, 0, tutor_temperature=0.0)
                 trials.append((t, False))
 
-        # Filter out already completed
+        # Filter out already completed, apply limit
         pending = [(t, p) for t, p in trials if not self._exists(t.key)]
+        if limit is not None and limit < len(pending):
+            pending = pending[:limit]
         total = len(trials)
         done = total - len(pending)
 
