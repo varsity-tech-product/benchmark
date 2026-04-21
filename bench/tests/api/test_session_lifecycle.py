@@ -146,6 +146,40 @@ class TestSessionStatus:
         assert resp.json()["status"] == "cancelled"
 
     @pytest.mark.asyncio
+    async def test_delete_persists_bundle(self, client, bench_root):
+        """Regression for issue #54.
+
+        DELETE used to discard the bundle because ``_cleanup_session``
+        was called without ``persist_partial=True``. That made DELETEd
+        sessions invisible to the batch evaluator (issue #47). The fix
+        routes DELETE through the same agent-abandoned persistence path
+        the lifespan shutdown hooks already used.
+        """
+        import json
+
+        sid, _ = await register_and_start(client)
+        await send_message(client, sid, "some conversation before DELETE")
+
+        resp = await client.delete(f"/session/{sid}")
+        assert resp.status_code == 200
+
+        task_root = bench_root / "results" / "server" / DEFAULT_TASK_ID
+        matches = list(task_root.rglob(f"*_{sid[:8]}"))
+        assert matches, f"bundle was not persisted under {task_root}"
+        bundle = matches[0]
+
+        manifest = json.loads((bundle / "manifest.json").read_text())
+        assert manifest["bundle_schema_version"].startswith("1.")
+        assert manifest["session_id"] == sid
+
+        run_state = json.loads((bundle / "run_state.json").read_text())
+        # ``agent_abandoned`` is not in ``_is_failed_reason`` so the
+        # session_status rolls up as ``completed``; the reason string is
+        # what distinguishes a DELETE from a normal finish.
+        assert run_state["termination_reason"] == "agent_abandoned"
+        assert run_state["session_status"] in ("completed", "failed")
+
+    @pytest.mark.asyncio
     async def test_list_sessions(self, client):
         sid, _ = await register_and_start(client)
         resp = await client.get("/session/list")
