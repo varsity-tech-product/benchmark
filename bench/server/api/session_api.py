@@ -268,6 +268,9 @@ class SessionState:
                     "tutor_scores": meta.get("tutor_scores", {}),
                     "overall": meta.get("overall_score", 0.0),
                 }
+                meta_errors = meta.get("errors")
+                if meta_errors:
+                    state._eval_results["errors"] = meta_errors
             except Exception:
                 pass
 
@@ -1147,12 +1150,20 @@ class SessionState:
                 tutor_dims=self._tutor_dims,
             )
 
-            # Build scores summary for API response
+            # Build scores summary for API response. Include per-component
+            # errors so callers seeing an empty tutor_scores / zeroed
+            # quant_result can tell whether it's a genuine zero or a silent
+            # failure upstream (see issue #42).
+            from server.storage.eval_writer import _collect_eval_errors
+
             scores_summary: dict = {
                 "quant_result": eval_results.get("quant_result", 0.0),
                 "quant_process": eval_results.get("quant_process", 0.0),
                 "tutor_scores": eval_results.get("tutor_scores", {}),
             }
+            eval_errors = _collect_eval_errors(eval_results)
+            if eval_errors:
+                scores_summary["errors"] = eval_errors
 
             # Try to compute overall composite score
             try:
