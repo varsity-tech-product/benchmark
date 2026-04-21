@@ -1319,7 +1319,11 @@ async def rest_session_status(request: Request) -> JSONResponse | Response:
         if not state:
             return JSONResponse({"error": "Session not found"}, 404)
         logger.info("[REST:%s] DELETE — cancelling session", sid[:8])
-        await manager._cleanup_session(sid)
+        # persist_partial=True so an active session's conversation + tool
+        # logs land as a bundle under results/server/... before the
+        # container is destroyed. Without this the offline evaluator
+        # (issue #47 batch driver) cannot see DELETEd sessions at all.
+        await manager._cleanup_session(sid, persist_partial=True)
         return JSONResponse({"status": "cancelled"})
 
     # GET
