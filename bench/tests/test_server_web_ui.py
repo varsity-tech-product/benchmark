@@ -128,24 +128,19 @@ class ResultIndexerTests(unittest.TestCase):
                 },
             )
 
-            old_eval = (
+            # Eval output lives in the sibling tree under
+            # ``evaluations/server/{task_id}/{persona_id}/{sid8}/{eval_run_id}/``
+            # — see ``server.evaluator.paths.eval_session_dir``.
+            eval_session_root = (
                 root
-                / "results"
+                / "evaluations"
                 / "server"
                 / "D01_demo"
-                / session_id
-                / "evaluations"
-                / "eval_20260101_010101"
+                / "beginner_persona"
+                / session_id[:8]
             )
-            new_eval = (
-                root
-                / "results"
-                / "server"
-                / "D01_demo"
-                / session_id
-                / "evaluations"
-                / "eval_20260102_010101"
-            )
+            old_eval = eval_session_root / "eval_20260101_010101"
+            new_eval = eval_session_root / "eval_20260102_010101"
             _write_json(
                 old_eval / "eval_meta.json",
                 {"overall_score": 0.11, "timestamp": "2026-01-01T01:01:01Z"},

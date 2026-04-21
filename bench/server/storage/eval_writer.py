@@ -1,25 +1,14 @@
-"""Evaluation runner + persistence for QuantTutorBench Server.
+"""Shared report writers for the evaluator.
 
-Each evaluation run creates a timestamped subdirectory under
-``evaluations/`` and updates a ``latest`` symlink::
+Output layout: see ``server.evaluator.paths`` —
+``evaluations/server/{task_id}/{persona_id}/{sid8}/{eval_run_id}/``.
 
-    results/server/{task_id}/{session_id}/
-        run_state.json
-        agent_files/
-        evaluations/
-            eval_20260410_110000/
-                scores.md
-                trace.md
-                cost.md
-                eval_meta.json
-            latest -> eval_20260410_110000/
-
+After issue #46 slice 4 this module owns only the shared helpers
+``score_bundle`` reuses (``_save_reports``, ``_collect_eval_errors``);
+the prior in-session compat shim is gone since nothing calls it.
 """
 
-import json
 import logging
-import time
-from datetime import datetime
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -49,138 +38,6 @@ def _collect_eval_errors(eval_results: dict) -> dict:
         if msg:
             out[public] = str(msg)
     return out
-
-
-def run_evaluation(
-    task,
-    persona,
-    result_dir: Path,
-    conversation: list[dict],
-    tool_logs: list,
-    distractor_names: list[str],
-    bench_root: str,
-    eval_model: str,
-    cancel_event=None,
-    eval_mode: str = "full",
-    tutor_dims: list[str] | None = None,
-) -> dict:
-    """Run full evaluation and save reports into a new evaluations/ subdirectory.
-
-    Args:
-        task: QuantTutorTask instance.
-        persona: StudentPersona instance.
-        result_dir: Session directory containing run_state.json and agent_files/.
-        conversation: Session conversation history.
-        tool_logs: Session tool call logs.
-        distractor_names: Distractor tool names.
-        bench_root: Path to bench/ root.
-        eval_model: Model for LLM-based evaluators.
-        cancel_event: Optional cancellation event.
-        eval_mode: "full" | "qr_only" | "qp_only" | "tutor_only".
-        tutor_dims: Optional list of tutor dimensions to evaluate.
-
-    Returns:
-        Dict with evaluation results (quant_result, quant_process, tutor_scores, ...).
-    """
-    result_dir = Path(result_dir)
-
-    # Update run_state.json status
-    from server.storage.result_writer import update_evaluation_status
-
-    update_evaluation_status(result_dir, "running")
-
-    eval_start = time.time()
-
-    # --- Run evaluation pipeline ---
-    from server.eval.pipeline import evaluate_task
-
-    workspace_path = str(result_dir / "agent_files")
-
-    _dims_info = f", tutor_dims={tutor_dims}" if tutor_dims else ""
-    logger.info("Running evaluation (mode=%s%s)...", eval_mode, _dims_info)
-    eval_results = evaluate_task(
-        task=task,
-        persona=persona,
-        workspace_path=workspace_path,
-        conversation=conversation,
-        tool_logs=tool_logs,
-        distractor_names=distractor_names,
-        bench_root=bench_root,
-        eval_model=eval_model,
-        cancel_event=cancel_event,
-        eval_mode=eval_mode,
-        tutor_dims=tutor_dims,
-    )
-
-    # --- Compute task score ---
-    from server.eval.scoring import compute_task_score
-
-    scores = compute_task_score(
-        quant_result_score=eval_results.get("quant_result", 0.0),
-        quant_process_score=eval_results.get("quant_process", 0.0),
-        tutor_dimension_scores=eval_results.get("tutor_scores", {}),
-        category=task.category.value,
-        requires_code=task.requires_code,
-        eval_mode=eval_mode,
-    )
-
-    eval_duration = time.time() - eval_start
-
-    # --- Create timestamped evaluations/ subdirectory ---
-    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    eval_dir = result_dir / "evaluations" / f"eval_{ts}"
-    eval_dir.mkdir(parents=True, exist_ok=True)
-
-    # --- Save reports ---
-    _save_reports(
-        eval_dir=eval_dir,
-        task=task,
-        persona=persona,
-        conversation=conversation,
-        tool_logs=tool_logs,
-        eval_results=eval_results,
-        scores=scores,
-        eval_model=eval_model,
-        eval_mode=eval_mode,
-        eval_duration=eval_duration,
-    )
-
-    # --- Write eval_meta.json ---
-    # Collect per-component errors so callers can see *why* a dimension is
-    # empty/zero (see issue #42). `pipeline.evaluate_task` stores each
-    # component's exception text under its own key when that component
-    # silently fell back to an empty/default score.
-    errors = _collect_eval_errors(eval_results)
-    meta = {
-        "timestamp": ts,
-        "eval_model": eval_model,
-        "eval_mode": eval_mode,
-        "eval_duration_seconds": round(eval_duration, 2),
-        "quant_result": eval_results.get("quant_result", 0.0),
-        "quant_process": eval_results.get("quant_process", 0.0),
-        "tutor_scores": eval_results.get("tutor_scores", {}),
-        "overall_score": scores.get("overall_score", 0.0),
-    }
-    if errors:
-        meta["errors"] = errors
-    meta_path = eval_dir / "eval_meta.json"
-    meta_path.write_text(json.dumps(meta, indent=2, default=str), encoding="utf-8")
-    logger.info("Saved eval_meta.json to %s", meta_path)
-
-    # --- Update latest symlink ---
-    latest_link = result_dir / "evaluations" / "latest"
-    try:
-        if latest_link.is_symlink() or latest_link.exists():
-            latest_link.unlink()
-        latest_link.symlink_to(eval_dir.name)
-        logger.info("Updated latest -> %s", eval_dir.name)
-    except OSError as exc:
-        logger.warning("Failed to update latest symlink: %s", exc)
-
-    # --- Update run_state.json status ---
-    update_evaluation_status(result_dir, "completed")
-
-    return eval_results
 
 
 def _save_reports(

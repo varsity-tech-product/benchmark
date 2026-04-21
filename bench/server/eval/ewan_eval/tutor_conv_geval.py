@@ -1,11 +1,11 @@
-"""7D Persona-aware tutoring rubric evaluation — single-call, checklist-based.
+"""6D Persona-aware tutoring rubric evaluation — single-call, checklist-based.
 
 Each dimension is scored in one LLM call against a structured rubric
 containing checklist conditions and a bottom-up evaluation process.
 No Phase 1 "evaluation steps" generation — the rubric IS the evaluation.
 
 Production logic:
-    - 7 dimensions (D1-D7) with per-category weights
+    - 6 dimensions (D1-D6) with per-category binary weights
     - Single judge run per model per dimension (temp=0, deterministic)
     - Multi-model parallel evaluation
     - Two-tier conversation input (original vs enriched)
@@ -16,12 +16,10 @@ Production logic:
 
 import asyncio
 import copy
-import json
 import logging
 import re as _re_mod
 import threading
 import time as _time
-from pathlib import Path
 from typing import Optional
 
 from server.eval.ewan_eval.async_utils import run_async
@@ -50,88 +48,84 @@ _ABORT_SENTINEL = object()
 
 
 # ──────────────────────────────────────────────────────────────
-# 7 Dimensions
+# 6 Dimensions (aligned with rubric_6d.json)
 # ──────────────────────────────────────────────────────────────
 
 DIMENSIONS = [
-    "D1_level_detection",
-    "D2_language_adaptation",
-    "D3_scaffolding_calibration",
-    "D4_domain_accuracy",
-    "D5_code_teaching",
-    "D6_empathetic_response",
-    "D7_safety_boundaries",
+    "D1_finance_adaptation",
+    "D2_code_adaptation",
+    "D3_pedagogical_method",
+    "D4_instructional_accuracy",
+    "D5_empathetic_response",
+    "D6_safety_boundaries",
 ]
 
 NUM_JUDGE_RUNS = 1  # Each dim is an independent LLM call at temp=0; shuffling order is a no-op (ICC experiment: CV=0.0% on stable tasks)
 
 # ──────────────────────────────────────────────────────────────
-# Per-category dimension weights
+# Per-category dimension weights (binary: 0 = skip, 1 = evaluate)
+#
+# weight=0 → dimension not evaluated, no LLM call, not in Tutor score.
+# weight=1 → dimension evaluated; rubric handles "no evidence" cases
+#             (e.g. D6 standard: "Score 3 if no safety trigger appears").
 # ──────────────────────────────────────────────────────────────
 
-CATEGORY_DIMENSION_WEIGHTS: dict[str, dict[str, float]] = {
+CATEGORY_DIMENSION_WEIGHTS: dict[str, dict[str, int]] = {
     "data_analysis": {
-        "D1": 1.0,
-        "D2": 1.0,
-        "D3": 1.0,
-        "D4": 1.0,
-        "D5": 0.3,
-        "D6": 1.0,
-        "D7": 0.3,
+        "D1": 1,
+        "D2": 1,
+        "D3": 1,
+        "D4": 1,
+        "D5": 1,
+        "D6": 0,
     },
     "strategy": {
-        "D1": 1.0,
-        "D2": 1.0,
-        "D3": 1.0,
-        "D4": 1.0,
-        "D5": 1.0,
-        "D6": 1.0,
-        "D7": 1.0,
+        "D1": 1,
+        "D2": 1,
+        "D3": 1,
+        "D4": 1,
+        "D5": 1,
+        "D6": 1,
     },
     "implementation": {
-        "D1": 1.0,
-        "D2": 0.7,
-        "D3": 1.0,
-        "D4": 1.0,
-        "D5": 1.0,
-        "D6": 0.7,
-        "D7": 0.3,
+        "D1": 1,
+        "D2": 1,
+        "D3": 1,
+        "D4": 1,
+        "D5": 1,
+        "D6": 0,
     },
     "backtest": {
-        "D1": 1.0,
-        "D2": 1.0,
-        "D3": 1.0,
-        "D4": 1.0,
-        "D5": 0.3,
-        "D6": 1.0,
-        "D7": 1.0,
+        "D1": 1,
+        "D2": 1,
+        "D3": 1,
+        "D4": 1,
+        "D5": 1,
+        "D6": 1,
     },
     "debug": {
-        "D1": 0.7,
-        "D2": 0.7,
-        "D3": 1.0,
-        "D4": 1.0,
-        "D5": 1.0,
-        "D6": 0.7,
-        "D7": 0.3,
+        "D1": 1,
+        "D2": 1,
+        "D3": 1,
+        "D4": 1,
+        "D5": 1,
+        "D6": 0,
     },
     "end_to_end": {
-        "D1": 1.0,
-        "D2": 1.0,
-        "D3": 1.0,
-        "D4": 1.0,
-        "D5": 1.0,
-        "D6": 1.0,
-        "D7": 1.0,
+        "D1": 1,
+        "D2": 1,
+        "D3": 1,
+        "D4": 1,
+        "D5": 1,
+        "D6": 1,
     },
     "adversarial": {
-        "D1": 1.0,
-        "D2": 1.0,
-        "D3": 0.3,
-        "D4": 1.0,
-        "D5": 0.0,
-        "D6": 1.0,
-        "D7": 1.0,
+        "D1": 1,
+        "D2": 0,
+        "D3": 1,
+        "D4": 1,
+        "D5": 1,
+        "D6": 1,
     },
 }
 
@@ -141,91 +135,23 @@ def get_dimension_weight(
     dimension_name: str,
     requires_code: bool = False,
 ) -> float:
+    """Return 1.0 (evaluate) or 0.0 (skip) for a dimension in a category."""
     if not category:
         return 1.0
     weights = CATEGORY_DIMENSION_WEIGHTS.get(category, {})
     dim_key = dimension_name[:2]
-    w = weights.get(dim_key, 1.0)
-    if w == 0.0 and dim_key == "D5" and category == "adversarial" and requires_code:
+    w = weights.get(dim_key, 1)
+    # Adversarial tasks that require code should evaluate D2 (code adaptation).
+    if w == 0 and dim_key == "D2" and category == "adversarial" and requires_code:
         return 1.0
-    return w
+    return float(w)
 
 
 # ──────────────────────────────────────────────────────────────
-# Rubric loading
+# Rubric loading — delegates to rubric_builder (6D)
 # ──────────────────────────────────────────────────────────────
 
-_RUBRIC_DIR = Path(__file__).parent.parent / "rubrics"
-_rubric_cache: dict[str, dict] = {}
-
-
-def load_rubric(persona_level: str) -> dict:
-    if persona_level in _rubric_cache:
-        return _rubric_cache[persona_level]
-    rubric_path = _RUBRIC_DIR / f"rubric_{persona_level}.json"
-    if not rubric_path.exists():
-        raise FileNotFoundError(f"Rubric file not found: {rubric_path}")
-    with open(rubric_path) as f:
-        rubric = json.load(f)
-    _rubric_cache[persona_level] = rubric
-    return rubric
-
-
-def _build_criteria_from_rubric(dimension_name: str, rubric: dict) -> str:
-    """Build the rubric block injected into the scoring prompt.
-
-    Contains: dimension label + scoring guidance with labels.
-    No criteria field, no persona context, no evaluation process
-    (process and rules are in _SCORE_PROMPT).
-    """
-    dim_data = rubric["dimensions"].get(dimension_name)
-    if not dim_data:
-        raise ValueError(
-            f"Dimension '{dimension_name}' not found in rubric for "
-            f"persona_level='{rubric.get('persona_level', 'unknown')}'"
-        )
-
-    # Score labels for clearer semantic anchoring
-    _SCORE_LABELS = {
-        "1": "Failure",
-        "2": "Below Expectations",
-        "3": "Adequate (Baseline)",
-        "4": "Good",
-        "5": "Excellent",
-    }
-
-    scoring_lines = []
-    for score, description in sorted(
-        dim_data["scoring_guidance"].items(), key=lambda x: int(x[0])
-    ):
-        label = _SCORE_LABELS.get(score, "")
-        prefix = f"Score {score} — {label}" if label else f"Score {score}"
-        scoring_lines.append(f"{prefix}: {description}")
-
-    dim_label = (
-        dimension_name.replace("_", " ")
-        .replace("D1 ", "Level ")
-        .replace("D2 ", "Language ")
-        .replace("D3 ", "Scaffolding ")
-        .replace("D4 ", "Domain ")
-        .replace("D5 ", "Code ")
-        .replace("D6 ", "Empathetic ")
-        .replace("D7 ", "Safety ")
-    )
-
-    score_keys = sorted(dim_data["scoring_guidance"].keys(), key=int)
-    max_score = int(score_keys[-1])
-
-    return (
-        f"## Dimension: {dim_label} (1-{max_score} scale)\n\n"
-        f"{chr(10).join(scoring_lines)}"
-    )
-
-
-def _build_full_criteria(dimension_name: str, persona_level: str) -> str:
-    rubric = load_rubric(persona_level)
-    return _build_criteria_from_rubric(dimension_name, rubric)
-
+from server.eval.rubric_builder import build_rubric_text, load_6d_rubric
 
 # ──────────────────────────────────────────────────────────────
 # Metric construction
@@ -233,20 +159,40 @@ def _build_full_criteria(dimension_name: str, persona_level: str) -> str:
 
 
 def create_tutor_geval_metrics(
-    persona_level: str,
+    persona_id: str,
+    category: Optional[str] = None,
     model=None,
     dimension_order: Optional[list[str]] = None,
 ) -> list[EwanConvGEval]:
-    rubric = load_rubric(persona_level)
+    """Create one EwanConvGEval metric per active dimension.
+
+    Uses rubric_builder to select the correct scoring variant
+    (per-quadrant / per-category / universal) and inject [KNOWN]/[UNKNOWN]
+    concept lists from the persona file.
+    """
+    rubric = load_6d_rubric()
     dims = dimension_order or DIMENSIONS
     metrics = []
     for dim_name in dims:
-        criteria = _build_criteria_from_rubric(dim_name, rubric)
+        criteria = build_rubric_text(rubric, dim_name, persona_id, category)
         model_obj = resolve_ewan_model(model)
-        # Detect scale from rubric keys (5-point or 10-point)
+        # 6D rubric uses 1-5 scale
         dim_data = rubric["dimensions"].get(dim_name, {})
-        score_keys = dim_data.get("scoring_guidance", {}).keys()
-        max_score = max((int(k) for k in score_keys), default=10)
+        # Detect scale: check scoring_guidance or scoring_variants
+        sg = dim_data.get("scoring_guidance")
+        if not sg:
+            # per-quadrant or per-category — get any variant to find scale
+            variants = dim_data.get("scoring_variants", {})
+            sg = next(
+                (
+                    v.get("scoring_guidance", {})
+                    for v in variants.values()
+                    if v.get("scoring_guidance")
+                ),
+                {},
+            )
+        score_keys = sg.keys() if sg else []
+        max_score = max((int(k) for k in score_keys), default=5)
         metrics.append(
             EwanConvGEval(
                 name=dim_name,
@@ -266,7 +212,12 @@ def create_tutor_geval_metrics(
 import re as _re
 
 
-def _extract_score_from_prose(raw_text: str):
+def _extract_score_from_prose(raw_text: str, max_score: int = 5):
+    """Fallback: extract a numeric score from malformed LLM output.
+
+    Tries JSON key extraction first, then natural-language patterns.
+    Returns (score, reason) tuple or None.
+    """
     if not raw_text:
         return None
     text = raw_text.strip()
@@ -275,18 +226,18 @@ def _extract_score_from_prose(raw_text: str):
     if score_m:
         score = float(score_m.group(1))
         reason = reason_m.group(1) if reason_m else "Extracted from malformed JSON"
-        if 0 <= score <= 10:
+        if 0 <= score <= max_score:
             return score, reason
     nl_patterns = [
         r"(?:score|rating|rate)\s*(?::|is|=)\s*(\d+)",
-        r"(\d+)\s*(?:out of|/)\s*10",
+        rf"(\d+)\s*(?:out of|/)\s*{max_score}",
         r"(?:give|assign|award)\s+(?:a\s+)?(\d+)",
     ]
     for pat in nl_patterns:
         m = _re.search(pat, text, _re.IGNORECASE)
         if m:
             score = float(m.group(1))
-            if 0 <= score <= 10:
+            if 0 <= score <= max_score:
                 return score, f"Extracted from prose: {text[:200]}"
     return None
 
@@ -317,11 +268,9 @@ async def _fallback_direct_eval(metric, tc, model_name: str):
 ENABLE_CONVERSATION_PREPROCESSING = True
 
 # Full enrichment: tool names + truncated args + truncated results
-_ENRICHED_DIMS_FULL = {"D4_domain_accuracy", "D5_code_teaching", "D7_safety_boundaries"}
-# Lightweight enrichment: tool names + status only (no content)
-_ENRICHED_DIMS_LIGHTWEIGHT = {"D3_scaffolding_calibration"}
+_ENRICHED_DIMS_FULL = {"D4_instructional_accuracy", "D6_safety_boundaries"}
 # Union for source selection
-_ENRICHED_DIMS = _ENRICHED_DIMS_FULL | _ENRICHED_DIMS_LIGHTWEIGHT
+_ENRICHED_DIMS = _ENRICHED_DIMS_FULL
 
 _CODE_FENCE_RE = _re_mod.compile(
     r"^[ \t]*```[^\n]*\n(.*?)^[ \t]*```[ \t]*$",
@@ -339,13 +288,12 @@ def _strip_code_blocks(content: str) -> str:
 
 
 _DIMENSION_PREPROCESS: dict[str, str] = {
-    "D1_level_detection": "strip_code",
-    "D2_language_adaptation": "strip_code",
-    "D3_scaffolding_calibration": "strip_code",
-    "D4_domain_accuracy": "none",
-    "D5_code_teaching": "none",
-    "D6_empathetic_response": "strip_code",
-    "D7_safety_boundaries": "strip_code",
+    "D1_finance_adaptation": "strip_code",
+    "D2_code_adaptation": "none",
+    "D3_pedagogical_method": "strip_code",
+    "D4_instructional_accuracy": "none",
+    "D5_empathetic_response": "strip_code",
+    "D6_safety_boundaries": "strip_code",
 }
 
 
@@ -372,7 +320,7 @@ def preprocess_turns(turns: list[dict], dimension_name: str) -> list[dict]:
 
 def evaluate_tutor_dimensions(
     conversation_turns: list[dict],
-    persona_level: str,
+    persona_id: str,
     scenario: Optional[str] = None,
     expected_outcome: Optional[str] = None,
     user_description: Optional[str] = None,
@@ -383,28 +331,19 @@ def evaluate_tutor_dimensions(
     requires_code: bool = False,
     abort_event: Optional[threading.Event] = None,
     enriched_conversation_turns: Optional[list[dict]] = None,
-    enriched_conversation_turns_lightweight: Optional[list[dict]] = None,
     dimension_order: Optional[list[str]] = None,
 ) -> dict[str, float]:
-    """Evaluate tutoring dimensions.
+    """Evaluate tutoring dimensions (6D rubric).
 
     Each dimension is an independent LLM call at temp=0, so dimension
     ordering has no effect on scores (validated by ICC experiment).
 
     Args:
+        persona_id: Persona identifier (e.g. "developer_crossover") for
+            rubric variant selection and [KNOWN]/[UNKNOWN] injection.
         dimension_order: If provided, evaluate only these dimensions
-            (e.g. ["D3_scaffolding_calibration", "D4_domain_accuracy"]).
+            (e.g. ["D3_pedagogical_method", "D4_instructional_accuracy"]).
             If None, evaluates all dimensions with non-zero weight.
-
-    Single-call evaluation: the rubric (with checklist conditions and
-    evaluation process) is injected directly into the scoring prompt.
-    No Phase 1 "evaluation steps" generation.
-
-    Full production logic:
-    - Single-call rubric evaluation (no Phase 1)
-    - Multi-model parallel execution
-    - Two-tier conversation (original vs enriched)
-    - Abort + fallback layers
     """
     from server.config.llm_config import EVAL_DEFAULT_MODELS
 
@@ -459,7 +398,6 @@ def evaluate_tutor_dimensions(
         user_description=user_description,
     )
     _enriched_full = enriched_conversation_turns or conversation_turns
-    _enriched_light = enriched_conversation_turns_lightweight or conversation_turns
 
     _dim_test_cases: dict[str, ConversationalTestCase] = {}
 
@@ -471,8 +409,6 @@ def evaluate_tutor_dimensions(
         for dim in active_dims:
             if dim in _ENRICHED_DIMS_FULL:
                 src = _enriched_full
-            elif dim in _ENRICHED_DIMS_LIGHTWEIGHT:
-                src = _enriched_light
             else:
                 src = conversation_turns
             processed = preprocess_turns(src, dim)
@@ -503,7 +439,8 @@ def evaluate_tutor_dimensions(
         mname = model_names[model_idx]
         for run_idx in range(num_judge_runs):
             metrics = create_tutor_geval_metrics(
-                persona_level,
+                persona_id,
+                category=category,
                 model=current_model,
                 dimension_order=active_dims,
             )
@@ -556,7 +493,9 @@ def evaluate_tutor_dimensions(
                         )
                         # Layer 1: extract score from raw prose
                         if raw_text:
-                            extracted = _extract_score_from_prose(raw_text)
+                            extracted = _extract_score_from_prose(
+                                raw_text, metric.max_score
+                            )
                             if extracted:
                                 score, reason = extracted
                                 metric.score = score / float(metric.max_score)

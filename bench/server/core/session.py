@@ -5,11 +5,19 @@ Backs the ``send_message`` session flow.
 
 Defense layers aligned with Legacy path (simulation.py create_model_callback):
 - TC checker exception isolation
-- Student simulator fallback on failure
 - Closing generation fallback (hardcoded text)
 - Timeout graceful wrap-up with closing
 - Agent repeat detection (force-stop after consecutive identical messages)
 - Max-turns student closing (aligned with _append_student_closing)
+
+Session status semantics
+------------------------
+``send_message`` returns one of three ``status`` values:
+
+- ``"active"``    — session is still running; student reply included
+- ``"completed"`` — session ended normally (objectives_met / max_turns / timeout)
+- ``"failed"``    — session aborted due to an abnormal condition
+                    (student_sim_error:* / agent_stuck)
 """
 
 import base64
@@ -25,13 +33,20 @@ from server.core.workspace_delta import scan_workspace_snapshot
 
 logger = logging.getLogger(__name__)
 
-# Fallback student message when generate_message() fails — aligned with
-# model_callback exception handler (simulation.py:586).
-_STUDENT_FALLBACK = "Could you explain that in a bit more detail?"
-
 # Repeat detection threshold — aligned with model_callback _MAX_REPEATS
 # (simulation.py:493).
 _MAX_REPEATS = 2
+
+
+# Completion reasons that represent abnormal termination.
+# These produce status="failed" rather than status="completed" so downstream
+# callers can distinguish them without parsing the reason string.
+def _is_failed_reason(reason: str | None) -> bool:
+    if not reason:
+        return False
+    return reason == "agent_stuck" or reason.startswith("student_sim_error:")
+
+
 # ---------------------------------------------------------------------------
 # Session background builder — factual environment description, no directives
 # ---------------------------------------------------------------------------
@@ -377,7 +392,10 @@ class TutoringSession:
         """
         # ── Pre-checks ──
         if self._done:
-            return self._result("", "completed", reason=self._completion_reason)
+            status = (
+                "failed" if _is_failed_reason(self._completion_reason) else "completed"
+            )
+            return self._result("", status, reason=self._completion_reason)
 
         if not text or not text.strip():
             return json.dumps(
@@ -431,7 +449,7 @@ class TutoringSession:
                 )
                 self._done = True
                 self._completion_reason = "agent_stuck"
-                return self._result("", "completed", reason="agent_stuck")
+                return self._result("", "failed", reason="agent_stuck")
         else:
             self._repeat_count = 0
         self._last_agent_msg = text
@@ -549,8 +567,32 @@ class TutoringSession:
                 workspace_path=self._workspace_path,
             )
         except Exception as exc:
-            logger.warning("StudentSimulator.generate_message failed: %s", exc)
-            reply = _STUDENT_FALLBACK
+            from server.core.student_sim import StudentSimError
+
+            error_type = (
+                exc.error_type
+                if isinstance(exc, StudentSimError)
+                else type(exc).__name__
+            )
+            reason = f"student_sim_error:{error_type}"
+            sim_error = (
+                exc.summary
+                if isinstance(exc, StudentSimError)
+                else {
+                    "final_error_type": type(exc).__name__,
+                    "attempt_count": 0,
+                    "error_types": [],
+                    "last_detail": str(exc),
+                }
+            )
+            logger.error(
+                "Student simulator failed at turn %d, terminating session: %s",
+                self._turn,
+                exc,
+            )
+            self._done = True
+            self._completion_reason = reason
+            return self._result("", "failed", reason=reason, sim_error=sim_error)
         self._conversation.append({"role": "user", "content": reply, "ts": time.time()})
 
         return self._result(reply, "active")
@@ -579,7 +621,9 @@ class TutoringSession:
     @property
     def session_status(self) -> str:
         if self._done:
-            return "completed"
+            return (
+                "failed" if _is_failed_reason(self._completion_reason) else "completed"
+            )
         if self._session_info_called:
             return "active"
         return "registered"
@@ -648,11 +692,15 @@ class TutoringSession:
         student_message: str,
         status: str,
         reason: str | None = None,
+        sim_error: dict | None = None,
     ) -> str:
         """Build JSON result dict.
 
         New architecture: returns {student_message, status} only.
         Does NOT expose turn or max_turns to Client.
+        ``sim_error`` carries structured failure metadata when ``status="failed"``
+        due to a simulator error, so callers can inspect failure details without
+        parsing log files.
         """
         d: dict = {
             "student_message": student_message or "",
@@ -660,6 +708,8 @@ class TutoringSession:
         }
         if reason:
             d["reason"] = reason
+        if sim_error:
+            d["sim_error"] = sim_error
         return json.dumps(d)
 
     def _current_tool_turn_index(self) -> int:

@@ -1,24 +1,32 @@
 """Statistical report generator for student simulator stability experiment.
 
-Produces:
-  1. Overall dashboard — radar chart per model (D1-D4)
-  2. D1 heatmap — persona adherence by (model x persona)
-  3. D2 table — ICC / reproducibility by phase
-  4. D3 matrix — cross-model consistency
-  5. D4 curves — per-turn drift
-  6. Control comparison — persona distinguishability
-  7. Conclusion — model ranking + prompt improvement suggestions
+Generates an HTML report with embedded matplotlib charts (base64 PNG).
 """
 
+import base64
+import io
 import json
 import logging
 from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
 
+import matplotlib
+
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+import matplotlib.ticker as ticker
 import numpy as np
 
 logger = logging.getLogger(__name__)
+
+# Consistent styling
+_COLORS = {
+    "gpt-5.4": "#1f77b4",
+    "claude-sonnet-4-6": "#ff7f0e",
+    "gemini-3.1-pro-preview": "#2ca02c",
+}
+_MODEL_ORDER = ["gpt-5.4", "claude-sonnet-4-6", "gemini-3.1-pro-preview"]
 
 
 def _safe_mean(values: list) -> float:
@@ -31,27 +39,52 @@ def _safe_std(values: list) -> float:
     return float(np.std(nums)) if len(nums) > 1 else 0.0
 
 
+def _fig_to_base64(fig) -> str:
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", dpi=150, bbox_inches="tight", facecolor="white")
+    plt.close(fig)
+    buf.seek(0)
+    return base64.b64encode(buf.read()).decode("ascii")
+
+
+def _embed_img(b64: str, alt: str = "") -> str:
+    return f'<img src="data:image/png;base64,{b64}" alt="{alt}" style="max-width:100%;margin:10px 0;">'
+
+
+def _color_for(model: str) -> str:
+    short = model.split("/")[-1] if "/" in model else model
+    return _COLORS.get(short, "#999999")
+
+
+def _count_votes(names: list[str]) -> dict[str, int]:
+    counts: dict[str, int] = defaultdict(int)
+    for n in names:
+        counts[n] += 1
+    return dict(counts)
+
+
 class ReportGenerator:
     """Generate statistical report from evaluation results."""
 
     def __init__(self, eval_path: str, output_dir: str):
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
-
         with open(eval_path) as f:
             self.raw = json.load(f)
 
     def generate(self) -> str:
         """Generate full report. Returns path to output HTML."""
+        stats = self._compute_all_stats()
         sections = [
             self._header(),
-            self._section_overview(),
-            self._section_d1(),
-            self._section_d2(),
-            self._section_d3(),
-            self._section_d4(),
-            self._section_control(),
-            self._section_conclusion(),
+            self._section_overview(stats),
+            self._section_d1(stats),
+            self._section_d2(stats),
+            self._section_d3(stats),
+            self._section_d4(stats),
+            self._section_temperature_ablation(stats),
+            self._section_control(stats),
+            self._section_conclusion(stats),
             self._footer(),
         ]
         html = "\n".join(sections)
@@ -59,8 +92,6 @@ class ReportGenerator:
         with open(path, "w") as f:
             f.write(html)
 
-        # Also save raw aggregated stats as JSON
-        stats = self._compute_all_stats()
         stats_path = self.output_dir / "stability_stats.json"
         with open(stats_path, "w") as f:
             json.dump(stats, f, indent=2, ensure_ascii=False)
@@ -68,7 +99,7 @@ class ReportGenerator:
         logger.info("Report saved to %s", path)
         return str(path)
 
-    # ----- Aggregation helpers -----
+    # ----- Stats computation -----
 
     def _compute_all_stats(self) -> dict:
         return {
@@ -81,12 +112,10 @@ class ReportGenerator:
         }
 
     def _aggregate_d1(self) -> dict:
-        """Aggregate D1 scores by model, persona, task, phase."""
         results = self.raw.get("D1", [])
         by_model: dict[str, list] = defaultdict(list)
         by_persona: dict[str, list] = defaultdict(list)
         by_task: dict[str, list] = defaultdict(list)
-        by_phase: dict[str, list] = defaultdict(list)
         by_model_persona: dict[str, list] = defaultdict(list)
 
         for r in results:
@@ -97,12 +126,9 @@ class ReportGenerator:
             model = m.get("model", "").split("/")[-1]
             persona = m.get("persona_id", "")
             task = m.get("task_id", "")
-            phase = m.get("phase", "")
-
             by_model[model].append(score)
             by_persona[persona].append(score)
             by_task[task].append(score)
-            by_phase[phase].append(score)
             by_model_persona[f"{model}__{persona}"].append(score)
 
         return {
@@ -118,10 +144,6 @@ class ReportGenerator:
                 k: {"mean": _safe_mean(v), "std": _safe_std(v), "n": len(v)}
                 for k, v in by_task.items()
             },
-            "by_phase": {
-                k: {"mean": _safe_mean(v), "std": _safe_std(v), "n": len(v)}
-                for k, v in by_phase.items()
-            },
             "by_model_persona": {
                 k: {"mean": _safe_mean(v), "std": _safe_std(v), "n": len(v)}
                 for k, v in by_model_persona.items()
@@ -129,11 +151,9 @@ class ReportGenerator:
         }
 
     def _aggregate_d2(self) -> dict:
-        """Aggregate D2 reproducibility scores."""
         results = self.raw.get("D2", [])
         by_model: dict[str, list] = defaultdict(list)
-        by_phase: dict[str, list] = defaultdict(list)
-        by_model_phase: dict[str, list] = defaultdict(list)
+        by_model_temp: dict[str, list] = defaultdict(list)
 
         for r in results:
             score = r["scores"].get("overall_reproducibility", 0)
@@ -141,68 +161,54 @@ class ReportGenerator:
                 continue
             m = r["metadata"]
             model = m.get("model", "").split("/")[-1]
-            phase = m.get("phase", "")
+            tutor_t = m.get("tutor_temperature", "?")
             by_model[model].append(score)
-            by_phase[phase].append(score)
-            by_model_phase[f"{model}__{phase}"].append(score)
+            by_model_temp[f"{model}__{tutor_t}"].append(score)
 
         return {
             "by_model": {
                 k: {"mean": _safe_mean(v), "std": _safe_std(v), "n": len(v)}
                 for k, v in by_model.items()
             },
-            "by_phase": {
+            "by_model_temp": {
                 k: {"mean": _safe_mean(v), "std": _safe_std(v), "n": len(v)}
-                for k, v in by_phase.items()
-            },
-            "by_model_phase": {
-                k: {"mean": _safe_mean(v), "std": _safe_std(v), "n": len(v)}
-                for k, v in by_model_phase.items()
+                for k, v in by_model_temp.items()
             },
         }
 
     def _aggregate_d3(self) -> dict:
-        """Aggregate D3 cross-model consistency scores."""
         results = self.raw.get("D3", [])
-        by_phase: dict[str, list] = defaultdict(list)
         by_task: dict[str, list] = defaultdict(list)
         best_models: list[str] = []
         worst_models: list[str] = []
+        all_scores: list[dict] = []
 
         for r in results:
             score = r["scores"].get("overall_cross_model", 0)
             if score <= 0:
                 continue
             m = r["metadata"]
-            phase = m.get("phase", "")
-            task = m.get("task_id", "")
-            by_phase[phase].append(score)
-            by_task[task].append(score)
+            by_task[m.get("task_id", "")].append(score)
             if m.get("best_model"):
                 best_models.append(m["best_model"])
             if m.get("worst_model"):
                 worst_models.append(m["worst_model"])
+            all_scores.append(r["scores"])
 
         return {
-            "by_phase": {
-                k: {"mean": _safe_mean(v), "std": _safe_std(v), "n": len(v)}
-                for k, v in by_phase.items()
-            },
             "by_task": {
                 k: {"mean": _safe_mean(v), "std": _safe_std(v), "n": len(v)}
                 for k, v in by_task.items()
             },
             "best_model_votes": _count_votes(best_models),
             "worst_model_votes": _count_votes(worst_models),
+            "all_scores": all_scores,
         }
 
     def _aggregate_d4(self) -> dict:
-        """Aggregate D4 drift detection scores."""
         results = self.raw.get("D4", [])
         by_model: dict[str, list] = defaultdict(list)
-        by_phase: dict[str, list] = defaultdict(list)
         drift_onsets: list = []
-        # Per-turn fidelity curves
         all_curves: dict[str, list[list]] = defaultdict(list)
 
         for r in results:
@@ -211,19 +217,14 @@ class ReportGenerator:
                 continue
             m = r["metadata"]
             model = m.get("model", "").split("/")[-1]
-            phase = m.get("phase", "")
             by_model[model].append(score)
-            by_phase[phase].append(score)
-
-            onset = m.get("drift_onset_turn")
+            onset = m.get("drift_onset_turn", r["scores"].get("drift_onset_turn"))
             if onset is not None:
                 drift_onsets.append(onset)
-
             fidelity = r["scores"].get("per_turn_fidelity", [])
             if fidelity:
                 all_curves[model].append(fidelity)
 
-        # Average per-turn curves per model
         avg_curves = {}
         for model, curves in all_curves.items():
             if curves:
@@ -238,39 +239,31 @@ class ReportGenerator:
                 k: {"mean": _safe_mean(v), "std": _safe_std(v), "n": len(v)}
                 for k, v in by_model.items()
             },
-            "by_phase": {
-                k: {"mean": _safe_mean(v), "std": _safe_std(v), "n": len(v)}
-                for k, v in by_phase.items()
-            },
             "drift_onset_mean": _safe_mean(drift_onsets),
             "avg_fidelity_curves": avg_curves,
         }
 
     def _aggregate_control(self) -> dict:
-        """Aggregate control group distinctiveness scores."""
         results = self.raw.get("control", [])
-        scores = [r["scores"].get("distinctiveness", 0) for r in results if r["scores"]]
         by_persona: dict[str, list] = defaultdict(list)
         for r in results:
             pid = r["metadata"].get("persona_id", "")
             s = r["scores"].get("distinctiveness", 0)
             if s > 0:
                 by_persona[pid].append(s)
-
+        all_scores = [s for v in by_persona.values() for s in v]
         return {
-            "overall_mean": _safe_mean(scores),
-            "overall_std": _safe_std(scores),
+            "overall_mean": _safe_mean(all_scores),
+            "overall_std": _safe_std(all_scores),
             "by_persona": {
                 k: {"mean": _safe_mean(v), "n": len(v)} for k, v in by_persona.items()
             },
         }
 
     def _compute_model_ranking(self) -> list[dict]:
-        """Rank models by composite stability score (D1-D4 average)."""
         d1 = self._aggregate_d1()["by_model"]
         d2 = self._aggregate_d2()["by_model"]
         d4 = self._aggregate_d4()["by_model"]
-
         models = set(d1.keys()) | set(d2.keys()) | set(d4.keys())
         rankings = []
         for m in models:
@@ -281,22 +274,191 @@ class ReportGenerator:
             }
             composite = _safe_mean(list(scores.values()))
             rankings.append({"model": m, "scores": scores, "composite": composite})
-
         rankings.sort(key=lambda x: x["composite"], reverse=True)
         return rankings
+
+    # ----- Chart generators -----
+
+    def _chart_overview_radar(self, stats: dict) -> str:
+        """Radar chart: D1/D2/D4 per model."""
+        ranking = stats["model_ranking"]
+        if not ranking:
+            return ""
+        categories = ["D1\nAdherence", "D2\nReproducibility", "D4\nAnti-drift"]
+        n = len(categories)
+        angles = np.linspace(0, 2 * np.pi, n, endpoint=False).tolist()
+        angles += angles[:1]
+
+        fig, ax = plt.subplots(figsize=(6, 6), subplot_kw=dict(polar=True))
+        for r in ranking:
+            values = [r["scores"]["D1"], r["scores"]["D2"], r["scores"]["D4"]]
+            values += values[:1]
+            color = _color_for(r["model"])
+            ax.plot(angles, values, "o-", linewidth=2, label=r["model"], color=color)
+            ax.fill(angles, values, alpha=0.1, color=color)
+        ax.set_xticks(angles[:-1])
+        ax.set_xticklabels(categories, size=11)
+        ax.set_ylim(0, 5)
+        ax.set_yticks([1, 2, 3, 4, 5])
+        ax.legend(loc="upper right", bbox_to_anchor=(1.3, 1.1), fontsize=9)
+        ax.set_title("Model Stability Profile", size=14, pad=20)
+        return _embed_img(_fig_to_base64(fig), "Model radar chart")
+
+    def _chart_d1_heatmap(self, stats: dict) -> str:
+        """Heatmap: model × persona D1 scores."""
+        d1 = stats["d1"]
+        models = sorted(set(k.split("__")[0] for k in d1["by_model_persona"]))
+        personas = sorted(set(k.split("__")[1] for k in d1["by_model_persona"]))
+        if not models or not personas:
+            return ""
+
+        data = np.zeros((len(models), len(personas)))
+        for i, m in enumerate(models):
+            for j, p in enumerate(personas):
+                data[i, j] = d1["by_model_persona"].get(f"{m}__{p}", {}).get("mean", 0)
+
+        fig, ax = plt.subplots(
+            figsize=(max(6, len(personas) * 1.8), max(3, len(models) * 0.8))
+        )
+        im = ax.imshow(data, cmap="RdYlGn", vmin=1, vmax=5, aspect="auto")
+        ax.set_xticks(range(len(personas)))
+        ax.set_xticklabels(personas, rotation=30, ha="right", fontsize=9)
+        ax.set_yticks(range(len(models)))
+        ax.set_yticklabels(models, fontsize=10)
+        for i in range(len(models)):
+            for j in range(len(personas)):
+                ax.text(
+                    j,
+                    i,
+                    f"{data[i, j]:.2f}",
+                    ha="center",
+                    va="center",
+                    fontsize=11,
+                    fontweight="bold",
+                )
+        fig.colorbar(im, ax=ax, label="D1 Score (1-5)", shrink=0.8)
+        ax.set_title("D1 Persona Adherence: Model × Persona", size=13, pad=10)
+        return _embed_img(_fig_to_base64(fig), "D1 heatmap")
+
+    def _chart_d2_bars(self, stats: dict) -> str:
+        """Grouped bar chart: D2 by model, colored by tutor temperature."""
+        d2 = stats["d2"]["by_model_temp"]
+        if not d2:
+            return ""
+
+        models = [m for m in _MODEL_ORDER if any(m in k for k in d2)]
+        temps = sorted(set(k.split("__")[1] for k in d2))
+
+        fig, ax = plt.subplots(figsize=(8, 4.5))
+        x = np.arange(len(models))
+        width = 0.35
+        for i, t in enumerate(temps):
+            vals = [d2.get(f"{m}__{t}", {}).get("mean", 0) for m in models]
+            stds = [d2.get(f"{m}__{t}", {}).get("std", 0) for m in models]
+            offset = (i - (len(temps) - 1) / 2) * width
+            bars = ax.bar(
+                x + offset,
+                vals,
+                width * 0.9,
+                yerr=stds,
+                label=f"Tutor {t}",
+                capsize=3,
+                alpha=0.85,
+            )
+            for bar, val in zip(bars, vals):
+                if val > 0:
+                    ax.text(
+                        bar.get_x() + bar.get_width() / 2,
+                        bar.get_height() + 0.08,
+                        f"{val:.2f}",
+                        ha="center",
+                        va="bottom",
+                        fontsize=9,
+                    )
+
+        ax.set_xticks(x)
+        ax.set_xticklabels(models, fontsize=10)
+        ax.set_ylim(0, 5.5)
+        ax.set_ylabel("D2 Reproducibility Score", fontsize=11)
+        ax.set_title("D2 Cross-run Reproducibility × Tutor Temperature", size=13)
+        ax.legend()
+        ax.axhline(y=4, color="green", linestyle="--", alpha=0.3, label="_nolegend_")
+        ax.axhline(y=3, color="orange", linestyle="--", alpha=0.3, label="_nolegend_")
+        return _embed_img(_fig_to_base64(fig), "D2 bar chart")
+
+    def _chart_d4_curves(self, stats: dict) -> str:
+        """Line chart: per-turn fidelity curves."""
+        curves = stats["d4"].get("avg_fidelity_curves", {})
+        if not curves:
+            return ""
+
+        fig, ax = plt.subplots(figsize=(8, 4.5))
+        for model in _MODEL_ORDER:
+            if model in curves:
+                y = curves[model]
+                x = list(range(1, len(y) + 1))
+                ax.plot(
+                    x,
+                    y,
+                    "o-",
+                    linewidth=2,
+                    markersize=6,
+                    label=model,
+                    color=_color_for(model),
+                )
+
+        ax.set_xlabel("Turn", fontsize=11)
+        ax.set_ylabel("Persona Fidelity (1-5)", fontsize=11)
+        ax.set_ylim(0.5, 5.5)
+        ax.set_title("D4 Per-turn Persona Fidelity", size=13)
+        ax.legend(fontsize=9)
+        ax.xaxis.set_major_locator(ticker.MaxNLocator(integer=True))
+        ax.axhline(y=4, color="green", linestyle="--", alpha=0.3)
+        ax.axhline(y=3, color="orange", linestyle="--", alpha=0.3)
+        ax.grid(axis="y", alpha=0.3)
+        return _embed_img(_fig_to_base64(fig), "D4 drift curves")
+
+    def _chart_control_bars(self, stats: dict) -> str:
+        """Bar chart: persona distinctiveness."""
+        ctrl = stats["control"]["by_persona"]
+        if not ctrl:
+            return ""
+        personas = sorted(ctrl.keys())
+        vals = [ctrl[p]["mean"] for p in personas]
+
+        fig, ax = plt.subplots(figsize=(6, 4))
+        bars = ax.bar(
+            personas,
+            vals,
+            color=["#3498db", "#e67e22", "#2ecc71", "#9b59b6"][: len(personas)],
+            alpha=0.85,
+        )
+        for bar, val in zip(bars, vals):
+            ax.text(
+                bar.get_x() + bar.get_width() / 2,
+                bar.get_height() + 0.08,
+                f"{val:.2f}",
+                ha="center",
+                va="bottom",
+                fontsize=11,
+                fontweight="bold",
+            )
+        ax.set_ylim(0, 5.5)
+        ax.set_ylabel("Distinctiveness (1-5)", fontsize=11)
+        ax.set_title("Control: Persona vs No-Persona Distinctiveness", size=13)
+        ax.axhline(y=4, color="green", linestyle="--", alpha=0.3)
+        ax.axhline(y=3, color="orange", linestyle="--", alpha=0.3)
+        return _embed_img(_fig_to_base64(fig), "Control distinctiveness")
 
     # ----- HTML sections -----
 
     def _header(self) -> str:
         return f"""<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
+<html lang="en"><head><meta charset="utf-8">
 <title>Student Simulator Stability Report</title>
 <style>
   body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-         max-width: 1100px; margin: 40px auto; padding: 0 20px; color: #333;
-         line-height: 1.6; }}
+         max-width: 1100px; margin: 40px auto; padding: 0 20px; color: #333; line-height: 1.6; }}
   h1 {{ color: #1a1a2e; border-bottom: 3px solid #16213e; padding-bottom: 10px; }}
   h2 {{ color: #16213e; margin-top: 40px; border-bottom: 1px solid #ddd; padding-bottom: 5px; }}
   h3 {{ color: #0f3460; }}
@@ -304,67 +466,50 @@ class ReportGenerator:
   th, td {{ border: 1px solid #ddd; padding: 10px 14px; text-align: center; }}
   th {{ background: #16213e; color: white; font-weight: 600; }}
   tr:nth-child(even) {{ background: #f8f9fa; }}
-  .score-high {{ color: #27ae60; font-weight: bold; }}
-  .score-mid {{ color: #f39c12; font-weight: bold; }}
-  .score-low {{ color: #e74c3c; font-weight: bold; }}
-  .metric-card {{ background: #f8f9fa; border-radius: 8px; padding: 20px;
-                  margin: 10px 0; border-left: 4px solid #16213e; }}
-  .grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-           gap: 15px; margin: 15px 0; }}
-  .card {{ background: white; border: 1px solid #e0e0e0; border-radius: 8px;
-           padding: 20px; text-align: center; }}
-  .card .value {{ font-size: 2em; font-weight: bold; color: #16213e; }}
-  .card .label {{ font-size: 0.9em; color: #666; margin-top: 5px; }}
-  .conclusion {{ background: #eef5ff; border: 1px solid #b3d4fc; border-radius: 8px;
-                 padding: 20px; margin: 20px 0; }}
-  .badge {{ display: inline-block; padding: 3px 10px; border-radius: 12px;
-            font-size: 0.85em; font-weight: 600; }}
+  .high {{ color: #27ae60; font-weight: bold; }}
+  .mid {{ color: #f39c12; font-weight: bold; }}
+  .low {{ color: #e74c3c; font-weight: bold; }}
+  .card-row {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin: 15px 0; }}
+  .card {{ background: white; border: 1px solid #e0e0e0; border-radius: 8px; padding: 20px; text-align: center; }}
+  .card .val {{ font-size: 2em; font-weight: bold; color: #16213e; }}
+  .card .lbl {{ font-size: 0.9em; color: #666; margin-top: 5px; }}
+  .insight {{ background: #f0f7ff; border-left: 4px solid #16213e; border-radius: 4px; padding: 15px; margin: 15px 0; }}
+  .badge {{ display: inline-block; padding: 3px 10px; border-radius: 12px; font-size: 0.85em; font-weight: 600; }}
   .badge-gold {{ background: #ffd700; color: #333; }}
   .badge-silver {{ background: #c0c0c0; color: #333; }}
   .badge-bronze {{ background: #cd7f32; color: white; }}
-</style>
-</head>
-<body>
+  .conclusion {{ background: #eef5ff; border: 1px solid #b3d4fc; border-radius: 8px; padding: 20px; margin: 20px 0; }}
+</style></head><body>
 <h1>Student Simulator Stability Report</h1>
 <p><em>Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}</em></p>
 """
 
     def _footer(self) -> str:
-        return """
-</body>
-</html>"""
+        return "</body></html>"
 
-    def _score_class(self, score: float) -> str:
+    def _sc(self, score: float) -> str:
         if score >= 4.0:
-            return "score-high"
-        elif score >= 3.0:
-            return "score-mid"
-        return "score-low"
+            return "high"
+        if score >= 3.0:
+            return "mid"
+        return "low"
 
-    def _section_overview(self) -> str:
-        stats = self._compute_all_stats()
+    def _section_overview(self, stats: dict) -> str:
         ranking = stats["model_ranking"]
+        total_evals = sum(
+            len(self.raw.get(k, [])) for k in ["D1", "D2", "D3", "D4", "control"]
+        )
 
-        # Count totals
-        total_d1 = len(self.raw.get("D1", []))
-        total_d2 = len(self.raw.get("D2", []))
-        total_d3 = len(self.raw.get("D3", []))
-        total_d4 = len(self.raw.get("D4", []))
-        total_ctrl = len(self.raw.get("control", []))
+        cards = f"""<h2>1. Overview</h2>
+<div class="card-row">
+  <div class="card"><div class="val">{total_evals}</div><div class="lbl">Total Evaluations</div></div>
+  <div class="card"><div class="val">{len(ranking)}</div><div class="lbl">Models Tested</div></div>
+  <div class="card"><div class="val">{len(self.raw.get('control', []))}</div><div class="lbl">Control Comparisons</div></div>
+</div>"""
 
-        cards = f"""
-<h2>1. Overview Dashboard</h2>
-<div class="grid">
-  <div class="card"><div class="value">{total_d1 + total_d2 + total_d3 + total_d4}</div>
-    <div class="label">Total Evaluations</div></div>
-  <div class="card"><div class="value">{total_ctrl}</div>
-    <div class="label">Control Comparisons</div></div>
-  <div class="card"><div class="value">{len(ranking)}</div>
-    <div class="label">Models Tested</div></div>
-</div>
-"""
+        radar = self._chart_overview_radar(stats)
 
-        # Model ranking table
+        # Ranking table
         rows = ""
         badges = ["badge-gold", "badge-silver", "badge-bronze"]
         for i, r in enumerate(ranking):
@@ -373,284 +518,136 @@ class ReportGenerator:
                 if i < 3
                 else f"{i+1}th"
             )
-            sc = self._score_class
-            rows += f"""<tr>
-  <td>{badge}</td>
-  <td><strong>{r['model']}</strong></td>
-  <td class="{sc(r['scores']['D1'])}">{r['scores']['D1']:.2f}</td>
-  <td class="{sc(r['scores']['D2'])}">{r['scores']['D2']:.2f}</td>
-  <td class="{sc(r['scores']['D4'])}">{r['scores']['D4']:.2f}</td>
-  <td class="{sc(r['composite'])}">{r['composite']:.2f}</td>
-</tr>"""
+            rows += f"""<tr><td>{badge}</td><td><strong>{r['model']}</strong></td>
+  <td class="{self._sc(r['scores']['D1'])}">{r['scores']['D1']:.2f}</td>
+  <td class="{self._sc(r['scores']['D2'])}">{r['scores']['D2']:.2f}</td>
+  <td class="{self._sc(r['scores']['D4'])}">{r['scores']['D4']:.2f}</td>
+  <td class="{self._sc(r['composite'])}">{r['composite']:.2f}</td></tr>"""
 
         return (
             cards
+            + radar
             + f"""
 <h3>Model Stability Ranking</h3>
-<table>
-<tr><th>Rank</th><th>Model</th><th>D1 Adherence</th><th>D2 Reproducibility</th>
-    <th>D4 Anti-drift</th><th>Composite</th></tr>
-{rows}
-</table>
-<p><em>Composite = mean(D1, D2, D4). D3 is a group metric and not included in per-model ranking.</em></p>
-"""
+<table><tr><th>Rank</th><th>Model</th><th>D1</th><th>D2</th><th>D4</th><th>Composite</th></tr>
+{rows}</table>
+<p><em>Composite = mean(D1, D2, D4). D3 is a group metric, not per-model.</em></p>"""
         )
 
-    def _section_d1(self) -> str:
-        d1 = self._aggregate_d1()
-        # Model x Persona heatmap
-        rows = ""
-        personas = sorted(d1["by_persona"].keys())
-        models = sorted(d1["by_model"].keys())
+    def _section_d1(self, stats: dict) -> str:
+        heatmap = self._chart_d1_heatmap(stats)
+        return f"""<h2>2. D1 — Persona Adherence</h2>
+<p>Does each student message respect the persona's knowledge boundaries, emotional tone, and behavioral rules?</p>
+{heatmap}"""
 
-        for model in models:
-            cells = f"<td><strong>{model}</strong></td>"
-            for persona in personas:
-                key = f"{model}__{persona}"
-                val = d1["by_model_persona"].get(key, {}).get("mean", 0)
-                cells += f'<td class="{self._score_class(val)}">{val:.2f}</td>'
-            # Model average
-            avg = d1["by_model"].get(model, {}).get("mean", 0)
-            cells += (
-                f'<td class="{self._score_class(avg)}"><strong>{avg:.2f}</strong></td>'
-            )
-            rows += f"<tr>{cells}</tr>\n"
+    def _section_d2(self, stats: dict) -> str:
+        chart = self._chart_d2_bars(stats)
+        return f"""<h2>3. D2 — Cross-run Reproducibility</h2>
+<p>Same (task, persona, model) run 3 times — how consistent is the student's behavior?</p>
+{chart}
+<div class="insight">
+<strong>Ceiling effect note:</strong> At tutor t=0, both student and tutor are near-deterministic,
+so high D2 scores are expected by design. The meaningful comparison is t=0 vs t=1:
+a small gap means student stability is genuinely robust, not just an artifact of determinism.
+</div>"""
 
-        # Persona averages row
-        pcells = "<td><em>Average</em></td>"
-        for persona in personas:
-            val = d1["by_persona"].get(persona, {}).get("mean", 0)
-            pcells += f'<td class="{self._score_class(val)}"><em>{val:.2f}</em></td>'
-        pcells += "<td></td>"
-        rows += f"<tr>{pcells}</tr>"
-
-        headers = "".join(f"<th>{p}</th>" for p in personas)
-
-        # Phase comparison
-        phase_rows = ""
-        for phase, data in d1["by_phase"].items():
-            sc = self._score_class(data["mean"])
-            phase_rows += f'<tr><td>{phase}</td><td class="{sc}">{data["mean"]:.2f}</td><td>{data["std"]:.2f}</td><td>{data["n"]}</td></tr>'
-
-        return f"""
-<h2>2. D1 — Persona Adherence</h2>
-<p>Per-message scoring: does the student simulator respect knowledge boundaries,
-emotional tone, and behavioral rules?</p>
-
-<h3>Model x Persona Heatmap</h3>
-<table>
-<tr><th>Model</th>{headers}<th>Avg</th></tr>
-{rows}
-</table>
-
-<h3>Phase Comparison</h3>
-<table>
-<tr><th>Phase</th><th>Mean Score</th><th>Std Dev</th><th>N</th></tr>
-{phase_rows}
-</table>
-"""
-
-    def _section_d2(self) -> str:
-        d2 = self._aggregate_d2()
-        rows = ""
-        for key, data in sorted(d2["by_model_phase"].items()):
-            model, phase = key.split("__")
-            sc = self._score_class(data["mean"])
-            rows += f'<tr><td>{model}</td><td>{phase}</td><td class="{sc}">{data["mean"]:.2f}</td><td>{data["std"]:.2f}</td><td>{data["n"]}</td></tr>'
-
-        return f"""
-<h2>3. D2 — Cross-run Reproducibility</h2>
-<p>Same (task, persona, model) run 3 times — how consistent is the student behavior?</p>
-
-<table>
-<tr><th>Model</th><th>Phase</th><th>Mean Score</th><th>Std Dev</th><th>N</th></tr>
-{rows}
-</table>
-
-<div class="metric-card">
-<strong>Key insight:</strong> Phase 1 (scripted tutor) should show higher
-reproducibility than Phase 2 (live tutor), since the tutor input is fixed.
-The gap between phases quantifies how much tutor variance propagates to
-student behavior.
-</div>
-"""
-
-    def _section_d3(self) -> str:
-        d3 = self._aggregate_d3()
-        # Task breakdown
-        task_rows = ""
-        for task, data in sorted(d3["by_task"].items()):
-            sc = self._score_class(data["mean"])
-            task_rows += f'<tr><td>{task}</td><td class="{sc}">{data["mean"]:.2f}</td><td>{data["std"]:.2f}</td><td>{data["n"]}</td></tr>'
-
-        # Best/worst model votes
-        best_votes = d3.get("best_model_votes", {})
-        worst_votes = d3.get("worst_model_votes", {})
-        vote_rows = ""
-        all_models = set(best_votes.keys()) | set(worst_votes.keys())
-        for m in sorted(all_models):
-            vote_rows += f"<tr><td>{m}</td><td>{best_votes.get(m, 0)}</td><td>{worst_votes.get(m, 0)}</td></tr>"
-
-        return f"""
-<h2>4. D3 — Cross-model Consistency</h2>
-<p>Do different LLMs produce the same persona behavior given identical prompts?</p>
-
+    def _section_d3(self, stats: dict) -> str:
+        d3 = stats["d3"]
+        best = d3.get("best_model_votes", {})
+        worst = d3.get("worst_model_votes", {})
+        all_models = sorted(set(best.keys()) | set(worst.keys()))
+        vote_rows = "".join(
+            f"<tr><td>{m}</td><td>{best.get(m, 0)}</td><td>{worst.get(m, 0)}</td></tr>"
+            for m in all_models
+        )
+        task_rows = "".join(
+            f'<tr><td>{t}</td><td class="{self._sc(d["mean"])}">{d["mean"]:.2f}</td><td>{d["n"]}</td></tr>'
+            for t, d in sorted(d3["by_task"].items())
+        )
+        return f"""<h2>4. D3 — Cross-model Consistency</h2>
+<p>Do different LLMs produce the same persona behavior?</p>
 <h3>By Task</h3>
-<table>
-<tr><th>Task</th><th>Mean Score</th><th>Std Dev</th><th>N</th></tr>
-{task_rows}
-</table>
+<table><tr><th>Task</th><th>Mean Score</th><th>N</th></tr>{task_rows}</table>
+<h3>Best/Worst Model Votes (judge assessment)</h3>
+<table><tr><th>Model</th><th>Best Votes</th><th>Worst Votes</th></tr>{vote_rows}</table>"""
 
-<h3>Best/Worst Model Votes</h3>
-<p>Judge's assessment of which model best/worst captures each persona:</p>
-<table>
-<tr><th>Model</th><th>Best Votes</th><th>Worst Votes</th></tr>
-{vote_rows}
-</table>
-"""
-
-    def _section_d4(self) -> str:
-        d4 = self._aggregate_d4()
-        # Model breakdown
-        model_rows = ""
-        for model, data in sorted(d4["by_model"].items()):
-            sc = self._score_class(data["mean"])
-            model_rows += f'<tr><td>{model}</td><td class="{sc}">{data["mean"]:.2f}</td><td>{data["std"]:.2f}</td><td>{data["n"]}</td></tr>'
-
-        # Per-turn fidelity curves (text representation)
-        curve_text = ""
-        for model, curve in d4.get("avg_fidelity_curves", {}).items():
-            values = " → ".join(f"{v:.1f}" for v in curve)
-            first_half = _safe_mean(curve[: len(curve) // 2])
-            second_half = _safe_mean(curve[len(curve) // 2 :])
-            delta = second_half - first_half
-            trend = "↑" if delta > 0.2 else "↓" if delta < -0.2 else "→"
-            curve_text += f"<tr><td>{model}</td><td>{values}</td><td>{first_half:.2f}</td><td>{second_half:.2f}</td><td>{delta:+.2f} {trend}</td></tr>"
-
+    def _section_d4(self, stats: dict) -> str:
+        chart = self._chart_d4_curves(stats)
+        d4 = stats["d4"]
         onset = d4.get("drift_onset_mean", 0)
         onset_text = f"{onset:.1f}" if onset else "N/A"
 
-        return f"""
-<h2>5. D4 — Drift Detection</h2>
+        model_rows = "".join(
+            f'<tr><td>{m}</td><td class="{self._sc(d["mean"])}">{d["mean"]:.2f}</td><td>{d["std"]:.2f}</td><td>{d["n"]}</td></tr>'
+            for m, d in sorted(d4["by_model"].items())
+        )
+        return f"""<h2>5. D4 — Drift Detection</h2>
 <p>Does persona fidelity degrade over conversation turns?</p>
+{chart}
+<table><tr><th>Model</th><th>Mean Drift Score</th><th>Std</th><th>N</th></tr>{model_rows}</table>
+<div class="insight"><strong>Average drift onset turn:</strong> {onset_text} (later = better)</div>"""
 
-<h3>Overall Drift Score by Model</h3>
-<table>
-<tr><th>Model</th><th>Mean Score</th><th>Std Dev</th><th>N</th></tr>
-{model_rows}
-</table>
+    def _section_temperature_ablation(self, stats: dict) -> str:
+        d2 = stats["d2"]["by_model_temp"]
+        if not d2:
+            return ""
+        rows = ""
+        for key in sorted(d2.keys()):
+            parts = key.split("__")
+            model, temp = parts[0], parts[1] if len(parts) > 1 else "?"
+            d = d2[key]
+            rows += f'<tr><td>{model}</td><td>{temp}</td><td class="{self._sc(d["mean"])}">{d["mean"]:.2f}</td><td>{d["std"]:.2f}</td><td>{d["n"]}</td></tr>'
 
-<h3>Per-turn Fidelity Curves</h3>
-<p>Average persona fidelity score (1-5) at each turn:</p>
-<table>
-<tr><th>Model</th><th>Turn-by-turn (1→8)</th><th>First Half</th><th>Second Half</th><th>Delta</th></tr>
-{curve_text}
-</table>
+        return f"""<h2>6. Temperature Ablation</h2>
+<p>Does tutor response diversity (temperature) affect student sim stability?</p>
+<table><tr><th>Model</th><th>Tutor Temp</th><th>D2 Score</th><th>Std</th><th>N</th></tr>{rows}</table>
+<div class="insight">
+<strong>Interpretation:</strong> If D2 scores are similar across t=0 and t=1 for the same model,
+the student simulator is robust to tutor variance — its persona behavior is driven by the prompt,
+not by what the tutor says.
+</div>"""
 
-<div class="metric-card">
-<strong>Average drift onset turn:</strong> {onset_text}<br>
-<em>Lower values indicate earlier persona degradation.</em>
-</div>
-"""
+    def _section_control(self, stats: dict) -> str:
+        chart = self._chart_control_bars(stats)
+        overall = stats["control"].get("overall_mean", 0)
+        return f"""<h2>7. Control — Persona Distinguishability</h2>
+<p>Does the persona definition produce meaningfully different behavior vs a generic student?</p>
+{chart}
+<div class="card-row"><div class="card"><div class="val {self._sc(overall)}">{overall:.2f}</div>
+<div class="lbl">Overall Distinctiveness (1-5)</div></div></div>"""
 
-    def _section_control(self) -> str:
-        ctrl = self._aggregate_control()
-        overall = ctrl.get("overall_mean", 0)
-        sc = self._score_class(overall)
-
-        persona_rows = ""
-        for pid, data in sorted(ctrl.get("by_persona", {}).items()):
-            psc = self._score_class(data["mean"])
-            persona_rows += f'<tr><td>{pid}</td><td class="{psc}">{data["mean"]:.2f}</td><td>{data["n"]}</td></tr>'
-
-        return f"""
-<h2>6. Control Group — Persona Distinguishability</h2>
-<p>Does the persona definition actually produce meaningfully different behavior
-compared to a generic student?</p>
-
-<div class="grid">
-  <div class="card">
-    <div class="value {sc}">{overall:.2f}</div>
-    <div class="label">Overall Distinctiveness (1-5)</div>
-  </div>
-</div>
-
-<table>
-<tr><th>Persona</th><th>Distinctiveness</th><th>N</th></tr>
-{persona_rows}
-</table>
-
-<div class="metric-card">
-<strong>Interpretation:</strong>
-<ul>
-  <li><strong>≥ 4.0:</strong> Persona definitions strongly differentiate behavior — good prompt design</li>
-  <li><strong>3.0-4.0:</strong> Moderate differentiation — personas have some effect but could be stronger</li>
-  <li><strong>< 3.0:</strong> Weak differentiation — persona prompts need improvement</li>
-</ul>
-</div>
-"""
-
-    def _section_conclusion(self) -> str:
-        stats = self._compute_all_stats()
+    def _section_conclusion(self, stats: dict) -> str:
         ranking = stats["model_ranking"]
-
+        parts = []
         if ranking:
             best = ranking[0]
-            conclusion_parts = [
-                f'<p><strong>Most stable model: {best["model"]}</strong> '
-                f'(composite score: {best["composite"]:.2f}/5.0)</p>'
-            ]
-        else:
-            conclusion_parts = ["<p>No model ranking available.</p>"]
+            parts.append(
+                f'<p><strong>Most stable model: {best["model"]}</strong> (composite: {best["composite"]:.2f}/5.0)</p>'
+            )
 
-        # D1 insight
-        d1 = stats["d1"]
-        if d1["by_phase"]:
-            scripted_d1 = d1["by_phase"].get("scripted", {}).get("mean", 0)
-            live_d1 = d1["by_phase"].get("live", {}).get("mean", 0)
-            if scripted_d1 and live_d1:
-                conclusion_parts.append(
-                    f"<p><strong>Persona adherence:</strong> Scripted={scripted_d1:.2f}, "
-                    f"Live={live_d1:.2f}. "
-                    f"{'Tutor variability has minimal impact.' if abs(scripted_d1-live_d1)<0.3 else 'Tutor variability significantly affects student persona adherence.'}</p>"
-                )
-
-        # D4 insight
         d4 = stats["d4"]
         onset = d4.get("drift_onset_mean", 0)
         if onset:
-            conclusion_parts.append(
-                f"<p><strong>Drift:</strong> Persona drift first appears around turn {onset:.0f} on average. "
-                f"{'This is late in the conversation — good stability.' if onset >= 6 else 'Early drift — prompt reinforcement may help.'}</p>"
+            quality = (
+                "good" if onset >= 6 else "moderate" if onset >= 4 else "concerning"
+            )
+            parts.append(
+                f"<p><strong>Drift:</strong> onset at turn {onset:.0f} ({quality})</p>"
             )
 
-        # Control insight
-        ctrl = stats["control"]
-        distinctiveness = ctrl.get("overall_mean", 0)
-        if distinctiveness:
-            conclusion_parts.append(
-                f"<p><strong>Persona value:</strong> Distinctiveness score = {distinctiveness:.2f}/5.0. "
-                f"{'Persona definitions effectively shape behavior.' if distinctiveness >= 4 else 'Persona definitions could be strengthened.' if distinctiveness >= 3 else 'Persona definitions have limited effect — consider redesigning prompts.'}</p>"
+        ctrl = stats["control"].get("overall_mean", 0)
+        if ctrl:
+            quality = "strong" if ctrl >= 4 else "moderate" if ctrl >= 3 else "weak"
+            parts.append(
+                f"<p><strong>Persona value:</strong> distinctiveness = {ctrl:.2f} ({quality})</p>"
             )
 
-        return f"""
-<h2>7. Conclusion & Recommendations</h2>
-<div class="conclusion">
-{"".join(conclusion_parts)}
-</div>
-
-<h3>Prompt Design Recommendations</h3>
+        return f"""<h2>8. Conclusion</h2>
+<div class="conclusion">{"".join(parts) or "<p>Insufficient data for conclusions.</p>"}</div>
+<h3>Recommendations</h3>
 <ul>
   <li>If D4 drift is high: add periodic persona reinforcement in runtime_guidance</li>
-  <li>If D1 knowledge_boundary is low: make known/unknown concept lists more explicit in the prompt</li>
-  <li>If D3 cross-model consistency is low: simplify behavioral rules to core behaviors that all models can follow</li>
-  <li>If control distinctiveness is low: strengthen persona-specific language patterns and reaction styles</li>
-</ul>
-"""
-
-
-def _count_votes(names: list[str]) -> dict[str, int]:
-    counts: dict[str, int] = defaultdict(int)
-    for n in names:
-        counts[n] += 1
-    return dict(counts)
+  <li>If D1 knowledge_boundary is low: make known/unknown concept lists more explicit</li>
+  <li>If D3 cross-model is low: simplify behavioral rules to core behaviors</li>
+  <li>If control distinctiveness is low: strengthen persona-specific language patterns</li>
+</ul>"""

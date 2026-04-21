@@ -4,7 +4,7 @@
 failed result judge, failed code eval) and returns an empty/zero score
 with the error text stashed under `{component}_eval_error` in eval_results.
 Before this fix those error strings were dropped before reaching
-`eval_meta.json` or `/session/{sid}/scores`, leaving callers with empty
+`eval_meta.json` or `/ops/session/{sid}/scores`, leaving callers with empty
 `tutor_scores: {}` and no way to tell if it was a genuine zero or a
 silent upstream failure.
 """

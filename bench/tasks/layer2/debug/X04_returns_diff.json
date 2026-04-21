@@ -10,8 +10,8 @@
     "fullstack_practitioner"
   ],
   "student_openings": {
-    "fullstack_practitioner": "I'm debugging an issue: find and fix a returns calculation bug where. I've narrowed it down but want a second pair of eyes on the root cause.",
-    "developer_crossover": "I'm looking at code that should find and fix a returns calculation bug where. The code reads fine to me, but I'm not sure the financial logic is correct. What should it be doing?"
+    "fullstack_practitioner": "I'm debugging an issue: the returns calculation produces values that look too large. I've narrowed it down but want a second pair of eyes on the root cause.",
+    "developer_crossover": "I'm looking at code that computes returns for a trading strategy, but the numbers look unrealistically large. The code reads fine to me, but I'm not sure the financial logic is correct. What should it be doing?"
   },
   "environment": {
     "data_files": [

@@ -10,8 +10,8 @@
     "fullstack_practitioner"
   ],
   "student_openings": {
-    "fullstack_practitioner": "I need to migrate from a classic LEAN algorithm (manual OnData +. I've done similar work in Python before — let's focus on getting the architecture and edge cases right.",
-    "developer_crossover": "I need to migrate from a classic LEAN algorithm (manual OnData +. I can handle the code, but I don't understand the financial logic behind it. What should this do and why?"
+    "fullstack_practitioner": "I need to migrate from a classic LEAN algorithm to the Algorithm Framework pattern with a custom AlphaModel. I've done similar work in Python before — let's focus on getting the architecture and edge cases right.",
+    "developer_crossover": "I need to migrate from a classic LEAN algorithm to the Algorithm Framework pattern. I can handle the code, but I don't understand the financial logic behind it. What should this do and why?"
   },
   "environment": {
     "data_files": [

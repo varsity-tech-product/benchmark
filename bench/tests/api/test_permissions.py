@@ -43,14 +43,16 @@ class TestRegisteredPhasePermissions:
         assert resp.status_code == 403
 
     @pytest.mark.asyncio
-    async def test_evaluate_denied(self, client):
+    async def test_evaluate_not_on_agent_surface(self, client):
+        """Issue #46 slice 3: /session/.../evaluate is gone from the
+        agent REST surface — eval lives under /ops/* now."""
         sid = await register_session(client)
         resp = await client.post(f"/session/{sid}/evaluate", json={})
-        assert resp.status_code == 403
+        assert resp.status_code == 404
 
 
 class TestInSessionPhasePermissions:
-    """After start, send + domain tools allowed, register/start/evaluate denied."""
+    """After start, send + domain tools allowed; register/start denied."""
 
     @pytest.mark.asyncio
     async def test_send_allowed(self, client):
@@ -72,10 +74,10 @@ class TestInSessionPhasePermissions:
         assert "send_message" in tool_names
 
     @pytest.mark.asyncio
-    async def test_evaluate_denied(self, client):
+    async def test_evaluate_not_on_agent_surface(self, client):
         sid, _ = await register_and_start(client)
         resp = await client.post(f"/session/{sid}/evaluate", json={})
-        assert resp.status_code == 403
+        assert resp.status_code == 404
 
     @pytest.mark.asyncio
     async def test_double_start_denied(self, client):

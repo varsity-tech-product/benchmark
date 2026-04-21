@@ -14,10 +14,39 @@ import logging
 import os
 import re
 import textwrap
+import time
 
 from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Error types for student simulator failures
+# ---------------------------------------------------------------------------
+
+_MAX_GENERATE_ATTEMPTS = 3
+
+
+class StudentSimError(Exception):
+    """Raised when student simulator exhausts all retry attempts."""
+
+    def __init__(self, error_type: str, attempts: list[dict], message: str = ""):
+        self.error_type = error_type  # "network" | "parse" | "empty"
+        self.attempts = attempts  # [{attempt, error_type, detail, ...}, ...]
+        super().__init__(
+            message
+            or f"Student sim failed ({error_type}) after {len(attempts)} attempts"
+        )
+
+    @property
+    def summary(self) -> dict:
+        """Compact failure summary suitable for serialising into session results."""
+        return {
+            "final_error_type": self.error_type,
+            "attempt_count": len(self.attempts),
+            "error_types": [a.get("error_type") for a in self.attempts],
+            "last_detail": self.attempts[-1].get("detail", "") if self.attempts else "",
+        }
 
 
 class SimulatedInput(BaseModel):
@@ -48,6 +77,20 @@ _NEXT_MESSAGE_PROMPT = textwrap.dedent(
 
     Respond with a JSON object containing a single key `simulated_input`.
     JSON Output:
+"""
+)
+
+# Repair prompt sent on parse failure instead of the original prompt.
+# Includes the bad output so the model can see what went wrong.
+_REPAIR_PROMPT = textwrap.dedent(
+    """\
+    Your previous response could not be parsed as a student reply.
+    Your output was:
+    ---
+    {bad_output}
+    ---
+    Return ONLY valid JSON in this exact shape, with no markdown, commentary, or extra keys:
+    {{"simulated_input": "..."}}
 """
 )
 
@@ -221,23 +264,90 @@ def _collect_images_from_ledger(
     return images
 
 
-def _parse_simulated_input(raw: str) -> str:
-    """Extract ``simulated_input`` from JSON output, with fallback.
+def _parse_simulated_input_strict(raw: str) -> tuple[str, str]:
+    """Extract ``simulated_input`` from JSON output.
 
-    Aligned with DeepEval's generate_schema() + trimAndLoadJson fallback
-    (conversation_simulator.py:606-623).
+    Returns ``(text, parse_method)`` on success where ``parse_method`` is one of:
+    - ``"json"``: extracted from ``simulated_input`` key
+    - ``"json_single_value"``: extracted from the only string value in a JSON object
+    - ``"fallback_text"``: accepted as natural-language student message
+
+    Raises ``ValueError`` if parsing fails.  Empty-output errors have the
+    prefix ``"empty:"`` so callers can distinguish them from structural parse
+    failures.
     """
-    match = _JSON_RE.search(raw or "")
+    if not raw or not raw.strip():
+        raise ValueError("empty: LLM returned empty output")
+
+    match = _JSON_RE.search(raw)
     if match:
         try:
             data = json.loads(match.group())
             text = data.get("simulated_input")
             if text and text.strip():
-                return text.strip()
+                return text.strip(), "json"
+            # simulated_input missing or empty — try single-value fallback
+            # before giving up: if the object has exactly one string value and
+            # it passes the usability check, accept it with a warning.
+            string_values = [
+                v for v in data.values() if isinstance(v, str) and v.strip()
+            ]
+            if len(string_values) == 1 and _is_usable_student_message(
+                string_values[0].strip()
+            ):
+                logger.warning(
+                    "Student sim: simulated_input key missing; "
+                    "accepted single string value from JSON (key drift). raw=%r",
+                    raw[:120],
+                )
+                return string_values[0].strip(), "json_single_value"
         except (json.JSONDecodeError, TypeError):
             pass
-    # Fallback: treat raw output as plain text.
-    return (raw or "").strip()
+        # JSON found but no usable value — not usable as-is
+        raise ValueError(f"JSON found but no valid simulated_input: {raw[:120]!r}")
+
+    # No JSON — check if raw text is usable as a student message
+    stripped = raw.strip()
+    if _is_usable_student_message(stripped):
+        return stripped, "fallback_text"
+
+    raise ValueError(f"No JSON and text not usable as student message: {raw[:120]!r}")
+
+
+# Patterns that indicate prompt leakage or meta content — not a real student message
+_META_PATTERNS = re.compile(
+    r"simulated_input|JSON Output:|You are role-playing|"
+    r"Respond with a JSON|Reply format:|Conversation so far:|"
+    r"^```\w*\n",  # Code fence at start of output
+    re.IGNORECASE | re.MULTILINE,
+)
+
+
+def _is_usable_student_message(text: str) -> bool:
+    """Check if non-JSON text is usable as a student message.
+
+    Accepts natural student text (e.g., when model skips JSON wrapper),
+    including short replies like "Why?" or "Got it." that a real student
+    might send.
+    Rejects prompt leakage, meta content, empty, or degenerate output.
+    """
+    if not text or not text.strip():
+        return False
+    if len(text) > 2000:
+        return False
+    if _META_PATTERNS.search(text):
+        return False
+    # Must contain at least one alphabetic character — rejects pure
+    # punctuation, digits, or brace-heavy garbled output.
+    if not any(c.isalpha() for c in text):
+        return False
+    # For longer text, also require a minimum alpha density to reject
+    # outputs dominated by special characters or JSON fragments.
+    if len(text) >= 10:
+        alpha_count = sum(c.isalpha() for c in text)
+        if alpha_count / len(text) < 0.4:
+            return False
+    return True
 
 
 # ---------------------------------------------------------------------------
@@ -246,15 +356,15 @@ def _parse_simulated_input(raw: str) -> str:
 
 
 class StudentSimulator:
-    """Generates student messages via a DeepEval model object.
+    """Generates student messages via an LLM client.
 
-    Prompt templates, conversation history format, and output parsing are
-    aligned with DeepEval's ConversationSimulator to produce identical
-    student message distributions across Legacy and MCP paths.
-
-    Accepts any object returned by ``resolve_deepeval_model()`` —
-    ``GPTModel``, ``GPTModel``, or a plain model-name string.
+    Accepts any object returned by ``resolve_ewan_model()`` —
+    ``EwanLLMClient`` or a plain model-name string.
     When a plain string is passed, it is resolved lazily on first use.
+
+    Uses a unified retry budget (``_MAX_GENERATE_ATTEMPTS``) for both
+    network errors and parse failures.  Raises ``StudentSimError`` when
+    all attempts are exhausted.
     """
 
     def __init__(
@@ -265,57 +375,113 @@ class StudentSimulator:
     ):
         self.scenario = scenario
         self.user_description = user_description
-        self._model = model  # DeepEval model object or string
+        self._model = model
         self.total_cost: float = 0.0
 
     @property
     def model(self):
         """Lazy-resolve plain string model names on first use."""
         if isinstance(self._model, str) or self._model is None:
-            from server.eval.ewan_eval.model_resolver import (
-                resolve_ewan_model as resolve_deepeval_model,
-            )
+            from server.eval.ewan_eval.model_resolver import resolve_ewan_model
 
-            self._model = resolve_deepeval_model(self._model)
+            self._model = resolve_ewan_model(self._model)
         return self._model
 
     def _generate_parsed(self, prompt: str, images: list[dict] | None = None) -> str:
-        """Generate text via model, parse JSON output, track cost.
+        """Generate text via model with retry, parse JSON output, track cost.
 
-        Tries structured output (schema=) first, falls back to plain
-        text + JSON extraction.  Aligned with DeepEval's generate_schema()
-        (conversation_simulator.py:606-623).
+        Retry strategy (budget: ``_MAX_GENERATE_ATTEMPTS``):
+        - network error  → retry with original prompt (transient failure)
+        - empty output   → retry once with original prompt, then fail
+        - parse error    → retry with repair prompt containing the bad output
+
+        After all attempts are exhausted, raises ``StudentSimError`` with full
+        attempt history.
         """
-        # Try structured output path (GPTModel / GPTModel).
-        # Only catch TypeError/AttributeError/NotImplementedError — these
-        # indicate the model doesn't support schema=.  Network errors,
-        # rate limits, etc. should propagate (aligned with DeepEval's
-        # generate_schema which only catches TypeError).
-        try:
-            result = self.model.generate(
-                prompt, schema=SimulatedInput, images=images or None
-            )
+        attempts: list[dict] = []
+        # The prompt actually sent on the current attempt.  Starts as the
+        # original prompt; becomes a repair prompt after a parse/empty failure.
+        current_prompt = prompt
+        last_bad_output: str = ""
+
+        for attempt_idx in range(_MAX_GENERATE_ATTEMPTS):
+            attempt_record: dict = {"attempt": attempt_idx + 1, "ts": time.time()}
+
+            # --- Network layer ---
+            try:
+                result = self.model.generate(current_prompt, images=images or None)
+            except Exception as exc:
+                attempt_record.update(
+                    error_type="network",
+                    detail=f"{type(exc).__name__}: {exc}",
+                )
+                attempts.append(attempt_record)
+                logger.warning(
+                    "Student sim network error (attempt %d/%d): %s",
+                    attempt_idx + 1,
+                    _MAX_GENERATE_ATTEMPTS,
+                    exc,
+                )
+                # Network failure — keep original prompt, don't build repair
+                current_prompt = prompt
+                continue
+
             if isinstance(result, tuple):
-                obj, cost = result[0], result[1] if len(result) > 1 else None
+                text = result[0]
+                cost = result[1] if len(result) > 1 else None
                 if cost is not None:
                     self.total_cost += cost
+                    attempt_record["cost"] = cost
             else:
-                obj = result
-            if hasattr(obj, "simulated_input"):
-                return obj.simulated_input.strip()
-        except (TypeError, AttributeError, NotImplementedError) as exc:
-            logger.debug("Structured output failed (%s), falling back to text.", exc)
+                text = result
+            attempt_record["output_len"] = len(text or "")
 
-        # Fallback: plain text generation + JSON extraction.
-        result = self.model.generate(prompt, images=images or None)
-        if isinstance(result, tuple):
-            text = result[0]
-            cost = result[1] if len(result) > 1 else None
-            if cost is not None:
-                self.total_cost += cost
-        else:
-            text = result
-        return _parse_simulated_input(text)
+            # --- Parse layer ---
+            try:
+                parsed, parse_method = _parse_simulated_input_strict(text)
+                attempt_record.update(error_type=None, parse_method=parse_method)
+                attempts.append(attempt_record)
+                if len(attempts) > 1:
+                    logger.info(
+                        "Student sim succeeded on attempt %d/%d",
+                        attempt_idx + 1,
+                        _MAX_GENERATE_ATTEMPTS,
+                    )
+                return parsed
+            except ValueError as exc:
+                detail = str(exc)
+                # Distinguish empty output from structural parse failure so
+                # downstream filtering and retry logic can treat them differently.
+                error_type = "empty" if detail.startswith("empty:") else "parse"
+                attempt_record.update(error_type=error_type, detail=detail)
+                attempts.append(attempt_record)
+                logger.warning(
+                    "Student sim %s error (attempt %d/%d): %s",
+                    error_type,
+                    attempt_idx + 1,
+                    _MAX_GENERATE_ATTEMPTS,
+                    exc,
+                )
+                if error_type == "parse":
+                    # Build a repair prompt for the next attempt.
+                    # Include the bad output (truncated) so the model can see
+                    # what it produced and correct course.  Do NOT re-send the
+                    # full original prompt — that wastes tokens and doesn't help.
+                    last_bad_output = (text or "")[:300]
+                    current_prompt = _REPAIR_PROMPT.format(bad_output=last_bad_output)
+                else:
+                    # Empty output — likely a transient API issue.  Retry with
+                    # the original prompt; a repair prompt with nothing to show
+                    # the model would be nonsensical.
+                    current_prompt = prompt
+                continue
+
+        # All attempts exhausted
+        last_type = attempts[-1].get("error_type", "unknown") if attempts else "unknown"
+        raise StudentSimError(
+            error_type=last_type,
+            attempts=attempts,
+        )
 
     def generate_message(
         self,

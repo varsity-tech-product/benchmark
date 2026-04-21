@@ -47,11 +47,14 @@ class TestCompletedPhasePermissions:
         assert resp.status_code == 403
 
     @pytest.mark.asyncio
-    async def test_evaluate_allowed_after_completion(self, client, completed_session):
+    async def test_evaluate_allowed_after_completion(
+        self, client, completed_session, mock_eval_pipeline
+    ):
         sid = completed_session
-        resp = await client.post(f"/session/{sid}/evaluate", json={})
-        # Should be 200 (accepted) — eval starts in background
+        resp = await client.post(f"/ops/session/{sid}/evaluate", json={})
+        # Synchronous scoring on the operator surface (#46 slice 4).
         assert resp.status_code == 200
+        assert resp.json()["status"] == "completed"
 
     @pytest.mark.asyncio
     async def test_status_shows_completed(self, client, completed_session):
@@ -67,19 +70,20 @@ class TestCompletedPhasePermissions:
 
 class TestCompletedPhaseTools:
     @pytest.mark.asyncio
-    async def test_tools_shows_eval_tools(self, client, completed_session):
-        """Static-union visibility (issue #25): all lifecycle tools remain
-        listed in COMPLETED; calling an out-of-phase one returns the
-        imperative phase-denial error rather than disappearing from the
-        catalogue."""
+    async def test_eval_tools_no_longer_advertised(self, client, completed_session):
+        """Issue #46 slice 3: evaluation tools dropped from agent catalogue.
+
+        COMPLETED is terminal for the agent; scoring runs out-of-band on
+        the operator surface (``/ops/session/{sid}/...``). Lifecycle tools
+        stay visible so frozen-registry clients can still observe the
+        terminal state via error guidance from any further call.
+        """
         sid = completed_session
         tools = await get_tools(client, sid)
         names = [t["name"] for t in tools]
-        assert "request_evaluation" in names
-        assert "get_results" in names
-        assert "get_scores" in names
-        # Lifecycle tools stay visible so frozen-registry clients can still
-        # drive the state machine via error guidance.
+        assert "request_evaluation" not in names
+        assert "get_results" not in names
+        assert "get_scores" not in names
         assert "send_message" in names
         assert "start_session" in names
 
@@ -93,7 +97,7 @@ class TestCompletedPhaseData:
     @pytest.mark.asyncio
     async def test_get_results_returns_data(self, client, completed_session):
         sid = completed_session
-        resp = await client.get(f"/session/{sid}/results")
+        resp = await client.get(f"/ops/session/{sid}/results")
         if resp.status_code == 200:
             data = resp.json()
             assert "conversation" in data
@@ -102,7 +106,7 @@ class TestCompletedPhaseData:
     async def test_get_scores_returns_pending(self, client, completed_session):
         """Before evaluation, scores should report pending status."""
         sid = completed_session
-        resp = await client.get(f"/session/{sid}/scores")
+        resp = await client.get(f"/ops/session/{sid}/scores")
         assert resp.status_code == 200
         data = resp.json()
         assert data["status"] in ("pending", "running")

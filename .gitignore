@@ -57,6 +57,9 @@ logs/
 # Benchmark results (traces, scores, agent files)
 bench/results/
 /results/
+bench/experiments/student_sim_stability/results/
+bench/experiments/student_sim_stability/pilot/
+bench/experiments/student_sim_stability/doc/
 
 # Claude Code local state
 .claude/

@@ -4,13 +4,13 @@ Design doc §6.1 (Quant Process Scoring) and §9 (DeepEval Component Mapping).
 
 Metrics implemented:
 - Tool Usage: mathematical scoring of tool selection quality (tool_usage.py)
-- Step Efficiency: 3-sub-dimension evaluation via direct GPTModel call
+- Step Efficiency: 3-sub-dimension evaluation via direct EwanLLMClient call
   (Action Economy, Redundancy Avoidance, Logical Sequencing)
 - Process Reasonableness: tool-agnostic execution quality (process_reasonableness.py)
 - Process Alignment: reference-anchored process comparison (process_reasonableness.py)
 - Code Process: code development process quality (code_process.py)
-- Role Adherence: custom GPTModel direct-call (custom_conv_metrics.py)
-- Topic Adherence: custom GPTModel direct-call (custom_conv_metrics.py)
+- Role Adherence: custom EwanLLMClient direct-call (custom_conv_metrics.py)
+- Topic Adherence: custom EwanLLMClient direct-call (custom_conv_metrics.py)
 
 QP aggregate = weighted average of 7 dimensions:
     tool_usage              0.20
@@ -30,9 +30,7 @@ import threading
 from typing import Optional
 
 from server.eval.ewan_eval._scoring_utils import extract_json_from_response
-from server.eval.ewan_eval.model_resolver import (
-    resolve_ewan_model as resolve_deepeval_model,
-)
+from server.eval.ewan_eval.model_resolver import resolve_ewan_model
 from server.tool_filters import NON_SUBSTANTIVE_TOOLS
 
 # ──────────────────────────────────────────────────────────────
@@ -50,13 +48,7 @@ def set_eval_concurrency(n: int) -> None:
 # Sentinel for aborted coroutines
 _ABORT_SENTINEL = object()
 
-try:
-    from server.eval.ewan_eval.llm_client import EwanLLMClient as GPTModel
-
-    DEEPEVAL_AVAILABLE = True
-except ImportError:
-    DEEPEVAL_AVAILABLE = False
-
+from server.eval.ewan_eval.llm_client import EwanLLMClient
 
 # Default relevant topics for TopicAdherenceMetric
 QUANT_TUTOR_TOPICS = [
@@ -328,7 +320,7 @@ async def _async_eval_step_efficiency(
 ):
     """Evaluate step efficiency with 3 sub-dimensions.
 
-    Uses direct LLM call (via GPTModel) instead of DeepEval's
+    Uses direct LLM call (via EwanLLMClient) instead of DeepEval's
     StepEfficiencyMetric to support structured multi-score output.
 
     Sub-dimensions:
@@ -336,9 +328,6 @@ async def _async_eval_step_efficiency(
         Redundancy Avoidance (0.3): LLM-judged
         Logical Sequencing (0.3): LLM-judged
     """
-    if not DEEPEVAL_AVAILABLE:
-        return {"score": 0.5, "reason": "deepeval not available", "passed": True}
-
     # Count substantive steps
     agent_steps = _count_substantive_steps(proxy_logs)
 
@@ -375,13 +364,13 @@ async def _async_eval_step_efficiency(
         action_economy_precomputed=action_economy,
     )
 
-    # Get LLM response via GPTModel
+    # Get LLM response via EwanLLMClient
     try:
-        model_obj = resolve_deepeval_model(model)
+        model_obj = resolve_ewan_model(model)
         if isinstance(model_obj, str):
-            from server.config.pricing import get_deepeval_cost_kwargs
+            from server.config.pricing import get_llm_cost_kwargs
 
-            model_obj = GPTModel(model=model_obj, **get_deepeval_cost_kwargs(model_obj))
+            model_obj = EwanLLMClient(model=model_obj, **get_llm_cost_kwargs(model_obj))
         response_text, call_cost = await model_obj.a_generate(prompt)
         result = extract_json_from_response(response_text)
     except Exception:
@@ -424,7 +413,7 @@ async def _async_eval_role_adherence(
     model,
     threshold=0.5,
 ):
-    """Evaluate role adherence via custom GPTModel direct call.
+    """Evaluate role adherence via custom EwanLLMClient direct call.
 
     Args:
         turns: Conversation as list of {"role": ..., "content": ...} dicts.
@@ -440,7 +429,7 @@ async def _async_eval_topic_adherence(
     task_description="",
     threshold=0.5,
 ):
-    """Evaluate topic adherence via custom GPTModel direct call.
+    """Evaluate topic adherence via custom EwanLLMClient direct call.
 
     Args:
         turns: Conversation as list of {"role": ..., "content": ...} dicts.
@@ -542,7 +531,7 @@ def _build_process_tasks_for_model(
             model=single_model,
         )
 
-    # Conversational metrics — custom GPTModel direct-call
+    # Conversational metrics — custom EwanLLMClient direct-call
     if conversation:
         tasks["role_adherence"] = _async_eval_role_adherence(
             conversation,

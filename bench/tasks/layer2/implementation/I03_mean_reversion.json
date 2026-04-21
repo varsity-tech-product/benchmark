@@ -10,8 +10,8 @@
     "fullstack_practitioner"
   ],
   "student_openings": {
-    "fullstack_practitioner": "I need to implement an RSI mean-reversion strategy with asymmetric. I've done similar work in Python before — let's focus on getting the architecture and edge cases right.",
-    "developer_crossover": "I need to implement an RSI mean-reversion strategy with asymmetric. I can handle the code, but I don't understand the financial logic behind it. What should this do and why?"
+    "fullstack_practitioner": "I need to implement an RSI mean-reversion strategy with asymmetric entry/exit thresholds and stop-loss. I've done similar work in Python before — let's focus on getting the architecture and edge cases right.",
+    "developer_crossover": "I need to implement an RSI mean-reversion strategy with asymmetric thresholds. I can handle the code, but I don't understand the financial logic behind it. What should this do and why?"
   },
   "environment": {
     "data_files": [

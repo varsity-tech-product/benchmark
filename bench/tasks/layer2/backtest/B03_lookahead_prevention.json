@@ -12,10 +12,10 @@
     "fullstack_practitioner"
   ],
   "student_openings": {
-    "fullstack_practitioner": "I want to build a backtest engine that architecturally prevents properly. I've run basic backtests before — what methodology issues should I watch for?",
-    "finance_veteran": "I need to build a backtest engine that architecturally prevents. I know what good backtesting looks like from experience — can you help me implement it in code?",
-    "developer_crossover": "I want to build a backtest engine that architecturally prevents. I can write the code myself, but I need to understand the financial concepts. What does this mean in trading?",
-    "double_novice": "I want to learn about how to build a backtest engine that architecturally prevents. I'm new to both Python and finance — can you walk me through it from the beginning?"
+    "fullstack_practitioner": "I want to build a backtest engine that architecturally prevents look-ahead bias. I've run basic backtests before — what methodology issues should I watch for?",
+    "finance_veteran": "I need to build a backtest engine that prevents look-ahead bias with a verification test. I know what good backtesting looks like from experience — can you help me implement it in code?",
+    "developer_crossover": "I want to build a backtest engine that prevents look-ahead bias. I can write the code myself, but I need to understand the financial concepts. What does this mean in trading?",
+    "double_novice": "I want to learn about how to build a backtest engine that prevents look-ahead bias. I'm new to both Python and finance — can you walk me through it from the beginning?"
   },
   "environment": {
     "data_files": [

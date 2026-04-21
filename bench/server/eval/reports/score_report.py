@@ -65,7 +65,7 @@ def generate_score_report(
         if result.tutor_scores
         else 0.0
     )
-    _a(f"| Tutor Score (weighted 7D) | {_f(tutor_avg)} |")
+    _a(f"| Tutor Score (weighted 6D) | {_f(tutor_avg)} |")
     _a("")
 
     # ── QR Breakdown ──
@@ -76,8 +76,8 @@ def generate_score_report(
     _a("## Quant Process (QP) Breakdown\n")
     _section_qp(lines, result)
 
-    # ── Tutor 7D ──
-    _a("## Tutor Quality (7D) Breakdown\n")
+    # ── Tutor 6D ──
+    _a("## Tutor Quality (6D) Breakdown\n")
     _section_tutor(lines, result)
 
     # ── Workspace Files ──
@@ -619,17 +619,16 @@ def _fmt_list(items) -> str:
 
 
 # ──────────────────────────────────────────────────────────────
-# Tutor 7D Section
+# Tutor 6D Section
 # ──────────────────────────────────────────────────────────────
 
 _TUTOR_DIMS = [
-    "D1_level_detection",
-    "D2_language_adaptation",
-    "D3_scaffolding_calibration",
-    "D4_domain_accuracy",
-    "D5_code_teaching",
-    "D6_empathetic_response",
-    "D7_safety_boundaries",
+    "D1_finance_adaptation",
+    "D2_code_adaptation",
+    "D3_pedagogical_method",
+    "D4_instructional_accuracy",
+    "D5_empathetic_response",
+    "D6_safety_boundaries",
 ]
 
 

@@ -10,8 +10,8 @@
     "fullstack_practitioner"
   ],
   "student_openings": {
-    "fullstack_practitioner": "I need to implement a dual moving average crossover strategy as a. I've done similar work in Python before — let's focus on getting the architecture and edge cases right.",
-    "developer_crossover": "I need to implement a dual moving average crossover strategy as a. I can handle the code, but I don't understand the financial logic behind it. What should this do and why?"
+    "fullstack_practitioner": "I need to implement a dual moving average crossover strategy as a LEAN C# algorithm across multiple symbols. I've done similar work in Python before — let's focus on getting the architecture and edge cases right.",
+    "developer_crossover": "I need to implement a dual moving average crossover strategy as a LEAN C# algorithm. I can handle the code, but I don't understand the financial logic behind it. What should this do and why?"
   },
   "environment": {
     "data_files": [
