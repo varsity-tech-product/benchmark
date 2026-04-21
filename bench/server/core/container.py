@@ -210,6 +210,36 @@ class ContainerManager:
                     capture_output=True,
                 )
 
+            # Inject shared lean_config.py helper. run_backtest.sh imports this
+            # from /lean/helpers/lean_config.py; without it, containers built
+            # before the helper existed raise ModuleNotFoundError at [2b/4].
+            lean_config_py = (
+                Path(__file__).parent.parent.parent / "docker" / "lean_config.py"
+            )
+            if lean_config_py.exists():
+                subprocess.run(
+                    [
+                        "docker",
+                        "exec",
+                        "--user",
+                        "root",
+                        container_id,
+                        "mkdir",
+                        "-p",
+                        "/lean/helpers",
+                    ],
+                    capture_output=True,
+                )
+                subprocess.run(
+                    [
+                        "docker",
+                        "cp",
+                        str(lean_config_py),
+                        f"{container_id}:/lean/helpers/lean_config.py",
+                    ],
+                    capture_output=True,
+                )
+
             inject_strategy_py = (
                 Path(__file__).parent.parent.parent / "scripts" / "inject_strategy.py"
             )

@@ -34,6 +34,13 @@ SCRIPT_DIR = Path(__file__).parent
 BENCH_ROOT = SCRIPT_DIR.parent
 REFERENCE_ROOT = BENCH_ROOT / "reference"  # bench/reference/
 
+# Shared LEAN config helper — the same module Dockerfile.lean copies to
+# /lean/helpers/lean_config.py inside the container, so reference generation
+# (host) and session backtests (container) cannot drift on which keys get
+# written to config.json.
+sys.path.insert(0, str(BENCH_ROOT / "docker"))
+import lean_config  # noqa: E402
+
 # Series prefix → subdirectory mapping
 _SERIES_SUBDIR = {
     "I": "Implementation",
@@ -300,12 +307,14 @@ def _ensure_lean_runtime() -> tuple[str, str]:
     sys.exit(1)
 
 
-def _build_lean_config(
-    class_name: str, algo_filename: str, start_date: str, end_date: str
-) -> dict:
-    """Build a LEAN configuration for the backtest.
+def _build_lean_config(start_date: str, end_date: str) -> dict:
+    """LEAN scaffolding (environments, handlers, data paths, dates).
 
-    Aligned with MatchX cloud backtest lean-config.json template.
+    Aligned with MatchX cloud backtest lean-config.json template. Session-
+    specific keys — ``algorithm-type-name``, ``algorithm-location``,
+    ``parameters`` — are filled in by ``lean_config.apply_session_overrides``
+    so both the reference generator and the in-container session runner use
+    the same patch logic.
     """
     return {
         "environment": "backtesting",
@@ -320,10 +329,7 @@ def _build_lean_config(
                 "history-provider": "QuantConnect.Lean.Engine.HistoricalData.SubscriptionDataReaderHistoryProvider",
             }
         },
-        "algorithm-type-name": class_name,
         "algorithm-language": "CSharp",
-        "algorithm-location": f"/Lean/Algorithm.CSharp/{algo_filename}",
-        "parameters": {},
         "data-folder": "/Lean/Data",
         "data-directory": "/Lean/Data",
         "results-destination-folder": "/Results",
@@ -638,18 +644,23 @@ def run_lean_backtest(
                     print(f"  Copied {supp_filename} to algo mount dir")
                     break
 
-        # Write LEAN config — point to compiled DLL
+        # Write LEAN config — point to compiled DLL.
+        # Reference generator uses a symmetric 0.0005 maker/taker fee for parity
+        # with MatchX cloud backtests, overriding the shared helper's session
+        # default of 0.0002 maker.
         dll_path = "/CustomAlgo/bin/Debug/net10.0/CustomAlgo.dll"
-        config = _build_lean_config(class_name, algo_file.name, start_date, end_date)
-        config["algorithm-location"] = dll_path
-        # Inject custom data root for 12-col data
-        config.setdefault("parameters", {})
-        config["parameters"]["custom-data-root"] = "/data/custom/binance"
-        config["parameters"]["maker-fee-rate"] = "0.0005"
-        config["parameters"]["taker-fee-rate"] = "0.0005"
-        # Merge task-specific parameters into config
-        if parameters:
-            config["parameters"] = {**config.get("parameters", {}), **parameters}
+        config = _build_lean_config(start_date, end_date)
+        ref_fees = {"maker-fee-rate": "0.0005", "taker-fee-rate": "0.0005"}
+        # class_name here is already a fully qualified name (see class_name_map
+        # above, e.g. "QuantTutorBench.I01ImplementSma"). Pass through
+        # full_type_name so the helper doesn't re-prefix it with
+        # QuantConnect.Algorithm.CSharp.*.
+        lean_config.apply_session_overrides(
+            config,
+            full_type_name=class_name,
+            dll_path=dll_path,
+            parameters={**ref_fees, **(parameters or {})},
+        )
         config_path = os.path.join(config_dir, "config.json")
         with open(config_path, "w") as f:
             json.dump(config, f, indent=2)
