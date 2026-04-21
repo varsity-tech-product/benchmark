@@ -121,15 +121,18 @@ bundles and writes to the sibling tree:
 | File | Role |
 |------|------|
 | `single.py::score_bundle` | Load a bundle, call `evaluate_task`, compute overall score, write reports + `eval_meta.json` to `evaluations/server/.../`. |
-| `paths.py` | `eval_run_dir`, `new_eval_run_id`, `find_latest_eval_dir`, `list_eval_history` — single source of truth for eval output locations, with legacy-fallback. |
-| `__main__.py` | CLI: `python -m server.evaluator --bundle <path> [--eval-mode …] [--eval-model …]`. Issue #47 will add batch flags on top. |
+| `paths.py` | `eval_run_dir`, `new_eval_run_id`, `find_latest_eval_dir`, `list_eval_history` — single source of truth for eval output locations. |
+| `batch.py::run_campaign` | Fan `score_bundle` over many bundles with `ThreadPoolExecutor` dispatch, idempotency via `config_hash`, failure isolation, and a campaign-level summary at `evaluations/campaigns/{campaign_id}/summary.json`. |
+| `config_hash.py` | Deterministic 16-char hash over `(judge, eval_mode, tutor_dims, rubric_version, formula_version)`; stamped into `eval_meta.json` so `--skip-scored` can recognise prior runs. |
+| `__main__.py` | CLI with two modes: single-bundle (`--bundle <path>`) and batch (`--all-pending`, `--session`, `--task-id`, `--persona`, `--bundles-from`, `--concurrency`, `--skip-scored`/`--force`, `--dry-run`). |
 
 `score_bundle` is the single scoring entry point. The operator REST
 handler (`http_app.ops_evaluate`) calls it synchronously via
 `asyncio.to_thread`; the CLI calls it directly. All readers (session
 API `get_eval_scores`, archived-session REST, UI indexer) go through
 `paths.find_latest_eval_dir` so the on-disk layout is decided in one
-place.
+place. Campaigns write to `evaluations/campaigns/{campaign_id}/summary.json`
+(sibling to the per-session tree) for audit.
 
 ## Evaluation pipeline (`bench/server/eval/`)
 
@@ -278,5 +281,8 @@ in the sibling `evaluations/server/...` tree, and bundles must carry
 `manifest.json` — `load_bundle` is the single source of truth for
 "what's in a bundle". The producer/consumer split is complete.
 
-Issue #47 (batch evaluator) is unblocked — its CLI sits on top of
-`score_bundle`.
+Issue #47 slice P1 (landed): `batch.py` + `config_hash.py` layered on
+top of `score_bundle` with idempotent dispatch, failure isolation, and
+a campaign summary. Remaining work (slice P2) adds `--max-cost-usd`,
+`--resume` from checkpoint, `--since`/`--until`, and a retry wrapper
+for transient judge-LLM failures.
