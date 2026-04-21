@@ -24,12 +24,29 @@
 set -euo pipefail
 
 # ── Configuration ──────────────────────────────────────────────────────
-LEAN_ROOT="/lean"
+# LEAN_ROOT may be overridden for image layouts that install LEAN elsewhere
+# (e.g. a capitalised `/Lean` on forks built from a different base image).
+# Everything else derives from it so a reproducer with a non-default layout
+# only needs to set this one knob.
+LEAN_ROOT="${LEAN_ROOT:-/lean}"
 LEAN_LAUNCHER="${LEAN_ROOT}/Launcher"
 LEAN_ALGO_DIR="${LEAN_ROOT}/Algorithm.CSharp"
-LEAN_CONFIG="${LEAN_LAUNCHER}/config.json"
-RESULTS_DIR="/workspace/results"
 LEAN_OUTPUT_DIR="${LEAN_LAUNCHER}/bin/Debug"
+# The Launcher DLL runs from bin/Debug and reads the sibling config.json there.
+# Editing $LEAN_LAUNCHER/config.json (the source copy) has no runtime effect.
+LEAN_CONFIG="${LEAN_OUTPUT_DIR}/config.json"
+# The benchmark-shipped, comment-free config. Dockerfile.lean copies this to
+# ${LEAN_LAUNCHER}/config.json only; bin/Debug/config.json remains the upstream
+# LEAN default (JSON with comments) that python's json.load cannot parse.
+# Used to seed LEAN_CONFIG before patching.
+LEAN_CONFIG_SEED="${LEAN_LAUNCHER}/config.json"
+# Shared helper shipped into the container by Dockerfile.lean. Both the
+# reference generator (host-side) and this runner import the same patch
+# logic so the two code paths cannot drift apart (see issue #33).
+# Derived from LEAN_ROOT so the one-variable layout override covers the
+# helper too (e.g. LEAN_ROOT=/Lean puts helpers under /Lean/helpers).
+LEAN_HELPERS_DIR="${LEAN_HELPERS_DIR:-${LEAN_ROOT}/helpers}"
+RESULTS_DIR="/workspace/results"
 
 # Per-backtest timeout in seconds (default 5 min, overridable via env var).
 # Exit code 124 = timeout killed.
@@ -171,67 +188,73 @@ echo "  -> Build succeeded"
 # Copy the compiled DLL to the Launcher directory where LEAN expects it.
 # dotnet build outputs to Algorithm.CSharp/bin/Debug/ but LEAN's JobQueue
 # loads from Launcher/QuantConnect.Algorithm.CSharp.dll.
-ALGO_DLL="${LEAN_ALGO_DIR}/bin/Debug/QuantConnect.Algorithm.CSharp.dll"
-if [ -f "$ALGO_DLL" ]; then
+# Discover via `find` to survive TFM bumps (net10.0 -> net11.0 -> ...) and
+# any csproj-level layout change: dotnet may drop the DLL either directly
+# under bin/Debug/ or inside a framework-specific subfolder.
+# `|| true` swallows pipefail exits when find returns nonzero (missing path)
+# or when head closes early (SIGPIPE to find after the first match). Without
+# it, `set -euo pipefail` terminates the runner before reaching the warning.
+ALGO_DLL=$(find "${LEAN_ALGO_DIR}/bin/Debug" -maxdepth 3 \
+    -name 'QuantConnect.Algorithm.CSharp.dll' -type f 2>/dev/null | head -1 || true)
+LEAN_ALGO_DLL="${LEAN_OUTPUT_DIR}/QuantConnect.Algorithm.CSharp.dll"
+if [ -n "$ALGO_DLL" ] && [ -f "$ALGO_DLL" ]; then
     cp "$ALGO_DLL" "${LEAN_LAUNCHER}/QuantConnect.Algorithm.CSharp.dll"
     # LEAN's Composer loads assemblies from Launcher/bin/Debug/, not Launcher/.
     # Both locations must have the freshly compiled DLL.
-    cp "$ALGO_DLL" "${LEAN_LAUNCHER}/bin/Debug/QuantConnect.Algorithm.CSharp.dll"
-    echo "  -> Copied DLL to Launcher directory"
+    cp "$ALGO_DLL" "$LEAN_ALGO_DLL"
+    echo "  -> Copied DLL from $ALGO_DLL"
 else
-    echo "WARNING: Compiled DLL not found at $ALGO_DLL"
+    echo "WARNING: Compiled DLL not found under ${LEAN_ALGO_DIR}/bin/Debug"
 fi
 
 # ── Step 2b: Reset and inject parameters into config.json ─────────────
 echo "[2b/4] Preparing config.json parameters..."
+# Seed the runtime-read config (bin/Debug/config.json, which the Launcher
+# reads) from the benchmark's shipped comment-free copy. Skipped if already
+# identical, so reruns don't thrash.
+if ! cmp -s "$LEAN_CONFIG_SEED" "$LEAN_CONFIG" 2>/dev/null; then
+    cp "$LEAN_CONFIG_SEED" "$LEAN_CONFIG"
+    echo "  -> Seeded $LEAN_CONFIG from $LEAN_CONFIG_SEED"
+fi
 # Write PARAMS_JSON to a temp file to avoid shell injection via heredoc
 _PARAMS_TMPFILE=$(mktemp /tmp/params_XXXXXX.json)
 printf '%s' "$PARAMS_JSON" > "$_PARAMS_TMPFILE"
 export _PARAMS_TMPFILE
 python3 -c "
-import json, os
+import json, os, sys
+
+# Shared helper shipped at /lean/helpers/lean_config.py by Dockerfile.lean.
+# Keeps this runner and the reference generator in lockstep on which keys
+# steer the LEAN Launcher (see issue #33).
+sys.path.insert(0, '$LEAN_HELPERS_DIR')
+import lean_config
 
 with open('$LEAN_CONFIG') as f:
     cfg = json.load(f)
 
 params_file = os.environ.get('_PARAMS_TMPFILE', '')
+params = {}
 if params_file and os.path.isfile(params_file):
     raw = open(params_file).read().strip()
-    params = json.loads(raw) if raw else {}
-else:
-    params = {}
+    if raw:
+        params = json.loads(raw)
 
-# Inject default fee rates (both modes — matches MatchX compiler.py behavior).
-params.setdefault('maker-fee-rate', '0.0002')
-params.setdefault('taker-fee-rate', '0.0005')
-
-data_mode = '$DATA_MODE'
-params.setdefault('custom-data-root', '/data/custom/binance')
-
-cfg['parameters'] = params
-
-# Point LEAN results to the run-specific directory
-cfg['results-destination-folder'] = '$RESULTS_DIR'
-
-# Use submitted class name if provided, else fall back to 'Algorithm'.
-# MatchX uses the submitted strategy_class_name; benchmark previously
-# hardcoded 'Algorithm'.  With --class-name, both paths align.
-class_name = '$CLASS_NAME' or 'Algorithm'
-full_type_name = '$FULL_TYPE_NAME'
-if full_type_name:
-    cfg['algorithm-type-name'] = full_type_name
-else:
-    cfg['algorithm-type-name'] = f'QuantConnect.Algorithm.CSharp.{class_name}'
+lean_config.apply_session_overrides(
+    cfg,
+    class_name='$CLASS_NAME',
+    full_type_name='$FULL_TYPE_NAME',
+    dll_path='$LEAN_ALGO_DLL',
+    results_dir='$RESULTS_DIR',
+    parameters=params,
+)
 
 with open('$LEAN_CONFIG', 'w') as f:
     json.dump(cfg, f, indent=2)
 
-print(f'  -> Set {len(params)} parameter(s)')
-print(f'  -> Data mode: {data_mode}')
-if full_type_name:
-    print(f'  -> Full type name: {full_type_name}')
-else:
-    print(f'  -> Class name: {class_name}')
+print(f'  -> algorithm-type-name: {cfg[\"algorithm-type-name\"]}')
+print(f'  -> algorithm-location:  {cfg[\"algorithm-location\"]}')
+print(f'  -> Data mode: $DATA_MODE')
+print(f'  -> Parameters: {len(cfg[\"parameters\"])}')
 print(f'  -> Results folder: $RESULTS_DIR')
 " 2>&1
 rm -f "$_PARAMS_TMPFILE"
