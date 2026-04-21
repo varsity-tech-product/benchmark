@@ -641,46 +641,61 @@ class BenchSessionManager:
         if not result_dir:
             return None
 
+        state = self.get_archived_results(session_id) or {}
+        task_id = state.get("task_id", "")
+        persona_id = state.get("persona_id", "")
+        bundle_session_id = state.get("session_id", session_id)
+
+        from server.evaluator.paths import (
+            find_latest_eval_dir,
+            list_eval_history,
+        )
+
         if history:
-            evals_dir = result_dir / "evaluations"
             entries = []
-            if evals_dir.is_dir():
-                for sub in sorted(evals_dir.iterdir(), reverse=True):
-                    if (
-                        not sub.is_dir()
-                        or sub.name == "latest"
-                        or not sub.name.startswith("eval_")
-                    ):
-                        continue
-                    meta_path = sub / "eval_meta.json"
-                    if not meta_path.exists():
-                        continue
-                    try:
-                        meta = json.loads(meta_path.read_text(encoding="utf-8"))
-                        meta["eval_dir"] = sub.name
-                        entries.append(meta)
-                    except Exception:
-                        continue
+            for sub in list_eval_history(
+                bench_root=self.bench_root,
+                bundle_dir=result_dir,
+                task_id=task_id,
+                persona_id=persona_id,
+                session_id=bundle_session_id,
+            ):
+                meta_path = sub / "eval_meta.json"
+                if not meta_path.exists():
+                    continue
+                try:
+                    meta = json.loads(meta_path.read_text(encoding="utf-8"))
+                    meta["eval_dir"] = sub.name
+                    entries.append(meta)
+                except Exception:
+                    continue
             return {"session_id": session_id, "evaluations": entries}
 
-        latest_meta = result_dir / "evaluations" / "latest" / "eval_meta.json"
-        if latest_meta.exists():
-            try:
-                meta = json.loads(latest_meta.read_text(encoding="utf-8"))
-                scores: dict = {
-                    "quant_result": meta.get("quant_result", 0.0),
-                    "quant_process": meta.get("quant_process", 0.0),
-                    "tutor_scores": meta.get("tutor_scores", {}),
-                    "overall": meta.get("overall_score", 0.0),
-                }
-                meta_errors = meta.get("errors")
-                if meta_errors:
-                    scores["errors"] = meta_errors
-                return {"status": "completed", "scores": scores}
-            except Exception:
-                pass
+        latest_dir = find_latest_eval_dir(
+            bench_root=self.bench_root,
+            bundle_dir=result_dir,
+            task_id=task_id,
+            persona_id=persona_id,
+            session_id=bundle_session_id,
+        )
+        if latest_dir is not None:
+            latest_meta = latest_dir / "eval_meta.json"
+            if latest_meta.exists():
+                try:
+                    meta = json.loads(latest_meta.read_text(encoding="utf-8"))
+                    scores: dict = {
+                        "quant_result": meta.get("quant_result", 0.0),
+                        "quant_process": meta.get("quant_process", 0.0),
+                        "tutor_scores": meta.get("tutor_scores", {}),
+                        "overall": meta.get("overall_score", 0.0),
+                    }
+                    meta_errors = meta.get("errors")
+                    if meta_errors:
+                        scores["errors"] = meta_errors
+                    return {"status": "completed", "scores": scores}
+                except Exception:
+                    pass
 
-        state = self.get_archived_results(session_id)
         if not state:
             return None
         return {"status": state.get("evaluation_status", "pending")}

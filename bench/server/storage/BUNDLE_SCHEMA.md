@@ -19,10 +19,12 @@ results/server/{task_id}/{persona_id}/{YYYYMMDD_HHMMSS}_{session_id[:8]}/
     agent_files/        # workspace snapshot at session completion
 ```
 
-`evaluations/` (legacy in-session writer) currently lives as a sibling of
-the above files. The producer/consumer split (issue #46) moves evaluator
-output to a parallel `evaluations/server/...` tree so a "raw bundle"
-contains zero evaluator-produced files.
+Evaluator output lives in a parallel tree under
+`evaluations/server/{task_id}/{persona_id}/{session_id[:8]}/{eval_run_id}/`
+so a raw bundle contains zero evaluator-produced files. New scoring (both
+in-session and offline) writes there exclusively; the in-bundle
+`evaluations/` subdirectory is only read as a fallback for historical
+runs and will be dropped once slice 5 of the migration lands.
 
 ## `manifest.json`
 

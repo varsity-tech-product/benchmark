@@ -78,7 +78,7 @@ the API layer:
 | `result_writer.py::save_run_state` | Writes `run_state.json` + `run_state.md`, copies workspace to `agent_files/`, then writes `manifest.json` via `bundle.write_manifest`. |
 | `bundle.py` | Bundle contract: `BUNDLE_SCHEMA_VERSION`, `write_manifest`, `load_bundle → LoadedBundle`. Owns the producer/consumer interface. |
 | `BUNDLE_SCHEMA.md` | Spec for the on-disk bundle: layout, `manifest.json` shape, `run_state.json` fields the evaluator reads. |
-| `eval_writer.py::run_evaluation` | Legacy in-session eval driver: calls `pipeline.evaluate_task`, writes `evaluations/{ts}/{scores,trace,cost}.md` + `eval_meta.json`, updates `latest` symlink. |
+| `eval_writer.py::run_evaluation` | Compat shim around `server.evaluator.score_bundle` for the in-session caller; also exports `_save_reports` + `_collect_eval_errors` consumed by the new evaluator module. |
 | `format_validator.py` | Validates `run_state.json` shape before persistence. |
 
 Bundle layout on disk:
@@ -89,8 +89,37 @@ results/server/{task_id}/{persona_id}/{YYYYMMDD_HHMMSS}_{session_id[:8]}/
     run_state.json     (conversation + tool_logs + metadata)
     run_state.md       (human-readable rendering)
     agent_files/       (workspace snapshot)
-    evaluations/       (legacy in-session eval output; moves to sibling tree per #46)
 ```
+
+Evaluator output lives in a sibling tree:
+
+```
+evaluations/server/{task_id}/{persona_id}/{session_id[:8]}/{eval_run_id}/
+    eval_meta.json     (scores + run config)
+    scores.md
+    trace.md
+    cost.md
+```
+
+Old runs may still carry an in-bundle `evaluations/eval_*/` subdirectory;
+`server.evaluator.paths.find_latest_eval_dir` falls back to it
+transparently. That fallback gets removed in slice 5.
+
+## Evaluator driver (`bench/server/evaluator/`)
+
+The producer/consumer split introduces a standalone driver that reads
+bundles and writes to the sibling tree:
+
+| File | Role |
+|------|------|
+| `single.py::score_bundle` | Load a bundle, call `evaluate_task`, compute overall score, write reports + `eval_meta.json` to `evaluations/server/.../`. |
+| `paths.py` | `eval_run_dir`, `new_eval_run_id`, `find_latest_eval_dir`, `list_eval_history` — single source of truth for eval output locations, with legacy-fallback. |
+| `__main__.py` | CLI: `python -m server.evaluator --bundle <path> [--eval-mode …] [--eval-model …]`. Issue #47 will add batch flags on top. |
+
+The in-session `eval_writer.run_evaluation` is now a thin shim that
+delegates to `score_bundle`. All readers (session API, archived-session
+REST, UI indexer) go through `paths.find_latest_eval_dir` so the on-disk
+layout is decided in one place.
 
 ## Evaluation pipeline (`bench/server/eval/`)
 
@@ -209,12 +238,14 @@ re-scoring requiring re-tutoring). The split moves to:
   tree.
 
 Slice 1 (landed): `bundle.py` + `manifest.json` + `BUNDLE_SCHEMA.md` +
-`load_bundle` + smoke tests pin the contract. No behavior change.
+`load_bundle` + smoke tests pin the contract.
 
-Slice 2 (next): extract `bench/server/evaluator/` reusing
-`server.eval.pipeline.evaluate_task`; dual-write to the sibling tree
-while the in-session eval still runs.
+Slice 2 (landed): `bench/server/evaluator/` extracted with
+`score_bundle` + CLI; output cut over to the
+`evaluations/server/...` sibling tree; in-session `run_evaluation` now
+delegates to the new driver; readers go through
+`paths.find_latest_eval_dir` with legacy-fallback for old runs.
 
 Slices 3–5 cut the agent-visible eval catalogue, delete the in-session
-eval thread, and remove the deprecated REST routes. Issue #47 (batch
-evaluator) is unblocked once slice 2 lands.
+eval thread, and remove the legacy-fallback path. Issue #47 (batch
+evaluator) is now unblocked — its CLI sits on top of `score_bundle`.

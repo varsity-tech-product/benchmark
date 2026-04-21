@@ -256,9 +256,20 @@ class SessionState:
         state._result_dir = result_dir
         state.phase = SessionPhase.COMPLETED
 
-        # Check if evaluation was already run
-        latest_meta = result_dir / "evaluations" / "latest" / "eval_meta.json"
-        if latest_meta.exists():
+        # Check if evaluation was already run (sibling tree first, then legacy).
+        from server.evaluator.paths import find_latest_eval_dir
+
+        latest_dir = find_latest_eval_dir(
+            bench_root=bench_root,
+            bundle_dir=result_dir,
+            task_id=run_state.get("task_id", ""),
+            persona_id=run_state.get("persona_id", ""),
+            session_id=run_state.get("session_id", session_id),
+        )
+        latest_meta = (
+            latest_dir / "eval_meta.json" if latest_dir is not None else None
+        )
+        if latest_meta is not None and latest_meta.exists():
             try:
                 meta = json.loads(latest_meta.read_text(encoding="utf-8"))
                 state._eval_status = "completed"
@@ -1133,17 +1144,10 @@ class SessionState:
             if not self._result_dir:
                 raise RuntimeError("No result_dir — session results not saved")
 
-            conversation = self.session.conversation
-            tool_logs = self.proxy.get_logs()
-            distractor_names = self.proxy.get_distractor_names()
-
             eval_results = run_evaluation(
                 task=self.task,
                 persona=self.persona,
                 result_dir=self._result_dir,
-                conversation=conversation,
-                tool_logs=tool_logs,
-                distractor_names=distractor_names,
                 bench_root=str(self.bench_root),
                 eval_model=self.eval_model,
                 eval_mode=self._eval_mode,
@@ -1236,28 +1240,32 @@ class SessionState:
         return {"status": "pending"}
 
     def _read_eval_history(self) -> dict:
-        """Read all eval_meta.json files from evaluations/."""
+        """Read all eval_meta.json files for this session, newest first.
+
+        Spans the new sibling tree and the legacy in-bundle dir
+        transparently via ``paths.list_eval_history``.
+        """
         if not self._result_dir:
             return {"session_id": self.session_id, "evaluations": []}
-        evals_dir = self._result_dir / "evaluations"
-        if not evals_dir.is_dir():
-            return {"session_id": self.session_id, "evaluations": []}
+        from server.evaluator.paths import list_eval_history
+
         entries = []
-        for sub in sorted(evals_dir.iterdir(), reverse=True):
-            if (
-                not sub.is_dir()
-                or sub.name == "latest"
-                or not sub.name.startswith("eval_")
-            ):
-                continue
+        for sub in list_eval_history(
+            bench_root=self.bench_root,
+            bundle_dir=self._result_dir,
+            task_id=self.task_id,
+            persona_id=self.persona_id,
+            session_id=self.session_id,
+        ):
             meta_path = sub / "eval_meta.json"
-            if meta_path.exists():
-                try:
-                    meta = json.loads(meta_path.read_text(encoding="utf-8"))
-                    meta["eval_dir"] = sub.name
-                    entries.append(meta)
-                except Exception:
-                    pass
+            if not meta_path.exists():
+                continue
+            try:
+                meta = json.loads(meta_path.read_text(encoding="utf-8"))
+                meta["eval_dir"] = sub.name
+                entries.append(meta)
+            except Exception:
+                pass
         return {"session_id": self.session_id, "evaluations": entries}
 
     # ------------------------------------------------------------------
