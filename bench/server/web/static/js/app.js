@@ -157,7 +157,8 @@
 
   function setActiveNav(route) {
     var current;
-    if (route.indexOf('/tasks') === 0) current = 'tasks';
+    if (route.indexOf('/flow-demo') === 0) current = 'flow';
+    else if (route.indexOf('/tasks') === 0) current = 'tasks';
     else if (route === '/runs') current = 'runs';
     else if (route.indexOf('/run') === 0) current = 'run';
     else current = 'results';
@@ -2013,6 +2014,15 @@
 
     if (route === '/tasks') {
       showTasks();
+      return;
+    }
+
+    if (route === '/flow-demo') {
+      if (window.QTB && typeof window.QTB.renderFlowDemoPage === 'function') {
+        window.QTB.renderFlowDemoPage(app, state);
+      } else {
+        renderError('Flow demo unavailable', new Error('flow-demo.js not loaded'));
+      }
       return;
     }
 
