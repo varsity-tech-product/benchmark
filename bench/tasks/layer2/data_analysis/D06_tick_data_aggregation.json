@@ -12,7 +12,7 @@
     "fullstack_practitioner"
   ],
   "student_openings": {
-    "fullstack_practitioner": "I want to aggregate tick-level data into OHLCV bars, save the result rigorously. I know the basics — let's focus on methodology and potential pitfalls.",
+    "fullstack_practitioner": "I want to aggregate tick-level data into OHLCV bars and save the result as a clean CSV. I know the basics — let's focus on methodology and potential pitfalls.",
     "finance_veteran": "I need to aggregate tick-level data into OHLCV bars, save the result in Python. I understand what the data means financially — I just need help with the pandas side.",
     "developer_crossover": "I need to aggregate tick-level data into OHLCV bars, save the result. I can use pandas fine — but what do these financial metrics actually mean? Why would a trader care?",
     "double_novice": "My professor asked us to aggregate tick-level data into OHLCV bars, save the result. I'm new to both Python and finance — can you start from the basics?"

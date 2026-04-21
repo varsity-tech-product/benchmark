@@ -10,8 +10,8 @@
     "fullstack_practitioner"
   ],
   "student_openings": {
-    "fullstack_practitioner": "I'm debugging an issue: find and fix a timezone misalignment bug in a crypto-stock. I've narrowed it down but want a second pair of eyes on the root cause.",
-    "developer_crossover": "I'm looking at code that should find and fix a timezone misalignment bug in a crypto-stock. The code reads fine to me, but I'm not sure the financial logic is correct. What should it be doing?"
+    "fullstack_practitioner": "I'm debugging an issue: find and fix a timezone misalignment bug in a crypto-stock correlation analysis. I've narrowed it down but want a second pair of eyes on the root cause.",
+    "developer_crossover": "I'm looking at code that should correlate crypto and stock data, but I think there might be a timezone issue. The code reads fine to me, but I'm not sure the financial logic is correct. What should it be doing?"
   },
   "environment": {
     "data_files": [

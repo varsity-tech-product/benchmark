@@ -10,8 +10,8 @@
     "fullstack_practitioner"
   ],
   "student_openings": {
-    "fullstack_practitioner": "I'm debugging an issue: diagnose and fix conflicting alpha model insights in a LEAN. I've narrowed it down but want a second pair of eyes on the root cause.",
-    "developer_crossover": "I'm looking at code that should diagnose and fix conflicting alpha model insights in a LEAN. The code reads fine to me, but I'm not sure the financial logic is correct. What should it be doing?"
+    "fullstack_practitioner": "I'm debugging an issue: diagnose and fix conflicting alpha model insights in a LEAN Algorithm Framework strategy. I've narrowed it down but want a second pair of eyes on the root cause.",
+    "developer_crossover": "I'm looking at code that combines multiple alpha models in a LEAN framework strategy, but trades are near zero. The code reads fine to me, but I'm not sure the financial logic is correct. What should it be doing?"
   },
   "environment": {
     "data_files": [

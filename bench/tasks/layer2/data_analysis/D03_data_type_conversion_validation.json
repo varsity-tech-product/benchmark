@@ -12,10 +12,10 @@
     "fullstack_practitioner"
   ],
   "student_openings": {
-    "fullstack_practitioner": "I want to convert raw OHLCV columns into proper data types, handle rigorously. I know the basics — let's focus on methodology and potential pitfalls.",
-    "finance_veteran": "I need to convert raw OHLCV columns into proper data types, handle in Python. I understand what the data means financially — I just need help with the pandas side.",
-    "developer_crossover": "I need to convert raw OHLCV columns into proper data types, handle. I can use pandas fine — but what do these financial metrics actually mean? Why would a trader care?",
-    "double_novice": "My professor asked us to convert raw OHLCV columns into proper data types, handle. I'm new to both Python and finance — can you start from the basics?"
+    "fullstack_practitioner": "I want to convert raw OHLCV columns into proper data types, handle timezone normalization, and validate schema integrity. I know the basics — let's focus on methodology and potential pitfalls.",
+    "finance_veteran": "I need to convert raw OHLCV columns into proper data types, handle timezone normalization, and validate the schema. I understand what the data means financially — I just need help with the pandas side.",
+    "developer_crossover": "I need to convert raw OHLCV columns into proper data types and handle timezone normalization. I can use pandas fine — but what do these financial metrics actually mean? Why would a trader care?",
+    "double_novice": "My professor asked us to convert raw OHLCV columns into proper data types and handle timezone normalization. I'm new to both Python and finance — can you start from the basics?"
   },
   "environment": {
     "data_files": [
