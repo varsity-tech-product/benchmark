@@ -10,8 +10,8 @@
     "fullstack_practitioner"
   ],
   "student_openings": {
-    "fullstack_practitioner": "I'm debugging an issue: find and fix a missing short position in a Bollinger Band. I've narrowed it down but want a second pair of eyes on the root cause.",
-    "developer_crossover": "I'm looking at code that should find and fix a missing short position in a Bollinger Band. The code reads fine to me, but I'm not sure the financial logic is correct. What should it be doing?"
+    "fullstack_practitioner": "I'm debugging an issue: find and fix a missing short position in a Bollinger Band mean-reversion strategy. I've narrowed it down but want a second pair of eyes on the root cause.",
+    "developer_crossover": "I'm looking at code that should find and fix a missing short position in a Bollinger Band mean-reversion strategy. The code reads fine to me, but I'm not sure the financial logic is correct. What should it be doing?"
   },
   "environment": {
     "data_files": [

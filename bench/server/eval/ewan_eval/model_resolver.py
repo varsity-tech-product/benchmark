@@ -1,7 +1,6 @@
-"""Model resolution — DeepEval-free, server-scoped.
+"""Model resolution for ewan_eval scoring pipeline.
 
-Drop-in replacement for ``server.config.model_resolver.resolve_deepeval_model``.
-Returns ``EwanLLMClient`` — no DeepEval classes.
+Returns ``EwanLLMClient`` instances for LLM-based evaluation.
 
 Public API:
     resolve_ewan_model(model) → client object with a_generate(prompt) → (text, cost)
@@ -113,7 +112,3 @@ def require_student_model(
         purpose="student simulator",
         temperature=temperature,
     )
-
-
-# Backward-compat alias
-resolve_deepeval_model = resolve_ewan_model

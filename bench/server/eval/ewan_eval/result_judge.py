@@ -16,18 +16,9 @@ import os
 import threading
 
 from server.eval.ewan_eval._scoring_utils import extract_json_from_response
-from server.eval.ewan_eval.model_resolver import (
-    resolve_ewan_model as resolve_deepeval_model,
-)
+from server.eval.ewan_eval.llm_client import EwanLLMClient
+from server.eval.ewan_eval.model_resolver import resolve_ewan_model
 from server.tool_filters import PROTOCOL_ONLY_TOOLS
-
-try:
-    from server.eval.ewan_eval.llm_client import EwanLLMClient as GPTModel
-
-    DEEPEVAL_AVAILABLE = True
-except ImportError:
-    DEEPEVAL_AVAILABLE = False
-
 
 # ──────────────────────────────────────────────────────────────
 # Agent result extraction
@@ -349,14 +340,6 @@ async def async_evaluate_result_quality(
 
     from server.config.llm_config import EVAL_DEFAULT_MODELS
 
-    if not DEEPEVAL_AVAILABLE:
-        return {
-            "score": 0.5,
-            "reason": "deepeval not available (needed for GPTModel)",
-            "sub_scores": {},
-            "has_reference": reference is not None,
-        }
-
     # ── Resolve model list ──
     if isinstance(model, list) and len(model) > 0:
         eval_models = model
@@ -387,11 +370,11 @@ async def async_evaluate_result_quality(
     _first_error: list[Exception] = []
 
     async def _call_single_model(m):
-        model_obj = resolve_deepeval_model(m)
+        model_obj = resolve_ewan_model(m)
         if isinstance(model_obj, str):
-            from server.config.pricing import get_deepeval_cost_kwargs
+            from server.config.pricing import get_llm_cost_kwargs
 
-            model_obj = GPTModel(model=model_obj, **get_deepeval_cost_kwargs(model_obj))
+            model_obj = EwanLLMClient(model=model_obj, **get_llm_cost_kwargs(model_obj))
         response_text, call_cost = await model_obj.a_generate(prompt)
         parsed = extract_json_from_response(response_text)
         parsed["_eval_cost"] = float(call_cost) if call_cost else 0.0

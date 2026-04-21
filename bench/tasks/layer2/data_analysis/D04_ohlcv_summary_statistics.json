@@ -12,10 +12,10 @@
     "fullstack_practitioner"
   ],
   "student_openings": {
-    "fullstack_practitioner": "I want to compute and interpret core OHLCV summary statistics, rigorously. I know the basics — let's focus on methodology and potential pitfalls.",
-    "finance_veteran": "I need to compute and interpret core OHLCV summary statistics, in Python. I understand what the data means financially — I just need help with the pandas side.",
-    "developer_crossover": "I need to compute and interpret core OHLCV summary statistics,. I can use pandas fine — but what do these financial metrics actually mean? Why would a trader care?",
-    "double_novice": "My professor asked us to compute and interpret core OHLCV summary statistics,. I'm new to both Python and finance — can you start from the basics?"
+    "fullstack_practitioner": "I want to compute and interpret core OHLCV summary statistics including distribution diagnostics. I know the basics — let's focus on methodology and potential pitfalls.",
+    "finance_veteran": "I need to compute and interpret core OHLCV summary statistics including volume behavior patterns. I understand what the data means financially — I just need help with the pandas side.",
+    "developer_crossover": "I need to compute and interpret core OHLCV summary statistics. I can use pandas fine — but what do these financial metrics actually mean? Why would a trader care?",
+    "double_novice": "My professor asked us to compute and interpret core OHLCV summary statistics. I'm new to both Python and finance — can you start from the basics?"
   },
   "environment": {
     "data_files": [

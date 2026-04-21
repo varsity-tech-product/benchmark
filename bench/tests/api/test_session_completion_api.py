@@ -84,7 +84,7 @@ class TestRepeatDetectionViaAPI:
         await send_message(client, sid, msg)  # 1st
         await send_message(client, sid, msg)  # 2nd — repeat_count=1
         body = await send_message(client, sid, msg)  # 3rd — stuck
-        assert body["status"] == "completed"
+        assert body["status"] == "failed"
         assert body["reason"] == "agent_stuck"
 
     @pytest.mark.asyncio

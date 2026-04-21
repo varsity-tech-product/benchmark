@@ -30,7 +30,7 @@ from pathlib import Path
 
 BENCH_ROOT = Path(__file__).resolve().parents[2]
 SERVER_URL = "http://localhost:8765"
-DIMS = "D4_domain_accuracy"
+DIMS = "D4_instructional_accuracy"
 EVAL_MODE = "tutor_only"
 
 
@@ -157,8 +157,8 @@ def main():
                 )
             else:
                 dims = result.get("dim_scores", {})
-                d3 = dims.get("D3_scaffolding_calibration", "?")
-                d4 = dims.get("D4_domain_accuracy", "?")
+                d3 = dims.get("D3_pedagogical_method", "?")
+                d4 = dims.get("D4_instructional_accuracy", "?")
                 print(f"  [{done_count}/{len(manifest)}] {sid_short} D3={d3} D4={d4}")
 
     elapsed = time.time() - t0

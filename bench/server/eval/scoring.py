@@ -3,7 +3,7 @@
 Design doc §6.3: Scoring Architecture
     Task Score = 0.70 * Quant Agent Score + 0.30 * Tutor Score
     Quant Agent Score = 0.50 * Result Sub-score + 0.50 * Process Sub-score
-    Tutor Score = average of 7D rubric scores (each 0-1)
+    Tutor Score = average of 6D rubric scores (each 0-1)
 
 Design doc §6.4: Benchmark-Level KPIs
     OAS  = Overall Agent Score (weighted average across all tasks)
@@ -48,8 +48,8 @@ def compute_task_score(
     agent score uses 100% of the available component instead of a
     50/50 blend (avoids halving the score due to a missing zero).
 
-    Tutor Score uses per-category dimension weights for weighted averaging
-    (see CATEGORY_DIMENSION_WEIGHTS in tutor_conv_geval.py).
+    Tutor Score uses per-category binary dimension weights (0=skip, 1=evaluate)
+    for averaging (see CATEGORY_DIMENSION_WEIGHTS in tutor_conv_geval.py).
 
     Args:
         quant_result_score: Score from eval scripts (0-1).
@@ -57,7 +57,7 @@ def compute_task_score(
         tutor_dimension_scores: Dict of dimension_name -> score (0-1).
         category: TaskCategory.value for per-category tutor dimension weighting.
         requires_code: Whether the task expects code output (passed
-            through to compute_tutor_score for D5 weight override).
+            through to compute_tutor_score for D2 weight override in adversarial).
         eval_mode: "full" (default), "qr_only", or "qp_only".
 
     Returns:

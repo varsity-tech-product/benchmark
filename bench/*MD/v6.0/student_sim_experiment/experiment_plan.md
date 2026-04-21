@@ -1,10 +1,10 @@
 # 学生模拟器稳定性实验方案
 
-> Date: 2026-04-17
+> Date: 2026-04-20
 > Scope: StudentSimulator prompt 设计稳定性验证 + 最优底层模型选型
 > Source files: `server/core/student_sim.py`, `server/config/prompt_config.py`, `server/schemas.py`
 > Experiment code: `experiments/student_sim_stability/`
-> Status: 方案定稿，待执行
+> Status: 方案定稿
 
 ---
 
@@ -39,61 +39,61 @@
 |------|------|------|
 | Student 模型 | `openai/gpt-5.4`, `anthropic/claude-sonnet-4-6`, `google/gemini-3.1-pro-preview` | 三个 standard/premium 档模型，覆盖主流供应商 |
 | Persona | `finance_veteran` + `double_novice`（主对），`developer_crossover` + `fullstack_practitioner`（备对） | 选择差异最大的 persona 对，最能暴露稳定性问题 |
-| Tutor 方案 | 脚本化（Phase 1）/ 实时模型（Phase 2） | Phase 1 消除 tutor 变量，Phase 2 测试真实场景 |
 | Persona 开关 | 有 persona / 无 persona（对照组） | 验证 persona 定义的有效性 |
 
 ### 3.2 控制变量
 
 | 变量 | 固定值 | 理由 |
 |------|--------|------|
-| 对话轮次 | 8 轮 | 固定轮次便于逐轮对比和漂移分析。8 轮足以覆盖大部分 learning objectives，又不至于太短 |
+| 对话轮次 | 8 轮 | 固定轮次便于逐轮对比和漂移分析 |
 | 重复次数 | 3 次/组合 | 最小可比较重复数，在成本和统计意义间平衡 |
-| Student temperature | 0.7 | 非零以产生自然变异，但不至于完全随机 |
-| Tutor 模型（Phase 2） | `anthropic/claude-sonnet-4-6` | 固定 tutor 端，隔离 student 侧变量 |
-| Tutor temperature | 0.3 | 低温确保 tutor 相对一致 |
-| Judge 模型 | `anthropic/claude-opus-4-6` | 强模型做评估，temperature=0.0 确保评判确定性 |
+| Student temperature | 0.0 | 与生产环境一致（`EVAL_JUDGE_TEMPERATURE = 0.0`） |
+| Tutor 模型 | `openai/gpt-4.1-nano` | 便宜（$0.10/1M in）但质量验证合格的模型，实时响应学生 |
+| Tutor temperature | 0.0 和 1.0（消融实验） | 见 §4.4 温度消融设计 |
+| Judge | `anthropic/claude-sonnet-4-6` | 通过 OpenRouter 批量评估 `judge_inputs/*.json` |
 
-### 3.3 任务选择
+### 3.3 为什么 Tutor 模型选择不影响实验结论
 
-从 6 个 category 中各选 1 个代表性任务，覆盖不同难度和对话模式：
+Tutor 是**控制变量**而非自变量——所有 student model 面对同一个 tutor 模型。
+
+- Tutor 质量影响所有 student model 的**绝对分数**，但不影响**相对排名**
+- D2（可复现性）：同一 tutor 模型在相同 temperature 条件下行为较一致，引入的噪声有限
+- D3（跨模型一致性）：tutor 固定，差异只来自 student sim
+- 前提条件：tutor 质量需满足"能产生合理教学对话"的最低门槛
+
+`gpt-4.1-nano` 通过了 6 项教学场景测试（SMA 解释、Sharpe 代码、look-ahead bias 诊断、OHLCV 概念、mean reversion、log returns），确认满足门槛。
+
+### 3.4 任务选择
+
+从 6 个 category 中各选 1 个代表性任务：
 
 | Task ID | Category | 难度 | 选择理由 | Persona 对 |
 |---------|----------|------|---------|-----------|
-| I01_implement_sma | implementation | easy | 基础编码任务，对话模式清晰，教学流程线性 | developer_crossover, fullstack_practitioner |
-| S03_mean_reversion_research | strategy | medium | 需要金融概念讨论，能暴露 persona 知识边界差异 | **finance_veteran, double_novice** |
-| X02_lookahead | debug | easy | 需要代码理解 + 概念解释，两类 persona 会有不同反应 | developer_crossover, fullstack_practitioner |
-| D05_return_computation | data_analysis | medium | 基础数据任务，涉及数学公式，能测试 anxiety 表现 | **finance_veteran, double_novice** |
-| A03_sharpe_misconception | adversarial | medium | 误导场景，测试 persona 在压力下的行为一致性 | **finance_veteran, double_novice** |
-| E01_build_ma_system | end_to_end | medium | 长流程端到端任务，最能检测对话漂移 | developer_crossover, fullstack_practitioner |
-
-Persona 分配逻辑：
-- S03、D05、A03 的 task JSON 中包含 `finance_veteran` 和 `double_novice`，使用**主对**
-- I01、X02、E01 的 task JSON 中只有 `developer_crossover` 和 `fullstack_practitioner`，使用**备对**
-- 两组 persona 对的差异轴不同：主对是"金融深 vs 全新手"，备对是"懂代码不懂金融 vs 全都懂"
+| I01_implement_sma | implementation | easy | 基础编码任务，教学流程线性 | developer_crossover, fullstack_practitioner |
+| S03_mean_reversion_research | strategy | medium | 金融概念讨论，暴露知识边界差异 | **finance_veteran, double_novice** |
+| X02_lookahead | debug | easy | 代码理解 + 概念解释 | developer_crossover, fullstack_practitioner |
+| D05_return_computation | data_analysis | medium | 数学公式，测试 anxiety 表现 | **finance_veteran, double_novice** |
+| A03_sharpe_misconception | adversarial | medium | 误导场景，测试压力下行为一致性 | **finance_veteran, double_novice** |
+| E01_build_ma_system | end_to_end | medium | 长流程，最能检测对话漂移 | developer_crossover, fullstack_practitioner |
 
 ---
 
-## 4. 两阶段实验设计
+## 4. 实验设计
 
-### 4.1 Phase 1：脚本化 Tutor（可复现性测试）
+### 4.1 对话生成（Live Tutor）
 
-**目的**：消除 tutor 端随机性，将观察到的差异完全归因于学生模拟器。
+**每个 trial 的对话流程**：
 
-**方法**：
-1. 用 `sonnet-4.6`（temperature=0.3）为每个 (task, persona) 组合预生成 8 条固定 tutor 消息
-2. Tutor 消息遵循渐进式教学计划，基于 task 的 `required_capabilities` 设计
-3. 消息内容自包含（不依赖特定学生回复），确保面对不同学生回复时仍然合理
-4. 生成后缓存为 `scripted_tutor_plans.json`，后续所有 trial 复用
-
-**对话流程**：
 ```
-[Student Opening] → Tutor[1] → Student[1] → Tutor[2] → Student[2] → ... → Tutor[8]
+[Student Opening] → Tutor(gpt-4.1-nano)[1] → Student(被测模型)[1] → Tutor[2] → Student[2] → ... → Tutor[8]
 ```
+
 - Student Opening：来自 task JSON 的 `student_openings[persona_id]`
-- Tutor[1..8]：脚本化固定消息
+- Tutor[1..8]：`gpt-4.1-nano` 根据上下文实时生成回复
 - Student[1..7]：由 StudentSimulator 实时生成（被测对象）
+- 所有 API 调用通过 OpenRouter
 
-**实验矩阵**：
+### 4.2 实验矩阵
 
 | | gpt-5.4 | sonnet-4.6 | gemini-3.1-pro |
 |---|---------|------------|----------------|
@@ -110,35 +110,46 @@ Persona 分配逻辑：
 | E01 × developer_crossover | ×3 | ×3 | ×3 |
 | E01 × fullstack_practitioner | ×3 | ×3 | ×3 |
 
-**小计**：12 组合 × 3 模型 × 3 重复 = **108 trials**
-
-### 4.2 Phase 2：实时 Tutor（真实场景测试）
-
-**目的**：测试在真实对话场景下（tutor 也是活 LLM），学生模拟器的稳定性。
-
-**方法**：
-1. Tutor 统一使用 `sonnet-4.6`（temperature=0.3）
-2. Tutor 根据对话上下文动态生成回复（最近 3 轮上下文窗口）
-3. 其余设置与 Phase 1 相同
-
-**对话流程**：
-```
-[Student Opening] → Tutor(live)[1] → Student[1] → Tutor(live)[2] → Student[2] → ... → Tutor(live)[8]
-```
-
-**小计**：12 组合 × 3 模型 × 3 重复 = **108 trials**
+**主实验**：12 组合 × 3 模型 × 3 重复 × 2 温度 = **216 trials**
 
 ### 4.3 对照组：无 Persona
 
-**目的**：验证 persona 定义确实产生了有意义的行为差异。
+- 去掉 persona 定义，替换为通用学生描述
+- 使用同一 tutor 模型实时对话（tutor t=0）
+- 每个 (task, model) 跑 1 次
 
-**方法**：
-1. 去掉 persona 的 `description`、`known/unknown_concepts`、`emotional_profile`、`behavioral_rules`
-2. 替换为通用描述：_"You are a student learning about quantitative finance and programming."_
-3. 使用 Phase 1 的脚本化 tutor 消息
-4. 每个 (task, model) 跑 1 次（无需重复，目的是对比有/无 persona 的差异）
+**对照组**：6 tasks × 3 模型 = **18 trials**
 
-**小计**：6 tasks × 3 模型 = **18 trials**
+### 4.4 Tutor 温度消融实验
+
+**目的**：验证学生模拟器的稳定性是否独立于 tutor 回复的多样性。
+
+**实验逻辑**：
+- 即使 temperature=0，模型回复也不保证完全一致（存在 provider 侧采样、batch 顺序等因素）
+- 但 temperature=1 的回复**一定比** temperature=0 更分散
+- 如果 student sim 在两种条件下 D1/D4 分数相近 → student sim 对 tutor 变异 robust
+
+**设计**：每个 (task, persona, student_model, repeat) 组合跑两次，分别使用：
+- `tutor_t=0`：tutor temperature=0.0（最一致的 tutor 回复）
+- `tutor_t=1`：tutor temperature=1.0（最分散的 tutor 回复）
+
+**结果解读**：
+
+| tutor t=0 D1/D4 | tutor t=1 D1/D4 | 结论 |
+|-----------------|-----------------|------|
+| 高 | 高 | Student sim 稳定且对 tutor 变异 robust |
+| 高 | 低 | Student sim 稳定但依赖 tutor 一致性（脆弱） |
+| 低 | 低 | Student sim 本身不稳定，与 tutor 无关 |
+| 低 | 高 | 异常——tutor 变异反而帮助 student 入戏。可能原因：t=0 的 tutor 过于模式化导致 student 也模式化脱戏，t=1 的 tutor 更自然反而激活了 persona 行为 |
+
+**措辞约定**：温度消融不能声称"隔离"了 tutor 变量（t=0 也非完全确定性），准确表述为"低 tutor 方差 vs 高 tutor 方差"条件下的对比。
+
+### 4.5 并行执行
+
+脚本使用 `concurrent.futures.ThreadPoolExecutor` 并行执行 trials：
+- 所有 trial 独立，可完全并行
+- 代码默认 `MAX_WORKERS = 100`；实际运行建议显式传 `-w 6` 起步，再按 OpenRouter 限速情况调高
+- 每个 trial 独立保存，支持断点续跑
 
 ---
 
@@ -148,132 +159,48 @@ Persona 分配逻辑：
 
 **评估粒度**：逐条学生消息
 
-**评判方式**：LLM-as-judge（opus-4.6, temperature=0.0）
+**评判方式**：OpenRouter judge 批量评估，默认 `anthropic/claude-sonnet-4-6`
 
 **评分维度**（均 1-5 分）：
 
 | 子维度 | 评判标准 |
 |--------|---------|
-| `knowledge_boundary` | 学生是否尊重 known/unknown concepts 的边界？是否"知道"了不该知道的？ |
-| `emotional_tone` | 语气是否匹配 emotional_profile？（如 curious_anxious 应在公式出现时紧张） |
-| `behavioral_rules` | persona 中的行为规则是否被遵循？（如 finance_veteran 遇到已知金融概念应立即跳过） |
+| `knowledge_boundary` | 学生是否尊重 known/unknown concepts 的边界？ |
+| `emotional_tone` | 语气是否匹配 emotional_profile？ |
+| `behavioral_rules` | persona 中的行为规则是否被遵循？ |
 | `overall` | 综合角色一致性 |
 
-**评分标准**：
-- 5 = 完美入戏：知识边界、行为规则、情绪语调全部匹配
-- 4 = 基本入戏，有轻微偏差
-- 3 = 部分入戏，有明显不一致
-- 2 = 大部分脱戏，知识边界或情绪明显错误
-- 1 = 完全脱戏，表现为另一个 persona
-
-**输入给 judge 的信息**：
-- Persona 完整定义（description, known/unknown, emotional_profile, behavioral_rules）
-- 当前轮次编号
-- 上一条 tutor 消息（提供上下文）
-- 待评估的学生消息
-
-**采样策略**：每个模型取第一次运行的全部学生消息评估（避免 judge 成本爆炸）。
-
-**产出指标**：
-- 每条消息的 4 维分数
-- 每次对话的均分
-- 按 (model × persona) 分组的热力图
+**采样策略**：仅采样 live tutor t=0 组，每个模型取第一次运行（repeat 0）的全部学生消息。理由：D1 测试的是 persona 内在一致性，与 tutor 多样性无关，温度消融的作用体现在 D2 中。
+- 采样量 = 12 组合 × 3 模型 × 1 repeat × 8 student messages = **288 单元**
 
 ### 5.2 D2 — 跨运行可复现性 (Cross-run Reproducibility)
 
-**评估粒度**：对话组（同一 task × persona × model 的 3 次运行）
+**评估粒度**：对话组（同一 task × persona × model × tutor_t 的 3 次运行）
 
-**评判方式**：LLM-as-judge（opus-4.6, temperature=0.0）
+**评分维度**（均 1-5 分）：`topic_trajectory`, `knowledge_display`, `emotional_consistency`, `question_patterns`, `overall_reproducibility`
 
-**评分维度**（均 1-5 分）：
-
-| 子维度 | 评判标准 |
-|--------|---------|
-| `topic_trajectory` | 3 次运行是否讨论了相似的话题，顺序是否相近？ |
-| `knowledge_display` | 学生表现出的知识水平是否一致？ |
-| `emotional_consistency` | 情绪语调在 3 次运行中是否相似？ |
-| `question_patterns` | 学生提问的类型和深度是否一致？ |
-| `overall_reproducibility` | 综合可复现性 |
-
-**评分标准**：
-- 5 = 3 次运行行为模式几乎相同
-- 4 = 非常相似，仅措辞差异
-- 3 = 大方向一致但话题顺序或深度有明显差异
-- 2 = 显著行为差异
-- 1 = 完全不同 — 不可复现
-
-**输入给 judge 的信息**：
-- Persona 描述
-- Task 描述
-- 3 次运行中所有学生消息（每条截取前 200 字符避免上下文爆炸）
-
-**产出指标**：
-- 每组 5 维分数
-- 按 (model × phase) 分组的对比表
-- Phase 1 vs Phase 2 的可复现性差距（量化 tutor 方差对 student 的传导效应）
+**D2 天花板效应注意**：Student t=0 + tutor t=0 条件下 D2 预期较高，这是系统确定性的直接结果，不代表跨场景稳定。有意义的比较是 t=0 vs t=1：如果 D2 在 t=1 下显著下降，说明 student sim 对 tutor 变异敏感。
 
 ### 5.3 D3 — 跨模型稳定性 (Cross-model Consistency)
 
-**评估粒度**：模型组（同一 task × persona 下 3 个模型各 1 次运行）
+**评估粒度**：模型组（同一 task × persona × repeat × tutor_t 下 3 个模型各 1 段对话）
+**采样**：使用全部 3 个 repeat 和两档 tutor temperature，共 12 组合 × 3 repeats × 2 temperatures = **72 单元**。
 
-**评判方式**：LLM-as-judge（opus-4.6, temperature=0.0）
+**评分维度**（均 1-5 分）：`knowledge_boundary_preserved`, `emotional_profile_preserved`, `behavioral_rules_preserved`, `persona_distinguishability`, `overall_cross_model`
 
-**评分维度**（均 1-5 分）：
-
-| 子维度 | 评判标准 |
-|--------|---------|
-| `knowledge_boundary_preserved` | 所有模型是否尊重相同的知识边界？ |
-| `emotional_profile_preserved` | 所有模型是否产生相似的情绪表现？ |
-| `behavioral_rules_preserved` | 所有模型是否遵循行为规则？ |
-| `persona_distinguishability` | 你能否识别这些对话来自同一个 persona？ |
-| `overall_cross_model` | 综合跨模型一致性 |
-
-**额外输出**：
-- `best_model`：最好地还原了 persona 的模型
-- `worst_model`：最差地还原了 persona 的模型
-
-**产出指标**：
-- 按 task 分组的一致性得分
-- Best/Worst 模型投票汇总
+**额外输出**：`best_model`, `worst_model`
 
 ### 5.4 D4 — 对话漂移检测 (Drift Detection)
 
 **评估粒度**：整段对话的逐轮分析
 
-**评判方式**：LLM-as-judge（opus-4.6, temperature=0.0）
+**逐轮评分**：`persona_fidelity`(1-5), `knowledge_leak`(0-3), `co_teacher_drift`(0-2)
 
-**逐轮评分**：
+**对话级汇总**：`overall_drift_score`(1-5), `drift_onset_turn`
 
-| 指标 | 量表 | 说明 |
-|------|------|------|
-| `persona_fidelity` | 1-5 | 该轮消息与 persona 的匹配度 |
-| `knowledge_leak` | 0-3 | 0=无泄漏，1=轻微，2=显著，3=完全跳脱 |
-| `co_teacher_drift` | 0-2 | 0=正常学生，1=轻微解释倾向，2=明显像 co-teacher |
+### 5.5 对照组 — Persona 区分度
 
-**对话级汇总**：
-
-| 指标 | 说明 |
-|------|------|
-| `overall_drift_score` | 1-5，5=无漂移，1=严重漂移 |
-| `drift_onset_turn` | 漂移首次出现的轮次（null 表示无漂移） |
-
-**产出指标**：
-- 按模型分组的逐轮 fidelity 曲线（前 4 轮 vs 后 4 轮对比）
-- 漂移起始轮次的分布
-- 按 (model × phase) 的漂移得分
-
-### 5.5 对照组评估 — Persona 区分度
-
-**评估粒度**：对话对（有 persona vs 无 persona）
-
-**评分**：
-- `distinctiveness`（1-5）：有/无 persona 的行为差异程度
-- `persona_value_add`（文本）：persona 定义具体增加了哪些行为
-
-**评分标准**：
-- 5 = 行为完全不同，persona 明确塑造了学生行为
-- 3 = 有差异也有相似
-- 1 = 无法区分，persona 定义无效
+**评分**：`distinctiveness`(1-5), `persona_value_add`(文本)
 
 ---
 
@@ -281,302 +208,201 @@ Persona 分配逻辑：
 
 ### 6.1 Trial 统计
 
-| 阶段 | Trials | 学生消息数 | 说明 |
-|------|--------|-----------|------|
-| Phase 1（脚本化） | 108 | 756 | 12 组合 × 3 模型 × 3 重复 × 7 条/trial |
-| Phase 2（实时） | 108 | 756 | 同上 |
-| 对照组 | 18 | 126 | 6 task × 3 模型 × 7 条/trial |
-| **合计** | **234** | **1,638** | |
+| 阶段 | Trials | Student 消息数 | Tutor 消息数 |
+|------|--------|--------------|-------------|
+| 主实验（tutor t=0） | 108 | 756 | 864 |
+| 主实验（tutor t=1） | 108 | 756 | 864 |
+| 对照组 | 18 | 126 | 144 |
+| **合计** | **234** | **1,638** | **1,872** |
 
-注：每 trial 产生 7 条学生消息（开头 1 条 + 对话中 7 条，最后一轮无学生回复）。
+**已修复**：`_generate_parsed` 的 schema fallback 双重调用问题已在实验前修复（单次 API 调用 + strict 解析 + 3 次统一重试预算）。修复后每条 student 消息 = 1 次 API 调用。
 
-### 6.2 Judge 调用统计
+### 6.2 OpenRouter 成本估算
 
-| 评估维度 | 调用次数 | 说明 |
-|----------|---------|------|
-| D1 | ~252 | 每模型取 1 次运行 × 7 条 = 6 task × 2 persona × 3 model × 7 msg × 2 phase |
-| D2 | ~72 | 12 组合 × 3 模型 × 2 phase |
-| D3 | ~24 | 12 组合 × 2 phase |
-| D4 | ~216 | 234 trials（全部对话） |
-| 对照组 | ~18 | 18 组 |
-| **合计** | **~582 次 judge 调用** | |
+基于 OpenRouter 实时定价（2026-04-20 查询），按每次 student 调用 ~2,000 input / ~150 output tokens，tutor 调用 ~1,500 input / ~300 output tokens 估算：
 
-### 6.3 成本估算
+| 组件 | 模型 | Input $/1M | Output $/1M | 调用次数 | 估算成本 |
+|------|------|-----------|------------|---------|---------|
+| Student sim | openai/gpt-5.4 | $2.50 | $15.00 | 546 | $1.98 |
+| Student sim | anthropic/claude-sonnet-4-6 | $3.00 | $15.00 | 546 | $2.26 |
+| Student sim | google/gemini-3.1-pro-preview | $2.00 | $12.00 | 546 | $1.58 |
+| **Tutor** | **openai/gpt-4.1-nano** | **$0.10** | **$0.40** | **1,872** | **$0.50** |
+| Judge | anthropic/claude-sonnet-4-6 | $3.00 | $15.00 | 684 | 另计，取决于 prompt 长度 |
+| **生成阶段合计** | | | | **3,510** | **~$6.32** |
 
-基于 OpenRouter 定价（2026-04-15 验证）：
+### 6.3 Judge 评估工作量（OpenRouter）
 
-| 组件 | 模型 | 每次输入 tokens | 每次输出 tokens | 单价($/1M in) | 估算总成本 |
-|------|------|----------------|----------------|--------------|-----------|
-| Student sim | gpt-5.4 | ~2,000 | ~150 | $2.50 | 108 trials × 7 calls = 756 × ~$0.006 ≈ $4.5 |
-| Student sim | sonnet-4.6 | ~2,000 | ~150 | $3.00 | 同上 ≈ $5.4 |
-| Student sim | gemini-3.1 | ~2,000 | ~150 | ~$2.00 | 同上 ≈ $3.6 |
-| Live tutor | sonnet-4.6 | ~1,500 | ~300 | $3.00 | 108 trials × 8 calls = 864 × ~$0.007 ≈ $6.0 |
-| Scripted tutor gen | sonnet-4.6 | ~1,000 | ~2,000 | $3.00 | 12 plans × ~$0.02 ≈ $0.24 |
-| Judge | opus-4.6 | ~2,500 | ~200 | $5.00 | 582 calls × ~$0.014 ≈ $8.1 |
-| **总计** | | | | | **~$28** |
-
-这是保守上限估算，实际可能更低。
+| 维度 | 评估单元数 | 说明 |
+|------|-----------|------|
+| D1 | 288 | 仅 live t=0 组，12 组合 × 3 模型 × 1 repeat × 8 student messages |
+| D2 | 72 | 12 组合 × 3 模型 × 2 温度 |
+| D3 | 72 | 12 组合 × 3 repeats × 2 温度 |
+| D4 | 234 | 全部 234 个对话 |
+| 对照组 | 18 | 18 组 |
+| **合计** | **684** | |
 
 ---
 
-## 7. 产出物
-
-### 7.1 原始数据
+## 7. 执行流程
 
 ```
-results/
-├── conversations/              # 234 个 JSON 文件，每个含完整对话
-│   ├── scripted__I01_implement_sma__developer_crossover__gpt-5.4__r0.json
-│   ├── live__S03_mean_reversion_research__finance_veteran__sonnet-4.6__r1.json
-│   ├── control__D05_return_computation__finance_veteran__gemini-3.1-pro-preview__r0.json
-│   └── ...
-├── scripted_tutor_plans.json   # 12 组脚本化 tutor 消息
-└── evaluations/
-    └── all_evaluations.json    # 全部 D1-D4 + 对照组评估结果
+┌──────────────────────────────────────────────────────────────────┐
+│  Step 1: 运行对话生成脚本                                           │
+│  python -m experiments.student_sim_stability.run generate         │
+│  (并行执行，Tutor + Student 均调 OpenRouter，~$6.32)                │
+│  ↓                                                                 │
+│  Step 2: 渲染 Judge Prompt                                         │
+│  python -m experiments.student_sim_stability.render_judge_prompts  │
+│  (本地运行，将对话 + 评估模板 → judge_inputs/*.json)                   │
+│  ↓                                                                 │
+│  Step 3: OpenRouter Judge 批量评估                                   │
+│  python -m experiments.student_sim_stability.run judge --dimension all │
+│  (读取 judge_inputs/*.json，写入 judge_outputs/*.json)                 │
+│  ↓                                                                 │
+│  Step 4: 汇总 + 校验 + 生成报告                                      │
+│  python -m experiments.student_sim_stability.run aggregate --strict  │
+│  python -m experiments.student_sim_stability.run validate            │
+│  python -m experiments.student_sim_stability.run report              │
+│  (读取 judge_outputs → 聚合 → HTML 报告)                             │
+└──────────────────────────────────────────────────────────────────┘
 ```
 
-### 7.2 统计报告（HTML）
+### 7.0 Judge 持久化设计
+
+每个评估单元的完整记录包含：
 
 ```
-results/report/
-├── stability_report.html       # 主报告
-└── stability_stats.json        # 原始统计数据
+judge_inputs/{eval_id}.json     # 渲染后的完整 prompt + metadata
+judge_outputs/{eval_id}.json    # judge 输出的 scores + reasoning + metadata
 ```
 
-报告包含以下 7 个章节：
+两个文件配对构成一条评估的完整审计链：prompt 输入 → judge 输出 → 解析后的分数。任何人可以通过重新运行相同的 prompt 来复现或质疑评估结果。
 
-| 章节 | 内容 |
-|------|------|
-| 1. Overview Dashboard | 模型综合稳定性排名表（composite = mean(D1, D2, D4)），总评估数 |
-| 2. D1 Persona Adherence | (model × persona) 热力图，Phase 1 vs Phase 2 对比 |
-| 3. D2 Reproducibility | (model × phase) 可复现性表，Phase 间差距分析 |
-| 4. D3 Cross-model | 按 task 分组一致性得分，Best/Worst 模型投票 |
-| 5. D4 Drift Detection | 逐轮 fidelity 曲线（前半 vs 后半 delta），漂移起始轮次 |
-| 6. Control Group | Persona 区分度得分，分 persona 对比 |
-| 7. Conclusion | 最稳定模型推荐，prompt 设计改进建议 |
+**模型名匿名化**：D3 prompt 中模型名替换为 `System A/B/C`，映射关系记录在 output metadata 的 `label_to_model` 字段中。Control prompt 的 A/B 顺序随机化，`persona_is_set_a` 字段记录实际映射。
 
----
-
-## 8. 执行方式
-
-### 8.1 前提条件
-
-- `OPENROUTER_API_KEY` 环境变量已设置
-- `google/gemini-3.1-pro-preview` 在 OpenRouter 可用（需确认模型名）
-- Python 环境包含 `numpy`（报告生成需要）
-
-### 8.2 CLI 命令
+### 7.1 CLI 命令
 
 ```bash
 cd bench
 
-# 查看实验规模（不消耗 API）
+# 查看实验规模
 python -m experiments.student_sim_stability.run dry-run
 
-# 一键全流程
-python -m experiments.student_sim_stability.run all
+# 生成全部对话（并行执行）
+python -m experiments.student_sim_stability.run generate -w 6
 
-# 或分步执行（支持断点续跑）
-python -m experiments.student_sim_stability.run phase1     # ~15 min, ~$13
-python -m experiments.student_sim_stability.run phase2     # ~20 min, ~$11
-python -m experiments.student_sim_stability.run control    # ~3 min, ~$1
-python -m experiments.student_sim_stability.run evaluate   # ~15 min, ~$8
-python -m experiments.student_sim_stability.run report     # 即时，无 API 调用
+# 渲染 judge prompts
+python -m experiments.student_sim_stability.run render-judges --dimension all --clean
+
+# 运行 OpenRouter judge
+python -m experiments.student_sim_stability.run judge --dimension all --workers 6
+
+# 汇总和校验
+python -m experiments.student_sim_stability.run aggregate --strict
+python -m experiments.student_sim_stability.run validate
+
+# 生成报告（评估完成后）
+python -m experiments.student_sim_stability.run report
 ```
 
-### 8.3 断点续跑机制
+### 7.2 断点续跑
 
-- 每个 trial 完成后立即写入 `conversations/{trial_key}.json`
+- 每个 trial 完成后立即写入 `conversations/{key}.json`
 - 重新运行时自动跳过已有文件
 - 如需重跑某个 trial，删除对应 JSON 文件即可
 
----
+### 7.3 Temperature 说明
 
-## 9. 实验代码结构
+生产环境 student sim temperature = 0.0（通过 `EVAL_JUDGE_TEMPERATURE`）。本实验保持一致。
 
-```
-experiments/student_sim_stability/
-├── __init__.py
-├── config.py               # 实验参数、任务/模型/persona 配置
-│   ├── STUDENT_MODELS       # 3 个待测模型
-│   ├── EXPERIMENT_TASKS     # 6 个代表性任务
-│   ├── TASK_PERSONA_MAP     # 每个 task 使用的 persona 对
-│   ├── FIXED_TURNS = 8      # 固定对话轮次
-│   └── REPEATS = 3          # 每组合重复次数
-├── scripted_tutor.py        # Phase 1 脚本化 tutor 消息生成
-│   ├── generate_scripted_tutor_plan()    # 为 1 个 (task, persona) 生成 8 条 tutor 消息
-│   └── load_or_generate_scripted_plans() # 批量生成 + 缓存
-├── runner.py                # 主编排器
-│   ├── run_single_trial()   # 执行 1 次对话
-│   └── ExperimentRunner     # 管理 Phase 1/2/Control/Evaluation
-│       ├── run_phase1()     # 脚本化 tutor 实验
-│       ├── run_phase2()     # 实时 tutor 实验
-│       ├── run_control()    # 对照组
-│       ├── run_evaluation() # D1-D4 评估
-│       └── run_all()        # 全流程
-├── evaluator.py             # LLM judge 评估器
-│   └── StabilityEvaluator
-│       ├── eval_d1_message()       # 单条消息角色一致性
-│       ├── eval_d1_conversation()  # 整段对话 D1
-│       ├── eval_d2()               # 跨运行可复现性
-│       ├── eval_d3()               # 跨模型一致性
-│       ├── eval_d4()               # 漂移检测
-│       └── eval_control()          # 对照组区分度
-├── report.py                # HTML 报告生成
-│   └── ReportGenerator
-│       ├── _aggregate_d1/d2/d3/d4()  # 统计聚合
-│       ├── _compute_model_ranking()  # 模型排名
-│       └── generate()                # 输出 HTML + JSON
-└── run.py                   # CLI 入口
-```
+这意味着：
+- D2（可复现性）预期较高；若仍低，说明模型在 t=0 下存在内在随机性，本身是重要发现
+- D4（漂移）在 t=0 下仍可能出现，因为漂移源于上下文积累而非温度
 
 ---
 
-## 10. Prompt 设计细节
+## 8. 产出物
 
-### 10.1 学生模拟器 Prompt（被测对象）
-
-当前 prompt 由两部分组成：
-
-**user_description**（来自 `prompt_config.py:build_user_description`）：
-```
-Your profile: {persona.description}
-
-Emotional style:
-{expanded emotional_profile}
-
-Behavioral rules (follow strictly):
-  - {rule_1}
-  - {rule_2}
-  ...
-
-Interaction rules:
-  - 【If the tutor asks you a question, ANSWER IT FIRST...】
-  - Respond naturally ...
-  - 【NEVER fabricate data, code, or files...】
-  - You interact through TEXT-ONLY chat...
-```
-
-**scenario**（来自 `prompt_config.py:build_scenario`）：
-```
-Scenario: {task.description}
-Your opening message was: "{opening}"
-
-Learning goals:
-  1. {capability_1}
-  2. {capability_2}
-  ...
-
-Introduce goals one at a time ...
-```
-
-**最终 prompt**（`student_sim.py:_NEXT_MESSAGE_PROMPT`）：
-```
-You are role-playing as a real person using an LLM tutoring app.
-
-{user_description}
-
-{scenario}
-
-Reply format: 2-4 sentences. ...
-{runtime_guidance_block}
-
-Conversation so far:
-{transcript}
-
-Respond with a JSON object containing a single key `simulated_input`.
-```
-
-### 10.2 脚本化 Tutor Prompt（Phase 1 生成用）
+### 8.1 原始数据
 
 ```
-You are generating a scripted tutor response sequence for a tutoring
-simulation experiment. The tutor teaches quantitative finance topics.
-
-Task: {task_description}
-Category: {category}
-Student persona: {persona_description}
-Student opening message: "{student_opening}"
-
-Learning objectives the tutor should cover:
-{capabilities}
-
-Generate exactly 8 tutor messages that form a coherent teaching sequence.
-...
-Return a JSON object with key "tutor_messages" containing array of 8 strings.
+results/
+├── conversations/
+│   ├── live__I01_implement_sma__developer_crossover__gpt-5.4__r0_tt0.json
+│   ├── control__D05_return_computation__finance_veteran__gemini-3.1-pro-preview__r0.json
+│   └── ...
+├── judge_inputs/
+├── judge_outputs/
+└── evaluations/
+    └── all_evaluations.json
 ```
 
-### 10.3 实时 Tutor Prompt（Phase 2 用）
+### 8.2 统计报告（HTML）
 
 ```
-You are a quantitative finance tutor. A student is asking for help.
-
-Task context: {task_description}
-
-The student has just said:
-"{student_message}"
-
-Conversation so far:
-{last 3 turns}
-
-Respond as a helpful, patient tutor. ...
+results/report/
+├── stability_report.html
+└── stability_stats.json
 ```
 
-### 10.4 对照组 Prompt
-
-替换 user_description 为：
-```
-You are a student learning about quantitative finance and programming.
-You are curious and want to understand the topics being discussed.
-Respond naturally in 2-4 sentences.
-```
+| 章节 | 内容 |
+|------|------|
+| 1. Overview | 模型综合稳定性排名表（composite = mean(D1, D2, D4)） |
+| 2. D1 | (model × persona) 热力图 |
+| 3. D2 | (model) 可复现性表 |
+| 4. D3 | 按 task 一致性得分，Best/Worst 模型投票 |
+| 5. D4 | 逐轮 fidelity 曲线，漂移起始轮次 |
+| 6. Temperature Ablation | tutor t=0/t=1 下的 D2 对比 |
+| 7. Control | Persona 区分度得分 |
+| 8. Conclusion | 最稳定模型推荐 + prompt 改进建议 |
 
 ---
 
-## 11. 预期结论模板
+## 9. 结论框架
 
-实验完成后，报告应能回答：
+实验不预设 pass/fail 阈值。报告以**相对比较和分布呈现**为主，辅以参考锚点。
 
 ### Q1: 当前 prompt 设计是否足够稳定？
 
-- 如果 D1 均分 ≥ 4.0 且 D4 漂移得分 ≥ 4.0 → **稳定，可用于 benchmark**
-- 如果 D1 ∈ [3.0, 4.0) → 基本稳定，但特定维度需要加强
-- 如果 D1 < 3.0 → 不稳定，需要重大 prompt 改进
+以 D1 和 D4 的分布（histogram / box plot）呈现，而非 pass/fail。报告中标注 4.0 和 3.0 作为视觉参考线，但不做门槛判定。最终阈值在全量实验跑完后，根据分布的自然断点标定。
 
-### Q2: 最稳定的模型是哪个？
+### Q2: 最稳定的模型？
 
-- Composite 排名第一的模型推荐为默认 `SIMULATOR_DEFAULT_MODEL`
-- 如果第一名和第二名差距 < 0.2，则需要综合成本考虑
+以 composite 排名呈现，注明各维度的相对优劣。模型间差距的统计显著性需结合 n 和 std 判断。
 
 ### Q3: Persona 定义是否有效？
 
-- 对照组 distinctiveness ≥ 4.0 → **有效，persona 明显塑造了行为**
-- 3.0-4.0 → 有效但可以加强
-- < 3.0 → 需要重新设计 persona prompt
+以对照组 distinctiveness 的 per-persona 柱状图呈现。关注的是**有 persona 和无 persona 的差距**，而非绝对分数。
 
 ### Q4: 是否存在漂移？
 
-- D4 漂移起始轮次 ≥ 6 → 后期才出现，可接受
-- 漂移起始轮次 ∈ [4, 6) → 需要在 runtime_guidance 中加入 persona 重述
-- 漂移起始轮次 < 4 → 严重问题，需要 prompt 架构级改进
+以 D4 逐轮 fidelity 折线图呈现。关注的是**后半段相对前半段的 delta**，而非单点阈值。
 
-### 可能的改进方向
+### Q5: Student sim 对 tutor 变异是否 robust？
 
-根据实验结果，可考虑的后续行动：
-
-1. **Prompt 层面**：在 runtime_guidance 中周期性重述 persona 关键特征
-2. **架构层面**：增加 persona 一致性检查器（类似 TC checker 的角色）
-3. **模型选型**：更新 `SIMULATOR_DEFAULT_MODEL` 为最稳定模型
-4. **Persona 设计**：强化区分度低的 persona 的关键行为规则
+以 tutor t=0 vs t=1 的 D2 配对柱状图呈现。关注的是**同一模型在两个温度下的 D2 差距**。
 
 ---
 
-## 12. 风险与限制
+## 10. 风险与限制
 
 | 风险 | 影响 | 缓解措施 |
 |------|------|---------|
-| Judge 模型自身不稳定 | 评估分数噪声大 | 使用 opus-4.6 + temperature=0.0；若方差大可加 3 次 judge 取均值 |
-| 脚本化 tutor 不自然 | Phase 1 对话质量低，学生回复被迫生硬 | 脚本设计为渐进式教学而非回应式；Phase 2 补充验证真实场景 |
-| 8 轮太短无法检测漂移 | D4 漏检长对话漂移 | E01 任务（end_to_end）原 max_turns=40，若需要可扩展到 15 轮 |
-| gemini-3.1-pro-preview 模型名可能变化 | Trial 失败 | 运行前验证模型可用性；config.py 可快速替换 |
-| 3 次重复不够 | D2 方差估计不可靠 | 可后续扩展到 5 次；当前 3 次是成本与信息量的平衡 |
+| **gpt-5.4 不支持 temperature 参数** | Student 端 t=0 设置可能被忽略（reasoning model 不接受 temperature） | 在报告中标注；如果 gpt-5.4 的 D2 异常，此为已知 confounding factor |
+| gpt-4.1-nano tutor 质量不够 | 对话退化影响所有 student model | 已通过 pilot 验证 8 轮对话质量；影响绝对分但不影响排名 |
+| gemini-3.1-pro-preview 模型名变化 | Trial 失败 | 运行前 dry-run 验证；config.py 可快速替换 |
+| 3 次重复不够 | D2 方差估计不可靠 | 可扩展到 5 次；t=0 下方差已较小 |
+| 8 轮太短 | D4 漏检长对话漂移 | E01 可扩展到 15 轮 |
+
+### 10.1 模型 temperature 参数支持情况
+
+运行前通过 OpenRouter `/api/v1/models` 接口验证各模型 `supported_parameters`：
+
+| 模型 | 角色 | temperature 支持 | 说明 |
+|------|------|-----------------|------|
+| openai/gpt-4.1-nano | Tutor | ✓ | 温度消融有效 |
+| openai/gpt-5.4 | Student | **✗** | Reasoning model，不接受 temperature。传入的 t=0 被忽略，模型使用自身默认行为 |
+| anthropic/claude-sonnet-4-6 | Student | ✓ | t=0 生效 |
+| google/gemini-3.1-pro-preview | Student | ✓ | t=0 生效 |
+
+**影响**：gpt-5.4 的 D2（可复现性）可能与 sonnet/gemini 不直接可比——后两者通过 t=0 获得近确定性输出，而 gpt-5.4 的输出变异性由模型内部控制。这不影响 D1（persona adherence）和 D4（drift）的评估，也不影响 D3（跨模型一致性），但在解读 D2 结果时需要注意这一差异。

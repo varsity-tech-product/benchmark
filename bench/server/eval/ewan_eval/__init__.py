@@ -1,1 +1,1 @@
-# DeepEval-free evaluation metrics.
+# Self-contained evaluation metrics for QuantTutorBench.

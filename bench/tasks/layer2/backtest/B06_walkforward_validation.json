@@ -10,8 +10,8 @@
     "fullstack_practitioner"
   ],
   "student_openings": {
-    "fullstack_practitioner": "I want to build a walk-forward validation framework on top of a properly. I've run basic backtests before — what methodology issues should I watch for?",
-    "finance_veteran": "I need to build a walk-forward validation framework on top of a. I know what good backtesting looks like from experience — can you help me implement it in code?"
+    "fullstack_practitioner": "I want to build a walk-forward validation framework on top of a backtest engine. I've run basic backtests before — what methodology issues should I watch for?",
+    "finance_veteran": "I need to build a walk-forward validation framework on top of a backtest engine. I know what good backtesting looks like from experience — can you help me implement it in code?"
   },
   "environment": {
     "data_files": [

@@ -627,15 +627,23 @@ class SessionState:
         except (json.JSONDecodeError, TypeError):
             return result
 
-        if data.get("status") == "completed":
+        session_status = data.get("status")
+        if session_status in ("completed", "failed"):
             self.phase = SessionPhase.COMPLETED
             self._save_results()
             self._destroy_container()
-            logger.info(
-                "Session %s completed: reason=%s",
-                self.session_id,
-                data.get("reason", "unknown"),
-            )
+            if session_status == "failed":
+                logger.error(
+                    "Session %s failed: reason=%s",
+                    self.session_id,
+                    data.get("reason", "unknown"),
+                )
+            else:
+                logger.info(
+                    "Session %s completed: reason=%s",
+                    self.session_id,
+                    data.get("reason", "unknown"),
+                )
             # Notify Run layer
             if self._on_completed:
                 try:
@@ -648,6 +656,7 @@ class SessionState:
                         self.session_id,
                         exc,
                     )
+
         data.setdefault("current_phase", self.phase.value)
         data.setdefault("next_allowed", next_allowed_for_phase(self.phase))
         return json.dumps(data)
@@ -729,9 +738,7 @@ class SessionState:
         if task is None:
             return []
 
-        core_names = list(
-            task.environment.core_mcp_tools if task.environment else []
-        )
+        core_names = list(task.environment.core_mcp_tools if task.environment else [])
         convenient_names = list(
             task.ground_truth.convenient_tools if task.ground_truth else []
         )
