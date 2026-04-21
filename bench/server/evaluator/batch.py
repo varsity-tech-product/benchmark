@@ -22,7 +22,7 @@ from __future__ import annotations
 import json
 import logging
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -53,6 +53,7 @@ class BundleOutcome:
     eval_run_id: Optional[str] = None
     eval_run_dir: Optional[Path] = None
     overall_score: Optional[float] = None
+    cost_usd: float = 0.0
     duration_seconds: float = 0.0
     error: Optional[str] = None
 
@@ -122,6 +123,8 @@ def resolve_bundles(
     persona_ids: Optional[list[str]] = None,
     bundle_paths: Optional[list[Path]] = None,
     all_bundles: bool = False,
+    since: Optional[datetime] = None,
+    until: Optional[datetime] = None,
 ) -> list[Path]:
     """Resolve a bundle set from filter arguments.
 
@@ -130,6 +133,10 @@ def resolve_bundles(
     paths, the tree under ``results/server`` is walked and filtered by any
     combination of ``session_ids`` / ``task_ids`` / ``persona_ids``. Pass
     ``all_bundles=True`` to skip filtering entirely.
+
+    ``since`` / ``until`` filter bundles by their manifest ``created_at``
+    timestamp. Bundles without a parseable timestamp pass the filter so
+    legacy producers do not drop out silently.
     """
     if bundle_paths:
         out: list[Path] = []
@@ -163,8 +170,45 @@ def resolve_bundles(
             continue
         if sid_prefixes and sid8 not in sid_prefixes:
             continue
+        if (since or until) and not _bundle_in_window(bundle, since, until):
+            continue
         out.append(bundle)
     return out
+
+
+def _bundle_in_window(
+    bundle: Path, since: Optional[datetime], until: Optional[datetime]
+) -> bool:
+    """Return True when the bundle's manifest timestamp is inside the window.
+
+    Bundles with an unparseable ``created_at`` pass the filter — we'd
+    rather score an old bundle than silently drop one whose manifest
+    got mangled. Both sides of the comparison are stripped to naive
+    datetimes so a tz-aware ``--since 2026-04-15T00:00:00+00:00`` does
+    not crash against the naive ``datetime.now().isoformat()`` writers
+    stamp into manifests today.
+    """
+    try:
+        manifest = json.loads(
+            (bundle / MANIFEST_FILENAME).read_text(encoding="utf-8")
+        )
+        created = manifest.get("created_at")
+        if not created:
+            return True
+        ts = _strip_tz(datetime.fromisoformat(created))
+    except Exception:
+        return True
+    since = _strip_tz(since) if since else None
+    until = _strip_tz(until) if until else None
+    if since and ts < since:
+        return False
+    if until and ts > until:
+        return False
+    return True
+
+
+def _strip_tz(dt: datetime) -> datetime:
+    return dt.replace(tzinfo=None) if dt.tzinfo is not None else dt
 
 
 def bundle_already_scored(
@@ -253,6 +297,8 @@ def run_campaign(
     rubric_version: str = "",
     formula_version: str = "",
     dry_run: bool = False,
+    max_cost_usd: Optional[float] = None,
+    resume_campaign_id: Optional[str] = None,
     on_progress: Optional[Callable[[BundleOutcome, int, int], None]] = None,
     campaign_id: Optional[str] = None,
 ) -> CampaignSummary:
@@ -261,6 +307,18 @@ def run_campaign(
     Idempotent by default: bundles already scored with the matching
     ``config_hash`` are returned as ``skipped`` outcomes without
     triggering the judge. ``force=True`` bypasses the skip check.
+
+    Operational controls:
+
+    - ``max_cost_usd`` caps the campaign's cumulative eval cost. Once
+      the running total meets or exceeds the cap, no further bundles
+      are dispatched; remaining pending bundles are marked skipped
+      with ``error='budget_exceeded'`` so the campaign summary
+      preserves audit information.
+    - ``resume_campaign_id`` reuses a prior campaign's id + directory;
+      bundles already recorded in that campaign's ``checkpoint.jsonl``
+      are skipped, so an interrupted batch can pick up where it left
+      off under the same audit trail.
     """
     cfg_hash = compute_config_hash(
         judge=eval_model,
@@ -270,20 +328,38 @@ def run_campaign(
         formula_version=formula_version,
     )
 
+    started_at = datetime.now()
+    t0 = time.time()
+    effective_id = campaign_id or resume_campaign_id or new_campaign_id(started_at)
+
+    # Apply the checkpoint first. ``filter_pending`` would otherwise
+    # translate every already-scored bundle into a "skipped" outcome (the
+    # sibling-tree eval_meta.json already carries the matching
+    # config_hash), duplicating the checkpoint entries and inflating the
+    # campaign totals on resume.
+    resumed_outcomes: list[BundleOutcome] = []
+    if resume_campaign_id:
+        resumed_outcomes = _load_checkpoint(bench_root, resume_campaign_id)
+        done_bundles = {o.bundle_dir for o in resumed_outcomes}
+        bundles = [b for b in bundles if b not in done_bundles]
+
     if skip_scored and not force:
         pending, skipped_pairs = filter_pending(bundles, bench_root, cfg_hash)
     else:
         pending, skipped_pairs = list(bundles), []
 
-    started_at = datetime.now()
-    t0 = time.time()
-    outcomes: list[BundleOutcome] = [_skipped_outcome(b, m) for b, m in skipped_pairs]
+    outcomes: list[BundleOutcome] = list(resumed_outcomes)
+    outcomes.extend(_skipped_outcome(b, m) for b, m in skipped_pairs)
 
     if dry_run:
         for bundle in pending:
             outcomes.append(_pending_outcome(bundle))
     else:
+        checkpoint_path = _open_checkpoint(
+            bench_root, effective_id, append=bool(resume_campaign_id)
+        )
         prev_concurrency = _tune_per_worker_concurrency(concurrency)
+        cost_so_far = sum(o.cost_usd or 0.0 for o in outcomes)
         try:
             def _worker(bundle: Path) -> BundleOutcome:
                 return _score_bundle_isolated(
@@ -298,28 +374,64 @@ def run_campaign(
                 )
 
             total = len(pending)
+            done_count = 0
+            pending_iter = iter(pending)
+            budget_exceeded = (
+                max_cost_usd is not None and cost_so_far >= max_cost_usd
+            )
+
+            def _record(out: BundleOutcome) -> None:
+                nonlocal done_count, cost_so_far
+                outcomes.append(out)
+                _append_checkpoint(checkpoint_path, out)
+                cost_so_far += out.cost_usd or 0.0
+                done_count += 1
+                if on_progress:
+                    on_progress(out, done_count, total)
+
             if concurrency <= 1:
-                for idx, bundle in enumerate(pending, 1):
-                    out = _worker(bundle)
-                    outcomes.append(out)
-                    if on_progress:
-                        on_progress(out, idx, total)
+                for bundle in pending_iter:
+                    if max_cost_usd is not None and cost_so_far >= max_cost_usd:
+                        budget_exceeded = True
+                        outcomes.append(_budget_skipped_outcome(bundle))
+                        continue
+                    _record(_worker(bundle))
             else:
                 with ThreadPoolExecutor(max_workers=concurrency) as pool:
-                    futures = {pool.submit(_worker, b): b for b in pending}
-                    done = 0
-                    for fut in as_completed(futures):
-                        done += 1
-                        out = fut.result()
-                        outcomes.append(out)
-                        if on_progress:
-                            on_progress(out, done, total)
+                    in_flight: set = set()
+                    while True:
+                        while (
+                            len(in_flight) < concurrency
+                            and not budget_exceeded
+                        ):
+                            try:
+                                bundle = next(pending_iter)
+                            except StopIteration:
+                                break
+                            in_flight.add(pool.submit(_worker, bundle))
+                        if not in_flight:
+                            break
+                        finished, in_flight = wait(
+                            in_flight, return_when=FIRST_COMPLETED
+                        )
+                        for fut in finished:
+                            _record(fut.result())
+                            if (
+                                max_cost_usd is not None
+                                and cost_so_far >= max_cost_usd
+                            ):
+                                budget_exceeded = True
+
+                for bundle in pending_iter:
+                    outcomes.append(_budget_skipped_outcome(bundle))
         finally:
             _restore_per_worker_concurrency(prev_concurrency)
 
     finished_at = datetime.now()
+    totals = _tally(outcomes)
+    total_cost = round(sum(o.cost_usd or 0.0 for o in outcomes), 6)
     summary = CampaignSummary(
-        campaign_id=campaign_id or new_campaign_id(started_at),
+        campaign_id=effective_id,
         started_at=started_at.isoformat(),
         finished_at=finished_at.isoformat(),
         config={
@@ -333,9 +445,11 @@ def run_campaign(
             "skip_scored": skip_scored and not force,
             "force": force,
             "dry_run": dry_run,
+            "max_cost_usd": max_cost_usd,
+            "resumed_from": resume_campaign_id,
         },
-        totals=_tally(outcomes),
-        cost_usd=0.0,
+        totals=totals,
+        cost_usd=total_cost,
         duration_s=round(time.time() - t0, 2),
         outcomes=[_outcome_to_dict(o) for o in outcomes],
     )
@@ -404,7 +518,8 @@ def _score_bundle_isolated(
         )
 
     run_dir: Path = result["_eval_run_dir"]
-    _stamp_config_hash(run_dir / "eval_meta.json", config_hash)
+    cost_usd = _extract_eval_cost(result)
+    _stamp_config_hash(run_dir / "eval_meta.json", config_hash, cost_usd=cost_usd)
 
     return BundleOutcome(
         bundle_dir=bundle,
@@ -415,17 +530,43 @@ def _score_bundle_isolated(
         eval_run_id=result.get("_eval_run_id"),
         eval_run_dir=run_dir,
         overall_score=result.get("_overall_score"),
+        cost_usd=cost_usd,
         duration_seconds=round(time.time() - start, 2),
     )
 
 
-def _stamp_config_hash(meta_path: Path, config_hash: str) -> None:
+def _extract_eval_cost(result: dict) -> float:
+    """Sum the ``_eval_cost`` signals the pipeline leaves in its output.
+
+    Sub-evaluators stamp their own cost under ``_eval_cost`` either at the
+    top level (process metrics, tutor rubric rollup) or nested inside a
+    per-component dict (``result_judge``). Summing the ones we know about
+    is a faithful enough estimate for budget gating; exact dollar parity
+    with ``cost.md`` is not required here.
+    """
+    total = 0.0
+    for key in ("_eval_cost", "_tutor_eval_cost", "_process_eval_cost"):
+        total += float(result.get(key, 0.0) or 0.0)
+
+    for nested_key in ("tutor_scores", "result_judge", "process_metrics"):
+        nested = result.get(nested_key) or {}
+        if isinstance(nested, dict):
+            total += float(nested.get("_eval_cost", 0.0) or 0.0)
+
+    return round(total, 6)
+
+
+def _stamp_config_hash(
+    meta_path: Path, config_hash: str, *, cost_usd: float = 0.0
+) -> None:
     try:
         meta = json.loads(meta_path.read_text(encoding="utf-8"))
     except Exception:
         logger.warning("cannot stamp config_hash: %s unreadable", meta_path)
         return
     meta["config_hash"] = config_hash
+    if cost_usd:
+        meta["cost_usd"] = round(cost_usd, 6)
     meta_path.write_text(
         json.dumps(meta, indent=2, default=str), encoding="utf-8"
     )
@@ -542,3 +683,81 @@ def write_campaign_summary(
         json.dumps(asdict(summary), indent=2, default=str), encoding="utf-8"
     )
     return path
+
+
+# ---------------------------------------------------------------------------
+# Checkpoint / resume
+# ---------------------------------------------------------------------------
+
+
+def _checkpoint_path(bench_root: Path | str, campaign_id: str) -> Path:
+    return campaign_dir(bench_root, campaign_id) / "checkpoint.jsonl"
+
+
+def _open_checkpoint(
+    bench_root: Path | str, campaign_id: str, *, append: bool
+) -> Path:
+    path = _checkpoint_path(bench_root, campaign_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if not append:
+        path.write_text("", encoding="utf-8")
+    return path
+
+
+def _append_checkpoint(checkpoint: Path, outcome: BundleOutcome) -> None:
+    line = json.dumps(_outcome_to_dict(outcome), default=str)
+    with checkpoint.open("a", encoding="utf-8") as fh:
+        fh.write(line + "\n")
+
+
+def _load_checkpoint(
+    bench_root: Path | str, campaign_id: str
+) -> list[BundleOutcome]:
+    """Rehydrate outcomes recorded before the campaign was interrupted."""
+    path = _checkpoint_path(bench_root, campaign_id)
+    if not path.is_file():
+        return []
+    out: list[BundleOutcome] = []
+    for raw in path.read_text(encoding="utf-8").splitlines():
+        s = raw.strip()
+        if not s:
+            continue
+        try:
+            entry = json.loads(s)
+        except Exception:
+            logger.warning("skipping malformed checkpoint line in %s", path)
+            continue
+        out.append(
+            BundleOutcome(
+                bundle_dir=Path(entry.get("bundle_dir", "")),
+                session_id=entry.get("session_id", ""),
+                task_id=entry.get("task_id", ""),
+                persona_id=entry.get("persona_id", ""),
+                status=entry.get("status", "failed"),
+                eval_run_id=entry.get("eval_run_id"),
+                eval_run_dir=(
+                    Path(entry["eval_run_dir"]) if entry.get("eval_run_dir") else None
+                ),
+                overall_score=entry.get("overall_score"),
+                cost_usd=float(entry.get("cost_usd", 0.0) or 0.0),
+                duration_seconds=float(entry.get("duration_seconds", 0.0) or 0.0),
+                error=entry.get("error"),
+            )
+        )
+    return out
+
+
+def _budget_skipped_outcome(bundle: Path) -> BundleOutcome:
+    try:
+        loaded = load_bundle(bundle)
+        sid, tid, pid = loaded.session_id, loaded.task_id, loaded.persona_id
+    except Exception:
+        sid = tid = pid = ""
+    return BundleOutcome(
+        bundle_dir=bundle,
+        session_id=sid,
+        task_id=tid,
+        persona_id=pid,
+        status="skipped",
+        error="budget_exceeded",
+    )

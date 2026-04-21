@@ -283,6 +283,21 @@ in the sibling `evaluations/server/...` tree, and bundles must carry
 
 Issue #47 slice P1 (landed): `batch.py` + `config_hash.py` layered on
 top of `score_bundle` with idempotent dispatch, failure isolation, and
-a campaign summary. Remaining work (slice P2) adds `--max-cost-usd`,
-`--resume` from checkpoint, `--since`/`--until`, and a retry wrapper
-for transient judge-LLM failures.
+a campaign summary.
+
+Issue #47 slice P2 (landed): budget gating, checkpoint/resume, and
+time-window filters.
+
+- `--max-cost-usd` runs the worker pool in lazy-dispatch mode: pull the
+  next bundle only when below the cap, mark the rest skipped with
+  `error="budget_exceeded"` so the summary still audits them.
+- `--resume CAMPAIGN_ID` reuses the original campaign dir and replays
+  `checkpoint.jsonl` to skip bundles already scored. Every outcome is
+  appended to that checkpoint as it completes so an interrupted run
+  has something to restart from.
+- `--since` / `--until` filter bundles by manifest `created_at`;
+  unparseable timestamps pass so legacy producers don't silently drop.
+- Per-bundle cost comes from the `_eval_cost` signals the pipeline
+  already emits (tutor rubric + process metrics + result judge). The
+  total lands in `CampaignSummary.cost_usd` and is stamped into
+  `eval_meta.json` for downstream audit.

@@ -24,6 +24,8 @@ from server.evaluator.batch import (
     resolve_bundles,
     run_campaign,
 )
+from datetime import datetime
+
 from server.evaluator.config_hash import compute_config_hash
 from server.storage.result_writer import save_run_state
 
@@ -91,7 +93,13 @@ def _stub_persona(persona_id="fullstack_practitioner"):
     )
 
 
-def _fake_scored_result(bundle_dir: Path, eval_run_id: str, bench_root: Path):
+def _fake_scored_result(
+    bundle_dir: Path,
+    eval_run_id: str,
+    bench_root: Path,
+    *,
+    cost: float = 0.0,
+):
     """Return the shape ``score_bundle`` hands back + write the sibling artefact."""
     from server.evaluator.paths import eval_run_dir as _run_dir
 
@@ -120,7 +128,7 @@ def _fake_scored_result(bundle_dir: Path, eval_run_id: str, bench_root: Path):
         "_overall_score": 0.7,
         "quant_result": 0.7,
         "quant_process": 0.6,
-        "tutor_scores": {},
+        "tutor_scores": {"_eval_cost": cost},
     }
 
 
@@ -518,6 +526,349 @@ class TestRunCampaign:
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# P2: operational hardening
+# ---------------------------------------------------------------------------
+
+
+class TestCostAndBudget:
+    def test_cost_summed_into_campaign(self, tmp_path):
+        bundles = [
+            _make_bundle(
+                tmp_path,
+                task_id="X01",
+                persona_id="p1",
+                session_id=chr(ord("a") + i) * 32,
+                ts=f"2026042{i}_120000",
+            )
+            for i in range(3)
+        ]
+
+        def _fake(bundle_dir, **_kw):
+            return _fake_scored_result(
+                Path(bundle_dir),
+                f"eval_20260421_{abs(hash(str(bundle_dir))) % 1000000:06d}",
+                tmp_path,
+                cost=0.5,
+            )
+
+        with patch.object(batch_mod, "_score_one", side_effect=_fake):
+            summary = run_campaign(
+                bench_root=tmp_path,
+                bundles=bundles,
+                task_loader=lambda _: _stub_task(),
+                persona_loader=lambda _: _stub_persona(),
+                eval_model="claude",
+                concurrency=1,
+            )
+        assert summary.cost_usd == pytest.approx(1.5)
+        scored = [o for o in summary.outcomes if o["status"] == "scored"]
+        assert all(o["cost_usd"] == 0.5 for o in scored)
+
+    def test_max_cost_stops_dispatch(self, tmp_path):
+        bundles = [
+            _make_bundle(
+                tmp_path,
+                task_id="X01",
+                persona_id="p1",
+                session_id=chr(ord("a") + i) * 32,
+                ts=f"2026042{i}_120000",
+            )
+            for i in range(5)
+        ]
+
+        def _fake(bundle_dir, **_kw):
+            return _fake_scored_result(
+                Path(bundle_dir),
+                f"eval_20260421_{abs(hash(str(bundle_dir))) % 1000000:06d}",
+                tmp_path,
+                cost=0.4,
+            )
+
+        with patch.object(batch_mod, "_score_one", side_effect=_fake):
+            summary = run_campaign(
+                bench_root=tmp_path,
+                bundles=bundles,
+                task_loader=lambda _: _stub_task(),
+                persona_loader=lambda _: _stub_persona(),
+                eval_model="claude",
+                concurrency=1,
+                max_cost_usd=1.0,
+            )
+        budget_skipped = [
+            o for o in summary.outcomes
+            if o["status"] == "skipped" and o.get("error") == "budget_exceeded"
+        ]
+        assert budget_skipped, "expected at least one budget_exceeded skip"
+        assert summary.cost_usd <= 1.0 + 0.4  # the bundle that crossed the cap finishes
+
+
+class TestCostExtraction:
+    def test_process_metrics_cost_summed(self, tmp_path):
+        """``process_metrics._eval_cost`` must reach the campaign total.
+
+        The real pipeline stamps process-metric spend at
+        ``result["process_metrics"]["_eval_cost"]``; missing it would
+        let `--max-cost-usd` overshoot its cap.
+        """
+        b = _make_bundle(tmp_path, task_id="X01", persona_id="p1", session_id="a" * 32)
+
+        def _fake(bundle_dir, **_kw):
+            result = _fake_scored_result(
+                Path(bundle_dir),
+                "eval_20260421_000001",
+                tmp_path,
+                cost=0.0,
+            )
+            # Simulate the real pipeline's nested cost surface.
+            result["process_metrics"] = {"_eval_cost": 0.75}
+            result["result_judge"] = {"_eval_cost": 0.1}
+            return result
+
+        with patch.object(batch_mod, "_score_one", side_effect=_fake):
+            summary = run_campaign(
+                bench_root=tmp_path,
+                bundles=[b],
+                task_loader=lambda _: _stub_task(),
+                persona_loader=lambda _: _stub_persona(),
+                eval_model="claude",
+                concurrency=1,
+            )
+        assert summary.cost_usd == pytest.approx(0.85)
+
+
+class TestResume:
+    def test_resume_reuses_campaign_id(self, tmp_path, patched_score_bundle):
+        """Resumed campaign lands in the same directory as the original."""
+        b1 = _make_bundle(tmp_path, task_id="X01", persona_id="p1", session_id="a" * 32)
+        b2 = _make_bundle(
+            tmp_path, task_id="X01", persona_id="p1", session_id="b" * 32,
+            ts="20260421_130000",
+        )
+
+        first = run_campaign(
+            bench_root=tmp_path,
+            bundles=[b1],
+            task_loader=lambda _: _stub_task(),
+            persona_loader=lambda _: _stub_persona(),
+            eval_model="claude",
+            concurrency=1,
+        )
+
+        resumed = run_campaign(
+            bench_root=tmp_path,
+            bundles=[b1, b2],
+            task_loader=lambda _: _stub_task(),
+            persona_loader=lambda _: _stub_persona(),
+            eval_model="claude",
+            concurrency=1,
+            skip_scored=False,
+            resume_campaign_id=first.campaign_id,
+        )
+        assert resumed.campaign_id == first.campaign_id
+        # Only b2 actually dispatched via _score_one; b1 came back through
+        # the checkpoint plus b2 was scored fresh.
+        sids_scored = [
+            o["session_id"] for o in resumed.outcomes if o["status"] == "scored"
+        ]
+        assert set(sids_scored) == {"a" * 32, "b" * 32}
+
+    def test_resume_skips_already_done_bundles(self, tmp_path):
+        """After an interrupt, a resume dispatches only the unfinished bundles."""
+        bundles = [
+            _make_bundle(
+                tmp_path,
+                task_id="X01",
+                persona_id="p1",
+                session_id=chr(ord("a") + i) * 32,
+                ts=f"2026042{i}_120000",
+            )
+            for i in range(3)
+        ]
+
+        crashed_at = bundles[1]
+        done_count = {"n": 0}
+
+        def _fake(bundle_dir, **_kw):
+            done_count["n"] += 1
+            if Path(bundle_dir) == crashed_at:
+                raise RuntimeError("simulated interrupt")
+            return _fake_scored_result(
+                Path(bundle_dir),
+                f"eval_20260421_{done_count['n']:06d}",
+                tmp_path,
+                cost=0.0,
+            )
+
+        with patch.object(batch_mod, "_score_one", side_effect=_fake):
+            first = run_campaign(
+                bench_root=tmp_path,
+                bundles=bundles,
+                task_loader=lambda _: _stub_task(),
+                persona_loader=lambda _: _stub_persona(),
+                eval_model="claude",
+                concurrency=1,
+            )
+        assert first.totals["scored"] + first.totals["failed"] == 3
+
+        # Resume: every bundle is rewritten via checkpoint; force is only
+        # needed here to bypass the config_hash skip since the first run
+        # also wrote eval_meta.json entries.
+        call_log: list[Path] = []
+
+        def _second(bundle_dir, **_kw):
+            call_log.append(Path(bundle_dir))
+            return _fake_scored_result(
+                Path(bundle_dir),
+                f"eval_20260421_second_{len(call_log):06d}",
+                tmp_path,
+                cost=0.0,
+            )
+
+        with patch.object(batch_mod, "_score_one", side_effect=_second):
+            resumed = run_campaign(
+                bench_root=tmp_path,
+                bundles=bundles,
+                task_loader=lambda _: _stub_task(),
+                persona_loader=lambda _: _stub_persona(),
+                eval_model="claude",
+                concurrency=1,
+                resume_campaign_id=first.campaign_id,
+                skip_scored=False,
+            )
+
+        # The bundles that were successfully scored in the first run are
+        # skipped by resume; the interrupted one is dispatched again.
+        assert resumed.campaign_id == first.campaign_id
+        assert len(call_log) < 3, f"resume re-scored too many bundles: {call_log}"
+
+
+class TestBudgetEdges:
+    def test_concurrency_path_honors_exhausted_budget(self, tmp_path):
+        """If cost is already over the cap, the concurrent dispatcher
+        must not submit any new bundles before checking.
+        """
+        bundles = [
+            _make_bundle(
+                tmp_path,
+                task_id="X01",
+                persona_id="p1",
+                session_id=chr(ord("a") + i) * 32,
+                ts=f"2026042{i}_120000",
+            )
+            for i in range(4)
+        ]
+
+        call_log: list[Path] = []
+
+        def _fake(bundle_dir, **_kw):
+            call_log.append(Path(bundle_dir))
+            return _fake_scored_result(
+                Path(bundle_dir),
+                f"eval_{len(call_log):06d}",
+                tmp_path,
+                cost=1.0,
+            )
+
+        with patch.object(batch_mod, "_score_one", side_effect=_fake):
+            summary = run_campaign(
+                bench_root=tmp_path,
+                bundles=bundles,
+                task_loader=lambda _: _stub_task(),
+                persona_loader=lambda _: _stub_persona(),
+                eval_model="claude",
+                concurrency=4,
+                max_cost_usd=0.0,
+            )
+        assert call_log == [], "budget_exceeded at start must halt dispatch immediately"
+        assert summary.totals["skipped"] == len(bundles)
+
+
+class TestResumeDeduplicatesWithSkipScored:
+    def test_checkpoint_applied_before_filter_pending(
+        self, tmp_path, patched_score_bundle
+    ):
+        """Resume must not double-count bundles via ``filter_pending``.
+
+        On the first run we wrote ``eval_meta.json`` with the matching
+        ``config_hash``, so a naive resume with ``skip_scored=True``
+        would emit both a "skipped" (from filter_pending) and a
+        "scored" (from checkpoint) outcome for the same bundle.
+        """
+        b = _make_bundle(tmp_path, task_id="X01", persona_id="p1", session_id="a" * 32)
+        first = run_campaign(
+            bench_root=tmp_path,
+            bundles=[b],
+            task_loader=lambda _: _stub_task(),
+            persona_loader=lambda _: _stub_persona(),
+            eval_model="claude",
+            concurrency=1,
+        )
+        resumed = run_campaign(
+            bench_root=tmp_path,
+            bundles=[b],
+            task_loader=lambda _: _stub_task(),
+            persona_loader=lambda _: _stub_persona(),
+            eval_model="claude",
+            concurrency=1,
+            resume_campaign_id=first.campaign_id,
+        )
+        # Each bundle must appear exactly once across the resumed outcomes.
+        sids = [o["session_id"] for o in resumed.outcomes]
+        assert len(sids) == len(set(sids))
+
+
+class TestTimeWindow:
+    def test_resolve_filters_since(self, tmp_path):
+        _make_bundle(tmp_path, task_id="X01", persona_id="p1", session_id="a" * 32)
+        _make_bundle(
+            tmp_path, task_id="X01", persona_id="p1", session_id="b" * 32,
+            ts="20260421_130000",
+        )
+        # created_at is stamped at manifest write time; fake both manifests.
+        for b in (tmp_path / "results" / "server" / "X01" / "p1").iterdir():
+            mf = b / "manifest.json"
+            data = json.loads(mf.read_text())
+            if "aaaaaaaa" in b.name:
+                data["created_at"] = "2026-04-01T00:00:00"
+            else:
+                data["created_at"] = "2026-04-20T00:00:00"
+            mf.write_text(json.dumps(data))
+
+        recent = batch_mod.resolve_bundles(
+            tmp_path, all_bundles=True, since=datetime(2026, 4, 15)
+        )
+        assert len(recent) == 1
+        assert "bbbbbbbb" in recent[0].name
+
+    def test_resolve_handles_tz_aware_since(self, tmp_path):
+        """Manifests store naive timestamps; a tz-aware ``since``
+        must not crash the comparison."""
+        from datetime import timezone
+
+        b = _make_bundle(tmp_path, task_id="X01", persona_id="p1", session_id="a" * 32)
+        mf = b / "manifest.json"
+        data = json.loads(mf.read_text())
+        data["created_at"] = "2026-04-20T00:00:00"
+        mf.write_text(json.dumps(data))
+
+        tz_since = datetime(2026, 4, 15, tzinfo=timezone.utc)
+        got = batch_mod.resolve_bundles(tmp_path, all_bundles=True, since=tz_since)
+        assert got == [b]
+
+    def test_resolve_keeps_unparseable_timestamp(self, tmp_path):
+        b = _make_bundle(tmp_path, task_id="X01", persona_id="p1", session_id="a" * 32)
+        mf = b / "manifest.json"
+        data = json.loads(mf.read_text())
+        data["created_at"] = "not-a-date"
+        mf.write_text(json.dumps(data))
+
+        got = batch_mod.resolve_bundles(
+            tmp_path, all_bundles=True, since=datetime(2026, 4, 15)
+        )
+        assert got == [b]
 
 
 class TestCLI:

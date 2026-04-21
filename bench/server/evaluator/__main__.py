@@ -25,6 +25,8 @@ import sys
 from pathlib import Path
 from typing import Callable
 
+from datetime import datetime
+
 from server.evaluator.batch import (
     BundleOutcome,
     resolve_bundles,
@@ -163,6 +165,29 @@ def _make_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Resolve + print planned work; do not score.",
     )
+    p.add_argument(
+        "--max-cost-usd",
+        type=float,
+        default=None,
+        help="Stop dispatching once cumulative eval cost meets or exceeds this cap.",
+    )
+    p.add_argument(
+        "--resume",
+        dest="resume",
+        default=None,
+        metavar="CAMPAIGN_ID",
+        help="Resume an interrupted campaign; reuses its id, dir, and checkpoint.",
+    )
+    p.add_argument(
+        "--since",
+        default=None,
+        help="Only consider bundles with created_at >= SINCE (ISO 8601).",
+    )
+    p.add_argument(
+        "--until",
+        default=None,
+        help="Only consider bundles with created_at <= UNTIL (ISO 8601).",
+    )
     return p
 
 
@@ -194,6 +219,15 @@ def _read_bundle_list(path: str) -> list[Path]:
     return out
 
 
+def _parse_iso(value: str | None, *, label: str) -> datetime | None:
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value)
+    except ValueError as exc:
+        raise SystemExit(f"error: --{label} must be ISO 8601: {exc}")
+
+
 def _run_batch(args, bench_root: Path) -> int:
     explicit_paths = (
         _read_bundle_list(args.bundles_from) if args.bundles_from else None
@@ -205,6 +239,8 @@ def _run_batch(args, bench_root: Path) -> int:
         persona_ids=args.persona,
         bundle_paths=explicit_paths,
         all_bundles=args.all_pending or args.all,
+        since=_parse_iso(args.since, label="since"),
+        until=_parse_iso(args.until, label="until"),
     )
     if not bundles:
         print("No bundles matched the given filters.")
@@ -236,6 +272,8 @@ def _run_batch(args, bench_root: Path) -> int:
         rubric_version=args.rubric_version,
         formula_version=args.formula_version,
         dry_run=args.dry_run,
+        max_cost_usd=args.max_cost_usd,
+        resume_campaign_id=args.resume,
         on_progress=_progress,
     )
 
@@ -244,7 +282,8 @@ def _run_batch(args, bench_root: Path) -> int:
         f"\nCampaign {summary.campaign_id}: "
         f"scored={totals['scored']} skipped={totals['skipped']} "
         f"failed={totals['failed']} pending={totals['pending']} "
-        f"total={totals['total']} duration={summary.duration_s}s"
+        f"total={totals['total']} cost=${summary.cost_usd:.4f} "
+        f"duration={summary.duration_s}s"
     )
     if not args.dry_run:
         path = (
