@@ -27,9 +27,20 @@ set -euo pipefail
 LEAN_ROOT="/lean"
 LEAN_LAUNCHER="${LEAN_ROOT}/Launcher"
 LEAN_ALGO_DIR="${LEAN_ROOT}/Algorithm.CSharp"
-LEAN_CONFIG="${LEAN_LAUNCHER}/config.json"
-RESULTS_DIR="/workspace/results"
 LEAN_OUTPUT_DIR="${LEAN_LAUNCHER}/bin/Debug"
+# The Launcher DLL runs from bin/Debug and reads the sibling config.json there.
+# Editing /lean/Launcher/config.json (the source copy) has no runtime effect.
+LEAN_CONFIG="${LEAN_OUTPUT_DIR}/config.json"
+# The benchmark-shipped, comment-free config. Dockerfile.lean copies this to
+# ${LEAN_LAUNCHER}/config.json only; bin/Debug/config.json remains the upstream
+# LEAN default (JSON with comments) that python's json.load cannot parse.
+# Used to seed LEAN_CONFIG before patching.
+LEAN_CONFIG_SEED="${LEAN_LAUNCHER}/config.json"
+RESULTS_DIR="/workspace/results"
+# Location LEAN's JobQueue loads the compiled algorithm from. Must be written
+# into config.json as `algorithm-location` or the Launcher crashes with
+# System.ArgumentException: empty path.
+LEAN_ALGO_DLL="${LEAN_OUTPUT_DIR}/QuantConnect.Algorithm.CSharp.dll"
 
 # Per-backtest timeout in seconds (default 5 min, overridable via env var).
 # Exit code 124 = timeout killed.
@@ -184,6 +195,13 @@ fi
 
 # ── Step 2b: Reset and inject parameters into config.json ─────────────
 echo "[2b/4] Preparing config.json parameters..."
+# Seed the runtime-read config (bin/Debug/config.json, which the Launcher
+# reads) from the benchmark's shipped comment-free copy. Skipped if already
+# identical, so reruns don't thrash.
+if ! cmp -s "$LEAN_CONFIG_SEED" "$LEAN_CONFIG" 2>/dev/null; then
+    cp "$LEAN_CONFIG_SEED" "$LEAN_CONFIG"
+    echo "  -> Seeded $LEAN_CONFIG from $LEAN_CONFIG_SEED"
+fi
 # Write PARAMS_JSON to a temp file to avoid shell injection via heredoc
 _PARAMS_TMPFILE=$(mktemp /tmp/params_XXXXXX.json)
 printf '%s' "$PARAMS_JSON" > "$_PARAMS_TMPFILE"
@@ -222,6 +240,10 @@ if full_type_name:
     cfg['algorithm-type-name'] = full_type_name
 else:
     cfg['algorithm-type-name'] = f'QuantConnect.Algorithm.CSharp.{class_name}'
+
+# Point the Launcher at the freshly copied DLL. Without this the base image's
+# empty default crashes JobQueue.NextJob with an empty-string path.
+cfg['algorithm-location'] = '$LEAN_ALGO_DLL'
 
 with open('$LEAN_CONFIG', 'w') as f:
     json.dump(cfg, f, indent=2)
