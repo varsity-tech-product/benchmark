@@ -16,17 +16,17 @@
   };
 
   var POLL_MS = 2000;
-  var ACTIVE_STATUSES = {waiting: true, claimed: true, active: true};
-  var TERMINAL_STATUSES = {completed: true, failed: true, cancelled: true};
+  var LIVE_STATUSES = {waiting: true, claimed: true, active: true};
 
   var _root = null;
   var _pollTimer = null;
   var state = {
     runs: [],
-    selectedRunId: '',
     loading: true,
     error: '',
-    lastUpdated: ''
+    lastUpdated: '',
+    statusFilter: 'all',
+    search: ''
   };
 
   window.QTB.renderFlowDemoPage = function (app) {
@@ -69,7 +69,6 @@
         state.loading = false;
         state.error = '';
         state.lastUpdated = new Date().toISOString();
-        ensureSelection();
         render();
       })
       .catch(function (err) {
@@ -85,25 +84,6 @@
     });
   }
 
-  function ensureSelection() {
-    var selected = findRun(state.selectedRunId);
-    if (selected) return;
-
-    var active = state.runs.filter(isLiveRun);
-    state.selectedRunId = (active[0] || state.runs[0] || {}).run_id || '';
-  }
-
-  function findRun(runId) {
-    for (var i = 0; i < state.runs.length; i++) {
-      if (state.runs[i].run_id === runId) return state.runs[i];
-    }
-    return null;
-  }
-
-  function selectedRun() {
-    return findRun(state.selectedRunId) || state.runs[0] || null;
-  }
-
   function render() {
     if (!_root) return;
     _root.innerHTML = pageHtml();
@@ -114,21 +94,30 @@
     var refreshBtn = document.getElementById('flow-refresh-btn');
     if (refreshBtn) refreshBtn.addEventListener('click', refresh);
 
-    var items = document.querySelectorAll('[data-flow-run-id]');
-    Array.prototype.forEach.call(items, function (item) {
-      item.addEventListener('click', function (event) {
-        if (item.getAttribute('href') && item.getAttribute('href') !== '#') return;
-        event.preventDefault();
-        state.selectedRunId = item.getAttribute('data-flow-run-id') || '';
+    var status = document.getElementById('flow-status-filter');
+    if (status) {
+      status.value = state.statusFilter;
+      status.addEventListener('change', function (event) {
+        state.statusFilter = event.target.value || 'all';
         render();
       });
-    });
+    }
+
+    var search = document.getElementById('flow-search');
+    if (search) {
+      search.value = state.search;
+      search.addEventListener('input', function (event) {
+        state.search = String(event.target.value || '').trim().toLowerCase();
+        render();
+      });
+    }
   }
 
   function pageHtml() {
-    var run = selectedRun();
+    var statuses = sortedUnique(state.runs.map(function (run) { return displayStatus(run); }));
+    var visible = filteredRuns();
     return '' +
-      '<section class="page flow-demo flow-monitor">' +
+      '<section class="page flow-demo">' +
         '<header class="page-header">' +
           '<div class="page-title-wrap">' +
             '<p class="eyebrow">Flow</p>' +
@@ -141,38 +130,24 @@
         '</header>' +
         summaryHtml() +
         statusBannerHtml() +
-        '<div class="run-agent-grid flow-monitor-grid">' +
-          '<aside class="panel run-control-panel flow-run-list-panel">' +
-            '<h2>Runs</h2>' +
-            runListHtml() +
-          '</aside>' +
-          '<section class="panel run-conversation-panel">' +
-            '<div class="run-panel-header">' +
-              '<div>' +
-                '<h2>Conversation</h2>' +
-                (run ? '<p>' + escapeHtml(runLabel(run)) + '</p>' : '') +
-              '</div>' +
-            '</div>' +
-            '<div id="flow-conversation" class="run-conversation">' +
-              conversationHtml(run) +
-            '</div>' +
-          '</section>' +
-          '<aside class="panel run-tools-panel">' +
-            '<h2>Tool Activity</h2>' +
-            toolHtml(run) +
-          '</aside>' +
+        filterHtml(statuses) +
+        '<div class="results-meta">' +
+          '<div class="results-count">' + escapeHtml(String(visible.length)) + ' run(s) shown</div>' +
         '</div>' +
+        (visible.length
+          ? '<div class="results-grid flow-results-grid">' + visible.map(runCardHtml).join('') + '</div>'
+          : emptyHtml()) +
       '</section>';
   }
 
   function summaryHtml() {
-    var active = state.runs.filter(isLiveRun).length;
+    var live = state.runs.filter(isLiveRun).length;
     var completed = state.runs.filter(function (run) { return run.status === 'completed'; }).length;
     var failed = state.runs.filter(function (run) { return run.status === 'failed'; }).length;
     var updated = state.lastUpdated ? formatTime(state.lastUpdated) : 'pending';
     return '' +
       '<div class="summary-strip flow-summary-strip">' +
-        summaryPill('Active', String(active)) +
+        summaryPill('Live', String(live)) +
         summaryPill('Completed', String(completed)) +
         summaryPill('Failed', String(failed)) +
         summaryPill('Updated', updated) +
@@ -196,40 +171,124 @@
     return '';
   }
 
-  function runListHtml() {
-    if (!state.runs.length) {
-      return '<p class="detail-empty-note">Waiting for benchmark runs.</p>';
-    }
-    return '<div class="flow-run-list">' + state.runs.map(runItemHtml).join('') + '</div>';
-  }
-
-  function runItemHtml(run) {
-    var selected = run.run_id === state.selectedRunId ? ' selected' : '';
-    var terminal = TERMINAL_STATUSES[run.status];
-    var status = displayStatus(run);
-    var href = terminal && run.status === 'completed' && run.session_id
-      ? '#/results/' + encodeURIComponent(run.session_id)
-      : '#';
-    var session = run.session_id ? run.session_id.slice(0, 8) : 'pending';
-    var turn = run.turn != null ? 'Turn ' + run.turn : titleCase(status || '');
+  function filterHtml(statuses) {
+    var options = ['<option value="all">All</option>'].concat(statuses.map(function (status) {
+      var selected = status === state.statusFilter ? ' selected' : '';
+      return '<option value="' + escapeHtml(status) + '"' + selected + '>' + escapeHtml(statusLabel(status)) + '</option>';
+    }));
     return '' +
-      '<a class="flow-run-item' + selected + '" href="' + href + '" data-flow-run-id="' + escapeHtml(run.run_id || '') + '">' +
-        '<span class="flow-run-item-top">' +
-          '<strong>' + escapeHtml(run.public_task_label || '-') + '</strong>' +
-          '<span class="summary-pill run-status-' + escapeHtml(status || '') + '">' + escapeHtml(statusLabel(status)) + '</span>' +
-        '</span>' +
-        '<span class="flow-run-item-meta">' + escapeHtml(session) + ' · ' + escapeHtml(turn) + '</span>' +
-        '<span class="flow-run-item-time">' + escapeHtml(formatTime(run.updated_at || run.created_at)) + '</span>' +
-      '</a>';
+      '<section class="panel filter-bar">' +
+        '<label class="filter-field">' +
+          '<span class="filter-label">Status</span>' +
+          '<select id="flow-status-filter" class="filter-select">' + options.join('') + '</select>' +
+        '</label>' +
+        '<label class="filter-field">' +
+          '<span class="filter-label">Search</span>' +
+          '<input id="flow-search" class="filter-input" type="search" placeholder="task, run_id, session_id..." value="' + escapeHtml(state.search) + '">' +
+        '</label>' +
+      '</section>';
   }
 
-  function conversationHtml(run) {
-    if (!run) return '<div class="run-empty-conversation">Waiting for benchmark runs.</div>';
+  function filteredRuns() {
+    return state.runs.filter(function (run) {
+      var status = displayStatus(run);
+      if (state.statusFilter !== 'all' && status !== state.statusFilter) return false;
+      if (state.search) {
+        var haystack = [
+          run.run_id,
+          run.session_id,
+          run.public_task_label,
+          run.status,
+          run.observer_status
+        ].join(' ').toLowerCase();
+        if (haystack.indexOf(state.search) === -1) return false;
+      }
+      return true;
+    });
+  }
+
+  function runCardHtml(run) {
+    var status = displayStatus(run);
     var conversation = run.conversation || [];
-    if (!conversation.length) {
-      return '<div class="run-empty-conversation">' + escapeHtml(emptyConversationText(run)) + '</div>';
-    }
-    return conversation.map(messageHtml).join('');
+    var logs = run.recent_tool_logs || [];
+    var href = run.status === 'completed' && run.session_id
+      ? '#/results/' + encodeURIComponent(run.session_id)
+      : '';
+    var tag = href ? 'a' : 'article';
+    var open = href ? ' href="' + href + '"' : '';
+
+    return '' +
+      '<' + tag + ' class="session-card flow-run-card"' + open + '>' +
+        '<div class="session-top">' +
+          '<div>' +
+            '<h2 class="session-title">' +
+              '<span>' + escapeHtml(run.public_task_label || 'Run') + '</span>' +
+              '<span class="badge">' + escapeHtml(statusLabel(status)) + '</span>' +
+              (run.mode ? '<span class="badge">' + escapeHtml(run.mode) + '</span>' : '') +
+            '</h2>' +
+            '<p class="session-subtitle">' +
+              'Run <code>' + escapeHtml(shortId(run.run_id)) + '</code>' +
+              (run.session_id ? ' · Session <code>' + escapeHtml(shortId(run.session_id)) + '</code>' : '') +
+              ' · ' + escapeHtml(formatTimestamp(run.updated_at || run.created_at)) +
+            '</p>' +
+          '</div>' +
+          '<span class="status-pill ' + statusClass(status) + '">' + escapeHtml(statusLabel(status)) + '</span>' +
+        '</div>' +
+        '<div class="session-meta-row">' +
+          '<span class="meta-chip">' + escapeHtml(String(run.turn || 0) + ' turns') + '</span>' +
+          '<span class="meta-chip">' + escapeHtml(String(conversation.length) + ' messages') + '</span>' +
+          '<span class="meta-chip">' + escapeHtml(String(logs.length) + ' recent tools') + '</span>' +
+          (run.session_phase ? '<span class="meta-chip">' + escapeHtml(run.session_phase) + '</span>' : '') +
+          (run.error ? '<span class="meta-chip flow-error-chip">' + escapeHtml(run.error) + '</span>' : '') +
+        '</div>' +
+        previewHtml(run) +
+      '</' + tag + '>';
+  }
+
+  function previewHtml(run) {
+    var conversation = run.conversation || [];
+    var logs = run.recent_tool_logs || [];
+    var messages = conversation.slice(Math.max(conversation.length - 2, 0));
+    return '' +
+      '<div class="flow-card-preview">' +
+        '<div class="flow-preview-block">' +
+          '<h3>Conversation</h3>' +
+          (messages.length ? messages.map(messagePreviewHtml).join('') : '<p class="detail-empty-note">' + escapeHtml(emptyConversationText(run)) + '</p>') +
+        '</div>' +
+        '<div class="flow-preview-block">' +
+          '<h3>Tool Activity</h3>' +
+          (logs.length ? toolListHtml(logs.slice(-4).reverse()) : '<p class="detail-empty-note">' + escapeHtml(emptyToolText(run)) + '</p>') +
+        '</div>' +
+      '</div>';
+  }
+
+  function messagePreviewHtml(msg) {
+    var role = (msg.role === 'user' || msg.role === 'student') ? 'Student' : 'Tutor';
+    return '' +
+      '<div class="flow-message-preview">' +
+        '<strong>' + escapeHtml(role) + '</strong>' +
+        '<span>' + escapeHtml(truncate(msg.content || '', 260)) + '</span>' +
+      '</div>';
+  }
+
+  function toolListHtml(logs) {
+    return '<div class="flow-tool-list">' + logs.map(function (log) {
+      var ok = log.success === false ? ' err' : ' ok';
+      var duration = log.duration_ms != null ? Math.round(log.duration_ms) + ' ms' : '';
+      return '' +
+        '<div class="flow-tool-item' + ok + '">' +
+          '<div class="flow-tool-head">' +
+            '<strong>' + escapeHtml(log.name || 'tool') + '</strong>' +
+            '<span>' + escapeHtml(duration) + '</span>' +
+          '</div>' +
+          '<div class="flow-tool-meta">' + escapeHtml(formatTime(log.timestamp)) + '</div>' +
+        '</div>';
+    }).join('') + '</div>';
+  }
+
+  function emptyHtml() {
+    if (state.runs.length) return '<div class="empty-state"><p>No runs match the current filters.</p></div>';
+    return '<div class="empty-state"><p>Waiting for benchmark runs.</p></div>';
   }
 
   function emptyConversationText(run) {
@@ -244,69 +303,29 @@
     return 'Waiting for session activity.';
   }
 
-  function messageHtml(msg) {
-    var role = (msg.role === 'user' || msg.role === 'student') ? 'student' : 'tutor';
-    var label = role === 'student' ? 'Student' : 'Tutor';
-    var body = renderMarkdown(msg.content || '');
-    return '' +
-      '<article class="run-message ' + role + '">' +
-        '<div class="run-message-label">' + label + '</div>' +
-        '<div class="run-message-bubble">' + body + '</div>' +
-      '</article>';
-  }
-
-  function renderMarkdown(value) {
-    if (window.QTB && typeof window.QTB.renderMarkdown === 'function') {
-      return window.QTB.renderMarkdown(value || '');
-    }
-    return '<p>' + escapeHtml(value || '') + '</p>';
-  }
-
-  function toolHtml(run) {
-    if (!run) return '<p class="detail-empty-note">Waiting for benchmark runs.</p>';
-    var logs = run.recent_tool_logs || [];
-    if (!logs.length) {
-      return '<p class="detail-empty-note">' + escapeHtml(emptyToolText(run)) + '</p>';
-    }
-    return '<div class="flow-tool-list">' + logs.slice().reverse().map(toolItemHtml).join('') + '</div>';
-  }
-
   function emptyToolText(run) {
     var status = displayStatus(run);
     if (status === 'active') return 'Tool calls will appear as the agent works.';
     if (status === 'completed') return 'Archived tool calls are available in Results.';
-    return titleCase(status || 'pending');
-  }
-
-  function toolItemHtml(log) {
-    var ok = log.success === false ? ' err' : ' ok';
-    var duration = log.duration_ms != null ? Math.round(log.duration_ms) + ' ms' : '';
-    return '' +
-      '<article class="flow-tool-item' + ok + '">' +
-        '<div class="flow-tool-head">' +
-          '<strong>' + escapeHtml(log.name || 'tool') + '</strong>' +
-          '<span>' + escapeHtml(duration) + '</span>' +
-        '</div>' +
-        '<div class="flow-tool-meta">' + escapeHtml(formatTime(log.timestamp)) + '</div>' +
-      '</article>';
-  }
-
-  function runLabel(run) {
-    var parts = [
-      run.public_task_label || 'Run',
-      statusLabel(displayStatus(run)),
-      run.session_phase || ''
-    ].filter(Boolean);
-    return parts.join(' · ');
+    return statusLabel(status || 'pending');
   }
 
   function isLiveRun(run) {
     if (run.is_live === true) return true;
-    return ACTIVE_STATUSES[run.status] && displayStatus(run) !== 'stale';
+    return LIVE_STATUSES[run.status] && displayStatus(run) !== 'stale';
   }
 
   function displayStatus(run) {
     return run.observer_status || run.status || '';
+  }
+
+  function statusClass(status) {
+    if (status === 'active' || status === 'claimed' || status === 'waiting') return 'running';
+    if (status === 'completed') return 'completed';
+    if (status === 'failed') return 'failed';
+    if (status === 'cancelled') return 'cancelled';
+    if (status === 'stale') return 'stale';
+    return 'pending';
   }
 
   function statusLabel(status) {
@@ -322,12 +341,38 @@
     return labels[status] || titleCase(status || '');
   }
 
+  function sortedUnique(values) {
+    var map = {};
+    values.forEach(function (value) {
+      if (value == null || value === '') return;
+      map[String(value)] = true;
+    });
+    return Object.keys(map).sort();
+  }
+
   function titleCase(value) {
     return String(value || '')
       .split(/[_\s-]+/)
       .filter(Boolean)
       .map(function (part) { return part.charAt(0).toUpperCase() + part.slice(1); })
       .join(' ');
+  }
+
+  function shortId(value) {
+    return String(value || '').slice(0, 8) || '-';
+  }
+
+  function truncate(value, maxLength) {
+    var text = String(value || '').replace(/\s+/g, ' ').trim();
+    if (text.length <= maxLength) return text;
+    return text.slice(0, maxLength - 1) + '…';
+  }
+
+  function formatTimestamp(value) {
+    if (!value) return 'Unknown time';
+    var date = new Date(value);
+    if (isNaN(date.getTime())) return String(value);
+    return date.toLocaleString();
   }
 
   function formatTime(value) {
