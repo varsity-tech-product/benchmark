@@ -284,6 +284,30 @@ class ResultIndexer:
             return None
         return full_path
 
+    def resolve_run_state_file(
+        self,
+        session_id: str,
+        *,
+        user: Any | None = None,
+        include_all: bool = False,
+        include_org: bool = False,
+    ) -> Path | None:
+        result_dir = self._find_result_dir(session_id)
+        if result_dir is None:
+            return None
+
+        run_state_path = result_dir / "run_state.json"
+        run_state = self._load_json(run_state_path)
+        if not isinstance(run_state, dict):
+            return None
+        if not self._run_state_visible(
+            run_state, user=user, include_all=include_all, include_org=include_org
+        ):
+            raise PermissionError("Result access denied")
+        if not run_state_path.exists() or not run_state_path.is_file():
+            return None
+        return run_state_path
+
     def get_workspace_index(
         self,
         session_id: str,

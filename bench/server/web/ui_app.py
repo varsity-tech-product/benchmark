@@ -227,6 +227,42 @@ def ui_routes(manager) -> list[Route]:
             return JSONResponse({"error": "Session not found"}, status_code=404)
         return JSONResponse(_sanitize_for_json(payload))
 
+    async def export_run_state(request: Request) -> JSONResponse | FileResponse:
+        user, err = auth.require_user(request)
+        if err is not None:
+            return err
+        include_all, include_org = _scope_flags(request, user)
+        session_id = request.path_params["session_id"]
+        try:
+            full_path = indexer.resolve_run_state_file(
+                session_id,
+                user=user,
+                include_all=include_all,
+                include_org=include_org,
+            )
+        except PermissionError:
+            return JSONResponse({"error": "Result access denied"}, status_code=403)
+
+        if full_path is None:
+            return JSONResponse({"error": "Session not found"}, status_code=404)
+
+        safe_session_id = "".join(
+            ch if ch.isalnum() or ch in ("-", "_") else "_" for ch in session_id
+        )
+        record_event(
+            manager.bench_root,
+            user,
+            "result.export",
+            request=request,
+            session_id=session_id,
+            payload={"file": "run_state.json"},
+        )
+        return FileResponse(
+            str(full_path),
+            media_type="application/json",
+            filename=f"{safe_session_id}_run_state.json",
+        )
+
     async def get_workspace_preview(request: Request) -> JSONResponse:
         user, err = auth.require_user(request)
         if err is not None:
@@ -758,6 +794,7 @@ def ui_routes(manager) -> list[Route]:
         Route("/ui/tasks", list_tasks, methods=["GET"]),
         Route("/ui/results", list_results, methods=["GET"]),
         Route("/ui/results/{session_id}", get_detail, methods=["GET"]),
+        Route("/ui/results/{session_id}/export", export_run_state, methods=["GET"]),
         Route("/ui/results/{session_id}/workspace", get_workspace, methods=["GET"]),
         Route(
             "/ui/results/{session_id}/workspace/preview/{path:path}",

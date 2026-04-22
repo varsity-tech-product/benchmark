@@ -1212,6 +1212,7 @@ h1 {
   color: var(--text);
   font-size: 13px;
   font-weight: 700;
+  text-decoration: none;
   cursor: pointer;
   transition: all var(--duration-fast) var(--ease);
 }
