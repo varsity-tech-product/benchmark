@@ -16,6 +16,7 @@ import logging
 import math
 import os
 from dataclasses import asdict
+from pathlib import Path
 
 from server.audit import record_event
 from server.auth import AuthService
@@ -153,13 +154,12 @@ def ui_routes(manager) -> list[Route]:
         return JSONResponse(auth.me_payload(request))
 
     async def rest_agent_skill_page(request: Request) -> HTMLResponse:
-        skill_path = (
-            manager.bench_root
-            / "docs"
-            / "skills"
-            / "quanttutorbench-rest-agent"
-            / "SKILL.md"
-        )
+        relative = Path("docs/skills/quanttutorbench-rest-agent/SKILL.md")
+        candidates = [
+            manager.bench_root / relative,
+            manager.bench_root.parent / relative,
+        ]
+        skill_path = next((path for path in candidates if path.exists()), candidates[0])
         try:
             markdown = skill_path.read_text(encoding="utf-8")
         except OSError:
