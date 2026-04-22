@@ -1,0 +1,37 @@
+{
+  "environment": "backtesting",
+  "environments": {
+    "backtesting": {
+      "live-mode": false,
+      "setup-handler": "QuantConnect.Lean.Engine.Setup.BacktestingSetupHandler",
+      "result-handler": "QuantConnect.Lean.Engine.Results.BacktestingResultHandler",
+      "data-feed-handler": "QuantConnect.Lean.Engine.DataFeeds.FileSystemDataFeed",
+      "real-time-handler": "QuantConnect.Lean.Engine.RealTime.BacktestingRealTimeHandler",
+      "transaction-handler": "QuantConnect.Lean.Engine.TransactionHandlers.BacktestingTransactionHandler",
+      "history-provider": "QuantConnect.Lean.Engine.HistoricalData.SubscriptionDataReaderHistoryProvider"
+    }
+  },
+
+  "algorithm-type-name": "QuantConnect.Algorithm.CSharp.Algorithm",
+  "algorithm-language": "CSharp",
+  "algorithm-location": "",
+
+  "parameters": {},
+
+  "data-folder": "/lean/Data",
+  "data-directory": "/lean/Data",
+
+  "results-destination-folder": "/workspace/results",
+
+  "log-handler": "QuantConnect.Logging.CompositeLogHandler",
+  "debugging": false,
+  "debugging-highlight-logs": false,
+
+  "job-user-id": "0",
+  "job-project-id": "0",
+  "job-organization-id": "",
+  "api-access-token": "",
+
+  "close-automatically": true,
+  "cache-location": "/workspace/cache"
+}

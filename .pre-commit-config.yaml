@@ -1,0 +1,65 @@
+repos:
+  # Standard pre-commit hooks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      - id: trailing-whitespace
+        exclude: '^bench/data/hf_cache/'
+      - id: end-of-file-fixer
+        exclude: '^bench/data/hf_cache/'
+      - id: check-yaml
+      - id: check-json
+      - id: check-added-large-files
+        args: ['--maxkb=1000']
+        exclude: '^bench/data/hf_cache/'
+      - id: check-merge-conflict
+      - id: detect-private-key
+
+  # Python code formatting
+  - repo: https://github.com/psf/black
+    rev: 24.1.1
+    hooks:
+      - id: black
+        language_version: python3
+
+  # Python linting
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.1.14
+    hooks:
+      - id: ruff
+        args: [--fix, --exit-non-zero-on-fix]
+
+  # Local hooks for project-specific validation
+  - repo: local
+    hooks:
+      # Validate Python syntax
+      - id: python-syntax
+        name: Validate Python Syntax
+        entry: python -m py_compile
+        language: python
+        types: [python]
+
+      # Validate Pydantic schemas
+      - id: validate-schemas
+        name: Validate Pydantic Schemas
+        entry: bash -c 'source .venv/bin/activate && python -c "from scripts.lib.schemas import StructuredQA, LearnerProfile, TutoringStrategy, FinalBenchmarkRecord; print(\"✓ Schemas valid\")"'
+        language: system
+        pass_filenames: false
+        files: ^scripts/lib/schemas\.py$
+
+      # Validate synthesized data if it exists
+      - id: validate-synthesized-data
+        name: Validate Synthesized Data Schema
+        entry: bash -c 'if [ -f data/02_synthesized/synthesized_data.jsonl ]; then python scripts/04_validate/validate_schema.py --input data/02_synthesized/synthesized_data.jsonl --output /dev/null --error-log /dev/null 2>/dev/null && echo "✓ Synthesized data valid" || echo "⚠ Synthesized data has validation errors"; fi; exit 0'
+        language: system
+        pass_filenames: false
+        always_run: true
+
+      # Run unit tests
+      - id: pytest
+        name: Run Unit Tests
+        entry: bash -c 'source .venv/bin/activate && python -m pytest tests/ -q --tb=short'
+        language: system
+        pass_filenames: false
+        types: [python]
+        stages: [pre-commit]

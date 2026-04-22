@@ -1,0 +1,68 @@
+{
+  "task_id": "S03_mean_reversion_research",
+  "version": "2.2",
+  "difficulty": "medium",
+  "category": "strategy",
+  "task_type": "multi_turn",
+  "description": "Guide a student to research mean-reversion alpha in BTCUSDT daily data.",
+  "persona_ids": [
+    "beginner_no_finance",
+    "intermediate_developer",
+    "advanced_quant"
+  ],
+  "student_openings": {
+    "beginner_no_finance": "I noticed that Bitcoin sometimes drops a lot and then bounces back. Is there a way to trade that 'bounce back' pattern? How do I know if it's real?",
+    "intermediate_developer": "I want to research mean-reversion signals on BTC. I know about z-scores and Bollinger Bands, but I want to systematically evaluate whether reversion is actually present in this data before building a strategy.",
+    "advanced_quant": "I'm researching short-term mean-reversion alpha in crypto. I suspect reversion exists at certain horizons but I want to rigorously test it. What's the approach?"
+  },
+  "environment": {
+    "data_files": [
+      "BTCUSDT_1d_2021_2024.csv"
+    ],
+    "core_mcp_tools": [
+      "shell_exec",
+      "file_write",
+      "file_read",
+      "file_list",
+      "get_environment_info"
+    ],
+    "docs_available": [
+      "alpha_research_methodology.md",
+      "signal_evaluation.md",
+      "statistical_tests.md"
+    ],
+    "sandbox_image": "quant-tutor-env:v2.2",
+    "network_enabled": false
+  },
+  "ground_truth": {
+    "expected_outcome": "Tutor guides the student to statistically verify mean-reversion behavior in the data, construct a formalized mean-reversion signal, evaluate signal quality with multiple metrics, perform a rough PnL check with risk-adjusted measures, and critically analyze failure modes. The run should leave concrete computational outputs such as research code, signal evaluation metrics, and PnL results rather than only conversational discussion.",
+    "required_capabilities": [
+      "Identify mean-reversion characteristics in the data using statistical analysis",
+      "Construct a mean-reversion signal with a clear definition",
+      "Evaluate signal quality using metrics like IC, hit rate, and turnover",
+      "Perform a rough PnL check and interpret risk-adjusted results",
+      "Analyze when the mean-reversion approach fails and why"
+    ],
+    "expected_mcp_tools": [
+      "shell_exec",
+      "file_read",
+      "get_environment_info"
+    ],
+    "convenient_tools": [
+      "compute_indicator",
+      "compute_statistics",
+      "evaluate_signal",
+      "plot_chart",
+      "construct_signal"
+    ],
+    "quant_validation": {
+      "eval_script": "evaluation/test_scripts/strategy/S03_mean_reversion_research.py"
+    },
+    "termination_criteria": "The tutor has completed the following research steps with computational evidence (not just verbal discussion): (1) Investigated mean-reversion behavior in the data and constructed at least one mean-reversion signal (e.g., z-score, RSI deviation, Bollinger Band deviation) with a clear mathematical definition, supported by statistical evidence such as return autocorrelation or distributional analysis with specific numerical results. (2) Evaluated the signal quantitatively using at least one quality metric (e.g., information coefficient, hit rate, quantile spread, turnover) and discussed what the metric values imply about signal quality. (3) Computed a rough PnL or cumulative return for the signal-based strategy, including at least one risk-adjusted metric such as Sharpe ratio or maximum drawdown, with specific numerical values. (4) Discussed when and why the mean-reversion approach fails, referencing specific market conditions or data periods. Once all four steps have been computationally demonstrated, the research session is complete."
+  },
+  "requires_code": true,
+  "sample_code": null,
+  "max_turns": 20,
+  "agent_max_steps": 15,
+  "timeout_minutes": 40
+}

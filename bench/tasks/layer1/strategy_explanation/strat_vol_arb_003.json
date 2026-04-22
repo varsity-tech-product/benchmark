@@ -1,0 +1,19 @@
+{
+  "task_id": "strat_vol_arb_003",
+  "version": "1.0",
+  "difficulty": "hard",
+  "category": "strategy_explanation",
+  "task_type": "single_turn",
+  "requires_tool": false,
+  "description": "I want to understand volatility arbitrage. How do you exploit the difference between implied and realized volatility, and what are the practical challenges?",
+  "context": null,
+  "reference_answer": "Volatility arbitrage exploits the persistent premium of implied volatility (IV) over realized volatility (RV). The strategy typically involves selling options (collecting IV premium) and delta-hedging the directional exposure, profiting when IV > subsequent RV. P&L ≈ 0.5 * Gamma * S² * (σ²_implied - σ²_realized) * dt. Key challenges: (1) discrete hedging introduces gamma risk and hedging P&L variance, (2) volatility of volatility (vol-of-vol) creates path dependency — a stock can realize low average vol but with a single large move that causes losses, (3) tail risk from gap moves where delta hedging fails, (4) financing costs of the hedging portfolio, (5) model risk in IV surface interpolation. The strategy requires robust volatility forecasting (GARCH, HAR-RV, or ML models), careful Greeks management, and strict risk limits on vega and gamma exposure.",
+  "synthetic_response": "Let's dig into the mechanics precisely.\n\n## The Fundamental Setup\n\nVol arb exploits one of the most persistent anomalies in options markets: **implied volatility systematically overestimates subsequent realized volatility**. This is the Variance Risk Premium (VRP).\n\nThe trade: **sell options (harvest IV premium), delta-hedge away directional exposure, profit if IV > RV.**\n\n## P&L Decomposition\n\nFor a delta-hedged option position, the daily P&L contribution is:\n\n```\nP&L_t ≈ 0.5 × Γ_t × S_t² × (σ²_implied - r²_t)\n```\n\nwhere `r_t` is the actual daily return. Summing over the option's life:\n\n```\nTotal P&L ≈ 0.5 × Σ Γ_t × S_t² × (σ²_imp - σ²_realized) × dt\n```\n\nYou profit when each day's actual squared return is less than the implied daily variance.\n\n## Path Dependency — The Subtlety Most People Miss\n\nTwo stocks can both realize 20% annualized volatility but produce dramatically different P&L:\n\n- **Stock A**: Steady 1.26% daily moves → smooth positive P&L accumulation\n- **Stock B**: Twenty quiet days then one -8% gap → the single gap wipes out weeks of theta\n\nThis is why **average realized vol doesn't determine P&L** — the distribution of returns matters. Volatility clustering (GARCH effects) creates path dependency.\n\n## Practical Challenges\n\n1. **Discrete hedging**: You can't hedge continuously. Each rebalance has transaction costs, and between rebalances you're exposed to gamma. Hedging frequency is an optimization problem: too frequent = high costs, too infrequent = high variance.\n\n2. **Gap risk**: Overnight or weekend moves can't be hedged. A 5-sigma gap move on a short gamma position can exceed months of premium collected.\n\n3. **Volatility forecasting**: Your edge depends on forecasting RV better than the market's IV. Consider HAR-RV (Heterogeneous Autoregressive model of Realized Volatility) which captures multi-scale volatility dynamics better than GARCH for this application.\n\n4. **Greeks management**: As the option approaches expiry, gamma increases dramatically (pin risk). You need explicit risk limits on gamma, vega, and vanna exposures.\n\nShall we implement a backtest of a delta-hedged short straddle strategy with daily rebalancing?",
+  "source_dataset": "strategy_explanation",
+  "tags": [
+    "strategy",
+    "options",
+    "volatility",
+    "advanced"
+  ]
+}

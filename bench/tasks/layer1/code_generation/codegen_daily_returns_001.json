@@ -1,0 +1,19 @@
+{
+  "task_id": "codegen_daily_returns_001",
+  "version": "1.0",
+  "difficulty": "easy",
+  "category": "code_generation",
+  "task_type": "single_turn",
+  "requires_tool": true,
+  "description": "I have a CSV file with columns 'Date' and 'Close' containing daily stock prices. How do I write Python code to calculate daily percentage returns and plot them?",
+  "context": null,
+  "reference_answer": "```python\nimport pandas as pd\nimport matplotlib.pyplot as plt\n\n# Load data\ndf = pd.read_csv('stock_prices.csv', parse_dates=['Date'], index_col='Date')\n\n# Calculate daily percentage returns\ndf['daily_return'] = df['Close'].pct_change() * 100\n\n# Drop the first NaN row\ndf = df.dropna()\n\n# Summary statistics\nprint(f\"Mean daily return: {df['daily_return'].mean():.4f}%\")\nprint(f\"Std daily return: {df['daily_return'].std():.4f}%\")\nprint(f\"Annualized volatility: {df['daily_return'].std() * (252**0.5):.2f}%\")\n\n# Plot\nfig, axes = plt.subplots(2, 1, figsize=(12, 8))\naxes[0].plot(df.index, df['Close'])\naxes[0].set_title('Stock Price')\naxes[1].bar(df.index, df['daily_return'], width=1, alpha=0.7)\naxes[1].set_title('Daily Returns (%)')\nplt.tight_layout()\nplt.show()\n```\nKey points: (1) Use pct_change() for percentage returns, not manual division which risks off-by-one errors. (2) The first row will be NaN since there's no prior price. (3) Annualize volatility by multiplying daily std by sqrt(252) trading days. (4) Returns are approximately log-normal; for log returns use np.log(df['Close']/df['Close'].shift(1)).",
+  "synthetic_response": "Let me walk you through this step by step!\n\n## Why Returns, Not Prices?\n\nFirst, an important concept: in finance, we almost always analyze **returns** rather than raw prices. Why?\n- Returns are **comparable** across stocks (a $1 move means different things for a $10 stock vs. a $1000 stock)\n- Returns have nicer **statistical properties** (roughly stationary)\n\n## Step 1: Load the Data\n\n```python\nimport pandas as pd\nimport matplotlib.pyplot as plt\n\ndf = pd.read_csv('stock_prices.csv', parse_dates=['Date'], index_col='Date')\nprint(df.head())\n```\n\n`parse_dates=['Date']` converts the Date column from strings to datetime objects. `index_col='Date'` makes dates the row labels, which is essential for time series work.\n\n## Step 2: Calculate Returns\n\n```python\ndf['daily_return'] = df['Close'].pct_change() * 100  # in percent\n```\n\nWhat `pct_change()` does under the hood:\n```\nreturn_t = (price_t - price_{t-1}) / price_{t-1}\n```\n\nThe first row will be `NaN` because there's no previous price to compare to. That's expected — drop it with `df.dropna()`.\n\n## Step 3: Summary Statistics\n\n```python\nprint(f\"Mean daily return: {df['daily_return'].mean():.4f}%\")\nprint(f\"Daily volatility: {df['daily_return'].std():.4f}%\")\nprint(f\"Annualized volatility: {df['daily_return'].std() * (252**0.5):.2f}%\")\n```\n\nWhy `252**0.5`? There are ~252 trading days per year. Volatility scales with the **square root of time** (a key result from statistics), so: `annual_vol = daily_vol × √252`.\n\n## Step 4: Visualize\n\n```python\nfig, axes = plt.subplots(2, 1, figsize=(12, 8))\naxes[0].plot(df.index, df['Close'])\naxes[0].set_title('Stock Price')\naxes[1].bar(df.index, df['daily_return'], width=1, alpha=0.7)\naxes[1].set_title('Daily Returns (%)')\nplt.tight_layout()\nplt.show()\n```\n\nNotice how the price chart might look smooth, but the returns chart reveals the daily volatility that was hidden!\n\nWant to try running this on real data? I can help you fetch Apple's stock prices.",
+  "source_dataset": "code_generation",
+  "tags": [
+    "code-generation",
+    "pandas",
+    "returns",
+    "visualization"
+  ]
+}
