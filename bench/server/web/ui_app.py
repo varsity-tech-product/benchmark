@@ -10,6 +10,7 @@ Provides:
 from __future__ import annotations
 
 import hmac
+import html
 import json
 import logging
 import math
@@ -20,7 +21,7 @@ from server.audit import record_event
 from server.auth import AuthService
 from server.quota import QuotaExceeded
 from starlette.requests import Request
-from starlette.responses import FileResponse, JSONResponse
+from starlette.responses import FileResponse, HTMLResponse, JSONResponse
 from starlette.routing import Route
 
 from .ui_indexer import ResultIndexer
@@ -150,6 +151,42 @@ def ui_routes(manager) -> list[Route]:
 
     async def ui_me(request: Request) -> JSONResponse:
         return JSONResponse(auth.me_payload(request))
+
+    async def rest_agent_skill_page(request: Request) -> HTMLResponse:
+        skill_path = (
+            manager.bench_root
+            / "docs"
+            / "skills"
+            / "quanttutorbench-rest-agent"
+            / "SKILL.md"
+        )
+        try:
+            markdown = skill_path.read_text(encoding="utf-8")
+        except OSError:
+            return HTMLResponse("Skill page not found.", status_code=404)
+
+        body = html.escape(markdown)
+        return HTMLResponse(
+            "<!doctype html>"
+            '<html lang="en">'
+            "<head>"
+            '<meta charset="utf-8">'
+            '<meta name="viewport" content="width=device-width, initial-scale=1">'
+            "<title>QuantTutorBench REST Agent Skill</title>"
+            "<style>"
+            "body{font-family:Inter,system-ui,-apple-system,sans-serif;margin:0;background:#f8f7f4;color:#20201f;}"
+            "main{max-width:960px;margin:0 auto;padding:40px 24px 72px;}"
+            "a{color:#006d77;} pre{white-space:pre-wrap;background:#fff;border:1px solid #ddd8cf;border-radius:8px;padding:24px;line-height:1.55;overflow:auto;}"
+            ".back{display:inline-block;margin-bottom:24px;text-decoration:none;font-weight:600;}"
+            "</style>"
+            "</head>"
+            "<body><main>"
+            '<a class="back" href="/">QuantTutorBench</a>'
+            "<h1>REST Agent Skill</h1>"
+            "<p>Use this first-party skill page when connecting an external agent to the benchmark service.</p>"
+            f"<pre>{body}</pre>"
+            "</main></body></html>"
+        )
 
     async def get_api_key(request: Request) -> JSONResponse:
         user, err = auth.require_user(request)
@@ -845,6 +882,11 @@ def ui_routes(manager) -> list[Route]:
         Route("/auth/login", auth_login, methods=["GET"]),
         Route("/auth/callback", auth_callback, methods=["GET"]),
         Route("/auth/logout", auth_logout, methods=["POST"]),
+        Route(
+            "/skills/quanttutorbench-rest-agent",
+            rest_agent_skill_page,
+            methods=["GET"],
+        ),
         Route("/ui/me", ui_me, methods=["GET"]),
         Route("/ui/api-key", get_api_key, methods=["GET"]),
         Route("/ui/api-key", rotate_api_key, methods=["POST"]),
