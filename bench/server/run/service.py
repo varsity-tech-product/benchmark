@@ -338,13 +338,17 @@ class RunService:
             raise PermissionError("Run access denied")
         return assignment
 
-    def resolve_token(self, raw_token: str) -> Optional[RunAssignment]:
+    def resolve_token(
+        self, raw_token: str, *, allow_expired_bound: bool = False
+    ) -> Optional[RunAssignment]:
         """Find a run by raw run_token. Does NOT change state."""
         token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
         assignment = self._store.find_by_token_hash(token_hash, token_type="run")
         if assignment is None:
             return None
-        if _token_expired(assignment.token_expires_at):
+        if _token_expired(assignment.token_expires_at) and not (
+            allow_expired_bound and bool(assignment.session_id)
+        ):
             return None
         return assignment
 
