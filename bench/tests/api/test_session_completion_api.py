@@ -130,11 +130,12 @@ class TestPostCompletion:
         state.session._max_turns = 1
         await send_message(client, sid, "Done.")
 
-        # REST permission check blocks send in COMPLETED phase
+        # REST permission check blocks send in COMPLETED phase.
+        # Agent-facing lifecycle is terminal; scoring is server-side.
         resp = await client.post(f"/session/{sid}/send", json={"text": "More stuff"})
         assert resp.status_code == 403
         body = resp.json()
-        assert "request_evaluation" in body.get("allowed", [])
+        assert body.get("allowed") == []
 
     @pytest.mark.asyncio
     async def test_results_available_after_completion(self, app, client):

@@ -89,8 +89,9 @@ SEND_MESSAGE_TOOL = Tool(
         "only messages sent through this tool reach them. "
         "Each call advances the conversation by one turn and cannot be undone. "
         "Returns the student's reply and session status. "
-        "When status is 'completed' or 'failed', the session has ended; follow "
-        'the returned "next_allowed" hint (request_evaluation). '
+        "When status is 'completed' or 'failed', the session has ended and "
+        "the agent's lifecycle is over. Evaluation is handled server-side "
+        "out-of-band. "
         "Precondition: start_session must have succeeded. "
         "Optionally include 'reasoning' to record your private rationale "
         "for this turn — it is logged for analysis and is NOT shown to the student."
@@ -138,85 +139,16 @@ GET_BACKGROUND_TOOL = Tool(
     inputSchema={"type": "object", "properties": {}, "required": []},
 )
 
-REQUEST_EVALUATION_TOOL = Tool(
-    name="request_evaluation",
-    description=(
-        "Append a new score_n evaluation run for the completed session. "
-        "If another evaluation is running, returns that run's status."
-    ),
-    inputSchema={
-        "type": "object",
-        "properties": {
-            "eval_mode": {
-                "type": "string",
-                "enum": ["full", "qr", "qp", "tutor"],
-                "description": "Evaluation scope.",
-            },
-            "tutor_dims": {
-                "type": "string",
-                "description": "Comma-separated Tutor dimensions for tutor-mode subsets.",
-            },
-            "eval_model": {
-                "type": "string",
-                "description": "Judge model identifier.",
-            },
-            "idempotency_key": {
-                "type": "string",
-                "description": "Optional key to reuse an existing running request.",
-            },
-        },
-        "required": [],
-    },
-)
-
-GET_RESULTS_TOOL = Tool(
-    name="get_results",
-    description="Return the session run_state (conversation, tool_logs, metrics).",
-    inputSchema={"type": "object", "properties": {}, "required": []},
-)
-
-GET_SCORES_TOOL = Tool(
-    name="get_scores",
-    description=(
-        "Return evaluation scores. "
-        "Set history=true to return all score runs, or pass score/score_id."
-    ),
-    inputSchema={
-        "type": "object",
-        "properties": {
-            "history": {
-                "type": "boolean",
-                "description": "If true, return all score_n history.",
-            },
-            "score": {
-                "type": "string",
-                "description": "Specific score id to return, e.g. score_2.",
-            },
-            "scores": {
-                "type": "string",
-                "description": "Comma-separated score ids to return.",
-            },
-            "status": {
-                "type": "string",
-                "description": "Comma-separated status filter for history.",
-            },
-        },
-        "required": [],
-    },
-)
-
-# Names of the four session API tools (benchmark interaction).
+# Names of the session API tools agents drive directly.
 SESSION_API_TOOLS = frozenset(
     {
         "register_session",
         "start_session",
         "send_message",
-        "request_evaluation",
     }
 )
 
-# Tools allowed in COMPLETED phase.
-_COMPLETED_TOOLS = frozenset(
+SERVER_ONLY_EVAL_TOOLS = frozenset(
     {
         "request_evaluation",
         "get_results",
@@ -225,7 +157,7 @@ _COMPLETED_TOOLS = frozenset(
 )
 
 # Tool names that REST /tool/{name} must reject (use dedicated endpoints instead).
-TOOL_ENDPOINT_BLOCKED = SESSION_API_TOOLS | _COMPLETED_TOOLS
+TOOL_ENDPOINT_BLOCKED = SESSION_API_TOOLS | SERVER_ONLY_EVAL_TOOLS
 
 
 # Lifecycle tools that MCP ``list_tools`` exposes in every phase (static union).
@@ -234,9 +166,6 @@ LIFECYCLE_TOOL_NAMES: tuple[str, ...] = (
     "start_session",
     "send_message",
     "get_background",
-    "request_evaluation",
-    "get_results",
-    "get_scores",
 )
 
 
@@ -246,7 +175,7 @@ _NEXT_ALLOWED: dict[SessionPhase, list[str]] = {
     SessionPhase.UNREGISTERED: ["register_session"],
     SessionPhase.REGISTERED: ["start_session"],
     SessionPhase.IN_SESSION: ["send_message"],
-    SessionPhase.COMPLETED: ["request_evaluation"],
+    SessionPhase.COMPLETED: [],
 }
 
 
@@ -276,6 +205,13 @@ def check_permission(
         should call — so a frozen-registry MCP client can drive the state
         machine from error guidance alone.
     """
+    if tool_name in SERVER_ONLY_EVAL_TOOLS:
+        return (
+            False,
+            "Evaluation is handled server-side and is not available as an MCP tool.",
+            next_allowed_for_phase(phase),
+        )
+
     if phase == SessionPhase.UNREGISTERED:
         if tool_name == "register_session":
             return True, "", []
@@ -308,15 +244,13 @@ def check_permission(
         )
 
     if phase == SessionPhase.COMPLETED:
-        if tool_name in _COMPLETED_TOOLS:
-            return True, "", []
         return (
             False,
             (
-                "Wrong phase. Session completed — call request_evaluation, "
-                "then get_results / get_scores."
+                "Wrong phase. Session completed — the agent lifecycle is "
+                "over. No further tools to call."
             ),
-            sorted(_COMPLETED_TOOLS),
+            [],
         )
 
     return False, "Unknown phase.", []

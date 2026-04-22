@@ -47,11 +47,12 @@ class TestCompletedPhasePermissions:
         assert resp.status_code == 403
 
     @pytest.mark.asyncio
-    async def test_evaluate_allowed_after_completion(self, client, completed_session):
+    async def test_public_evaluate_absent_after_completion(
+        self, client, completed_session
+    ):
         sid = completed_session
         resp = await client.post(f"/session/{sid}/evaluate", json={})
-        # Should be 200 (accepted) — eval starts in background
-        assert resp.status_code == 200
+        assert resp.status_code == 404
 
     @pytest.mark.asyncio
     async def test_status_shows_completed(self, client, completed_session):
@@ -67,19 +68,14 @@ class TestCompletedPhasePermissions:
 
 class TestCompletedPhaseTools:
     @pytest.mark.asyncio
-    async def test_tools_shows_eval_tools(self, client, completed_session):
-        """Static-union visibility (issue #25): all lifecycle tools remain
-        listed in COMPLETED; calling an out-of-phase one returns the
-        imperative phase-denial error rather than disappearing from the
-        catalogue."""
+    async def test_eval_tools_no_longer_advertised(self, client, completed_session):
+        """COMPLETED is terminal for the agent; scoring is server-side."""
         sid = completed_session
         tools = await get_tools(client, sid)
         names = [t["name"] for t in tools]
-        assert "request_evaluation" in names
-        assert "get_results" in names
-        assert "get_scores" in names
-        # Lifecycle tools stay visible so frozen-registry clients can still
-        # drive the state machine via error guidance.
+        assert "request_evaluation" not in names
+        assert "get_results" not in names
+        assert "get_scores" not in names
         assert "send_message" in names
         assert "start_session" in names
 

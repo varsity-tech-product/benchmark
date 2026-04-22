@@ -45,6 +45,7 @@ from server.web.ui_app import extract_bearer_token, resolve_run_from_token, ui_r
 
 from .limits import HEAVY_TOOLS, backtest_sem
 from .protocol import (
+    SERVER_ONLY_EVAL_TOOLS,
     TOOL_ENDPOINT_BLOCKED,
     SessionPhase,
     check_permission,
@@ -88,14 +89,12 @@ class BenchSessionManager:
         use_docker: bool = True,
         bench_root: str | Path | None = None,
         eval_model: str = EVAL_DEFAULT_MODEL,
-        auto_eval: bool = False,
     ):
         self.use_docker = use_docker
         self.bench_root = (
             Path(bench_root) if bench_root else Path(__file__).parent.parent.parent
         )
         self.eval_model = eval_model
-        self.auto_eval = auto_eval
 
         self._sessions: dict[str, SessionState] = {}
         self._transports: dict[str, StreamableHTTPServerTransport] = {}
@@ -126,7 +125,7 @@ class BenchSessionManager:
         async with anyio.create_task_group() as tg:
             self._task_group = tg
             tg.start_soon(self._session_sweeper)
-            logger.info("BenchSessionManager started (auto_eval=%s)", self.auto_eval)
+            logger.info("BenchSessionManager started")
             try:
                 yield
             finally:
@@ -427,7 +426,6 @@ class BenchSessionManager:
             use_docker=self.use_docker,
             bench_root=self.bench_root,
             eval_model=self.eval_model,
-            auto_eval=self.auto_eval,
         )
         # Bind to Run
         state.run_id = run.run_id
@@ -644,7 +642,6 @@ class BenchSessionManager:
             use_docker=self.use_docker,
             bench_root=self.bench_root,
             eval_model=self.eval_model,
-            auto_eval=self.auto_eval,
         )
         return state
 
@@ -883,7 +880,14 @@ async def rest_tool_call(request: Request) -> JSONResponse:
 
     name = request.path_params["name"]
 
-    # Block session API tools — use dedicated endpoints
+    if name in SERVER_ONLY_EVAL_TOOLS:
+        logger.debug("[REST:%s] BLOCKED server-only tool/%s", sid[:8], name)
+        return JSONResponse(
+            {"error": "Evaluation is server-side and is not available via /tool."},
+            403,
+        )
+
+    # Block session API tools — use dedicated endpoints.
     if name in TOOL_ENDPOINT_BLOCKED:
         logger.debug(
             "[REST:%s] BLOCKED tool/%s (use dedicated endpoint)", sid[:8], name
@@ -1103,8 +1107,14 @@ async def rest_send(request: Request) -> JSONResponse:
     return JSONResponse(data)
 
 
-async def rest_evaluate(request: Request) -> JSONResponse:
-    """``POST /session/{sid}/evaluate[?eval_mode=tutor&tutor_dims=D3,D4]``"""
+async def ops_evaluate(request: Request) -> JSONResponse:
+    """``POST /ops/session/{sid}/evaluate[?eval_mode=tutor&tutor_dims=D3,D4]``."""
+    from server.web.ui_app import _authorize_admin_token
+
+    auth_err = _authorize_admin_token(request)
+    if auth_err is not None:
+        return auth_err
+
     manager: BenchSessionManager = request.app.state.manager
     sid = request.path_params["sid"]
     try:
@@ -1116,14 +1126,16 @@ async def rest_evaluate(request: Request) -> JSONResponse:
     if not state:
         return JSONResponse({"error": "Session not found"}, 404)
 
-    allowed, error, ops = check_permission(state.phase, "request_evaluation")
-    if not allowed:
+    if state.phase != SessionPhase.COMPLETED:
         logger.debug(
             "[REST:%s] DENIED evaluate in phase %s", sid[:8], state.phase.value
         )
         return JSONResponse(
-            {"error": error, "allowed": ops, "current_phase": state.phase.value},
-            403,
+            {
+                "error": "Session not completed — operator evaluation requires a completed result bundle.",
+                "current_phase": state.phase.value,
+            },
+            409,
         )
 
     from server.eval.contracts.request import EvalError, parse_eval_request
@@ -1132,7 +1144,7 @@ async def rest_evaluate(request: Request) -> JSONResponse:
         eval_request = parse_eval_request(
             {
                 "session_id": sid,
-                "eval_mode": request.query_params.get("eval_mode", "full"),
+                "eval_mode": request.query_params.get("eval_mode", "tutor"),
                 "tutor_dims": request.query_params.get("tutor_dims", ""),
                 "eval_model": request.query_params.get("eval_model")
                 or state.eval_model,
@@ -1153,7 +1165,7 @@ async def rest_evaluate(request: Request) -> JSONResponse:
     async with state._request_lock:
         state._last_activity = time.time()
         result = await asyncio.to_thread(state.request_evaluation)
-    logger.info("[REST:%s] evaluate: %s", sid[:8], result.get("status"))
+    logger.info("[OPS:%s] evaluate: %s", sid[:8], result.get("status"))
     return JSONResponse(result)
 
 
@@ -1174,7 +1186,7 @@ def _save_archived_eval_restore_failure(
         eval_request = parse_eval_request(
             {
                 "session_id": sid,
-                "eval_mode": request.query_params.get("eval_mode", "full"),
+                "eval_mode": request.query_params.get("eval_mode", "tutor"),
                 "tutor_dims": request.query_params.get("tutor_dims", ""),
                 "eval_model": request.query_params.get("eval_model")
                 or manager.eval_model,
@@ -1229,8 +1241,97 @@ def _save_archived_eval_restore_failure(
     return JSONResponse(payload)
 
 
+_PUBLIC_RUN_RESULT_KEYS = {
+    "session_id",
+    "run_id",
+    "task_id",
+    "public_task_label",
+    "persona_id",
+    "session_status",
+    "termination_reason",
+    "timestamp",
+    "duration_seconds",
+    "conversation",
+    "key_results",
+    "trace_summary",
+    "workspace_files",
+}
+
+
+def _public_run_results(data: dict) -> dict:
+    """Return the client export scope for run results."""
+    return {key: data.get(key) for key in _PUBLIC_RUN_RESULT_KEYS if key in data}
+
+
+def _public_score_summary(summary: dict | None) -> dict | None:
+    if not isinstance(summary, dict):
+        return summary
+    out = dict(summary)
+    out.pop("eval_cost_usd", None)
+    return out
+
+
+def _public_score_entry(entry: dict) -> dict:
+    allowed = {
+        "score_id",
+        "status",
+        "score_status",
+        "eval_mode",
+        "tutor_dims",
+        "created_at",
+        "completed_at",
+        "overall_score",
+        "error",
+    }
+    out = {key: entry.get(key) for key in allowed if key in entry}
+    if "scores" in entry:
+        out["scores"] = _public_score_summary(entry.get("scores"))
+    return out
+
+
+def _public_scores_payload(payload: dict) -> dict:
+    """Strip private score internals from a score-store payload."""
+    out = {
+        key: value
+        for key, value in payload.items()
+        if key not in {"score", "cost", "evaluations"}
+    }
+    if "scores" in payload:
+        scores = payload.get("scores")
+        if isinstance(scores, list):
+            out["scores"] = [
+                _public_score_entry(item) if isinstance(item, dict) else item
+                for item in scores
+            ]
+            out["evaluations"] = out["scores"]
+        elif isinstance(scores, dict):
+            out["scores"] = _public_score_summary(scores)
+        else:
+            out["scores"] = scores
+    return out
+
+
 async def rest_results(request: Request) -> JSONResponse:
     """``GET /session/{sid}/results``"""
+    manager: BenchSessionManager = request.app.state.manager
+    state = manager.get_or_restore_session(request.path_params["sid"])
+    if not state:
+        return JSONResponse({"error": "Session not found"}, 404)
+
+    data = state.get_run_results()
+    if "error" in data:
+        return JSONResponse(data, 404)
+    return JSONResponse(_public_run_results(data))
+
+
+async def ops_results(request: Request) -> JSONResponse:
+    """``GET /ops/session/{sid}/results`` — operator-only full run state."""
+    from server.web.ui_app import _authorize_admin_token
+
+    auth_err = _authorize_admin_token(request)
+    if auth_err is not None:
+        return auth_err
+
     manager: BenchSessionManager = request.app.state.manager
     state = manager.get_or_restore_session(request.path_params["sid"])
     if not state:
@@ -1244,6 +1345,58 @@ async def rest_results(request: Request) -> JSONResponse:
 
 async def rest_scores(request: Request) -> JSONResponse:
     """``GET /session/{sid}/scores[?history=true&score=score_2]``"""
+    manager: BenchSessionManager = request.app.state.manager
+    from server.eval.contracts.request import EvalError, parse_score_query
+
+    try:
+        query = parse_score_query(
+            {
+                "session_id": request.path_params["sid"],
+                "history": request.query_params.get("history", "false").lower()
+                == "true",
+                "score": request.query_params.get("score"),
+                "score_id": request.query_params.get("score_id"),
+                "scores": request.query_params.get("scores"),
+                "score_ids": request.query_params.get("score_ids"),
+                "status": request.query_params.get("status", ""),
+            }
+        )
+    except EvalError as exc:
+        return JSONResponse({"error": str(exc)}, 400)
+
+    try:
+        state = manager.get_or_restore_session(request.path_params["sid"])
+    except Exception:
+        payload = manager.get_archived_scores(
+            query.session_id,
+            history=query.history,
+            score_id=query.score_id,
+            score_ids=query.score_ids,
+            status_filter=query.status_filter,
+        )
+        if payload is not None:
+            return JSONResponse(_public_scores_payload(payload))
+        raise
+    if not state:
+        return JSONResponse({"error": "Session not found"}, 404)
+
+    payload = state.get_eval_scores(
+        history=query.history,
+        score_id=query.score_id,
+        score_ids=query.score_ids,
+        status_filter=query.status_filter,
+    )
+    return JSONResponse(_public_scores_payload(payload))
+
+
+async def ops_scores(request: Request) -> JSONResponse:
+    """``GET /ops/session/{sid}/scores[?history=true&score=score_2]``."""
+    from server.web.ui_app import _authorize_admin_token
+
+    auth_err = _authorize_admin_token(request)
+    if auth_err is not None:
+        return auth_err
+
     manager: BenchSessionManager = request.app.state.manager
     from server.eval.contracts.request import EvalError, parse_score_query
 
@@ -1349,7 +1502,6 @@ def create_app(
     use_docker: bool = True,
     bench_root: str | Path | None = None,
     eval_model: str = EVAL_DEFAULT_MODEL,
-    auto_eval: bool = False,
 ) -> _ServerApp:
     """Create the QuantTutorBench ASGI application."""
     load_server_env(bench_root)
@@ -1357,7 +1509,6 @@ def create_app(
         use_docker=use_docker,
         bench_root=bench_root,
         eval_model=eval_model,
-        auto_eval=auto_eval,
     )
 
     @contextlib.asynccontextmanager
@@ -1381,9 +1532,11 @@ def create_app(
         ),
         Route("/session/{sid}/tool/{name}", rest_tool_call, methods=["POST"]),
         Route("/session/{sid}/send", rest_send, methods=["POST"]),
-        Route("/session/{sid}/evaluate", rest_evaluate, methods=["POST"]),
         Route("/session/{sid}/results", rest_results, methods=["GET"]),
         Route("/session/{sid}/scores", rest_scores, methods=["GET"]),
+        Route("/ops/session/{sid}/evaluate", ops_evaluate, methods=["POST"]),
+        Route("/ops/session/{sid}/results", ops_results, methods=["GET"]),
+        Route("/ops/session/{sid}/scores", ops_scores, methods=["GET"]),
     ]
 
     web_dir = Path(manager.bench_root) / "server" / "web"

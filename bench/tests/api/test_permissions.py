@@ -4,13 +4,13 @@ Verifies that wrong-phase operations return 403 with the correct
 ``allowed`` hint, matching the state machine in protocol.py.
 """
 
+import httpx
 import pytest
 import pytest_asyncio
-import httpx
 
 from tests.helpers import (
-    register_session,
     register_and_start,
+    register_session,
 )
 
 
@@ -28,9 +28,7 @@ class TestRegisteredPhasePermissions:
     @pytest.mark.asyncio
     async def test_send_denied(self, client):
         sid = await register_session(client)
-        resp = await client.post(
-            f"/session/{sid}/send", json={"text": "hello"}
-        )
+        resp = await client.post(f"/session/{sid}/send", json={"text": "hello"})
         assert resp.status_code == 403
         assert "start_session" in resp.json()["allowed"]
 
@@ -43,14 +41,14 @@ class TestRegisteredPhasePermissions:
         assert resp.status_code == 403
 
     @pytest.mark.asyncio
-    async def test_evaluate_denied(self, client):
+    async def test_evaluate_not_on_public_surface(self, client):
         sid = await register_session(client)
         resp = await client.post(f"/session/{sid}/evaluate", json={})
-        assert resp.status_code == 403
+        assert resp.status_code == 404
 
 
 class TestInSessionPhasePermissions:
-    """After start, send + domain tools allowed, register/start/evaluate denied."""
+    """After start, send + domain tools allowed; public evaluate is absent."""
 
     @pytest.mark.asyncio
     async def test_send_allowed(self, client):
@@ -72,10 +70,10 @@ class TestInSessionPhasePermissions:
         assert "send_message" in tool_names
 
     @pytest.mark.asyncio
-    async def test_evaluate_denied(self, client):
+    async def test_evaluate_not_on_public_surface(self, client):
         sid, _ = await register_and_start(client)
         resp = await client.post(f"/session/{sid}/evaluate", json={})
-        assert resp.status_code == 403
+        assert resp.status_code == 404
 
     @pytest.mark.asyncio
     async def test_double_start_denied(self, client):
@@ -92,9 +90,7 @@ class TestNonexistentSession:
 
     @pytest.mark.asyncio
     async def test_send_404(self, client):
-        resp = await client.post(
-            "/session/fake-id/send", json={"text": "hello"}
-        )
+        resp = await client.post("/session/fake-id/send", json={"text": "hello"})
         assert resp.status_code == 404
 
     @pytest.mark.asyncio

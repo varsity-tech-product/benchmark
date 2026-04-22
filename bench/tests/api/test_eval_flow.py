@@ -1,7 +1,7 @@
-"""API tests for the evaluation REST endpoints.
+"""API tests for the server-side evaluation boundary.
 
-Tests POST /evaluate, GET /results, GET /scores with a mocked
-eval pipeline (no real LLM calls).
+Public session endpoints can read exported results and score summaries, but
+only the operator surface may trigger scoring.
 """
 
 import time
@@ -22,10 +22,12 @@ async def client(app):
 
 
 def _get_state(app, sid):
-    return app._manager.get_session(sid)
+    state = app._manager.get_session(sid)
+    assert state is not None
+    return state
 
 
-async def _complete_session(client, app):
+async def _complete_session(client):
     """Drive a session to COMPLETED via repeat detection."""
     sid, _ = await register_and_start(client)
     msg = "Repeated message for completion"
@@ -40,153 +42,197 @@ def _wait_eval_done(state):
             if state._eval_status in ("completed", "failed"):
                 return
         time.sleep(0.1)
+    raise AssertionError("evaluation did not finish")
 
 
-# ---------------------------------------------------------------------------
-# POST /evaluate
-# ---------------------------------------------------------------------------
-
-
-class TestRequestEvaluation:
+class TestPublicEvaluationBoundary:
     @pytest.mark.asyncio
-    async def test_evaluate_returns_running(self, app, client, mock_eval_pipeline):
-        sid = await _complete_session(client, app)
+    async def test_public_evaluate_route_absent_after_completion(self, client):
+        sid = await _complete_session(client)
+
         resp = await client.post(f"/session/{sid}/evaluate")
+
+        assert resp.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_public_evaluate_route_absent_before_completion(self, client):
+        sid, _ = await register_and_start(client)
+
+        resp = await client.post(f"/session/{sid}/evaluate")
+
+        assert resp.status_code == 404
+
+
+class TestOperatorEvaluation:
+    @pytest.mark.asyncio
+    async def test_ops_evaluate_starts_score_run(self, app, client, mock_eval_pipeline):
+        sid = await _complete_session(client)
+
+        resp = await client.post(f"/ops/session/{sid}/evaluate")
+
         assert resp.status_code == 200
         body = resp.json()
         assert body["status"] in ("running", "completed")
-
-    @pytest.mark.asyncio
-    async def test_evaluate_denied_before_completion(self, client):
-        sid, _ = await register_and_start(client)
-        resp = await client.post(f"/session/{sid}/evaluate")
-        assert resp.status_code == 403
-
-    @pytest.mark.asyncio
-    async def test_evaluate_completes_with_scores(
-        self, app, client, mock_eval_pipeline
-    ):
-        sid = await _complete_session(client, app)
-        resp = await client.post(f"/session/{sid}/evaluate")
-        assert resp.status_code == 200
+        assert body["score_id"] == "score_1"
 
         state = _get_state(app, sid)
         _wait_eval_done(state)
-
         with state._eval_lock:
             assert state._eval_status == "completed"
             assert state._active_score_id == "score_1"
 
     @pytest.mark.asyncio
-    async def test_evaluate_appends_score_run(self, app, client, mock_eval_pipeline):
-        sid = await _complete_session(client, app)
+    async def test_ops_evaluate_denied_before_completion(self, client):
+        sid, _ = await register_and_start(client)
 
-        # First eval
-        first = await client.post(f"/session/{sid}/evaluate")
+        resp = await client.post(f"/ops/session/{sid}/evaluate")
+
+        assert resp.status_code == 409
+
+    @pytest.mark.asyncio
+    async def test_ops_evaluate_appends_score_run(
+        self, app, client, mock_eval_pipeline
+    ):
+        sid = await _complete_session(client)
+        state = _get_state(app, sid)
+
+        first = await client.post(f"/ops/session/{sid}/evaluate")
         assert first.json()["score_id"] == "score_1"
+        _wait_eval_done(state)
+
+        second = await client.post(f"/ops/session/{sid}/evaluate")
+        assert second.status_code == 200
+        assert second.json()["score_id"] == "score_2"
+
+
+class TestOperatorEvalParameters:
+    @pytest.mark.asyncio
+    async def test_eval_mode_passed(self, app, client, mock_eval_pipeline):
+        sid = await _complete_session(client)
+
+        await client.post(f"/ops/session/{sid}/evaluate?eval_mode=tutor")
         state = _get_state(app, sid)
         _wait_eval_done(state)
 
-        # Second eval appends score_2 without force/overwrite.
-        resp = await client.post(f"/session/{sid}/evaluate")
-        assert resp.status_code == 200
-        body = resp.json()
-        assert body["status"] == "running"
-        assert body["score_id"] == "score_2"
-
-
-# ---------------------------------------------------------------------------
-# Eval parameters
-# ---------------------------------------------------------------------------
-
-
-class TestEvalParameters:
-    @pytest.mark.asyncio
-    async def test_eval_mode_passed(self, app, client, mock_eval_pipeline):
-        sid = await _complete_session(client, app)
-        await client.post(f"/session/{sid}/evaluate?eval_mode=tutor")
-        state = _get_state(app, sid)
         assert state._eval_mode == "tutor"
+        assert mock_eval_pipeline.call_args.kwargs["eval_mode"] == "tutor"
 
     @pytest.mark.asyncio
     async def test_tutor_dims_passed(self, app, client, mock_eval_pipeline):
-        sid = await _complete_session(client, app)
-        await client.post(f"/session/{sid}/evaluate?tutor_dims=D3,D4")
+        sid = await _complete_session(client)
+
+        await client.post(f"/ops/session/{sid}/evaluate?tutor_dims=D3,D4")
         state = _get_state(app, sid)
+        _wait_eval_done(state)
+
         assert state._tutor_dims == ["D3", "D4"]
+        assert mock_eval_pipeline.call_args.kwargs["tutor_dims"] == ["D3", "D4"]
 
     @pytest.mark.asyncio
-    async def test_default_eval_mode_full(self, app, client, mock_eval_pipeline):
-        sid = await _complete_session(client, app)
-        await client.post(f"/session/{sid}/evaluate")
+    async def test_default_eval_mode_tutor(self, app, client, mock_eval_pipeline):
+        sid = await _complete_session(client)
+
+        await client.post(f"/ops/session/{sid}/evaluate")
         state = _get_state(app, sid)
-        assert state._eval_mode == "full"
+        _wait_eval_done(state)
 
-
-# ---------------------------------------------------------------------------
-# GET /scores
-# ---------------------------------------------------------------------------
+        assert mock_eval_pipeline.call_args.kwargs["eval_mode"] == "tutor"
 
 
 class TestGetScores:
     @pytest.mark.asyncio
-    async def test_scores_pending_before_eval(self, app, client):
-        sid = await _complete_session(client, app)
+    async def test_public_scores_pending_before_eval(self, client):
+        sid = await _complete_session(client)
+
         resp = await client.get(f"/session/{sid}/scores")
+
         assert resp.status_code == 200
         assert resp.json()["status"] == "pending"
 
     @pytest.mark.asyncio
-    async def test_scores_completed_after_eval(self, app, client, mock_eval_pipeline):
-        sid = await _complete_session(client, app)
-        await client.post(f"/session/{sid}/evaluate")
-
+    async def test_public_scores_completed_without_private_cost(
+        self, app, client, mock_eval_pipeline
+    ):
+        sid = await _complete_session(client)
         state = _get_state(app, sid)
-        _wait_eval_done(state)
 
+        await client.post(f"/ops/session/{sid}/evaluate")
+        _wait_eval_done(state)
         resp = await client.get(f"/session/{sid}/scores")
+
         assert resp.status_code == 200
         data = resp.json()
         assert data["status"] == "completed"
-        assert "scores" in data
         assert data["score_id"] == "score_1"
         assert data["scores"]["overall_score"] == 0.775
+        assert "score" not in data
+        assert "cost" not in data
+        assert "eval_cost_usd" not in data["scores"]
+
+    @pytest.mark.asyncio
+    async def test_ops_scores_include_private_cost(
+        self, app, client, mock_eval_pipeline
+    ):
+        sid = await _complete_session(client)
+        state = _get_state(app, sid)
+
+        await client.post(f"/ops/session/{sid}/evaluate")
+        _wait_eval_done(state)
+        resp = await client.get(f"/ops/session/{sid}/scores")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["status"] == "completed"
+        assert data["score_id"] == "score_1"
+        assert data["cost"]["eval_cost_usd"] == 0.006
 
     @pytest.mark.asyncio
     async def test_scores_history_after_multiple_evals(
         self, app, client, mock_eval_pipeline
     ):
-        sid = await _complete_session(client, app)
+        sid = await _complete_session(client)
         state = _get_state(app, sid)
 
-        await client.post(f"/session/{sid}/evaluate")
+        await client.post(f"/ops/session/{sid}/evaluate")
         _wait_eval_done(state)
-        await client.post(f"/session/{sid}/evaluate")
+        await client.post(f"/ops/session/{sid}/evaluate")
         _wait_eval_done(state)
 
         resp = await client.get(f"/session/{sid}/scores?history=true")
+
         assert resp.status_code == 200
         data = resp.json()
         assert data["status"] == "history"
         assert [s["score_id"] for s in data["scores"]] == ["score_1", "score_2"]
-
-
-# ---------------------------------------------------------------------------
-# GET /results
-# ---------------------------------------------------------------------------
+        assert all("cost" not in s for s in data["scores"])
 
 
 class TestGetResults:
     @pytest.mark.asyncio
-    async def test_results_after_completion(self, app, client):
-        sid = await _complete_session(client, app)
+    async def test_public_results_after_completion_are_export_scoped(self, client):
+        sid = await _complete_session(client)
+
         resp = await client.get(f"/session/{sid}/results")
-        # Results should be saved after completion
-        if resp.status_code == 200:
-            data = resp.json()
-            assert "conversation" in data
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "conversation" in data
+        assert "tool_logs" not in data
+        assert "tc_debug_history" not in data
+
+    @pytest.mark.asyncio
+    async def test_ops_results_after_completion_include_full_state(self, client):
+        sid = await _complete_session(client)
+
+        resp = await client.get(f"/ops/session/{sid}/results")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "conversation" in data
+        assert "tool_logs" in data
 
     @pytest.mark.asyncio
     async def test_results_not_found_before_register(self, client):
         resp = await client.get("/session/nonexistent/results")
+
         assert resp.status_code == 404

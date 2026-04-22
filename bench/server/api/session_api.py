@@ -5,7 +5,7 @@ Each MCP HTTP session maps to one ``SessionState`` instance that manages:
 - Container + tool setup
 - TutoringSession lifecycle (student simulation, termination checking)
 - Result saving (run_state.json + agent_files/)
-- Evaluation triggering (background thread)
+- Internal evaluation triggering (background thread; server/operator only)
 
 Thread safety:
 - MCP processes requests sequentially per session, so ``handle_tool_call``
@@ -38,10 +38,7 @@ if TYPE_CHECKING:
 from .limits import HEAVY_TOOLS, backtest_sem
 from .protocol import (
     GET_BACKGROUND_TOOL,
-    GET_RESULTS_TOOL,
-    GET_SCORES_TOOL,
     REGISTER_SESSION_TOOL,
-    REQUEST_EVALUATION_TOOL,
     SEND_MESSAGE_TOOL,
     SESSION_API_TOOLS,
     START_SESSION_TOOL,
@@ -123,7 +120,7 @@ class SessionState:
         2. ``register(task_id)`` — loads task, picks persona, creates container.
         3. ``start()`` — returns student opening, enters IN_SESSION.
         4. ``handle_send_message(text)`` — routes through proxy, may complete.
-        5. ``request_evaluation()`` — triggers eval pipeline in background.
+        5. Server/operator evaluation may run after results are saved.
         6. ``cleanup()`` — destroys container and temp dirs.
     """
 
@@ -133,14 +130,12 @@ class SessionState:
         use_docker: bool = True,
         bench_root: Optional[Path] = None,
         eval_model: str = EVAL_DEFAULT_MODEL,
-        auto_eval: bool = False,
     ):
         self.session_id = session_id
         self.phase = SessionPhase.UNREGISTERED
         self.use_docker = use_docker
         self.bench_root = bench_root or Path(__file__).parent.parent.parent
         self.eval_model = eval_model
-        self.auto_eval = auto_eval
 
         # Task state (set during register)
         self.task = None
@@ -188,7 +183,7 @@ class SessionState:
         self._result_dir: Optional[Path] = None
         self._closed: bool = False
 
-        # Evaluation parameters (set before request_evaluation if non-default)
+        # Evaluation parameters (set before internal evaluation if non-default)
         self._eval_mode: str = "full"
         self._tutor_dims: Optional[list[str]] = None
         self._eval_idempotency_key: Optional[str] = None
@@ -686,26 +681,16 @@ class SessionState:
                         self.session_id,
                         exc,
                     )
-            # Server-side auto_eval — only for normal completions, not failures.
-            # Failed sessions (sim error, agent_stuck) are not valid eval inputs.
-            if self.auto_eval and session_status == "completed":
-                payload = self.request_evaluation()
-                logger.info(
-                    "Session %s auto_eval requested: %s",
-                    self.session_id,
-                    payload.get("status"),
-                )
-
         data.setdefault("current_phase", self.phase.value)
         data.setdefault("next_allowed", next_allowed_for_phase(self.phase))
         return json.dumps(data)
 
     # ------------------------------------------------------------------
-    # request_evaluation
+    # Internal server-side evaluation trigger
     # ------------------------------------------------------------------
 
     def request_evaluation(self) -> dict:
-        """Handle ``request_evaluation()``.
+        """Start an internal evaluation run for a completed result bundle.
 
         Each non-concurrent call appends a new score_n evaluation run.
         Concurrent calls return the active running score instead of starting
@@ -786,12 +771,9 @@ class SessionState:
         return self._decorate_eval_payload({"status": "unknown"})
 
     def _decorate_eval_payload(self, payload: dict) -> dict:
-        """Attach state-machine hints to a ``request_evaluation`` response."""
+        """Attach read-only follow-up hints to an internal eval response."""
         payload.setdefault("current_phase", self.phase.value)
-        if payload.get("status") == "completed":
-            payload.setdefault("next_allowed", ["get_scores", "get_results"])
-        else:
-            payload.setdefault("next_allowed", ["request_evaluation"])
+        payload.setdefault("next_allowed", ["get_scores", "get_results"])
         return payload
 
     # ------------------------------------------------------------------
@@ -830,9 +812,6 @@ class SessionState:
             START_SESSION_TOOL,
             SEND_MESSAGE_TOOL,
             GET_BACKGROUND_TOOL,
-            REQUEST_EVALUATION_TOOL,
-            GET_RESULTS_TOOL,
-            GET_SCORES_TOOL,
         ]
         return lifecycle + self._resolve_domain_tools()
 
@@ -1049,56 +1028,6 @@ class SessionState:
                 await self._notify_tools_changed()
             return [TextContent(type="text", text=str(result))]
 
-        if name == "request_evaluation":
-            from server.eval.contracts.request import EvalError, parse_eval_request
-
-            try:
-                request = parse_eval_request(
-                    {
-                        "session_id": self.session_id,
-                        "eval_mode": arguments.get("eval_mode", self._eval_mode),
-                        "tutor_dims": arguments.get("tutor_dims", self._tutor_dims),
-                        "eval_model": arguments.get("eval_model", self.eval_model),
-                        "idempotency_key": arguments.get("idempotency_key"),
-                    }
-                )
-            except EvalError as exc:
-                return [TextContent(type="text", text=json.dumps({"error": str(exc)}))]
-            self._eval_mode = request.eval_mode
-            self._tutor_dims = request.tutor_dims
-            self.eval_model = request.eval_model or self.eval_model
-            self._eval_idempotency_key = request.idempotency_key
-            result = await asyncio.to_thread(self.request_evaluation)
-            logger.info(
-                "[%s] request_evaluation: %s", self.session_id[:8], result.get("status")
-            )
-            return [TextContent(type="text", text=json.dumps(result))]
-
-        if name == "get_results":
-            result = self.get_run_results()
-            return [TextContent(type="text", text=json.dumps(result))]
-
-        if name == "get_scores":
-            history = arguments.get("history", False)
-            score_id = arguments.get("score") or arguments.get("score_id")
-            score_ids_raw = arguments.get("scores") or arguments.get("score_ids")
-            if isinstance(score_ids_raw, str):
-                score_ids = [s.strip() for s in score_ids_raw.split(",") if s.strip()]
-            else:
-                score_ids = score_ids_raw
-            status_raw = arguments.get("status") or arguments.get("status_filter")
-            if isinstance(status_raw, str):
-                status_filter = [s.strip() for s in status_raw.split(",") if s.strip()]
-            else:
-                status_filter = status_raw
-            result = self.get_eval_scores(
-                history=history,
-                score_id=score_id,
-                score_ids=score_ids,
-                status_filter=status_filter,
-            )
-            return [TextContent(type="text", text=json.dumps(result))]
-
         # Domain tool — route through proxy
         if name in HEAVY_TOOLS:
             async with backtest_sem():
@@ -1253,7 +1182,7 @@ class SessionState:
                     pass
 
     # ------------------------------------------------------------------
-    # Query methods (shared by MCP get_results/get_scores + REST endpoints)
+    # Query methods (shared by server internals and REST read endpoints)
     # ------------------------------------------------------------------
 
     def get_run_results(self) -> dict:

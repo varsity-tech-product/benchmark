@@ -25,7 +25,6 @@ def session_state(bench_root):
         use_docker=False,
         bench_root=bench_root,
         eval_model="fake-model",
-        auto_eval=False,
     )
     return state
 
@@ -205,22 +204,18 @@ class TestMCPEvalRouting:
         assert "error" in result
 
     @pytest.mark.asyncio
-    async def test_get_results_in_session_returns_error_or_empty(self, session_state):
-        """get_results/get_scores route through MCP even in IN_SESSION
-        (not blocked by SESSION_API_TOOLS). They return data-level errors
-        (no results yet) rather than permission errors."""
+    async def test_get_results_denied_in_session(self, session_state):
         await _register(session_state)
         await _start(session_state)
         result = await _call(session_state, "get_results")
-        # No results saved yet — returns error at data level
-        assert "error" in result or "Results" in str(result)
+        assert "error" in result
 
     @pytest.mark.asyncio
-    async def test_get_scores_in_session_returns_pending(self, session_state):
+    async def test_get_scores_denied_in_session(self, session_state):
         await _register(session_state)
         await _start(session_state)
         result = await _call(session_state, "get_scores")
-        assert result.get("status") == "pending"
+        assert "error" in result
 
 
 # ---------------------------------------------------------------------------
@@ -304,7 +299,9 @@ class TestMCPPhaseTransitions:
         names = {t.name for t in tools}
         for lifecycle in LIFECYCLE_TOOL_NAMES:
             assert lifecycle in names
-        assert len(tools) > len(LIFECYCLE_TOOL_NAMES), "expected domain tools after register"
+        assert len(tools) > len(
+            LIFECYCLE_TOOL_NAMES
+        ), "expected domain tools after register"
 
         await _start(session_state)
         # IN_SESSION — same static lifecycle set

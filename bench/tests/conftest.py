@@ -296,9 +296,8 @@ def bench_root(tmp_path):
 def app(bench_root):
     """Create a QuantTutorBench ASGI app for in-process testing.
 
-    Uses ``use_docker=False`` so no Docker daemon is required.
-    Auto-eval is disabled to keep tests fast and deterministic.
-    Results are written to an isolated tmp directory via bench_root.
+    Uses ``use_docker=False`` so no Docker daemon is required. Results
+    are written to an isolated tmp directory via bench_root.
 
     Usage with httpx::
 
@@ -314,7 +313,6 @@ def app(bench_root):
         use_docker=False,
         bench_root=str(bench_root),
         eval_model="fake-model",
-        auto_eval=False,
     )
 
 
