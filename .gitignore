@@ -62,7 +62,10 @@ bench/experiments/student_sim_stability/pilot/
 bench/experiments/student_sim_stability/doc/
 
 # Claude Code local state
-.claude/
+# Claude Code config — local user settings stay private, but project-scoped
+# skills are checked in so they ship with the repo (issue #57).
+.claude/*
+!.claude/skills/
 
 # Vercel
 vercel-frontend/.vercel/
