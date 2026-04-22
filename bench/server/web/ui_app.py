@@ -352,6 +352,67 @@ def ui_routes(manager) -> list[Route]:
             )
         )
 
+    def _live_snapshot_for_run(run) -> dict:
+        """Build a read-only live snapshot for the passive Flow monitor."""
+        payload = run.public_dict()
+        payload.update(
+            {
+                "observer_status": run.status.value,
+                "is_live": run.status.value in ("waiting", "claimed"),
+                "session_phase": None,
+                "turn": None,
+                "conversation": [],
+                "recent_tool_logs": [],
+            }
+        )
+
+        if not run.session_id:
+            return payload
+
+        session = manager.get_session(run.session_id)
+        if not session:
+            if run.status.value == "active":
+                payload["observer_status"] = "stale"
+                payload["is_live"] = False
+            return payload
+
+        payload["is_live"] = run.status.value == "active"
+        if session.session:
+            payload["conversation"] = getattr(session.session, "conversation", [])[-50:]
+            payload["turn"] = getattr(session.session, "turn", 0)
+        payload["session_phase"] = session.phase.value
+
+        if session.proxy:
+            recent_logs = []
+            for log in session.proxy.get_logs()[-20:]:
+                if isinstance(log, dict):
+                    recent_logs.append(log)
+                else:
+                    recent_logs.append(asdict(log))
+            payload["recent_tool_logs"] = recent_logs
+
+        return payload
+
+    async def observe_runs_live(request: Request) -> JSONResponse:
+        """``GET /ui/runs/live`` — passive read-only monitor snapshot."""
+        _ = request
+        run_service = getattr(manager, "_run_service", None)
+        if run_service is None:
+            return JSONResponse({"error": "Run service not initialized"}, 503)
+
+        runs = sorted(
+            run_service.list_runs(),
+            key=lambda run: run.created_at or "",
+            reverse=True,
+        )[:50]
+        return JSONResponse(
+            _sanitize_for_json(
+                {
+                    "runs": [_live_snapshot_for_run(run) for run in runs],
+                }
+            )
+        )
+
     async def cancel_run(request: Request) -> JSONResponse:
         """``POST /ui/runs/{run_id}/cancel`` — owner-only cancel."""
         run_service = getattr(manager, "_run_service", None)
@@ -501,6 +562,7 @@ def ui_routes(manager) -> list[Route]:
         # New: Run management (UI)
         Route("/ui/runs", create_run, methods=["POST"]),
         Route("/ui/runs", list_runs, methods=["GET"]),
+        Route("/ui/runs/live", observe_runs_live, methods=["GET"]),
         Route("/ui/runs/{run_id}", get_run, methods=["GET"]),
         Route("/ui/runs/{run_id}/live", get_run_live, methods=["GET"]),
         Route("/ui/runs/{run_id}/cancel", cancel_run, methods=["POST"]),
