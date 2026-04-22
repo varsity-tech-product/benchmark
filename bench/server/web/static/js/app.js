@@ -140,7 +140,11 @@
     if (!target) return;
     var user = state.auth.user;
     if (!user) {
-      target.innerHTML = '<a class="btn btn-secondary btn-small" href="' + loginUrl() + '">Log in</a>';
+      if (state.auth.authMode === 'github') {
+        target.innerHTML = '<a class="btn btn-secondary btn-small" href="' + loginUrl() + '">Log in</a>';
+      } else {
+        target.innerHTML = '<span class="badge">Auth disabled</span>';
+      }
       return;
     }
     var avatar = user.avatar_url
@@ -151,7 +155,7 @@
         avatar +
         '<span class="nav-user-name">' + escapeHtml(user.github_login || user.display_name || 'User') + '</span>' +
         (user.role === 'admin' ? '<span class="badge">Admin</span>' : '') +
-        '<button class="btn btn-secondary btn-small" id="auth-logout-btn" type="button">Logout</button>' +
+        (state.auth.authMode === 'github' ? '<button class="btn btn-secondary btn-small" id="auth-logout-btn" type="button">Logout</button>' : '<span class="badge">Auth disabled</span>') +
       '</div>';
     var logout = document.getElementById('auth-logout-btn');
     if (logout) {
