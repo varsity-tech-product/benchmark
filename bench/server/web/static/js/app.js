@@ -1454,6 +1454,12 @@
 
   function buildDetailActions(detail) {
     var buttons = [];
+    var exportUrl = '/ui/results/' + encodeURIComponent(detail.session_id) + '/export';
+    buttons.push(
+      '<a class="detail-report-btn" href="' + escapeHtml(exportUrl) + '" download="' +
+      escapeHtml((detail.session_id || 'session') + '_run_state.json') +
+      '">Export JSON</a>'
+    );
     // Server / Client / Eval History
     buttons.push('<button class="detail-report-btn" id="detail-server-btn">Server</button>');
     buttons.push(
