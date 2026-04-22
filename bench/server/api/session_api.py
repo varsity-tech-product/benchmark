@@ -208,6 +208,10 @@ class SessionState:
         # Run layer binding (set by http_app when connected via run token).
         self.run_id: Optional[str] = None
         self._run_task_id: Optional[str] = None  # task_id from RunAssignment
+        self.owner_user_id: str = ""
+        self.owner_github_login: str = ""
+        self.owner_email: str = ""
+        self.visibility: str = "private"
         # Callback invoked after successful register(). Used by http_app to
         # bind the session to a RunAssignment without injecting RunService
         # into SessionState.
@@ -287,6 +291,11 @@ class SessionState:
 
         state._result_dir = result_dir
         state.phase = SessionPhase.COMPLETED
+        state.run_id = str(run_state.get("run_id") or "")
+        state.owner_user_id = str(run_state.get("owner_user_id") or "")
+        state.owner_github_login = str(run_state.get("owner_github_login") or "")
+        state.owner_email = str(run_state.get("owner_email") or "")
+        state.visibility = str(run_state.get("visibility") or "private")
 
         # Eval state is no longer held in memory — ``get_eval_scores`` reads
         # the bundle's sibling tree on demand (issue #46 slice 4).
@@ -1041,6 +1050,10 @@ class SessionState:
             ),
             run_id=self.run_id or "",
             public_task_label=(self.task_id.split("_")[0] if self.task_id else ""),
+            owner_user_id=self.owner_user_id,
+            owner_github_login=self.owner_github_login,
+            owner_email=self.owner_email,
+            visibility=self.visibility,
         )
         logger.info("Results saved: %s", result_dir)
 

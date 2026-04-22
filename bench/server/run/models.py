@@ -41,6 +41,12 @@ class RunAssignment:
     control_token_hint: str = ""
     control_token_hash: str = ""
 
+    # UI owner and sharing scope
+    owner_user_id: str = ""
+    owner_github_login: str = ""
+    owner_email: str = ""
+    visibility: str = "private"
+
     # Binding (set after claim)
     client_info: Optional[dict] = None
     session_id: Optional[str] = None
@@ -92,6 +98,9 @@ class RunAssignment:
             "session_id": self.session_id,
             "persona_id": self.persona_id,
             "eval_status": self.eval_status,
+            "owner_user_id": self.owner_user_id,
+            "owner_github_login": self.owner_github_login,
+            "visibility": self.visibility,
             "error": self.error,
             "created_at": self.created_at,
             "updated_at": self.updated_at,

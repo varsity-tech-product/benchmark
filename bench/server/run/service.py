@@ -14,6 +14,7 @@ from uuid import uuid4
 from .catalog import TaskCatalog
 from .models import TERMINAL_STATUSES, RunAssignment, RunStatus
 from .store import RunStore
+from server.quota import QuotaExceeded, max_active_runs_per_user, quota_subject_enabled
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +50,10 @@ class RunService:
         mode: str = "agent",
         persona_policy: str = "auto",
         token_ttl_minutes: int = 30,
+        owner_user_id: str = "",
+        owner_github_login: str = "",
+        owner_email: str = "",
+        visibility: str = "private",
     ) -> tuple[RunAssignment, str, str]:
         """Create a RunAssignment + generate both tokens.
 
@@ -59,6 +64,15 @@ class RunService:
         entry = self._catalog.resolve(task)
         if entry is None:
             raise ValueError(f"Unknown task: {task}")
+
+        owner_user_id = str(owner_user_id or "")
+        if quota_subject_enabled(owner_user_id):
+            limit = max_active_runs_per_user()
+            active_count = self._count_active_runs(owner_user_id)
+            if limit > 0 and active_count >= limit:
+                raise QuotaExceeded(
+                    f"User has reached the active run limit ({limit})"
+                )
 
         raw_token = f"qtb_{secrets.token_urlsafe(24)}"
         token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
@@ -85,6 +99,10 @@ class RunService:
             token_expires_at=expires_at,
             control_token_hint=control_token_hint,
             control_token_hash=control_token_hash,
+            owner_user_id=owner_user_id,
+            owner_github_login=str(owner_github_login or ""),
+            owner_email=str(owner_email or ""),
+            visibility=visibility if visibility in ("private", "org") else "private",
             persona_policy=persona_policy,
             created_at=now,
             updated_at=now,
@@ -105,6 +123,10 @@ class RunService:
         client_info: Optional[dict] = None,
         mode: str = "agent",
         persona_policy: str = "auto",
+        owner_user_id: str = "",
+        owner_github_login: str = "",
+        owner_email: str = "",
+        visibility: str = "private",
     ) -> tuple[RunAssignment, str, str]:
         """Create + immediately claim. For client-initiated runs.
 
@@ -112,7 +134,13 @@ class RunService:
         status already CLAIMED.
         """
         assignment, raw_token, raw_control_token = self.create_run(
-            task=task, mode=mode, persona_policy=persona_policy
+            task=task,
+            mode=mode,
+            persona_policy=persona_policy,
+            owner_user_id=owner_user_id,
+            owner_github_login=owner_github_login,
+            owner_email=owner_email,
+            visibility=visibility,
         )
         now = _now_iso()
         assignment.status = RunStatus.CLAIMED
@@ -275,12 +303,40 @@ class RunService:
         self,
         status: Optional[str] = None,
         task: Optional[str] = None,
+        owner_user_id: Optional[str] = None,
+        include_all: bool = False,
+        include_org: bool = False,
     ) -> list[RunAssignment]:
         status_enum = RunStatus(status) if status else None
         runs = self._store.list_runs(status=status_enum)
         if task:
             runs = [r for r in runs if r.public_task_label == task]
+        if owner_user_id is not None and not include_all:
+            owner = str(owner_user_id or "")
+            if include_org:
+                runs = [
+                    r
+                    for r in runs
+                    if r.owner_user_id == owner
+                    or (r.visibility == "org" and bool(r.owner_user_id))
+                ]
+            else:
+                runs = [r for r in runs if r.owner_user_id == owner]
         return runs
+
+    def get_run_for_user(self, run_id: str, user) -> Optional[RunAssignment]:
+        assignment = self._store.get(run_id)
+        if assignment is None:
+            return None
+        if self._run_visible_to_user(assignment, user):
+            return assignment
+        return None
+
+    def assert_run_owner_or_admin(self, run_id: str, user) -> RunAssignment:
+        assignment = self._get_or_raise(run_id)
+        if not self._run_visible_to_user(assignment, user):
+            raise PermissionError("Run access denied")
+        return assignment
 
     def resolve_token(self, raw_token: str) -> Optional[RunAssignment]:
         """Find a run by raw run_token. Does NOT change state."""
@@ -313,3 +369,20 @@ class RunService:
         if assignment is None:
             raise ValueError(f"Run not found: {run_id}")
         return assignment
+
+    def _count_active_runs(self, owner_user_id: str) -> int:
+        return sum(
+            1
+            for run in self._store.list_runs()
+            if run.owner_user_id == owner_user_id and run.status not in TERMINAL_STATUSES
+        )
+
+    def _run_visible_to_user(self, assignment: RunAssignment, user) -> bool:
+        if user is None:
+            return False
+        if bool(getattr(user, "is_admin", False)):
+            return True
+        return bool(
+            assignment.owner_user_id
+            and assignment.owner_user_id == str(getattr(user, "user_id", "") or "")
+        )
