@@ -78,6 +78,16 @@ the API layer:
   (`run_state.json` and the sibling `evaluations/server/...` tree); they
   back the `/ops/session/{sid}/...` REST routes.
 
+For agents that drive sessions externally (your LLM as the tutor, the
+server's `student_sim` as the student), the canonical reference is
+`docs/agent_in_loop.md` — it covers the four-call lifecycle, termination
+semantics, workspace tools, bundle persistence, and the five empirical
+pitfalls. The runnable example is `bench/scripts/agent_in_loop_example.py`.
+Claude Code agents in this repo also see a thin invocation shim at
+`.claude/skills/quanttutorbench-agent/SKILL.md` that points back at the
+doc. Codex / Cursor / other-agent users should read the doc directly.
+Issue #57 captures the design.
+
 ## Storage layer (`bench/server/storage/`)
 
 | File | Role |
