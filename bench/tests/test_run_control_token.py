@@ -5,6 +5,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 
 from starlette.applications import Starlette
 from starlette.testclient import TestClient
@@ -38,9 +39,10 @@ class _StubManager:
     def __init__(self, root: Path):
         self.bench_root = root
         self._run_service = RunService(TaskCatalog(root), RunStore(root / "runs"))
+        self._sessions = {}
 
-    def get_session(self, _sid):
-        return None
+    def get_session(self, sid):
+        return self._sessions.get(sid)
 
     async def cancel_run(self, run_id):
         self._run_service.cancel_run(run_id)
@@ -106,6 +108,58 @@ class ControlTokenTests(unittest.TestCase):
                 headers={"Authorization": f"Bearer {body['token']}"},
             )
             self.assertEqual(r.status_code, 401)
+
+    def test_live_observer_lists_active_run_from_public_endpoint(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            _write_task(Path(tmp))
+            client, manager = _build_client(Path(tmp))
+            assignment, _, _ = manager._run_service.create_and_claim("D01")
+            manager._run_service.bind_session(assignment.run_id, "session-1")
+            manager._sessions["session-1"] = SimpleNamespace(
+                phase=SimpleNamespace(value="in_session"),
+                session=SimpleNamespace(
+                    conversation=[{"role": "user", "content": "opening"}],
+                    turn=1,
+                ),
+                proxy=SimpleNamespace(
+                    get_logs=lambda: [
+                        {
+                            "name": "run_lean_backtest",
+                            "args": {},
+                            "result": "{}",
+                            "success": True,
+                            "duration_ms": 12.0,
+                        }
+                    ]
+                ),
+            )
+
+            r = client.get("/ui/runs/live")
+            self.assertEqual(r.status_code, 200)
+            body = r.json()
+            self.assertEqual(body["runs"][0]["run_id"], assignment.run_id)
+            self.assertTrue(body["runs"][0]["is_live"])
+            self.assertEqual(body["runs"][0]["observer_status"], "active")
+            self.assertEqual(body["runs"][0]["session_phase"], "in_session")
+            self.assertEqual(body["runs"][0]["turn"], 1)
+            self.assertEqual(body["runs"][0]["conversation"][0]["content"], "opening")
+            self.assertEqual(
+                body["runs"][0]["recent_tool_logs"][0]["name"],
+                "run_lean_backtest",
+            )
+
+    def test_live_observer_marks_missing_active_session_stale(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            _write_task(Path(tmp))
+            client, manager = _build_client(Path(tmp))
+            assignment, _, _ = manager._run_service.create_and_claim("D01")
+            manager._run_service.bind_session(assignment.run_id, "missing-session")
+
+            r = client.get("/ui/runs/live")
+            self.assertEqual(r.status_code, 200)
+            body = r.json()
+            self.assertFalse(body["runs"][0]["is_live"])
+            self.assertEqual(body["runs"][0]["observer_status"], "stale")
 
     def test_cancel_requires_control_token(self):
         with tempfile.TemporaryDirectory() as tmp:
