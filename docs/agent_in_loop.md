@@ -10,7 +10,11 @@ actually said.
 This is the **canonical, agent-agnostic reference**. Claude Code agents
 working in this repo also see a thin invocation shim at
 `.claude/skills/quanttutorbench-agent/SKILL.md` that points back here.
-The runnable example is `bench/scripts/agent_in_loop_example.py`.
+
+This repo intentionally does not provide a runnable auto-driver that emits
+tutor messages. Agent-in-the-loop runs are evaluated as live tutoring
+conversations: the tutor must read each `student_message` and decide the next
+reply from that message.
 
 Issue #57 captures the design decisions and the empirical evidence behind
 the pitfalls below.
@@ -86,9 +90,9 @@ OPENER=$(echo "$START" | jq -r .student_message)
 # ... loop send_message until terminal ...
 ```
 
-For a complete reference implementation, read
-`bench/scripts/agent_in_loop_example.py`. The `compose_reply` function is
-the LLM extension point — replace its stub with your model integration.
+This guide gives the protocol lifecycle only. Do not wrap it in a static
+reply queue. If you build a client, its reply function must call a live tutor
+model or a human operator on every turn using the latest `student_message`.
 
 ---
 
@@ -260,9 +264,9 @@ Before driving a non-trivial session, confirm:
       if you started the server yourself for development.
 - [ ] `task_id` exists under `bench/tasks/.../*.json` and the persona
       you chose is in that task's `persona_ids`.
-- [ ] Your `compose_reply` strategy is wired to a real LLM (not a static
-      queue). If you're an LLM doing this in-session, the strategy is
-      "read `student_message`, think, respond".
+- [ ] Your reply strategy calls a live LLM or human operator on every turn.
+      If you're an LLM doing this in-session, the strategy is "read
+      `student_message`, think, respond".
 - [ ] HTTP client timeout ≥ 900 s on `/send`.
 - [ ] You're prepared for the session to take many turns (15 for I01,
       higher for E-series). Don't bail early.
@@ -272,7 +276,6 @@ Before driving a non-trivial session, confirm:
 ## Reference files in this repo
 
 - `.claude/skills/quanttutorbench-agent/SKILL.md` — Claude Code skill (thin shim pointing here)
-- `bench/scripts/agent_in_loop_example.py` — runnable reference driver
 - `bench/spec/PROTOCOL.md` — protocol surface
 - `bench/server/api/protocol.py` — phase machine + permission rules
 - `bench/server/storage/BUNDLE_SCHEMA.md` — bundle layout and v1.0.0 contract

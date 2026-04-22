@@ -51,6 +51,7 @@ _FAMILY_BY_NAME: dict[str, ToolFamily] = {
     "breakdown_pnl": "backtest",
     "split_walkforward_windows": "backtest",
     "run_lean_backtest": "lean_trials",
+    "get_lean_template": "lean_trials",
     "submit_trial": "lean_trials",
     "select_submission": "lean_trials",
     "get_trial_status": "lean_trials",
@@ -91,6 +92,7 @@ _LOW_LEVEL_TOOLS = frozenset(
 
 _HIGH_LEVEL_TOOLS = frozenset(
     {
+        "get_lean_template",
         "fetch_market_data",
         "compute_indicator",
         "run_backtest",
@@ -288,12 +290,15 @@ def _default_related_tools(name: str, family: ToolFamily) -> tuple[str, ...]:
         return ("file_read", "shell_exec")
     if name == "shell_exec":
         return ("get_environment_info", "file_read", "file_write")
+    if name == "get_lean_template":
+        return ("file_write", "run_lean_backtest", "analyze_lean_results")
     if family == "analysis":
         return ("file_read", "shell_exec")
     if family == "backtest":
         return ("analyze_backtest_results", "plot_chart", "shell_exec")
     if family == "lean_trials":
         return (
+            "get_lean_template",
             "run_lean_backtest",
             "get_trial_status",
             "select_submission",
