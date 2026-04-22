@@ -82,7 +82,8 @@ For agents that drive sessions externally (your LLM as the tutor, the
 server's `student_sim` as the student), the canonical reference is
 `docs/agent_in_loop.md` — it covers the four-call lifecycle, termination
 semantics, workspace tools, bundle persistence, and the five empirical
-pitfalls. The runnable example is `bench/scripts/agent_in_loop_example.py`.
+pitfalls. The repo intentionally does not ship an auto-driver that emits tutor
+messages; each reply must be composed from the live student message.
 Claude Code agents in this repo also see a thin invocation shim at
 `.claude/skills/quanttutorbench-agent/SKILL.md` that points back at the
 doc. Codex / Cursor / other-agent users should read the doc directly.
