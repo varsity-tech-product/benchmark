@@ -97,6 +97,69 @@ def _mcp_tool_success(contents: list[TextContent]) -> bool:
     return True
 
 
+def _bool_env(name: str, default: bool) -> bool:
+    raw = os.environ.get(name, "").strip().lower()
+    if not raw:
+        return default
+    if raw in {"1", "true", "yes", "on"}:
+        return True
+    if raw in {"0", "false", "no", "off"}:
+        return False
+    return default
+
+
+def _rest_session_token_required() -> bool:
+    if os.environ.get("QTB_REQUIRE_SESSION_TOKEN", "").strip():
+        return _bool_env("QTB_REQUIRE_SESSION_TOKEN", False)
+    return (
+        os.environ.get("QTB_AUTH_MODE", "disabled").strip().lower() == "github"
+        or _bool_env("QTB_REQUIRE_CLIENT_AUTH", False)
+        or bool(os.environ.get("QTB_CLIENT_API_KEYS", "").strip())
+    )
+
+
+def _authorize_rest_session_request(
+    request: Request, manager: "BenchSessionManager", state: SessionState
+) -> JSONResponse | None:
+    """Require the run token that owns this REST session when auth is enabled."""
+    if not _rest_session_token_required() or not state.run_id:
+        return None
+
+    raw = extract_bearer_token(request)
+    if not raw:
+        return JSONResponse(
+            {"error": "Authorization: Bearer <token> required"},
+            status_code=401,
+        )
+    run = manager._run_service.resolve_token(raw, allow_expired_bound=True)
+    if run is None:
+        return JSONResponse({"error": "Invalid or expired token"}, status_code=401)
+    if run.run_id != state.run_id:
+        return JSONResponse({"error": "Run token does not own this session"}, 403)
+    return None
+
+
+def _authorize_rest_job_request(
+    request: Request, manager: "BenchSessionManager", sid: str
+) -> JSONResponse | None:
+    """Authorize polling a job by matching bearer run token to session id."""
+    if not _rest_session_token_required():
+        return None
+
+    raw = extract_bearer_token(request)
+    if not raw:
+        return JSONResponse(
+            {"error": "Authorization: Bearer <token> required"},
+            status_code=401,
+        )
+    run = manager._run_service.resolve_token(raw, allow_expired_bound=True)
+    if run is None:
+        return JSONResponse({"error": "Invalid or expired token"}, status_code=401)
+    if run.session_id != sid:
+        return JSONResponse({"error": "Run token does not own this session"}, 403)
+    return None
+
+
 class NoCacheStaticFiles(StaticFiles):
     """StaticFiles variant that forces browser revalidation for UI assets."""
 
@@ -1043,6 +1106,10 @@ async def rest_start(request: Request) -> JSONResponse:
     if not state:
         return JSONResponse({"error": "Session not found"}, 404)
 
+    auth_err = _authorize_rest_session_request(request, manager, state)
+    if auth_err is not None:
+        return auth_err
+
     allowed, error, ops = check_permission(state.phase, "start_session")
     if not allowed:
         logger.debug("[REST:%s] DENIED start in phase %s", sid[:8], state.phase.value)
@@ -1074,6 +1141,10 @@ async def rest_tools(request: Request) -> JSONResponse:
     if not state:
         return JSONResponse({"error": "Session not found"}, 404)
 
+    auth_err = _authorize_rest_session_request(request, manager, state)
+    if auth_err is not None:
+        return auth_err
+
     tools = state.get_visible_tools()
     return JSONResponse(
         {
@@ -1096,6 +1167,10 @@ async def rest_tool_call(request: Request) -> JSONResponse:
     state = manager.get_session(sid)
     if not state:
         return JSONResponse({"error": "Session not found"}, 404)
+
+    auth_err = _authorize_rest_session_request(request, manager, state)
+    if auth_err is not None:
+        return auth_err
 
     name = request.path_params["name"]
 
@@ -1324,6 +1399,9 @@ async def rest_tool_job_status(request: Request) -> JSONResponse:
     job = manager._job_store.get(job_id)
     if job is None or job.get("session_id") != sid:
         return JSONResponse({"error": "Job not found"}, 404)
+    auth_err = _authorize_rest_job_request(request, manager, sid)
+    if auth_err is not None:
+        return auth_err
     # Trim the echoed arguments — they can be large (full source files).
     return JSONResponse(
         {
@@ -1346,6 +1424,10 @@ async def rest_send(request: Request) -> JSONResponse:
     state = manager.get_session(sid)
     if not state:
         return JSONResponse({"error": "Session not found"}, 404)
+
+    auth_err = _authorize_rest_session_request(request, manager, state)
+    if auth_err is not None:
+        return auth_err
 
     allowed, error, ops = check_permission(state.phase, "send_message")
     if not allowed:
@@ -1543,6 +1625,9 @@ async def rest_session_status(request: Request) -> JSONResponse | Response:
     if request.method == "DELETE":
         if not state:
             return JSONResponse({"error": "Session not found"}, 404)
+        auth_err = _authorize_rest_session_request(request, manager, state)
+        if auth_err is not None:
+            return auth_err
         logger.info("[REST:%s] DELETE — cancelling session", sid[:8])
         # persist_partial=True so an active session's conversation + tool
         # logs land as a bundle under results/server/... before the
@@ -1556,6 +1641,9 @@ async def rest_session_status(request: Request) -> JSONResponse | Response:
         state = manager.get_or_restore_session(sid)
     if not state:
         return JSONResponse({"error": "Session not found"}, 404)
+    auth_err = _authorize_rest_session_request(request, manager, state)
+    if auth_err is not None:
+        return auth_err
     return JSONResponse(
         {
             "session_id": sid,
@@ -1570,7 +1658,23 @@ async def rest_list(request: Request) -> JSONResponse:
     """``GET /session/list[?task_id=X01]``"""
     manager: BenchSessionManager = request.app.state.manager
     task_id = request.query_params.get("task_id", "")
-    return JSONResponse({"sessions": manager.list_sessions(task_id)})
+    sessions = manager.list_sessions(task_id)
+    if _rest_session_token_required():
+        raw = extract_bearer_token(request)
+        if not raw:
+            return JSONResponse(
+                {"error": "Authorization: Bearer <token> required"},
+                status_code=401,
+            )
+        run = manager._run_service.resolve_token(raw, allow_expired_bound=True)
+        if run is None:
+            return JSONResponse({"error": "Invalid or expired token"}, status_code=401)
+        sessions = [
+            session
+            for session in sessions
+            if session.get("session_id") == run.session_id
+        ]
+    return JSONResponse({"sessions": sessions})
 
 
 # ---------------------------------------------------------------------------

@@ -130,7 +130,7 @@ async def hit(
 
 
 async def wait_for_job_terminal(
-    client: httpx.AsyncClient, sid: str, job_id: str
+    client: httpx.AsyncClient, sid: str, job_id: str, headers: dict | None = None
 ) -> None:
     """Poll the job until it reaches a terminal state or deadline expires.
 
@@ -140,7 +140,10 @@ async def wait_for_job_terminal(
     deadline = time.time() + JOB_TERMINAL_DEADLINE_S
     while time.time() < deadline:
         try:
-            resp = await client.get(f"/session/{sid}/tool/jobs/{job_id}")
+            resp = await client.get(
+                f"/session/{sid}/tool/jobs/{job_id}",
+                headers=headers or {},
+            )
         except (httpx.TimeoutException, httpx.TransportError):
             return
         if resp.status_code != 200:
@@ -150,7 +153,12 @@ async def wait_for_job_terminal(
         await asyncio.sleep(1.0)
 
 
-async def run_smoke(base_url: str, task_label: str, jsonl: Optional[str]) -> int:
+async def run_smoke(
+    base_url: str,
+    task_label: str,
+    jsonl: Optional[str],
+    api_key: str = "",
+) -> int:
     result = SmokeResult(jsonl_path=jsonl)
 
     async with httpx.AsyncClient(
@@ -182,6 +190,7 @@ async def run_smoke(base_url: str, task_label: str, jsonl: Optional[str]) -> int
         resp = await hit(
             client, result, "T2", "POST", "/client/runs/start",
             json={"task": task_label},
+            headers={"Authorization": f"Bearer {api_key}"} if api_key else {},
             expect="2xx",
         )
         if resp is None or resp.status_code != 200:
@@ -214,12 +223,16 @@ async def run_smoke(base_url: str, task_label: str, jsonl: Optional[str]) -> int
             print("Cannot continue: /session/register did not succeed.")
             return _finalise(result)
         sid = resp.json()["session_id"]
+        session_auth = {"Authorization": f"Bearer {token}"}
 
         try:
             await hit(client, result, "T3", "GET", "/session/list")
-            await hit(client, result, "T3", "GET", f"/session/{sid}")
-            await hit(client, result, "T3", "POST", f"/session/{sid}/start", json={})
-            await hit(client, result, "T3", "GET", f"/session/{sid}/tools")
+            await hit(client, result, "T3", "GET", f"/session/{sid}", headers=session_auth)
+            await hit(
+                client, result, "T3", "POST", f"/session/{sid}/start",
+                json={}, headers=session_auth,
+            )
+            await hit(client, result, "T3", "GET", f"/session/{sid}/tools", headers=session_auth)
 
             # ------------------------------------------------------------------
             # T4 — Sync domain tool (fast)
@@ -228,6 +241,7 @@ async def run_smoke(base_url: str, task_label: str, jsonl: Optional[str]) -> int
                 client, result, "T4", "POST",
                 f"/session/{sid}/tool/shell_exec",
                 json={"command": "echo availability"},
+                headers=session_auth,
             )
 
             # ------------------------------------------------------------------
@@ -237,6 +251,7 @@ async def run_smoke(base_url: str, task_label: str, jsonl: Optional[str]) -> int
                 client, result, "T5", "POST",
                 f"/session/{sid}/tool/run_lean_backtest",
                 json={"algorithm_path": "/nonexistent-smoke.cs"},
+                headers=session_auth,
                 expect="202",
             )
             job_id: Optional[str] = None
@@ -256,10 +271,11 @@ async def run_smoke(base_url: str, task_label: str, jsonl: Optional[str]) -> int
                 await hit(
                     client, result, "T5", "GET",
                     f"/session/{sid}/tool/jobs/{job_id}",
+                    headers=session_auth,
                 )
                 # Let the background worker reach a terminal state so the
                 # session lock frees up before we try to DELETE.
-                await wait_for_job_terminal(client, sid, job_id)
+                await wait_for_job_terminal(client, sid, job_id, headers=session_auth)
 
             # ------------------------------------------------------------------
             # T6 — Results + scores (reachable without a completed eval).
@@ -301,7 +317,7 @@ async def run_smoke(base_url: str, task_label: str, jsonl: Optional[str]) -> int
                     f"/ui/runs/{run_id}/cancel",
                     headers=control_auth,
                 )
-            await hit(client, result, "T3", "DELETE", f"/session/{sid}")
+            await hit(client, result, "T3", "DELETE", f"/session/{sid}", headers=session_auth)
 
     return _finalise(result)
 
@@ -320,8 +336,13 @@ def main() -> int:
     p.add_argument("--base-url", default=DEFAULT_BASE, help=f"default: {DEFAULT_BASE}")
     p.add_argument("--task", default=DEFAULT_TASK, help=f"public task label (default: {DEFAULT_TASK})")
     p.add_argument("--jsonl", default=None, help="append-only JSONL log path")
+    p.add_argument(
+        "--api-key",
+        default=os.environ.get("QTB_CLIENT_API_KEY", ""),
+        help="REST API key from the logged-in UI account (default: QTB_CLIENT_API_KEY)",
+    )
     args = p.parse_args()
-    return asyncio.run(run_smoke(args.base_url, args.task, args.jsonl))
+    return asyncio.run(run_smoke(args.base_url, args.task, args.jsonl, args.api_key))
 
 
 if __name__ == "__main__":

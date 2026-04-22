@@ -90,6 +90,7 @@ def _cmd_run(args):
                 adapter_factory=adapter_factory,
                 result_dir=result_dir,
                 protocol=args.protocol,
+                api_key=args.api_key,
             )
         )
         results = [result]
@@ -102,6 +103,7 @@ def _cmd_run(args):
                 workers=args.workers,
                 result_dir=result_dir,
                 protocol=args.protocol,
+                api_key=args.api_key,
             )
         )
 
@@ -190,6 +192,11 @@ def _add_common_args(parser: argparse.ArgumentParser):
         help="Override system prompt",
     )
     parser.add_argument(
+        "--api-key",
+        default="",
+        help="REST API key for creating runs (or QTB_CLIENT_API_KEY env var)",
+    )
+    parser.add_argument(
         "--log-level",
         default="INFO",
         choices=["DEBUG", "INFO", "WARNING", "ERROR"],
@@ -235,6 +242,10 @@ def main():
     )
 
     args = parser.parse_args()
+    if not getattr(args, "api_key", ""):
+        import os
+
+        args.api_key = os.environ.get("QTB_CLIENT_API_KEY", "")
 
     logging.basicConfig(
         level=getattr(logging, args.log_level.upper(), logging.INFO),

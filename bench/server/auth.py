@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hmac
+import hashlib
 import json
 import os
 import secrets
@@ -63,6 +64,7 @@ class AuthStore:
         self._dir.mkdir(parents=True, exist_ok=True)
         self._sessions_path = self._dir / "sessions.json"
         self._states_path = self._dir / "oauth_states.json"
+        self._api_keys_path = self._dir / "api_keys.json"
         self._lock = threading.Lock()
 
     def create_session(self, user: UserContext) -> str:
@@ -104,6 +106,77 @@ class AuthStore:
             if session_id in sessions:
                 sessions.pop(session_id, None)
                 self._write_locked(self._sessions_path, sessions)
+
+    def rotate_api_key(self, user: UserContext) -> tuple[str, dict]:
+        """Create a new user API key and revoke prior active keys for the user."""
+        raw_key = f"qtbu_{secrets.token_urlsafe(32)}"
+        key_hash = _hash_secret(raw_key)
+        now = time.time()
+        with self._lock:
+            keys = self._read_locked(self._api_keys_path)
+            for record in keys.values():
+                if (
+                    isinstance(record, dict)
+                    and (record.get("user") or {}).get("user_id") == user.user_id
+                    and not record.get("revoked_at")
+                ):
+                    record["revoked_at"] = now
+            record = {
+                "key_hint": raw_key[:14],
+                "user": user.to_dict(),
+                "created_at": now,
+                "revoked_at": None,
+            }
+            keys[key_hash] = record
+            self._write_locked(self._api_keys_path, keys)
+        return raw_key, _api_key_public_record(record)
+
+    def get_api_key_status(self, user: UserContext) -> dict:
+        with self._lock:
+            keys = self._read_locked(self._api_keys_path)
+            active = [
+                record
+                for record in keys.values()
+                if isinstance(record, dict)
+                and (record.get("user") or {}).get("user_id") == user.user_id
+                and not record.get("revoked_at")
+            ]
+        if not active:
+            return {"has_key": False}
+        active.sort(key=lambda item: float(item.get("created_at") or 0), reverse=True)
+        payload = _api_key_public_record(active[0])
+        payload["has_key"] = True
+        return payload
+
+    def revoke_api_key(self, user: UserContext) -> dict:
+        revoked = False
+        now = time.time()
+        with self._lock:
+            keys = self._read_locked(self._api_keys_path)
+            for record in keys.values():
+                if (
+                    isinstance(record, dict)
+                    and (record.get("user") or {}).get("user_id") == user.user_id
+                    and not record.get("revoked_at")
+                ):
+                    record["revoked_at"] = now
+                    revoked = True
+            self._write_locked(self._api_keys_path, keys)
+        return {"revoked": revoked, "has_key": False}
+
+    def get_api_key_user(self, raw_key: str) -> UserContext | None:
+        if not raw_key:
+            return None
+        key_hash = _hash_secret(raw_key)
+        with self._lock:
+            keys = self._read_locked(self._api_keys_path)
+            record = keys.get(key_hash)
+        if not isinstance(record, dict) or record.get("revoked_at"):
+            return None
+        user = record.get("user")
+        if not isinstance(user, dict):
+            return None
+        return UserContext.from_dict(user)
 
     def create_state(self, next_url: str = "/") -> str:
         state = secrets.token_urlsafe(32)
@@ -190,6 +263,40 @@ class AuthService:
         if user and user.is_admin:
             return user, None
         return None, JSONResponse({"error": "Admin access required"}, status_code=403)
+
+    def resolve_client_user(
+        self, request: Request
+    ) -> tuple[UserContext | None, JSONResponse | None]:
+        """Resolve the owner for REST-created client runs.
+
+        Browser-created runs use the GitHub cookie via ``/ui/runs``. External
+        REST clients use API keys declared in ``QTB_CLIENT_API_KEYS``. Local
+        development remains anonymous when auth and API keys are disabled.
+        """
+        cookie_user = self.get_current_user(request)
+        if cookie_user is not None and cookie_user.user_id != "local-dev":
+            return cookie_user, None
+
+        api_keys = _client_api_keys()
+        raw = _extract_bearer(request)
+        stored_user = self.store.get_api_key_user(raw)
+        if stored_user is not None:
+            return stored_user, None
+        if raw and raw in api_keys:
+            return api_keys[raw], None
+
+        auth_required = self.enabled or bool(api_keys) or _bool_env(
+            "QTB_REQUIRE_CLIENT_AUTH", False
+        )
+        if not auth_required:
+            return None, None
+
+        if not raw:
+            return None, JSONResponse(
+                {"error": "Authorization: Bearer <client_api_key> required"},
+                status_code=401,
+            )
+        return None, JSONResponse({"error": "Invalid client API key"}, status_code=401)
 
     def me_payload(self, request: Request) -> dict:
         user = self.get_current_user(request)
@@ -417,6 +524,72 @@ class AuthService:
 def _csv_env(name: str) -> set[str]:
     raw = os.environ.get(name, "")
     return {item.strip().lower() for item in raw.split(",") if item.strip()}
+
+
+def _client_api_keys() -> dict[str, UserContext]:
+    """Parse ``QTB_CLIENT_API_KEYS`` into API-key owners.
+
+    Format:
+      ``key=user_id|github_login|email|role,key2=user_id2|login2``
+
+    ``github_login``, ``email``, and ``role`` are optional. Use role ``admin``
+    only for trusted automation.
+    """
+    raw = os.environ.get("QTB_CLIENT_API_KEYS", "").strip()
+    if not raw:
+        return {}
+    users: dict[str, UserContext] = {}
+    for entry in raw.split(","):
+        item = entry.strip()
+        if not item or "=" not in item:
+            continue
+        key, spec = item.split("=", 1)
+        key = key.strip()
+        parts = [part.strip() for part in spec.split("|")]
+        user_id = parts[0] if parts and parts[0] else ""
+        if not key or not user_id:
+            continue
+        github_login = parts[1] if len(parts) > 1 and parts[1] else user_id
+        email = parts[2] if len(parts) > 2 else ""
+        role = "admin" if len(parts) > 3 and parts[3].lower() == "admin" else "user"
+        users[key] = UserContext(
+            user_id=user_id,
+            github_login=github_login,
+            email=email,
+            display_name=github_login or user_id,
+            avatar_url="",
+            role=role,
+        )
+    return users
+
+
+def _hash_secret(value: str) -> str:
+    return hashlib.sha256(value.encode()).hexdigest()
+
+
+def _api_key_public_record(record: dict) -> dict:
+    return {
+        "key_hint": str(record.get("key_hint") or ""),
+        "created_at": float(record.get("created_at") or 0.0),
+    }
+
+
+def _extract_bearer(request: Request) -> str:
+    auth = request.headers.get("authorization", "")
+    if auth.lower().startswith("bearer "):
+        return auth[7:].strip()
+    return ""
+
+
+def _bool_env(name: str, default: bool) -> bool:
+    raw = os.environ.get(name, "").strip().lower()
+    if not raw:
+        return default
+    if raw in {"1", "true", "yes", "on"}:
+        return True
+    if raw in {"0", "false", "no", "off"}:
+        return False
+    return default
 
 
 def _sanitize_next_url(next_url: str) -> str:

@@ -151,6 +151,43 @@ def ui_routes(manager) -> list[Route]:
     async def ui_me(request: Request) -> JSONResponse:
         return JSONResponse(auth.me_payload(request))
 
+    async def get_api_key(request: Request) -> JSONResponse:
+        user, err = auth.require_user(request)
+        if err is not None:
+            return err
+        return JSONResponse(auth.store.get_api_key_status(user))
+
+    async def rotate_api_key(request: Request) -> JSONResponse:
+        user, err = auth.require_user(request)
+        if err is not None:
+            return err
+        raw_key, record = auth.store.rotate_api_key(user)
+        record_event(
+            manager.bench_root,
+            user,
+            "api_key.rotate",
+            request=request,
+            payload={"key_hint": record.get("key_hint", "")},
+        )
+        payload = dict(record)
+        payload["has_key"] = True
+        payload["api_key"] = raw_key
+        return JSONResponse(payload)
+
+    async def revoke_api_key(request: Request) -> JSONResponse:
+        user, err = auth.require_user(request)
+        if err is not None:
+            return err
+        payload = auth.store.revoke_api_key(user)
+        record_event(
+            manager.bench_root,
+            user,
+            "api_key.revoke",
+            request=request,
+            payload={"revoked": payload.get("revoked", False)},
+        )
+        return JSONResponse(payload)
+
     # -----------------------------------------------------------------------
     # Existing: /ui/tasks, /ui/results/*
     # -----------------------------------------------------------------------
@@ -708,6 +745,10 @@ def ui_routes(manager) -> list[Route]:
         if run_service is None:
             return JSONResponse({"error": "Run service not initialized"}, 503)
 
+        user, auth_err = auth.resolve_client_user(request)
+        if auth_err is not None:
+            return auth_err
+
         try:
             body = await request.json()
         except Exception:
@@ -722,15 +763,30 @@ def ui_routes(manager) -> list[Route]:
 
         try:
             assignment, raw_token, raw_control_token = run_service.create_and_claim(
-                task=task, client_info=client_info, mode=mode
+                task=task,
+                client_info=client_info,
+                mode=mode,
+                owner_user_id=user.user_id if user else "",
+                owner_github_login=user.github_login if user else "",
+                owner_email=user.email if user else "",
             )
+        except QuotaExceeded as exc:
+            record_event(
+                manager.bench_root,
+                user,
+                "run.create",
+                request=request,
+                success=False,
+                payload={"error": str(exc), "source": "client_start", "task": task},
+            )
+            return JSONResponse({"error": str(exc)}, 429)
         except ValueError as exc:
             return JSONResponse({"error": str(exc)}, 400)
 
         base_url = str(request.base_url).rstrip("/")
         record_event(
             manager.bench_root,
-            None,
+            user,
             "run.create",
             request=request,
             run_id=assignment.run_id,
@@ -790,6 +846,9 @@ def ui_routes(manager) -> list[Route]:
         Route("/auth/callback", auth_callback, methods=["GET"]),
         Route("/auth/logout", auth_logout, methods=["POST"]),
         Route("/ui/me", ui_me, methods=["GET"]),
+        Route("/ui/api-key", get_api_key, methods=["GET"]),
+        Route("/ui/api-key", rotate_api_key, methods=["POST"]),
+        Route("/ui/api-key", revoke_api_key, methods=["DELETE"]),
         # Existing: results + tasks
         Route("/ui/tasks", list_tasks, methods=["GET"]),
         Route("/ui/results", list_results, methods=["GET"]),
