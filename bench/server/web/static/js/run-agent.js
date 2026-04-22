@@ -56,6 +56,13 @@
     if (tok) {
       options.headers['Authorization'] = 'Bearer ' + tok;
     }
+    return _authFetch(url, options);
+  }
+
+  function _authFetch(url, options) {
+    if (window.QTB && typeof window.QTB.authFetch === 'function') {
+      return window.QTB.authFetch(url, options);
+    }
     return fetch(url, options);
   }
 
@@ -80,7 +87,7 @@
 
   function loadCatalog(callback) {
     if (_catalog) { callback(_catalog); return; }
-    fetch('/ui/tasks/catalog/labels')
+    _authFetch('/ui/tasks/catalog/labels')
       .then(function (r) { return r.json(); })
       .then(function (data) {
         _catalog = data.tasks || [];
@@ -157,7 +164,7 @@
         createBtn.textContent = 'Creating...';
         errorDiv.style.display = 'none';
 
-        fetch('/ui/runs', {
+        _authFetch('/ui/runs', {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
           body: JSON.stringify({task: task, mode: 'agent'})

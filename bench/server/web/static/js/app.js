@@ -3,8 +3,14 @@
 
   var app = document.getElementById('app');
   if (!app) return;
+  window.QTB = window.QTB || {};
 
   var state = {
+    auth: {
+      loaded: false,
+      authMode: 'disabled',
+      user: null
+    },
     results: null,
     tasksPayload: null,
     detailCache: {},
@@ -53,8 +59,29 @@
     return '<pre>' + escapeHtml(markdown) + '</pre>';
   }
 
+  function loginUrl() {
+    return '/auth/login?next=' + encodeURIComponent(
+      window.location.pathname + window.location.search + window.location.hash
+    );
+  }
+
+  function redirectToLogin() {
+    window.location.href = loginUrl();
+  }
+
+  function authFetch(path, options) {
+    return fetch(path, options).then(function (response) {
+      if (response.status === 401) {
+        redirectToLogin();
+      }
+      return response;
+    });
+  }
+
+  window.QTB.authFetch = authFetch;
+
   function api(path) {
-    return fetch('/ui' + path).then(function (response) {
+    return authFetch('/ui' + path).then(function (response) {
       if (!response.ok) {
         return response.text().then(function (text) {
           throw new Error(text || ('HTTP ' + response.status));
@@ -70,7 +97,7 @@
       {'Content-Type': 'application/json'},
       options.headers || {}
     );
-    return fetch(path, options).then(function (response) {
+    return authFetch(path, options).then(function (response) {
       return response.text().then(function (text) {
         var payload = {};
         if (text) {
@@ -87,6 +114,54 @@
         return payload;
       });
     });
+  }
+
+  function loadMe() {
+    return fetch('/ui/me')
+      .then(function (response) { return response.json(); })
+      .then(function (payload) {
+        state.auth.loaded = true;
+        state.auth.authMode = payload.auth_mode || 'disabled';
+        state.auth.user = payload.user || null;
+        renderNavUser();
+        if (state.auth.authMode === 'github' && !payload.authenticated) {
+          redirectToLogin();
+        }
+        return payload;
+      })
+      .catch(function () {
+        state.auth.loaded = true;
+        renderNavUser();
+      });
+  }
+
+  function renderNavUser() {
+    var target = document.getElementById('nav-user');
+    if (!target) return;
+    var user = state.auth.user;
+    if (!user) {
+      target.innerHTML = '<a class="btn btn-secondary btn-small" href="' + loginUrl() + '">Log in</a>';
+      return;
+    }
+    var avatar = user.avatar_url
+      ? '<img class="nav-avatar" src="' + escapeHtml(user.avatar_url) + '" alt="">'
+      : '<span class="nav-avatar-fallback">' + escapeHtml((user.github_login || 'U').slice(0, 1).toUpperCase()) + '</span>';
+    target.innerHTML =
+      '<div class="nav-user-card">' +
+        avatar +
+        '<span class="nav-user-name">' + escapeHtml(user.github_login || user.display_name || 'User') + '</span>' +
+        (user.role === 'admin' ? '<span class="badge">Admin</span>' : '') +
+        '<button class="btn btn-secondary btn-small" id="auth-logout-btn" type="button">Logout</button>' +
+      '</div>';
+    var logout = document.getElementById('auth-logout-btn');
+    if (logout) {
+      logout.addEventListener('click', function () {
+        fetch('/auth/logout', {method: 'POST'}).then(function () {
+          state.auth.user = null;
+          redirectToLogin();
+        });
+      });
+    }
   }
 
   function formatDuration(value) {
@@ -594,7 +669,7 @@
 
   function ensureRuns(force) {
     if (runsState.runs && !force) return Promise.resolve(runsState.runs);
-    return fetch('/ui/runs').then(function (r) { return r.json(); })
+    return authFetch('/ui/runs').then(function (r) { return r.json(); })
       .then(function (data) {
         runsState.runs = data.runs || [];
         return runsState.runs;
@@ -2035,5 +2110,7 @@
   }
 
   window.addEventListener('hashchange', onRouteChange);
-  window.addEventListener('load', onRouteChange);
+  window.addEventListener('load', function () {
+    loadMe().then(onRouteChange);
+  });
 })();
