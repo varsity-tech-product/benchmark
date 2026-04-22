@@ -13,6 +13,7 @@ Usage (from orchestrator):
 """
 
 import asyncio
+import json
 import logging
 from typing import Any
 
@@ -149,19 +150,55 @@ def _build_standalone_server(task_id: str, persona_id: str, use_docker: bool = T
         custom_data_dir=custom_data_dir,
     )
 
+    max_bt = task.environment.max_backtest_trials if task.environment else 0
+    task_core_tools = list(task.environment.core_mcp_tools if task.environment else [])
+    sandbox_image = task.environment.sandbox_image if task.environment else ""
+    is_lean_task = "lean" in str(sandbox_image).lower() or "run_lean_backtest" in task_core_tools
+    if is_lean_task and "get_lean_template" not in task_core_tools:
+        task_core_tools.append("get_lean_template")
+
+    session_context = {
+        "category": task.category.value,
+        "requires_code": bool(task.requires_code),
+        "docs_available": list(docs_available),
+        "max_backtest_trials": max_bt,
+        "sandbox_image": sandbox_image,
+        "student_code_available": bool(student_code_dir),
+    }
+    task_id_upper = task_id.upper()
+    if task.category.value == "debug" or task.sample_code:
+        template_type = "debug"
+    elif task_id_upper.startswith("I01"):
+        template_type = "single_symbol"
+    elif task_id_upper.startswith(("I07", "I08", "I09", "I10")):
+        template_type = "framework"
+    elif task_id_upper.startswith(("I02", "I03", "I04", "I05", "I06")):
+        template_type = "multi_symbol"
+    else:
+        template_type = "generic"
+    lean_template_context = {
+        "category": task.category.value,
+        "requires_code": bool(task.requires_code),
+        "template_type": template_type,
+        "expects_universe": template_type == "multi_symbol",
+        "sandbox_image": sandbox_image,
+        "student_code_available": bool(student_code_dir),
+    }
+
     if container_manager.use_docker:
-        max_bt = task.environment.max_backtest_trials if task.environment else 0
         container_manager.start_executor(
             container.container_id,
             env_vars={
                 "QTB_MAX_BACKTEST_TRIALS": str(max_bt),
                 "LEAN_RUN_TIMEOUT": "300",
+                "QTB_SESSION_CONTEXT_JSON": json.dumps(session_context),
+                "QTB_LEAN_TEMPLATE_CONTEXT_JSON": json.dumps(lean_template_context),
             },
         )
 
     # Create proxy with tools
     proxy = create_proxy_for_task(
-        core_tool_names=task.environment.core_mcp_tools,
+        core_tool_names=task_core_tools,
         convenient_tool_names=(
             task.ground_truth.convenient_tools if task.ground_truth else []
         ),

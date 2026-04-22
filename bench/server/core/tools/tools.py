@@ -54,6 +54,19 @@ def _session_context() -> dict:
     return parsed if isinstance(parsed, dict) else {}
 
 
+def _lean_template_context() -> dict:
+    """Return internal LEAN template metadata for current session."""
+    raw = os.environ.get("QTB_LEAN_TEMPLATE_CONTEXT_JSON", "").strip()
+    if raw:
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError:
+            parsed = {}
+        if isinstance(parsed, dict):
+            return parsed
+    return _session_context()
+
+
 def _infer_csharp_entrypoint(source_path: str) -> dict[str, str]:
     """Infer namespace/class entrypoint from a C# QCAlgorithm source file."""
     try:
@@ -2410,6 +2423,253 @@ def get_environment_info() -> str:
     return json.dumps(info, indent=2)
 
 
+def _lean_common_rules() -> str:
+    return """Production harness rules:
+- Namespace: QuantConnect.Algorithm.CSharp
+- Entrypoint: public class Algorithm : QCAlgorithm
+- Subscribe with AddCryptoFuture(ticker, Resolution.Daily, Market.Binance) for Binance perpetual futures data.
+- Store the returned Symbol and use it as the key for indicators, readiness, regime, and positions.
+- Trade with SetHoldings(symbol, targetWeight) and Liquidate(symbol).
+- Leave brokerage model selection to the benchmark harness for custom-data backtests.
+- Use SetWarmUp(...) plus per-symbol readiness checks before trading."""
+
+
+def _single_symbol_lean_template() -> str:
+    return r'''using QuantConnect;
+using QuantConnect.Algorithm;
+using QuantConnect.Data;
+using QuantConnect.Indicators;
+
+namespace QuantConnect.Algorithm.CSharp
+{
+    public class Algorithm : QCAlgorithm
+    {
+        private Symbol _symbol;
+        private SimpleMovingAverage _sma;
+
+        public override void Initialize()
+        {
+            SetStartDate(2022, 1, 1);
+            SetEndDate(2025, 12, 31);
+            SetAccountCurrency("USDT");
+            SetCash("USDT", 100000m);
+
+            _symbol = AddCryptoFuture("BTCUSDT", Resolution.Daily, Market.Binance).Symbol;
+            _sma = SMA(_symbol, 20, Resolution.Daily);
+
+            SetWarmUp(20, Resolution.Daily);
+        }
+
+        public override void OnData(Slice data)
+        {
+            if (IsWarmingUp) return;
+            if (!data.ContainsKey(_symbol)) return;
+            if (!_sma.IsReady) return;
+
+            var price = Securities[_symbol].Price;
+            if (price > _sma.Current.Value)
+            {
+                SetHoldings(_symbol, 1.0m);
+            }
+            else if (Portfolio[_symbol].Invested)
+            {
+                Liquidate(_symbol);
+            }
+        }
+    }
+}'''
+
+
+def _multi_symbol_lean_template() -> str:
+    return r'''using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using Newtonsoft.Json;
+using QuantConnect;
+using QuantConnect.Algorithm;
+using QuantConnect.Data;
+using QuantConnect.Indicators;
+
+namespace QuantConnect.Algorithm.CSharp
+{
+    public class Algorithm : QCAlgorithm
+    {
+        private readonly List<Symbol> _symbols = new List<Symbol>();
+        private readonly Dictionary<Symbol, SymbolState> _state =
+            new Dictionary<Symbol, SymbolState>();
+
+        public override void Initialize()
+        {
+            SetStartDate(2022, 1, 1);
+            SetEndDate(2025, 12, 31);
+            SetAccountCurrency("USDT");
+            SetCash("USDT", 100000m);
+
+            foreach (var ticker in LoadUniverse())
+            {
+                var security = AddCryptoFuture(ticker, Resolution.Daily, Market.Binance);
+                var symbol = security.Symbol;
+                _symbols.Add(symbol);
+                _state[symbol] = new SymbolState(
+                    SMA(symbol, 10, Resolution.Daily),
+                    SMA(symbol, 30, Resolution.Daily)
+                );
+            }
+
+            SetWarmUp(30, Resolution.Daily);
+        }
+
+        public override void OnData(Slice data)
+        {
+            if (IsWarmingUp) return;
+
+            var changed = false;
+            foreach (var symbol in data.Keys)
+            {
+                SymbolState st;
+                if (!_state.TryGetValue(symbol, out st)) continue;
+                if (!st.Fast.IsReady || !st.Slow.IsReady) continue;
+                if (Securities[symbol].Price <= 0) continue;
+
+                var regime = st.Fast.Current.Value > st.Slow.Current.Value ? 1 : -1;
+                if (!st.HasRegime || st.Regime != regime)
+                {
+                    st.Regime = regime;
+                    st.HasRegime = true;
+                    changed = true;
+                }
+            }
+
+            if (changed)
+            {
+                Rebalance();
+            }
+        }
+
+        private void Rebalance()
+        {
+            var active = _symbols
+                .Where(s => _state[s].HasRegime
+                    && _state[s].Fast.IsReady
+                    && _state[s].Slow.IsReady
+                    && Securities[s].Price > 0)
+                .ToList();
+
+            if (active.Count == 0) return;
+
+            var weight = 1.0m / active.Count;
+            foreach (var symbol in active)
+            {
+                SetHoldings(symbol, _state[symbol].Regime * weight);
+            }
+        }
+
+        private List<string> LoadUniverse()
+        {
+            var json = File.ReadAllText("/data/universe.json");
+            return JsonConvert.DeserializeObject<List<string>>(json)
+                .Select(x => x.Trim().ToUpperInvariant())
+                .Where(x => x.Length > 0)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+
+        private sealed class SymbolState
+        {
+            public SimpleMovingAverage Fast { get; }
+            public SimpleMovingAverage Slow { get; }
+            public bool HasRegime { get; set; }
+            public int Regime { get; set; }
+
+            public SymbolState(SimpleMovingAverage fast, SimpleMovingAverage slow)
+            {
+                Fast = fast;
+                Slow = slow;
+            }
+        }
+    }
+}'''
+
+
+def _framework_lean_template() -> str:
+    return r'''using QuantConnect;
+using QuantConnect.Algorithm;
+using QuantConnect.Algorithm.Framework.Alphas;
+using QuantConnect.Algorithm.Framework.Execution;
+using QuantConnect.Algorithm.Framework.Portfolio;
+
+namespace QuantConnect.Algorithm.CSharp
+{
+    public class Algorithm : QCAlgorithm
+    {
+        public override void Initialize()
+        {
+            SetStartDate(2022, 1, 1);
+            SetEndDate(2025, 12, 31);
+            SetAccountCurrency("USDT");
+            SetCash("USDT", 100000m);
+
+            AddCryptoFuture("BTCUSDT", Resolution.Daily, Market.Binance);
+            SetAlpha(new ConstantAlphaModel(InsightType.Price, InsightDirection.Up, System.TimeSpan.FromDays(1)));
+            SetPortfolioConstruction(new EqualWeightingPortfolioConstructionModel());
+            SetExecution(new ImmediateExecutionModel());
+            SetWarmUp(30, Resolution.Daily);
+        }
+    }
+}'''
+
+
+def _debug_lean_template() -> str:
+    return """Debug-session template:
+1. Inspect the mounted code first with file_list(directory="student_code") and file_read(path="student_code/<file>.cs").
+2. Copy the code into the workspace, apply the smallest fix, and keep the namespace/class entrypoint production-safe.
+3. Use SetWarmUp(...) and if (IsWarmingUp) return; when the bug involves indicator readiness.
+4. Run run_lean_backtest on the workspace copy, then inspect results with analyze_lean_results."""
+
+
+def get_lean_template() -> str:
+    """Return a production-safe LEAN C# skeleton for the current session."""
+    context = _lean_template_context()
+    template_type = str(context.get("template_type", "")).lower()
+    task_id = str(context.get("task_id", "")).upper()
+    category = str(context.get("category", "")).lower()
+    data_files = {str(item).lower() for item in context.get("data_files", [])}
+
+    if category == "debug" or context.get("student_code_available"):
+        template_name = "debug-fix workflow"
+        template = _debug_lean_template()
+    elif template_type == "single_symbol" or task_id.startswith("I01"):
+        template_name = "single-symbol SMA skeleton"
+        template = _single_symbol_lean_template()
+    elif template_type == "framework" or task_id.startswith(("I07", "I08", "I09", "I10")):
+        template_name = "Algorithm Framework skeleton"
+        template = _framework_lean_template()
+    elif (
+        template_type == "multi_symbol"
+        or "universe.json" in data_files
+        or task_id.startswith(("I02", "I03", "I04", "I05", "I06"))
+    ):
+        template_name = "multi-symbol universe skeleton"
+        template = _multi_symbol_lean_template()
+    else:
+        template_name = "single-symbol LEAN skeleton"
+        template = _single_symbol_lean_template()
+
+    payload = {
+        "template": template_name,
+        "session": {
+            "category": context.get("category", ""),
+            "sandbox_image": context.get("sandbox_image", ""),
+            "template_type": context.get("template_type", ""),
+            "student_code_available": bool(context.get("student_code_available")),
+        },
+        "rules": _lean_common_rules(),
+        "code": template,
+    }
+    return json.dumps(payload, indent=2)
+
+
 def compare_backtest_results(
     data_paths: list,
     labels: Optional[list] = None,
@@ -3566,6 +3826,11 @@ CORE_TOOLS = {
         "description": "Return directory paths, mounted files, installed packages, and truthful session runtime context such as student_code availability or tracked trial budget when present.",
         "params": {},
     },
+    "get_lean_template": {
+        "func": get_lean_template,
+        "description": "Return a production-safe LEAN C# algorithm skeleton for the current benchmark session.",
+        "params": {},
+    },
     "construct_signal": {
         "func": construct_signal,
         "description": (
@@ -4009,6 +4274,93 @@ def _get_trial_manager() -> "TrialManager":
     return _trial_managers[workspace]
 
 
+def _split_csharp_args(arg_text: str) -> list[str]:
+    """Split a C# call argument list on top-level commas."""
+    args: list[str] = []
+    current: list[str] = []
+    depth = 0
+    in_string = False
+    escape = False
+    for ch in arg_text:
+        if in_string:
+            current.append(ch)
+            if escape:
+                escape = False
+            elif ch == "\\":
+                escape = True
+            elif ch == '"':
+                in_string = False
+            continue
+        if ch == '"':
+            in_string = True
+            current.append(ch)
+            continue
+        if ch in "([{":
+            depth += 1
+        elif ch in ")]}" and depth > 0:
+            depth -= 1
+        if ch == "," and depth == 0:
+            args.append("".join(current).strip())
+            current = []
+            continue
+        current.append(ch)
+    tail = "".join(current).strip()
+    if tail:
+        args.append(tail)
+    return args
+
+
+def _lean_preflight_target_expects_universe(context: dict) -> bool:
+    if context.get("expects_universe"):
+        return True
+    task_id = str(context.get("task_id", "")).upper()
+    return task_id.startswith(("I02", "I03", "I04", "I05", "I06"))
+
+
+def _preflight_lean_source(source: str, context: dict | None = None) -> list[str]:
+    """Return source issues that should be fixed before a tracked LEAN trial."""
+    context = context or {}
+    issues: list[str] = []
+
+    if not re.search(r"\bnamespace\s+QuantConnect\.Algorithm\.CSharp\b", source):
+        issues.append(
+            "Use namespace QuantConnect.Algorithm.CSharp for the benchmark LEAN entrypoint."
+        )
+
+    if not re.search(
+        r"\bpublic\s+class\s+Algorithm\s*:\s*[^{\n]*\bQCAlgorithm\b",
+        source,
+    ):
+        issues.append(
+            "Declare public class Algorithm : QCAlgorithm so the session runner can load the entrypoint."
+        )
+
+    if re.search(r"\bSetBrokerageModel\s*\(", source):
+        issues.append(
+            "Leave brokerage model selection unset; the benchmark harness supplies custom-data securities for LEAN backtests."
+        )
+
+    for match in re.finditer(r"\bSetHoldings\s*\((?P<args>[^;]+)\)\s*;", source, re.S):
+        if len(_split_csharp_args(match.group("args"))) >= 3:
+            issues.append(
+                "Use SetHoldings(symbol, targetWeight) for the deployed benchmark LEAN build."
+            )
+            break
+
+    if _lean_preflight_target_expects_universe(context):
+        uses_universe_file = "universe.json" in source.lower()
+        hardcoded_subs = re.findall(
+            r"\bAddCrypto(?:Future)?\s*\(\s*\"([A-Za-z0-9]+)\"",
+            source,
+        )
+        if hardcoded_subs and len(set(hardcoded_subs)) < 5 and not uses_universe_file:
+            issues.append(
+                "Load the session universe file and subscribe dynamically for universe-scale LEAN tasks."
+            )
+
+    return list(dict.fromkeys(issues))
+
+
 def run_lean_backtest(
     algorithm_path: str,
     params_json: str = "",
@@ -4038,6 +4390,22 @@ def run_lean_backtest(
     resolved_algorithm_path = _resolve_path(algorithm_path)
     if not resolved_algorithm_path or not os.path.isfile(resolved_algorithm_path):
         return f"Error: Algorithm file not found: {requested_path}"
+
+    try:
+        with open(resolved_algorithm_path, encoding="utf-8") as f:
+            source = f.read()
+    except OSError as exc:
+        return f"Error: Could not read algorithm file: {exc}"
+
+    preflight_issues = _preflight_lean_source(source, _lean_template_context())
+    if preflight_issues:
+        lines = ["Preflight failed:"]
+        lines.extend(f"- {issue}" for issue in preflight_issues)
+        lines.append("")
+        lines.append(
+            "Call get_lean_template() for a production-safe LEAN skeleton for this session."
+        )
+        return "\n".join(lines)
 
     inferred_entrypoint = _infer_csharp_entrypoint(resolved_algorithm_path)
     if not full_type_name and inferred_entrypoint.get("full_type_name"):
