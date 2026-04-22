@@ -92,6 +92,23 @@ class ResultOwnerFilteringTests(unittest.TestCase):
                 indexer.get_detail("sess-b", user=alice)
             with self.assertRaises(PermissionError):
                 indexer.resolve_agent_file("sess-b", "report.md", user=alice)
+            with self.assertRaises(PermissionError):
+                indexer.resolve_run_state_file("sess-b", user=alice)
+
+    def test_user_can_export_own_run_state(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _write_json(
+                root / "tasks" / "layer2" / "data" / "D01_demo.json",
+                {"task_id": "D01_demo", "category": "data"},
+            )
+            _write_result(root, "sess-a", "github:alice")
+            indexer = ResultIndexer(root)
+            alice = UserContext("github:alice", "alice", "a@example.com", "Alice", "")
+
+            path = indexer.resolve_run_state_file("sess-a", user=alice)
+            self.assertIsNotNone(path)
+            self.assertEqual(path.name, "run_state.json")
 
     def test_detail_payload_excludes_owner_email(self):
         with tempfile.TemporaryDirectory() as tmp:

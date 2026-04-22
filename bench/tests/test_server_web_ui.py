@@ -428,6 +428,7 @@ class UiRoutesTests(unittest.TestCase):
             tasks_response = client.get("/ui/tasks")
             results_response = client.get("/ui/results")
             detail_response = client.get(f"/ui/results/{session_id}")
+            export_response = client.get(f"/ui/results/{session_id}/export")
             workspace_response = client.get(f"/ui/results/{session_id}/workspace")
             workspace_preview_response = client.get(
                 f"/ui/results/{session_id}/workspace/preview/artifacts/report.md"
@@ -451,12 +452,18 @@ class UiRoutesTests(unittest.TestCase):
             self.assertEqual(tasks_response.status_code, 200)
             self.assertEqual(results_response.status_code, 200)
             self.assertEqual(detail_response.status_code, 200)
+            self.assertEqual(export_response.status_code, 200)
             self.assertEqual(workspace_response.status_code, 200)
             self.assertEqual(workspace_preview_response.status_code, 200)
             self.assertEqual(csv_preview_response.status_code, 200)
             self.assertEqual(image_preview_response.status_code, 200)
             self.assertEqual(file_response.status_code, 200)
             self.assertEqual(file_response.text, "report")
+            self.assertEqual(export_response.json()["session_id"], session_id)
+            self.assertIn(
+                "session-003_run_state.json",
+                export_response.headers.get("content-disposition", ""),
+            )
             self.assertEqual(bad_path_response.status_code, 400)
             self.assertEqual(bad_preview_response.status_code, 400)
 
