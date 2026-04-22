@@ -3,8 +3,14 @@
 
   var app = document.getElementById('app');
   if (!app) return;
+  window.QTB = window.QTB || {};
 
   var state = {
+    auth: {
+      loaded: false,
+      authMode: 'disabled',
+      user: null
+    },
     results: null,
     tasksPayload: null,
     detailCache: {},
@@ -53,8 +59,29 @@
     return '<pre>' + escapeHtml(markdown) + '</pre>';
   }
 
+  function loginUrl() {
+    return '/auth/login?next=' + encodeURIComponent(
+      window.location.pathname + window.location.search + window.location.hash
+    );
+  }
+
+  function redirectToLogin() {
+    window.location.href = loginUrl();
+  }
+
+  function authFetch(path, options) {
+    return fetch(path, options).then(function (response) {
+      if (response.status === 401) {
+        redirectToLogin();
+      }
+      return response;
+    });
+  }
+
+  window.QTB.authFetch = authFetch;
+
   function api(path) {
-    return fetch('/ui' + path).then(function (response) {
+    return authFetch('/ui' + path).then(function (response) {
       if (!response.ok) {
         return response.text().then(function (text) {
           throw new Error(text || ('HTTP ' + response.status));
@@ -70,7 +97,7 @@
       {'Content-Type': 'application/json'},
       options.headers || {}
     );
-    return fetch(path, options).then(function (response) {
+    return authFetch(path, options).then(function (response) {
       return response.text().then(function (text) {
         var payload = {};
         if (text) {
@@ -87,6 +114,65 @@
         return payload;
       });
     });
+  }
+
+  function loadMe() {
+    return fetch('/ui/me')
+      .then(function (response) { return response.json(); })
+      .then(function (payload) {
+        state.auth.loaded = true;
+        state.auth.authMode = payload.auth_mode || 'disabled';
+        state.auth.user = payload.user || null;
+        renderNavUser();
+        if (state.auth.authMode === 'github' && !payload.authenticated) {
+          redirectToLogin();
+        }
+        return payload;
+      })
+      .catch(function () {
+        state.auth.loaded = true;
+        renderNavUser();
+      });
+  }
+
+  function renderNavUser() {
+    var target = document.getElementById('nav-user');
+    if (!target) return;
+    var user = state.auth.user;
+    if (!user) {
+      if (state.auth.authMode === 'github') {
+        target.innerHTML = '<a class="btn btn-secondary btn-small" href="' + loginUrl() + '">Log in</a>';
+      } else {
+        target.innerHTML = '<span class="badge">Auth disabled</span>';
+      }
+      return;
+    }
+    var avatar = user.avatar_url
+      ? '<img class="nav-avatar" src="' + escapeHtml(user.avatar_url) + '" alt="">'
+      : '<span class="nav-avatar-fallback">' + escapeHtml((user.github_login || 'U').slice(0, 1).toUpperCase()) + '</span>';
+    target.innerHTML =
+      '<div class="nav-user-card">' +
+        avatar +
+        '<span class="nav-user-name">' + escapeHtml(user.github_login || user.display_name || 'User') + '</span>' +
+        (user.role === 'admin' ? '<span class="badge">Admin</span>' : '') +
+        (state.auth.authMode === 'github'
+          ? '<button class="btn btn-secondary btn-small" id="api-key-btn" type="button">API Key</button>' +
+            '<button class="btn btn-secondary btn-small" id="auth-logout-btn" type="button">Logout</button>'
+          : '<span class="badge">Auth disabled</span>') +
+      '</div>';
+    var apiKey = document.getElementById('api-key-btn');
+    if (apiKey) {
+      apiKey.addEventListener('click', openApiKeyModal);
+    }
+    var logout = document.getElementById('auth-logout-btn');
+    if (logout) {
+      logout.addEventListener('click', function () {
+        fetch('/auth/logout', {method: 'POST'}).then(function () {
+          state.auth.user = null;
+          redirectToLogin();
+        });
+      });
+    }
   }
 
   function formatDuration(value) {
@@ -272,6 +358,72 @@
   }
 
   window._qtbShowModal = showModal;
+
+  function openApiKeyModal() {
+    showModal('REST API Key', '<p class="detail-empty-note">Loading API key status...</p>');
+    authFetch('/ui/api-key')
+      .then(function (response) { return response.json(); })
+      .then(renderApiKeyModalBody)
+      .catch(function (error) {
+        showModal('REST API Key', '<p class="detail-empty-note">' + escapeHtml(error && error.message ? error.message : String(error || 'Unable to load API key status.')) + '</p>');
+      });
+  }
+
+  function renderApiKeyModalBody(status) {
+    var created = status && status.created_at ? formatTimestamp(status.created_at * 1000) : '';
+    var skillUrl = '/skills/quanttutorbench-rest-agent';
+    var body =
+      '<section class="info-section">' +
+        '<h3>External REST Access</h3>' +
+        '<p class="detail-empty-note">Use this key as <code>Authorization: Bearer &lt;api_key&gt;</code> when creating runs through <code>/client/runs/start</code>. The raw key is shown once after generation. See the <a href="' + skillUrl + '" target="_blank" rel="noreferrer">REST agent skill</a> for the full platform workflow.</p>' +
+        (status && status.has_key
+          ? '<div class="info-grid">' +
+              metaItem('Current Key', status.key_hint ? status.key_hint + '...' : 'Active') +
+              metaItem('Created', created || 'Unknown') +
+            '</div>'
+          : '<p class="detail-empty-note">No active API key.</p>') +
+        '<div id="api-key-result" class="run-connect-section"></div>' +
+        '<div class="run-actions">' +
+          '<button class="btn btn-primary" id="api-key-generate-btn" type="button">' + (status && status.has_key ? 'Regenerate Key' : 'Generate Key') + '</button>' +
+          (status && status.has_key ? '<button class="btn btn-secondary" id="api-key-revoke-btn" type="button">Revoke Key</button>' : '') +
+        '</div>' +
+      '</section>';
+    showModal('REST API Key', body);
+    var generate = document.getElementById('api-key-generate-btn');
+    if (generate) generate.addEventListener('click', rotateApiKey);
+    var revoke = document.getElementById('api-key-revoke-btn');
+    if (revoke) revoke.addEventListener('click', revokeApiKey);
+  }
+
+  function rotateApiKey() {
+    authFetch('/ui/api-key', {method: 'POST'})
+      .then(function (response) { return response.json(); })
+      .then(function (payload) {
+        var target = document.getElementById('api-key-result');
+        if (target) {
+          target.innerHTML =
+            '<h3>New Key</h3>' +
+            '<code class="run-connect-cmd">' + escapeHtml(payload.api_key || '') + '</code>' +
+            '<button class="btn btn-small run-copy-btn" id="api-key-copy-btn" type="button">Copy</button>' +
+            '<p class="detail-empty-note">Use this key with the <a href="/skills/quanttutorbench-rest-agent" target="_blank" rel="noreferrer">REST agent skill</a> to connect your agent to the benchmark service.</p>';
+          var copy = document.getElementById('api-key-copy-btn');
+          if (copy) {
+            copy.addEventListener('click', function () {
+              if (navigator.clipboard && payload.api_key) {
+                navigator.clipboard.writeText(payload.api_key);
+                copy.textContent = 'Copied';
+              }
+            });
+          }
+        }
+      });
+  }
+
+  function revokeApiKey() {
+    authFetch('/ui/api-key', {method: 'DELETE'})
+      .then(function (response) { return response.json(); })
+      .then(renderApiKeyModalBody);
+  }
 
   function buildSummaryPill(label, value) {
     return '<span class="summary-pill"><strong>' + escapeHtml(label) + '</strong> ' + escapeHtml(value) + '</span>';
@@ -599,7 +751,7 @@
 
   function ensureRuns(force) {
     if (runsState.runs && !force) return Promise.resolve(runsState.runs);
-    return fetch('/ui/runs').then(function (r) { return r.json(); })
+    return authFetch('/ui/runs').then(function (r) { return r.json(); })
       .then(function (data) {
         runsState.runs = data.runs || [];
         return runsState.runs;
@@ -1406,6 +1558,12 @@
 
   function buildDetailActions(detail) {
     var buttons = [];
+    var exportUrl = '/ui/results/' + encodeURIComponent(detail.session_id) + '/export';
+    buttons.push(
+      '<a class="detail-report-btn" href="' + escapeHtml(exportUrl) + '" download="' +
+      escapeHtml((detail.session_id || 'session') + '_run_state.json') +
+      '">Export JSON</a>'
+    );
     // Server / Client / Eval History
     buttons.push('<button class="detail-report-btn" id="detail-server-btn">Server</button>');
     buttons.push(
@@ -2051,5 +2209,7 @@
   }
 
   window.addEventListener('hashchange', onRouteChange);
-  window.addEventListener('load', onRouteChange);
+  window.addEventListener('load', function () {
+    loadMe().then(onRouteChange);
+  });
 })();

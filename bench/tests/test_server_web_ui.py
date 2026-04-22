@@ -382,6 +382,15 @@ class UiRoutesTests(unittest.TestCase):
                     "description": "Demo persona",
                 },
             )
+            (root / "docs" / "skills" / "quanttutorbench-rest-agent").mkdir(
+                parents=True, exist_ok=True
+            )
+            (
+                root / "docs" / "skills" / "quanttutorbench-rest-agent" / "SKILL.md"
+            ).write_text(
+                "# QuantTutorBench REST Agent\n\nPOST /client/runs/start\n",
+                encoding="utf-8",
+            )
             _write_json(
                 result_dir / "run_state.json",
                 {
@@ -426,6 +435,7 @@ class UiRoutesTests(unittest.TestCase):
             tasks_response = client.get("/ui/tasks")
             results_response = client.get("/ui/results")
             detail_response = client.get(f"/ui/results/{session_id}")
+            export_response = client.get(f"/ui/results/{session_id}/export")
             workspace_response = client.get(f"/ui/results/{session_id}/workspace")
             workspace_preview_response = client.get(
                 f"/ui/results/{session_id}/workspace/preview/artifacts/report.md"
@@ -445,16 +455,26 @@ class UiRoutesTests(unittest.TestCase):
             bad_preview_response = client.get(
                 f"/ui/results/{session_id}/workspace/preview/%2E%2E/secret.txt"
             )
+            skill_response = client.get("/skills/quanttutorbench-rest-agent")
 
             self.assertEqual(tasks_response.status_code, 200)
             self.assertEqual(results_response.status_code, 200)
             self.assertEqual(detail_response.status_code, 200)
+            self.assertEqual(export_response.status_code, 200)
             self.assertEqual(workspace_response.status_code, 200)
             self.assertEqual(workspace_preview_response.status_code, 200)
             self.assertEqual(csv_preview_response.status_code, 200)
             self.assertEqual(image_preview_response.status_code, 200)
             self.assertEqual(file_response.status_code, 200)
+            self.assertEqual(skill_response.status_code, 200)
             self.assertEqual(file_response.text, "report")
+            self.assertIn("QuantTutorBench REST Agent", skill_response.text)
+            self.assertIn("POST /client/runs/start", skill_response.text)
+            self.assertEqual(export_response.json()["session_id"], session_id)
+            self.assertIn(
+                "session-003_run_state.json",
+                export_response.headers.get("content-disposition", ""),
+            )
             self.assertEqual(bad_path_response.status_code, 400)
             self.assertEqual(bad_preview_response.status_code, 400)
 

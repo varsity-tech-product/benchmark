@@ -26,14 +26,17 @@ from uuid import uuid4
 import anyio
 from mcp.server import Server
 from mcp.server.streamable_http import StreamableHTTPServerTransport
+from mcp.types import TextContent
 from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import FileResponse, JSONResponse, Response
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
+from server.audit import record_event
 from server.config.bootstrap import load_server_env
 from server.config.llm_config import EVAL_DEFAULT_MODEL
+from server.quota import QuotaExceeded, QuotaManager
 from server.run import JobStore, RunService, RunStore, TaskCatalog
 from server.run.jobs import (
     JOB_STATUS_COMPLETED,
@@ -59,6 +62,104 @@ _SWEEPER_INTERVAL: int = 30
 _UNREGISTERED_IDLE_TIMEOUT: int = 300  # 5 min
 _REGISTERED_IDLE_TIMEOUT: int = 300  # 5 min
 _COMPLETED_IDLE_TIMEOUT: int = 3600  # 1 hour
+
+
+def _audit_user_from_run(run) -> dict:
+    return {
+        "user_id": getattr(run, "owner_user_id", "") or "",
+        "github_login": getattr(run, "owner_github_login", "") or "",
+        "email": getattr(run, "owner_email", "") or "",
+        "role": "user",
+    }
+
+
+def _audit_user_from_state(state: SessionState) -> dict:
+    return {
+        "user_id": state.owner_user_id,
+        "github_login": state.owner_github_login,
+        "email": state.owner_email,
+        "role": "user",
+    }
+
+
+def _mcp_tool_success(contents: list[TextContent]) -> bool:
+    if not contents:
+        return True
+    text = getattr(contents[0], "text", "")
+    try:
+        payload = json.loads(text)
+    except (json.JSONDecodeError, TypeError):
+        return True
+    if not isinstance(payload, dict):
+        return True
+    if payload.get("success") is False:
+        return False
+    if payload.get("error"):
+        return False
+    return True
+
+
+def _bool_env(name: str, default: bool) -> bool:
+    raw = os.environ.get(name, "").strip().lower()
+    if not raw:
+        return default
+    if raw in {"1", "true", "yes", "on"}:
+        return True
+    if raw in {"0", "false", "no", "off"}:
+        return False
+    return default
+
+
+def _rest_session_token_required() -> bool:
+    if os.environ.get("QTB_REQUIRE_SESSION_TOKEN", "").strip():
+        return _bool_env("QTB_REQUIRE_SESSION_TOKEN", False)
+    return (
+        os.environ.get("QTB_AUTH_MODE", "disabled").strip().lower() == "github"
+        or _bool_env("QTB_REQUIRE_CLIENT_AUTH", False)
+        or bool(os.environ.get("QTB_CLIENT_API_KEYS", "").strip())
+    )
+
+
+def _authorize_rest_session_request(
+    request: Request, manager: "BenchSessionManager", state: SessionState
+) -> JSONResponse | None:
+    """Require the run token that owns this REST session when auth is enabled."""
+    if not _rest_session_token_required() or not state.run_id:
+        return None
+
+    raw = extract_bearer_token(request)
+    if not raw:
+        return JSONResponse(
+            {"error": "Authorization: Bearer <token> required"},
+            status_code=401,
+        )
+    run = manager._run_service.resolve_token(raw, allow_expired_bound=True)
+    if run is None:
+        return JSONResponse({"error": "Invalid or expired token"}, status_code=401)
+    if run.run_id != state.run_id:
+        return JSONResponse({"error": "Run token does not own this session"}, 403)
+    return None
+
+
+def _authorize_rest_job_request(
+    request: Request, manager: "BenchSessionManager", sid: str
+) -> JSONResponse | None:
+    """Authorize polling a job by matching bearer run token to session id."""
+    if not _rest_session_token_required():
+        return None
+
+    raw = extract_bearer_token(request)
+    if not raw:
+        return JSONResponse(
+            {"error": "Authorization: Bearer <token> required"},
+            status_code=401,
+        )
+    run = manager._run_service.resolve_token(raw, allow_expired_bound=True)
+    if run is None:
+        return JSONResponse({"error": "Invalid or expired token"}, status_code=401)
+    if run.session_id != sid:
+        return JSONResponse({"error": "Run token does not own this session"}, 403)
+    return None
 
 
 class NoCacheStaticFiles(StaticFiles):
@@ -107,6 +208,7 @@ class BenchSessionManager:
 
         # Job layer — async tool dispatch (slice 2)
         self._job_store = JobStore(self.bench_root / "results" / "jobs")
+        self._quota_manager = QuotaManager(self.bench_root)
         # Strong refs for background tasks so the event loop does not GC them
         # mid-flight (asyncio.create_task caveat).
         self._job_tasks: dict[str, asyncio.Task] = {}
@@ -430,6 +532,10 @@ class BenchSessionManager:
         # Bind to Run
         state.run_id = run.run_id
         state._run_task_id = run.task_id
+        state.owner_user_id = run.owner_user_id
+        state.owner_github_login = run.owner_github_login
+        state.owner_email = run.owner_email
+        state.visibility = run.visibility
         state._on_registered = lambda sid: self._run_service.bind_session(
             run.run_id, sid
         )
@@ -501,9 +607,79 @@ class BenchSessionManager:
         @server.call_tool()
         async def handle_call_tool(name: str, arguments: dict):
             async with state._request_lock:
-                return await state.handle_tool_call(name, arguments)
+                return await self._handle_mcp_tool_call(state, name, arguments)
 
         return server
+
+    async def _handle_mcp_tool_call(
+        self, state: SessionState, name: str, arguments: dict
+    ) -> list[TextContent]:
+        """Run one MCP tool call with per-user quota checks for heavy tools."""
+        if name not in HEAVY_TOOLS:
+            return await state.handle_tool_call(name, arguments)
+
+        quota_reservation: str | None = None
+        try:
+            quota_reservation = self._quota_manager.reserve_heavy_job(
+                owner_user_id=state.owner_user_id,
+                run_id=state.run_id or "",
+                session_id=state.session_id,
+                tool_name=name,
+            )
+        except QuotaExceeded as exc:
+            record_event(
+                self.bench_root,
+                _audit_user_from_state(state),
+                "tool.call",
+                run_id=state.run_id or "",
+                session_id=state.session_id,
+                task_id=state.task_id,
+                success=False,
+                payload={"tool": name, "transport": "mcp", "error": str(exc)},
+            )
+            return [
+                TextContent(
+                    type="text",
+                    text=json.dumps(
+                        {
+                            "success": False,
+                            "error": str(exc),
+                            "current_phase": state.phase.value,
+                        }
+                    ),
+                )
+            ]
+
+        try:
+            contents = await state.handle_tool_call(name, arguments)
+            record_event(
+                self.bench_root,
+                _audit_user_from_state(state),
+                "tool.call",
+                run_id=state.run_id or "",
+                session_id=state.session_id,
+                task_id=state.task_id,
+                success=_mcp_tool_success(contents),
+                payload={"tool": name, "transport": "mcp"},
+            )
+            return contents
+        except Exception as exc:
+            record_event(
+                self.bench_root,
+                _audit_user_from_state(state),
+                "tool.call",
+                run_id=state.run_id or "",
+                session_id=state.session_id,
+                task_id=state.task_id,
+                success=False,
+                payload={"tool": name, "transport": "mcp", "error": str(exc)},
+            )
+            raise
+        finally:
+            self._quota_manager.release_heavy_job(
+                owner_user_id=state.owner_user_id,
+                reservation_id=quota_reservation,
+            )
 
     # ------------------------------------------------------------------
     # Session cleanup
@@ -800,6 +976,10 @@ async def rest_register(request: Request) -> JSONResponse:
     state = manager.create_rest_session()
     state.run_id = run.run_id
     state._run_task_id = run.task_id
+    state.owner_user_id = run.owner_user_id
+    state.owner_github_login = run.owner_github_login
+    state.owner_email = run.owner_email
+    state.visibility = run.visibility
     state._on_completed = lambda result_dir: manager._run_service.mark_completed(
         run.run_id, result_dir
     )
@@ -816,12 +996,32 @@ async def rest_register(request: Request) -> JSONResponse:
             state.persona_id,
             run.run_id,
         )
+        record_event(
+            manager.bench_root,
+            _audit_user_from_run(run),
+            "session.register",
+            request=request,
+            run_id=run.run_id,
+            session_id=state.session_id,
+            task_id=task_id,
+            success=True,
+        )
         return JSONResponse(result)
     else:
         state.cleanup()
         logger.warning("[REST] register failed: %s", result.get("error"))
         error = result.get("error", "")
         code = 404 if "not found" in error.lower() else 400
+        record_event(
+            manager.bench_root,
+            _audit_user_from_run(run),
+            "session.register",
+            request=request,
+            run_id=run.run_id,
+            task_id=task_id,
+            success=False,
+            payload={"error": error},
+        )
         return JSONResponse(result, status_code=code)
 
 
@@ -832,6 +1032,10 @@ async def rest_start(request: Request) -> JSONResponse:
     state = manager.get_session(sid)
     if not state:
         return JSONResponse({"error": "Session not found"}, 404)
+
+    auth_err = _authorize_rest_session_request(request, manager, state)
+    if auth_err is not None:
+        return auth_err
 
     allowed, error, ops = check_permission(state.phase, "start_session")
     if not allowed:
@@ -845,6 +1049,15 @@ async def rest_start(request: Request) -> JSONResponse:
         state._last_activity = time.time()
         result = await asyncio.to_thread(state.start)
     logger.info("[REST:%s] session started", sid[:8])
+    record_event(
+        manager.bench_root,
+        _audit_user_from_state(state),
+        "session.start",
+        request=request,
+        run_id=state.run_id or "",
+        session_id=sid,
+        task_id=state.task_id,
+    )
     return JSONResponse(result)
 
 
@@ -854,6 +1067,10 @@ async def rest_tools(request: Request) -> JSONResponse:
     state = manager.get_session(request.path_params["sid"])
     if not state:
         return JSONResponse({"error": "Session not found"}, 404)
+
+    auth_err = _authorize_rest_session_request(request, manager, state)
+    if auth_err is not None:
+        return auth_err
 
     tools = state.get_visible_tools()
     return JSONResponse(
@@ -877,6 +1094,10 @@ async def rest_tool_call(request: Request) -> JSONResponse:
     state = manager.get_session(sid)
     if not state:
         return JSONResponse({"error": "Session not found"}, 404)
+
+    auth_err = _authorize_rest_session_request(request, manager, state)
+    if auth_err is not None:
+        return auth_err
 
     name = request.path_params["name"]
 
@@ -916,6 +1137,27 @@ async def rest_tool_call(request: Request) -> JSONResponse:
     state._last_activity = time.time()
 
     if name in HEAVY_TOOLS:
+        try:
+            quota_reservation = manager._quota_manager.reserve_heavy_job(
+                owner_user_id=state.owner_user_id,
+                run_id=state.run_id or "",
+                session_id=sid,
+                tool_name=name,
+            )
+        except QuotaExceeded as exc:
+            record_event(
+                manager.bench_root,
+                _audit_user_from_state(state),
+                "tool.job_enqueued",
+                request=request,
+                run_id=state.run_id or "",
+                session_id=sid,
+                task_id=state.task_id,
+                success=False,
+                payload={"tool": name, "error": str(exc)},
+            )
+            return JSONResponse({"error": str(exc)}, status_code=429)
+
         # Async dispatch — return 202 immediately so the client is not
         # holding an HTTP connection open for the full backtest window.
         #
@@ -929,9 +1171,20 @@ async def rest_tool_call(request: Request) -> JSONResponse:
         try:
             job = manager._job_store.create(sid, name, body)
             task = asyncio.create_task(
-                _execute_tool_job(manager, state, job["job_id"], name, body)
+                _execute_tool_job(
+                    manager,
+                    state,
+                    job["job_id"],
+                    name,
+                    body,
+                    quota_reservation=quota_reservation,
+                )
             )
         except BaseException:
+            manager._quota_manager.release_heavy_job(
+                owner_user_id=state.owner_user_id,
+                reservation_id=quota_reservation,
+            )
             state._request_lock.release()
             raise
         manager._job_tasks[job["job_id"]] = task
@@ -943,6 +1196,16 @@ async def rest_tool_call(request: Request) -> JSONResponse:
             sid[:8],
             job["job_id"][:8],
             name,
+        )
+        record_event(
+            manager.bench_root,
+            _audit_user_from_state(state),
+            "tool.job_enqueued",
+            request=request,
+            run_id=state.run_id or "",
+            session_id=sid,
+            task_id=state.task_id,
+            payload={"tool": name, "job_id": job["job_id"]},
         )
         return JSONResponse(
             {
@@ -961,6 +1224,17 @@ async def rest_tool_call(request: Request) -> JSONResponse:
         parsed = json.loads(result)
     except (json.JSONDecodeError, TypeError):
         parsed = {"success": True, "output": result}
+    record_event(
+        manager.bench_root,
+        _audit_user_from_state(state),
+        "tool.call",
+        request=request,
+        run_id=state.run_id or "",
+        session_id=sid,
+        task_id=state.task_id,
+        success=bool(parsed.get("success", True)),
+        payload={"tool": name},
+    )
     return JSONResponse(parsed)
 
 
@@ -970,6 +1244,8 @@ async def _execute_tool_job(
     job_id: str,
     name: str,
     body: dict,
+    *,
+    quota_reservation: str | None = None,
 ) -> None:
     """Background worker for heavy tool invocations.
 
@@ -997,6 +1273,16 @@ async def _execute_tool_job(
             result=parsed,
         )
         logger.info("[REST:%s] job %s (%s) completed", sid[:8], job_id[:8], name)
+        record_event(
+            manager.bench_root,
+            _audit_user_from_state(state),
+            "tool.job_completed",
+            run_id=state.run_id or "",
+            session_id=sid,
+            task_id=state.task_id,
+            success=bool(parsed.get("success", True)),
+            payload={"tool": name, "job_id": job_id},
+        )
     except Exception as exc:
         logger.exception("[REST:%s] job %s failed", sid[:8], job_id[:8])
         store.update(
@@ -1005,7 +1291,21 @@ async def _execute_tool_job(
             completed_at=time.time(),
             error=f"{type(exc).__name__}: {exc}",
         )
+        record_event(
+            manager.bench_root,
+            _audit_user_from_state(state),
+            "tool.job_completed",
+            run_id=state.run_id or "",
+            session_id=sid,
+            task_id=state.task_id,
+            success=False,
+            payload={"tool": name, "job_id": job_id, "error": str(exc)},
+        )
     finally:
+        manager._quota_manager.release_heavy_job(
+            owner_user_id=state.owner_user_id,
+            reservation_id=quota_reservation,
+        )
         state._request_lock.release()
 
 
@@ -1027,6 +1327,9 @@ async def rest_tool_job_status(request: Request) -> JSONResponse:
     job = manager._job_store.get(job_id)
     if job is None or job.get("session_id") != sid:
         return JSONResponse({"error": "Job not found"}, 404)
+    auth_err = _authorize_rest_job_request(request, manager, sid)
+    if auth_err is not None:
+        return auth_err
     # Trim the echoed arguments — they can be large (full source files).
     return JSONResponse(
         {
@@ -1049,6 +1352,10 @@ async def rest_send(request: Request) -> JSONResponse:
     state = manager.get_session(sid)
     if not state:
         return JSONResponse({"error": "Session not found"}, 404)
+
+    auth_err = _authorize_rest_session_request(request, manager, state)
+    if auth_err is not None:
+        return auth_err
 
     allowed, error, ops = check_permission(state.phase, "send_message")
     if not allowed:
@@ -1108,7 +1415,11 @@ async def rest_send(request: Request) -> JSONResponse:
 
 
 async def ops_evaluate(request: Request) -> JSONResponse:
-    """``POST /ops/session/{sid}/evaluate[?eval_mode=tutor&tutor_dims=D3,D4]``."""
+    """``POST /ops/session/{sid}/evaluate[?eval_mode=tutor&tutor_dims=D3,D4]``
+
+    Operator-only. Agents can finish runs and read scoped results, but scoring
+    is triggered by the server side only.
+    """
     from server.web.ui_app import _authorize_admin_token
 
     auth_err = _authorize_admin_token(request)
@@ -1132,7 +1443,10 @@ async def ops_evaluate(request: Request) -> JSONResponse:
         )
         return JSONResponse(
             {
-                "error": "Session not completed — operator evaluation requires a completed result bundle.",
+                "error": (
+                    "Session not yet completed - operator evaluation is only "
+                    "permitted on COMPLETED bundles."
+                ),
                 "current_phase": state.phase.value,
             },
             409,
@@ -1317,6 +1631,9 @@ async def rest_results(request: Request) -> JSONResponse:
     state = manager.get_or_restore_session(request.path_params["sid"])
     if not state:
         return JSONResponse({"error": "Session not found"}, 404)
+    auth_err = _authorize_rest_session_request(request, manager, state)
+    if auth_err is not None:
+        return auth_err
 
     data = state.get_run_results()
     if "error" in data:
@@ -1379,6 +1696,9 @@ async def rest_scores(request: Request) -> JSONResponse:
         raise
     if not state:
         return JSONResponse({"error": "Session not found"}, 404)
+    auth_err = _authorize_rest_session_request(request, manager, state)
+    if auth_err is not None:
+        return auth_err
 
     payload = state.get_eval_scores(
         history=query.history,
@@ -1451,8 +1771,15 @@ async def rest_session_status(request: Request) -> JSONResponse | Response:
     if request.method == "DELETE":
         if not state:
             return JSONResponse({"error": "Session not found"}, 404)
+        auth_err = _authorize_rest_session_request(request, manager, state)
+        if auth_err is not None:
+            return auth_err
         logger.info("[REST:%s] DELETE — cancelling session", sid[:8])
-        await manager._cleanup_session(sid)
+        # persist_partial=True so an active session's conversation + tool
+        # logs land as a bundle under results/server/... before the
+        # container is destroyed. Without this the offline evaluator
+        # (issue #47 batch driver) cannot see DELETEd sessions at all.
+        await manager._cleanup_session(sid, persist_partial=True)
         return JSONResponse({"status": "cancelled"})
 
     # GET
@@ -1460,6 +1787,9 @@ async def rest_session_status(request: Request) -> JSONResponse | Response:
         state = manager.get_or_restore_session(sid)
     if not state:
         return JSONResponse({"error": "Session not found"}, 404)
+    auth_err = _authorize_rest_session_request(request, manager, state)
+    if auth_err is not None:
+        return auth_err
     return JSONResponse(
         {
             "session_id": sid,
@@ -1474,7 +1804,23 @@ async def rest_list(request: Request) -> JSONResponse:
     """``GET /session/list[?task_id=X01]``"""
     manager: BenchSessionManager = request.app.state.manager
     task_id = request.query_params.get("task_id", "")
-    return JSONResponse({"sessions": manager.list_sessions(task_id)})
+    sessions = manager.list_sessions(task_id)
+    if _rest_session_token_required():
+        raw = extract_bearer_token(request)
+        if not raw:
+            return JSONResponse(
+                {"error": "Authorization: Bearer <token> required"},
+                status_code=401,
+            )
+        run = manager._run_service.resolve_token(raw, allow_expired_bound=True)
+        if run is None:
+            return JSONResponse({"error": "Invalid or expired token"}, status_code=401)
+        sessions = [
+            session
+            for session in sessions
+            if session.get("session_id") == run.session_id
+        ]
+    return JSONResponse({"sessions": sessions})
 
 
 # ---------------------------------------------------------------------------
@@ -1534,6 +1880,8 @@ def create_app(
         Route("/session/{sid}/send", rest_send, methods=["POST"]),
         Route("/session/{sid}/results", rest_results, methods=["GET"]),
         Route("/session/{sid}/scores", rest_scores, methods=["GET"]),
+        # Operator-only evaluation surface: not reachable from MCP or
+        # client-facing /session tool dispatch.
         Route("/ops/session/{sid}/evaluate", ops_evaluate, methods=["POST"]),
         Route("/ops/session/{sid}/results", ops_results, methods=["GET"]),
         Route("/ops/session/{sid}/scores", ops_scores, methods=["GET"]),

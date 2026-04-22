@@ -112,6 +112,50 @@ def _resolve_persona_pin(task_id: str, persona_ids: list[str]) -> Optional[str]:
     return None
 
 
+def _task_is_lean(task) -> bool:
+    environment = getattr(task, "environment", None)
+    if environment is None:
+        return False
+    sandbox_image = str(getattr(environment, "sandbox_image", "") or "").lower()
+    core_tools = list(getattr(environment, "core_mcp_tools", []) or [])
+    return "lean" in sandbox_image or "run_lean_backtest" in core_tools
+
+
+def _effective_core_tool_names(task) -> list[str]:
+    environment = getattr(task, "environment", None)
+    names = list(getattr(environment, "core_mcp_tools", []) or [])
+    if _task_is_lean(task) and "get_lean_template" not in names:
+        names.append("get_lean_template")
+    return names
+
+
+def _lean_template_type(task) -> str:
+    task_id = str(getattr(task, "task_id", "") or "").upper()
+    category = str(getattr(getattr(task, "category", None), "value", "") or "").lower()
+    if category == "debug" or getattr(task, "sample_code", None):
+        return "debug"
+    if task_id.startswith("I01"):
+        return "single_symbol"
+    if task_id.startswith(("I07", "I08", "I09", "I10")):
+        return "framework"
+    if task_id.startswith(("I02", "I03", "I04", "I05", "I06")):
+        return "multi_symbol"
+    return "generic"
+
+
+def _lean_template_context(task, *, student_code_dir: Optional[str | Path]) -> dict:
+    environment = getattr(task, "environment", None)
+    template_type = _lean_template_type(task)
+    return {
+        "category": task.category.value,
+        "requires_code": bool(task.requires_code),
+        "template_type": template_type,
+        "expects_universe": template_type == "multi_symbol",
+        "sandbox_image": environment.sandbox_image if environment else "",
+        "student_code_available": bool(student_code_dir),
+    }
+
+
 class SessionState:
     """Per-session state for one benchmark session.
 
@@ -167,6 +211,10 @@ class SessionState:
         # Run layer binding (set by http_app when connected via run token).
         self.run_id: Optional[str] = None
         self._run_task_id: Optional[str] = None  # task_id from RunAssignment
+        self.owner_user_id: str = ""
+        self.owner_github_login: str = ""
+        self.owner_email: str = ""
+        self.visibility: str = "private"
         # Callback invoked after successful register(). Used by http_app to
         # bind the session to a RunAssignment without injecting RunService
         # into SessionState.
@@ -254,6 +302,11 @@ class SessionState:
 
         state._result_dir = result_dir
         state.phase = SessionPhase.COMPLETED
+        state.run_id = str(run_state.get("run_id") or "")
+        state.owner_user_id = str(run_state.get("owner_user_id") or "")
+        state.owner_github_login = str(run_state.get("owner_github_login") or "")
+        state.owner_email = str(run_state.get("owner_email") or "")
+        state.visibility = str(run_state.get("visibility") or "private")
 
         # Check if evaluation was already run under the score_n store.
         try:
@@ -269,13 +322,11 @@ class SessionState:
                 state._active_score_id = payload.get("score_id")
         except Exception:
             pass
-
         logger.info(
-            "Restored session %s from storage: %s/%s (eval=%s)",
+            "Restored session %s from storage: %s/%s",
             session_id[:8],
             task_id,
             persona_id,
-            state._eval_status,
         )
         return state
 
@@ -321,6 +372,10 @@ class SessionState:
         }
         if student_code_dir:
             env["QTB_STUDENT_CODE_DIR"] = str(student_code_dir)
+        if self.task and _task_is_lean(self.task):
+            env["QTB_LEAN_TEMPLATE_CONTEXT_JSON"] = json.dumps(
+                _lean_template_context(self.task, student_code_dir=student_code_dir)
+            )
         return env
 
     # ------------------------------------------------------------------
@@ -360,9 +415,7 @@ class SessionState:
 
             self.task = task
             self.task_id = task_id
-            self._task_core_tool_names = tuple(
-                task.environment.core_mcp_tools if task.environment else ()
-            )
+            self._task_core_tool_names = tuple(_effective_core_tool_names(task))
             self._task_convenient_tool_names = tuple(
                 task.ground_truth.convenient_tools if task.ground_truth else ()
             )
@@ -490,9 +543,7 @@ class SessionState:
             self.proxy = MCPProxy(workspace_path=self.container.workspace_path)
             populate_proxy_for_task(
                 proxy=self.proxy,
-                core_tool_names=(
-                    task.environment.core_mcp_tools if task.environment else []
-                ),
+                core_tool_names=list(self._task_core_tool_names),
                 convenient_tool_names=(
                     task.ground_truth.convenient_tools if task.ground_truth else []
                 ),
@@ -773,7 +824,13 @@ class SessionState:
     def _decorate_eval_payload(self, payload: dict) -> dict:
         """Attach read-only follow-up hints to an internal eval response."""
         payload.setdefault("current_phase", self.phase.value)
-        payload.setdefault("next_allowed", ["get_scores", "get_results"])
+        payload.setdefault(
+            "next_allowed",
+            [
+                f"GET /ops/session/{self.session_id}/scores",
+                f"GET /ops/session/{self.session_id}/results",
+            ],
+        )
         return payload
 
     # ------------------------------------------------------------------
@@ -853,7 +910,7 @@ class SessionState:
         if task is None:
             return []
 
-        core_names = list(task.environment.core_mcp_tools if task.environment else [])
+        core_names = _effective_core_tool_names(task)
         convenient_names = list(
             task.ground_truth.convenient_tools if task.ground_truth else []
         )
@@ -1105,6 +1162,10 @@ class SessionState:
             ),
             run_id=self.run_id or "",
             public_task_label=(self.task_id.split("_")[0] if self.task_id else ""),
+            owner_user_id=self.owner_user_id,
+            owner_github_login=self.owner_github_login,
+            owner_email=self.owner_email,
+            visibility=self.visibility,
         )
         logger.info("Results saved: %s", result_dir)
 
@@ -1203,8 +1264,8 @@ class SessionState:
     ) -> dict:
         """Return evaluation scores.
 
-        Args:
-            history: If True, return all evaluation runs from evaluations/.
+        Reads the in-bundle score store written under
+        ``evaluations/score_n``.
         """
         if self._result_dir:
             from server.storage.score_store import get_scores_payload

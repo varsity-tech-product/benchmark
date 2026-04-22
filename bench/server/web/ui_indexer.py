@@ -87,6 +87,10 @@ class ResultIndexer:
         category: str | None = None,
         task_id: str | None = None,
         eval_status: str | None = None,
+        owner_user_id: str | None = None,
+        include_all: bool = False,
+        include_org: bool = False,
+        user: Any | None = None,
     ) -> list[dict[str, Any]]:
         normalized_category = self._normalize_filter(category)
         normalized_task_id = self._normalize_filter(task_id)
@@ -96,6 +100,15 @@ class ResultIndexer:
         for result_dir in self._iter_result_dirs():
             summary = self._build_summary(result_dir)
             if not summary:
+                continue
+            if not self._owner_fields_visible(
+                owner_user_id=str(summary.get("owner_user_id") or ""),
+                visibility=str(summary.get("visibility") or "private"),
+                user=user,
+                filter_owner_user_id=owner_user_id,
+                include_all=include_all,
+                include_org=include_org,
+            ):
                 continue
 
             if normalized_category and summary.get("category") != normalized_category:
@@ -119,7 +132,14 @@ class ResultIndexer:
         )
         return results
 
-    def get_detail(self, session_id: str) -> dict[str, Any] | None:
+    def get_detail(
+        self,
+        session_id: str,
+        *,
+        user: Any | None = None,
+        include_all: bool = False,
+        include_org: bool = False,
+    ) -> dict[str, Any] | None:
         result_dir = self._find_result_dir(session_id)
         if result_dir is None:
             return None
@@ -127,6 +147,10 @@ class ResultIndexer:
         run_state = self._load_json(result_dir / "run_state.json")
         if not isinstance(run_state, dict):
             return None
+        if not self._run_state_visible(
+            run_state, user=user, include_all=include_all, include_org=include_org
+        ):
+            raise PermissionError("Result access denied")
 
         task_id = str(run_state.get("task_id") or result_dir.parent.name)
         task_meta = self._task_meta_cache.get(
@@ -155,6 +179,10 @@ class ResultIndexer:
 
         detail = {
             "session_id": str(run_state.get("session_id") or session_id),
+            "run_id": str(run_state.get("run_id") or ""),
+            "owner_user_id": str(run_state.get("owner_user_id") or ""),
+            "owner_github_login": str(run_state.get("owner_github_login") or ""),
+            "visibility": str(run_state.get("visibility") or "private"),
             "task_id": task_id,
             "category": task_meta.get("category", "unknown"),
             "difficulty": task_meta.get("difficulty", "unknown"),
@@ -202,10 +230,23 @@ class ResultIndexer:
         }
         return detail
 
-    def resolve_agent_file(self, session_id: str, relative_path: str) -> Path | None:
+    def resolve_agent_file(
+        self,
+        session_id: str,
+        relative_path: str,
+        *,
+        user: Any | None = None,
+        include_all: bool = False,
+        include_org: bool = False,
+    ) -> Path | None:
         result_dir = self._find_result_dir(session_id)
         if result_dir is None:
             return None
+        run_state = self._load_json(result_dir / "run_state.json")
+        if isinstance(run_state, dict) and not self._run_state_visible(
+            run_state, user=user, include_all=include_all, include_org=include_org
+        ):
+            raise PermissionError("Result access denied")
 
         agent_files_root = (result_dir / "agent_files").resolve()
         full_path = (agent_files_root / relative_path).resolve()
@@ -219,12 +260,47 @@ class ResultIndexer:
             return None
         return full_path
 
-    def get_workspace_index(self, session_id: str) -> dict[str, Any] | None:
+    def resolve_run_state_file(
+        self,
+        session_id: str,
+        *,
+        user: Any | None = None,
+        include_all: bool = False,
+        include_org: bool = False,
+    ) -> Path | None:
+        result_dir = self._find_result_dir(session_id)
+        if result_dir is None:
+            return None
+
+        run_state_path = result_dir / "run_state.json"
+        run_state = self._load_json(run_state_path)
+        if not isinstance(run_state, dict):
+            return None
+        if not self._run_state_visible(
+            run_state, user=user, include_all=include_all, include_org=include_org
+        ):
+            raise PermissionError("Result access denied")
+        if not run_state_path.exists() or not run_state_path.is_file():
+            return None
+        return run_state_path
+
+    def get_workspace_index(
+        self,
+        session_id: str,
+        *,
+        user: Any | None = None,
+        include_all: bool = False,
+        include_org: bool = False,
+    ) -> dict[str, Any] | None:
         result_dir = self._find_result_dir(session_id)
         if result_dir is None:
             return None
 
         run_state = self._load_json(result_dir / "run_state.json")
+        if isinstance(run_state, dict) and not self._run_state_visible(
+            run_state, user=user, include_all=include_all, include_org=include_org
+        ):
+            raise PermissionError("Result access denied")
         workspace_files = self._extract_workspace_files(run_state, result_dir)
         entries = self._build_workspace_entries(session_id, result_dir, workspace_files)
 
@@ -236,9 +312,21 @@ class ResultIndexer:
         }
 
     def get_workspace_preview(
-        self, session_id: str, relative_path: str
+        self,
+        session_id: str,
+        relative_path: str,
+        *,
+        user: Any | None = None,
+        include_all: bool = False,
+        include_org: bool = False,
     ) -> dict[str, Any] | None:
-        resolved = self.resolve_agent_file(session_id, relative_path)
+        resolved = self.resolve_agent_file(
+            session_id,
+            relative_path,
+            user=user,
+            include_all=include_all,
+            include_org=include_org,
+        )
         if resolved is None:
             return None
 
@@ -389,6 +477,9 @@ class ResultIndexer:
         return {
             "run_id": str(run_state.get("run_id") or ""),
             "public_task_label": str(run_state.get("public_task_label") or ""),
+            "owner_user_id": str(run_state.get("owner_user_id") or ""),
+            "owner_github_login": str(run_state.get("owner_github_login") or ""),
+            "visibility": str(run_state.get("visibility") or "private"),
             "session_id": session_id,
             "task_id": task_id,
             "category": task_meta.get("category", "unknown"),
@@ -413,6 +504,49 @@ class ResultIndexer:
             "timestamp": timestamp_text,
             "_sort_ts": sort_ts,
         }
+
+    def _run_state_visible(
+        self,
+        run_state: dict[str, Any],
+        *,
+        user: Any | None,
+        include_all: bool,
+        include_org: bool,
+    ) -> bool:
+        return self._owner_fields_visible(
+            owner_user_id=str(run_state.get("owner_user_id") or ""),
+            visibility=str(run_state.get("visibility") or "private"),
+            user=user,
+            filter_owner_user_id=None,
+            include_all=include_all,
+            include_org=include_org,
+        )
+
+    def _owner_fields_visible(
+        self,
+        *,
+        owner_user_id: str,
+        visibility: str,
+        user: Any | None,
+        filter_owner_user_id: str | None,
+        include_all: bool,
+        include_org: bool,
+    ) -> bool:
+        if include_all:
+            return True
+        if filter_owner_user_id is not None:
+            owner = str(filter_owner_user_id or "")
+            if owner_user_id == owner:
+                return True
+            return bool(include_org and visibility == "org" and owner_user_id)
+        if user is None:
+            return True
+        if bool(getattr(user, "is_admin", False)):
+            return True
+        user_id = str(getattr(user, "user_id", "") or "")
+        if owner_user_id and owner_user_id == user_id:
+            return True
+        return bool(include_org and visibility == "org" and owner_user_id)
 
     def _load_client_trace(self, session_id: str) -> dict[str, Any] | None:
         """Best-effort load of client-side trace (thinking blocks, cost).
@@ -457,18 +591,6 @@ class ResultIndexer:
         match = re.match(r"^(.+)_([A-Z]\d{2})$", raw)
         if match:
             add(match.group(1))
-
-        short_id = raw[:8]
-        if short_id and self.client_results_dir.is_dir():
-            matches = sorted(
-                path.name
-                for path in self.client_results_dir.iterdir()
-                if path.is_dir()
-                and path.name.startswith(short_id)
-                and (path / "client_trace.json").exists()
-            )
-            for name in matches:
-                add(name)
 
         return candidates
 

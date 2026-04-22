@@ -186,12 +186,14 @@ async def run_task(
     adapter_factory: Callable,
     result_dir: Optional[Path] = None,
     protocol: str = "mcp",
+    api_key: str = "",
 ) -> dict:
     """Create a run + claim + execute. One-step convenience entry point.
 
     Calls POST /client/runs/start to get a token, then run_via_attach.
     """
     base = server_base_url.rstrip("/")
+    headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
     async with httpx.AsyncClient(base_url=base, timeout=30.0) as http:
         resp = await http.post(
             "/client/runs/start",
@@ -199,6 +201,7 @@ async def run_task(
                 "task": task,
                 "client": {"name": "baseline_client", "version": "0.1.0"},
             },
+            headers=headers,
         )
         if resp.status_code != 200:
             return {"task_id": task, "error": f"Create run failed: {resp.text}"}
@@ -222,6 +225,7 @@ async def run_multiple_tasks(
     workers: int = 1,
     result_dir: Optional[Path] = None,
     protocol: str = "mcp",
+    api_key: str = "",
 ) -> list[dict]:
     """Run multiple tasks with bounded concurrency."""
     semaphore = asyncio.Semaphore(workers)
@@ -234,6 +238,7 @@ async def run_multiple_tasks(
                 adapter_factory,
                 result_dir,
                 protocol,
+                api_key,
             )
 
     coros = [_run_with_sem(t) for t in tasks]
@@ -275,9 +280,6 @@ async def run_single_task(
         {
             "register_session",
             "start_session",
-            "request_evaluation",
-            "get_results",
-            "get_scores",
         }
     )
 

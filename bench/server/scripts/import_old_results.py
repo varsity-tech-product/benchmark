@@ -5,8 +5,9 @@ Copies run_state.json + agent_files/ into the server directory layout so that
 the server's find_archived_result_dir() can discover them.
 
 Layout:
-  results/server/{task_id}/{persona_id}/{YYYYMMDD_HHMMSS}_{session_id[:8]}/
+  results/server/{task_id}/{persona_id}/{YYYYMMDD_HHMMSS}_{session_id[:12]}/
     run_state.json   (with session_id injected)
+    .session_id
     agent_files/     (copied)
 
 Usage:
@@ -55,7 +56,7 @@ def import_result(src_dir: Path, dry_run: bool = False) -> dict | None:
     session_id = generate_session_id(src_dir)
     timestamp = "20260407_000000"  # Fixed timestamp for imported results
 
-    dest_dir = SERVER_RESULTS / task_id / persona_id / f"{timestamp}_{session_id[:8]}"
+    dest_dir = SERVER_RESULTS / task_id / persona_id / f"{timestamp}_{session_id[:12]}"
 
     if dest_dir.exists():
         print(f"  EXISTS: {dest_dir.relative_to(BENCH_ROOT)}")
@@ -74,6 +75,7 @@ def import_result(src_dir: Path, dry_run: bool = False) -> dict | None:
     (dest_dir / "run_state.json").write_text(
         json.dumps(run_state, indent=2, default=str), encoding="utf-8"
     )
+    (dest_dir / ".session_id").write_text(session_id, encoding="utf-8")
 
     # Copy agent_files/ if exists
     agent_src = src_dir / "agent_files"
@@ -81,7 +83,7 @@ def import_result(src_dir: Path, dry_run: bool = False) -> dict | None:
         shutil.copytree(agent_src, dest_dir / "agent_files", dirs_exist_ok=True)
 
     print(
-        f"  COPIED: {src_dir.name} -> {dest_dir.relative_to(BENCH_ROOT)} (sid={session_id[:8]})"
+        f"  COPIED: {src_dir.name} -> {dest_dir.relative_to(BENCH_ROOT)} (sid={session_id[:12]})"
     )
     return {
         "session_id": session_id,
@@ -98,7 +100,7 @@ def main():
     )
     parser.add_argument("--scan-dir", required=True)
     parser.add_argument("--dry-run", action="store_true")
-    parser.add_argument("--output", type=str, help="Save import manifest JSON")
+    parser.add_argument("--output", type=str, help="Save import summary JSON")
     args = parser.parse_args()
 
     scan = Path(args.scan_dir)
