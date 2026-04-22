@@ -366,10 +366,11 @@
 
   function renderApiKeyModalBody(status) {
     var created = status && status.created_at ? formatTimestamp(status.created_at * 1000) : '';
+    var skillUrl = 'https://github.com/varsity-tech-product/benchmark/blob/master/docs/skills/quanttutorbench-rest-agent/SKILL.md';
     var body =
       '<section class="info-section">' +
         '<h3>External REST Access</h3>' +
-        '<p class="detail-empty-note">Use this key as <code>Authorization: Bearer &lt;api_key&gt;</code> when creating runs through <code>/client/runs/start</code>. The raw key is shown once after generation.</p>' +
+        '<p class="detail-empty-note">Use this key as <code>Authorization: Bearer &lt;api_key&gt;</code> when creating runs through <code>/client/runs/start</code>. The raw key is shown once after generation. See the <a href="' + skillUrl + '" target="_blank" rel="noreferrer">REST agent skill</a> for the full platform workflow.</p>' +
         (status && status.has_key
           ? '<div class="info-grid">' +
               metaItem('Current Key', status.key_hint ? status.key_hint + '...' : 'Active') +
@@ -398,7 +399,8 @@
           target.innerHTML =
             '<h3>New Key</h3>' +
             '<code class="run-connect-cmd">' + escapeHtml(payload.api_key || '') + '</code>' +
-            '<button class="btn btn-small run-copy-btn" id="api-key-copy-btn" type="button">Copy</button>';
+            '<button class="btn btn-small run-copy-btn" id="api-key-copy-btn" type="button">Copy</button>' +
+            '<p class="detail-empty-note">Use this key with the <a href="https://github.com/varsity-tech-product/benchmark/blob/master/docs/skills/quanttutorbench-rest-agent/SKILL.md" target="_blank" rel="noreferrer">REST agent skill</a> to connect your agent to the benchmark service.</p>';
           var copy = document.getElementById('api-key-copy-btn');
           if (copy) {
             copy.addEventListener('click', function () {
