@@ -45,6 +45,10 @@ def save_run_state(
     artifact_debug_history: Optional[list[dict]] = None,
     run_id: str = "",
     public_task_label: str = "",
+    owner_user_id: str = "",
+    owner_github_login: str = "",
+    owner_email: str = "",
+    visibility: str = "private",
 ) -> Path:
     """Save ``run_state.json`` + ``run_state.md``."""
     result_dir = Path(result_dir)
@@ -100,6 +104,10 @@ def save_run_state(
     state = {
         "run_id": run_id,
         "public_task_label": public_task_label,
+        "owner_user_id": owner_user_id,
+        "owner_github_login": owner_github_login,
+        "owner_email": owner_email,
+        "visibility": visibility,
         "task_id": task_id,
         "session_id": session_id,
         "persona_id": persona_id,

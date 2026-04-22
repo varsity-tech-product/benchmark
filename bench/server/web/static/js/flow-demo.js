@@ -29,6 +29,13 @@
     search: ''
   };
 
+  function authFetch(url, options) {
+    if (window.QTB && typeof window.QTB.authFetch === 'function') {
+      return window.QTB.authFetch(url, options);
+    }
+    return fetch(url, options);
+  }
+
   window.QTB.renderFlowDemoPage = function (app) {
     _root = app;
     render();
@@ -53,13 +60,13 @@
   }
 
   function refresh() {
-    return fetch('/ui/runs/live')
+    return authFetch('/ui/runs/live')
       .then(function (resp) {
         if (!resp.ok) throw new Error('HTTP ' + resp.status);
         return resp.json();
       })
       .catch(function () {
-        return fetch('/ui/runs').then(function (resp) {
+        return authFetch('/ui/runs').then(function (resp) {
           if (!resp.ok) throw new Error('HTTP ' + resp.status);
           return resp.json();
         });

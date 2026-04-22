@@ -16,6 +16,9 @@ import math
 import os
 from dataclasses import asdict
 
+from server.audit import record_event
+from server.auth import AuthService
+from server.quota import QuotaExceeded
 from starlette.requests import Request
 from starlette.responses import FileResponse, JSONResponse
 from starlette.routing import Route
@@ -112,16 +115,57 @@ def ui_routes(manager) -> list[Route]:
     """
 
     indexer = ResultIndexer(manager.bench_root)
+    auth = AuthService(manager.bench_root)
+
+    def _scope_flags(request: Request, user) -> tuple[bool, bool]:
+        scope = request.query_params.get("scope", "").strip().lower()
+        include_all = bool(getattr(user, "is_admin", False)) and scope in ("", "all")
+        include_org = scope == "org"
+        return include_all, include_org
+
+    def _run_access_from_cookie(run_service, run_id: str, user):
+        if user is None:
+            return None
+        try:
+            return run_service.assert_run_owner_or_admin(run_id, user)
+        except PermissionError:
+            return None
+        except ValueError:
+            raise
+
+    async def auth_login(request: Request):
+        return await auth.login(request)
+
+    async def auth_callback(request: Request):
+        try:
+            return await auth.callback(request)
+        except PermissionError as exc:
+            return JSONResponse({"error": str(exc)}, status_code=401)
+        except Exception as exc:
+            logger.warning("OAuth callback failed: %s", exc, exc_info=True)
+            return JSONResponse({"error": "OAuth callback failed"}, status_code=502)
+
+    async def auth_logout(request: Request):
+        return await auth.logout(request)
+
+    async def ui_me(request: Request) -> JSONResponse:
+        return JSONResponse(auth.me_payload(request))
 
     # -----------------------------------------------------------------------
     # Existing: /ui/tasks, /ui/results/*
     # -----------------------------------------------------------------------
 
     async def list_tasks(request: Request) -> JSONResponse:
-        _ = request
+        _, err = auth.require_user(request)
+        if err is not None:
+            return err
         return JSONResponse(_sanitize_for_json(indexer.list_tasks()))
 
     async def list_results(request: Request) -> JSONResponse:
+        user, err = auth.require_user(request)
+        if err is not None:
+            return err
+        include_all, include_org = _scope_flags(request, user)
         return JSONResponse(
             _sanitize_for_json(
                 {
@@ -129,48 +173,111 @@ def ui_routes(manager) -> list[Route]:
                         category=request.query_params.get("category"),
                         task_id=request.query_params.get("task_id"),
                         eval_status=request.query_params.get("eval_status"),
+                        owner_user_id=None if include_all else user.user_id,
+                        user=user,
+                        include_all=include_all,
+                        include_org=include_org,
                     ),
                 }
             )
         )
 
     async def get_detail(request: Request) -> JSONResponse:
-        detail = indexer.get_detail(request.path_params["session_id"])
+        user, err = auth.require_user(request)
+        if err is not None:
+            return err
+        include_all, include_org = _scope_flags(request, user)
+        try:
+            detail = indexer.get_detail(
+                request.path_params["session_id"],
+                user=user,
+                include_all=include_all,
+                include_org=include_org,
+            )
+        except PermissionError:
+            return JSONResponse({"error": "Result access denied"}, status_code=403)
         if detail is None:
             return JSONResponse({"error": "Session not found"}, status_code=404)
+        record_event(
+            manager.bench_root,
+            user,
+            "result.view",
+            request=request,
+            run_id=str(detail.get("run_id") or ""),
+            session_id=str(detail.get("session_id") or ""),
+            task_id=str(detail.get("task_id") or ""),
+        )
         return JSONResponse(_sanitize_for_json(detail))
 
     async def get_workspace(request: Request) -> JSONResponse:
-        payload = indexer.get_workspace_index(request.path_params["session_id"])
+        user, err = auth.require_user(request)
+        if err is not None:
+            return err
+        include_all, include_org = _scope_flags(request, user)
+        try:
+            payload = indexer.get_workspace_index(
+                request.path_params["session_id"],
+                user=user,
+                include_all=include_all,
+                include_org=include_org,
+            )
+        except PermissionError:
+            return JSONResponse({"error": "Result access denied"}, status_code=403)
         if payload is None:
             return JSONResponse({"error": "Session not found"}, status_code=404)
         return JSONResponse(_sanitize_for_json(payload))
 
     async def get_workspace_preview(request: Request) -> JSONResponse:
+        user, err = auth.require_user(request)
+        if err is not None:
+            return err
+        include_all, include_org = _scope_flags(request, user)
         try:
             payload = indexer.get_workspace_preview(
                 request.path_params["session_id"],
                 request.path_params["path"],
+                user=user,
+                include_all=include_all,
+                include_org=include_org,
             )
         except ValueError:
             return JSONResponse({"error": "Invalid path"}, status_code=400)
+        except PermissionError:
+            return JSONResponse({"error": "Result access denied"}, status_code=403)
 
         if payload is None:
             return JSONResponse({"error": "Not found"}, status_code=404)
         return JSONResponse(_sanitize_for_json(payload))
 
     async def get_file(request: Request) -> JSONResponse | FileResponse:
+        user, err = auth.require_user(request)
+        if err is not None:
+            return err
+        include_all, include_org = _scope_flags(request, user)
         try:
             full_path = indexer.resolve_agent_file(
                 request.path_params["session_id"],
                 request.path_params["path"],
+                user=user,
+                include_all=include_all,
+                include_org=include_org,
             )
         except ValueError:
             return JSONResponse({"error": "Invalid path"}, status_code=400)
+        except PermissionError:
+            return JSONResponse({"error": "Result access denied"}, status_code=403)
 
         if full_path is None:
             return JSONResponse({"error": "Not found"}, status_code=404)
 
+        record_event(
+            manager.bench_root,
+            user,
+            "result.file_read",
+            request=request,
+            session_id=request.path_params["session_id"],
+            payload={"path": request.path_params["path"]},
+        )
         return FileResponse(str(full_path))
 
     # -----------------------------------------------------------------------
@@ -182,7 +289,9 @@ def ui_routes(manager) -> list[Route]:
 
         Used by Results UI. Do not wire this into the Run/exam UI.
         """
-        _ = request
+        _, err = auth.require_user(request)
+        if err is not None:
+            return err
         run_service = getattr(manager, "_run_service", None)
         if run_service is None:
             return JSONResponse({"error": "Run service not initialized"}, 503)
@@ -190,7 +299,9 @@ def ui_routes(manager) -> list[Route]:
 
     async def task_catalog_labels(request: Request) -> JSONResponse:
         """Run/exam-mode catalog — labels only, no category or difficulty."""
-        _ = request
+        _, err = auth.require_user(request)
+        if err is not None:
+            return err
         run_service = getattr(manager, "_run_service", None)
         if run_service is None:
             return JSONResponse({"error": "Run service not initialized"}, 503)
@@ -202,6 +313,9 @@ def ui_routes(manager) -> list[Route]:
 
     async def create_run(request: Request) -> JSONResponse:
         """``POST /ui/runs`` — create a new run assignment."""
+        user, err = auth.require_user(request)
+        if err is not None:
+            return err
         run_service = getattr(manager, "_run_service", None)
         if run_service is None:
             return JSONResponse({"error": "Run service not initialized"}, 503)
@@ -218,6 +332,7 @@ def ui_routes(manager) -> list[Route]:
         mode = body.get("mode", "agent")
         persona_policy = body.get("persona_policy", "auto")
         token_ttl = body.get("token_ttl_minutes", 30)
+        visibility = body.get("visibility", "private")
 
         try:
             assignment, raw_token, raw_control_token = run_service.create_run(
@@ -225,7 +340,21 @@ def ui_routes(manager) -> list[Route]:
                 mode=mode,
                 persona_policy=persona_policy,
                 token_ttl_minutes=token_ttl,
+                owner_user_id=user.user_id,
+                owner_github_login=user.github_login,
+                owner_email=user.email,
+                visibility=visibility,
             )
+        except QuotaExceeded as exc:
+            record_event(
+                manager.bench_root,
+                user,
+                "run.create",
+                request=request,
+                success=False,
+                payload={"error": str(exc), "task": task},
+            )
+            return JSONResponse({"error": str(exc)}, 429)
         except ValueError as exc:
             return JSONResponse({"error": str(exc)}, 400)
 
@@ -233,6 +362,15 @@ def ui_routes(manager) -> list[Route]:
         base_url = str(request.base_url).rstrip("/")
         mcp_url = f"{base_url}/mcp"
 
+        record_event(
+            manager.bench_root,
+            user,
+            "run.create",
+            request=request,
+            run_id=assignment.run_id,
+            task_id=assignment.task_id,
+            payload={"visibility": assignment.visibility},
+        )
         return JSONResponse(
             {
                 "run_id": assignment.run_id,
@@ -251,22 +389,24 @@ def ui_routes(manager) -> list[Route]:
         )
 
     async def list_runs(request: Request) -> JSONResponse:
-        """``GET /ui/runs`` — list runs with optional filters.
-
-        Requires ``Authorization: Bearer <admin_token>`` when
-        ``QTB_ADMIN_TOKEN`` is set; otherwise allowed (local dev).
-        """
+        """``GET /ui/runs`` — list owner-visible runs with optional filters."""
+        user, err = auth.require_user(request)
+        if err is not None:
+            return err
         run_service = getattr(manager, "_run_service", None)
         if run_service is None:
             return JSONResponse({"error": "Run service not initialized"}, 503)
 
-        err = _authorize_admin_token(request)
-        if err is not None:
-            return err
-
         status = request.query_params.get("status")
         task = request.query_params.get("task")
-        runs = run_service.list_runs(status=status, task=task)
+        include_all, include_org = _scope_flags(request, user)
+        runs = run_service.list_runs(
+            status=status,
+            task=task,
+            owner_user_id=user.user_id,
+            include_all=include_all,
+            include_org=include_org,
+        )
         return JSONResponse({"runs": [r.public_dict() for r in runs]})
 
     async def get_run(request: Request) -> JSONResponse:
@@ -276,8 +416,18 @@ def ui_routes(manager) -> list[Route]:
             return JSONResponse({"error": "Run service not initialized"}, 503)
 
         run_id = request.path_params["run_id"]
+        user = auth.get_current_user(request) if auth.enabled else None
+        try:
+            run = _run_access_from_cookie(run_service, run_id, user)
+        except ValueError:
+            return JSONResponse({"error": "Run not found"}, 404)
+        if run is not None:
+            return JSONResponse(run.public_dict())
+
         err, run = _authorize_control_token(request, run_service, run_id)
         if err is not None:
+            if user is not None:
+                return JSONResponse({"error": "Run access denied"}, status_code=403)
             return err
         return JSONResponse(run.public_dict())
 
@@ -288,9 +438,17 @@ def ui_routes(manager) -> list[Route]:
             return JSONResponse({"error": "Run service not initialized"}, 503)
 
         run_id = request.path_params["run_id"]
-        err, run = _authorize_control_token(request, run_service, run_id)
-        if err is not None:
-            return err
+        user = auth.get_current_user(request) if auth.enabled else None
+        try:
+            run = _run_access_from_cookie(run_service, run_id, user)
+        except ValueError:
+            return JSONResponse({"error": "Run not found"}, 404)
+        if run is None:
+            err, run = _authorize_control_token(request, run_service, run_id)
+            if err is not None:
+                if user is not None:
+                    return JSONResponse({"error": "Run access denied"}, status_code=403)
+                return err
 
         # Terminal or pre-active states
         if run.status.value in (
@@ -303,6 +461,7 @@ def ui_routes(manager) -> list[Route]:
             return JSONResponse(
                 {
                     "run_status": run.status.value,
+                    "session_id": run.session_id,
                     "session_phase": None,
                 }
             )
@@ -312,6 +471,7 @@ def ui_routes(manager) -> list[Route]:
             return JSONResponse(
                 {
                     "run_status": run.status.value,
+                    "session_id": run.session_id,
                     "session_phase": None,
                 }
             )
@@ -321,6 +481,7 @@ def ui_routes(manager) -> list[Route]:
             return JSONResponse(
                 {
                     "run_status": run.status.value,
+                    "session_id": run.session_id,
                     "session_phase": None,
                 }
             )
@@ -344,6 +505,7 @@ def ui_routes(manager) -> list[Route]:
             _sanitize_for_json(
                 {
                     "run_status": run.status.value,
+                    "session_id": run.session_id,
                     "session_phase": session.phase.value,
                     "turn": turn,
                     "conversation": conversation,
@@ -395,13 +557,20 @@ def ui_routes(manager) -> list[Route]:
 
     async def observe_runs_live(request: Request) -> JSONResponse:
         """``GET /ui/runs/live`` — passive read-only monitor snapshot."""
-        _ = request
+        user, err = auth.require_user(request)
+        if err is not None:
+            return err
         run_service = getattr(manager, "_run_service", None)
         if run_service is None:
             return JSONResponse({"error": "Run service not initialized"}, 503)
 
+        include_all, include_org = _scope_flags(request, user)
         runs = sorted(
-            run_service.list_runs(),
+            run_service.list_runs(
+                owner_user_id=user.user_id,
+                include_all=include_all,
+                include_org=include_org,
+            ),
             key=lambda run: run.created_at or "",
             reverse=True,
         )[:50]
@@ -420,9 +589,17 @@ def ui_routes(manager) -> list[Route]:
             return JSONResponse({"error": "Run service not initialized"}, 503)
 
         run_id = request.path_params["run_id"]
-        err, _ = _authorize_control_token(request, run_service, run_id)
-        if err is not None:
-            return err
+        user = auth.get_current_user(request) if auth.enabled else None
+        try:
+            run = _run_access_from_cookie(run_service, run_id, user)
+        except ValueError:
+            return JSONResponse({"error": "Run not found"}, 404)
+        if run is None:
+            err, _ = _authorize_control_token(request, run_service, run_id)
+            if err is not None:
+                if user is not None:
+                    return JSONResponse({"error": "Run access denied"}, status_code=403)
+                return err
         try:
             await manager.cancel_run(run_id)
         except ValueError as exc:
@@ -432,6 +609,15 @@ def ui_routes(manager) -> list[Route]:
             return JSONResponse({"error": f"Cancel failed: {exc}"}, 500)
 
         run = run_service.get_run(run_id)
+        record_event(
+            manager.bench_root,
+            user,
+            "run.cancel",
+            request=request,
+            run_id=run_id,
+            session_id=run.session_id if run else "",
+            success=True,
+        )
         return JSONResponse(run.public_dict() if run else {"status": "cancelled"})
 
     # -----------------------------------------------------------------------
@@ -461,6 +647,15 @@ def ui_routes(manager) -> list[Route]:
             return JSONResponse({"error": str(exc)}, 401)
 
         base_url = str(request.base_url).rstrip("/")
+        record_event(
+            manager.bench_root,
+            None,
+            "run.claim",
+            request=request,
+            run_id=assignment.run_id,
+            task_id=assignment.task_id,
+            payload={"client": client_info or {}},
+        )
 
         return JSONResponse(
             {
@@ -497,6 +692,15 @@ def ui_routes(manager) -> list[Route]:
             return JSONResponse({"error": str(exc)}, 400)
 
         base_url = str(request.base_url).rstrip("/")
+        record_event(
+            manager.bench_root,
+            None,
+            "run.create",
+            request=request,
+            run_id=assignment.run_id,
+            task_id=assignment.task_id,
+            payload={"source": "client_start"},
+        )
 
         return JSONResponse(
             {
@@ -545,6 +749,11 @@ def ui_routes(manager) -> list[Route]:
     # -----------------------------------------------------------------------
 
     return [
+        # Auth
+        Route("/auth/login", auth_login, methods=["GET"]),
+        Route("/auth/callback", auth_callback, methods=["GET"]),
+        Route("/auth/logout", auth_logout, methods=["POST"]),
+        Route("/ui/me", ui_me, methods=["GET"]),
         # Existing: results + tasks
         Route("/ui/tasks", list_tasks, methods=["GET"]),
         Route("/ui/results", list_results, methods=["GET"]),
