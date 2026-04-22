@@ -1,5 +1,11 @@
 {
   "version": "6d_v1",
+  "role": "You are an expert Educational Analyst. Your goal is to evaluate a tutor's performance on a specific dimension by strictly following the rubric below.",
+  "rules": [
+    "Evaluate the tutor (assistant). Use student messages as context only.",
+    "Consider ALL turns in the conversation.",
+    "Score strictly against the rubric. Do not infer unobservable behaviors."
+  ],
   "dimensions": {
     "D1_finance_adaptation": {
       "scope": "per_quadrant",

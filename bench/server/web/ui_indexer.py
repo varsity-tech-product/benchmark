@@ -133,12 +133,9 @@ class ResultIndexer:
             task_id, self._make_fallback_task_meta(task_id)
         )
         client_trace = self._load_client_trace(session_id)
-        latest_eval_dir = self._resolve_latest_eval_dir(result_dir)
-        latest_eval_meta = (
-            self._load_json(latest_eval_dir / "eval_meta.json")
-            if latest_eval_dir
-            else None
-        )
+        latest_score_id = self._resolve_latest_score_id(result_dir)
+        latest_score = self._load_score_json(result_dir, latest_score_id)
+        latest_cost = self._load_cost_json(result_dir, latest_score_id)
 
         conversation = self._ensure_list(run_state.get("conversation"))
         raw_tool_logs = self._ensure_list(run_state.get("tool_logs"))
@@ -175,10 +172,8 @@ class ResultIndexer:
             "model": model,
             "agent_name": self._extract_agent_name(model),
             "timestamp": timestamp_text,
-            "evaluation_status": self._resolve_evaluation_status(
-                run_state, latest_eval_dir
-            ),
-            "overall_score": self._extract_overall_score(latest_eval_meta),
+            "evaluation_status": self._resolve_evaluation_status(latest_score),
+            "overall_score": self._extract_overall_score(latest_score),
             "has_client_trace": client_trace is not None,
             "has_content_blocks": self._has_content_blocks(client_trace, conversation),
             "has_agent_files": self._dir_has_entries(result_dir / "agent_files"),
@@ -188,21 +183,8 @@ class ResultIndexer:
             "send_message_events": send_message_events,
             "workspace_files": workspace_files,
             "distractor_names": distractor_names,
-            "scores_md": (
-                self._read_text(latest_eval_dir / "scores.md")
-                if latest_eval_dir
-                else None
-            ),
-            "cost_md": (
-                self._read_text(latest_eval_dir / "cost.md")
-                if latest_eval_dir
-                else None
-            ),
-            "trace_md": (
-                self._read_text(latest_eval_dir / "trace.md")
-                if latest_eval_dir
-                else None
-            ),
+            "score_json": latest_score,
+            "cost_json": latest_cost,
             "eval_history": self._load_eval_history(result_dir),
             "agent_cost": agent_cost,
             "simulator_cost": self._coerce_float(
@@ -211,6 +193,10 @@ class ResultIndexer:
             "tc_checker_cost": self._coerce_float(
                 run_state.get("tc_checker_cost"), default=None
             ),
+            "evaluation_cost": self._coerce_float(
+                (latest_cost or {}).get("eval_cost_usd"), default=None
+            ),
+            "total_cost": self._compute_total_cost(run_state, latest_cost),
             "requires_code": task_meta.get("requires_code", False),
             "max_turns": task_meta.get("max_turns"),
         }
@@ -349,8 +335,7 @@ class ResultIndexer:
     def _iter_result_dirs(self):
         """Iterate all result directories.
 
-        Supports both old layout  ``{task_id}/{session_id}/``
-        and new layout ``{task_id}/{persona_id}/{ts}_{short_id}/``.
+        Supports the server layout ``{task_id}/{persona_id}/{ts}_{short_id}/``.
         A result dir is identified by containing ``run_state.json``.
         """
         if not self.server_results_dir.is_dir():
@@ -362,22 +347,18 @@ class ResultIndexer:
             for child in sorted(task_dir.iterdir()):
                 if not child.is_dir():
                     continue
-                if (child / "run_state.json").exists():
-                    # Old layout: {task_id}/{session_id}/
-                    yield child
-                else:
-                    # New layout: {task_id}/{persona_id}/{ts}_{short_id}/
-                    for run_dir in sorted(child.iterdir()):
-                        if run_dir.is_dir() and (run_dir / "run_state.json").exists():
-                            yield run_dir
+                for run_dir in sorted(child.iterdir()):
+                    if run_dir.is_dir() and (run_dir / "run_state.json").exists():
+                        yield run_dir
 
     def _find_result_dir(self, session_id: str) -> Path | None:
-        short_id = session_id[:8]
+        short_id = session_id[:12]
         for result_dir in self._iter_result_dirs():
-            # Old layout: dir name == full session_id
-            if result_dir.name == session_id:
+            sid_file = result_dir / ".session_id"
+            if sid_file.exists() and sid_file.read_text(
+                encoding="utf-8"
+            ).strip().startswith(session_id):
                 return result_dir
-            # New layout: dir name ends with _{short_id}
             if result_dir.name.endswith(f"_{short_id}"):
                 return result_dir
         return None
@@ -393,12 +374,8 @@ class ResultIndexer:
         )
         session_id = str(run_state.get("session_id") or result_dir.name)
         client_trace = self._load_client_trace(session_id)
-        latest_eval_dir = self._resolve_latest_eval_dir(result_dir)
-        latest_eval_meta = (
-            self._load_json(latest_eval_dir / "eval_meta.json")
-            if latest_eval_dir
-            else None
-        )
+        latest_score_id = self._resolve_latest_score_id(result_dir)
+        latest_score = self._load_score_json(result_dir, latest_score_id)
         conversation = self._ensure_list(run_state.get("conversation"))
         raw_tool_logs = self._ensure_list(run_state.get("tool_logs"))
         tool_logs, send_message_events = self._split_tool_logs(raw_tool_logs)
@@ -426,10 +403,8 @@ class ResultIndexer:
             "step_count": self._coerce_int(
                 run_state.get("step_count"), default=len(raw_tool_logs)
             ),
-            "evaluation_status": self._resolve_evaluation_status(
-                run_state, latest_eval_dir
-            ),
-            "overall_score": self._extract_overall_score(latest_eval_meta),
+            "evaluation_status": self._resolve_evaluation_status(latest_score),
+            "overall_score": self._extract_overall_score(latest_score),
             "has_client_trace": client_trace is not None,
             "has_content_blocks": self._has_content_blocks(client_trace, conversation),
             "has_agent_files": self._dir_has_entries(result_dir / "agent_files"),
@@ -501,45 +476,54 @@ class ResultIndexer:
     # Evaluation loading
     # ------------------------------------------------------------------
 
-    def _resolve_latest_eval_dir(self, result_dir: Path) -> Path | None:
+    def _load_score_index(self, result_dir: Path) -> dict[str, Any] | None:
         eval_root = result_dir / "evaluations"
-        if not eval_root.exists():
+        index_path = eval_root / "index.json"
+        if not index_path.exists():
             return None
+        index = self._load_json(index_path)
+        return index if isinstance(index, dict) else None
 
-        latest = eval_root / "latest"
-        if latest.exists() and latest.is_dir():
-            return latest.resolve()
+    def _resolve_latest_score_id(self, result_dir: Path) -> str | None:
+        index = self._load_score_index(result_dir)
+        if not index:
+            return None
+        latest = index.get("latest_completed_score_id")
+        if latest:
+            return str(latest)
+        scores = self._ensure_list(index.get("scores"))
+        if not scores:
+            return None
+        last = scores[-1]
+        return str(last.get("score_id")) if isinstance(last, dict) else None
 
-        eval_dirs = sorted(
-            [
-                path
-                for path in eval_root.iterdir()
-                if path.is_dir() and path.name.startswith("eval_")
-            ],
-            key=lambda path: path.name,
-            reverse=True,
-        )
-        return eval_dirs[0] if eval_dirs else None
+    def _load_score_json(
+        self, result_dir: Path, score_id: str | None
+    ) -> dict[str, Any] | None:
+        if not score_id:
+            return None
+        payload = self._load_json(result_dir / "evaluations" / score_id / "score.json")
+        return payload if isinstance(payload, dict) else None
+
+    def _load_cost_json(
+        self, result_dir: Path, score_id: str | None
+    ) -> dict[str, Any] | None:
+        if not score_id:
+            return None
+        payload = self._load_json(result_dir / "evaluations" / score_id / "cost.json")
+        return payload if isinstance(payload, dict) else None
 
     def _load_eval_history(self, result_dir: Path) -> list[dict[str, Any]]:
-        eval_root = result_dir / "evaluations"
-        if not eval_root.is_dir():
+        index = self._load_score_index(result_dir)
+        if not index:
             return []
 
         history: list[dict[str, Any]] = []
-        for eval_dir in sorted(eval_root.iterdir()):
-            if not eval_dir.is_dir() or not eval_dir.name.startswith("eval_"):
+        for entry in self._ensure_list(index.get("scores")):
+            if not isinstance(entry, dict):
                 continue
-
-            meta = self._load_json(eval_dir / "eval_meta.json")
-            if not isinstance(meta, dict):
-                continue
-
-            entry = dict(meta)
-            entry["eval_dir"] = eval_dir.name
-            history.append(entry)
-
-        history.sort(key=lambda item: str(item.get("timestamp", "")), reverse=True)
+            history.append(dict(entry))
+        history.sort(key=lambda item: str(item.get("created_at", "")), reverse=True)
         return history
 
     # ------------------------------------------------------------------
@@ -920,18 +904,33 @@ class ResultIndexer:
     # Field extraction
     # ------------------------------------------------------------------
 
-    def _resolve_evaluation_status(
-        self, run_state: dict[str, Any], latest_eval_dir: Path | None
-    ) -> str:
-        status = str(run_state.get("evaluation_status") or "pending")
-        if status == "pending" and latest_eval_dir is not None:
+    def _resolve_evaluation_status(self, latest_score: Any) -> str:
+        if not isinstance(latest_score, dict):
+            return "pending"
+        status = str(
+            latest_score.get("score_status") or latest_score.get("status") or ""
+        )
+        if status.startswith("completed"):
             return "completed"
-        return status
+        return status or "pending"
 
-    def _extract_overall_score(self, latest_eval_meta: Any) -> float | None:
-        if not isinstance(latest_eval_meta, dict):
+    def _extract_overall_score(self, latest_score: Any) -> float | None:
+        if not isinstance(latest_score, dict):
             return None
-        return self._coerce_float(latest_eval_meta.get("overall_score"), default=None)
+        return self._coerce_float(latest_score.get("overall_score"), default=None)
+
+    def _compute_total_cost(
+        self, run_state: dict[str, Any], latest_cost: dict[str, Any] | None
+    ) -> float | None:
+        simulator_cost = self._coerce_float(
+            run_state.get("simulator_cost"), default=None
+        )
+        eval_cost = self._coerce_float(
+            (latest_cost or {}).get("eval_cost_usd"), default=None
+        )
+        if simulator_cost is None and eval_cost is None:
+            return None
+        return round((simulator_cost or 0.0) + (eval_cost or 0.0), 6)
 
     def _extract_agent_cost(
         self, client_trace: dict[str, Any] | None

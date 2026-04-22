@@ -21,7 +21,9 @@ def load_server_env(bench_root: str | Path | None = None) -> Path | None:
         logger.debug("python-dotenv not installed; skipping .env bootstrap")
         return None
 
-    root = Path(bench_root) if bench_root else _DEFAULT_BENCH_ROOT
+    root = (
+        Path(bench_root).expanduser().resolve() if bench_root else _DEFAULT_BENCH_ROOT
+    )
     candidates = [root / ".env", root.parent / ".env"]
 
     for path in candidates:

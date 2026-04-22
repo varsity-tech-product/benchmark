@@ -190,11 +190,11 @@ def _mock_llm_resolution():
 
     with (
         patch(
-            "server.eval.ewan_eval.model_resolver.require_ewan_model",
+            "server.eval.judges.runtime.model_resolver.require_ewan_model",
             return_value=fake,
         ),
         patch(
-            "server.eval.ewan_eval.model_resolver.resolve_ewan_model",
+            "server.eval.judges.runtime.model_resolver.resolve_ewan_model",
             return_value=fake,
         ),
     ):
@@ -476,15 +476,106 @@ def make_session(_mock_llm_resolution):
 _FAKE_EVAL_SCORES = {
     "quant_result": 0.85,
     "quant_process": 0.70,
-    "tutor_scores": {"D1": 4, "D2": 3, "D3": 4, "D4": 3, "D5": 4, "D6": 3, "D7": 4},
+    "tutor_score": 0.75,
+    "tutor_scores": {
+        "D1_finance_adaptation": 0.75,
+        "D2_code_adaptation": 0.50,
+        "D3_pedagogical_method": 0.75,
+        "D4_instructional_accuracy": 0.50,
+        "D5_empathetic_response": 0.75,
+        "D6_safety_boundaries": 0.50,
+    },
 }
 
 
 @pytest.fixture
 def mock_eval_pipeline():
     """Patch eval pipeline to return fake scores immediately."""
+
+    def _fake_run(*args, **kwargs):
+        from datetime import datetime, timezone
+
+        from server.storage.score_store import (
+            allocate_score_run,
+            summarize_score,
+            update_score_run,
+            write_score_files,
+        )
+
+        result_dir = kwargs["result_dir"]
+        score_id = kwargs.get("score_id")
+        if score_id is None:
+            run, _ = allocate_score_run(
+                result_dir,
+                eval_mode=kwargs.get("eval_mode", "full"),
+                eval_model=kwargs.get("eval_model"),
+                tutor_dims=kwargs.get("tutor_dims"),
+            )
+            score_id = run.score_id
+            created_at = run.created_at
+        else:
+            created_at = datetime.now(timezone.utc).isoformat()
+        completed_at = datetime.now(timezone.utc).isoformat()
+        score = {
+            "version": "2.0",
+            "score_id": score_id,
+            "score_status": "completed_scored",
+            "created_at": created_at,
+            "completed_at": completed_at,
+            "eval_model": kwargs.get("eval_model"),
+            "eval_mode": kwargs.get("eval_mode", "full"),
+            "duration_seconds": 0.01,
+            "interrupted": False,
+            "blocking_missing": [],
+            "overall_score": 0.775,
+            "qr": {
+                "track": "qr",
+                "status": "success",
+                "score": _FAKE_EVAL_SCORES["quant_result"],
+                "blocking_missing": [],
+                "detail": {},
+                "eval_cost": 0.001,
+                "eval_cost_by_model": {"fake-model": 0.001},
+            },
+            "qp": {
+                "track": "qp",
+                "status": "success",
+                "score": _FAKE_EVAL_SCORES["quant_process"],
+                "blocking_missing": [],
+                "detail": {},
+                "eval_cost": 0.002,
+                "eval_cost_by_model": {"fake-model": 0.002},
+            },
+            "tutor": {
+                "track": "tutor",
+                "status": "success",
+                "score": _FAKE_EVAL_SCORES["tutor_score"],
+                "blocking_missing": [],
+                "detail": _FAKE_EVAL_SCORES["tutor_scores"],
+                "eval_cost": 0.003,
+                "eval_cost_by_model": {"fake-model": 0.003},
+            },
+        }
+        cost = {
+            "version": "2.0",
+            "score_id": score_id,
+            "eval_cost_usd": 0.006,
+            "eval_cost_by_track": {"qr": 0.001, "qp": 0.002, "tutor": 0.003},
+            "eval_cost_by_model": {"fake-model": 0.006},
+            "eval_cost_by_stage_model": {},
+        }
+        write_score_files(result_dir, score_id, score, cost)
+        update_score_run(
+            result_dir,
+            score_id,
+            status="completed_scored",
+            overall_score=score["overall_score"],
+            completed_at=completed_at,
+        )
+        return summarize_score(score, cost)
+
     with patch(
         "server.storage.eval_writer.run_evaluation",
-        return_value=dict(_FAKE_EVAL_SCORES),
+        side_effect=_fake_run,
     ) as mock_run:
         yield mock_run

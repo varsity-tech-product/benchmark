@@ -4,7 +4,7 @@ Usage::
 
     python -m server --port 8000 --docker
     python -m server --port 8000 --no-docker
-    python -m server --port 8000 --docker --eval-model anthropic/claude-haiku-4-5
+    python -m server --port 8000 --docker --eval-model MODEL
 
 """
 
@@ -19,6 +19,7 @@ if str(_BENCH_ROOT) not in sys.path:
     sys.path.insert(0, str(_BENCH_ROOT))
 
 from server.config.bootstrap import load_server_env
+from server.config.llm_config import EVAL_DEFAULT_MODEL
 
 load_server_env(_BENCH_ROOT)
 
@@ -45,8 +46,8 @@ def main():
     )
     parser.add_argument(
         "--eval-model",
-        default="anthropic/claude-haiku-4-5",
-        help="Model for LLM-based evaluation (default: anthropic/claude-haiku-4-5)",
+        default=EVAL_DEFAULT_MODEL,
+        help=f"Model for LLM-based evaluation (default: {EVAL_DEFAULT_MODEL})",
     )
     parser.add_argument(
         "--auto-eval",

@@ -15,7 +15,6 @@ import shutil
 # Use relative imports that work both as package and standalone
 import sys
 import tempfile
-import threading
 import time
 from pathlib import Path
 from typing import Optional
@@ -30,8 +29,8 @@ from config.prompt_config import (
     build_tutor_context,
     build_user_description,
 )
-from evaluation.scoring import compute_benchmark_kpis, compute_task_score
 from mcp_servers.registry import create_proxy_for_task, register_session_tools
+from server.eval.core.scoring import compute_benchmark_kpis, compute_task_score
 
 from orchestrator.agent_adapters.base_adapter import BaseAgentAdapter
 from orchestrator.container_manager import ContainerManager
@@ -416,26 +415,16 @@ class BenchmarkOrchestrator:
                 goal_checker = None
                 if tc_items is None and task.ground_truth:
                     gt = task.ground_truth
-                    if gt.termination_criteria:
-                        if task.category.value in (
-                            "implementation",
-                            "end_to_end",
-                            "debug",
-                        ):
-                            expected_outcome = (
-                                f"{gt.expected_outcome}\n\n"
-                                f"Observable completion criteria:\n"
-                                f"{gt.termination_criteria}"
-                            )
-                        else:
-                            expected_outcome = gt.termination_criteria
-                    else:
-                        expected_outcome = gt.expected_outcome
-                    if expected_outcome:
+                    stop_criteria = gt.termination_criteria
+                    if isinstance(stop_criteria, dict):
+                        stop_criteria = "\n".join(
+                            f"{key}: {value}" for key, value in stop_criteria.items()
+                        )
+                    if stop_criteria:
                         from mcp_servers.session import GoalChecker
 
                         goal_checker = GoalChecker(
-                            expected_outcome,
+                            stop_criteria,
                             resolved_sim_model,
                         )
 
@@ -774,494 +763,33 @@ class BenchmarkOrchestrator:
         cancel_event=None,
         eval_mode="full",
     ) -> dict:
-        """Run full evaluation on a completed task.
+        """Run post-hoc evaluation through the v6 coordinator.
 
-        Design doc §4.3 Phase 4: EVALUATION (post-hoc, using DeepEval)
-        - Quant Result: run eval/test_*.py against workspace files
-        - Quant Process: Reformed process metrics (7 dimensions)
-        - Tutor Quality: DeepEval ConversationalGEval with 7D persona-aware rubric
-
-        Design doc §6.3:
-        Task Score = 0.70 × Quant Agent Score + 0.30 × Tutor Score
-        Quant Agent Score = 0.50 × Result Sub-score + 0.50 × Process Sub-score
-
-        Args:
-            task: The benchmark task.
-            persona: The student persona.
-            workspace_path: Path to the container workspace.
-            proxy: The MCPProxy instance with tool call logs.
-            conversation: List of {"role", "content"} dicts.
-            eval_mode: "full" (default), "qr_only", or "qp_only".
+        This legacy method is intentionally only a thin adapter now. The
+        coordinator owns QR/QP/Tutor isolation, missing-score semantics, and
+        result-judge/tutor/process execution.
         """
-        from orchestrator.live_monitor import emit
+        mode = {
+            "qr_only": "qr",
+            "qp_only": "qp",
+            "tutor_only": "tutor",
+        }.get(eval_mode, eval_mode)
 
-        _eval_id = {"task_id": task.task_id, "persona_id": persona.persona_id}
+        print(f"  Eval mode: {mode}")
+        from server.eval.core.coordinator import evaluate_tracks
 
-        def _check_eval_cancel():
-            if cancel_event and cancel_event.is_set():
-                raise InterruptedError("Evaluation cancelled by user")
-
-        results = {
-            "quant_result": 0.0,
-            "quant_process": 0.0,
-            "tutor_scores": {},
-            "process_metrics": {},
-        }
-
-        _run_qr = eval_mode in ("full", "qr_only")
-        _run_qp = eval_mode in ("full", "qp_only")
-
-        if _run_qr or _run_qp:
-            print(f"  Eval mode: {eval_mode}")
-
-        # ── Step 2: Quant Result Score (custom eval scripts) ──
-        emit("eval_step", {**_eval_id, "step": "quant_result", "status": "running"})
-        if _run_qr:
-            print("  Evaluating Quant Result...")
-        if _run_qr and task.ground_truth.quant_validation:
-            eval_script = (
-                self.bench_root / task.ground_truth.quant_validation.eval_script
-            )
-            if eval_script.exists():
-                try:
-                    import importlib.util
-                    import inspect
-
-                    spec = importlib.util.spec_from_file_location(
-                        "eval_module", str(eval_script)
-                    )
-                    module = importlib.util.module_from_spec(spec)
-                    spec.loader.exec_module(module)
-
-                    # Detect eval script signature — pass data_files if accepted
-                    sig = inspect.signature(module.evaluate)
-                    eval_kwargs: dict = {}
-                    if "data_files" in sig.parameters:
-                        eval_kwargs["data_files"] = task.environment.data_files or []
-                    eval_result = module.evaluate(
-                        workspace_path,
-                        proxy.get_logs(),
-                        conversation,
-                        **eval_kwargs,
-                    )
-                    results["quant_result"] = eval_result.get("score", 0.0)
-                    results["eval_script_detail"] = eval_result
-                except Exception as e:
-                    results["quant_result_error"] = str(e)
-
-        emit(
-            "eval_step",
-            {
-                **_eval_id,
-                "step": "quant_result",
-                "status": "done",
-                "score": (
-                    round(results["quant_result"], 4) if results["quant_result"] else 0
-                ),
-            },
+        return evaluate_tracks(
+            task=task,
+            persona=persona,
+            workspace_path=workspace_path,
+            conversation=conversation,
+            tool_logs=proxy.get_logs(),
+            distractor_names=proxy.get_distractor_names(),
+            bench_root=str(self.bench_root),
+            eval_model=self.eval_model,
+            cancel_event=cancel_event,
+            eval_mode=mode,
         )
-
-        _check_eval_cancel()
-
-        # ── Step 2b: Code Execution QR (Phase 1) ──
-        # Reference loading is always needed (QP uses it for process_alignment).
-        # Code eval scoring is QR-only.
-        emit("eval_step", {**_eval_id, "step": "code_eval", "status": "running"})
-        if _run_qr:
-            print("  Evaluating Code Execution QR...")
-        reference = None  # loaded here, also used by Step 2c + Step 3b
-        try:
-            from reference_generator.reference_store import ReferenceStore
-
-            ref_store = ReferenceStore()
-            reference = ref_store.load(task.task_id, persona.persona_id)
-
-            if _run_qr:
-                from evaluation.code_eval import evaluate_code_combined
-
-                _sandbox_img = (
-                    task.environment.sandbox_image if task.environment else ""
-                )
-                code_eval_result = evaluate_code_combined(
-                    workspace_path=workspace_path,
-                    tool_logs=proxy.get_logs(),
-                    reference=reference,
-                    task_requires_code=task.requires_code,
-                    is_lean_task="lean" in _sandbox_img,
-                )
-                results["code_eval"] = code_eval_result
-        except Exception as e:
-            if _run_qr:
-                results["code_eval_error"] = str(e)
-
-        emit(
-            "eval_step",
-            {
-                **_eval_id,
-                "step": "code_eval",
-                "status": "done",
-                "score": round(results.get("code_eval", {}).get("score", 0), 4),
-            },
-        )
-
-        _check_eval_cancel()
-
-        # ── Step 2c (pre): Tool Usage (mathematical, no LLM — needed by QP) ──
-        emit("eval_step", {**_eval_id, "step": "tool_usage", "status": "running"})
-        tool_usage_result = None
-        if _run_qp:
-            try:
-                from evaluation.deepeval_metrics.tool_usage import evaluate_tool_usage
-
-                tool_usage_result = evaluate_tool_usage(
-                    proxy_logs=proxy.get_logs(),
-                    expected_tools=(
-                        task.ground_truth.expected_mcp_tools
-                        if task.ground_truth
-                        else []
-                    ),
-                    convenient_tools=(
-                        task.ground_truth.convenient_tools if task.ground_truth else []
-                    ),
-                    distractor_names=proxy.get_distractor_names(),
-                    is_adversarial=(task.category.value == "adversarial"),
-                )
-                results["tool_usage"] = tool_usage_result
-            except Exception as e:
-                results["tool_usage_error"] = str(e)
-
-        emit(
-            "eval_step",
-            {
-                **_eval_id,
-                "step": "tool_usage",
-                "status": "done",
-                "score": (
-                    round(tool_usage_result.get("score", 0), 4)
-                    if tool_usage_result
-                    else 0
-                ),
-            },
-        )
-
-        # ── Steps 2c/3/4: Parallel LLM evaluation (RJ + QP + Tutor) ──
-        # These three evaluators have no cross-dependencies. Each maintains
-        # its own async event loop internally. Peak concurrency ~43 requests
-        # (RJ=3 + QP≤20 + Tutor≤20), well within OpenRouter limits.
-        #
-        # Abort mechanism: _abort_event is shared between RJ and QP only.
-        # Tutor manages its own abort independently (has internal fallback
-        # for non-JSON eval LLM responses). If Tutor fails even after
-        # fallback, it degrades gracefully without killing RJ/QP.
-        import concurrent.futures
-
-        _logs = proxy.get_logs()  # snapshot once for all threads
-        _is_adversarial = task.category.value == "adversarial"
-        _abort_event = threading.Event()  # shared by RJ + QP only
-
-        def _run_result_judge() -> dict:
-            """Thread 1: LLM Result Judge (Step 2c)."""
-            print("  [RJ] Evaluating Result Quality (LLM judge)...")
-            from evaluation.deepeval_metrics.result_judge import (
-                evaluate_result_quality,
-            )
-
-            rj_result = evaluate_result_quality(
-                task_description=task.description,
-                category=task.category.value,
-                workspace_path=workspace_path,
-                tool_logs=_logs,
-                conversation=conversation,
-                model=self.eval_model,
-                reference=reference,
-                expected_outcome=(
-                    task.ground_truth.expected_outcome if task.ground_truth else None
-                ),
-                abort_event=_abort_event,
-            )
-            print("  [RJ] Done.")
-            return {"result_judge": rj_result}
-
-        def _run_process_metrics() -> dict:
-            """Thread 2: DeepEval process-level metrics (Step 3)."""
-            print("  [QP] Evaluating Quant Process...")
-            from evaluation.deepeval_metrics.process_metrics import (
-                evaluate_all_process_metrics,
-            )
-
-            agent_outputs = [
-                t["content"] for t in conversation if t["role"] == "assistant"
-            ]
-            combined_output = "\n---\n".join(agent_outputs) if agent_outputs else ""
-
-            process_results = evaluate_all_process_metrics(
-                task_description=task.description,
-                actual_output=combined_output,
-                proxy_logs=_logs,
-                category=task.category.value,
-                conversation=conversation,
-                model=self.eval_model,
-                reference_trace=reference,
-                is_adversarial=_is_adversarial,
-                tool_usage_result=tool_usage_result,
-                task_requires_code=task.requires_code,
-                abort_event=_abort_event,
-            )
-            print("  [QP] Done.")
-            return {
-                "process_metrics": process_results,
-                "quant_process": round(
-                    process_results.get("aggregate_process_score", 0.5), 4
-                ),
-            }
-
-        def _run_tutor_eval() -> dict:
-            """Thread 3: Tutor Quality Score — 7D ConversationalGEval (Step 4)."""
-            print(
-                "  [Tutor] Evaluating Tutor Quality "
-                "(7D rubric, multi-model × 3x shuffled)..."
-            )
-            from evaluation.deepeval_metrics.tutor_conv_geval import (
-                evaluate_tutor_dimensions,
-            )
-
-            # Two-tier conversation input for Tutor 7D evaluation:
-            # - D4/D5/D7 (competence dims) use enriched conversation so the
-            #   judge can verify domain accuracy against tool outputs.
-            # - D1/D2/D3/D6 (teaching-quality dims) use the original
-            #   conversation so tool-activity text doesn't interfere with
-            #   evaluation of the tutor's own language and empathy.
-            enriched_conv = _enrich_conversation_with_tools(conversation, _logs)
-
-            tutor_scores = evaluate_tutor_dimensions(
-                conversation_turns=conversation,
-                enriched_conversation_turns=enriched_conv,
-                persona_level=persona.knowledge_level,
-                scenario=build_scenario(task, persona.persona_id),
-                expected_outcome=task.ground_truth.expected_outcome,
-                user_description=build_user_description(persona),
-                model=self.eval_model,
-                category=task.category.value,
-                requires_code=task.requires_code,
-                abort_event=None,  # independent — has internal fallback
-            )
-            fallback_count = tutor_scores.pop("_fallback_count", 0)
-            per_model = tutor_scores.pop("_per_model", None)
-            out: dict = {"tutor_scores": tutor_scores}
-            if fallback_count > 0:
-                out["tutor_fallback_count"] = fallback_count
-            if per_model:
-                out["tutor_scores_by_model"] = per_model
-                print("  [Tutor] Per-model tutor scores:")
-                for mname, dim_scores in per_model.items():
-                    clean = {
-                        k: v
-                        for k, v in dim_scores.items()
-                        if not k.startswith("_") and isinstance(v, (int, float))
-                    }
-                    avg = sum(clean.values()) / len(clean) if clean else 0.0
-                    print(f"    {mname}: avg={avg:.4f}")
-                    for dim, sc in sorted(clean.items()):
-                        print(f"      {dim}: {sc:.4f}")
-            print("  [Tutor] Done.")
-            return out
-
-        _check_eval_cancel()
-
-        # Determine which parallel threads to submit
-        _active_labels = []
-        if _run_qr:
-            _active_labels.append("RJ")
-        if _run_qp:
-            _active_labels.append("QP")
-        _active_labels.append("Tutor")
-        print(f"  Running {' / '.join(_active_labels)} in parallel...")
-
-        if _run_qr:
-            emit("eval_step", {**_eval_id, "step": "result_judge", "status": "running"})
-        if _run_qp:
-            emit(
-                "eval_step",
-                {**_eval_id, "step": "process_metrics", "status": "running"},
-            )
-        emit("eval_step", {**_eval_id, "step": "tutor_7d", "status": "running"})
-        _t_parallel = time.time()
-        _thread_errors: list[Exception] = []
-        with concurrent.futures.ThreadPoolExecutor(max_workers=3) as pool:
-            fut_rj = pool.submit(_run_result_judge) if _run_qr else None
-            fut_qp = pool.submit(_run_process_metrics) if _run_qp else None
-            fut_tutor = pool.submit(_run_tutor_eval)
-
-            _futures = [f for f in (fut_rj, fut_qp, fut_tutor) if f is not None]
-            for fut in concurrent.futures.as_completed(_futures):
-                try:
-                    fut_result = fut.result()
-                    results.update(fut_result)
-                    if fut is fut_rj:
-                        rj_s = fut_result.get("result_judge", {}).get("score", 0)
-                        emit(
-                            "eval_step",
-                            {
-                                **_eval_id,
-                                "step": "result_judge",
-                                "status": "done",
-                                "score": round(rj_s, 4),
-                            },
-                        )
-                    elif fut is fut_qp:
-                        qp_s = fut_result.get("quant_process", 0)
-                        emit(
-                            "eval_step",
-                            {
-                                **_eval_id,
-                                "step": "process_metrics",
-                                "status": "done",
-                                "score": round(qp_s, 4),
-                            },
-                        )
-                    elif fut is fut_tutor:
-                        ts = fut_result.get("tutor_scores", {})
-                        t_vals = [v for v in ts.values() if isinstance(v, (int, float))]
-                        t_avg = sum(t_vals) / len(t_vals) if t_vals else 0
-                        emit(
-                            "eval_step",
-                            {
-                                **_eval_id,
-                                "step": "tutor_7d",
-                                "status": "done",
-                                "score": round(t_avg, 4),
-                            },
-                        )
-                except Exception as e:
-                    if fut is fut_tutor:
-                        # Tutor is independent — graceful degradation
-                        print(f"  *** TUTOR EVAL WARNING: {e}")
-                        results["tutor_scores"] = {}
-                        results["tutor_eval_error"] = str(e)
-                    else:
-                        # RJ / QP share abort cascade
-                        _abort_event.set()
-                        _thread_errors.append(e)
-
-        if _thread_errors:
-            first = _thread_errors[0]
-            raise EvalAbortError(
-                f"Evaluation aborted: {len(_thread_errors)} evaluator(s) failed. "
-                f"First error: {first}"
-            ) from first
-
-        print(
-            f"  Parallel eval done in {time.time() - _t_parallel:.1f}s "
-            f"({' + '.join(_active_labels)})"
-        )
-
-        _check_eval_cancel()
-
-        if not _run_qr:
-            # qp_only mode — skip QR blending entirely
-            return results
-
-        # ── Step 2d: Combine QR components (30/30/40 blend) ──
-        emit("eval_step", {**_eval_id, "step": "qr_blend", "status": "running"})
-        # Must run after RJ completes (needs result_judge score).
-        programmatic_score = results["quant_result"]
-        code_eval_score = results.get("code_eval", {}).get("score", 0.0)
-        code_eval_applicable = results.get("code_eval", {}).get("applicable", False)
-        llm_judge_score = results.get("result_judge", {}).get("score", 0.0)
-
-        # Tasks that don't require code: always skip code_eval.
-        # Without this, code_eval participates only when the agent happens
-        # to write a .py file — making the QR formula non-deterministic
-        # across runs of the same task (ICC stability issue).
-        if not task.requires_code:
-            code_eval_applicable = False
-
-        # When the eval script returns score=None, it signals insufficient
-        # programmatic evidence (e.g. A04: no tool calls → can't judge
-        # technical dump from tool logs alone).  Defer entirely to LLM Judge.
-        if programmatic_score is None:
-            if code_eval_applicable:
-                results["quant_result"] = round(
-                    0.30 * code_eval_score + 0.70 * llm_judge_score, 4
-                )
-            else:
-                results["quant_result"] = round(llm_judge_score, 4)
-            print(
-                f"    QR: eval script returned None "
-                f"(insufficient signal) → deferring to LLM Judge "
-                f"({llm_judge_score:.2f})"
-            )
-            rj = results.get("result_judge")
-            if isinstance(rj, dict):
-                rj["_eval_script_score"] = None
-                rj["_dampening_factor"] = None
-            emit(
-                "eval_step",
-                {
-                    **_eval_id,
-                    "step": "qr_blend",
-                    "status": "done",
-                    "score": round(results["quant_result"], 4),
-                },
-            )
-            return results
-
-        # Continuous divergence dampening: smoothly reduce programmatic
-        # weight as divergence between eval script and LLM judge increases.
-        # Uses sigmoid centered at 0.40 — replaces the old binary threshold.
-        import math
-
-        divergence = abs(programmatic_score - llm_judge_score)
-        # factor ≈ 1.0 when divergence ≈ 0, ≈ 0.5 at 0.40, ≈ 0.0 at 0.80+
-        dampening_factor = 1.0 / (1.0 + math.exp(10 * (divergence - 0.40)))
-
-        if code_eval_applicable:
-            # Smoothly interpolate between:
-            #   factor=1.0 → (0.30, 0.30, 0.40) [standard]
-            #   factor=0.0 → (0.10, 0.30, 0.60) [fully dampened]
-            w_prog = 0.10 + 0.20 * dampening_factor
-            w_code = 0.30
-            w_judge = 1.0 - w_prog - w_code
-            results["quant_result"] = round(
-                w_prog * programmatic_score
-                + w_code * code_eval_score
-                + w_judge * llm_judge_score,
-                4,
-            )
-        else:
-            # Smoothly interpolate between:
-            #   factor=1.0 → (0.40, 0.60) [standard]
-            #   factor=0.0 → (0.15, 0.85) [fully dampened]
-            w_prog = 0.15 + 0.25 * dampening_factor
-            w_judge = 1.0 - w_prog
-            results["quant_result"] = round(
-                w_prog * programmatic_score + w_judge * llm_judge_score, 4
-            )
-
-        if dampening_factor < 0.9:
-            print(
-                f"    QR dampening active: programmatic={programmatic_score:.2f} "
-                f"vs judge={llm_judge_score:.2f} "
-                f"(Δ={divergence:.2f}, factor={dampening_factor:.3f})"
-            )
-
-        # Store QR blending diagnostics in result_judge dict for score_report
-        rj = results.get("result_judge")
-        if isinstance(rj, dict):
-            rj["_eval_script_score"] = programmatic_score
-            rj["_dampening_factor"] = round(dampening_factor, 4)
-
-        emit(
-            "eval_step",
-            {
-                **_eval_id,
-                "step": "qr_blend",
-                "status": "done",
-                "score": round(results["quant_result"], 4),
-            },
-        )
-
-        return results
 
     def _create_staged_dirs(
         self,

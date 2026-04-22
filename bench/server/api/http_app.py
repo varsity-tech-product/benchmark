@@ -33,6 +33,7 @@ from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
 from server.config.bootstrap import load_server_env
+from server.config.llm_config import EVAL_DEFAULT_MODEL
 from server.run import JobStore, RunService, RunStore, TaskCatalog
 from server.run.jobs import (
     JOB_STATUS_COMPLETED,
@@ -86,7 +87,7 @@ class BenchSessionManager:
         self,
         use_docker: bool = True,
         bench_root: str | Path | None = None,
-        eval_model: str = "anthropic/claude-haiku-4-5",
+        eval_model: str = EVAL_DEFAULT_MODEL,
         auto_eval: bool = False,
     ):
         self.use_docker = use_docker
@@ -560,55 +561,17 @@ class BenchSessionManager:
     def find_archived_result_dir(self, session_id: str) -> Path | None:
         """Find archived result dir for a session_id.
 
-        Session ID format:
-        - ``{uuid}_{task_prefix}`` (new) — task prefix (e.g. D01) enables
-          O(1) directory lookup instead of scanning all tasks.
-        - ``{uuid}`` (legacy) — falls back to full scan.
-
-        Supports both old layout  ``{task_id}/{session_id}/``
-        and new layout ``{task_id}/{persona_id}/{ts}_{session_id[:8]}/``.
+        New layout:
+        ``{task_id}/{persona_id}/{ts}_{session_id[:12]}/`` with a mandatory
+        ``.session_id`` file for exact matching.
         """
-        import re
-
         results_root = self.bench_root / "results" / "server"
-        if not results_root.is_dir():
+        try:
+            from server.eval.contracts.request import resolve_result_dir
+
+            return resolve_result_dir(session_id, results_root)
+        except Exception:
             return None
-
-        # Parse task hint from session_id suffix (e.g. "…_D01" → "D01")
-        task_hint = None
-        m = re.search(r"_([A-Z]\d{2})$", session_id)
-        if m:
-            task_hint = m.group(1)
-
-        short_id = session_id[:8]
-
-        # Select which task directories to search
-        if task_hint:
-            # O(1): only scan task dirs matching the hint
-            task_dirs = [
-                d
-                for d in results_root.iterdir()
-                if d.is_dir() and d.name.startswith(f"{task_hint}_")
-            ]
-        else:
-            # Legacy: scan all task dirs
-            task_dirs = [d for d in results_root.iterdir() if d.is_dir()]
-
-        for task_dir in task_dirs:
-            # Old layout: {task_id}/{session_id}/
-            candidate = task_dir / session_id
-            if candidate.is_dir():
-                return candidate
-            # New layout: {task_id}/{persona_id}/{ts}_{session_id[:8]}/
-            for persona_dir in task_dir.iterdir():
-                if not persona_dir.is_dir():
-                    continue
-                for run_dir in persona_dir.iterdir():
-                    if run_dir.is_dir() and run_dir.name.endswith(f"_{short_id}"):
-                        rs = run_dir / "run_state.json"
-                        if rs.exists():
-                            return run_dir
-        return None
 
     def get_archived_session_status(self, session_id: str) -> dict | None:
         state = self.get_archived_results(session_id)
@@ -635,55 +598,28 @@ class BenchSessionManager:
             return None
 
     def get_archived_scores(
-        self, session_id: str, *, history: bool = False
+        self,
+        session_id: str,
+        *,
+        history: bool = False,
+        score_id: str | None = None,
+        score_ids: list[str] | None = None,
+        status_filter: list[str] | None = None,
     ) -> dict | None:
         result_dir = self.find_archived_result_dir(session_id)
         if not result_dir:
             return None
+        from server.storage.score_store import get_scores_payload
 
-        if history:
-            evals_dir = result_dir / "evaluations"
-            entries = []
-            if evals_dir.is_dir():
-                for sub in sorted(evals_dir.iterdir(), reverse=True):
-                    if (
-                        not sub.is_dir()
-                        or sub.name == "latest"
-                        or not sub.name.startswith("eval_")
-                    ):
-                        continue
-                    meta_path = sub / "eval_meta.json"
-                    if not meta_path.exists():
-                        continue
-                    try:
-                        meta = json.loads(meta_path.read_text(encoding="utf-8"))
-                        meta["eval_dir"] = sub.name
-                        entries.append(meta)
-                    except Exception:
-                        continue
-            return {"session_id": session_id, "evaluations": entries}
-
-        latest_meta = result_dir / "evaluations" / "latest" / "eval_meta.json"
-        if latest_meta.exists():
-            try:
-                meta = json.loads(latest_meta.read_text(encoding="utf-8"))
-                scores: dict = {
-                    "quant_result": meta.get("quant_result", 0.0),
-                    "quant_process": meta.get("quant_process", 0.0),
-                    "tutor_scores": meta.get("tutor_scores", {}),
-                    "overall": meta.get("overall_score", 0.0),
-                }
-                meta_errors = meta.get("errors")
-                if meta_errors:
-                    scores["errors"] = meta_errors
-                return {"status": "completed", "scores": scores}
-            except Exception:
-                pass
-
-        state = self.get_archived_results(session_id)
-        if not state:
-            return None
-        return {"status": state.get("evaluation_status", "pending")}
+        payload = get_scores_payload(
+            result_dir,
+            history=history,
+            score_id=score_id,
+            score_ids=score_ids,
+            status_filter=status_filter,
+        )
+        payload["session_id"] = session_id
+        return payload
 
     def list_sessions(self, task_id: str = "") -> list[dict]:
         results = []
@@ -756,9 +692,7 @@ _HEALTH_LEAN_IMAGE_DEFAULT = "quant-tutor-env:v2.2-lean"
 
 def _health_check_docker() -> dict:
     try:
-        proc = subprocess.run(
-            ["docker", "info"], capture_output=True, timeout=3
-        )
+        proc = subprocess.run(["docker", "info"], capture_output=True, timeout=3)
         return {"ok": proc.returncode == 0}
     except (FileNotFoundError, subprocess.TimeoutExpired, OSError) as exc:
         return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
@@ -783,10 +717,15 @@ def _health_check_lean_image() -> dict:
 
 def _health_check_disk() -> dict:
     try:
-        usage = shutil.disk_usage("/home")
+        path = "/home"
+        usage = shutil.disk_usage(path)
+        if usage.total <= 0:
+            path = "/"
+            usage = shutil.disk_usage(path)
         free_gb = usage.free / (1024**3)
         return {
             "ok": free_gb >= _HEALTH_DISK_MIN_GB,
+            "path": path,
             "free_gb": round(free_gb, 2),
             "percent_free": round(usage.free / usage.total * 100, 1),
         }
@@ -1040,13 +979,9 @@ async def _execute_tool_job(
     sid = state.session_id
     try:
         async with backtest_sem():
-            store.update(
-                job_id, status=JOB_STATUS_RUNNING, started_at=time.time()
-            )
+            store.update(job_id, status=JOB_STATUS_RUNNING, started_at=time.time())
             state._last_activity = time.time()
-            result = await asyncio.to_thread(
-                state.call_domain_tool, name, **body
-            )
+            result = await asyncio.to_thread(state.call_domain_tool, name, **body)
         try:
             parsed = json.loads(result)
         except (json.JSONDecodeError, TypeError):
@@ -1057,9 +992,7 @@ async def _execute_tool_job(
             completed_at=time.time(),
             result=parsed,
         )
-        logger.info(
-            "[REST:%s] job %s (%s) completed", sid[:8], job_id[:8], name
-        )
+        logger.info("[REST:%s] job %s (%s) completed", sid[:8], job_id[:8], name)
     except Exception as exc:
         logger.exception("[REST:%s] job %s failed", sid[:8], job_id[:8])
         store.update(
@@ -1171,10 +1104,15 @@ async def rest_send(request: Request) -> JSONResponse:
 
 
 async def rest_evaluate(request: Request) -> JSONResponse:
-    """``POST /session/{sid}/evaluate[?force=true&eval_mode=tutor_only&tutor_dims=D3,D4]``"""
+    """``POST /session/{sid}/evaluate[?eval_mode=tutor&tutor_dims=D3,D4]``"""
     manager: BenchSessionManager = request.app.state.manager
     sid = request.path_params["sid"]
-    state = manager.get_or_restore_session(sid)
+    try:
+        state = manager.get_or_restore_session(sid)
+    except (
+        Exception
+    ) as exc:  # noqa: BLE001 - persist hard preflight failure if possible
+        return _save_archived_eval_restore_failure(request, manager, sid, exc)
     if not state:
         return JSONResponse({"error": "Session not found"}, 404)
 
@@ -1188,31 +1126,107 @@ async def rest_evaluate(request: Request) -> JSONResponse:
             403,
         )
 
-    # Parse eval parameters from query string
-    eval_mode = request.query_params.get("eval_mode", "full")
-    tutor_dims_raw = request.query_params.get("tutor_dims", "")
-    tutor_dims = (
-        [d.strip() for d in tutor_dims_raw.split(",") if d.strip()]
-        if tutor_dims_raw
-        else None
-    )
+    from server.eval.contracts.request import EvalError, parse_eval_request
 
-    force = request.query_params.get("force", "false").lower() == "true"
-    if force:
-        with state._eval_lock:
-            if state._eval_status in ("completed", "failed"):
-                state._eval_status = "pending"
-                logger.info("[REST:%s] evaluate force reset", sid[:8])
+    try:
+        eval_request = parse_eval_request(
+            {
+                "session_id": sid,
+                "eval_mode": request.query_params.get("eval_mode", "full"),
+                "tutor_dims": request.query_params.get("tutor_dims", ""),
+                "eval_model": request.query_params.get("eval_model")
+                or state.eval_model,
+                "idempotency_key": (
+                    request.query_params.get("idempotency_key")
+                    or request.headers.get("Idempotency-Key")
+                ),
+            }
+        )
+    except EvalError as exc:
+        return JSONResponse({"error": str(exc)}, 400)
 
-    # Set eval parameters before triggering
-    state._eval_mode = eval_mode
-    state._tutor_dims = tutor_dims
+    state._eval_mode = eval_request.eval_mode
+    state._tutor_dims = eval_request.tutor_dims
+    state.eval_model = eval_request.eval_model or state.eval_model
+    state._eval_idempotency_key = eval_request.idempotency_key
 
     async with state._request_lock:
         state._last_activity = time.time()
         result = await asyncio.to_thread(state.request_evaluation)
     logger.info("[REST:%s] evaluate: %s", sid[:8], result.get("status"))
     return JSONResponse(result)
+
+
+def _save_archived_eval_restore_failure(
+    request: Request,
+    manager: BenchSessionManager,
+    sid: str,
+    exc: Exception,
+) -> JSONResponse:
+    result_dir = manager.find_archived_result_dir(sid)
+    if result_dir is None:
+        return JSONResponse({"error": "Session not found"}, 404)
+
+    from server.eval.contracts.request import EvalError, parse_eval_request
+    from server.storage.score_store import allocate_score_run
+
+    try:
+        eval_request = parse_eval_request(
+            {
+                "session_id": sid,
+                "eval_mode": request.query_params.get("eval_mode", "full"),
+                "tutor_dims": request.query_params.get("tutor_dims", ""),
+                "eval_model": request.query_params.get("eval_model")
+                or manager.eval_model,
+                "idempotency_key": (
+                    request.query_params.get("idempotency_key")
+                    or request.headers.get("Idempotency-Key")
+                ),
+            }
+        )
+    except EvalError as parse_exc:
+        return JSONResponse({"error": str(parse_exc)}, 400)
+
+    run, created = allocate_score_run(
+        result_dir,
+        eval_mode=eval_request.eval_mode,
+        eval_model=eval_request.eval_model,
+        tutor_dims=eval_request.tutor_dims,
+        idempotency_key=eval_request.idempotency_key,
+    )
+    if not created:
+        return JSONResponse(
+            {
+                "status": "running",
+                "score_id": run.score_id,
+                "message": "Evaluation in progress.",
+            }
+        )
+
+    from server.storage.eval_writer import save_terminal_eval_result
+
+    message = f"run_state.json could not be loaded: {exc}"
+    payload = save_terminal_eval_result(
+        result_dir=result_dir,
+        score_id=run.score_id,
+        eval_mode=eval_request.eval_mode,
+        eval_model=eval_request.eval_model,
+        created_at=run.created_at,
+        status="failed",
+        error=message,
+        preflight={
+            "hard_errors": [
+                {
+                    "code": "run_state_invalid",
+                    "message": message,
+                }
+            ],
+            "track_blockers": {"qr": [], "qp": [], "tutor": []},
+            "skipped_dependencies": [],
+        },
+    )
+    payload["session_id"] = sid
+    return JSONResponse(payload)
 
 
 async def rest_results(request: Request) -> JSONResponse:
@@ -1229,14 +1243,50 @@ async def rest_results(request: Request) -> JSONResponse:
 
 
 async def rest_scores(request: Request) -> JSONResponse:
-    """``GET /session/{sid}/scores[?history=true]``"""
+    """``GET /session/{sid}/scores[?history=true&score=score_2]``"""
     manager: BenchSessionManager = request.app.state.manager
-    history = request.query_params.get("history", "false").lower() == "true"
-    state = manager.get_or_restore_session(request.path_params["sid"])
+    from server.eval.contracts.request import EvalError, parse_score_query
+
+    try:
+        query = parse_score_query(
+            {
+                "session_id": request.path_params["sid"],
+                "history": request.query_params.get("history", "false").lower()
+                == "true",
+                "score": request.query_params.get("score"),
+                "score_id": request.query_params.get("score_id"),
+                "scores": request.query_params.get("scores"),
+                "score_ids": request.query_params.get("score_ids"),
+                "status": request.query_params.get("status", ""),
+            }
+        )
+    except EvalError as exc:
+        return JSONResponse({"error": str(exc)}, 400)
+
+    try:
+        state = manager.get_or_restore_session(request.path_params["sid"])
+    except Exception:
+        payload = manager.get_archived_scores(
+            query.session_id,
+            history=query.history,
+            score_id=query.score_id,
+            score_ids=query.score_ids,
+            status_filter=query.status_filter,
+        )
+        if payload is not None:
+            return JSONResponse(payload)
+        raise
     if not state:
         return JSONResponse({"error": "Session not found"}, 404)
 
-    return JSONResponse(state.get_eval_scores(history=history))
+    return JSONResponse(
+        state.get_eval_scores(
+            history=query.history,
+            score_id=query.score_id,
+            score_ids=query.score_ids,
+            status_filter=query.status_filter,
+        )
+    )
 
 
 async def rest_session_status(request: Request) -> JSONResponse | Response:
@@ -1298,7 +1348,7 @@ class _ServerApp:
 def create_app(
     use_docker: bool = True,
     bench_root: str | Path | None = None,
-    eval_model: str = "anthropic/claude-haiku-4-5",
+    eval_model: str = EVAL_DEFAULT_MODEL,
     auto_eval: bool = False,
 ) -> _ServerApp:
     """Create the QuantTutorBench ASGI application."""

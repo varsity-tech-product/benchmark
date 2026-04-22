@@ -199,6 +199,14 @@ def _progress(completed: int, total: int, latest):
     )
 
 
+def _fmt_score(value, width: int | None = None) -> str:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        text = "N/A"
+    else:
+        text = f"{value:.4f}"
+    return f"{text:>{width}}" if width else text
+
+
 def _print_single_result(result):
     """Print detailed result for a single task (preserves existing display)."""
     print(f"\n--- Conversation ({len(result.turns)} turns) ---")
@@ -207,9 +215,9 @@ def _print_single_result(result):
         print(f"\n[{prefix}]: {turn.content[:200]}...")
 
     print("\n--- Scores ---")
-    print(f"Quant Result:  {result.quant_result_score:.4f}")
-    print(f"Quant Process: {result.quant_process_score:.4f}")
-    print(f"Overall:       {result.overall_score:.4f}")
+    print(f"Quant Result:  {_fmt_score(result.quant_result_score)}")
+    print(f"Quant Process: {_fmt_score(result.quant_process_score)}")
+    print(f"Overall:       {_fmt_score(result.overall_score)}")
 
     if result.tutor_scores:
         print("\n--- Tutor Dimension Scores (7D, averaged) ---")
@@ -235,15 +243,13 @@ def _print_single_result(result):
                 print(f"    {dim}: {score:.4f}")
 
     if result.process_metrics:
-        print("\n--- Process Metrics (QP 7 Dimensions) ---")
+        print("\n--- Process Metrics (QP 5 Dimensions) ---")
         _QP_METRICS = [
             "tool_usage",
-            "step_efficiency",
-            "process_reasonableness",
-            "process_alignment",
-            "code_process",
-            "role_adherence",
-            "topic_adherence",
+            "action_economy",
+            "code_lifecycle",
+            "task_planning",
+            "problem_solving",
         ]
         print(f"  {'Metric':<25} {'Score':>8}  {'Status':>6}")
         print(f"  {'-'*25} {'-'*8}  {'-'*6}")
@@ -257,16 +263,19 @@ def _print_single_result(result):
                 if skipped:
                     print(f"  {mn:<25} {'N/A':>8}  {'SKIP':>6}")
                 elif sc is not None:
-                    st = "PASS" if v.get("passed") else "FAIL"
-                    print(f"  {mn:<25} {sc:>8.4f}  {st:>6}")
+                    if "passed" in v:
+                        st = "PASS" if v["passed"] else "FAIL"
+                    else:
+                        st = "SCORE"
+                    print(f"  {mn:<25} {_fmt_score(sc, 8)}  {st:>6}")
                 else:
                     print(f"  {mn:<25} {'N/A':>8}  {'?':>6}")
             elif isinstance(v, (int, float)):
-                print(f"  {mn:<25} {v:>8.4f}")
+                print(f"  {mn:<25} {_fmt_score(v, 8)}")
         agg = result.process_metrics.get("aggregate_process_score")
         if agg is not None:
             print(f"  {'-'*25} {'-'*8}  {'-'*6}")
-            print(f"  {'AGGREGATE':<25} {agg:>8.4f}")
+            print(f"  {'AGGREGATE':<25} {_fmt_score(agg, 8)}")
 
         _pm = result.process_metrics.get("_per_model")
         if _pm:
@@ -288,11 +297,11 @@ def _print_single_result(result):
         ce = result.code_eval
         print(f"  Applicable: {ce.get('applicable', False)}")
         if ce.get("applicable"):
-            print(f"  Combined score: {ce.get('score', 0):.4f}")
+            print(f"  Combined score: {_fmt_score(ce.get('score'))}")
             sa = ce.get("static_analysis", {})
             if sa:
                 print(
-                    f"  Layer A (static):    {sa.get('score', 0):.4f}"
+                    f"  Layer A (static):    {_fmt_score(sa.get('score'))}"
                     f"  (syntax={'OK' if sa.get('syntax_valid') else 'FAIL'},"
                     f" files={sa.get('files_analyzed', 0)},"
                     f" funcs={sa.get('total_functions', 0)})"
@@ -300,7 +309,7 @@ def _print_single_result(result):
             ex = ce.get("execution", {})
             if ex:
                 print(
-                    f"  Layer B (execution): {ex.get('score', 0):.4f}"
+                    f"  Layer B (execution): {_fmt_score(ex.get('score'))}"
                     f"  (calls={ex.get('exec_calls_found', 0)},"
                     f" success_rate={ex.get('success_rate', 0):.2f},"
                     f" untested={ex.get('untested_files', [])})"
@@ -308,7 +317,7 @@ def _print_single_result(result):
             ov = ce.get("output_verification")
             if ov:
                 print(
-                    f"  Layer C (output):    {ov.get('score', 0):.4f}"
+                    f"  Layer C (output):    {_fmt_score(ov.get('score'))}"
                     f"  (accuracy={ov.get('numerical_accuracy', 0):.2f},"
                     f" completeness={ov.get('output_completeness', 0):.2f},"
                     f" metrics_compared={ov.get('metrics_compared', 0)})"
@@ -319,7 +328,7 @@ def _print_single_result(result):
     if result.result_judge:
         print("\n--- LLM Result Judge ---")
         rj = result.result_judge
-        print(f"  Score: {rj.get('score', 0):.4f}")
+        print(f"  Score: {_fmt_score(rj.get('score'))}")
         sub = rj.get("sub_scores", {})
         if sub:
             print(
@@ -337,7 +346,7 @@ def _print_single_result(result):
         applicable = cp.get("applicable", False)
         print(f"  Applicable: {applicable}")
         if applicable:
-            print(f"  Combined score: {cp.get('score', 0):.4f}")
+            print(f"  Combined score: {_fmt_score(cp.get('score'))}")
             prog = cp.get("programmatic", {})
             if prog and prog.get("applicable"):
                 psub = prog.get("sub_scores", {})
@@ -351,7 +360,7 @@ def _print_single_result(result):
                     v = psub.get(k)
                     parts.append(f"{k}={v}" if v is not None else f"{k}=N/A")
                 print(
-                    f"  Programmatic ({prog.get('score', 0):.4f}): {', '.join(parts)}"
+                    f"  Programmatic ({_fmt_score(prog.get('score'))}): {', '.join(parts)}"
                 )
             llm = cp.get("llm_judged", {})
             if llm and llm.get("applicable"):
@@ -364,7 +373,9 @@ def _print_single_result(result):
                         "code_explanation_quality",
                     )
                 ]
-                print(f"  LLM-judged  ({llm.get('score', 0):.4f}): {', '.join(parts)}")
+                print(
+                    f"  LLM-judged  ({_fmt_score(llm.get('score'))}): {', '.join(parts)}"
+                )
             reason = cp.get("llm_judged", {}).get("reason", "")
             if reason:
                 print(f"  Reason: {reason[:200]}")
@@ -372,7 +383,7 @@ def _print_single_result(result):
     if result.tool_usage:
         print("\n--- Tool Usage ---")
         tu = result.tool_usage
-        print(f"  Score: {tu.get('score', 0):.4f}")
+        print(f"  Score: {_fmt_score(tu.get('score'))}")
         print(
             f"  base={tu.get('base', '?')}  "
             f"bonus={tu.get('bonus', '?')}  "
@@ -423,8 +434,10 @@ def _print_group_summary(results: list):
             else:
                 print(
                     f"{tr.task_id:<30} {tr.persona_id:<25} "
-                    f"{tr.overall_score:>6.4f} {tr.quant_result_score:>6.4f} "
-                    f"{tr.quant_process_score:>6.4f} {r.duration_seconds:>6.1f}s OK"
+                    f"{_fmt_score(tr.overall_score, 6)} "
+                    f"{_fmt_score(tr.quant_result_score, 6)} "
+                    f"{_fmt_score(tr.quant_process_score, 6)} "
+                    f"{r.duration_seconds:>6.1f}s OK"
                 )
             total_cost += tr.cost_usd
             ok_count += 1
@@ -453,48 +466,46 @@ def _print_group_summary(results: list):
 
 
 def _save_group_summary(results: list, label: str, result_base_dir: Path):
-    """Save a summary.md for group/layer runs."""
+    """Save a machine-readable JSON summary for group/layer runs."""
     result_base_dir.mkdir(parents=True, exist_ok=True)
     is_runonly = any(r.job.skip_eval for r in results if r.job)
 
-    lines = [f"# {label} Summary\n"]
-    if is_runonly:
-        lines.append("*RUNONLY mode — no evaluation scores*\n\n")
-        lines.append(
-            "| Task | Persona | Turns | Time | Status |\n"
-            "|------|---------|-------|------|--------|\n"
-        )
-    else:
-        lines.append(
-            "| Task | Persona | OAS | QR | QP | Time | Status |\n"
-            "|------|---------|-----|----|----|------|--------|\n"
-        )
+    summary = {
+        "label": label,
+        "mode": "runonly" if is_runonly else "evaluated",
+        "results": [],
+    }
     for r in results:
         if r.task_result:
             tr = r.task_result
-            if is_runonly:
-                lines.append(
-                    f"| {tr.task_id} | {tr.persona_id} | "
-                    f"{len(tr.turns)} | {r.duration_seconds:.1f}s | OK |\n"
-                )
-            else:
-                lines.append(
-                    f"| {tr.task_id} | {tr.persona_id} | "
-                    f"{tr.overall_score:.4f} | {tr.quant_result_score:.4f} | "
-                    f"{tr.quant_process_score:.4f} | {r.duration_seconds:.1f}s | OK |\n"
+            item = {
+                "task_id": tr.task_id,
+                "persona_id": tr.persona_id,
+                "turns": len(tr.turns),
+                "duration_seconds": round(r.duration_seconds, 2),
+                "status": "ok",
+            }
+            if not is_runonly:
+                item.update(
+                    {
+                        "overall_score": tr.overall_score,
+                        "quant_result_score": tr.quant_result_score,
+                        "quant_process_score": tr.quant_process_score,
+                    }
                 )
         else:
-            if is_runonly:
-                lines.append(
-                    f"| {r.job.task.task_id} | {r.job.persona.persona_id} | "
-                    f"--- | {r.duration_seconds:.1f}s | ERR |\n"
-                )
-            else:
-                lines.append(
-                    f"| {r.job.task.task_id} | {r.job.persona.persona_id} | "
-                    f"--- | --- | --- | {r.duration_seconds:.1f}s | ERR |\n"
-                )
-    (result_base_dir / "summary.md").write_text("".join(lines), encoding="utf-8")
+            item = {
+                "task_id": r.job.task.task_id,
+                "persona_id": r.job.persona.persona_id,
+                "duration_seconds": round(r.duration_seconds, 2),
+                "status": "error",
+                "error": r.error,
+            }
+        summary["results"].append(item)
+    (result_base_dir / "summary.json").write_text(
+        json.dumps(summary, indent=2, default=str),
+        encoding="utf-8",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -745,9 +756,12 @@ def _validate_workers(args):
 
 def cmd_run(args):
     """Run the full benchmark (Layer 1 + Layer 2, or individually via --layer)."""
-    from evaluation.scoring import compute_combined_benchmark_kpis, compute_task_score
     from orchestrator.orchestrator import BenchmarkOrchestrator
     from orchestrator.schemas import BenchmarkReport
+    from server.eval.core.scoring import (
+        compute_combined_benchmark_kpis,
+        compute_task_score,
+    )
 
     condition = CONDITIONS[getattr(args, "condition", "agent")]
     agent = _create_agent(args)
@@ -917,22 +931,22 @@ def cmd_run(args):
         layers_evaluated=layers_evaluated,
     )
 
-    report.overall_agent_score = combined_kpis.get("overall_agent_score", 0.0)
-    report.quant_agent_index = combined_kpis.get("quant_agent_index", 0.0)
+    report.overall_agent_score = combined_kpis.get("overall_agent_score")
+    report.quant_agent_index = combined_kpis.get("quant_agent_index")
     report.tutoring_effectiveness_index = combined_kpis.get(
-        "tutoring_effectiveness_index", 0.0
+        "tutoring_effectiveness_index"
     )
     report.combined_result_subscore = combined_kpis.get("combined_result_subscore")
 
     # Compute KPIs that may not have been set in parallel path
     if workers > 1 and all_l2_scores:
-        from evaluation.scoring import compute_benchmark_kpis
+        from server.eval.core.scoring import compute_benchmark_kpis
 
         kpis = compute_benchmark_kpis(
             all_l2_scores, task_result_objects=all_result_objects
         )
-        report.adaptiveness_score = kpis.get("adaptiveness_score", 0.0)
-        report.process_mastery_score = kpis.get("process_mastery_score", 0.0)
+        report.adaptiveness_score = kpis.get("adaptiveness_score")
+        report.process_mastery_score = kpis.get("process_mastery_score")
 
         import statistics as _stats
         from collections import defaultdict
@@ -940,10 +954,13 @@ def cmd_run(args):
         by_diff = defaultdict(list)
         by_cat = defaultdict(list)
         for r_obj, r_score in zip(all_result_objects, all_l2_scores):
+            score = r_score.get("overall_score")
+            if not isinstance(score, (int, float)):
+                continue
             if r_obj.difficulty:
-                by_diff[r_obj.difficulty].append(r_score["overall_score"])
+                by_diff[r_obj.difficulty].append(score)
             if r_obj.category:
-                by_cat[r_obj.category].append(r_score["overall_score"])
+                by_cat[r_obj.category].append(score)
         report.results_by_difficulty = {
             k: round(_stats.mean(v), 4) for k, v in sorted(by_diff.items())
         }
@@ -956,17 +973,26 @@ def cmd_run(args):
 
     print("=== Benchmark-Level KPIs (§6.3 + §6.4) ===")
     print(f"Layers evaluated:                {', '.join(layers_evaluated)}")
-    print(f"Overall Agent Score (OAS):       {report.overall_agent_score:.4f}")
-    print(f"Quant Agent Index (QAI):         {report.quant_agent_index:.4f}")
+    print(f"Overall Agent Score (OAS):       {_fmt_score(report.overall_agent_score)}")
+    print(f"Quant Agent Index (QAI):         {_fmt_score(report.quant_agent_index)}")
     if report.combined_result_subscore is not None:
-        print(f"  Result Sub-score (blended):    {report.combined_result_subscore:.4f}")
+        print(
+            f"  Result Sub-score (blended):    "
+            f"{_fmt_score(report.combined_result_subscore)}"
+        )
         if "layer1" in layers_evaluated:
             print(
-                f"    Layer 1 contribution:        {report.layer1_mean_score:.4f} (weight=0.40)"
+                f"    Layer 1 contribution:        "
+                f"{_fmt_score(report.layer1_mean_score)} (weight=0.40)"
             )
-    print(f"Tutoring Effectiveness (TEI):    {report.tutoring_effectiveness_index:.4f}")
-    print(f"Adaptiveness Score (AS):         {report.adaptiveness_score:.4f}")
-    print(f"Process Mastery Score (PMS):      {report.process_mastery_score:.4f}")
+    print(
+        f"Tutoring Effectiveness (TEI):    "
+        f"{_fmt_score(report.tutoring_effectiveness_index)}"
+    )
+    print(f"Adaptiveness Score (AS):         {_fmt_score(report.adaptiveness_score)}")
+    print(
+        f"Process Mastery Score (PMS):      {_fmt_score(report.process_mastery_score)}"
+    )
     if "layer1" in layers_evaluated and report.layer1_summary:
         print(
             f"Layer 1 items evaluated:         {report.layer1_summary['total_items']}"
@@ -1349,7 +1375,7 @@ def cmd_test_e2e(args):
     # Test 5: Scoring pipeline
     print("[5/8] Testing scoring pipeline...")
     try:
-        from evaluation.scoring import compute_task_score
+        from server.eval.core.scoring import compute_task_score
 
         score = compute_task_score(
             quant_result_score=0.8,
@@ -1374,7 +1400,7 @@ def cmd_test_e2e(args):
     # Test 5b: Combined scoring pipeline (Layer 1 + Layer 2)
     print("[5b/8] Testing combined scoring pipeline...")
     try:
-        from evaluation.scoring import compute_combined_benchmark_kpis
+        from server.eval.core.scoring import compute_combined_benchmark_kpis
 
         combined = compute_combined_benchmark_kpis(
             layer2_task_results=[score],  # reuse 'score' from test 5
@@ -1530,7 +1556,7 @@ def _add_common_args(parser):
     parser.add_argument(
         "--save-result",
         action="store_true",
-        help="Save scores.md, trace.md, cost.md, and agent_files/",
+        help="Save run_state.json, agent_files/, and score_n JSON when evaluated.",
     )
     parser.add_argument(
         "--workers",
@@ -1548,21 +1574,20 @@ def _add_common_args(parser):
         "--runonly",
         action="store_true",
         help="Run agent only (no evaluation). Implies --save-result. "
-        "Saves trace.md + agent_files/ + cost.md + run_state.json, skips scores.md.",
+        "Saves run_state.json + agent_files/ only.",
     )
     parser.add_argument(
         "--evalonly",
         action="store_true",
         help="Evaluate previously saved --runonly results. "
         "Reads run_state.json from result dirs, runs evaluation, "
-        "saves scores.md + updated cost.md. No agent/docker needed.",
+        "appends evaluations/score_n/score.json + cost.json. No agent/docker needed.",
     )
     parser.add_argument(
         "--eval-mode",
-        choices=["full", "qr_only", "qp_only"],
+        choices=["full", "qr", "qp", "tutor"],
         default="full",
-        help="Evaluation scope: full (default), qr_only (Result only), "
-        "or qp_only (Process only). Tutor 7D always runs.",
+        help="Evaluation scope: full (default), qr, qp, or tutor.",
     )
     parser.add_argument(
         "--live",

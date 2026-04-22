@@ -141,10 +141,32 @@ GET_BACKGROUND_TOOL = Tool(
 REQUEST_EVALUATION_TOOL = Tool(
     name="request_evaluation",
     description=(
-        "Request evaluation of the completed session. "
-        "First call triggers evaluation; subsequent calls return status or results."
+        "Append a new score_n evaluation run for the completed session. "
+        "If another evaluation is running, returns that run's status."
     ),
-    inputSchema={"type": "object", "properties": {}, "required": []},
+    inputSchema={
+        "type": "object",
+        "properties": {
+            "eval_mode": {
+                "type": "string",
+                "enum": ["full", "qr", "qp", "tutor"],
+                "description": "Evaluation scope.",
+            },
+            "tutor_dims": {
+                "type": "string",
+                "description": "Comma-separated Tutor dimensions for tutor-mode subsets.",
+            },
+            "eval_model": {
+                "type": "string",
+                "description": "Judge model identifier.",
+            },
+            "idempotency_key": {
+                "type": "string",
+                "description": "Optional key to reuse an existing running request.",
+            },
+        },
+        "required": [],
+    },
 )
 
 GET_RESULTS_TOOL = Tool(
@@ -157,14 +179,26 @@ GET_SCORES_TOOL = Tool(
     name="get_scores",
     description=(
         "Return evaluation scores. "
-        "Set history=true to return all evaluation runs instead of just the latest."
+        "Set history=true to return all score runs, or pass score/score_id."
     ),
     inputSchema={
         "type": "object",
         "properties": {
             "history": {
                 "type": "boolean",
-                "description": "If true, return all evaluation history.",
+                "description": "If true, return all score_n history.",
+            },
+            "score": {
+                "type": "string",
+                "description": "Specific score id to return, e.g. score_2.",
+            },
+            "scores": {
+                "type": "string",
+                "description": "Comma-separated score ids to return.",
+            },
+            "status": {
+                "type": "string",
+                "description": "Comma-separated status filter for history.",
             },
         },
         "required": [],

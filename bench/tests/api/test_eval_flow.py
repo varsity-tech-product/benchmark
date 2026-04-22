@@ -34,6 +34,14 @@ async def _complete_session(client, app):
     return sid
 
 
+def _wait_eval_done(state):
+    for _ in range(50):
+        with state._eval_lock:
+            if state._eval_status in ("completed", "failed"):
+                return
+        time.sleep(0.1)
+
+
 # ---------------------------------------------------------------------------
 # POST /evaluate
 # ---------------------------------------------------------------------------
@@ -62,35 +70,29 @@ class TestRequestEvaluation:
         resp = await client.post(f"/session/{sid}/evaluate")
         assert resp.status_code == 200
 
-        # Wait for background eval thread
         state = _get_state(app, sid)
-        for _ in range(50):
-            with state._eval_lock:
-                if state._eval_status in ("completed", "failed"):
-                    break
-            time.sleep(0.1)
+        _wait_eval_done(state)
 
         with state._eval_lock:
             assert state._eval_status == "completed"
+            assert state._active_score_id == "score_1"
 
     @pytest.mark.asyncio
-    async def test_evaluate_force_re_eval(self, app, client, mock_eval_pipeline):
+    async def test_evaluate_appends_score_run(self, app, client, mock_eval_pipeline):
         sid = await _complete_session(client, app)
 
         # First eval
-        await client.post(f"/session/{sid}/evaluate")
+        first = await client.post(f"/session/{sid}/evaluate")
+        assert first.json()["score_id"] == "score_1"
         state = _get_state(app, sid)
-        for _ in range(50):
-            with state._eval_lock:
-                if state._eval_status in ("completed", "failed"):
-                    break
-            time.sleep(0.1)
+        _wait_eval_done(state)
 
-        # Force re-eval
-        resp = await client.post(f"/session/{sid}/evaluate?force=true")
+        # Second eval appends score_2 without force/overwrite.
+        resp = await client.post(f"/session/{sid}/evaluate")
         assert resp.status_code == 200
         body = resp.json()
         assert body["status"] == "running"
+        assert body["score_id"] == "score_2"
 
 
 # ---------------------------------------------------------------------------
@@ -102,9 +104,9 @@ class TestEvalParameters:
     @pytest.mark.asyncio
     async def test_eval_mode_passed(self, app, client, mock_eval_pipeline):
         sid = await _complete_session(client, app)
-        await client.post(f"/session/{sid}/evaluate?eval_mode=tutor_only")
+        await client.post(f"/session/{sid}/evaluate?eval_mode=tutor")
         state = _get_state(app, sid)
-        assert state._eval_mode == "tutor_only"
+        assert state._eval_mode == "tutor"
 
     @pytest.mark.asyncio
     async def test_tutor_dims_passed(self, app, client, mock_eval_pipeline):
@@ -140,17 +142,33 @@ class TestGetScores:
         await client.post(f"/session/{sid}/evaluate")
 
         state = _get_state(app, sid)
-        for _ in range(50):
-            with state._eval_lock:
-                if state._eval_status in ("completed", "failed"):
-                    break
-            time.sleep(0.1)
+        _wait_eval_done(state)
 
         resp = await client.get(f"/session/{sid}/scores")
         assert resp.status_code == 200
         data = resp.json()
         assert data["status"] == "completed"
         assert "scores" in data
+        assert data["score_id"] == "score_1"
+        assert data["scores"]["overall_score"] == 0.775
+
+    @pytest.mark.asyncio
+    async def test_scores_history_after_multiple_evals(
+        self, app, client, mock_eval_pipeline
+    ):
+        sid = await _complete_session(client, app)
+        state = _get_state(app, sid)
+
+        await client.post(f"/session/{sid}/evaluate")
+        _wait_eval_done(state)
+        await client.post(f"/session/{sid}/evaluate")
+        _wait_eval_done(state)
+
+        resp = await client.get(f"/session/{sid}/scores?history=true")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["status"] == "history"
+        assert [s["score_id"] for s in data["scores"]] == ["score_1", "score_2"]
 
 
 # ---------------------------------------------------------------------------

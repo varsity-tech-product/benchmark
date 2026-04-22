@@ -1,54 +1,545 @@
-"""Evaluation runner + persistence for QuantTutorBench Server.
+"""Evaluation JSON persistence for QuantTutorBench Server."""
 
-Each evaluation run creates a timestamped subdirectory under
-``evaluations/`` and updates a ``latest`` symlink::
+from __future__ import annotations
 
-    results/server/{task_id}/{session_id}/
-        run_state.json
-        agent_files/
-        evaluations/
-            eval_20260410_110000/
-                scores.md
-                trace.md
-                cost.md
-                eval_meta.json
-            latest -> eval_20260410_110000/
-
-"""
-
-import json
 import logging
-import time
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
+
+from server.eval.contracts.output import EvalOutput, TrackResult
+from server.eval.contracts.request import EvalRequest, normalize_eval_mode
+from server.storage.score_store import (
+    allocate_score_run,
+    summarize_score,
+    update_score_run,
+    write_score_files,
+)
 
 logger = logging.getLogger(__name__)
 
 
-# Maps internal error-stash keys produced by `pipeline.evaluate_task` onto
-# the short component name exposed in eval_meta.json + the /scores payload.
-# See issue #42 — the tutor path uses `_eval_error` while quant_result /
-# code_eval use `_error`, so an ad-hoc suffix strip would mangle them.
 _EVAL_ERROR_KEYS: dict[str, str] = {
     "tutor_eval_error": "tutor",
     "quant_result_error": "quant_result",
     "code_eval_error": "code_eval",
     "tool_usage_error": "tool_usage",
+    "process_metrics_error": "process_metrics",
+    "qr_track_error": "qr",
+    "qp_track_error": "qp",
 }
 
 
 def _collect_eval_errors(eval_results: dict) -> dict:
-    """Return a component → error-text dict for every silently-failed eval.
+    """Return a component → error-text dict for known eval component failures."""
 
-    Keys are the short component name so the API surface reads cleanly
-    and callers can tell an empty/zeroed score apart from a genuine zero.
-    """
     out: dict = {}
     for internal, public in _EVAL_ERROR_KEYS.items():
         msg = eval_results.get(internal)
         if msg:
             out[public] = str(msg)
     return out
+
+
+def _now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _mode_includes(eval_mode: str, track: str) -> bool:
+    return eval_mode == "full" or eval_mode == track
+
+
+def _cost_by_model_from(*sources: dict | None) -> dict[str, float]:
+    out: dict[str, float] = {}
+    for src in sources:
+        if not isinstance(src, dict):
+            continue
+        by_model = src.get("_eval_cost_by_model") or src.get("eval_cost_by_model") or {}
+        if not isinstance(by_model, dict):
+            continue
+        for model, cost in by_model.items():
+            try:
+                out[str(model)] = round(out.get(str(model), 0.0) + float(cost), 6)
+            except (TypeError, ValueError):
+                continue
+    return out
+
+
+def _eval_cost_from(*sources: dict | None) -> float:
+    total = 0.0
+    for src in sources:
+        if not isinstance(src, dict):
+            continue
+        try:
+            total += float(src.get("_eval_cost", 0.0) or src.get("eval_cost", 0.0))
+        except (TypeError, ValueError):
+            continue
+    return round(total, 6)
+
+
+def _track_status(
+    score: float | None, blockers: list[dict], *, skipped: bool = False
+) -> str:
+    if skipped:
+        return "skipped"
+    if blockers:
+        return "not_computable"
+    return "success" if score is not None else "not_computable"
+
+
+def _dimension_optional(data: Any) -> bool:
+    return isinstance(data, dict) and (
+        data.get("required_for_track_score") is False
+        or data.get("skipped") is True
+        or data.get("status") == "skipped"
+    )
+
+
+def _preflight_blockers(eval_results: dict, track: str) -> list[dict[str, Any]]:
+    preflight = eval_results.get("preflight")
+    if not isinstance(preflight, dict):
+        return []
+    blockers = preflight.get("track_blockers")
+    if not isinstance(blockers, dict):
+        return []
+    items = blockers.get(track) or []
+    return [item for item in items if isinstance(item, dict)]
+
+
+def _make_qr_track(eval_results: dict, duration: float) -> TrackResult:
+    blockers: list[dict[str, Any]] = list(_preflight_blockers(eval_results, "qr"))
+    for key in ("quant_result_error", "code_eval_error"):
+        if eval_results.get(key):
+            blockers.append(
+                {
+                    "track": "qr",
+                    "dimension": key.removesuffix("_error"),
+                    "reason": str(eval_results[key]),
+                }
+            )
+
+    rj = (
+        eval_results.get("result_judge")
+        if isinstance(eval_results.get("result_judge"), dict)
+        else {}
+    )
+    score = eval_results.get("quant_result")
+    if rj and rj.get("score") is None and rj.get("error"):
+        blockers.append(
+            {
+                "track": "qr",
+                "dimension": "result_judge",
+                "reason": str(rj.get("error")),
+            }
+        )
+    if blockers:
+        score = None
+
+    if eval_results.get("qr_track_error"):
+        blockers.append(
+            {
+                "track": "qr",
+                "dimension": "qr",
+                "reason": str(eval_results["qr_track_error"]),
+            }
+        )
+        score = None
+
+    code_eval = eval_results.get("code_eval") or {}
+    eval_script_detail = eval_results.get("eval_script_detail") or {}
+    detail = {
+        "programmatic": {
+            "score": eval_script_detail.get(
+                "score", eval_results.get("quant_result_programmatic")
+            ),
+            "status": eval_script_detail.get(
+                "status",
+                "failed" if eval_results.get("quant_result_error") else "success",
+            ),
+            "required_for_track_score": eval_script_detail.get(
+                "required_for_track_score",
+                eval_script_detail.get("status") != "skipped",
+            ),
+            "detail": eval_script_detail,
+        },
+        "code_eval": code_eval,
+        "result_judge": rj,
+        "blend_weights": eval_results.get("qr_blend_weights"),
+    }
+    return TrackResult(
+        track="qr",
+        score=score,
+        status=_track_status(score, blockers),
+        detail=detail,
+        blocking_missing=blockers,
+        eval_cost=_eval_cost_from(rj),
+        eval_cost_by_model=_cost_by_model_from(rj),
+        duration_seconds=duration,
+    )
+
+
+def _make_qp_track(eval_results: dict, duration: float) -> TrackResult:
+    process = eval_results.get("process_metrics") or {}
+    blockers: list[dict[str, Any]] = list(_preflight_blockers(eval_results, "qp"))
+    for key in ("tool_usage_error", "process_metrics_error", "qp_track_error"):
+        if eval_results.get(key):
+            blockers.append(
+                {
+                    "track": "qp",
+                    "dimension": key.removesuffix("_error"),
+                    "reason": str(eval_results[key]),
+                }
+            )
+    for dim in (
+        "tool_usage",
+        "action_economy",
+        "code_lifecycle",
+        "task_planning",
+        "problem_solving",
+    ):
+        data = process.get(dim)
+        if data is None:
+            blockers.append(
+                {
+                    "track": "qp",
+                    "dimension": dim,
+                    "reason": "Required QP dimension is missing",
+                }
+            )
+            continue
+        if isinstance(data, dict) and data.get("score") is None:
+            if _dimension_optional(data):
+                continue
+            blockers.append(
+                {
+                    "track": "qp",
+                    "dimension": dim,
+                    "reason": data.get("reason")
+                    or "Required QP dimension has no score",
+                }
+            )
+    score = eval_results.get("quant_process")
+    if blockers:
+        score = None
+    return TrackResult(
+        track="qp",
+        score=score,
+        status=_track_status(score, blockers),
+        detail=process,
+        blocking_missing=blockers,
+        eval_cost=_eval_cost_from(process),
+        eval_cost_by_model=_cost_by_model_from(process),
+        duration_seconds=duration,
+    )
+
+
+def _tutor_score(
+    tutor_scores: dict, *, category: str, requires_code: bool
+) -> float | None:
+    clean = {
+        k: v
+        for k, v in tutor_scores.items()
+        if not str(k).startswith("_") and isinstance(v, (int, float))
+    }
+    if not clean:
+        return None
+    from server.eval.judges.tutor_6d import compute_tutor_score
+
+    return compute_tutor_score(clean, category=category, requires_code=requires_code)
+
+
+def _make_tutor_track(
+    eval_results: dict,
+    *,
+    category: str,
+    requires_code: bool,
+    tutor_dims: list[str] | None,
+    duration: float,
+) -> TrackResult:
+    tutor_scores = eval_results.get("tutor_scores") or {}
+    blockers: list[dict[str, Any]] = list(_preflight_blockers(eval_results, "tutor"))
+    if eval_results.get("tutor_eval_error"):
+        blockers.append(
+            {
+                "track": "tutor",
+                "dimension": "tutor",
+                "reason": str(eval_results["tutor_eval_error"]),
+            }
+        )
+    from server.eval.judges.tutor_6d import DIMENSIONS, get_dimension_weight
+
+    expected_dims = tutor_dims or [
+        dim
+        for dim in DIMENSIONS
+        if get_dimension_weight(category, dim, requires_code=requires_code) > 0.0
+    ]
+    for dim in expected_dims:
+        if dim not in tutor_scores or not isinstance(
+            tutor_scores.get(dim), (int, float)
+        ):
+            blockers.append(
+                {
+                    "track": "tutor",
+                    "dimension": dim,
+                    "reason": "Required Tutor dimension is missing",
+                }
+            )
+    score = _tutor_score(tutor_scores, category=category, requires_code=requires_code)
+    if blockers:
+        score = None
+    per_model = (
+        eval_results.get("tutor_scores_by_model")
+        or tutor_scores.get("_per_model")
+        or {}
+    )
+    reasons = tutor_scores.get("_dim_reasons") if isinstance(tutor_scores, dict) else {}
+    dim_errors = (
+        tutor_scores.get("_dim_errors") if isinstance(tutor_scores, dict) else {}
+    )
+    detail: dict[str, Any] = {}
+    for dim in expected_dims:
+        value = tutor_scores.get(dim)
+        missing = not isinstance(value, (int, float))
+        error_list = dim_errors.get(dim, []) if isinstance(dim_errors, dict) else []
+        detail[dim] = {
+            "score": value if not missing else None,
+            "status": "failed" if error_list else ("missing" if missing else "success"),
+            "required_for_track_score": True,
+            "reason": (
+                "; ".join(str(e) for e in error_list)
+                if error_list
+                else ((reasons or {}).get(dim, "") if isinstance(reasons, dict) else "")
+            ),
+            "evidence": [],
+            "per_model": (
+                {
+                    model: dims.get(dim)
+                    for model, dims in per_model.items()
+                    if isinstance(dims, dict) and dim in dims
+                }
+                if isinstance(per_model, dict)
+                else {}
+            ),
+        }
+        if error_list:
+            detail[dim]["error"] = "; ".join(str(e) for e in error_list)
+    for key, value in tutor_scores.items():
+        if str(key).startswith("_"):
+            detail[key] = value
+
+    return TrackResult(
+        track="tutor",
+        score=score,
+        status=_track_status(score, blockers),
+        detail=detail,
+        blocking_missing=blockers,
+        eval_cost=_eval_cost_from(tutor_scores),
+        eval_cost_by_model=_cost_by_model_from(tutor_scores),
+        duration_seconds=duration,
+    )
+
+
+def _compute_overall(
+    *,
+    eval_mode: str,
+    qr: TrackResult | None,
+    qp: TrackResult | None,
+    tutor: TrackResult | None,
+) -> tuple[float | None, list[dict[str, Any]]]:
+    tracks = [t for t in (qr, qp, tutor) if t is not None]
+    blockers = [b for t in tracks for b in t.blocking_missing]
+    from server.eval.core.scoring import compute_overall
+
+    return compute_overall(qr=qr, qp=qp, tutor=tutor, eval_mode=eval_mode), blockers
+
+
+def _build_eval_output(
+    *,
+    score_id: str,
+    eval_results: dict,
+    task,
+    eval_mode: str,
+    eval_model: str | None,
+    created_at: str,
+    completed_at: str,
+    duration: float,
+    tutor_dims: list[str] | None = None,
+) -> EvalOutput:
+    category = task.category.value
+    requires_code = task.requires_code
+    qr = (
+        _make_qr_track(eval_results, duration)
+        if _mode_includes(eval_mode, "qr")
+        else None
+    )
+    qp = (
+        _make_qp_track(eval_results, duration)
+        if _mode_includes(eval_mode, "qp")
+        else None
+    )
+    tutor = (
+        _make_tutor_track(
+            eval_results,
+            category=category,
+            requires_code=requires_code,
+            tutor_dims=tutor_dims,
+            duration=duration,
+        )
+        if _mode_includes(eval_mode, "tutor")
+        else None
+    )
+    overall, blockers = _compute_overall(eval_mode=eval_mode, qr=qr, qp=qp, tutor=tutor)
+    status = "completed_scored" if overall is not None else "completed_not_computable"
+    return EvalOutput(
+        score_id=score_id,
+        score_status=status,
+        qr=qr,
+        qp=qp,
+        tutor=tutor,
+        overall_score=overall,
+        eval_mode=eval_mode,
+        eval_model=eval_model,
+        created_at=created_at,
+        completed_at=completed_at,
+        duration_seconds=duration,
+        blocking_missing=blockers,
+    )
+
+
+def _build_cost(
+    output: EvalOutput, stage_costs: dict[str, dict[str, float]] | None = None
+) -> dict[str, Any]:
+    tracks = [t for t in (output.qr, output.qp, output.tutor) if t is not None]
+    by_track = {t.track: round(t.eval_cost, 6) for t in tracks}
+    by_model: dict[str, float] = {}
+    by_stage_model: dict[str, dict[str, float]] = dict(stage_costs or {})
+    for t in tracks:
+        if t.eval_cost_by_model and not stage_costs:
+            by_stage_model[t.track] = t.eval_cost_by_model
+        for model, cost in t.eval_cost_by_model.items():
+            by_model[model] = round(by_model.get(model, 0.0) + cost, 6)
+    return {
+        "version": "2.0",
+        "score_id": output.score_id,
+        "eval_cost_usd": round(sum(by_track.values()), 6),
+        "eval_cost_by_track": by_track,
+        "eval_cost_by_model": by_model,
+        "eval_cost_by_stage_model": by_stage_model,
+    }
+
+
+def save_eval_results(
+    *,
+    task,
+    result_dir: Path,
+    eval_results: dict,
+    eval_mode: str = "full",
+    eval_model: str | None = None,
+    tutor_dims: list[str] | None = None,
+    score_id: str | None = None,
+    created_at: str | None = None,
+    duration: float = 0.0,
+    stage_costs: dict[str, dict[str, float]] | None = None,
+) -> dict:
+    """Persist existing evaluation results as a new ``score_n`` JSON run."""
+
+    result_dir = Path(result_dir)
+    eval_mode = normalize_eval_mode(eval_mode)
+    if score_id is None:
+        run, _created = allocate_score_run(
+            result_dir,
+            eval_mode=eval_mode,
+            eval_model=eval_model,
+            tutor_dims=tutor_dims,
+        )
+        score_id = run.score_id
+        created_at = run.created_at
+    elif created_at is None:
+        from server.storage.score_store import load_index
+
+        index = load_index(result_dir)
+        entry = next(
+            (e for e in index.get("scores", []) if e.get("score_id") == score_id),
+            {},
+        )
+        created_at = entry.get("created_at") or _now()
+
+    completed_at = _now()
+    output = _build_eval_output(
+        score_id=score_id,
+        eval_results=eval_results,
+        task=task,
+        eval_mode=eval_mode,
+        eval_model=eval_model,
+        tutor_dims=tutor_dims,
+        created_at=created_at or completed_at,
+        completed_at=completed_at,
+        duration=duration,
+    )
+    score_data = output.to_dict()
+    cost_data = _build_cost(output, stage_costs=stage_costs)
+    write_score_files(result_dir, score_id, score_data, cost_data)
+    update_score_run(
+        result_dir,
+        score_id,
+        status=output.score_status,
+        overall_score=output.overall_score,
+        completed_at=completed_at,
+    )
+    logger.info("Saved %s score.json + cost.json", score_id)
+    return summarize_score(score_data, cost_data)
+
+
+def save_terminal_eval_result(
+    *,
+    result_dir: Path,
+    score_id: str,
+    eval_mode: str,
+    eval_model: str | None,
+    created_at: str | None,
+    status: str,
+    error: str,
+    duration: float = 0.0,
+    preflight: dict[str, Any] | None = None,
+    interrupted: bool = False,
+) -> dict:
+    completed_at = _now()
+    score_data = {
+        "version": "2.0",
+        "score_id": score_id,
+        "score_status": status,
+        "created_at": created_at or completed_at,
+        "completed_at": completed_at,
+        "eval_model": eval_model,
+        "eval_mode": eval_mode,
+        "duration_seconds": round(duration, 2),
+        "interrupted": interrupted,
+        "blocking_missing": [],
+        "overall_score": None,
+        "qr": None,
+        "qp": None,
+        "tutor": None,
+        "error": error,
+        "preflight": preflight or {},
+    }
+    cost_data = {
+        "version": "2.0",
+        "score_id": score_id,
+        "eval_cost_usd": 0.0,
+        "eval_cost_by_track": {},
+        "eval_cost_by_model": {},
+        "eval_cost_by_stage_model": {},
+    }
+    write_score_files(result_dir, score_id, score_data, cost_data)
+    update_score_run(
+        result_dir,
+        score_id,
+        status=status,
+        overall_score=None,
+        completed_at=completed_at,
+        error=error,
+    )
+    return summarize_score(score_data, cost_data)
 
 
 def run_evaluation(
@@ -63,198 +554,62 @@ def run_evaluation(
     cancel_event=None,
     eval_mode: str = "full",
     tutor_dims: list[str] | None = None,
+    score_id: str | None = None,
 ) -> dict:
-    """Run full evaluation and save reports into a new evaluations/ subdirectory.
+    """Run evaluation and save score.json + cost.json under a score_n directory."""
 
-    Args:
-        task: QuantTutorTask instance.
-        persona: StudentPersona instance.
-        result_dir: Session directory containing run_state.json and agent_files/.
-        conversation: Session conversation history.
-        tool_logs: Session tool call logs.
-        distractor_names: Distractor tool names.
-        bench_root: Path to bench/ root.
-        eval_model: Model for LLM-based evaluators.
-        cancel_event: Optional cancellation event.
-        eval_mode: "full" | "qr_only" | "qp_only" | "tutor_only".
-        tutor_dims: Optional list of tutor dimensions to evaluate.
-
-    Returns:
-        Dict with evaluation results (quant_result, quant_process, tutor_scores, ...).
-    """
     result_dir = Path(result_dir)
+    eval_mode = normalize_eval_mode(eval_mode)
+    if score_id is None:
+        run, _created = allocate_score_run(
+            result_dir,
+            eval_mode=eval_mode,
+            eval_model=eval_model,
+            tutor_dims=tutor_dims,
+        )
+        score_id = run.score_id
+        created_at = run.created_at
+    else:
+        # Keep index-created timestamp when possible.
+        from server.storage.score_store import load_index
 
-    # Update run_state.json status
-    from server.storage.result_writer import update_evaluation_status
+        index = load_index(result_dir)
+        entry = next(
+            (e for e in index.get("scores", []) if e.get("score_id") == score_id),
+            {},
+        )
+        created_at = entry.get("created_at") or _now()
 
-    update_evaluation_status(result_dir, "running")
+    from server.eval.core.coordinator import EvalCoordinator
 
-    eval_start = time.time()
-
-    # --- Run evaluation pipeline ---
-    from server.eval.pipeline import evaluate_task
-
-    workspace_path = str(result_dir / "agent_files")
-
-    _dims_info = f", tutor_dims={tutor_dims}" if tutor_dims else ""
-    logger.info("Running evaluation (mode=%s%s)...", eval_mode, _dims_info)
-    eval_results = evaluate_task(
+    run_state = {
+        "conversation": conversation,
+        "tool_logs": [
+            vars(log) if hasattr(log, "__dict__") else log for log in (tool_logs or [])
+        ],
+        "distractor_names": distractor_names,
+        "task_id": getattr(task, "task_id", ""),
+        "persona_id": getattr(persona, "persona_id", ""),
+    }
+    request = EvalRequest(
+        session_id=(run_state.get("session_id") or ""),
+        eval_mode=eval_mode,
+        tutor_dims=tutor_dims,
+        eval_model=eval_model,
+    )
+    logger.info("Running evaluation score_id=%s mode=%s...", score_id, eval_mode)
+    output = EvalCoordinator(bench_root=bench_root).run(
+        request=request,
+        result_dir=result_dir,
+        score_id=score_id,
         task=task,
         persona=persona,
-        workspace_path=workspace_path,
+        run_state=run_state,
+        created_at=created_at,
         conversation=conversation,
         tool_logs=tool_logs,
         distractor_names=distractor_names,
-        bench_root=bench_root,
-        eval_model=eval_model,
         cancel_event=cancel_event,
-        eval_mode=eval_mode,
-        tutor_dims=tutor_dims,
+        persist=True,
     )
-
-    # --- Compute task score ---
-    from server.eval.scoring import compute_task_score
-
-    scores = compute_task_score(
-        quant_result_score=eval_results.get("quant_result", 0.0),
-        quant_process_score=eval_results.get("quant_process", 0.0),
-        tutor_dimension_scores=eval_results.get("tutor_scores", {}),
-        category=task.category.value,
-        requires_code=task.requires_code,
-        eval_mode=eval_mode,
-    )
-
-    eval_duration = time.time() - eval_start
-
-    # --- Create timestamped evaluations/ subdirectory ---
-    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    eval_dir = result_dir / "evaluations" / f"eval_{ts}"
-    eval_dir.mkdir(parents=True, exist_ok=True)
-
-    # --- Save reports ---
-    _save_reports(
-        eval_dir=eval_dir,
-        task=task,
-        persona=persona,
-        conversation=conversation,
-        tool_logs=tool_logs,
-        eval_results=eval_results,
-        scores=scores,
-        eval_model=eval_model,
-        eval_mode=eval_mode,
-        eval_duration=eval_duration,
-    )
-
-    # --- Write eval_meta.json ---
-    # Collect per-component errors so callers can see *why* a dimension is
-    # empty/zero (see issue #42). `pipeline.evaluate_task` stores each
-    # component's exception text under its own key when that component
-    # silently fell back to an empty/default score.
-    errors = _collect_eval_errors(eval_results)
-    meta = {
-        "timestamp": ts,
-        "eval_model": eval_model,
-        "eval_mode": eval_mode,
-        "eval_duration_seconds": round(eval_duration, 2),
-        "quant_result": eval_results.get("quant_result", 0.0),
-        "quant_process": eval_results.get("quant_process", 0.0),
-        "tutor_scores": eval_results.get("tutor_scores", {}),
-        "overall_score": scores.get("overall_score", 0.0),
-    }
-    if errors:
-        meta["errors"] = errors
-    meta_path = eval_dir / "eval_meta.json"
-    meta_path.write_text(json.dumps(meta, indent=2, default=str), encoding="utf-8")
-    logger.info("Saved eval_meta.json to %s", meta_path)
-
-    # --- Update latest symlink ---
-    latest_link = result_dir / "evaluations" / "latest"
-    try:
-        if latest_link.is_symlink() or latest_link.exists():
-            latest_link.unlink()
-        latest_link.symlink_to(eval_dir.name)
-        logger.info("Updated latest -> %s", eval_dir.name)
-    except OSError as exc:
-        logger.warning("Failed to update latest symlink: %s", exc)
-
-    # --- Update run_state.json status ---
-    update_evaluation_status(result_dir, "completed")
-
-    return eval_results
-
-
-def _save_reports(
-    eval_dir: Path,
-    task,
-    persona,
-    conversation: list[dict],
-    tool_logs: list,
-    eval_results: dict,
-    scores: dict,
-    eval_model: str,
-    eval_mode: str,
-    eval_duration: float,
-) -> None:
-    """Save scores.md, trace.md, and cost.md into the eval directory."""
-    from server.schemas import ConversationTurn, TaskResult
-
-    result = TaskResult(
-        task_id=task.task_id,
-        persona_id=persona.persona_id,
-        difficulty=task.difficulty.value,
-        category=task.category.value,
-        requires_code=task.requires_code,
-    )
-    for t in conversation:
-        result.turns.append(
-            ConversationTurn(role=t["role"], content=t["content"]),
-        )
-
-    # --- scores.md ---
-    try:
-        from server.eval.eval_helpers import populate_eval_results
-        from server.eval.reports.score_report import generate_score_report
-
-        populate_eval_results(
-            result,
-            eval_results,
-            category=task.category.value,
-            requires_code=task.requires_code,
-            eval_mode=eval_mode,
-        )
-
-        scores_path = eval_dir / "scores.md"
-        scores_path.write_text(
-            generate_score_report(result),
-            encoding="utf-8",
-        )
-        logger.info("Saved scores.md")
-    except Exception as exc:
-        logger.warning("Failed to save scores.md: %s", exc)
-
-    # --- trace.md ---
-    try:
-        from server.eval.reports.trace_report import generate_trace_md
-
-        # trace_report expects TaskResult-like object and proxy logs
-        trace_md = generate_trace_md(result, tool_logs)
-        trace_path = eval_dir / "trace.md"
-        trace_path.write_text(trace_md, encoding="utf-8")
-        logger.info("Saved trace.md")
-    except Exception as exc:
-        logger.warning("Failed to save trace.md: %s", exc)
-
-    # --- cost.md ---
-    try:
-        from server.eval.reports.cost_report import generate_cost_report
-
-        cost_md = generate_cost_report(
-            result,
-            task_id=task.task_id,
-            persona_id=persona.persona_id,
-        )
-        cost_path = eval_dir / "cost.md"
-        cost_path.write_text(cost_md, encoding="utf-8")
-        logger.info("Saved cost.md")
-    except Exception as exc:
-        logger.warning("Failed to save cost.md: %s", exc)
+    return output.to_summary()
