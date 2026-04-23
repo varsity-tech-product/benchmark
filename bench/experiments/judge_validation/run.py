@@ -16,6 +16,12 @@ from typing import Any
 BENCH_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(BENCH_ROOT))
 
+from experiments.judge_validation.human_alignment import (  # noqa: E402
+    convert_csv_to_human_labels,
+    compute_human_alignment_stats,
+    load_human_labels,
+    write_human_alignment_reports,
+)
 from experiments.judge_validation.report import (  # noqa: E402
     compute_reliability_stats,
     write_reports,
@@ -38,6 +44,7 @@ from server.eval.judges.runtime.conv_geval import (  # noqa: E402
 from server.eval.judges.runtime.model_resolver import resolve_ewan_model  # noqa: E402
 
 DEFAULT_CORPUS = Path(__file__).resolve().parent / "pilot_corpus.json"
+DEFAULT_HUMAN_LABELS = Path(__file__).resolve().parent / "human_labels.json"
 DEFAULT_OUTPUT_DIR = Path("experiments/judge_validation/results")
 DEFAULT_REPEAT_COUNT = 3
 DEFAULT_PROMPT_VARIANT = "baseline"
@@ -486,6 +493,56 @@ def _report(args: argparse.Namespace) -> int:
     return 0
 
 
+def _convert_human_labels(args: argparse.Namespace) -> int:
+    csv_path = _resolve(args.csv)
+    output_path = _resolve(args.labels_output)
+    payload = convert_csv_to_human_labels(csv_path)
+    _atomic_write_json(output_path, payload)
+    print(
+        json.dumps(
+            {
+                "human_labels": str(output_path),
+                "labels": len(payload["labels"]),
+            },
+            indent=2,
+        )
+    )
+    return 0
+
+
+def _human_alignment(args: argparse.Namespace) -> int:
+    corpus = _load_json(_resolve(args.corpus))
+    runs = _load_json(_resolve(args.runs))
+    labels = load_human_labels(_resolve(args.labels))
+    records = runs.get("records", [])
+    stats = compute_human_alignment_stats(
+        corpus=corpus,
+        records=records,
+        labels=labels,
+    )
+    output_dir = _resolve(args.output_dir)
+    paths = write_human_alignment_reports(
+        stats=stats,
+        run_id=str(runs.get("run_id", "")),
+        output_dir=output_dir,
+    )
+    print(
+        json.dumps(
+            {
+                "run_id": runs.get("run_id"),
+                "labels": len(labels),
+                "stats": paths["stats"],
+                "markdown": paths["markdown"],
+                "html": paths["html"],
+                "overall": stats["overall"],
+                "stage3_gate": stats["stage3_gate"],
+            },
+            indent=2,
+        )
+    )
+    return 0
+
+
 def _dry_run(args: argparse.Namespace) -> int:
     corpus = _load_json(_resolve(args.corpus))
     pairs = corpus.get("adversarial_pairs", [])
@@ -549,6 +606,31 @@ def _make_parser() -> argparse.ArgumentParser:
         help="Path to judge_runs.json",
     )
 
+    convert_labels_p = sub.add_parser("convert-human-labels")
+    convert_labels_p.add_argument(
+        "--csv",
+        required=True,
+        help="Path to a Google Form CSV export",
+    )
+    convert_labels_p.add_argument(
+        "--labels-output",
+        default=str(DEFAULT_HUMAN_LABELS),
+        help="Path for canonical human_labels.json",
+    )
+
+    human_alignment_p = sub.add_parser("human-alignment")
+    add_common(human_alignment_p)
+    human_alignment_p.add_argument(
+        "--runs",
+        default=str(DEFAULT_OUTPUT_DIR / "judge_runs.json"),
+        help="Path to judge_runs.json",
+    )
+    human_alignment_p.add_argument(
+        "--labels",
+        default=str(DEFAULT_HUMAN_LABELS),
+        help="Path to human_labels.json",
+    )
+
     return parser
 
 
@@ -563,6 +645,10 @@ def main(argv: list[str] | None = None) -> int:
         return _judge(args)
     if args.command == "report":
         return _report(args)
+    if args.command == "convert-human-labels":
+        return _convert_human_labels(args)
+    if args.command == "human-alignment":
+        return _human_alignment(args)
     parser.error(f"Unknown command: {args.command}")
     return 2
 

@@ -135,11 +135,16 @@ If a batch driver is needed, it should be a thin wrapper around
 `bench/experiments/judge_validation/` is the automated judge reliability gate for
 external-agent scoring. It owns a fixed pilot corpus, prompt rendering, repeated
 same-prompt judge runs, prompt-format variants, one-factor sensitivity cases,
-adversarial-pair ranking checks, and Markdown/HTML/JSON reliability reports. The
-report tracks mean absolute score delta, within-one score rate, pass/fail flip
-rate, prompt-format score deltas, sensitivity pass rate, adversarial ranking
-pass rate, evidence/reason coverage, lightweight explanation consistency, raw
-disagreement examples, and residual risks.
+adversarial-pair ranking checks, human label artifacts, Google Form CSV
+conversion, and Markdown/HTML/JSON reliability reports. The automated report
+tracks mean absolute score delta, within-one score rate, pass/fail flip rate,
+prompt-format score deltas, sensitivity pass rate, adversarial ranking pass
+rate, evidence/reason coverage, lightweight explanation consistency, raw
+disagreement examples, and residual risks. The human-alignment report joins
+`judge_runs.json` with `human_labels.json` and reports exact agreement,
+within-one agreement, mean absolute delta versus human labels, pass/fail
+agreement, large disagreement examples, and bias slices by dimension, category,
+persona, and transcript source.
 
 ## Public Reads
 

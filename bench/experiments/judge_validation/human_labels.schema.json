@@ -1,0 +1,101 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://quanttutorbench.local/schemas/judge_validation_human_labels_v1.json",
+  "title": "Judge Validation Human Labels",
+  "type": "object",
+  "required": ["version", "labels"],
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "const": "judge_validation_human_labels_v1"
+    },
+    "generated_at": {
+      "type": "string"
+    },
+    "labels": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/human_label"
+      }
+    }
+  },
+  "$defs": {
+    "human_label": {
+      "type": "object",
+      "required": [
+        "sample_id",
+        "transcript_id",
+        "rubric_id",
+        "dimension",
+        "human_score",
+        "confidence",
+        "human_rationale",
+        "evidence_spans",
+        "failure_tags",
+        "reviewer_id",
+        "label_version",
+        "timestamp"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "sample_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "transcript_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "rubric_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "dimension": {
+          "type": "string",
+          "minLength": 1
+        },
+        "human_score": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 5
+        },
+        "confidence": {
+          "type": "string",
+          "enum": ["low", "medium", "high"]
+        },
+        "human_rationale": {
+          "type": "string",
+          "minLength": 1
+        },
+        "evidence_spans": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "failure_tags": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "reviewer_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "label_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "timestamp": {
+          "type": "string"
+        },
+        "notes": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}
