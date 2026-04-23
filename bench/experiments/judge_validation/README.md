@@ -43,6 +43,17 @@ Render prompt inputs without calling a judge model:
 python -m experiments.judge_validation.run render
 ```
 
+Export the reviewer packet for expert labeling:
+
+```bash
+python -m experiments.judge_validation.run export-review-packet
+```
+
+This writes `human_review_packet.json`, `human_review_packet.md`,
+`google_form_bilingual.md`, `human_label_template.csv`, and the private
+`human_review_sample_map.json` under
+`experiments/judge_validation/results/human_review_packet/`.
+
 Run the Stage 1 judge gate with three repeats per item:
 
 ```bash
@@ -78,7 +89,8 @@ Generate the Stage 3 human-alignment report:
 ```bash
 python -m experiments.judge_validation.run human-alignment \
   --runs experiments/judge_validation/results/judge_runs.json \
-  --labels experiments/judge_validation/human_labels.json
+  --labels experiments/judge_validation/human_labels.json \
+  --sample-map experiments/judge_validation/results/human_review_packet/human_review_sample_map.json
 ```
 
 Outputs are written under `bench/experiments/judge_validation/results/` by default.

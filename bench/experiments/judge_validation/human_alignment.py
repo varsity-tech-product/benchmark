@@ -46,6 +46,18 @@ CSV_HEADER_ALIASES = {
     "notes": ("notes", "reviewer_notes"),
 }
 
+CANONICAL_FAILURE_TAGS = [
+    "quant_error",
+    "code_error",
+    "missing_task_completion",
+    "hallucinated_tool_output",
+    "poor_adaptation",
+    "answer_dump",
+    "unsafe_financial_advice",
+    "unclear_rubric",
+    "other",
+]
+
 
 def _safe_mean(values: list[float]) -> float | None:
     return round(mean(values), 4) if values else None
@@ -86,6 +98,41 @@ def _split_list(value: Any, *, split_commas: bool = False) -> list[str]:
     return [part.strip() for part in re.split(pattern, text) if part.strip()]
 
 
+def _normalize_confidence(value: str) -> str:
+    text = value.strip().lower()
+    tokens = set(re.findall(r"[a-z]+", text))
+    for confidence in ("low", "medium", "high"):
+        if confidence in tokens or text == confidence:
+            return confidence
+    if "低" in text:
+        return "low"
+    if "中" in text:
+        return "medium"
+    if "高" in text:
+        return "high"
+    raise ValueError(f"confidence must be low, medium, or high: {value}")
+
+
+def _normalize_failure_tags(values: list[str]) -> list[str]:
+    normalized_tags: list[str] = []
+    for value in values:
+        normalized = _normalize_header(value)
+        match = next(
+            (
+                tag
+                for tag in CANONICAL_FAILURE_TAGS
+                if normalized == tag
+                or normalized.startswith(f"{tag}_")
+                or normalized.endswith(f"_{tag}")
+                or f"_{tag}_" in normalized
+            ),
+            normalized,
+        )
+        if match and match not in normalized_tags:
+            normalized_tags.append(match)
+    return normalized_tags
+
+
 def _as_int_score(value: Any) -> int:
     if isinstance(value, bool):
         raise ValueError(f"human_score must be an integer from 1 to 5: {value}")
@@ -124,9 +171,7 @@ def normalize_human_label(
         raise ValueError(f"human label is missing required fields: {missing}")
 
     sample_id = _required_text(raw, "sample_id")
-    confidence = _required_text(raw, "confidence").lower()
-    if confidence not in {"low", "medium", "high"}:
-        raise ValueError(f"confidence must be low, medium, or high: {confidence}")
+    confidence = _normalize_confidence(_required_text(raw, "confidence"))
     label = {
         "sample_id": sample_id,
         "transcript_id": str(raw.get("transcript_id") or sample_id).strip(),
@@ -136,7 +181,9 @@ def normalize_human_label(
         "confidence": confidence,
         "human_rationale": _required_text(raw, "human_rationale"),
         "evidence_spans": _split_list(raw.get("evidence_spans")),
-        "failure_tags": _split_list(raw.get("failure_tags"), split_commas=True),
+        "failure_tags": _normalize_failure_tags(
+            _split_list(raw.get("failure_tags"), split_commas=True)
+        ),
         "reviewer_id": _required_text(raw, "reviewer_id"),
         "label_version": str(raw.get("label_version") or "v1").strip(),
         "timestamp": str(
@@ -151,9 +198,33 @@ def normalize_human_label(
 
 def _extract_csv_value(row: dict[str, str], canonical_field: str) -> str:
     aliases = CSV_HEADER_ALIASES[canonical_field]
+    if canonical_field == "reviewer_id":
+        for alias in ("reviewer_id", "reviewer", "reviewer_email"):
+            if alias in row:
+                return row[alias]
+        for alias in ("reviewer_id", "reviewer_email"):
+            for key, value in row.items():
+                if (
+                    key.startswith(f"{alias}_")
+                    or key.endswith(f"_{alias}")
+                    or f"_{alias}_" in key
+                ):
+                    return value
+        return row.get("email_address", "")
+
     for alias in aliases:
         if alias in row:
             return row[alias]
+    for alias in aliases:
+        if alias == "reviewer":
+            continue
+        for key, value in row.items():
+            if (
+                key.startswith(f"{alias}_")
+                or key.endswith(f"_{alias}")
+                or f"_{alias}_" in key
+            ):
+                return value
     return ""
 
 
@@ -203,6 +274,39 @@ def load_human_labels(path: Path) -> list[dict[str, Any]]:
     else:
         raise ValueError("human labels must be a list or an object with labels")
     return [normalize_human_label(label) for label in raw_labels]
+
+
+def load_sample_id_map(path: Path) -> dict[str, str]:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if isinstance(payload, dict):
+        rows = payload.get("mappings", [])
+    elif isinstance(payload, list):
+        rows = payload
+    else:
+        raise ValueError("sample ID map must be a list or an object with mappings")
+    return {
+        str(row.get("review_sample_id")): str(row.get("original_sample_id"))
+        for row in rows
+        if row.get("review_sample_id") and row.get("original_sample_id")
+    }
+
+
+def _apply_sample_id_map(
+    label: dict[str, Any],
+    sample_id_map: dict[str, str],
+) -> dict[str, Any]:
+    if not sample_id_map:
+        return label
+    review_sample_id = str(label.get("sample_id") or "")
+    original_sample_id = sample_id_map.get(review_sample_id)
+    if not original_sample_id:
+        return label
+    mapped = dict(label)
+    mapped["review_sample_id"] = review_sample_id
+    mapped["sample_id"] = original_sample_id
+    if str(mapped.get("transcript_id") or review_sample_id) == review_sample_id:
+        mapped["transcript_id"] = original_sample_id
+    return mapped
 
 
 def _nearest_score(score: float) -> int:
@@ -257,11 +361,15 @@ def compute_human_alignment_stats(
     records: list[dict[str, Any]],
     labels: list[dict[str, Any]],
     pass_threshold: float | None = None,
+    sample_id_map: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """Compare successful judge scores against human expert labels."""
 
     threshold = float(pass_threshold or corpus.get("pass_threshold") or 3)
-    normalized_labels = [normalize_human_label(label) for label in labels]
+    normalized_labels = [
+        _apply_sample_id_map(normalize_human_label(label), sample_id_map or {})
+        for label in labels
+    ]
     item_index = {
         str(item.get("sample_id", "")): item
         for item in corpus.get("items", [])
@@ -313,6 +421,7 @@ def compute_human_alignment_stats(
             "persona_id": item.get("persona_id"),
             "transcript_source": item.get("transcript_source"),
             "reviewer_id": label["reviewer_id"],
+            "review_sample_id": label.get("review_sample_id"),
             "confidence": label["confidence"],
             "human_score": human_score,
             "judge_mean_score": judge_mean,

@@ -10,7 +10,12 @@ from experiments.judge_validation.human_alignment import (
     compute_human_alignment_stats,
     convert_csv_to_human_labels,
     labels_from_csv_rows,
+    load_sample_id_map,
     normalize_human_label,
+)
+from experiments.judge_validation.review_packet import (
+    build_review_packet,
+    write_review_packet,
 )
 
 
@@ -261,13 +266,36 @@ def test_google_form_email_address_can_supply_reviewer_id():
             "Dimension": "D4_instructional_accuracy",
             "Human Score": "5",
             "Confidence": "High",
-            "Human Rationale": "Correct lookahead explanation.",
+            "Reviewer Rationale": "Correct lookahead explanation.",
         }
     ]
 
     labels = labels_from_csv_rows(rows)
 
     assert labels[0]["reviewer_id"] == "expert@example.com"
+    assert labels[0]["human_rationale"] == "Correct lookahead explanation."
+
+
+def test_bilingual_google_form_headers_and_options_convert_to_labels():
+    rows = [
+        {
+            "Email Address": "expert@example.com",
+            "reviewer_id / 专家 ID": "expert_anon_1",
+            "sample_id / 样本 ID": "sample",
+            "rubric_id / 评分规则 ID": "quant_correctness.v1",
+            "dimension / 评分维度": "D4_instructional_accuracy",
+            "human_score / 人类专家评分": "5",
+            "confidence / 评分信心": "high / 高",
+            "human_rationale / 专家理由": "Correct timing explanation.",
+            "failure_tags / 失败标签": "quant_error / quant error, other / other",
+        }
+    ]
+
+    labels = labels_from_csv_rows(rows)
+
+    assert labels[0]["confidence"] == "high"
+    assert labels[0]["failure_tags"] == ["quant_error", "other"]
+    assert labels[0]["reviewer_id"] == "expert_anon_1"
 
 
 def test_convert_human_labels_and_human_alignment_cli(tmp_path):
@@ -364,3 +392,267 @@ def test_convert_human_labels_and_human_alignment_cli(tmp_path):
     assert stats["overall"]["exact_agreement"] == 1.0
     assert (output_dir / "human_alignment_report.md").exists()
     assert (output_dir / "human_alignment_report.html").exists()
+
+
+def test_human_alignment_uses_blind_sample_map():
+    corpus = {"pass_threshold": 3, "items": [{"sample_id": "original"}]}
+    records = [
+        {
+            "sample_id": "original",
+            "registry_rubric_id": "quant_correctness.v1",
+            "dimension": "D4_instructional_accuracy",
+            "status": "success",
+            "raw_score": 5,
+        }
+    ]
+    labels = [
+        {
+            "sample_id": "jv_review_001",
+            "rubric_id": "quant_correctness.v1",
+            "dimension": "D4_instructional_accuracy",
+            "human_score": 5,
+            "confidence": "high",
+            "human_rationale": "Correct.",
+            "reviewer_id": "expert_anon_1",
+        }
+    ]
+
+    stats = compute_human_alignment_stats(
+        corpus=corpus,
+        records=records,
+        labels=labels,
+        sample_id_map={"jv_review_001": "original"},
+    )
+
+    assert stats["counts"]["comparable_labels"] == 1
+    assert stats["comparisons"][0]["sample_id"] == "original"
+    assert stats["comparisons"][0]["review_sample_id"] == "jv_review_001"
+    assert stats["stage3_gate"]["status"] == "pass"
+
+
+def test_review_packet_exports_reviewer_materials_without_expected_scores(tmp_path):
+    corpus = {
+        "items": [
+            {
+                "sample_id": "sample",
+                "pair_id": "pair",
+                "pair_role": "stronger",
+                "task_id": "B03_lookahead_prevention",
+                "category": "backtest",
+                "persona_id": "finance_veteran",
+                "transcript_source": "synthetic_adversarial",
+                "track": "tutor",
+                "dimension": "D4_instructional_accuracy",
+                "registry_rubric_id": "quant_correctness.v1",
+                "expected_score_band": "high",
+                "conversation": [
+                    {"role": "user", "content": "Is same-close trading valid?"},
+                    {"role": "assistant", "content": "Shift the signal one bar."},
+                ],
+            }
+        ]
+    }
+    registry = {
+        "rubrics": [
+            {
+                "rubric_id": "quant_correctness.v1",
+                "version": "v1",
+                "dimension": "quant_correctness",
+                "score_scale": {"min": 1, "max": 5},
+                "score_anchors": {"1": "wrong", "5": "excellent"},
+                "required_evidence": ["formula"],
+                "common_failure_cases": ["lookahead"],
+                "examples": {"high": "accurate"},
+            }
+        ]
+    }
+
+    packet = build_review_packet(corpus=corpus, rubric_registry=registry)
+    item = packet["items"][0]
+    paths = write_review_packet(packet=packet, output_dir=tmp_path)
+
+    assert packet["counts"]["items"] == 1
+    assert packet["private_sample_map"][0]["review_sample_id"] == "jv_review_001"
+    assert packet["private_sample_map"][0]["original_sample_id"] == "sample"
+    assert item["sample_id"] == "jv_review_001"
+    assert item["rubric_id"] == "quant_correctness.v1"
+    assert "Shift the signal one bar" in item["review_context"]
+    assert "sample" not in item["sample_id"]
+    assert "expected_score_band" not in item
+    assert "pair_role" not in item
+    assert Path(paths["json"]).exists()
+    assert Path(paths["markdown"]).exists()
+    assert Path(paths["google_form_bilingual"]).exists()
+    sample_map = load_sample_id_map(Path(paths["sample_map"]))
+    assert sample_map == {"jv_review_001": "sample"}
+    public_json = json.loads(Path(paths["json"]).read_text(encoding="utf-8"))
+    assert "private_sample_map" not in public_json
+    csv_text = Path(paths["csv"]).read_text(encoding="utf-8")
+    assert "human_score" in csv_text
+    assert "jv_review_001" in csv_text
+    form_text = Path(paths["google_form_bilingual"]).read_text(encoding="utf-8")
+    assert "Judge Validation Human Labels" in form_text
+    assert "裁判验证人类专家标注" in form_text
+
+
+def test_review_packet_blind_ids_use_corpus_position_for_targeted_exports():
+    corpus = {
+        "items": [
+            {
+                "sample_id": "first",
+                "dimension": "result_judge",
+                "registry_rubric_id": "code_correctness.v1",
+                "context": "first context",
+            },
+            {
+                "sample_id": "second",
+                "dimension": "result_judge",
+                "registry_rubric_id": "code_correctness.v1",
+                "context": "second context",
+            },
+        ]
+    }
+    registry = {
+        "rubrics": [
+            {
+                "rubric_id": "code_correctness.v1",
+                "version": "v1",
+                "dimension": "code_correctness",
+                "score_scale": {"min": 1, "max": 5},
+                "score_anchors": {"1": "broken", "5": "robust"},
+            }
+        ]
+    }
+
+    packet = build_review_packet(
+        corpus=corpus,
+        rubric_registry=registry,
+        sample_ids=["second"],
+    )
+
+    assert packet["items"][0]["sample_id"] == "jv_review_002"
+    assert packet["private_sample_map"][0]["original_sample_id"] == "second"
+
+
+def test_export_review_packet_cli(tmp_path):
+    corpus_path = tmp_path / "corpus.json"
+    registry_path = tmp_path / "registry.json"
+    output_dir = tmp_path / "packet"
+    corpus_path.write_text(
+        json.dumps(
+            {
+                "items": [
+                    {
+                        "sample_id": "sample",
+                        "task_id": "task",
+                        "category": "debug",
+                        "persona_id": "developer_crossover",
+                        "transcript_source": "synthetic_adversarial",
+                        "track": "qr",
+                        "dimension": "result_judge",
+                        "registry_rubric_id": "code_correctness.v1",
+                        "context": "## Task\nFix the bug.",
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    registry_path.write_text(
+        json.dumps(
+            {
+                "rubrics": [
+                    {
+                        "rubric_id": "code_correctness.v1",
+                        "version": "v1",
+                        "dimension": "code_correctness",
+                        "score_scale": {"min": 1, "max": 5},
+                        "score_anchors": {"1": "broken", "5": "robust"},
+                        "required_evidence": ["test output"],
+                        "common_failure_cases": ["runtime error"],
+                        "examples": {"high": "tested fix"},
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    rc = judge_run.main(
+        [
+            "--corpus",
+            str(corpus_path),
+            "export-review-packet",
+            "--rubric-registry",
+            str(registry_path),
+            "--packet-output-dir",
+            str(output_dir),
+        ]
+    )
+
+    assert rc == 0
+    assert (output_dir / "human_review_packet.json").exists()
+    assert (output_dir / "human_review_packet.md").exists()
+    assert (output_dir / "human_label_template.csv").exists()
+    assert (output_dir / "google_form_bilingual.md").exists()
+    assert (output_dir / "human_review_sample_map.json").exists()
+
+
+def test_export_review_packet_cli_honors_output_dir(tmp_path):
+    corpus_path = tmp_path / "corpus.json"
+    registry_path = tmp_path / "registry.json"
+    output_dir = tmp_path / "results"
+    corpus_path.write_text(
+        json.dumps(
+            {
+                "items": [
+                    {
+                        "sample_id": "sample",
+                        "task_id": "task",
+                        "category": "debug",
+                        "persona_id": "developer_crossover",
+                        "transcript_source": "synthetic_adversarial",
+                        "track": "qr",
+                        "dimension": "result_judge",
+                        "registry_rubric_id": "code_correctness.v1",
+                        "context": "## Task\nFix the bug.",
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    registry_path.write_text(
+        json.dumps(
+            {
+                "rubrics": [
+                    {
+                        "rubric_id": "code_correctness.v1",
+                        "version": "v1",
+                        "dimension": "code_correctness",
+                        "score_scale": {"min": 1, "max": 5},
+                        "score_anchors": {"1": "broken", "5": "robust"},
+                        "required_evidence": ["test output"],
+                        "common_failure_cases": ["runtime error"],
+                        "examples": {"high": "tested fix"},
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    rc = judge_run.main(
+        [
+            "--corpus",
+            str(corpus_path),
+            "--output-dir",
+            str(output_dir),
+            "export-review-packet",
+            "--rubric-registry",
+            str(registry_path),
+        ]
+    )
+
+    assert rc == 0
+    assert (output_dir / "human_review_packet" / "google_form_bilingual.md").exists()
