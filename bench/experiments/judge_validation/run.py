@@ -28,6 +28,7 @@ from server.eval.inputs.rubric_builder import (  # noqa: E402
     load_6d_rubric,
     load_rubric,
 )
+from server.eval.judges.runtime.call_policy import llm_call_with_retry  # noqa: E402
 from server.eval.judges.runtime.conv_geval import (  # noqa: E402
     EvalTestCase,
     EwanConvGEval,
@@ -67,6 +68,8 @@ def _atomic_write_json(path: Path, data: Any) -> None:
 
 
 def _conversation_context(item: dict[str, Any]) -> str:
+    if item.get("context"):
+        return str(item["context"])
     turns = [
         Turn(role=str(turn.get("role", "")), content=str(turn.get("content", "")))
         for turn in item.get("conversation", [])
@@ -224,19 +227,30 @@ async def _judge_one(
     )
     start = time.time()
     try:
-        score = await metric.a_measure(
-            EvalTestCase(context=_conversation_context(item))
+        result = await llm_call_with_retry(
+            lambda: _metric_for_item(item, model=model),
+            EvalTestCase(context=_conversation_context(item)),
+            dimension_name=str(item.get("dimension", "")),
         )
-        metadata = metric.judge_metadata()
-        metadata.update(base["judge_metadata"])
+        metadata = result.get("judge_metadata") or metric.judge_metadata()
+        if result.get("score") is None:
+            return {
+                **base,
+                "status": "failed",
+                "score": None,
+                "raw_score": None,
+                "reason": result.get("error") or result.get("reason", ""),
+                "evidence": result.get("evidence", []),
+                "duration_seconds": round(time.time() - start, 3),
+            }
         base["judge_metadata"] = metadata
         return {
             **base,
             "status": "success",
-            "score": round(score, 4),
-            "raw_score": _raw_from_normalized(score, metadata),
-            "reason": metric.reason,
-            "evidence": list(getattr(metric, "evidence", []) or []),
+            "score": round(float(result["score"]), 4),
+            "raw_score": _raw_from_normalized(float(result["score"]), metadata),
+            "reason": result.get("reason", ""),
+            "evidence": list(result.get("evidence", []) or []),
             "duration_seconds": round(time.time() - start, 3),
         }
     except Exception as exc:  # noqa: BLE001 - persisted as judge validation data
