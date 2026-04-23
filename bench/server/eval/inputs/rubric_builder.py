@@ -24,7 +24,7 @@ Usage::
 import json
 import logging
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 _log = logging.getLogger(__name__)
 
@@ -40,6 +40,65 @@ _PERSONA_DIR = _BENCH_ROOT / "personas"
 _rubric_6d: dict | None = None
 _rubric_cache: dict[str, dict] = {}
 _persona_cache: dict[str, dict] = {}
+
+
+def _score_keys_from_dim(dim_data: dict) -> list[str]:
+    """Return score keys from universal or variant-scoped guidance."""
+
+    scope = dim_data.get("scope", "universal")
+    if scope == "universal":
+        keys = list((dim_data.get("scoring_guidance") or {}).keys())
+    else:
+        keys = []
+        for variant in (dim_data.get("scoring_variants") or {}).values():
+            keys.extend((variant.get("scoring_guidance") or {}).keys())
+    return sorted({str(key) for key in keys}, key=int)
+
+
+def build_rubric_metadata(
+    rubric: dict,
+    dimension_name: str,
+    *,
+    rubric_name: str | None = None,
+    context_fields: list[str] | None = None,
+    transcript_source: str | None = None,
+    extra: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Build stable metadata for a judge prompt/output dimension."""
+
+    dim_data = rubric["dimensions"].get(dimension_name)
+    if not dim_data:
+        raise ValueError(f"Dimension '{dimension_name}' not found in rubric")
+
+    score_keys = _score_keys_from_dim(dim_data)
+    rubric_version = str(
+        dim_data.get("rubric_version") or rubric.get("version") or "unversioned"
+    )
+    rubric_stem = str(dim_data.get("rubric_id") or rubric.get("rubric_id") or "")
+    if not rubric_stem:
+        rubric_stem = str(rubric_name or rubric_version or "rubric")
+    rubric_id = str(dim_data.get("rubric_id") or f"{rubric_stem}.{dimension_name}")
+
+    metadata: dict[str, Any] = {
+        "rubric_id": rubric_id,
+        "rubric_version": rubric_version,
+        "dimension": dimension_name,
+        "score_scale": {
+            "min": int(score_keys[0]) if score_keys else 1,
+            "max": int(score_keys[-1]) if score_keys else 5,
+            "type": "integer",
+        },
+        "score_anchor_keys": score_keys,
+        "context_fields_included": list(context_fields or ["context"]),
+        "transcript_source": transcript_source or "evaluation_context",
+        "score_interpretation": (
+            "Judge returns a raw integer score on the rubric scale; the "
+            "runtime stores a normalized 0-1 score for aggregation."
+        ),
+    }
+    if extra:
+        metadata.update(extra)
+    return metadata
 
 
 def load_6d_rubric() -> dict:
@@ -287,6 +346,10 @@ def _format_scoring_guidance(scoring_guidance: dict, label: str) -> str:
 def build_eval_params(
     rubric: dict,
     dimension_name: str,
+    *,
+    rubric_name: str | None = None,
+    context_fields: list[str] | None = None,
+    transcript_source: str | None = None,
 ) -> dict:
     """Extract evaluation parameters from a rubric for EwanConvGEval.
 
@@ -327,4 +390,11 @@ def build_eval_params(
         "rules": rules,
         "criteria": criteria,
         "max_score": max_score,
+        "rubric_metadata": build_rubric_metadata(
+            rubric,
+            dimension_name,
+            rubric_name=rubric_name,
+            context_fields=context_fields,
+            transcript_source=transcript_source,
+        ),
     }
