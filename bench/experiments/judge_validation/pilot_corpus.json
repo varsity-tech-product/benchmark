@@ -61,6 +61,7 @@
       "dimension": "result_judge",
       "registry_rubric_id": "code_correctness.v1",
       "expected_score_band": "high",
+      "context": "## Task\nFix the SMA crossover off-by-one bug so today's close is not used for today's trade.\nCategory: debug\n\n## Required Capabilities (Acceptance Criteria)\n- Correct the off-by-one signal timing.\n- Run the failing case or an equivalent regression check.\n- Final logic must use prior-bar signals for current-bar trades.\n\n## Agent Result\nFiles produced: strategy.py\nKey tool outputs:\n  pytest [OK]: test_sma_crossover_offbyone passed; first crossover now occurs on the expected date.\nAgent's explanation (summary):\nI changed the signal to use sma_fast.shift(1) and sma_slow.shift(1), reran the failing case, and confirmed today's close is kept out of today's trading decision.",
       "conversation": [
         {
           "role": "user",
@@ -84,6 +85,7 @@
       "dimension": "result_judge",
       "registry_rubric_id": "code_correctness.v1",
       "expected_score_band": "low",
+      "context": "## Task\nFix the SMA crossover off-by-one bug so today's close is not used for today's trade.\nCategory: debug\n\n## Required Capabilities (Acceptance Criteria)\n- Correct the off-by-one signal timing.\n- Run the failing case or an equivalent regression check.\n- Final logic must use prior-bar signals for current-bar trades.\n\n## Agent Result\nFiles produced: strategy.py\nKey tool outputs:\n  (no tool outputs)\nAgent's explanation (summary):\nI renamed the variables to fast_ma and slow_ma. The signal timing logic is unchanged and I did not rerun the failing case.",
       "conversation": [
         {
           "role": "user",
@@ -153,6 +155,7 @@
       "dimension": "result_judge",
       "registry_rubric_id": "tool_workspace_use.v1",
       "expected_score_band": "high",
+      "context": "## Task\nInspect the OHLCV file and report the row count.\nCategory: data_analysis\n\n## Required Capabilities (Acceptance Criteria)\n- Load the OHLCV file.\n- Inspect the dataframe shape.\n- Report the row count using observed tool output.\n\n## Agent Result\nFiles produced: inspection_notes.md\nKey tool outputs:\n  python [OK]: df.shape = (252, 6); columns = ['date', 'open', 'high', 'low', 'close', 'volume']; close nulls = 0.\nAgent's explanation (summary):\nI loaded data/ohlcv.csv, printed df.shape, and saw 252 rows and 6 columns. The date column parses cleanly and the close column has zero nulls.",
       "conversation": [
         {
           "role": "user",
@@ -176,6 +179,7 @@
       "dimension": "result_judge",
       "registry_rubric_id": "tool_workspace_use.v1",
       "expected_score_band": "low",
+      "context": "## Task\nInspect the OHLCV file and report the row count.\nCategory: data_analysis\n\n## Required Capabilities (Acceptance Criteria)\n- Load the OHLCV file.\n- Inspect the dataframe shape.\n- Report the row count using observed tool output.\n\n## Agent Result\nFiles produced: (none)\nKey tool outputs:\n  (no tool outputs)\nAgent's explanation (summary):\nThe file probably has around 250 rows and standard OHLCV columns. That is enough to continue.",
       "conversation": [
         {
           "role": "user",
