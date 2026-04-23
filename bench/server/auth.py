@@ -323,7 +323,7 @@ class AuthService:
             {
                 "client_id": client_id,
                 "redirect_uri": redirect_uri,
-                "scope": "read:user user:email read:org",
+                "scope": self._github_oauth_scope(),
                 "state": state,
             }
         )
@@ -452,12 +452,10 @@ class AuthService:
             return True
 
         login = str(profile.get("login") or "")
-        allowed_logins = _csv_env("QTB_GITHUB_ALLOWED_LOGINS")
+        allowed_logins, allowed_orgs, allowed_teams = self._github_allowlists()
         if allowed_logins and login.lower() in allowed_logins:
             return True
 
-        allowed_orgs = _csv_env("QTB_GITHUB_ALLOWED_ORGS")
-        allowed_teams = _csv_env("QTB_GITHUB_ALLOWED_TEAMS")
         if not allowed_orgs and not allowed_teams and not allowed_logins:
             return True
 
@@ -482,6 +480,22 @@ class AuthService:
                 if slug in allowed_teams or f"{org_login}/{slug}" in allowed_teams:
                     return True
         return False
+
+    def _github_allowlists(self) -> tuple[set[str], set[str], set[str]]:
+        return (
+            _csv_env("QTB_GITHUB_ALLOWED_LOGINS"),
+            _csv_env("QTB_GITHUB_ALLOWED_ORGS"),
+            _csv_env("QTB_GITHUB_ALLOWED_TEAMS"),
+        )
+
+    def _github_oauth_scope(self) -> str:
+        scopes = ["read:user", "user:email"]
+        _, allowed_orgs, allowed_teams = self._github_allowlists()
+        if not _bool_env("QTB_GITHUB_ALLOW_ALL", False) and (
+            allowed_orgs or allowed_teams
+        ):
+            scopes.append("read:org")
+        return " ".join(scopes)
 
     def _build_user(self, profile: dict) -> UserContext:
         login = str(profile.get("login") or "")
