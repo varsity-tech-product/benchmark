@@ -19,13 +19,33 @@ def _write_json(path: Path, payload) -> None:
     path.write_text(json.dumps(payload), encoding="utf-8")
 
 
+def _make_server_result_dir(
+    root: Path,
+    task_id: str,
+    persona_id: str,
+    session_id: str,
+    timestamp: str = "20260422_120000",
+) -> Path:
+    result_dir = (
+        root
+        / "results"
+        / "server"
+        / task_id
+        / persona_id
+        / f"{timestamp}_{session_id[:12]}"
+    )
+    result_dir.mkdir(parents=True, exist_ok=True)
+    (result_dir / ".session_id").write_text(session_id, encoding="utf-8")
+    return result_dir
+
+
 class _Manager:
     def __init__(self, bench_root: Path):
         self.bench_root = bench_root
 
 
 class ResultIndexerTests(unittest.TestCase):
-    def test_indexer_uses_newest_eval_dir_without_latest_symlink(self):
+    def test_indexer_uses_latest_score_run(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
             _write_json(
@@ -49,14 +69,12 @@ class ResultIndexerTests(unittest.TestCase):
                 },
             )
 
-            session_id = "session-001"
+            session_id = "session-001-abcdef"
+            result_dir = _make_server_result_dir(
+                root, "D01_demo", "beginner_persona", session_id
+            )
             _write_json(
-                root
-                / "results"
-                / "server"
-                / "D01_demo"
-                / session_id
-                / "run_state.json",
+                result_dir / "run_state.json",
                 {
                     "session_id": session_id,
                     "task_id": "D01_demo",
@@ -99,7 +117,7 @@ class ResultIndexerTests(unittest.TestCase):
                     "workspace_files": ["reports/chart.png", "notes.md"],
                     "distractor_names": ["noise_tool"],
                     "step_count": 5,
-                    "evaluation_status": "pending",
+                    "simulator_cost": 0.02,
                 },
             )
 
@@ -128,59 +146,78 @@ class ResultIndexerTests(unittest.TestCase):
                 },
             )
 
-            # Eval output lives in the sibling tree under
-            # ``evaluations/server/{task_id}/{persona_id}/{sid8}/{eval_run_id}/``
-            # — see ``server.evaluator.paths.eval_session_dir``.
-            eval_session_root = (
-                root
-                / "evaluations"
-                / "server"
-                / "D01_demo"
-                / "beginner_persona"
-                / session_id[:8]
-            )
-            old_eval = eval_session_root / "eval_20260101_010101"
-            new_eval = eval_session_root / "eval_20260102_010101"
             _write_json(
-                old_eval / "eval_meta.json",
-                {"overall_score": 0.11, "timestamp": "2026-01-01T01:01:01Z"},
+                result_dir / "evaluations" / "index.json",
+                {
+                    "version": "2.0",
+                    "next_score_number": 3,
+                    "latest_completed_score_id": "score_2",
+                    "scores": [
+                        {
+                            "score_id": "score_1",
+                            "status": "completed_scored",
+                            "eval_mode": "full",
+                            "eval_model": "judge-a",
+                            "tutor_dims": None,
+                            "created_at": "2026-01-01T01:01:01Z",
+                            "completed_at": "2026-01-01T01:01:02Z",
+                            "overall_score": 0.11,
+                            "score_path": "score_1/score.json",
+                            "cost_path": "score_1/cost.json",
+                        },
+                        {
+                            "score_id": "score_2",
+                            "status": "completed_scored",
+                            "eval_mode": "full",
+                            "eval_model": "judge-a",
+                            "tutor_dims": None,
+                            "created_at": "2026-01-02T01:01:01Z",
+                            "completed_at": "2026-01-02T01:01:02Z",
+                            "overall_score": 0.82,
+                            "score_path": "score_2/score.json",
+                            "cost_path": "score_2/cost.json",
+                        },
+                    ],
+                },
             )
             _write_json(
-                new_eval / "eval_meta.json",
-                {"overall_score": 0.82, "timestamp": "2026-01-02T01:01:01Z"},
+                result_dir / "evaluations" / "score_1" / "score.json",
+                {
+                    "version": "2.0",
+                    "score_id": "score_1",
+                    "score_status": "completed_scored",
+                    "overall_score": 0.11,
+                },
             )
-            (old_eval / "scores.md").write_text("# old", encoding="utf-8")
-            (new_eval / "scores.md").write_text("# newest", encoding="utf-8")
-            (new_eval / "cost.md").write_text("cost body", encoding="utf-8")
-            (new_eval / "trace.md").write_text("trace body", encoding="utf-8")
-            (
-                root
-                / "results"
-                / "server"
-                / "D01_demo"
-                / session_id
-                / "agent_files"
-                / "reports"
-            ).mkdir(parents=True, exist_ok=True)
-            (
-                root
-                / "results"
-                / "server"
-                / "D01_demo"
-                / session_id
-                / "agent_files"
-                / "reports"
-                / "chart.png"
-            ).write_bytes(b"png")
-            (
-                root
-                / "results"
-                / "server"
-                / "D01_demo"
-                / session_id
-                / "agent_files"
-                / "notes.md"
-            ).write_text("hello", encoding="utf-8")
+            _write_json(
+                result_dir / "evaluations" / "score_2" / "score.json",
+                {
+                    "version": "2.0",
+                    "score_id": "score_2",
+                    "score_status": "completed_scored",
+                    "eval_mode": "full",
+                    "overall_score": 0.82,
+                    "completed_at": "2026-01-02T01:01:02Z",
+                    "qr": {"track": "qr", "score": 0.8, "status": "success"},
+                    "qp": {"track": "qp", "score": 0.84, "status": "success"},
+                    "tutor": {"track": "tutor", "score": 0.82, "status": "success"},
+                },
+            )
+            _write_json(
+                result_dir / "evaluations" / "score_2" / "cost.json",
+                {
+                    "version": "2.0",
+                    "score_id": "score_2",
+                    "eval_cost_usd": 0.03,
+                    "eval_cost_by_track": {"qr": 0.01, "qp": 0.01, "tutor": 0.01},
+                    "eval_cost_by_model": {"judge-a": 0.03},
+                },
+            )
+            (result_dir / "agent_files" / "reports").mkdir(parents=True, exist_ok=True)
+            (result_dir / "agent_files" / "reports" / "chart.png").write_bytes(b"png")
+            (result_dir / "agent_files" / "notes.md").write_text(
+                "hello", encoding="utf-8"
+            )
 
             indexer = ResultIndexer(root)
             summary = indexer.list_results()[0]
@@ -197,9 +234,11 @@ class ResultIndexerTests(unittest.TestCase):
             self.assertEqual(summary["send_message_count"], 1)
             self.assertEqual(summary["step_count"], 5)
 
-            self.assertEqual(detail["scores_md"], "# newest")
-            self.assertEqual(detail["cost_md"], "cost body")
-            self.assertEqual(detail["trace_md"], "trace body")
+            self.assertEqual(detail["score_json"]["score_id"], "score_2")
+            self.assertEqual(detail["cost_json"]["eval_cost_usd"], 0.03)
+            self.assertEqual(detail["eval_history"][0]["score_id"], "score_2")
+            self.assertAlmostEqual(detail["evaluation_cost"], 0.03)
+            self.assertAlmostEqual(detail["total_cost"], 0.05)
             self.assertEqual(
                 detail["workspace_files"], ["reports/chart.png", "notes.md"]
             )
@@ -234,13 +273,12 @@ class ResultIndexerTests(unittest.TestCase):
             root = Path(tmpdir)
             base_session_id = "48ad001952494420bf83cc3f5be94c3f"
             stored_session_id = f"{base_session_id}_D01"
-            run_dir = (
-                root
-                / "results"
-                / "server"
-                / "D01_demo"
-                / "beginner_persona"
-                / f"20260416_120000_{base_session_id[:8]}"
+            run_dir = _make_server_result_dir(
+                root,
+                "D01_demo",
+                "beginner_persona",
+                stored_session_id,
+                timestamp="20260416_120000",
             )
             _write_json(
                 run_dir / "run_state.json",
@@ -293,13 +331,11 @@ class ResultIndexerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
             session_id = "session-002"
+            result_dir = _make_server_result_dir(
+                root, "D01_demo", "beginner_persona", session_id
+            )
             _write_json(
-                root
-                / "results"
-                / "server"
-                / "D01_demo"
-                / session_id
-                / "run_state.json",
+                result_dir / "run_state.json",
                 {
                     "session_id": session_id,
                     "task_id": "D01_demo",
@@ -308,16 +344,7 @@ class ResultIndexerTests(unittest.TestCase):
                     "tool_logs": [],
                 },
             )
-            nested = (
-                root
-                / "results"
-                / "server"
-                / "D01_demo"
-                / session_id
-                / "agent_files"
-                / "plots"
-                / "chart.png"
-            )
+            nested = result_dir / "agent_files" / "plots" / "chart.png"
             nested.parent.mkdir(parents=True, exist_ok=True)
             nested.write_bytes(b"png")
 
@@ -334,6 +361,9 @@ class UiRoutesTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
             session_id = "session-003"
+            result_dir = _make_server_result_dir(
+                root, "D01_demo", "beginner_persona", session_id
+            )
             _write_json(
                 root / "tasks" / "layer2" / "data_analysis" / "D01_demo.json",
                 {
@@ -352,26 +382,17 @@ class UiRoutesTests(unittest.TestCase):
                     "description": "Demo persona",
                 },
             )
+            (root / "docs" / "skills" / "quanttutorbench-rest-agent").mkdir(
+                parents=True, exist_ok=True
+            )
             (
-                root / "docs" / "skills" / "quanttutorbench-rest-agent"
-            ).mkdir(parents=True, exist_ok=True)
-            (
-                root
-                / "docs"
-                / "skills"
-                / "quanttutorbench-rest-agent"
-                / "SKILL.md"
+                root / "docs" / "skills" / "quanttutorbench-rest-agent" / "SKILL.md"
             ).write_text(
                 "# QuantTutorBench REST Agent\n\nPOST /client/runs/start\n",
                 encoding="utf-8",
             )
             _write_json(
-                root
-                / "results"
-                / "server"
-                / "D01_demo"
-                / session_id
-                / "run_state.json",
+                result_dir / "run_state.json",
                 {
                     "session_id": session_id,
                     "task_id": "D01_demo",
@@ -398,40 +419,13 @@ class UiRoutesTests(unittest.TestCase):
                     ],
                 },
             )
-            file_path = (
-                root
-                / "results"
-                / "server"
-                / "D01_demo"
-                / session_id
-                / "agent_files"
-                / "artifacts"
-                / "report.md"
-            )
+            file_path = result_dir / "agent_files" / "artifacts" / "report.md"
             file_path.parent.mkdir(parents=True, exist_ok=True)
             file_path.write_text("report", encoding="utf-8")
-            image_path = (
-                root
-                / "results"
-                / "server"
-                / "D01_demo"
-                / session_id
-                / "agent_files"
-                / "plots"
-                / "chart.png"
-            )
+            image_path = result_dir / "agent_files" / "plots" / "chart.png"
             image_path.parent.mkdir(parents=True, exist_ok=True)
             image_path.write_bytes(b"png")
-            csv_path = (
-                root
-                / "results"
-                / "server"
-                / "D01_demo"
-                / session_id
-                / "agent_files"
-                / "data"
-                / "sample.csv"
-            )
+            csv_path = result_dir / "agent_files" / "data" / "sample.csv"
             csv_path.parent.mkdir(parents=True, exist_ok=True)
             csv_path.write_text("col_a,col_b\n1,2\n3,4\n", encoding="utf-8")
 

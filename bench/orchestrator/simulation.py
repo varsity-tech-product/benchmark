@@ -13,7 +13,7 @@ import json
 import logging
 import re
 import time
-from typing import Callable, Optional
+from typing import TYPE_CHECKING, Callable, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -109,6 +109,9 @@ from config.prompt_config import build_scenario, build_user_description
 
 from orchestrator.live_monitor import emit
 from orchestrator.schemas import QuantTutorTask, StudentPersona
+
+if TYPE_CHECKING:
+    from mcp_servers.session import TutoringSession
 
 # ---------------------------------------------------------------------------
 # TC parsing
@@ -423,9 +426,9 @@ def build_conversational_golden(
 ) -> "ConversationalGolden":
     """Build a DeepEval ConversationalGolden from task + persona.
 
-    For tasks using the incremental TC checker (strategy category),
-    expected_outcome is set to None to disable DeepEval's native checker.
-    For all other tasks, the native checker is preserved.
+    For tasks using the incremental TC checker (strategy category), the
+    native DeepEval checker is disabled. For all other tasks, termination
+    criteria are passed through when available.
     """
     if not DEEPEVAL_AVAILABLE:
         raise ImportError("deepeval is required. Install with: pip install deepeval")
@@ -436,18 +439,11 @@ def build_conversational_golden(
         # Incremental checker will handle termination — disable native
         stop_outcome = None
     else:
-        # Native checker — use TC or EO as before
-        if task.ground_truth.termination_criteria:
-            if task.category.value in ("implementation", "end_to_end", "debug"):
-                stop_outcome = (
-                    f"{task.ground_truth.expected_outcome}\n\n"
-                    f"Observable completion criteria:\n"
-                    f"{task.ground_truth.termination_criteria}"
-                )
-            else:
-                stop_outcome = task.ground_truth.termination_criteria
-        else:
-            stop_outcome = task.ground_truth.expected_outcome
+        stop_outcome = task.ground_truth.termination_criteria
+        if isinstance(stop_outcome, dict):
+            stop_outcome = "\n".join(
+                f"{key}: {value}" for key, value in stop_outcome.items()
+            )
 
     return ConversationalGolden(
         scenario=build_scenario(
@@ -961,9 +957,7 @@ def run_agent_session(
         if cancel_event is not None and cancel_event.is_set():
             logger.info("Agent session cancelled by user.")
         else:
-            logger.error(
-                "Agent session failed: %s: %s", type(exc).__name__, exc
-            )
+            logger.error("Agent session failed: %s: %s", type(exc).__name__, exc)
         response = ""
 
     # Fallback: if agent returned text but never called send_message,

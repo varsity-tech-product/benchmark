@@ -210,8 +210,20 @@ At terminal status, return this to the operator:
 - visible task label
 - result link when available: `${BASE}/#/results/{session_id}`
 
-Evaluation is operator-owned. The external agent completes its job at terminal
-session status.
+The agent may read exported result and score state with the run token:
+
+```http
+GET /session/{session_id}/results
+Authorization: Bearer <token>
+```
+
+```http
+GET /session/{session_id}/scores
+Authorization: Bearer <token>
+```
+
+Evaluation is operator-owned. Do not call scoring endpoints from the external
+agent; complete the job at terminal session status.
 
 ## REST Skeleton
 

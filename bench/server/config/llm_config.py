@@ -4,6 +4,9 @@ Only constants actually used by bench/server/ live here.
 Client/orchestrator agent configuration lives in bench/config/llm_config.py.
 """
 
+import os
+from typing import Any
+
 # --- Per-SDK agent models (native API format) ---
 OPENAI_AGENT_MODEL = "gpt-5.2"
 ANTHROPIC_AGENT_MODEL = "claude-sonnet-4-6"
@@ -65,12 +68,72 @@ STUDENT_MODEL_POOL_ALL: frozenset[str] = frozenset(
 
 SIMULATOR_DEFAULT_MODEL = "openai/gpt-5.4"  # must be in STUDENT_MODEL_POOL_ALL
 EVAL_DEFAULT_MODELS: list[str] = [
-    "anthropic/claude-sonnet-4-6",
-    # "anthropic/claude-haiku-4.5",
+    "anthropic/claude-haiku-4.5",
+    # "anthropic/claude-sonnet-4-6",
     # "openai/gpt-5.2",
     # "anthropic/claude-opus-4.6",
 ]
+EVAL_DEFAULT_MODEL = EVAL_DEFAULT_MODELS[0]
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+
+
+def get_openrouter_api_key() -> str:
+    """Return the configured OpenRouter API key, if any."""
+    return os.environ.get("OPENROUTER_API_KEY", "").strip()
+
+
+def has_openrouter_api_key() -> bool:
+    return bool(get_openrouter_api_key())
+
+
+def get_openrouter_base_url() -> str:
+    """Return the configured OpenRouter base URL."""
+    return (
+        os.environ.get("OPENROUTER_BASE_URL", OPENROUTER_BASE_URL).strip().rstrip("/")
+    )
+
+
+def require_openrouter_api_key(*, purpose: str = "LLM call") -> str:
+    key = get_openrouter_api_key()
+    if not key:
+        raise RuntimeError(
+            f"OPENROUTER_API_KEY not set for {purpose}. "
+            "Put it in .env or the server environment."
+        )
+    return key
+
+
+def create_openrouter_async_client(
+    *,
+    api_key: str | None = None,
+    base_url: str | None = None,
+    timeout: float = 120.0,
+) -> Any:
+    """Create an async OpenRouter client via the shared server LLM config."""
+    from openai import AsyncOpenAI
+
+    return AsyncOpenAI(
+        api_key=api_key or require_openrouter_api_key(purpose="async LLM client"),
+        base_url=(base_url or get_openrouter_base_url()).rstrip("/"),
+        timeout=timeout,
+    )
+
+
+def create_openrouter_sync_client(
+    *,
+    api_key: str | None = None,
+    base_url: str | None = None,
+    timeout: float = 120.0,
+) -> Any:
+    """Create a sync OpenRouter client via the shared server LLM config."""
+    import openai
+
+    return openai.OpenAI(
+        api_key=api_key or require_openrouter_api_key(purpose="sync LLM client"),
+        base_url=(base_url or get_openrouter_base_url()).rstrip("/"),
+        timeout=timeout,
+    )
+
 
 # --- Evaluation temperature ---
 # Judge / TC checker / simulator temperature.  Deterministic (0.0) ensures

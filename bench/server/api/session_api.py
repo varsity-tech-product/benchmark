@@ -5,7 +5,7 @@ Each MCP HTTP session maps to one ``SessionState`` instance that manages:
 - Container + tool setup
 - TutoringSession lifecycle (student simulation, termination checking)
 - Result saving (run_state.json + agent_files/)
-- Evaluation triggering (background thread)
+- Internal evaluation triggering (background thread; server/operator only)
 
 Thread safety:
 - MCP processes requests sequentially per session, so ``handle_tool_call``
@@ -23,11 +23,14 @@ import json
 import logging
 import os
 import random
+import threading
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
 from mcp.types import TextContent, Tool
+
+from server.config.llm_config import EVAL_DEFAULT_MODEL
 
 if TYPE_CHECKING:
     from mcp.server import Server
@@ -161,7 +164,7 @@ class SessionState:
         2. ``register(task_id)`` — loads task, picks persona, creates container.
         3. ``start()`` — returns student opening, enters IN_SESSION.
         4. ``handle_send_message(text)`` — routes through proxy, may complete.
-        5. ``request_evaluation()`` — triggers eval pipeline in background.
+        5. Server/operator evaluation may run after results are saved.
         6. ``cleanup()`` — destroys container and temp dirs.
     """
 
@@ -170,7 +173,7 @@ class SessionState:
         session_id: str,
         use_docker: bool = True,
         bench_root: Optional[Path] = None,
-        eval_model: str = "anthropic/claude-sonnet-4-6",
+        eval_model: str = EVAL_DEFAULT_MODEL,
     ):
         self.session_id = session_id
         self.phase = SessionPhase.UNREGISTERED
@@ -219,11 +222,19 @@ class SessionState:
         # Callback invoked after session completion + result save.
         self._on_completed: Optional[callable] = None
 
-        # Post-completion bundle path. Evaluation runs off this bundle
-        # on the operator surface (issue #46 slices 3-4) — the live
-        # session no longer holds any eval state.
+        # Evaluation state (guarded by _eval_lock)
+        self._eval_lock = threading.Lock()
+        self._eval_status: str = "pending"  # pending | running | completed | failed
+        self._eval_results: Optional[dict] = None
+        self._eval_error: Optional[str] = None
+        self._active_score_id: Optional[str] = None
         self._result_dir: Optional[Path] = None
         self._closed: bool = False
+
+        # Evaluation parameters (set before internal evaluation if non-default)
+        self._eval_mode: str = "full"
+        self._tutor_dims: Optional[list[str]] = None
+        self._eval_idempotency_key: Optional[str] = None
 
     # ------------------------------------------------------------------
     # Restore from server storage
@@ -235,7 +246,7 @@ class SessionState:
         session_id: str,
         result_dir: Path,
         bench_root: Path,
-        eval_model: str = "anthropic/claude-sonnet-4-6",
+        eval_model: str = EVAL_DEFAULT_MODEL,
     ) -> "SessionState":
         """Restore a COMPLETED session from server storage (run_state.json).
 
@@ -297,8 +308,20 @@ class SessionState:
         state.owner_email = str(run_state.get("owner_email") or "")
         state.visibility = str(run_state.get("visibility") or "private")
 
-        # Eval state is no longer held in memory — ``get_eval_scores`` reads
-        # the bundle's sibling tree on demand (issue #46 slice 4).
+        # Check if evaluation was already run under the score_n store.
+        try:
+            from server.storage.score_store import get_scores_payload
+
+            payload = get_scores_payload(result_dir)
+            if payload.get("status") == "completed":
+                state._eval_status = "completed"
+                state._active_score_id = payload.get("score_id")
+                state._eval_results = payload.get("scores")
+            elif payload.get("status") == "running":
+                state._eval_status = "running"
+                state._active_score_id = payload.get("score_id")
+        except Exception:
+            pass
         logger.info(
             "Restored session %s from storage: %s/%s",
             session_id[:8],
@@ -379,7 +402,7 @@ class SessionState:
         from server.core.student_sim import StudentSimulator
         from server.core.tc_checker import TCChecker, parse_tc_items
         from server.data_manager import ensure_data
-        from server.eval.ewan_eval.model_resolver import (
+        from server.eval.judges.runtime.model_resolver import (
             require_student_model,
         )
 
@@ -709,10 +732,106 @@ class SessionState:
                         self.session_id,
                         exc,
                     )
-
         data.setdefault("current_phase", self.phase.value)
         data.setdefault("next_allowed", next_allowed_for_phase(self.phase))
         return json.dumps(data)
+
+    # ------------------------------------------------------------------
+    # Internal server-side evaluation trigger
+    # ------------------------------------------------------------------
+
+    def request_evaluation(self) -> dict:
+        """Start an internal evaluation run for a completed result bundle.
+
+        Each non-concurrent call appends a new score_n evaluation run.
+        Concurrent calls return the active running score instead of starting
+        a second run.
+        """
+        if self._closed:
+            return {
+                "status": "failed",
+                "error": "Session is closed",
+                "current_phase": self.phase.value,
+            }
+        if not self._result_dir:
+            return {
+                "status": "failed",
+                "error": "Results are not available for evaluation",
+                "current_phase": self.phase.value,
+            }
+        with self._eval_lock:
+            if self._eval_status == "running":
+                return self._decorate_eval_payload(
+                    {
+                        "status": "running",
+                        "score_id": self._active_score_id,
+                        "message": "Evaluation in progress.",
+                    }
+                )
+
+            from server.eval.contracts.request import parse_eval_request
+            from server.storage.score_store import allocate_score_run
+
+            request = parse_eval_request(
+                {
+                    "session_id": self.session_id,
+                    "eval_mode": self._eval_mode,
+                    "tutor_dims": self._tutor_dims,
+                    "eval_model": self.eval_model,
+                    "idempotency_key": self._eval_idempotency_key,
+                }
+            )
+            self._eval_mode = request.eval_mode
+            self._tutor_dims = request.tutor_dims
+            self.eval_model = request.eval_model or self.eval_model
+            run, created = allocate_score_run(
+                self._result_dir,
+                eval_mode=request.eval_mode,
+                eval_model=request.eval_model,
+                tutor_dims=request.tutor_dims,
+                idempotency_key=request.idempotency_key,
+            )
+            self._active_score_id = run.score_id
+            self._eval_status = "running"
+            self._eval_error = None
+            self._eval_results = None
+
+            if not created:
+                return self._decorate_eval_payload(
+                    {
+                        "status": "running",
+                        "score_id": run.score_id,
+                        "message": "Evaluation in progress.",
+                    }
+                )
+
+            threading.Thread(
+                target=self._run_evaluation,
+                args=(run.score_id,),
+                daemon=True,
+                name=f"eval-{self.session_id[:8]}-{run.score_id}",
+            ).start()
+            return self._decorate_eval_payload(
+                {
+                    "status": "running",
+                    "score_id": run.score_id,
+                    "message": "Evaluation started.",
+                }
+            )
+
+        return self._decorate_eval_payload({"status": "unknown"})
+
+    def _decorate_eval_payload(self, payload: dict) -> dict:
+        """Attach read-only follow-up hints to an internal eval response."""
+        payload.setdefault("current_phase", self.phase.value)
+        payload.setdefault(
+            "next_allowed",
+            [
+                f"GET /ops/session/{self.session_id}/scores",
+                f"GET /ops/session/{self.session_id}/results",
+            ],
+        )
+        return payload
 
     # ------------------------------------------------------------------
     # Domain tool calls
@@ -985,28 +1104,21 @@ class SessionState:
     def _storage_session_id(self) -> str:
         """Session ID for result storage.
 
-        When bound to a Run (``run_id`` set): returns raw UUID — the
-        ``run_id`` serves as the primary index key.
-
-        Legacy (no run_id): returns ``{uuid}_{task_prefix}`` for O(1)
-        lookup in ``find_archived_result_dir``.
+        New server storage uses the raw 32-char session id for all runs.
         """
-        if self.run_id:
-            return self.session_id
-        prefix = self.task_id.split("_")[0] if self.task_id else ""
-        return f"{self.session_id}_{prefix}" if prefix else self.session_id
+        return self.session_id
 
     def _save_results(self):
         """Save run_state.json after session completion.
 
-        Storage path: results/server/{task_id}/{persona_id}/{YYYYMMDD_HHMMSS}_{session_id[:8]}/
+        Storage path: results/server/{task_id}/{persona_id}/{YYYYMMDD_HHMMSS}_{session_id[:12]}/
         """
         from datetime import datetime
 
         from server.storage.result_writer import save_run_state
 
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-        dir_name = f"{ts}_{self.session_id[:8]}"
+        dir_name = f"{ts}_{self.session_id[:12]}"
         result_dir = (
             self.bench_root
             / "results"
@@ -1058,7 +1170,80 @@ class SessionState:
         logger.info("Results saved: %s", result_dir)
 
     # ------------------------------------------------------------------
-    # Disk-backed read methods (bundle + eval; no in-session state)
+    # Evaluation (background thread)
+    # ------------------------------------------------------------------
+
+    def _run_evaluation(self, score_id: str):
+        """Run evaluation pipeline in a background thread.
+
+        Writes to ``_eval_status`` / ``_eval_results`` under ``_eval_lock``
+        to avoid races with ``request_evaluation`` reads.
+        """
+        try:
+            from server.storage.eval_writer import run_evaluation
+
+            if not self._result_dir:
+                raise RuntimeError("No result_dir — session results not saved")
+
+            conversation = self.session.conversation
+            tool_logs = self.proxy.get_logs()
+            distractor_names = self.proxy.get_distractor_names()
+
+            eval_results = run_evaluation(
+                task=self.task,
+                persona=self.persona,
+                result_dir=self._result_dir,
+                conversation=conversation,
+                tool_logs=tool_logs,
+                distractor_names=distractor_names,
+                bench_root=str(self.bench_root),
+                eval_model=self.eval_model,
+                eval_mode=self._eval_mode,
+                tutor_dims=self._tutor_dims,
+                score_id=score_id,
+            )
+
+            with self._eval_lock:
+                self._eval_results = eval_results
+                score_status = str(eval_results.get("score_status") or "")
+                if score_status == "failed":
+                    self._eval_status = "failed"
+                    self._eval_error = eval_results.get("error")
+                elif score_status == "interrupted":
+                    self._eval_status = "failed"
+                    self._eval_error = (
+                        eval_results.get("error") or "Evaluation interrupted"
+                    )
+                else:
+                    self._eval_status = "completed"
+                self._active_score_id = score_id
+            logger.info("Evaluation completed for session %s", self.session_id)
+
+        except Exception as e:
+            logger.error(
+                "Evaluation failed for session %s: %s",
+                self.session_id,
+                e,
+                exc_info=True,
+            )
+            with self._eval_lock:
+                self._eval_error = str(e)
+                self._eval_status = "failed"
+            if self._result_dir:
+                try:
+                    from server.storage.score_store import update_score_run
+
+                    update_score_run(
+                        self._result_dir,
+                        score_id,
+                        status="failed",
+                        error=str(e),
+                    )
+                except Exception:
+                    pass
+
+    # ------------------------------------------------------------------
+    # Query methods (shared by server internals and REST read endpoints)
     # ------------------------------------------------------------------
 
     def get_run_results(self) -> dict:
@@ -1070,81 +1255,39 @@ class SessionState:
             return {"error": "Results not available"}
         return json.loads(state_path.read_text(encoding="utf-8"))
 
-    def get_eval_scores(self, history: bool = False) -> dict:
-        """Return evaluation scores from the bundle's eval tree on disk.
+    def get_eval_scores(
+        self,
+        history: bool = False,
+        score_id: str | None = None,
+        score_ids: list[str] | None = None,
+        status_filter: list[str] | None = None,
+    ) -> dict:
+        """Return evaluation scores.
 
-        Post-slice-4 there is no in-session eval state: scoring runs
-        on the operator surface and lands in
-        ``evaluations/server/.../eval_meta.json``. Every call re-reads
-        the tree so operator polling sees fresh state.
+        Reads the in-bundle score store written under
+        ``evaluations/score_n``.
         """
-        if not self._result_dir:
-            return {"status": "pending"}
-        if history:
-            return self._read_eval_history()
+        if self._result_dir:
+            from server.storage.score_store import get_scores_payload
 
-        from server.evaluator.paths import find_latest_eval_dir
-
-        def _persisted_status() -> dict:
-            """Status from ``run_state.json`` — covers `failed` cleanly."""
-            run_state = self.get_run_results()
-            status = run_state.get("evaluation_status", "pending")
-            return {"status": status if isinstance(status, str) else "pending"}
-
-        latest = find_latest_eval_dir(
-            bench_root=self.bench_root,
-            task_id=self.task_id,
-            persona_id=self.persona_id,
-            session_id=self.session_id,
-        )
-        if latest is None:
-            return _persisted_status()
-
-        try:
-            meta = json.loads(
-                (latest / "eval_meta.json").read_text(encoding="utf-8")
+            return get_scores_payload(
+                self._result_dir,
+                history=history,
+                score_id=score_id,
+                score_ids=score_ids,
+                status_filter=status_filter,
             )
-        except Exception:
-            # Eval run directory exists but the meta file is missing or
-            # corrupt — most likely score_bundle crashed before writing
-            # it. Fall back to the persisted ``evaluation_status`` so a
-            # failed scorer surfaces as ``failed`` instead of ``pending``.
-            return _persisted_status()
-
-        scores: dict = {
-            "quant_result": meta.get("quant_result", 0.0),
-            "quant_process": meta.get("quant_process", 0.0),
-            "tutor_scores": meta.get("tutor_scores", {}),
-            "overall": meta.get("overall_score", 0.0),
-        }
-        errors = meta.get("errors")
-        if errors:
-            scores["errors"] = errors
-        return {"status": "completed", "scores": scores}
+        return {"status": "pending"}
 
     def _read_eval_history(self) -> dict:
-        """Read all eval_meta.json files for this session, newest first."""
+        """Read all score_n entries from evaluations/index.json."""
         if not self._result_dir:
-            return {"session_id": self.session_id, "evaluations": []}
-        from server.evaluator.paths import list_eval_history
+            return {"session_id": self.session_id, "scores": [], "evaluations": []}
+        from server.storage.score_store import get_scores_payload
 
-        entries = []
-        for sub in list_eval_history(
-            bench_root=self.bench_root,
-            task_id=self.task_id,
-            persona_id=self.persona_id,
-            session_id=self.session_id,
-        ):
-            meta_path = sub / "eval_meta.json"
-            if not meta_path.exists():
-                continue
-            try:
-                meta = json.loads(meta_path.read_text(encoding="utf-8"))
-                meta["eval_dir"] = sub.name
-                entries.append(meta)
-            except Exception:
-                pass
-        return {"session_id": self.session_id, "evaluations": entries}
+        payload = get_scores_payload(self._result_dir, history=True)
+        payload["session_id"] = self.session_id
+        return payload
 
     # ------------------------------------------------------------------
     # Container cleanup

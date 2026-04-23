@@ -35,7 +35,7 @@ from server.config.llm_config import OPENROUTER_BASE_URL
 from server.config.pricing import _resolve_pricing
 from server.config.prompt_config import build_scenario, build_user_description
 from server.core.student_sim import StudentSimulator
-from server.eval.ewan_eval.llm_client import EwanLLMClient
+from server.eval.judges.runtime.llm_client import EwanLLMClient
 from server.schemas import QuantTutorTask, StudentPersona
 
 logger = logging.getLogger(__name__)

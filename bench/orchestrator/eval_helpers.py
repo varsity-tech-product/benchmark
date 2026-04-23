@@ -17,13 +17,12 @@ def populate_eval_results(
         eval_results: Dict returned by ``_evaluate_task`` / ``eval_single_job``.
         category: Task category value (e.g. "data_analysis").
         requires_code: Whether the task requires code execution.
-        eval_mode: "full", "qr_only", or "qp_only".
+        eval_mode: "full", "qr", "qp", or "tutor".
     """
-    result.quant_result_score = eval_results.get("quant_result", 0.0)
-    result.quant_process_score = eval_results.get("quant_process", 0.0)
+    result.quant_result_score = eval_results.get("quant_result")
+    result.quant_process_score = eval_results.get("quant_process")
     result.tutor_scores = eval_results.get("tutor_scores", {})
     result.tutor_scores_by_model = eval_results.get("tutor_scores_by_model", {})
-    result.tutor_fallback_count = eval_results.get("tutor_fallback_count", 0)
     result.tutor_eval_error = eval_results.get("tutor_eval_error")
     result.process_metrics = eval_results.get("process_metrics", {})
     result.eval_script_detail = eval_results.get("eval_script_detail", {})
@@ -35,7 +34,7 @@ def populate_eval_results(
     result.tool_usage = eval_results.get("tool_usage", {})
     result.eval_mode = eval_mode
 
-    from evaluation.scoring import compute_task_score
+    from server.eval.core.scoring import compute_task_score
 
     score_breakdown = compute_task_score(
         quant_result_score=result.quant_result_score,

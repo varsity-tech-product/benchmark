@@ -41,7 +41,8 @@ The user asks you to:
 Do **not** use this skill for:
 
 - Static availability smoke tests — `bench/scripts/prod_smoke.py`.
-- Batch evaluation of existing bundles — `python -m server.evaluator --all-pending`.
+- Operator scoring of completed bundles — `/ops/session/{sid}/evaluate` or
+  `python -m server.scripts.eval_single`.
 - Building a new task or persona — JSON edits under `bench/tasks/` and `bench/personas/`.
 
 ## How to drive a session (operational summary)
@@ -57,10 +58,12 @@ Do **not** use this skill for:
    5–15 s, with outliers around 16 s).
 6. Don't DELETE active sessions to "clean up" — let the server terminate
    naturally (max_turns is the usual endpoint).
-7. When terminal, print the session id and expected bundle path:
-   `bench/results/server/{task_id}/{persona_id}/{YYYYMMDD_HHMMSS}_{session_id[:8]}/`.
-8. Eval is out of band — point the operator at
-   `python -m server.evaluator --bundle <bundle_dir>`.
+7. When terminal, print the session id. The bundle is stored under
+   `bench/results/server/{task_id}/{persona_id}/{YYYYMMDD_HHMMSS}_{session_id[:12]}/`
+   and can also be found through its `.session_id` file.
+8. Eval is server/operator-owned. Do not call scoring from the agent loop;
+   point the operator at `/ops/session/{sid}/evaluate` or
+   `python -m server.scripts.eval_single run --session <session_id>`.
 
 ## Default environment
 

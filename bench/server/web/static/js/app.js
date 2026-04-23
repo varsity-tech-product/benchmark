@@ -212,6 +212,11 @@
     return '$' + value.toFixed(4);
   }
 
+  function renderJsonBlock(payload) {
+    if (!payload) return '<p class="detail-empty-note">No JSON payload available.</p>';
+    return '<pre class="detail-json-block">' + escapeHtml(JSON.stringify(payload, null, 2)) + '</pre>';
+  }
+
   function titleCase(value) {
     return String(value || '')
       .split(/[_\s-]+/)
@@ -1493,16 +1498,41 @@
 
   function renderEvalHistoryItem(entry) {
     var score = extractEvalHistoryScore(entry);
-    var label = entry.eval_dir || entry.timestamp || 'Evaluation';
-    var timestamp = formatTimestamp(entry.timestamp);
+    var label = entry.score_id || entry.eval_dir || entry.created_at || 'Evaluation';
+    var timestamp = formatTimestamp(entry.completed_at || entry.created_at || entry.timestamp);
+    var status = entry.status || entry.score_status || 'unknown';
     return '' +
       '<div class="detail-history-item">' +
         '<strong>' + escapeHtml(label) + '</strong>' +
         '<div class="detail-history-meta">' +
-          'Time: ' + escapeHtml(timestamp) +
+          escapeHtml(titleCase(status)) + ' · ' + escapeHtml(timestamp) +
           (score == null ? '' : ' · OAS ' + escapeHtml(formatScore(score))) +
         '</div>' +
       '</div>';
+  }
+
+  function renderScoreJsonReport(detail) {
+    if (!detail.score_json) return '<p class="detail-empty-note">No score JSON available.</p>';
+    var score = detail.score_json;
+    var summary = [
+      metaItem('Score ID', score.score_id || '—'),
+      metaItem('Status', titleCase(score.score_status || 'unknown')),
+      metaItem('Mode', titleCase(score.eval_mode || 'full')),
+      metaItem('Overall Score', score.overall_score == null ? '—' : formatScore(score.overall_score)),
+      metaItem('Completed', formatTimestamp(score.completed_at))
+    ].join('');
+    return buildInfoSection('Score Summary', summary) +
+      buildInfoSection('Score JSON', renderJsonBlock(score));
+  }
+
+  function renderCostReport(detail) {
+    var summary = [
+      metaItem('Student Simulator Cost', detail.simulator_cost != null ? formatCost(detail.simulator_cost) : '—'),
+      metaItem('Evaluation Cost', detail.evaluation_cost != null ? formatCost(detail.evaluation_cost) : '—'),
+      metaItem('Displayed Total', detail.total_cost != null ? formatCost(detail.total_cost) : '—')
+    ].join('');
+    return buildInfoSection('Cost Summary', summary) +
+      buildInfoSection('Evaluation Cost JSON', renderJsonBlock(detail.cost_json));
   }
 
   function buildInfoPanel(detail) {
@@ -1519,7 +1549,8 @@
       metaItem('Send Messages', String(detail.send_message_count || 0)),
       metaItem('Steps', String(detail.step_count)),
       metaItem('Evaluation Status', titleCase(detail.evaluation_status)),
-      metaItem('Overall Score', detail.overall_score == null ? '—' : formatScore(detail.overall_score))
+      metaItem('Overall Score', detail.overall_score == null ? '—' : formatScore(detail.overall_score)),
+      metaItem('Student + Eval Cost', detail.total_cost == null ? '—' : formatCost(detail.total_cost))
     ].join('');
 
     return buildInfoSection('Summary', summary);
@@ -1543,15 +1574,11 @@
     if (detail.eval_history && detail.eval_history.length) {
       buttons.push('<button class="detail-report-btn" id="detail-eval-history-btn">Eval History</button>');
     }
-    // Eval reports
-    if (detail.scores_md) {
-      buttons.push('<button class="detail-report-btn" id="detail-score-btn">Score Report</button>');
+    if (detail.score_json) {
+      buttons.push('<button class="detail-report-btn" id="detail-score-btn">Score JSON</button>');
     }
-    if (detail.cost_md) {
-      buttons.push('<button class="detail-report-btn" id="detail-cost-btn">Cost Report</button>');
-    }
-    if (detail.trace_md) {
-      buttons.push('<button class="detail-report-btn" id="detail-trace-btn">Trace Report</button>');
+    if (detail.cost_json || detail.simulator_cost != null || detail.evaluation_cost != null) {
+      buttons.push('<button class="detail-report-btn" id="detail-cost-btn">Cost</button>');
     }
     return buttons.join('');
   }
@@ -1983,13 +2010,9 @@
       ? '<div class="detail-history-list">' + history.map(renderEvalHistoryItem).join('') + '</div>'
       : '<p class="detail-empty-note">No evaluation history found.</p>';
 
-    var costHtml = detail.cost_md
-      ? safeRenderMarkdown(detail.cost_md)
-      : '<p class="detail-empty-note">No evaluation cost report available.</p>';
-
     showModal('Eval History',
       buildInfoSection('Scores', scoresHtml) +
-      buildInfoSection('Eval Cost', costHtml)
+      renderCostReport(detail)
     );
   }
 
@@ -2001,7 +2024,6 @@
     var evalHistoryBtn = document.getElementById('detail-eval-history-btn');
     var scoreBtn = document.getElementById('detail-score-btn');
     var costBtn = document.getElementById('detail-cost-btn');
-    var traceBtn = document.getElementById('detail-trace-btn');
 
     if (serverBtn) serverBtn.addEventListener('click', function () { openServerModal(detail); });
     if (clientBtn) clientBtn.addEventListener('click', function () { openClientModal(detail); });
@@ -2009,19 +2031,13 @@
 
     if (scoreBtn) {
       scoreBtn.addEventListener('click', function () {
-        showModal('Score Report', safeRenderMarkdown(detail.scores_md));
+        showModal('Score JSON', renderScoreJsonReport(detail));
       });
     }
 
     if (costBtn) {
       costBtn.addEventListener('click', function () {
-        showModal('Cost Report', safeRenderMarkdown(detail.cost_md));
-      });
-    }
-
-    if (traceBtn) {
-      traceBtn.addEventListener('click', function () {
-        showModal('Trace Report', safeRenderMarkdown(detail.trace_md));
+        showModal('Cost', renderCostReport(detail));
       });
     }
   }

@@ -1,0 +1,23 @@
+{
+  "version": "qr_v1",
+  "role": "You are an expert Result Analyst. Your goal is to evaluate the quality of an AI agent's task deliverables on a specific dimension by strictly following the rubric below.",
+  "dimensions": {
+    "result_judge": {
+      "scope": "universal",
+      "label": "Deliverable Quality",
+      "rules": [
+        "Method neutrality: The agent may use different methods, parameters, or data subsets than expected. Evaluate whether deliverables meet RC requirements, not whether the specific approach matches expectations. Different parameters producing different numerical values is normal variation, not error.",
+        "Implementation correctness \u2260 result desirability: Judge methodological soundness and code executability, not whether results are impressive. A correctly implemented strategy may lose money; a correct statistical test may be insignificant. For debug tasks: judge whether the bug was resolved, not whether the strategy is profitable.",
+        "Only count executed code: Code that was written but never successfully executed (tool output marked [FAIL] or absent from tool outputs) should NOT receive credit. Plans, drafts, and unexecuted code are preparation \u2014 not results.",
+        "Evaluate final deliverables only: Do not penalize intermediate output, exploratory analysis, debugging traces, or iterative refinement. Process quality is evaluated separately by QP."
+      ],
+      "scoring_guidance": {
+        "1": "Critical RC deliverables are missing, or deliverables are entirely unusable (e.g., code cannot run, analysis based on wrong data, key metrics not computed).",
+        "2": "Some RC items addressed, but significant gaps remain, or completed deliverables have notable correctness/usability issues.",
+        "3": "ALL of: (a) All deliverables listed in RC are produced; (b) Deliverables are functionally correct and directly usable; (c) Numerical results are consistent with actual tool output.",
+        "4": "Meets all Score 3 criteria, and deliverables show attention to detail \u2014 e.g., edge cases handled, output well-formatted, code well-structured.",
+        "5": "Meets Score 4, and deliverables cover content not explicitly required by RC but of substantive value to task completeness \u2014 e.g., proactively adding risk metrics or data quality checks."
+      }
+    }
+  }
+}

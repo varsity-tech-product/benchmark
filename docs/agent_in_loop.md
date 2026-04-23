@@ -52,8 +52,8 @@ Use this guide when you want to:
 This is **not** the right reference for:
 
 - Static availability ping — that's `bench/scripts/prod_smoke.py`.
-- Batch evaluation of existing bundles — that's
-  `python -m server.evaluator --all-pending` (issue #47).
+- Operator scoring of completed bundles — that's server-owned and uses
+  `/ops/session/{sid}/evaluate` or `python -m server.scripts.eval_single`.
 - Building a new task or persona — those are JSON edits under
   `bench/tasks/` and `bench/personas/`.
 
@@ -219,18 +219,17 @@ Each one is grounded in a live failure mode (sessions `01e84317` and
 When the session reaches a terminal status, the server automatically:
 
 1. Saves `run_state.json` (full conversation + `tool_logs` + metadata).
-2. Saves `run_state.md` (human-readable transcript).
+2. Saves `.session_id` for exact archived-session lookup.
 3. Snapshots `/workspace` into `agent_files/` (any code/data the tutor
    wrote).
-4. Writes `manifest.json` (v1.0.0 bundle contract from issue #46).
 
 Bundle path:
 ```
-bench/results/server/{task_id}/{persona_id}/{YYYYMMDD_HHMMSS}_{session_id[:8]}/
+bench/results/server/{task_id}/{persona_id}/{YYYYMMDD_HHMMSS}_{session_id[:12]}/
 ```
 
-Print the session id and expected bundle path at the end of your run so
-the operator knows where to find it.
+Print the session id at the end of your run so the operator can locate the
+bundle through `.session_id` or the results UI.
 
 Since #54, `DELETE /session/{sid}` also persists the bundle. Natural
 terminal is still preferable for cleaner audit metadata.
@@ -240,18 +239,28 @@ terminal is still preferable for cleaner audit metadata.
 ## Eval is out of band
 
 You do **not** trigger evaluation from the agent loop. After the session
-terminates, the bundle is ready for offline scoring via:
+terminates, the bundle is ready for server/operator scoring via:
 
 ```bash
-# Single-bundle:
-python -m server.evaluator --bundle <bundle_dir>
+# Single session:
+python -m server.scripts.eval_single run --session <session_id> --mode tutor
 
-# Or batched against many bundles (issue #47):
-python -m server.evaluator --all-pending --concurrency 4
+# Read score state:
+python -m server.scripts.eval_single get --session <session_id> --history
+```
+
+The server may also expose operator scoring through
+`POST /ops/session/{sid}/evaluate`, but external tutor agents should not have
+the admin token and should not call that endpoint. Agents may read exported
+state with their run token:
+
+```bash
+curl -H "authorization: Bearer $TOKEN" "$BASE/session/$SID/results"
+curl -H "authorization: Bearer $TOKEN" "$BASE/session/$SID/scores"
 ```
 
 The agent's job ends at the terminal `send_message`. Mention this to the
-operator when you finish, and point them at the bundle path.
+operator when you finish, and give them the `session_id`.
 
 ---
 
@@ -278,6 +287,7 @@ Before driving a non-trivial session, confirm:
 - `.claude/skills/quanttutorbench-agent/SKILL.md` — Claude Code skill (thin shim pointing here)
 - `bench/spec/PROTOCOL.md` — protocol surface
 - `bench/server/api/protocol.py` — phase machine + permission rules
-- `bench/server/storage/BUNDLE_SCHEMA.md` — bundle layout and v1.0.0 contract
-- `bench/server/evaluator/__main__.py` — batch eval CLI for scoring bundles
+- `bench/server/storage/result_writer.py` — completed-run persistence
+- `bench/server/storage/score_store.py` — append-only score run storage
+- `bench/server/scripts/eval_single.py` — operator CLI for scoring bundles
 - `docs/architecture.md` — overall system map

@@ -164,13 +164,13 @@ class TestSessionStatus:
         assert resp.status_code == 200
 
         task_root = bench_root / "results" / "server" / DEFAULT_TASK_ID
-        matches = list(task_root.rglob(f"*_{sid[:8]}"))
+        matches = list(task_root.rglob(f"*_{sid[:12]}"))
         assert matches, f"bundle was not persisted under {task_root}"
         bundle = matches[0]
 
-        manifest = json.loads((bundle / "manifest.json").read_text())
-        assert manifest["bundle_schema_version"].startswith("1.")
-        assert manifest["session_id"] == sid
+        assert not (bundle / "manifest.json").exists()
+        assert not (bundle / "run_state.md").exists()
+        assert (bundle / ".session_id").read_text(encoding="utf-8") == sid
 
         run_state = json.loads((bundle / "run_state.json").read_text())
         # ``agent_abandoned`` is not in ``_is_failed_reason`` so the

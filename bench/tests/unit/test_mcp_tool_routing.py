@@ -196,38 +196,26 @@ class TestMCPGetBackground:
 
 
 class TestMCPEvalRouting:
-    """Issue #46 slice 3: evaluation tools no longer reachable via MCP.
-
-    The agent catalogue dropped them, so a misbehaving client that calls
-    them anyway either gets a phase-denial (COMPLETED) or an
-    ``Unknown tool`` failure from the proxy (other phases).
-    """
-
-    @pytest.mark.parametrize(
-        "tool", ["request_evaluation", "get_results", "get_scores"]
-    )
     @pytest.mark.asyncio
-    async def test_eval_tools_unknown_in_session(self, session_state, tool):
+    async def test_eval_denied_in_session(self, session_state):
         await _register(session_state)
         await _start(session_state)
-        result = await _call(session_state, tool)
-        assert result.get("success") is False
-        assert "Unknown tool" in result.get("output", "")
-
-    @pytest.mark.parametrize(
-        "tool", ["request_evaluation", "get_results", "get_scores"]
-    )
-    @pytest.mark.asyncio
-    async def test_eval_tools_denied_after_completion(self, session_state, tool):
-        from server.api.protocol import SessionPhase
-
-        await _register(session_state)
-        await _start(session_state)
-        session_state.phase = SessionPhase.COMPLETED
-        result = await _call(session_state, tool)
+        result = await _call(session_state, "request_evaluation")
         assert "error" in result
-        # Phase-denial: COMPLETED is terminal — empty allowed list.
-        assert result.get("allowed") == []
+
+    @pytest.mark.asyncio
+    async def test_get_results_denied_in_session(self, session_state):
+        await _register(session_state)
+        await _start(session_state)
+        result = await _call(session_state, "get_results")
+        assert "error" in result
+
+    @pytest.mark.asyncio
+    async def test_get_scores_denied_in_session(self, session_state):
+        await _register(session_state)
+        await _start(session_state)
+        result = await _call(session_state, "get_scores")
+        assert "error" in result
 
 
 # ---------------------------------------------------------------------------
@@ -311,7 +299,9 @@ class TestMCPPhaseTransitions:
         names = {t.name for t in tools}
         for lifecycle in LIFECYCLE_TOOL_NAMES:
             assert lifecycle in names
-        assert len(tools) > len(LIFECYCLE_TOOL_NAMES), "expected domain tools after register"
+        assert len(tools) > len(
+            LIFECYCLE_TOOL_NAMES
+        ), "expected domain tools after register"
 
         await _start(session_state)
         # IN_SESSION — same static lifecycle set

@@ -90,8 +90,8 @@ SEND_MESSAGE_TOOL = Tool(
         "Each call advances the conversation by one turn and cannot be undone. "
         "Returns the student's reply and session status. "
         "When status is 'completed' or 'failed', the session has ended and "
-        "the agent's lifecycle is over — evaluation runs out-of-band on the "
-        "operator surface. "
+        "the agent's lifecycle is over. Evaluation is handled server-side "
+        "out-of-band. "
         "Precondition: start_session must have succeeded. "
         "Optionally include 'reasoning' to record your private rationale "
         "for this turn — it is logged for analysis and is NOT shown to the student."
@@ -140,9 +140,6 @@ GET_BACKGROUND_TOOL = Tool(
 )
 
 # Names of the session API tools agents drive directly.
-# Evaluation tools (request_evaluation / get_results / get_scores) were
-# removed in issue #46 slice 3 — scoring runs out-of-band on the operator
-# surface, so the agent's lifecycle terminates at COMPLETED.
 SESSION_API_TOOLS = frozenset(
     {
         "register_session",
@@ -151,8 +148,16 @@ SESSION_API_TOOLS = frozenset(
     }
 )
 
+SERVER_ONLY_EVAL_TOOLS = frozenset(
+    {
+        "request_evaluation",
+        "get_results",
+        "get_scores",
+    }
+)
+
 # Tool names that REST /tool/{name} must reject (use dedicated endpoints instead).
-TOOL_ENDPOINT_BLOCKED = SESSION_API_TOOLS
+TOOL_ENDPOINT_BLOCKED = SESSION_API_TOOLS | SERVER_ONLY_EVAL_TOOLS
 
 
 # Lifecycle tools that MCP ``list_tools`` exposes in every phase (static union).
@@ -165,7 +170,7 @@ LIFECYCLE_TOOL_NAMES: tuple[str, ...] = (
 
 
 # Recommended next-hop tool(s) per phase — the state-machine signal the agent
-# should follow to advance. COMPLETED is terminal from the agent's perspective.
+# should follow to advance.
 _NEXT_ALLOWED: dict[SessionPhase, list[str]] = {
     SessionPhase.UNREGISTERED: ["register_session"],
     SessionPhase.REGISTERED: ["start_session"],
@@ -200,6 +205,13 @@ def check_permission(
         should call — so a frozen-registry MCP client can drive the state
         machine from error guidance alone.
     """
+    if tool_name in SERVER_ONLY_EVAL_TOOLS:
+        return (
+            False,
+            "Evaluation is handled server-side and is not available as an MCP tool.",
+            next_allowed_for_phase(phase),
+        )
+
     if phase == SessionPhase.UNREGISTERED:
         if tool_name == "register_session":
             return True, "", []
@@ -232,7 +244,6 @@ def check_permission(
         )
 
     if phase == SessionPhase.COMPLETED:
-        # COMPLETED is terminal for agents — evaluation runs out-of-band.
         return (
             False,
             (
