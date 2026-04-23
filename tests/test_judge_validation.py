@@ -1,9 +1,11 @@
+import asyncio
 import json
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "bench"))
 
+from experiments.judge_validation import run as judge_run
 from experiments.judge_validation.report import compute_reliability_stats
 from server.eval.inputs.rubric_builder import build_eval_params, load_rubric
 from server.eval.judges.runtime.conv_geval import EvalTestCase, EwanConvGEval
@@ -63,6 +65,58 @@ def test_pilot_corpus_items_match_registry_mappings():
     for item in corpus["items"]:
         key = (item["track"], item["dimension"])
         assert key in mapped[item["registry_rubric_id"]]
+
+
+def test_explicit_context_items_record_context_metadata():
+    root = Path(__file__).parent.parent
+    corpus = json.loads(
+        (
+            root / "bench/experiments/judge_validation/pilot_corpus.json"
+        ).read_text(encoding="utf-8")
+    )
+    item = next(i for i in corpus["items"] if i["sample_id"] == "jv_code_correct_good")
+    metric = judge_run._metric_for_item(item, model="judge-model")
+
+    assert judge_run._conversation_context(item).startswith("## Task")
+    assert metric.judge_metadata()["context_fields_included"] == ["context"]
+
+
+def test_failed_validation_judge_record_preserves_retry_diagnostics(monkeypatch):
+    async def fake_retry(*args, **kwargs):
+        return {
+            "score": None,
+            "reason": "bad json",
+            "evidence": [],
+            "judge_metadata": {"attempts": 3, "rubric_id": "qr.result_judge"},
+            "diagnostics": {"attempts": 3, "raw_response_excerpt": "```json"},
+        }
+
+    monkeypatch.setattr(judge_run, "llm_call_with_retry", fake_retry)
+    item = {
+        "sample_id": "sample",
+        "pair_id": "pair",
+        "pair_role": "stronger",
+        "task_id": "task",
+        "category": "debug",
+        "persona_id": "developer_crossover",
+        "track": "qr",
+        "dimension": "result_judge",
+        "registry_rubric_id": "code_correctness.v1",
+        "context": "## Task\nSynthetic task",
+    }
+
+    record = asyncio.run(
+        judge_run._judge_one(
+            run_id="run",
+            item=item,
+            run_index=0,
+            model="judge-model",
+        )
+    )
+
+    assert record["status"] == "failed"
+    assert record["judge_metadata"]["attempts"] == 3
+    assert record["diagnostics"]["raw_response_excerpt"] == "```json"
 
 
 def test_conv_geval_prompt_and_metadata_include_rubric_version():
