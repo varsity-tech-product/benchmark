@@ -11,6 +11,8 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from urllib.parse import parse_qs, urlparse
+
 from server.auth import AuthService, SESSION_COOKIE
 
 
@@ -59,6 +61,53 @@ class GithubOAuthAuthTests(unittest.TestCase):
                 self.assertIsNotNone(user)
                 self.assertEqual(user.github_login, "alice")
                 self.assertEqual(user.role, "admin")
+
+    def test_public_login_does_not_request_org_scope(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.dict(
+                "os.environ",
+                {
+                    "QTB_AUTH_MODE": "github",
+                    "QTB_GITHUB_CLIENT_ID": "cid",
+                    "QTB_GITHUB_ALLOW_ALL": "true",
+                    "QTB_GITHUB_ALLOWED_ORGS": "varsity-tech-product",
+                },
+                clear=True,
+            ):
+                auth = AuthService(Path(tmp))
+
+                async def login(request):
+                    return await auth.login(request)
+
+                client = TestClient(Starlette(routes=[Route("/auth/login", login)]))
+                response = client.get("/auth/login?next=/", follow_redirects=False)
+
+        self.assertEqual(response.status_code, 302)
+        query = parse_qs(urlparse(response.headers["location"]).query)
+        self.assertEqual(query["scope"], ["read:user user:email"])
+
+    def test_invite_only_org_login_requests_org_scope(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.dict(
+                "os.environ",
+                {
+                    "QTB_AUTH_MODE": "github",
+                    "QTB_GITHUB_CLIENT_ID": "cid",
+                    "QTB_GITHUB_ALLOWED_ORGS": "varsity-tech-product",
+                },
+                clear=True,
+            ):
+                auth = AuthService(Path(tmp))
+
+                async def login(request):
+                    return await auth.login(request)
+
+                client = TestClient(Starlette(routes=[Route("/auth/login", login)]))
+                response = client.get("/auth/login?next=/", follow_redirects=False)
+
+        self.assertEqual(response.status_code, 302)
+        query = parse_qs(urlparse(response.headers["location"]).query)
+        self.assertEqual(query["scope"], ["read:user user:email read:org"])
 
     def test_invalid_state_is_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:
