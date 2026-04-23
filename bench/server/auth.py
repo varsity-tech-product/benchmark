@@ -448,6 +448,9 @@ class AuthService:
         return response.json()
 
     def _is_allowed(self, profile: dict, token: str) -> bool:
+        if _bool_env("QTB_GITHUB_ALLOW_ALL", False):
+            return True
+
         login = str(profile.get("login") or "")
         allowed_logins = _csv_env("QTB_GITHUB_ALLOWED_LOGINS")
         if allowed_logins and login.lower() in allowed_logins:
@@ -456,7 +459,7 @@ class AuthService:
         allowed_orgs = _csv_env("QTB_GITHUB_ALLOWED_ORGS")
         allowed_teams = _csv_env("QTB_GITHUB_ALLOWED_TEAMS")
         if not allowed_orgs and not allowed_teams and not allowed_logins:
-            allowed_orgs = {"varsity-tech-product"}
+            return True
 
         if allowed_orgs:
             orgs = self._github_get(token, "/user/orgs")

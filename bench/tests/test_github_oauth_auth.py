@@ -77,7 +77,7 @@ class GithubOAuthAuthTests(unittest.TestCase):
             with patch.dict(
                 "os.environ",
                 {"QTB_GITHUB_ALLOWED_ORGS": "varsity-tech-product"},
-                clear=False,
+                clear=True,
             ):
                 auth = AuthService(Path(tmp))
                 with patch.object(
@@ -87,12 +87,35 @@ class GithubOAuthAuthTests(unittest.TestCase):
                 ):
                     self.assertTrue(auth._is_allowed({"login": "alice"}, "tok"))
 
+    def test_empty_allowlist_accepts_any_github_account(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.dict("os.environ", {}, clear=True):
+                auth = AuthService(Path(tmp))
+                with patch.object(auth, "_github_get") as github_get:
+                    self.assertTrue(auth._is_allowed({"login": "external"}, "tok"))
+                    github_get.assert_not_called()
+
+    def test_allow_all_accepts_account_with_org_allowlist_configured(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.dict(
+                "os.environ",
+                {
+                    "QTB_GITHUB_ALLOW_ALL": "true",
+                    "QTB_GITHUB_ALLOWED_ORGS": "varsity-tech-product",
+                },
+                clear=True,
+            ):
+                auth = AuthService(Path(tmp))
+                with patch.object(auth, "_github_get") as github_get:
+                    self.assertTrue(auth._is_allowed({"login": "external"}, "tok"))
+                    github_get.assert_not_called()
+
     def test_org_allowlist_rejects_outsider(self):
         with tempfile.TemporaryDirectory() as tmp:
             with patch.dict(
                 "os.environ",
                 {"QTB_GITHUB_ALLOWED_ORGS": "varsity-tech-product"},
-                clear=False,
+                clear=True,
             ):
                 auth = AuthService(Path(tmp))
                 with patch.object(auth, "_github_get", return_value=[{"login": "other"}]):
