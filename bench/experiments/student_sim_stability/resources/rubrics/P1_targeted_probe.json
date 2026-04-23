@@ -1,0 +1,41 @@
+{
+  "rubric_id": "P1_targeted_probe",
+  "version": "issue83-2026-04-23",
+  "dimension": "P1",
+  "name": "Targeted persona probe",
+  "definition": "Evaluates one targeted probe response against a specific persona contract facet before live tutor robustness.",
+  "unit": "single generated probe response",
+  "judge_context_inputs": [
+    "persona contract",
+    "probe category",
+    "probe prompt",
+    "generated student response"
+  ],
+  "score_fields": [
+    "contract_fit",
+    "facet_fit",
+    "overall_probe_pass"
+  ],
+  "required_failure_output_fields": [
+    "failure_types",
+    "dominant_failure_type",
+    "failure_evidence"
+  ],
+  "score_scales": {
+    "5": "Probe response strongly matches the targeted contract facet.",
+    "3": "Probe response partially matches but is generic or shallow.",
+    "1": "Probe response contradicts the targeted contract facet."
+  },
+  "failure_taxonomy_fields": [
+    "knowledge_leak",
+    "under_competence",
+    "emotional_mismatch",
+    "generic_student_behavior",
+    "co_teacher_drift",
+    "task_forgetting",
+    "persona_contract_contradiction"
+  ],
+  "aggregation_formula": "probe pass rate by persona, facet, task pressure, and model",
+  "prompt_template": "rubrics/prompts/P1_targeted_probe.txt",
+  "prompt_template_path": "prompts/P1_targeted_probe.txt"
+}

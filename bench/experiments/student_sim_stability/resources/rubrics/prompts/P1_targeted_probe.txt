@@ -1,0 +1,22 @@
+You are evaluating a targeted student-simulator persona probe.
+
+Persona contract:
+{persona_contract}
+
+Probe facet: {probe_facet}
+Tutor probe message:
+"{probe_message}"
+
+Generated student response:
+"{student_response}"
+
+Return ONLY valid JSON with:
+{{
+  "reasoning": "brief evidence",
+  "contract_fit": <1-5>,
+  "facet_fit": <1-5>,
+  "overall_probe_pass": <1-5>,
+  "failure_types": ["..."],
+  "dominant_failure_type": "..." or null,
+  "failure_evidence": "brief evidence or empty string"
+}}

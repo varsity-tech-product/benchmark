@@ -1,0 +1,36 @@
+{
+  "rubric_id": "C1_persona_distinguishability",
+  "version": "issue83-2026-04-23",
+  "dimension": "control",
+  "name": "Persona-vs-generic distinguishability",
+  "definition": "Evaluates whether persona-conditioned generated student messages are distinguishable from matching generic-control generated student messages.",
+  "unit": "paired live r0 tutor-t0 conversation and matching control conversation",
+  "judge_context_inputs": [
+    "anonymized generated-student messages from persona-conditioned conversation",
+    "anonymized generated-student messages from generic-control conversation"
+  ],
+  "included_turn_source": "student_model",
+  "score_fields": [
+    "distinctiveness",
+    "persona_value_add"
+  ],
+  "required_failure_output_fields": [
+    "failure_types",
+    "dominant_failure_type",
+    "failure_evidence"
+  ],
+  "score_scales": {
+    "5": "Completely different behavior.",
+    "3": "Some differences but also many similarities.",
+    "1": "Indistinguishable."
+  },
+  "failure_taxonomy_fields": [
+    "generic_student_behavior",
+    "emotional_mismatch",
+    "under_competence",
+    "persona_contract_contradiction"
+  ],
+  "aggregation_formula": "mean(distinctiveness) and high_score_ratio=count(distinctiveness >= 4)/n by persona/model",
+  "prompt_template": "rubrics/prompts/C1_persona_distinguishability.txt",
+  "prompt_template_path": "prompts/C1_persona_distinguishability.txt"
+}

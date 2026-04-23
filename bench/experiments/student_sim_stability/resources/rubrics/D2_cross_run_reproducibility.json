@@ -1,0 +1,45 @@
+{
+  "rubric_id": "D2_cross_run_reproducibility",
+  "version": "issue83-2026-04-23",
+  "dimension": "D2",
+  "name": "Cross-run reproducibility",
+  "definition": "Evaluates whether three repeated live conversations under identical conditions preserve similar student behavior.",
+  "unit": "three repeated live conversations",
+  "judge_context_inputs": [
+    "persona description",
+    "task description",
+    "three generated-student transcript sets"
+  ],
+  "included_turn_source": "student_model",
+  "score_fields": [
+    "topic_trajectory",
+    "knowledge_display",
+    "emotional_consistency",
+    "question_patterns",
+    "overall_reproducibility"
+  ],
+  "required_failure_output_fields": [
+    "failure_types",
+    "dominant_failure_type",
+    "failure_evidence"
+  ],
+  "score_scales": {
+    "5": "Nearly identical behavior patterns across all runs.",
+    "4": "Very similar with minor variations in phrasing.",
+    "3": "Same general direction but noticeable differences.",
+    "2": "Significant behavioral differences.",
+    "1": "Completely different behaviors."
+  },
+  "failure_taxonomy_fields": [
+    "knowledge_leak",
+    "under_competence",
+    "emotional_mismatch",
+    "generic_student_behavior",
+    "co_teacher_drift",
+    "task_forgetting",
+    "persona_contract_contradiction"
+  ],
+  "aggregation_formula": "mean(overall_reproducibility), std(overall_reproducibility), high_score_ratio=count(overall_reproducibility >= 4)/n by model and tutor_temperature",
+  "prompt_template": "rubrics/prompts/D2_cross_run_reproducibility.txt",
+  "prompt_template_path": "prompts/D2_cross_run_reproducibility.txt"
+}

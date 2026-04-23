@@ -1,11 +1,12 @@
 """Render judge prompts from conversation files for manual or agent evaluation.
 
-Reads conversations from a directory, applies evaluator prompt templates,
+Reads conversations from a directory, applies rubric prompt artifacts,
 and writes rendered prompts + metadata to judge_inputs/ for batch processing.
 
 Usage:
-    python -m experiments.student_sim_stability.render_judge_prompts \
-        --conv-dir pilot --output-dir pilot/judge_inputs --dimension D1
+    python -m experiments.student_sim_stability.pipeline.render_judge_prompts \
+        --conv-dir results/issue83/conversations \
+        --output-dir results/issue83/judge_inputs --dimension D1
 """
 
 import argparse
@@ -14,25 +15,42 @@ import random
 import sys
 from pathlib import Path
 
-BENCH_ROOT = Path(__file__).resolve().parent.parent.parent
-sys.path.insert(0, str(BENCH_ROOT))
+from experiments.student_sim_stability.core.paths import BENCH_ROOT, EXPERIMENT_ROOT
 
-from experiments.student_sim_stability.config import REPEATS
-from experiments.student_sim_stability.evaluator import (
-    _D1_PROMPT,
-    _D2_PROMPT,
-    _D3_PROMPT,
-    _D4_PROMPT,
-    _DISTINGUISH_PROMPT,
-    _SYSTEM_LABELS,
+if str(BENCH_ROOT) not in sys.path:
+    sys.path.insert(0, str(BENCH_ROOT))
+
+from experiments.student_sim_stability.core.config import (
+    CONTROL_OPENING_SOURCE,
+    FIXTURE_OPENING_SOURCE,
+    REPEATS,
+    STUDENT_MODEL_SOURCE,
+)
+from experiments.student_sim_stability.core.contracts import (
+    list_persona_contracts,
+    load_persona_contract,
+    load_student_persona,
+    render_persona_contract_text,
+)
+from experiments.student_sim_stability.core.rubrics import (
+    rubric_metadata,
+    rubric_prompt_template,
 )
 from server.schemas import QuantTutorTask, StudentPersona
 
+_D1_PROMPT = rubric_prompt_template("D1")
+_D2_PROMPT = rubric_prompt_template("D2")
+_D3_PROMPT = rubric_prompt_template("D3")
+_D4_PROMPT = rubric_prompt_template("D4")
+_DISTINGUISH_PROMPT = rubric_prompt_template("control")
+_P1_PROMPT = rubric_prompt_template("P1")
+_B1_PROMPT = rubric_prompt_template("B1")
+_SYSTEM_LABELS = ["System A", "System B", "System C", "System D", "System E"]
+_D4_CONTEXT_CHAR_LIMIT = 700
+
 
 def _load_persona(persona_id: str) -> StudentPersona:
-    path = BENCH_ROOT / "personas" / f"{persona_id}.json"
-    with open(path) as f:
-        return StudentPersona(**json.load(f))
+    return load_student_persona(persona_id)
 
 
 def _load_task(task_id: str) -> QuantTutorTask:
@@ -60,6 +78,92 @@ def _parse_conv_filename(name: str) -> dict:
     return meta
 
 
+def _generated_student_turns(
+    conv: list[dict], source_file: str = ""
+) -> list[tuple[int, dict]]:
+    """Return model-generated student turns and reject untagged user turns."""
+    turns: list[tuple[int, dict]] = []
+    for idx, turn in enumerate(conv):
+        if turn.get("role") != "user":
+            continue
+        source = turn.get("source")
+        if source == STUDENT_MODEL_SOURCE:
+            turns.append((idx, turn))
+            continue
+        if source in {FIXTURE_OPENING_SOURCE, CONTROL_OPENING_SOURCE}:
+            continue
+        location = f"{source_file}: " if source_file else ""
+        raise ValueError(
+            f"{location}user turn {idx} has missing/unknown source {source!r}"
+        )
+    return turns
+
+
+def _generated_student_messages(conv: list[dict], source_file: str = "") -> list[str]:
+    return [turn["content"] for _, turn in _generated_student_turns(conv, source_file)]
+
+
+def _quoted_excerpt(content: str, limit: int) -> str:
+    """Return a JSON-quoted prompt excerpt with stable truncation."""
+    if len(content) > limit:
+        content = content[: limit - 3] + "..."
+    return json.dumps(content, ensure_ascii=False)
+
+
+def _d4_conversation_context(
+    conv: list[dict], source_file: str = ""
+) -> tuple[str, int]:
+    """Format the full conversation while marking only generated student turns scored."""
+    lines: list[str] = []
+    scored_student_turn = 0
+    tutor_turn = 0
+
+    for idx, turn in enumerate(conv):
+        role = turn.get("role")
+        source = turn.get("source")
+        content = turn.get("content", "")
+
+        if role == "assistant":
+            tutor_turn += 1
+            label = f"Context only - tutor turn {tutor_turn}"
+        elif role == "user" and source == STUDENT_MODEL_SOURCE:
+            scored_student_turn += 1
+            label = f"Scored student turn {scored_student_turn}"
+        elif role == "user" and source == FIXTURE_OPENING_SOURCE:
+            label = "Context only - scripted student opening"
+        elif role == "user" and source == CONTROL_OPENING_SOURCE:
+            label = "Context only - neutral control opening"
+        elif role == "user":
+            location = f"{source_file}: " if source_file else ""
+            raise ValueError(
+                f"{location}user turn {idx} has missing/unknown source {source!r}"
+            )
+        else:
+            label = f"Context only - {role or 'unknown'} turn {idx}"
+
+        lines.append(f"{label}: {_quoted_excerpt(content, _D4_CONTEXT_CHAR_LIMIT)}")
+
+    return "\n".join(lines), scored_student_turn
+
+
+def _contract_metadata(persona_id: str) -> dict:
+    contract = load_persona_contract(persona_id)
+    return {
+        "persona_contract_id": contract["persona_id"],
+        "persona_contract_version": contract["contract_version"],
+    }
+
+
+def _rubric_prompt(dimension: str, prompt: str) -> tuple[dict, str]:
+    metadata = rubric_metadata(dimension)
+    header = (
+        "## Rubric Metadata\n"
+        f"rubric_id: {metadata['rubric_id']}\n"
+        f"rubric_version: {metadata['rubric_version']}\n\n"
+    )
+    return metadata, header + prompt
+
+
 def render_d1(conv_dir: Path, output_dir: Path, sample_policy: str = "all"):
     """Render D1 prompts: one per student message."""
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -84,7 +188,7 @@ def render_d1(conv_dir: Path, output_dir: Path, sample_policy: str = "all"):
         with open(conv_file) as f:
             conv = json.load(f)
 
-        student_turns = [(i, t) for i, t in enumerate(conv) if t["role"] == "user"]
+        student_turns = _generated_student_turns(conv, conv_file.name)
         total = len(student_turns)
 
         known = json.dumps(persona.known_concepts, ensure_ascii=False)
@@ -107,16 +211,27 @@ def render_d1(conv_dir: Path, output_dir: Path, sample_policy: str = "all"):
                 tutor_message=tutor_msg[:500],
                 student_message=turn["content"][:500],
             )
+            rubric_meta, prompt = _rubric_prompt("D1", prompt)
 
             eval_id = f"D1__{conv_file.stem}__turn{turn_idx}"
             out = {
                 "eval_id": eval_id,
                 "dimension": "D1",
+                "rubric_id": rubric_meta["rubric_id"],
+                "rubric_version": rubric_meta["rubric_version"],
                 "prompt": prompt,
                 "metadata": {
                     **meta,
+                    **rubric_meta,
+                    **_contract_metadata(pid),
                     "turn_index": turn_idx,
+                    "conversation_index": conv_idx,
                     "source_file": conv_file.name,
+                    "student_turn_source": STUDENT_MODEL_SOURCE,
+                    "excluded_opening_sources": [
+                        FIXTURE_OPENING_SOURCE,
+                        CONTROL_OPENING_SOURCE,
+                    ],
                 },
             }
             with open(output_dir / f"{eval_id}.json", "w") as f:
@@ -145,31 +260,43 @@ def render_d4(conv_dir: Path, output_dir: Path):
         with open(conv_file) as f:
             conv = json.load(f)
 
-        student_msgs = [t["content"] for t in conv if t["role"] == "user"]
-        if not student_msgs:
+        context_text, scored_turn_count = _d4_conversation_context(conv, conv_file.name)
+        if not scored_turn_count:
             continue
 
         known = json.dumps(persona.known_concepts, ensure_ascii=False)
         unknown = json.dumps(persona.unknown_concepts, ensure_ascii=False)
-        msgs_text = "\n".join(
-            f'Turn {i+1}: "{m[:300]}"' for i, m in enumerate(student_msgs)
-        )
 
         prompt = _D4_PROMPT.format(
             persona_description=persona.description,
             known_concepts=known,
             unknown_concepts=unknown,
             emotional_profile=persona.emotional_profile,
-            student_messages_text=msgs_text,
-            total_turns=len(student_msgs),
+            student_messages_text=context_text,
+            total_turns=scored_turn_count,
         )
+        rubric_meta, prompt = _rubric_prompt("D4", prompt)
 
         eval_id = f"D4__{conv_file.stem}"
         out = {
             "eval_id": eval_id,
             "dimension": "D4",
+            "rubric_id": rubric_meta["rubric_id"],
+            "rubric_version": rubric_meta["rubric_version"],
             "prompt": prompt,
-            "metadata": {**meta, "source_file": conv_file.name},
+            "metadata": {
+                **meta,
+                **rubric_meta,
+                **_contract_metadata(pid),
+                "source_file": conv_file.name,
+                "student_turn_source": STUDENT_MODEL_SOURCE,
+                "student_turn_count": scored_turn_count,
+                "non_scored_context_sources": [
+                    "assistant",
+                    FIXTURE_OPENING_SOURCE,
+                    CONTROL_OPENING_SOURCE,
+                ],
+            },
         }
         with open(output_dir / f"{eval_id}.json", "w") as f:
             json.dump(out, f, indent=2, ensure_ascii=False)
@@ -220,7 +347,7 @@ def render_d2(conv_dir: Path, output_dir: Path):
 
         runs_parts = []
         for i, (fname, conv) in enumerate(convs):
-            student_msgs = [t["content"] for t in conv if t["role"] == "user"]
+            student_msgs = _generated_student_messages(conv, fname)
             runs_parts.append(
                 f"### Run {i+1}\n"
                 + "\n".join(
@@ -234,19 +361,25 @@ def render_d2(conv_dir: Path, output_dir: Path):
             task_description=task.description,
             runs_text="\n\n".join(runs_parts),
         )
+        rubric_meta, prompt = _rubric_prompt("D2", prompt)
 
         eval_id = f"D2__{group_key}"
         out = {
             "eval_id": eval_id,
             "dimension": "D2",
+            "rubric_id": rubric_meta["rubric_id"],
+            "rubric_version": rubric_meta["rubric_version"],
             "prompt": prompt,
             "metadata": {
                 "task_id": task_id,
                 "persona_id": persona_id,
+                **rubric_meta,
+                **_contract_metadata(persona_id),
                 "model": model,
                 "tutor_temperature": tutor_t,
                 "n_runs": len(convs),
                 "source_files": [fname for fname, _ in convs],
+                "student_turn_source": STUDENT_MODEL_SOURCE,
             },
         }
         with open(output_dir / f"{eval_id}.json", "w") as f:
@@ -308,7 +441,7 @@ def render_d3(conv_dir: Path, output_dir: Path):
         for idx, (model_name, (fname, conv)) in enumerate(model_items):
             label = _SYSTEM_LABELS[idx]
             label_to_model[label] = model_name
-            student_msgs = [t["content"] for t in conv if t["role"] == "user"]
+            student_msgs = _generated_student_messages(conv, fname)
             models_parts.append(
                 f"### {label}\n"
                 + "\n".join(
@@ -325,18 +458,24 @@ def render_d3(conv_dir: Path, output_dir: Path):
             task_description=task.description,
             models_text="\n\n".join(models_parts),
         )
+        rubric_meta, prompt = _rubric_prompt("D3", prompt)
 
         eval_id = f"D3__{group_key}"
         out = {
             "eval_id": eval_id,
             "dimension": "D3",
+            "rubric_id": rubric_meta["rubric_id"],
+            "rubric_version": rubric_meta["rubric_version"],
             "prompt": prompt,
             "metadata": {
                 "task_id": task_id,
                 "persona_id": persona_id,
+                **rubric_meta,
+                **_contract_metadata(persona_id),
                 "repeat_tag": repeat_tag,
                 "label_to_model": label_to_model,
                 "source_files": [fname for _, (fname, _) in model_items],
+                "student_turn_source": STUDENT_MODEL_SOURCE,
             },
         }
         with open(output_dir / f"{eval_id}.json", "w") as f:
@@ -347,7 +486,7 @@ def render_d3(conv_dir: Path, output_dir: Path):
 
 
 def _student_messages_text(conv: list[dict]) -> str:
-    student_msgs = [t["content"] for t in conv if t["role"] == "user"]
+    student_msgs = _generated_student_messages(conv)
     return "\n".join(
         f'  Turn {i+1}: "{message[:200]}"' for i, message in enumerate(student_msgs)
     )
@@ -361,6 +500,7 @@ def render_control(conv_dir: Path, output_dir: Path):
     """
     output_dir.mkdir(parents=True, exist_ok=True)
     count = 0
+    missing_pairs: list[str] = []
 
     for control_file in sorted(conv_dir.glob("control__*.json")):
         meta = _parse_conv_filename(control_file.name)
@@ -378,6 +518,7 @@ def render_control(conv_dir: Path, output_dir: Path):
                 conv_dir.glob(f"live__{task_id}__{persona_id}__{model}__r*_tt0.json")
             )
             if not matches:
+                missing_pairs.append(control_file.name)
                 continue
             persona_file = matches[0]
 
@@ -404,33 +545,163 @@ def render_control(conv_dir: Path, output_dir: Path):
             set_a_conversation=set_a,
             set_b_conversation=set_b,
         )
+        rubric_meta, prompt = _rubric_prompt("control", prompt)
 
         out = {
             "eval_id": eval_id,
             "dimension": "control",
+            "rubric_id": rubric_meta["rubric_id"],
+            "rubric_version": rubric_meta["rubric_version"],
             "prompt": prompt,
             "metadata": {
                 "task_id": task_id,
                 "persona_id": persona_id,
+                **rubric_meta,
+                **_contract_metadata(persona_id),
                 "model": model,
                 "repeat_tag": "r0_tt0",
                 "persona_source_file": persona_file.name,
                 "control_source_file": control_file.name,
                 "persona_is_set_a": persona_is_set_a,
+                "student_turn_source": STUDENT_MODEL_SOURCE,
+                "excluded_opening_sources": [
+                    FIXTURE_OPENING_SOURCE,
+                    CONTROL_OPENING_SOURCE,
+                ],
             },
         }
         with open(output_dir / f"{eval_id}.json", "w") as f:
             json.dump(out, f, indent=2, ensure_ascii=False)
         count += 1
 
+    if missing_pairs:
+        sample = ", ".join(missing_pairs[:5])
+        raise RuntimeError(
+            "Control prompt rendering requires a matching live r*_tt0 conversation "
+            f"for every control conversation; missing for {sample}"
+        )
+
     print(f"control: rendered {count} prompts")
+
+
+def render_p1(results_dir: Path, output_dir: Path):
+    """Render P1 targeted-probe judge prompts."""
+    output_dir.mkdir(parents=True, exist_ok=True)
+    response_dir = results_dir / "probes" / "responses"
+    count = 0
+    for response_file in sorted(response_dir.glob("*.json")):
+        with open(response_file, encoding="utf-8") as fh:
+            payload = json.load(fh)
+        persona_id = payload.get("persona_id", "")
+        if not persona_id:
+            continue
+        conversation = payload.get("conversation") or []
+        probe_message = ""
+        if conversation:
+            probe_message = conversation[0].get("content", "")
+        student_response = (payload.get("turn") or {}).get("content", "")
+        if not student_response:
+            continue
+        prompt = _P1_PROMPT.format(
+            persona_contract=render_persona_contract_text(persona_id),
+            probe_facet=payload.get("facet", ""),
+            probe_message=probe_message[:800],
+            student_response=student_response[:1200],
+        )
+        rubric_meta, prompt = _rubric_prompt("P1", prompt)
+        model = payload.get("student_model", "")
+        eval_id = f"P1__{response_file.stem}"
+        out = {
+            "eval_id": eval_id,
+            "dimension": "P1",
+            "rubric_id": rubric_meta["rubric_id"],
+            "rubric_version": rubric_meta["rubric_version"],
+            "prompt": prompt,
+            "metadata": {
+                **rubric_meta,
+                **_contract_metadata(persona_id),
+                "persona_id": persona_id,
+                "model": model.split("/")[-1] if "/" in model else model,
+                "probe_id": payload.get("probe_id"),
+                "facet": payload.get("facet"),
+                "source_file": str(response_file.relative_to(results_dir)),
+                "student_turn_source": STUDENT_MODEL_SOURCE,
+            },
+        }
+        with open(output_dir / f"{eval_id}.json", "w", encoding="utf-8") as fh:
+            json.dump(out, fh, indent=2, ensure_ascii=False)
+            fh.write("\n")
+        count += 1
+    print(f"P1: rendered {count} prompts")
+
+
+def render_b1(results_dir: Path, output_dir: Path):
+    """Render B1 blind persona-identification prompts from scripted dialogues."""
+    output_dir.mkdir(parents=True, exist_ok=True)
+    dialogue_dir = results_dir / "scripted" / "conversations"
+    candidate_contracts = "\n\n".join(
+        render_persona_contract_text(contract["persona_id"])
+        for contract in list_persona_contracts()
+    )
+    count = 0
+    for dialogue_file in sorted(dialogue_dir.glob("*.json")):
+        with open(dialogue_file, encoding="utf-8") as fh:
+            payload = json.load(fh)
+        persona_id = payload.get("persona_id", "")
+        conversation = payload.get("conversation") or []
+        student_turns = [
+            turn.get("content", "")
+            for turn in conversation
+            if turn.get("role") == "user" and turn.get("source") == STUDENT_MODEL_SOURCE
+        ]
+        if not persona_id or not student_turns:
+            continue
+        transcript = "\n".join(
+            f'Student turn {idx + 1}: "{text[:350]}"'
+            for idx, text in enumerate(student_turns)
+        )
+        context_label = (
+            f"script={payload.get('script_id')}; pressure={payload.get('pressure')}"
+        )
+        prompt = _B1_PROMPT.format(
+            candidate_contracts=candidate_contracts,
+            context_label=context_label,
+            transcript=transcript,
+        )
+        rubric_meta, prompt = _rubric_prompt("B1", prompt)
+        model = payload.get("student_model", "")
+        eval_id = f"B1__{dialogue_file.stem}"
+        out = {
+            "eval_id": eval_id,
+            "dimension": "B1",
+            "rubric_id": rubric_meta["rubric_id"],
+            "rubric_version": rubric_meta["rubric_version"],
+            "prompt": prompt,
+            "metadata": {
+                **rubric_meta,
+                **_contract_metadata(persona_id),
+                "persona_id": persona_id,
+                "model": model.split("/")[-1] if "/" in model else model,
+                "script_id": payload.get("script_id"),
+                "pressure": payload.get("pressure"),
+                "source_file": str(dialogue_file.relative_to(results_dir)),
+                "student_turn_source": STUDENT_MODEL_SOURCE,
+            },
+        }
+        with open(output_dir / f"{eval_id}.json", "w", encoding="utf-8") as fh:
+            json.dump(out, fh, indent=2, ensure_ascii=False)
+            fh.write("\n")
+        count += 1
+    print(f"B1: rendered {count} prompts")
 
 
 def clean_rendered_prompts(output_dir: Path, dimension: str) -> int:
     """Remove previously rendered prompt files for a dimension."""
     output_dir.mkdir(parents=True, exist_ok=True)
     prefixes = (
-        ["D1", "D2", "D3", "D4", "control"] if dimension == "all" else [dimension]
+        ["D1", "D2", "D3", "D4", "control", "P1", "B1"]
+        if dimension == "all"
+        else [dimension]
     )
     removed = 0
     for prefix in prefixes:
@@ -451,7 +722,7 @@ def main():
     parser.add_argument(
         "--dimension",
         default="all",
-        choices=["D1", "D2", "D3", "D4", "control", "all"],
+        choices=["D1", "D2", "D3", "D4", "control", "P1", "B1", "all"],
     )
     parser.add_argument(
         "--d1-sample-policy",
@@ -466,7 +737,7 @@ def main():
     )
     args = parser.parse_args()
 
-    base = Path(__file__).parent
+    base = EXPERIMENT_ROOT
     conv_dir = base / args.conv_dir
     output_dir = base / args.output_dir
 
@@ -484,6 +755,11 @@ def main():
         render_d4(conv_dir, output_dir)
     if args.dimension in ("control", "all"):
         render_control(conv_dir, output_dir)
+    results_dir = conv_dir.parent
+    if args.dimension in ("P1", "all"):
+        render_p1(results_dir, output_dir)
+    if args.dimension in ("B1", "all"):
+        render_b1(results_dir, output_dir)
 
 
 if __name__ == "__main__":

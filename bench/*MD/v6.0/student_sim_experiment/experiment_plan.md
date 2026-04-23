@@ -6,6 +6,11 @@
 > Experiment code: `experiments/student_sim_stability/`
 > Status: 方案定稿
 
+> 2026-04-23 issue83 update: 当前实现已改为 36 条 control、252 段总对话、
+> opener-excluded D1 sampled count 252，并新增 P1/B1 controlled validation
+> 以及三评分模型 agreement。下文保留的 234/288 等数字是原始方案历史记录，
+> 不再作为当前 expected artifact counts。
+
 ---
 
 ## 1. 实验目标
@@ -248,21 +253,21 @@ Tutor 是**控制变量**而非自变量——所有 student model 面对同一�
 ```
 ┌──────────────────────────────────────────────────────────────────┐
 │  Step 1: 运行对话生成脚本                                           │
-│  python -m experiments.student_sim_stability.run generate         │
+│  python -m experiments.student_sim_stability.cli generate         │
 │  (并行执行，Tutor + Student 均调 OpenRouter，~$6.32)                │
 │  ↓                                                                 │
 │  Step 2: 渲染 Judge Prompt                                         │
-│  python -m experiments.student_sim_stability.render_judge_prompts  │
+│  python -m experiments.student_sim_stability.pipeline.render_judge_prompts  │
 │  (本地运行，将对话 + 评估模板 → judge_inputs/*.json)                   │
 │  ↓                                                                 │
 │  Step 3: OpenRouter Judge 批量评估                                   │
-│  python -m experiments.student_sim_stability.run judge --dimension all │
+│  python -m experiments.student_sim_stability.cli judge --dimension all │
 │  (读取 judge_inputs/*.json，写入 judge_outputs/*.json)                 │
 │  ↓                                                                 │
 │  Step 4: 汇总 + 校验 + 生成报告                                      │
-│  python -m experiments.student_sim_stability.run aggregate --strict  │
-│  python -m experiments.student_sim_stability.run validate            │
-│  python -m experiments.student_sim_stability.run report              │
+│  python -m experiments.student_sim_stability.cli aggregate --strict  │
+│  python -m experiments.student_sim_stability.cli validate            │
+│  python -m experiments.student_sim_stability.cli report              │
 │  (读取 judge_outputs → 聚合 → HTML 报告)                             │
 └──────────────────────────────────────────────────────────────────┘
 ```
@@ -286,23 +291,23 @@ judge_outputs/{eval_id}.json    # judge 输出的 scores + reasoning + metadata
 cd bench
 
 # 查看实验规模
-python -m experiments.student_sim_stability.run dry-run
+python -m experiments.student_sim_stability.cli dry-run
 
 # 生成全部对话（并行执行）
-python -m experiments.student_sim_stability.run generate -w 6
+python -m experiments.student_sim_stability.cli generate -w 6
 
 # 渲染 judge prompts
-python -m experiments.student_sim_stability.run render-judges --dimension all --clean
+python -m experiments.student_sim_stability.cli render-judges --dimension all --clean
 
 # 运行 OpenRouter judge
-python -m experiments.student_sim_stability.run judge --dimension all --workers 6
+python -m experiments.student_sim_stability.cli judge --dimension all --workers 6
 
 # 汇总和校验
-python -m experiments.student_sim_stability.run aggregate --strict
-python -m experiments.student_sim_stability.run validate
+python -m experiments.student_sim_stability.cli aggregate --strict
+python -m experiments.student_sim_stability.cli validate
 
 # 生成报告（评估完成后）
-python -m experiments.student_sim_stability.run report
+python -m experiments.student_sim_stability.cli report
 ```
 
 ### 7.2 断点续跑

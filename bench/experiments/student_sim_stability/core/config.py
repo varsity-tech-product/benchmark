@@ -4,33 +4,52 @@ Single-phase design: live tutor (gpt-4.1-nano) + student sim (3 models under tes
 Judge evaluation via OpenRouter (default: claude-sonnet-4-6).
 """
 
+import sys
 from dataclasses import dataclass
+
+from experiments.student_sim_stability.core.paths import BENCH_ROOT
+
+if str(BENCH_ROOT) not in sys.path:
+    sys.path.insert(0, str(BENCH_ROOT))
+
+from server.config.llm_config import (
+    STUDENT_SIM_STABILITY_JUDGE_MODELS,
+    STUDENT_SIM_STABILITY_PRIMARY_JUDGE_MODEL,
+    STUDENT_SIM_STABILITY_STUDENT_MODELS,
+    STUDENT_SIM_STABILITY_TUTOR_MODEL,
+)
 
 # ---------------------------------------------------------------------------
 # Student simulator models under test
 # ---------------------------------------------------------------------------
-STUDENT_MODELS: list[str] = [
-    "openai/gpt-5.4",
-    "anthropic/claude-sonnet-4-6",
-    "google/gemini-3.1-pro-preview",
-]
+STUDENT_MODELS: list[str] = list(STUDENT_SIM_STABILITY_STUDENT_MODELS)
 
 # Live tutor model — cheap but verified quality
-TUTOR_MODEL: str = "openai/gpt-4.1-nano"
+TUTOR_MODEL: str = STUDENT_SIM_STABILITY_TUTOR_MODEL
 
 # ---------------------------------------------------------------------------
 # Experiment parameters
 # ---------------------------------------------------------------------------
-FIXED_TURNS: int = 8
+FIXED_TURNS: int = 8  # Tutor turns per conversation.
+GENERATED_STUDENT_TURNS: int = FIXED_TURNS - 1
 REPEATS: int = 3
 TEMPERATURE: float = 0.0  # Matches production (EVAL_JUDGE_TEMPERATURE)
 TUTOR_TEMPERATURES: list[float] = [0.0, 1.0]  # Ablation: consistent vs diverse tutor
 MAX_WORKERS: int = 100  # Parallel trial execution (OpenRouter paid = no rate limit)
 
+# Conversation turn provenance. Judge prompts for D1-D4 and control use only
+# generated student turns, never fixture/control opening turns.
+FIXTURE_OPENING_SOURCE: str = "fixture_opening"
+CONTROL_OPENING_SOURCE: str = "control_neutral_opening"
+STUDENT_MODEL_SOURCE: str = "student_model"
+TUTOR_MODEL_SOURCE: str = "tutor_model"
+NEUTRAL_CONTROL_OPENING: str = "Hi, I need help understanding this task."
+
 # ---------------------------------------------------------------------------
 # Judge configuration
 # ---------------------------------------------------------------------------
-JUDGE_MODEL: str = "anthropic/claude-sonnet-4-6"
+JUDGE_MODELS: list[str] = list(STUDENT_SIM_STABILITY_JUDGE_MODELS)
+JUDGE_MODEL: str = STUDENT_SIM_STABILITY_PRIMARY_JUDGE_MODEL
 JUDGE_TEMPERATURE: float = 0.0
 JUDGE_MAX_WORKERS: int = 6
 
@@ -90,7 +109,7 @@ TASK_PERSONA_MAP: dict[str, list[str]] = {
 # ---------------------------------------------------------------------------
 # Paths (relative to bench/)
 # ---------------------------------------------------------------------------
-OUTPUT_DIR = "experiments/student_sim_stability/results"
+OUTPUT_DIR = "experiments/student_sim_stability/results/issue83"
 
 
 @dataclass
@@ -122,12 +141,13 @@ def compute_trial_count() -> dict[str, int]:
     n_combinations = sum(len(v) for v in TASK_PERSONA_MAP.values())  # 12
 
     live = n_combinations * n_models * REPEATS * n_temps
-    control = len(EXPERIMENT_TASKS) * n_models  # control only at t=0
+    # Control is per task/persona/model at tutor t=0.
+    control = n_combinations * n_models
 
     return {
         "live": live,
         "control": control,
         "total": live + control,
-        "student_messages": (live + control) * (FIXED_TURNS - 1),
+        "student_messages": (live + control) * GENERATED_STUDENT_TURNS,
         "tutor_messages": (live + control) * FIXED_TURNS,
     }

@@ -1,0 +1,49 @@
+{
+  "rubric_id": "D1_persona_adherence",
+  "version": "issue83-2026-04-23-r2",
+  "dimension": "D1",
+  "name": "Persona adherence per generated student message",
+  "definition": "Evaluates whether one generated student message matches the assigned persona contract.",
+  "unit": "student_model turn",
+  "judge_context_inputs": [
+    "persona description",
+    "emotional profile",
+    "familiar concepts",
+    "no-prior-experience concepts",
+    "behavioral rules",
+    "previous tutor message",
+    "generated student message"
+  ],
+  "included_turn_source": "student_model",
+  "excluded_turn_sources": ["fixture_opening", "control_neutral_opening"],
+  "score_fields": [
+    "knowledge_boundary",
+    "emotional_tone",
+    "behavioral_rules",
+    "overall"
+  ],
+  "required_failure_output_fields": [
+    "failure_types",
+    "dominant_failure_type",
+    "failure_evidence"
+  ],
+  "score_scales": {
+    "5": "Perfectly in-character.",
+    "4": "Mostly in-character with minor deviations.",
+    "3": "Partially in-character with noticeable inconsistencies.",
+    "2": "Mostly out-of-character.",
+    "1": "Completely out-of-character."
+  },
+  "failure_taxonomy_fields": [
+    "knowledge_leak",
+    "under_competence",
+    "emotional_mismatch",
+    "generic_student_behavior",
+    "co_teacher_drift",
+    "task_forgetting",
+    "persona_contract_contradiction"
+  ],
+  "aggregation_formula": "mean(overall), std(overall), high_score_ratio=count(overall >= 4)/n by model/persona/task",
+  "prompt_template": "rubrics/prompts/D1_persona_adherence.txt",
+  "prompt_template_path": "prompts/D1_persona_adherence.txt"
+}

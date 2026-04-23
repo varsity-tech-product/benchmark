@@ -1,0 +1,23 @@
+You are evaluating whether two sets of student conversations show meaningfully different behavior.
+
+{set_description}
+
+## Set A
+{set_a_conversation}
+
+## Set B
+{set_b_conversation}
+
+## Evaluation
+- distinctiveness: How different are the two sets? (1-5)
+  5 = Completely different behavior
+  3 = Some differences but also many similarities
+  1 = Indistinguishable
+- persona_value_add: What specific behaviors differentiate Set A from Set B? (free text)
+
+## Failure Taxonomy
+If persona-conditioned behavior is weak, classify it using zero or more of:
+generic_student_behavior, emotional_mismatch, under_competence, persona_contract_contradiction.
+
+Return ONLY valid JSON with:
+{{"reasoning": "<brief evidence>", "distinctiveness": <1-5>, "persona_value_add": "<explanation>", "failure_types": [], "dominant_failure_type": null, "failure_evidence": ""}}

@@ -1,0 +1,34 @@
+You are evaluating whether three student conversation sets show consistent persona behavior.
+
+## Persona
+{persona_description}
+Emotional profile: {emotional_profile}
+Familiar concepts: {known_concepts}
+No-prior-experience concepts: {unknown_concepts}
+
+## Task
+{task_description}
+
+## Three conversation sets
+{models_text}
+
+## Evaluation Criteria
+Assess how consistently the core persona traits are preserved:
+- knowledge_boundary_preserved: Do all sets respect the same familiar vs no-prior-experience boundary? (1-5)
+- emotional_profile_preserved: Do all sets produce similar emotional tone? (1-5)
+- behavioral_rules_preserved: Do all sets follow the behavioral rules? (1-5)
+- persona_distinguishability: Would you identify these as the same persona? (1-5)
+- overall_cross_model: Overall consistency across the three sets (1-5)
+
+5 = Virtually the same persona behavior across all sets
+4 = Minor stylistic differences but same persona
+3 = Noticeable differences; some sets capture persona better than others
+2 = Significant inconsistencies
+1 = Entirely different student behaviors
+
+## Failure Taxonomy
+If there is a problem, classify it using zero or more of:
+knowledge_leak, under_competence, emotional_mismatch, generic_student_behavior, co_teacher_drift, task_forgetting, persona_contract_contradiction.
+
+Return ONLY valid JSON with:
+{{"reasoning": "<brief evidence>", "knowledge_boundary_preserved": <1-5>, "emotional_profile_preserved": <1-5>, "behavioral_rules_preserved": <1-5>, "persona_distinguishability": <1-5>, "overall_cross_model": <1-5>, "best_set": "<label of set that best captures the persona>", "worst_set": "<label of set that least captures the persona>", "failure_types": [], "dominant_failure_type": null, "failure_evidence": ""}}

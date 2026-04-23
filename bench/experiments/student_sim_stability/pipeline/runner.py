@@ -14,26 +14,43 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
-# Ensure bench root is on sys.path
-BENCH_ROOT = Path(__file__).resolve().parent.parent.parent
-sys.path.insert(0, str(BENCH_ROOT))
+from experiments.student_sim_stability.core.paths import BENCH_ROOT
 
-from experiments.student_sim_stability.config import (
+if str(BENCH_ROOT) not in sys.path:
+    sys.path.insert(0, str(BENCH_ROOT))
+
+from server.config.bootstrap import load_server_env  # noqa: E402
+
+load_server_env(BENCH_ROOT)
+
+from experiments.student_sim_stability.core.artifacts import (
+    snapshot_static_artifacts,
+)
+from experiments.student_sim_stability.core.config import (
+    CONTROL_OPENING_SOURCE,
     EXPERIMENT_TASKS,
     FIXED_TURNS,
+    FIXTURE_OPENING_SOURCE,
     MAX_WORKERS,
+    NEUTRAL_CONTROL_OPENING,
     OUTPUT_DIR,
     REPEATS,
+    STUDENT_MODEL_SOURCE,
     STUDENT_MODELS,
     TASK_PERSONA_MAP,
     TEMPERATURE,
     TUTOR_MODEL,
+    TUTOR_MODEL_SOURCE,
     TUTOR_TEMPERATURES,
     TrialKey,
 )
+from experiments.student_sim_stability.core.contracts import (
+    build_contract_scenario,
+    build_contract_user_description,
+    load_student_persona,
+)
 from server.config.llm_config import OPENROUTER_BASE_URL
 from server.config.pricing import _resolve_pricing
-from server.config.prompt_config import build_scenario, build_user_description
 from server.core.student_sim import StudentSimulator
 from server.eval.judges.runtime.llm_client import EwanLLMClient
 from server.schemas import QuantTutorTask, StudentPersona
@@ -96,9 +113,7 @@ def _load_task(task_cfg: dict) -> QuantTutorTask:
 
 
 def _load_persona(persona_id: str) -> StudentPersona:
-    path = BENCH_ROOT / "personas" / f"{persona_id}.json"
-    with open(path) as f:
-        return StudentPersona(**json.load(f))
+    return load_student_persona(persona_id)
 
 
 def _generate_tutor_response(
@@ -139,8 +154,8 @@ def run_single_trial(
     persona_id = persona.persona_id
 
     if use_persona:
-        user_desc = build_user_description(persona)
-        scenario = build_scenario(task, persona_id)
+        user_desc = build_contract_user_description(persona_id)
+        scenario = build_contract_scenario(task, persona_id)
     else:
         user_desc = _CONTROL_USER_DESCRIPTION
         scenario = f"Scenario: {task.description}"
@@ -151,22 +166,49 @@ def run_single_trial(
         model=student_client,
     )
 
-    opening = (task.student_openings or {}).get(
-        persona_id, "Hi, I need help with this topic."
-    )
-    conversation: list[dict] = [{"role": "user", "content": opening}]
+    if use_persona:
+        opening = (task.student_openings or {}).get(
+            persona_id, "Hi, I need help with this topic."
+        )
+        opening_source = FIXTURE_OPENING_SOURCE
+    else:
+        opening = NEUTRAL_CONTROL_OPENING
+        opening_source = CONTROL_OPENING_SOURCE
+
+    conversation: list[dict] = [
+        {
+            "role": "user",
+            "content": opening,
+            "source": opening_source,
+            "model": None,
+        }
+    ]
 
     for turn_idx in range(n_turns):
         # Tutor responds
         tutor_msg = _generate_tutor_response(
             tutor_client, task.description, conversation
         )
-        conversation.append({"role": "assistant", "content": tutor_msg})
+        conversation.append(
+            {
+                "role": "assistant",
+                "content": tutor_msg,
+                "source": TUTOR_MODEL_SOURCE,
+                "model": TUTOR_MODEL,
+            }
+        )
 
         # Student responds (except after last tutor turn)
         if turn_idx < n_turns - 1:
             student_msg = sim.generate_message(conversation)
-            conversation.append({"role": "user", "content": student_msg})
+            conversation.append(
+                {
+                    "role": "user",
+                    "content": student_msg,
+                    "source": STUDENT_MODEL_SOURCE,
+                    "model": student_model,
+                }
+            )
 
     return conversation
 
@@ -185,6 +227,7 @@ class ExperimentRunner:
             out = BENCH_ROOT / out
         self.output_dir = out
         self.output_dir.mkdir(parents=True, exist_ok=True)
+        snapshot_static_artifacts(self.output_dir)
         self.conversations_dir = self.output_dir / "conversations"
         self.conversations_dir.mkdir(exist_ok=True)
         self.eval_dir = self.output_dir / "evaluations"
@@ -247,15 +290,25 @@ class ExperimentRunner:
                 )
             else:
                 logger.error("Trial %s failed: %s", trial.key, exc)
-            return f"FAIL {trial.key}: {exc}"
+            raise
 
-    def run_generate(self, max_workers: int = MAX_WORKERS, limit: int | None = None):
+    def run_generate(
+        self,
+        max_workers: int = MAX_WORKERS,
+        limit: int | None = None,
+        phase: str | None = None,
+        allowed_keys: set[str] | None = None,
+    ) -> dict:
         """Generate conversations in parallel.
 
         Args:
             max_workers: Thread pool size.
             limit: If set, run at most this many pending trials then stop.
+            phase: Optional "live" or "control" phase filter.
+            allowed_keys: Optional exact trial keys to generate.
         """
+        if phase not in {None, "live", "control"}:
+            raise ValueError(f"Unknown generation phase: {phase}")
         trials: list[tuple[TrialKey, bool]] = []
 
         # Main experiment — all tutor temperatures
@@ -267,33 +320,54 @@ class ExperimentRunner:
                             t = TrialKey("live", task_id, pid, model, repeat, tutor_t)
                             trials.append((t, True))
 
-        # Control group — tutor t=0 only
+        # Control group — each task/persona/model at tutor t=0 only.
         for task_id in self.tasks:
             persona_ids = TASK_PERSONA_MAP.get(task_id, [])
             if not persona_ids:
                 continue
-            pid = persona_ids[0]
-            for model in STUDENT_MODELS:
-                t = TrialKey("control", task_id, pid, model, 0, tutor_temperature=0.0)
-                trials.append((t, False))
+            for pid in persona_ids:
+                for model in STUDENT_MODELS:
+                    t = TrialKey(
+                        "control", task_id, pid, model, 0, tutor_temperature=0.0
+                    )
+                    trials.append((t, False))
+
+        if phase:
+            trials = [
+                (trial, use_persona)
+                for trial, use_persona in trials
+                if trial.phase == phase
+            ]
+        if allowed_keys is not None:
+            trials = [
+                (trial, use_persona)
+                for trial, use_persona in trials
+                if trial.key in allowed_keys
+            ]
 
         # Filter out already completed, apply limit
         pending = [(t, p) for t, p in trials if not self._exists(t.key)]
+        already_done = len(trials) - len(pending)
         if limit is not None and limit < len(pending):
             pending = pending[:limit]
         total = len(trials)
-        done = total - len(pending)
 
         logger.info(
-            "Total trials: %d, already done: %d, pending: %d",
+            "Total trials: %d, already done: %d, selected pending: %d",
             total,
-            done,
+            already_done,
             len(pending),
         )
 
         if not pending:
             logger.info("All trials already completed.")
-            return
+            return {
+                "total": total,
+                "already_done": already_done,
+                "selected": 0,
+                "completed": 0,
+                "failed": 0,
+            }
 
         start = time.time()
         completed = 0
@@ -304,10 +378,12 @@ class ExperimentRunner:
                 pool.submit(self._run_trial_wrapped, t, p): t for t, p in pending
             }
             for future in as_completed(futures):
-                result = future.result()
                 completed += 1
-                if result.startswith("FAIL"):
+                try:
+                    future.result()
+                except Exception as exc:  # noqa: BLE001 - surface failed trials
                     failed += 1
+                    logger.error("Trial failed: %s: %s", futures[future].key, exc)
                 # Progress update every 10 trials
                 if completed % 10 == 0 or completed == len(pending):
                     elapsed = time.time() - start
@@ -326,3 +402,10 @@ class ExperimentRunner:
             elapsed / 60,
             failed,
         )
+        return {
+            "total": total,
+            "already_done": already_done,
+            "selected": len(pending),
+            "completed": completed,
+            "failed": failed,
+        }

@@ -1,0 +1,31 @@
+You are evaluating the behavioral consistency of a student across multiple conversation runs under identical conditions.
+
+## Persona
+{persona_description}
+
+## Task
+{task_description}
+
+## Three conversation runs
+{runs_text}
+
+## Evaluation Criteria
+Assess how consistent the student's behavior is across the 3 runs:
+- topic_trajectory: Do the runs cover similar topics in similar order? (1-5)
+- knowledge_display: Does the student show the same level of knowledge? (1-5)
+- emotional_consistency: Is the emotional tone similar across runs? (1-5)
+- question_patterns: Does the student ask similar types of questions? (1-5)
+- overall_reproducibility: Overall behavioral consistency across runs (1-5)
+
+5 = Nearly identical behavior patterns across all runs
+4 = Very similar with minor variations in phrasing
+3 = Same general direction but noticeable differences in topic order or depth
+2 = Significant behavioral differences across runs
+1 = Completely different behaviors
+
+## Failure Taxonomy
+If there is a problem, classify it using zero or more of:
+knowledge_leak, under_competence, emotional_mismatch, generic_student_behavior, co_teacher_drift, task_forgetting, persona_contract_contradiction.
+
+Return ONLY valid JSON with:
+{{"reasoning": "<brief evidence>", "topic_trajectory": <1-5>, "knowledge_display": <1-5>, "emotional_consistency": <1-5>, "question_patterns": <1-5>, "overall_reproducibility": <1-5>, "failure_types": [], "dominant_failure_type": null, "failure_evidence": ""}}

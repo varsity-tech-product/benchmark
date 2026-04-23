@@ -1,6 +1,6 @@
 """Server-scoped LLM model configuration.
 
-Only constants actually used by bench/server/ live here.
+Server runtime defaults and shared experiment model lists live here.
 Client/orchestrator agent configuration lives in bench/config/llm_config.py.
 """
 
@@ -75,6 +75,24 @@ EVAL_DEFAULT_MODELS: list[str] = [
 ]
 EVAL_DEFAULT_MODEL = EVAL_DEFAULT_MODELS[0]
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+
+# --- Issue #83 student-simulator validation experiment ---
+# This is the single model-list entrypoint for
+# bench/experiments/student_sim_stability. Edit these values to change the
+# three student-simulator candidates, the live tutor stimulus, or the judge
+# panel used by that experiment.
+STUDENT_SIM_STABILITY_STUDENT_MODELS: list[str] = [
+    "openai/gpt-5.4",
+    "anthropic/claude-sonnet-4-6",
+    "google/gemini-3.1-pro-preview",
+]
+STUDENT_SIM_STABILITY_TUTOR_MODEL = "openai/gpt-4.1-nano"
+STUDENT_SIM_STABILITY_JUDGE_MODELS: list[str] = [
+    "anthropic/claude-sonnet-4-6",
+    "openai/gpt-5.4",
+    "google/gemini-3.1-pro-preview",
+]
+STUDENT_SIM_STABILITY_PRIMARY_JUDGE_MODEL = STUDENT_SIM_STABILITY_JUDGE_MODELS[0]
 
 
 def get_openrouter_api_key() -> str:

@@ -1,0 +1,22 @@
+{
+  "contract_name": "issue83_student_sim_persona_contracts",
+  "contract_date": "2026-04-23",
+  "source_policy": "Copied into the experiment directory so validation does not depend on mutable shared persona files.",
+  "persona_files": [
+    "personas/developer_crossover.json",
+    "personas/double_novice.json",
+    "personas/finance_veteran.json",
+    "personas/fullstack_practitioner.json"
+  ],
+  "emotional_profile_file": "emotional_profiles.json",
+  "required_persona_fields": [
+    "persona_id",
+    "knowledge_level",
+    "description",
+    "known_concepts",
+    "unknown_concepts",
+    "emotional_profile",
+    "behavioral_rules"
+  ],
+  "judge_use": "D1, D2, D3, D4, and control prompts must evaluate behavior against these copied contracts."
+}

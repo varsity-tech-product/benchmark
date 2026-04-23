@@ -19,6 +19,12 @@ import random
 import re
 from dataclasses import dataclass, field
 
+from experiments.student_sim_stability.core.config import (
+    CONTROL_OPENING_SOURCE,
+    FIXTURE_OPENING_SOURCE,
+    STUDENT_MODEL_SOURCE,
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -67,9 +73,17 @@ Score each axis independently:
 - behavioral_rules: Are the behavioral rules followed when applicable?
 - overall: Holistic persona adherence score
 
+## Failure Taxonomy
+If there is a problem, classify it using zero or more of:
+knowledge_leak, under_competence, emotional_mismatch,
+generic_student_behavior, co_teacher_drift, task_forgetting,
+persona_contract_contradiction.
+
 Think step by step before scoring. Return a JSON object with reasoning FIRST:
 {{"reasoning": "<your step-by-step analysis>", "knowledge_boundary": <1-5>, \
 "emotional_tone": <1-5>, "behavioral_rules": <1-5>, "overall": <1-5>}}
+Also include: "failure_types": [], "dominant_failure_type": null, \
+"failure_evidence": "".
 
 JSON Output:
 """
@@ -106,10 +120,18 @@ Assess how consistent the student's behavior is across the 3 runs:
 2 = Significant behavioral differences across runs
 1 = Completely different behaviors
 
+## Failure Taxonomy
+If there is a problem, classify it using zero or more of:
+knowledge_leak, under_competence, emotional_mismatch,
+generic_student_behavior, co_teacher_drift, task_forgetting,
+persona_contract_contradiction.
+
 Think step by step before scoring. Return a JSON object with reasoning FIRST:
 {{"reasoning": "<your step-by-step analysis>", "topic_trajectory": <1-5>, \
 "knowledge_display": <1-5>, "emotional_consistency": <1-5>, \
 "question_patterns": <1-5>, "overall_reproducibility": <1-5>}}
+Also include: "failure_types": [], "dominant_failure_type": null, \
+"failure_evidence": "".
 
 JSON Output:
 """
@@ -149,6 +171,12 @@ Assess how consistently the core persona traits are preserved:
 2 = Significant inconsistencies
 1 = Entirely different student behaviors
 
+## Failure Taxonomy
+If there is a problem, classify it using zero or more of:
+knowledge_leak, under_competence, emotional_mismatch,
+generic_student_behavior, co_teacher_drift, task_forgetting,
+persona_contract_contradiction.
+
 Think step by step before scoring. Return a JSON object with reasoning FIRST:
 {{"reasoning": "<your step-by-step analysis>", \
 "knowledge_boundary_preserved": <1-5>, "emotional_profile_preserved": <1-5>, \
@@ -156,6 +184,8 @@ Think step by step before scoring. Return a JSON object with reasoning FIRST:
 "overall_cross_model": <1-5>, \
 "best_set": "<label of set that best captures the persona>", \
 "worst_set": "<label of set that least captures the persona>"}}
+Also include: "failure_types": [], "dominant_failure_type": null, \
+"failure_evidence": "".
 
 JSON Output:
 """
@@ -197,12 +227,20 @@ For each student message (turn 1 through {total_turns}), score:
 2 = Significant drift — persona breaks down in later half
 1 = Severe drift — persona lost early in conversation
 
+## Failure Taxonomy
+If there is a problem, classify it using zero or more of:
+knowledge_leak, under_competence, emotional_mismatch,
+generic_student_behavior, co_teacher_drift, task_forgetting,
+persona_contract_contradiction.
+
 Think step by step before scoring. Return a JSON object with reasoning FIRST:
 {{"reasoning": "<explanation of any drift patterns>", \
 "per_turn": [{{"turn": 1, "persona_fidelity": <1-5>, "knowledge_leak": <0-3>, \
 "co_teacher_drift": <0-2>}}, ...], \
 "overall_drift_score": <1-5>, \
 "drift_onset_turn": <turn number where drift first appears, or null>}}
+Also include: "failure_types": [], "dominant_failure_type": null, \
+"failure_evidence": "".
 
 JSON Output:
 """
@@ -231,9 +269,16 @@ meaningfully different behavior.
   1 = Indistinguishable
 - persona_value_add: What specific behaviors differentiate Set A from Set B? (free text)
 
+## Failure Taxonomy
+If persona-conditioned behavior is weak, classify it using zero or more of:
+generic_student_behavior, emotional_mismatch, under_competence,
+persona_contract_contradiction.
+
 Think step by step before scoring. Return a JSON object with reasoning FIRST:
 {{"reasoning": "<your step-by-step analysis>", "distinctiveness": <1-5>, \
 "persona_value_add": "<explanation>"}}
+Also include: "failure_types": [], "dominant_failure_type": null, \
+"failure_evidence": "".
 
 JSON Output:
 """
@@ -244,6 +289,26 @@ JSON Output:
 # ---------------------------------------------------------------------------
 
 _SYSTEM_LABELS = ["System A", "System B", "System C", "System D", "System E"]
+
+
+def _generated_student_turns(conversation: list[dict]) -> list[tuple[int, dict]]:
+    """Return model-generated student turns and reject untagged user turns."""
+    turns: list[tuple[int, dict]] = []
+    for idx, turn in enumerate(conversation):
+        if turn.get("role") != "user":
+            continue
+        source = turn.get("source")
+        if source == STUDENT_MODEL_SOURCE:
+            turns.append((idx, turn))
+            continue
+        if source in {FIXTURE_OPENING_SOURCE, CONTROL_OPENING_SOURCE}:
+            continue
+        raise ValueError(f"user turn {idx} has missing/unknown source {source!r}")
+    return turns
+
+
+def _generated_student_messages(conversation: list[dict]) -> list[str]:
+    return [turn["content"] for _, turn in _generated_student_turns(conversation)]
 
 
 # ---------------------------------------------------------------------------
@@ -329,9 +394,7 @@ class StabilityEvaluator:
     ) -> list[EvalResult]:
         """Evaluate all student messages in a conversation."""
         results = []
-        student_turns = [
-            (i, t) for i, t in enumerate(conversation) if t["role"] == "user"
-        ]
+        student_turns = _generated_student_turns(conversation)
         total = len(student_turns)
 
         for turn_idx, (conv_idx, turn) in enumerate(student_turns):
@@ -361,7 +424,7 @@ class StabilityEvaluator:
         """Evaluate reproducibility across repeated runs."""
         runs_parts = []
         for i, conv in enumerate(conversations):
-            student_msgs = [t["content"] for t in conv if t["role"] == "user"]
+            student_msgs = _generated_student_messages(conv)
             runs_parts.append(
                 f"### Run {i+1}\n"
                 + "\n".join(
@@ -418,7 +481,7 @@ class StabilityEvaluator:
         for idx, (model_name, conv) in enumerate(model_items):
             label = _SYSTEM_LABELS[idx]
             label_to_model[label] = model_name
-            student_msgs = [t["content"] for t in conv if t["role"] == "user"]
+            student_msgs = _generated_student_messages(conv)
             models_parts.append(
                 f"### {label}\n"
                 + "\n".join(
@@ -475,7 +538,7 @@ class StabilityEvaluator:
         known = json.dumps(persona.known_concepts, ensure_ascii=False)
         unknown = json.dumps(persona.unknown_concepts, ensure_ascii=False)
 
-        student_msgs = [t["content"] for t in conversation if t["role"] == "user"]
+        student_msgs = _generated_student_messages(conversation)
         msgs_text = "\n".join(
             f'Turn {i+1}: "{m[:300]}"' for i, m in enumerate(student_msgs)
         )
@@ -527,14 +590,16 @@ class StabilityEvaluator:
         A/B ordering is randomized to prevent position bias.
         """
         persona_msgs = "\n".join(
-            f'  Turn {i+1}: "{t["content"][:200]}"'
-            for i, t in enumerate(persona_conversation)
-            if t["role"] == "user"
+            f'  Turn {i+1}: "{message[:200]}"'
+            for i, message in enumerate(
+                _generated_student_messages(persona_conversation)
+            )
         )
         control_msgs = "\n".join(
-            f'  Turn {i+1}: "{t["content"][:200]}"'
-            for i, t in enumerate(control_conversation)
-            if t["role"] == "user"
+            f'  Turn {i+1}: "{message[:200]}"'
+            for i, message in enumerate(
+                _generated_student_messages(control_conversation)
+            )
         )
 
         # Randomize which is Set A vs Set B

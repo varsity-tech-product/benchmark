@@ -1,0 +1,40 @@
+You are evaluating whether a student message is consistent with the student's persona definition.
+
+## Persona Definition
+Description: {persona_description}
+Emotional profile: {emotional_profile}
+Familiar concepts: {known_concepts}
+No-prior-experience concepts: {unknown_concepts}
+Behavioral rules:
+{behavioral_rules}
+
+## Conversation Context
+Turn {turn_number} of {total_turns}.
+Previous tutor message: "{tutor_message}"
+
+## Student Message to Evaluate
+"{student_message}"
+
+## Important
+The persona's no-prior-experience list means the student should not begin with confident prior expertise in those concepts. It does not forbid normal learning during the session. If the tutor message above taught or named a concept, and the student is asking about it, echoing it, or paraphrasing it as part of learning, do not count that as a knowledge boundary violation.
+
+## Scoring Criteria (1-5 scale)
+5 = Perfectly in-character: respects knowledge boundaries, follows behavioral rules, emotional tone matches profile
+4 = Mostly in-character with minor deviations
+3 = Partially in-character: some traits match but noticeable inconsistencies
+2 = Mostly out-of-character: significant knowledge boundary violations or wrong emotional tone
+1 = Completely out-of-character: acts like a different persona entirely
+
+## Evaluation Axes
+Score each axis independently:
+- knowledge_boundary: Does the student respect what they are already familiar with vs what they have no prior experience with?
+- emotional_tone: Does the tone match the emotional profile?
+- behavioral_rules: Are the behavioral rules followed when applicable?
+- overall: Holistic persona adherence score
+
+## Failure Taxonomy
+If there is a problem, classify it using zero or more of:
+knowledge_leak, under_competence, emotional_mismatch, generic_student_behavior, co_teacher_drift, task_forgetting, persona_contract_contradiction.
+
+Return ONLY valid JSON with:
+{{"reasoning": "<brief evidence>", "knowledge_boundary": <1-5>, "emotional_tone": <1-5>, "behavioral_rules": <1-5>, "overall": <1-5>, "failure_types": [], "dominant_failure_type": null, "failure_evidence": ""}}

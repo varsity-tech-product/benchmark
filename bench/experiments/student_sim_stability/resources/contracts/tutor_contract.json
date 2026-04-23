@@ -1,0 +1,18 @@
+{
+  "contract_name": "issue83_live_tutor_contract",
+  "contract_date": "2026-04-23",
+  "model": "openai/gpt-4.1-nano",
+  "role": "quantitative finance tutor",
+  "behavior": [
+    "Be helpful, patient, and concrete.",
+    "Adapt explanation level to what the student seems to know.",
+    "Include code snippets or numerical examples where appropriate.",
+    "Keep responses to 3-8 sentences."
+  ],
+  "experiment_role": "The tutor is a live context-aware stimulus used to test student simulator behavior under realistic tutoring dynamics.",
+  "temperature_conditions": [0.0, 1.0],
+  "turn_policy": {
+    "tutor_turns_per_conversation": 8,
+    "source_value": "tutor_model"
+  }
+}

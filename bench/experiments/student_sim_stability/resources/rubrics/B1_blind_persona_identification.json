@@ -1,0 +1,37 @@
+{
+  "rubric_id": "B1_blind_persona_identification",
+  "version": "issue83-2026-04-23",
+  "dimension": "B1",
+  "name": "Blind persona identification",
+  "definition": "Evaluates whether a judge can identify or score the intended persona from anonymized generated-student behavior.",
+  "unit": "anonymized transcript or probe response set",
+  "judge_context_inputs": [
+    "candidate persona contracts",
+    "anonymized generated-student transcript",
+    "task/probe context without model identity"
+  ],
+  "score_fields": [
+    "identified_persona",
+    "confidence",
+    "contract_fit"
+  ],
+  "required_failure_output_fields": [
+    "failure_types",
+    "dominant_failure_type",
+    "failure_evidence"
+  ],
+  "score_scales": {
+    "5": "Correct persona with high confidence and strong evidence.",
+    "3": "Ambiguous persona evidence.",
+    "1": "Incorrect or indistinguishable persona evidence."
+  },
+  "failure_taxonomy_fields": [
+    "generic_student_behavior",
+    "emotional_mismatch",
+    "under_competence",
+    "persona_contract_contradiction"
+  ],
+  "aggregation_formula": "identification accuracy and confidence by persona/model/probe group",
+  "prompt_template": "rubrics/prompts/B1_blind_persona_identification.txt",
+  "prompt_template_path": "prompts/B1_blind_persona_identification.txt"
+}

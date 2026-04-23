@@ -1,0 +1,25 @@
+{
+  "comparison_policy": "cross-vendor candidate selection",
+  "last_updated": "2026-04-23",
+  "pricing_source": "bench/server/config/pricing.py",
+  "notes": "This file documents the static metadata schema. Per-run report/model_metadata.json is generated from the unified llm_config entrypoint and local pricing table.",
+  "fields": [
+    "model",
+    "model_name",
+    "provider",
+    "roles",
+    "context_length_tokens",
+    "context_length_status",
+    "price_band",
+    "capability_tier",
+    "published_parameter_count",
+    "active_parameter_count",
+    "parameter_count_status",
+    "model_card_or_source_url",
+    "metadata_status",
+    "comparison_label",
+    "pricing_status",
+    "input_price_usd_per_million_tokens",
+    "output_price_usd_per_million_tokens"
+  ]
+}
