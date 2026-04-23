@@ -17,6 +17,7 @@ bench/
   tasks/               Task definitions
   personas/            Student persona profiles
   data/                Market/reference data
+  experiments/         Validation experiments and generated report pipelines
   tests/               Unit, API, and integration tests
 docs/                  Architecture and agent guidance
 vercel-frontend/       Vercel-hosted frontend shell
@@ -108,6 +109,13 @@ The active evaluation pipeline is under `bench/server/eval/`:
 - `judges/` contains LLM-backed result/process/tutor judges.
 - `programmatic/` contains code, process, and tool-usage evaluators.
 - `inputs/` builds task/persona/conversation/reference context.
+- `rubrics/` stores judge rubrics plus `rubric_registry.json`, the first-class
+  registry of judged dimensions and stable rubric IDs.
+
+LLM judge prompts are built through `judges/runtime/conv_geval.py`. Prompt and
+output records include rubric ID/version, prompt template version, judge model,
+judge temperature, transcript source, dimension, output schema, context fields,
+and run timestamp metadata.
 
 The operator REST endpoint calls `SessionState.request_evaluation()`, which
 allocates a `score_n` run and delegates to `EvalCoordinator`. The CLI entrypoint
@@ -121,6 +129,23 @@ python -m server.scripts.eval_single list
 
 If a batch driver is needed, it should be a thin wrapper around
 `EvalCoordinator` and `score_store`, not a second evaluator architecture.
+
+## Judge Validation
+
+`bench/experiments/judge_validation/` is the automated judge reliability gate for
+external-agent scoring. It owns a fixed pilot corpus, prompt rendering, repeated
+same-prompt judge runs, prompt-format variants, one-factor sensitivity cases,
+adversarial-pair ranking checks, human label artifacts, Google Form CSV
+conversion, bilingual Google Form blueprint export, blind reviewer packet
+export, private sample-ID mapping, and Markdown/HTML/JSON reliability reports.
+The automated report tracks mean absolute score delta, within-one score rate,
+pass/fail flip rate, prompt-format score deltas, sensitivity pass rate,
+adversarial ranking pass rate, evidence/reason coverage, lightweight
+explanation consistency, raw disagreement examples, and residual risks. The
+human-alignment report joins `judge_runs.json` with `human_labels.json` and
+reports exact agreement, within-one agreement, mean absolute delta versus human
+labels, pass/fail agreement, large disagreement examples, and bias slices by
+dimension, category, persona, and transcript source.
 
 ## Public Reads
 

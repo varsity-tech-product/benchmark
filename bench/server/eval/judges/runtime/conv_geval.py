@@ -25,6 +25,7 @@ Usage:
 import json
 import logging
 from dataclasses import dataclass
+from typing import Any
 
 from server.eval.judges.runtime.llm_client import (
     EwanLLMClient,
@@ -32,6 +33,11 @@ from server.eval.judges.runtime.llm_client import (
 )
 
 log = logging.getLogger(__name__)
+
+PROMPT_TEMPLATE_VERSION = "conv_geval_score_prompt_v1"
+OUTPUT_SCHEMA_VERSION = "conv_geval_score_json_v1"
+OUTPUT_SCHEMA_REQUIRED_FIELDS = ["score"]
+OUTPUT_SCHEMA_OPTIONAL_FIELDS = ["evidence", "reason"]
 
 
 # ──────────────────────────────────────────────────────────────
@@ -74,6 +80,13 @@ ConversationalTestCase = EvalTestCase
 _SCORE_PROMPT = """\
 # Role
 {role}
+
+# Judge Metadata
+Rubric ID: {rubric_id}
+Rubric Version: {rubric_version}
+Prompt Template Version: {prompt_template_version}
+Dimension: {dimension}
+Score Interpretation: {score_interpretation}
 
 # Scoring Rubric
 {rubric}
@@ -148,6 +161,9 @@ class EwanConvGEval:
         threshold: float = 0.5,
         model: EwanLLMClient | None = None,
         max_score: int = 5,
+        rubric_metadata: dict[str, Any] | None = None,
+        prompt_template_version: str = PROMPT_TEMPLATE_VERSION,
+        output_schema_version: str = OUTPUT_SCHEMA_VERSION,
         **kwargs,
     ):
         self.name = name
@@ -157,11 +173,71 @@ class EwanConvGEval:
         self.threshold = threshold
         self.model = model
         self.max_score = max_score
+        self.rubric_metadata = dict(rubric_metadata or {})
+        self.prompt_template_version = prompt_template_version
+        self.output_schema_version = output_schema_version
 
         # Mutable state — set after evaluation
         self.score: float = 0.0
         self.reason: str = ""
         self.evaluation_cost: float = 0.0
+
+    def _model_name(self) -> str:
+        get_name = getattr(self.model, "get_model_name", None)
+        if callable(get_name):
+            name = get_name()
+            if name:
+                return str(name)
+        name = getattr(self.model, "model", None)
+        return str(name) if name else str(self.model)
+
+    def judge_metadata(self) -> dict[str, Any]:
+        """Return stable metadata for persisted judge prompt/output records."""
+
+        metadata = dict(self.rubric_metadata)
+        scale = dict(metadata.get("score_scale") or {})
+        scale.setdefault("min", 1)
+        scale.setdefault("max", self.max_score)
+        scale.setdefault("type", "integer")
+        metadata.update(
+            {
+                "dimension": metadata.get("dimension") or self.name,
+                "rubric_id": metadata.get("rubric_id") or f"adhoc.{self.name}",
+                "rubric_version": metadata.get("rubric_version") or "unversioned",
+                "prompt_template_version": self.prompt_template_version,
+                "judge_model": self._model_name(),
+                "judge_temperature": getattr(self.model, "temperature", None),
+                "output_schema": {
+                    "version": self.output_schema_version,
+                    "required_fields": list(OUTPUT_SCHEMA_REQUIRED_FIELDS),
+                    "optional_fields": list(OUTPUT_SCHEMA_OPTIONAL_FIELDS),
+                },
+                "score_scale": scale,
+                "score_interpretation": metadata.get("score_interpretation")
+                or (
+                    "Judge returns a raw integer score on the rubric scale; "
+                    "runtime stores a normalized 0-1 score for aggregation."
+                ),
+            }
+        )
+        metadata.setdefault("context_fields_included", ["context"])
+        metadata.setdefault("transcript_source", "evaluation_context")
+        return metadata
+
+    def render_prompt(self, test_case: EvalTestCase) -> str:
+        metadata = self.judge_metadata()
+        return _SCORE_PROMPT.format(
+            role=self.role,
+            rubric=self.criteria,
+            rules=self.rules,
+            context=test_case.context,
+            max_score=self.max_score,
+            rubric_id=metadata["rubric_id"],
+            rubric_version=metadata["rubric_version"],
+            prompt_template_version=metadata["prompt_template_version"],
+            dimension=metadata["dimension"],
+            score_interpretation=metadata["score_interpretation"],
+        )
 
     async def a_measure(self, test_case: EvalTestCase) -> float:
         """Score the context against the rubric in a single LLM call.
@@ -169,13 +245,7 @@ class EwanConvGEval:
         Returns normalized score in [0, 1].
         Sets ``.score``, ``.reason``, ``.evaluation_cost``.
         """
-        prompt = _SCORE_PROMPT.format(
-            role=self.role,
-            rubric=self.criteria,
-            rules=self.rules,
-            context=test_case.context,
-            max_score=self.max_score,
-        )
+        prompt = self.render_prompt(test_case)
 
         response_text, cost = await self.model.a_generate(prompt)
         self.evaluation_cost += cost
