@@ -1,0 +1,22 @@
+{
+  "version": "judge_validation_human_labels_v1",
+  "generated_at": "2026-04-23T00:00:00Z",
+  "labels": [
+    {
+      "sample_id": "jv_quant_correct_good",
+      "transcript_id": "jv_quant_correct_good",
+      "rubric_id": "quant_correctness.v1",
+      "dimension": "D4_instructional_accuracy",
+      "human_score": 5,
+      "confidence": "high",
+      "human_rationale": "The response correctly identifies lookahead timing and gives the shift-based fix.",
+      "evidence_spans": [
+        "A signal formed from today's close can only be traded on the next bar"
+      ],
+      "failure_tags": [],
+      "reviewer_id": "expert_anon_1",
+      "label_version": "v1",
+      "timestamp": "2026-04-23T00:00:00Z"
+    }
+  ]
+}

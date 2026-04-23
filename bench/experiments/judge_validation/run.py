@@ -16,9 +16,20 @@ from typing import Any
 BENCH_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(BENCH_ROOT))
 
+from experiments.judge_validation.human_alignment import (  # noqa: E402
+    convert_csv_to_human_labels,
+    compute_human_alignment_stats,
+    load_human_labels,
+    load_sample_id_map,
+    write_human_alignment_reports,
+)
 from experiments.judge_validation.report import (  # noqa: E402
     compute_reliability_stats,
     write_reports,
+)
+from experiments.judge_validation.review_packet import (  # noqa: E402
+    build_review_packet,
+    write_review_packet,
 )
 from server.eval.inputs.rubric_builder import (  # noqa: E402
     build_eval_params,
@@ -38,7 +49,10 @@ from server.eval.judges.runtime.conv_geval import (  # noqa: E402
 from server.eval.judges.runtime.model_resolver import resolve_ewan_model  # noqa: E402
 
 DEFAULT_CORPUS = Path(__file__).resolve().parent / "pilot_corpus.json"
+DEFAULT_HUMAN_LABELS = Path(__file__).resolve().parent / "human_labels.json"
+DEFAULT_RUBRIC_REGISTRY = BENCH_ROOT / "server/eval/rubrics/rubric_registry.json"
 DEFAULT_OUTPUT_DIR = Path("experiments/judge_validation/results")
+DEFAULT_REVIEW_PACKET_DIR = DEFAULT_OUTPUT_DIR / "human_review_packet"
 DEFAULT_REPEAT_COUNT = 3
 DEFAULT_PROMPT_VARIANT = "baseline"
 SUPPORTED_PROMPT_VARIANTS = {
@@ -486,6 +500,92 @@ def _report(args: argparse.Namespace) -> int:
     return 0
 
 
+def _convert_human_labels(args: argparse.Namespace) -> int:
+    csv_path = _resolve(args.csv)
+    output_path = _resolve(args.labels_output)
+    payload = convert_csv_to_human_labels(csv_path)
+    _atomic_write_json(output_path, payload)
+    print(
+        json.dumps(
+            {
+                "human_labels": str(output_path),
+                "labels": len(payload["labels"]),
+            },
+            indent=2,
+        )
+    )
+    return 0
+
+
+def _export_review_packet(args: argparse.Namespace) -> int:
+    corpus = _load_json(_resolve(args.corpus))
+    rubric_registry = _load_json(_resolve(args.rubric_registry))
+    sample_ids = _split_csv(args.sample_ids) if args.sample_ids else None
+    limit = args.limit if args.limit and args.limit > 0 else None
+    packet_output_dir = (
+        _resolve(args.packet_output_dir)
+        if args.packet_output_dir
+        else _resolve(args.output_dir) / "human_review_packet"
+    )
+    packet = build_review_packet(
+        corpus=corpus,
+        rubric_registry=rubric_registry,
+        sample_ids=sample_ids,
+        limit=limit,
+    )
+    paths = write_review_packet(
+        packet=packet,
+        output_dir=packet_output_dir,
+    )
+    print(
+        json.dumps(
+            {
+                "review_packet": paths,
+                "items": packet["counts"]["items"],
+            },
+            indent=2,
+        )
+    )
+    return 0
+
+
+def _human_alignment(args: argparse.Namespace) -> int:
+    corpus = _load_json(_resolve(args.corpus))
+    runs = _load_json(_resolve(args.runs))
+    labels = load_human_labels(_resolve(args.labels))
+    sample_id_map = (
+        load_sample_id_map(_resolve(args.sample_map)) if args.sample_map else None
+    )
+    records = runs.get("records", [])
+    stats = compute_human_alignment_stats(
+        corpus=corpus,
+        records=records,
+        labels=labels,
+        sample_id_map=sample_id_map,
+    )
+    output_dir = _resolve(args.output_dir)
+    paths = write_human_alignment_reports(
+        stats=stats,
+        run_id=str(runs.get("run_id", "")),
+        output_dir=output_dir,
+    )
+    print(
+        json.dumps(
+            {
+                "run_id": runs.get("run_id"),
+                "labels": len(labels),
+                "stats": paths["stats"],
+                "markdown": paths["markdown"],
+                "html": paths["html"],
+                "overall": stats["overall"],
+                "stage3_gate": stats["stage3_gate"],
+            },
+            indent=2,
+        )
+    )
+    return 0
+
+
 def _dry_run(args: argparse.Namespace) -> int:
     corpus = _load_json(_resolve(args.corpus))
     pairs = corpus.get("adversarial_pairs", [])
@@ -549,6 +649,60 @@ def _make_parser() -> argparse.ArgumentParser:
         help="Path to judge_runs.json",
     )
 
+    convert_labels_p = sub.add_parser("convert-human-labels")
+    convert_labels_p.add_argument(
+        "--csv",
+        required=True,
+        help="Path to a Google Form CSV export",
+    )
+    convert_labels_p.add_argument(
+        "--labels-output",
+        default=str(DEFAULT_HUMAN_LABELS),
+        help="Path for canonical human_labels.json",
+    )
+
+    review_packet_p = sub.add_parser("export-review-packet")
+    add_common(review_packet_p)
+    review_packet_p.add_argument(
+        "--rubric-registry",
+        default=str(DEFAULT_RUBRIC_REGISTRY),
+        help="Path to rubric_registry.json",
+    )
+    review_packet_p.add_argument(
+        "--packet-output-dir",
+        default=None,
+        help="Directory for reviewer packet JSON, Markdown, and CSV files",
+    )
+    review_packet_p.add_argument(
+        "--limit",
+        type=int,
+        default=20,
+        help="Maximum number of corpus items to export; 0 exports all selected items",
+    )
+    review_packet_p.add_argument(
+        "--sample-ids",
+        default="",
+        help="Optional comma-separated sample IDs for a targeted packet",
+    )
+
+    human_alignment_p = sub.add_parser("human-alignment")
+    add_common(human_alignment_p)
+    human_alignment_p.add_argument(
+        "--runs",
+        default=str(DEFAULT_OUTPUT_DIR / "judge_runs.json"),
+        help="Path to judge_runs.json",
+    )
+    human_alignment_p.add_argument(
+        "--labels",
+        default=str(DEFAULT_HUMAN_LABELS),
+        help="Path to human_labels.json",
+    )
+    human_alignment_p.add_argument(
+        "--sample-map",
+        default="",
+        help="Optional blind review_sample_id to original_sample_id mapping",
+    )
+
     return parser
 
 
@@ -563,6 +717,12 @@ def main(argv: list[str] | None = None) -> int:
         return _judge(args)
     if args.command == "report":
         return _report(args)
+    if args.command == "convert-human-labels":
+        return _convert_human_labels(args)
+    if args.command == "export-review-packet":
+        return _export_review_packet(args)
+    if args.command == "human-alignment":
+        return _human_alignment(args)
     parser.error(f"Unknown command: {args.command}")
     return 2
 
