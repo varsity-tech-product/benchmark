@@ -1,6 +1,6 @@
 # Judge Validation
 
-Stage 1 validates the scoring judge before external-agent results depend on it.
+This experiment validates the scoring judge before external-agent results depend on it.
 
 This experiment provides:
 
@@ -8,7 +8,10 @@ This experiment provides:
 - rendered judge prompts with rubric and prompt metadata
 - repeated same-prompt judge runs
 - stability metrics: mean absolute score delta, within-one score rate, pass/fail flip rate
+- prompt-format robustness metrics across semantically equivalent transcript formats
 - adversarial pair metrics: whether the stronger transcript scores higher
+- one-factor sensitivity metrics: whether targeted defects move the intended rubric score
+- evidence and reason coverage plus lightweight explanation consistency
 - Markdown, HTML, and machine-readable JSON reports
 
 ## Commands
@@ -31,6 +34,16 @@ Run the Stage 1 judge gate with three repeats per item:
 python -m experiments.judge_validation.run judge --repeats 3 --model anthropic/claude-sonnet-4-6
 ```
 
+Run prompt-format robustness variants:
+
+```bash
+python -m experiments.judge_validation.run judge --repeats 3 --prompt-variants baseline,role_blocks,markdown_transcript --model anthropic/claude-sonnet-4-6
+```
+
+Items with prebuilt evaluation context use the baseline context once, because
+their QR-style payload already contains task, acceptance criteria, tool outputs,
+and result summary in a canonical format.
+
 Generate reports from `judge_runs.json`:
 
 ```bash
@@ -41,4 +54,4 @@ Outputs are written under `bench/experiments/judge_validation/results/` by defau
 
 ## Scope
 
-This stage covers repeated same-prompt stability and obvious good-vs-bad adversarial ranking. Later stages add rubric-order sensitivity, prompt variants, multi-judge comparison, and human quant expert alignment.
+The current automated gate covers repeated same-prompt stability, prompt-format robustness, one-factor sensitivity, obvious good-vs-bad adversarial ranking, and lightweight evidence consistency. Later stages add broader real-transcript sampling, rubric-order sensitivity where the protocol supports it, and human quant expert alignment.

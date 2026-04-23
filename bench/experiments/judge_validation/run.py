@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Stage 1 judge reliability validation runner."""
+"""Judge reliability validation runner."""
 
 from __future__ import annotations
 
@@ -40,6 +40,12 @@ from server.eval.judges.runtime.model_resolver import resolve_ewan_model  # noqa
 DEFAULT_CORPUS = Path(__file__).resolve().parent / "pilot_corpus.json"
 DEFAULT_OUTPUT_DIR = Path("experiments/judge_validation/results")
 DEFAULT_REPEAT_COUNT = 3
+DEFAULT_PROMPT_VARIANT = "baseline"
+SUPPORTED_PROMPT_VARIANTS = {
+    "baseline",
+    "role_blocks",
+    "markdown_transcript",
+}
 
 
 def _resolve(path: str | Path) -> Path:
@@ -67,13 +73,75 @@ def _atomic_write_json(path: Path, data: Any) -> None:
     tmp.replace(path)
 
 
-def _conversation_context(item: dict[str, Any]) -> str:
+def _split_csv(value: str | list[str] | tuple[str, ...]) -> list[str]:
+    if isinstance(value, (list, tuple)):
+        parts = [str(part).strip() for part in value]
+    else:
+        parts = [part.strip() for part in str(value).split(",")]
+    return [part for part in parts if part]
+
+
+def _prompt_variants(value: str | list[str] | tuple[str, ...]) -> list[str]:
+    variants = _split_csv(value)
+    unknown = sorted(set(variants) - SUPPORTED_PROMPT_VARIANTS)
+    if unknown:
+        known = ", ".join(sorted(SUPPORTED_PROMPT_VARIANTS))
+        raise ValueError(f"Unsupported prompt variants {unknown}; choose from {known}")
+    return variants or [DEFAULT_PROMPT_VARIANT]
+
+
+def _prompt_variants_for_item(
+    item: dict[str, Any],
+    requested_variants: list[str],
+) -> list[str]:
     if item.get("context"):
-        return str(item["context"])
-    turns = [
+        return [DEFAULT_PROMPT_VARIANT]
+    return list(requested_variants)
+
+
+def _turns(item: dict[str, Any]) -> list[Turn]:
+    return [
         Turn(role=str(turn.get("role", "")), content=str(turn.get("content", "")))
         for turn in item.get("conversation", [])
     ]
+
+
+def _format_turns_role_blocks(turns: list[Turn]) -> str:
+    blocks = []
+    for index, turn in enumerate(turns, start=1):
+        role = turn.role.title() if turn.role else "Unknown"
+        blocks.append(f"Turn {index} - {role}\n{turn.content}")
+    return "\n\n".join(blocks)
+
+
+def _format_turns_markdown(turns: list[Turn]) -> str:
+    blocks = []
+    for index, turn in enumerate(turns, start=1):
+        role = turn.role.title() if turn.role else "Unknown"
+        blocks.append(f"### Turn {index}: {role}\n\n{turn.content}")
+    return "\n\n".join(blocks)
+
+
+def _conversation_context(
+    item: dict[str, Any],
+    *,
+    prompt_variant_id: str = DEFAULT_PROMPT_VARIANT,
+) -> str:
+    if prompt_variant_id not in SUPPORTED_PROMPT_VARIANTS:
+        known = ", ".join(sorted(SUPPORTED_PROMPT_VARIANTS))
+        raise ValueError(
+            f"Unsupported prompt variant {prompt_variant_id}; choose from {known}"
+        )
+
+    turns = _turns(item)
+
+    if item.get("context"):
+        return str(item["context"])
+
+    if prompt_variant_id == "role_blocks":
+        return _format_turns_role_blocks(turns)
+    if prompt_variant_id == "markdown_transcript":
+        return _format_turns_markdown(turns)
     return format_turns(turns)
 
 
@@ -87,7 +155,12 @@ def _rules_text(rules: list[str] | str) -> str:
     return str(rules)
 
 
-def _metric_for_item(item: dict[str, Any], *, model: str) -> EwanConvGEval:
+def _metric_for_item(
+    item: dict[str, Any],
+    *,
+    model: str,
+    prompt_variant_id: str = DEFAULT_PROMPT_VARIANT,
+) -> EwanConvGEval:
     track = item["track"]
     dimension = item["dimension"]
     category = item.get("category")
@@ -105,7 +178,10 @@ def _metric_for_item(item: dict[str, Any], *, model: str) -> EwanConvGEval:
             rubric_name="tutor_6d",
             context_fields=context_fields,
             transcript_source=transcript_source,
-            extra={"registry_rubric_id": item.get("registry_rubric_id")},
+            extra={
+                "registry_rubric_id": item.get("registry_rubric_id"),
+                "prompt_variant_id": prompt_variant_id,
+            },
         )
         return EwanConvGEval(
             name=dimension,
@@ -129,6 +205,7 @@ def _metric_for_item(item: dict[str, Any], *, model: str) -> EwanConvGEval:
         params["rubric_metadata"]["registry_rubric_id"] = item.get(
             "registry_rubric_id"
         )
+        params["rubric_metadata"]["prompt_variant_id"] = prompt_variant_id
         return EwanConvGEval(
             name=dimension,
             model=model_obj,
@@ -151,6 +228,7 @@ def _record_base(
     item: dict[str, Any],
     run_index: int,
     metric: EwanConvGEval,
+    prompt_variant_id: str = DEFAULT_PROMPT_VARIANT,
 ) -> dict[str, Any]:
     metadata = metric.judge_metadata()
     metadata["run_timestamp"] = datetime.now(timezone.utc).isoformat()
@@ -167,6 +245,7 @@ def _record_base(
         "registry_rubric_id": item.get("registry_rubric_id"),
         "transcript_source": item.get("transcript_source"),
         "run_index": run_index,
+        "prompt_variant_id": prompt_variant_id,
         "judge_model": metadata.get("judge_model"),
         "judge_metadata": metadata,
     }
@@ -179,28 +258,39 @@ def _render(args: argparse.Namespace) -> int:
         f"jv_render_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}"
     )
     prompts: list[dict[str, Any]] = []
+    prompt_variants = _prompt_variants(args.prompt_variants)
     for item in corpus.get("items", []):
-        context = _conversation_context(item)
-        test_case = EvalTestCase(context=context)
-        metric = _metric_for_item(item, model=args.model)
-        for run_index in range(args.repeats):
-            prompts.append(
-                {
-                    **_record_base(
-                        run_id=run_id,
-                        item=item,
-                        run_index=run_index,
-                        metric=metric,
-                    ),
-                    "prompt": metric.render_prompt(test_case),
-                }
+        for prompt_variant_id in _prompt_variants_for_item(item, prompt_variants):
+            context = _conversation_context(
+                item,
+                prompt_variant_id=prompt_variant_id,
             )
+            test_case = EvalTestCase(context=context)
+            metric = _metric_for_item(
+                item,
+                model=args.model,
+                prompt_variant_id=prompt_variant_id,
+            )
+            for run_index in range(args.repeats):
+                prompts.append(
+                    {
+                        **_record_base(
+                            run_id=run_id,
+                            item=item,
+                            run_index=run_index,
+                            metric=metric,
+                            prompt_variant_id=prompt_variant_id,
+                        ),
+                        "prompt": metric.render_prompt(test_case),
+                    }
+                )
 
     payload = {
         "version": "judge_validation_prompts_v1",
         "run_id": run_id,
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "repeat_count": args.repeats,
+        "prompt_variants": prompt_variants,
         "counts": {"prompts": len(prompts)},
         "prompts": prompts,
     }
@@ -221,19 +311,34 @@ async def _judge_one(
     item: dict[str, Any],
     run_index: int,
     model: str,
+    prompt_variant_id: str = DEFAULT_PROMPT_VARIANT,
 ) -> dict[str, Any]:
-    metric = _metric_for_item(item, model=model)
+    metric = _metric_for_item(
+        item,
+        model=model,
+        prompt_variant_id=prompt_variant_id,
+    )
     base = _record_base(
         run_id=run_id,
         item=item,
         run_index=run_index,
         metric=metric,
+        prompt_variant_id=prompt_variant_id,
     )
     start = time.time()
     try:
         result = await llm_call_with_retry(
-            lambda: _metric_for_item(item, model=model),
-            EvalTestCase(context=_conversation_context(item)),
+            lambda: _metric_for_item(
+                item,
+                model=model,
+                prompt_variant_id=prompt_variant_id,
+            ),
+            EvalTestCase(
+                context=_conversation_context(
+                    item,
+                    prompt_variant_id=prompt_variant_id,
+                )
+            ),
             dimension_name=str(item.get("dimension", "")),
         )
         metadata = result.get("judge_metadata") or metric.judge_metadata()
@@ -278,14 +383,17 @@ def _judge(args: argparse.Namespace) -> int:
     run_id = args.run_id or (
         f"jv_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}"
     )
+    prompt_variants = _prompt_variants(args.prompt_variants)
     tasks = [
         _judge_one(
             run_id=run_id,
             item=item,
             run_index=run_index,
             model=args.model,
+            prompt_variant_id=prompt_variant_id,
         )
         for item in corpus.get("items", [])
+        for prompt_variant_id in _prompt_variants_for_item(item, prompt_variants)
         for run_index in range(args.repeats)
     ]
 
@@ -305,6 +413,7 @@ def _judge(args: argparse.Namespace) -> int:
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "judge_model": args.model,
         "repeat_count": args.repeats,
+        "prompt_variants": prompt_variants,
         "counts": {
             "records": len(records),
             "success": sum(1 for record in records if record["status"] == "success"),
@@ -342,8 +451,33 @@ def _report(args: argparse.Namespace) -> int:
                 "markdown": paths["markdown"],
                 "html": paths["html"],
                 "stability": stats["stability"],
+                "prompt_format": {
+                    "mean_absolute_variant_delta": stats["prompt_format"][
+                        "mean_absolute_variant_delta"
+                    ],
+                    "within_one_variant_rate": stats["prompt_format"][
+                        "within_one_variant_rate"
+                    ],
+                    "pass_fail_variant_flip_rate": stats["prompt_format"][
+                        "pass_fail_variant_flip_rate"
+                    ],
+                },
                 "adversarial": {
                     "ranking_pass_rate": stats["adversarial"]["ranking_pass_rate"]
+                },
+                "sensitivity": {
+                    "pass_rate": stats["sensitivity"]["pass_rate"]
+                },
+                "evidence_consistency": {
+                    "evidence_coverage_rate": stats["evidence_consistency"][
+                        "evidence_coverage_rate"
+                    ],
+                    "reason_coverage_rate": stats["evidence_consistency"][
+                        "reason_coverage_rate"
+                    ],
+                    "mean_pairwise_text_jaccard": stats["evidence_consistency"][
+                        "mean_pairwise_text_jaccard"
+                    ],
                 },
             },
             indent=2,
@@ -355,14 +489,22 @@ def _report(args: argparse.Namespace) -> int:
 def _dry_run(args: argparse.Namespace) -> int:
     corpus = _load_json(_resolve(args.corpus))
     pairs = corpus.get("adversarial_pairs", [])
+    sensitivity_cases = corpus.get("sensitivity_cases", [])
     items = corpus.get("items", [])
+    prompt_variants = _prompt_variants(args.prompt_variants)
+    planned_records = sum(
+        len(_prompt_variants_for_item(item, prompt_variants)) * args.repeats
+        for item in items
+    )
     print(
         json.dumps(
             {
                 "corpus": str(_resolve(args.corpus)),
                 "items": len(items),
                 "adversarial_pairs": len(pairs),
-                "planned_judge_records": len(items) * args.repeats,
+                "sensitivity_cases": len(sensitivity_cases),
+                "prompt_variants": prompt_variants,
+                "planned_judge_records": planned_records,
                 "repeat_count": args.repeats,
             },
             indent=2,
@@ -378,6 +520,7 @@ def _make_parser() -> argparse.ArgumentParser:
     parser.add_argument("--model", default="anthropic/claude-sonnet-4-6")
     parser.add_argument("--repeats", type=int, default=DEFAULT_REPEAT_COUNT)
     parser.add_argument("--run-id", default=None)
+    parser.add_argument("--prompt-variants", default=DEFAULT_PROMPT_VARIANT)
     sub = parser.add_subparsers(dest="command", required=True)
 
     def add_common(p: argparse.ArgumentParser) -> None:
@@ -386,6 +529,7 @@ def _make_parser() -> argparse.ArgumentParser:
         p.add_argument("--model", default=argparse.SUPPRESS)
         p.add_argument("--repeats", type=int, default=argparse.SUPPRESS)
         p.add_argument("--run-id", default=argparse.SUPPRESS)
+        p.add_argument("--prompt-variants", default=argparse.SUPPRESS)
 
     dry_run_p = sub.add_parser("dry-run")
     add_common(dry_run_p)

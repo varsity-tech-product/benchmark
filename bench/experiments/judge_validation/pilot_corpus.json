@@ -1,6 +1,6 @@
 {
-  "version": "judge_validation_pilot_corpus_v1",
-  "description": "Stage 1 fixed pilot corpus for automated judge stability and obvious adversarial ranking checks.",
+  "version": "judge_validation_pilot_corpus_v2",
+  "description": "Fixed pilot corpus for automated judge stability, prompt-format robustness, one-factor sensitivity, and obvious adversarial ranking checks.",
   "pass_threshold": 3,
   "items": [
     {
@@ -282,6 +282,128 @@
           "content": "Yes, the crossover is bullish. I would buy today and hold until the short average crosses back down."
         }
       ]
+    },
+    {
+      "sample_id": "jv_real_x02_lookahead_excerpt",
+      "transcript_source": "real_run_single_trace_excerpt",
+      "source_path": "bench/results/run-single/openai/gpt-4o-mini/X02_lookahead/intermediate_developer/trace.md",
+      "task_id": "X02_lookahead",
+      "category": "debug",
+      "persona_id": "developer_crossover",
+      "track": "tutor",
+      "dimension": "D4_instructional_accuracy",
+      "registry_rubric_id": "quant_correctness.v1",
+      "expected_score_band": "medium",
+      "conversation": [
+        {
+          "role": "user",
+          "content": "I implemented an SMA(10)/SMA(30) crossover backtest, and the returns seem suspiciously high. I suspect look-ahead bias. Can you help me audit the code?"
+        },
+        {
+          "role": "assistant",
+          "content": "We should check signal generation timing, position management, performance calculation, and data splitting. I need to see the code in student_code/lookahead.py to identify the exact issue."
+        },
+        {
+          "role": "user",
+          "content": "The code computes SMA10 and SMA30 from Close, sets Signal to 1 when SMA10 > SMA30, and returns the data."
+        },
+        {
+          "role": "assistant",
+          "content": "The signal uses the same row's close-derived SMA for the current decision. Shift the SMA values by one bar before generating the signal so the trade uses information available before the current bar."
+        }
+      ]
+    },
+    {
+      "sample_id": "jv_real_i01_sma_lean_excerpt",
+      "transcript_source": "real_run_single_trace_excerpt",
+      "source_path": "bench/results/run-single/openai/gpt-5.2/I01_implement_sma/intermediate_developer/trace.md",
+      "task_id": "I01_implement_sma",
+      "category": "implementation",
+      "persona_id": "developer_crossover",
+      "track": "tutor",
+      "dimension": "D2_code_adaptation",
+      "registry_rubric_id": "student_adaptation.v1",
+      "expected_score_band": "high",
+      "conversation": [
+        {
+          "role": "user",
+          "content": "I need to implement a basic SMA trend filter in LEAN for BTCUSDT daily bars. I know the strategy idea, and I am new to the QuantConnect API."
+        },
+        {
+          "role": "assistant",
+          "content": "The key pieces are to subscribe to BTCUSDT at daily resolution, create the SMA, warm up enough history, and use position-aware logic. Store the returned Symbol and use it everywhere to avoid string and symbol mixups."
+        },
+        {
+          "role": "user",
+          "content": "Can you explain how to handle warm-up and IsWarmingUp in OnData?"
+        },
+        {
+          "role": "assistant",
+          "content": "Use SetWarmUp with the SMA period and resolution, then return early in OnData while IsWarmingUp is true. Keep an _sma.IsReady guard as a second safety check before reading the indicator value."
+        }
+      ]
+    }
+  ],
+  "sensitivity_cases": [
+    {
+      "case_id": "sens_quant_error_only",
+      "factor": "quant_error_only",
+      "dimension": "D4_instructional_accuracy",
+      "registry_rubric_id": "quant_correctness.v1",
+      "baseline_sample_id": "jv_quant_correct_good",
+      "perturbed_sample_id": "jv_quant_correct_bad",
+      "expected_direction": "baseline_higher",
+      "minimum_margin": 1
+    },
+    {
+      "case_id": "sens_broken_code_only",
+      "factor": "broken_code_only",
+      "dimension": "result_judge",
+      "registry_rubric_id": "code_correctness.v1",
+      "baseline_sample_id": "jv_code_correct_good",
+      "perturbed_sample_id": "jv_code_correct_bad",
+      "expected_direction": "baseline_higher",
+      "minimum_margin": 1
+    },
+    {
+      "case_id": "sens_jargon_to_beginner",
+      "factor": "jargon_to_beginner",
+      "dimension": "D1_finance_adaptation",
+      "registry_rubric_id": "student_adaptation.v1",
+      "baseline_sample_id": "jv_adaptation_good",
+      "perturbed_sample_id": "jv_adaptation_bad",
+      "expected_direction": "baseline_higher",
+      "minimum_margin": 1
+    },
+    {
+      "case_id": "sens_hallucinated_tool_output",
+      "factor": "hallucinated_tool_output",
+      "dimension": "result_judge",
+      "registry_rubric_id": "tool_workspace_use.v1",
+      "baseline_sample_id": "jv_tool_grounding_good",
+      "perturbed_sample_id": "jv_tool_grounding_bad",
+      "expected_direction": "baseline_higher",
+      "minimum_margin": 1
+    },
+    {
+      "case_id": "sens_answer_dump",
+      "factor": "answer_dump",
+      "dimension": "D3_pedagogical_method",
+      "registry_rubric_id": "teaching_quality.v1",
+      "baseline_sample_id": "jv_teaching_good",
+      "perturbed_sample_id": "jv_teaching_bad",
+      "expected_direction": "baseline_higher",
+      "minimum_margin": 1
+    },
+    {
+      "case_id": "sens_failure_boundary_removed",
+      "factor": "failure_boundary_removed",
+      "dimension": "D6_safety_boundaries",
+      "registry_rubric_id": "failure_handling.v1",
+      "baseline_sample_id": "jv_safety_good",
+      "perturbed_sample_id": "jv_safety_bad",
+      "expected_direction": "baseline_higher",
+      "minimum_margin": 1
     }
   ],
   "adversarial_pairs": [
