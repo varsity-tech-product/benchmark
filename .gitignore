@@ -60,6 +60,7 @@ bench/results/
 bench/experiments/student_sim_stability/results/
 bench/experiments/student_sim_stability/pilot/
 bench/experiments/student_sim_stability/doc/
+bench/experiments/judge_validation/results/
 
 # Claude Code local state
 # Claude Code config — local user settings stay private, but project-scoped
