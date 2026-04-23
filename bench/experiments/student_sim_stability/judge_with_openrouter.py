@@ -31,7 +31,7 @@ from experiments.student_sim_stability.config import (  # noqa: E402
 )
 from server.config.llm_config import OPENROUTER_BASE_URL  # noqa: E402
 from server.config.pricing import get_llm_cost_kwargs  # noqa: E402
-from server.eval.ewan_eval.llm_client import EwanLLMClient  # noqa: E402
+from server.eval.judges.runtime.llm_client import EwanLLMClient  # noqa: E402
 
 log = logging.getLogger(__name__)
 

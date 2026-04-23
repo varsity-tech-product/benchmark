@@ -34,7 +34,7 @@ class JobSpec:
     trial_index: int = 0
     skip_eval: bool = False
     timeout_minutes: Optional[int] = None
-    eval_mode: str = "full"  # "full" | "qr_only" | "qp_only"
+    eval_mode: str = "full"  # "full" | "qr" | "qp" | "tutor"
 
 
 @dataclass
@@ -253,7 +253,7 @@ def _save_run_state(
     (key_results, trace_summary, step_count) so any run can be
     promoted to a reference via ``generate_reference promote``.
     """
-    from evaluation.trace_utils import build_trace_summary, extract_key_results
+    from server.storage.trace_utils import build_trace_summary, extract_key_results
 
     tool_logs_dicts = [asdict(log) for log in trace_captured.get("proxy_logs", [])]
 
@@ -317,6 +317,24 @@ def _save_run_state(
     )
 
 
+def _eval_results_from_task_result(result: TaskResult) -> dict:
+    out = {
+        "quant_result": result.quant_result_score,
+        "quant_process": result.quant_process_score,
+        "tutor_scores": result.tutor_scores,
+        "tutor_scores_by_model": result.tutor_scores_by_model,
+        "process_metrics": result.process_metrics,
+        "eval_script_detail": result.eval_script_detail,
+        "code_eval": result.code_eval,
+        "result_judge": result.result_judge,
+        "code_process": result.code_process,
+        "tool_usage": result.tool_usage,
+    }
+    if result.tutor_eval_error:
+        out["tutor_eval_error"] = result.tutor_eval_error
+    return out
+
+
 def _save_job_reports(
     result_dir: Path,
     result: TaskResult,
@@ -324,49 +342,21 @@ def _save_job_reports(
     agent,
     job: JobSpec,
 ):
-    """Save scores.md, trace.md, cost.md to result_dir."""
-    from config.conditions import CONDITIONS
+    """Save run_state.json and append score_n JSON when evaluation ran."""
 
-    condition = CONDITIONS[job.condition_name]
-
-    # Always save run_state.json (enables --evalonly and promote-to-reference)
     _save_run_state(result_dir, result, trace_captured, agent, job)
 
-    # scores.md: skip when evaluation was aborted or skipped (--runonly)
-    if job.skip_eval:
-        pass  # runonly — no scores.md
-    elif not result.eval_aborted:
-        from evaluation.score_report import generate_score_report
+    if not job.skip_eval and not result.eval_aborted:
+        from server.storage.eval_writer import save_eval_results
 
-        (result_dir / "scores.md").write_text(
-            generate_score_report(result), encoding="utf-8"
+        save_eval_results(
+            task=job.task,
+            result_dir=result_dir,
+            eval_results=_eval_results_from_task_result(result),
+            eval_mode=job.eval_mode,
+            eval_model=job.eval_model,
+            duration=result.duration_seconds,
         )
-    else:
-        (result_dir / "ABORTED.md").write_text(
-            f"# Evaluation Aborted\n\n{result.error}\n",
-            encoding="utf-8",
-        )
-
-    # trace.md
-    if "proxy_logs" in trace_captured:
-        from evaluation.trace_report import generate_trace_md
-
-        (result_dir / "trace.md").write_text(
-            generate_trace_md(
-                result,
-                trace_captured["proxy_logs"],
-                agent_name=job.agent_type,
-                model=agent.model,
-                condition=condition.name,
-                thinking_trace=trace_captured.get("thinking_trace", []),
-            ),
-            encoding="utf-8",
-        )
-
-    # cost.md
-    from evaluation.cost_report import generate_cost_report
-
-    (result_dir / "cost.md").write_text(generate_cost_report(result), encoding="utf-8")
 
 
 # ──────────────────────────────────────────────────────────────
@@ -397,7 +387,7 @@ def eval_single_job(job: JobSpec, cancel_event=None) -> JobResult:
 
     Loads run_state.json from the result directory, reconstructs
     tool logs and conversation, runs the full evaluation pipeline,
-    and saves scores.md + updated cost.md.
+    and appends ``evaluations/score_n/score.json`` + ``cost.json``.
     """
     start = time.time()
 
@@ -505,15 +495,15 @@ def eval_single_job(job: JobSpec, cancel_event=None) -> JobResult:
             eval_cost_by_stage_model=eval_cost_by_stage_model,
         )
 
-        # Save scores.md + updated cost.md
-        from evaluation.cost_report import generate_cost_report
-        from evaluation.score_report import generate_score_report
+        from server.storage.eval_writer import save_eval_results
 
-        (result_dir / "scores.md").write_text(
-            generate_score_report(result), encoding="utf-8"
-        )
-        (result_dir / "cost.md").write_text(
-            generate_cost_report(result), encoding="utf-8"
+        save_eval_results(
+            task=job.task,
+            result_dir=result_dir,
+            eval_results=eval_results,
+            eval_mode=job.eval_mode,
+            eval_model=job.eval_model,
+            duration=time.time() - start,
         )
 
         return JobResult(

@@ -50,9 +50,9 @@ def test_lean_code_eval_success():
     assert result["static_analysis"]["syntax_valid"] is True, "Last trial compiled"
     assert result["static_analysis"]["compile_errors"] == 1, "One compile error"
     assert result["execution"]["last_status"] == "success"
-    # Layer A=1.0, Layer B=1.0, Layer C=0.0 (no reference)
-    # score = 0.15*1.0 + 0.35*1.0 + 0.50*0.0 = 0.50
-    assert result["score"] == 0.5, f"Expected 0.5, got {result['score']}"
+    # Layer C is skipped when reference is unavailable; remaining layers are
+    # re-normalized instead of injecting a fake zero.
+    assert result["score"] == 1.0, f"Expected 1.0, got {result['score']}"
 
     print(
         f"✓ LEAN success: score={result['score']} (A={result['static_analysis']['score']}, B={result['execution']['score']})"
@@ -113,9 +113,9 @@ def test_lean_code_eval_empty_trades():
     )
 
     assert result["applicable"] is True
-    # Layer A=1.0 (compiled), Layer B=0.5 (empty_trades), Layer C=0.0
-    # score = 0.15*1.0 + 0.35*0.5 + 0.0 = 0.325
-    assert result["score"] == 0.325, f"Expected 0.325, got {result['score']}"
+    # Layer C is skipped when reference is unavailable; Layer A/B are
+    # re-normalized: (0.15*1.0 + 0.35*0.5) / 0.50 = 0.65.
+    assert result["score"] == 0.65, f"Expected 0.65, got {result['score']}"
 
     print(f"✓ LEAN empty trades: score={result['score']}")
 
@@ -186,7 +186,6 @@ def test_debug_judge_guideline():
         agent_workspace_files=["Algorithm.cs"],
         agent_summary="Fixed the PCM.",
         reference=None,
-        expected_outcome="Resolve insight cancellation.",
     )
 
     prompt_strategy = _build_result_judge_prompt(
@@ -196,7 +195,6 @@ def test_debug_judge_guideline():
         agent_workspace_files=["results.csv"],
         agent_summary="Computed metrics.",
         reference=None,
-        expected_outcome="Present backtest results.",
     )
 
     assert "DEBUG TASKS" in prompt_debug, "Debug guideline should be in debug prompt"

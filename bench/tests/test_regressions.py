@@ -62,7 +62,7 @@ def _make_task(*, requires_code: bool) -> QuantTutorTask:
             docs_available=["algorithm_framework_guide.md"],
         ),
         ground_truth=GroundTruth(
-            expected_outcome="Produce code, artifacts, and ranked optimization results.",
+            termination_criteria="Produce code, artifacts, and ranked optimization results.",
             required_capabilities=[
                 "Use GetParameter() to parameterize algorithm configuration",
                 "Collect and rank optimization results",

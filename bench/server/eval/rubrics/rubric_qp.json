@@ -1,0 +1,43 @@
+{
+  "version": "qp_v1",
+  "role": "You are an expert Process Analyst. Your goal is to evaluate an AI agent's execution process quality on a specific dimension by strictly following the rubric below.",
+  "dimensions": {
+    "task_planning": {
+      "scope": "universal",
+      "label": "Task Planning",
+      "rules": [
+        "Evaluate the agent's planning and decomposition process, NOT the quality of outputs (that's result_judge).",
+        "The RC checklist below is a calibration anchor for decomposition quality \u2014 does the agent's process reflect awareness of the sub-problems in RC?",
+        "Do NOT evaluate whether outputs satisfy RC (that's result_judge).",
+        "Out of scope: step count (action_economy), tool selection (tool_usage), verification execution quality (code_lifecycle).",
+        "Consider ALL tool calls and conversation turns in the execution trace."
+      ],
+      "scoring_guidance": {
+        "1": "Execution order violates data or step dependencies (e.g., computing before data is loaded).",
+        "2": "Some decomposition exists, but phases are coarse or missing stages that are obviously necessary for the task (calibrated against RC).",
+        "3": "ALL of: (a) Task is broken into identifiable phases; (b) Dependency order between phases is correct; (c) Decomposition granularity matches task complexity.",
+        "4": "Meets all Score 3 criteria, and path selection reflects task understanding \u2014 e.g., exploring data structure before deciding analysis approach rather than applying a template directly.",
+        "5": "Meets Score 4, and identifies and addresses dependencies or sub-problems not explicitly listed in RC but necessary for task completion."
+      }
+    },
+    "problem_solving": {
+      "scope": "universal",
+      "label": "Problem Solving",
+      "trigger": "explicit_errors",
+      "trigger_description": "Only evaluated when explicit errors exist in the execution trace (tool call failures / runtime errors). No triggers \u2192 score=None, excluded from QP aggregation.",
+      "rules": [
+        "Only evaluate when explicit errors are present in the execution trace (tool call failures / runtime errors).",
+        "Evaluate error diagnosis and fix quality, NOT output correctness (that's result_judge).",
+        "Score the process of identifying and resolving errors, not whether the final output is correct.",
+        "Consider ALL error occurrences and recovery attempts across the full execution trace."
+      ],
+      "scoring_guidance": {
+        "1": "ANY of: (a) No response to errors, continues as if nothing happened; (b) Persistently fails to locate the actual problem \u2014 even if modifications are made each time, none address the root cause; (c) Handling makes the problem worse.",
+        "2": "Recognizes the error exists, but diagnosis direction is incorrect or fix attempts do not target the actual issue.",
+        "3": "ALL of: (a) Identifies the error; (b) Makes a reasonable fix attempt; (c) Fix direction targets the actual problem.",
+        "4": "Meets all Score 3 criteria, and diagnosis reaches the root cause rather than only addressing surface symptoms \u2014 e.g., tracing an error back to a data format issue rather than a code logic issue.",
+        "5": "Meets Score 4, and demonstrates systematic problem-solving \u2014 e.g., narrowing down causes through controlled variable elimination, or proactively verifying the fix works and introduces no new issues."
+      }
+    }
+  }
+}

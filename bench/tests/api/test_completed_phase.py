@@ -47,14 +47,12 @@ class TestCompletedPhasePermissions:
         assert resp.status_code == 403
 
     @pytest.mark.asyncio
-    async def test_evaluate_allowed_after_completion(
-        self, client, completed_session, mock_eval_pipeline
+    async def test_public_evaluate_absent_after_completion(
+        self, client, completed_session
     ):
         sid = completed_session
-        resp = await client.post(f"/ops/session/{sid}/evaluate", json={})
-        # Synchronous scoring on the operator surface (#46 slice 4).
-        assert resp.status_code == 200
-        assert resp.json()["status"] == "completed"
+        resp = await client.post(f"/session/{sid}/evaluate", json={})
+        assert resp.status_code == 404
 
     @pytest.mark.asyncio
     async def test_status_shows_completed(self, client, completed_session):
@@ -71,13 +69,7 @@ class TestCompletedPhasePermissions:
 class TestCompletedPhaseTools:
     @pytest.mark.asyncio
     async def test_eval_tools_no_longer_advertised(self, client, completed_session):
-        """Issue #46 slice 3: evaluation tools dropped from agent catalogue.
-
-        COMPLETED is terminal for the agent; scoring runs out-of-band on
-        the operator surface (``/ops/session/{sid}/...``). Lifecycle tools
-        stay visible so frozen-registry clients can still observe the
-        terminal state via error guidance from any further call.
-        """
+        """COMPLETED is terminal for the agent; scoring is server-side."""
         sid = completed_session
         tools = await get_tools(client, sid)
         names = [t["name"] for t in tools]
@@ -97,7 +89,7 @@ class TestCompletedPhaseData:
     @pytest.mark.asyncio
     async def test_get_results_returns_data(self, client, completed_session):
         sid = completed_session
-        resp = await client.get(f"/ops/session/{sid}/results")
+        resp = await client.get(f"/session/{sid}/results")
         if resp.status_code == 200:
             data = resp.json()
             assert "conversation" in data
@@ -106,7 +98,7 @@ class TestCompletedPhaseData:
     async def test_get_scores_returns_pending(self, client, completed_session):
         """Before evaluation, scores should report pending status."""
         sid = completed_session
-        resp = await client.get(f"/ops/session/{sid}/scores")
+        resp = await client.get(f"/session/{sid}/scores")
         assert resp.status_code == 200
         data = resp.json()
         assert data["status"] in ("pending", "running")

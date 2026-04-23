@@ -131,8 +131,7 @@ class TestPostCompletion:
         await send_message(client, sid, "Done.")
 
         # REST permission check blocks send in COMPLETED phase.
-        # COMPLETED is terminal for the agent (issue #46 slice 3) so
-        # the allowed list is empty.
+        # Agent-facing lifecycle is terminal; scoring is server-side.
         resp = await client.post(f"/session/{sid}/send", json={"text": "More stuff"})
         assert resp.status_code == 403
         body = resp.json()
@@ -145,7 +144,7 @@ class TestPostCompletion:
         state.session._max_turns = 1
         await send_message(client, sid, "Done.")
 
-        resp = await client.get(f"/ops/session/{sid}/results")
+        resp = await client.get(f"/session/{sid}/results")
         # Results should be available (200) or at least attempted
         if resp.status_code == 200:
             data = resp.json()

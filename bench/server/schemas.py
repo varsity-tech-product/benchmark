@@ -42,7 +42,6 @@ class QuantValidation(BaseModel):
 
 
 class GroundTruth(BaseModel):
-    expected_outcome: str
     termination_criteria: Union[str, dict[str, str]] = ""
     required_capabilities: list[str] = Field(default_factory=list)
     expected_mcp_tools: list[str] = Field(default_factory=list)
@@ -126,15 +125,14 @@ class TaskResult(BaseModel):
     requires_code: bool = False  # Whether the task expects code output
     turns: list[ConversationTurn] = Field(default_factory=list)
     workspace_files: list[str] = Field(default_factory=list)
-    quant_result_score: float = 0.0
-    quant_process_score: float = 0.0
+    quant_result_score: Optional[float] = None
+    quant_process_score: Optional[float] = None
     tutor_scores: dict[str, float] = Field(default_factory=dict)
     tutor_scores_by_model: dict[str, dict[str, float]] = Field(
         default_factory=dict
     )  # {model_name: {dim: score}} per-judge-model breakdown
-    tutor_fallback_count: int = 0  # Tutor evals that used fallback recovery
     tutor_eval_error: Optional[str] = None  # Exception message when tutor eval failed
-    overall_score: float = 0.0
+    overall_score: Optional[float] = None
     # Extended metrics (design doc §6.1, §6.4)
     process_metrics: dict = Field(
         default_factory=dict
@@ -173,11 +171,11 @@ class BenchmarkReport(BaseModel):
 
     agent_name: str
     total_tasks: int = 0
-    overall_agent_score: float = 0.0
-    quant_agent_index: float = 0.0
-    tutoring_effectiveness_index: float = 0.0
-    adaptiveness_score: float = 0.0
-    process_mastery_score: float = 0.0
+    overall_agent_score: Optional[float] = None
+    quant_agent_index: Optional[float] = None
+    tutoring_effectiveness_index: Optional[float] = None
+    adaptiveness_score: Optional[float] = None
+    process_mastery_score: Optional[float] = None
     results_by_task: dict[str, TaskResult] = Field(default_factory=dict)
     results_by_difficulty: dict[str, float] = Field(default_factory=dict)
     results_by_category: dict[str, float] = Field(default_factory=dict)
@@ -185,5 +183,5 @@ class BenchmarkReport(BaseModel):
     layers_evaluated: list[str] = Field(default_factory=list)
     layer1_results: Optional[list[dict]] = None
     layer1_summary: Optional[dict] = None
-    layer1_mean_score: float = 0.0
+    layer1_mean_score: Optional[float] = None
     combined_result_subscore: Optional[float] = None

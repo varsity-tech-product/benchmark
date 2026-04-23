@@ -4,9 +4,7 @@ Tests check_permission() logic in isolation — no server needed.
 """
 
 import pytest
-
 from server.api.protocol import (
-    SESSION_API_TOOLS,
     SessionPhase,
     check_permission,
 )
@@ -17,10 +15,16 @@ class TestUnregisteredPhase:
         ok, err, ops = check_permission(SessionPhase.UNREGISTERED, "register_session")
         assert ok is True
 
-    @pytest.mark.parametrize("tool", [
-        "start_session", "send_message", "request_evaluation",
-        "read_file", "shell_exec",
-    ])
+    @pytest.mark.parametrize(
+        "tool",
+        [
+            "start_session",
+            "send_message",
+            "request_evaluation",
+            "read_file",
+            "shell_exec",
+        ],
+    )
     def test_everything_else_denied(self, tool):
         ok, err, ops = check_permission(SessionPhase.UNREGISTERED, tool)
         assert ok is False
@@ -32,10 +36,16 @@ class TestRegisteredPhase:
         ok, err, ops = check_permission(SessionPhase.REGISTERED, "start_session")
         assert ok is True
 
-    @pytest.mark.parametrize("tool", [
-        "register_session", "send_message", "request_evaluation",
-        "read_file", "shell_exec",
-    ])
+    @pytest.mark.parametrize(
+        "tool",
+        [
+            "register_session",
+            "send_message",
+            "request_evaluation",
+            "read_file",
+            "shell_exec",
+        ],
+    )
     def test_everything_else_denied(self, tool):
         ok, err, ops = check_permission(SessionPhase.REGISTERED, tool)
         assert ok is False
@@ -52,27 +62,30 @@ class TestInSessionPhase:
             ok, err, ops = check_permission(SessionPhase.IN_SESSION, tool)
             assert ok is True, f"{tool} should be allowed in IN_SESSION"
 
-    @pytest.mark.parametrize("tool", [
-        "register_session", "start_session",
-    ])
+    @pytest.mark.parametrize(
+        "tool",
+        ["register_session", "start_session", "request_evaluation"],
+    )
     def test_session_api_tools_denied(self, tool):
         ok, err, ops = check_permission(SessionPhase.IN_SESSION, tool)
         assert ok is False
 
 
 class TestCompletedPhase:
-    """COMPLETED is terminal for the agent (issue #46 slice 3).
-
-    Evaluation tools moved to the operator surface; every tool call from
-    a COMPLETED session now denies and returns an empty allowed list.
-    """
-
-    @pytest.mark.parametrize("tool", [
-        "register_session", "start_session", "send_message",
-        "request_evaluation", "get_results", "get_scores",
-        "read_file", "shell_exec",
-    ])
-    def test_every_tool_denied(self, tool):
+    @pytest.mark.parametrize(
+        "tool",
+        [
+            "register_session",
+            "start_session",
+            "send_message",
+            "request_evaluation",
+            "get_results",
+            "get_scores",
+            "read_file",
+            "shell_exec",
+        ],
+    )
+    def test_everything_denied(self, tool):
         ok, err, ops = check_permission(SessionPhase.COMPLETED, tool)
         assert ok is False
         assert ops == []

@@ -151,7 +151,7 @@ evaluation off the COMPLETED bundle via `/ops/session/{sid}/...`,
 gated by `Authorization: Bearer <QTB_ADMIN_TOKEN>`.
 
 ```
-POST /ops/session/{sid}/evaluate[?force=true&eval_mode=full&tutor_dims=D3,D4]
+POST /ops/session/{sid}/evaluate[?eval_mode=tutor&tutor_dims=D3,D4]
 GET  /ops/session/{sid}/results
 GET  /ops/session/{sid}/scores[?history=true]
 ```
@@ -159,11 +159,14 @@ GET  /ops/session/{sid}/scores[?history=true]
 The same scoring driver runs offline:
 
 ```
-python -m server.evaluator --bundle <path-to-bundle>
+python -m server.scripts.eval_single run --session <session_id> --mode tutor
+python -m server.scripts.eval_single get --session <session_id> --history
 ```
 
-See `bench/server/storage/BUNDLE_SCHEMA.md` and
-`bench/server/evaluator/__main__.py`.
+Scores are stored in the completed bundle under
+`evaluations/index.json` and `evaluations/score_n/{score,cost}.json`.
+The sibling evaluator tree and manifest-based bundle contract are not part of
+the current protocol.
 
 ### 2.7 Session status
 
@@ -270,11 +273,11 @@ python -m server --port 8000 --docker
 python -m server --port 8000 --no-docker --log-level DEBUG
 ```
 
-Scoring is always operator-triggered — either via
-`POST /ops/session/{sid}/evaluate` (synchronous, bearer-gated) or via
-the offline CLI (`python -m server.evaluator --bundle <path>`). The
-`--auto-eval` flag was removed in issue #46 slice 4 because session
-completion no longer triggers any in-process evaluator thread.
+Scoring is always operator-triggered - either via
+`POST /ops/session/{sid}/evaluate` (bearer-gated) or via
+`python -m server.scripts.eval_single run --session <session_id>`. The
+`--auto-eval` flag is not part of the server because session completion does
+not trigger scoring automatically.
 
 ---
 

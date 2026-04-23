@@ -149,7 +149,7 @@ def run_test(case, truncate_after_turn):
     golden = ConversationalGolden(
         scenario=build_scenario(task, persona_id, has_incremental_tc=True),
         expected_outcome=(
-            task.ground_truth.expected_outcome if task.ground_truth else ""
+            task.ground_truth.termination_criteria if task.ground_truth else ""
         ),
         user_description=build_user_description(persona, has_incremental_tc=True),
     )

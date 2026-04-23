@@ -1,9 +1,8 @@
 import json
+import sys
 import tempfile
 import unittest
 from pathlib import Path
-
-import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -17,7 +16,16 @@ def _write_json(path: Path, payload: dict) -> None:
 
 
 def _write_result(root: Path, session_id: str, owner_user_id: str = "") -> None:
-    result_dir = root / "results" / "server" / "D01_demo" / session_id
+    result_dir = (
+        root
+        / "results"
+        / "server"
+        / "D01_demo"
+        / "p"
+        / f"20260422_120000_{session_id[:12]}"
+    )
+    result_dir.mkdir(parents=True, exist_ok=True)
+    (result_dir / ".session_id").write_text(session_id, encoding="utf-8")
     _write_json(
         result_dir / "run_state.json",
         {
@@ -25,7 +33,9 @@ def _write_result(root: Path, session_id: str, owner_user_id: str = "") -> None:
             "task_id": "D01_demo",
             "persona_id": "p",
             "owner_user_id": owner_user_id,
-            "owner_github_login": owner_user_id.rsplit(":", 1)[-1] if owner_user_id else "",
+            "owner_github_login": (
+                owner_user_id.rsplit(":", 1)[-1] if owner_user_id else ""
+            ),
             "owner_email": "",
             "visibility": "private",
             "conversation": [],

@@ -10,10 +10,10 @@ The orchestrator's _EfficientSimulator delegates to this module.
 
 import json
 import logging
-import os
 import re
 from typing import Any, Optional
 
+from server.config.llm_config import TC_CHECKER_MODEL, create_openrouter_sync_client
 from server.core.tc_evidence import serialize_turn_evidence
 
 logger = logging.getLogger(__name__)
@@ -36,7 +36,7 @@ class TCChecker:
     def __init__(
         self,
         tc_items: list[str],
-        model: str = "anthropic/claude-sonnet-4-6",
+        model: str = TC_CHECKER_MODEL,
         temperature: float = 0.0,
     ):
         self.tc_items = tc_items
@@ -56,17 +56,7 @@ class TCChecker:
     @property
     def client(self):
         if self._client is None:
-            try:
-                import openai
-            except ImportError:
-                raise ImportError("openai package required. pip install openai")
-            api_key = os.environ.get("OPENROUTER_API_KEY", "")
-            if not api_key:
-                raise RuntimeError("OPENROUTER_API_KEY not set.")
-            self._client = openai.OpenAI(
-                api_key=api_key,
-                base_url="https://openrouter.ai/api/v1",
-            )
+            self._client = create_openrouter_sync_client()
         return self._client
 
     @property
