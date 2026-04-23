@@ -165,6 +165,10 @@ def evaluate(
                 else {}
             ),
         }
+        for model_data in detail[dim]["per_model"].values():
+            if isinstance(model_data, dict) and model_data.get("judge_metadata"):
+                detail[dim]["judge_metadata"] = model_data["judge_metadata"]
+                break
         if error_list:
             detail[dim]["error"] = "; ".join(str(e) for e in error_list)
 

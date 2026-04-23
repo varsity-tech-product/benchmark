@@ -149,6 +149,7 @@ def get_dimension_weight(
 # ──────────────────────────────────────────────────────────────
 
 from server.eval.inputs.rubric_builder import (
+    build_rubric_metadata,
     build_rubric_text,
     get_max_score,
     load_6d_rubric,
@@ -189,6 +190,12 @@ def create_tutor_geval_metrics(
     metrics = []
     for dim_name in dims:
         criteria = build_rubric_text(rubric, dim_name, persona_id, category)
+        rubric_metadata = build_rubric_metadata(
+            rubric,
+            dim_name,
+            rubric_name="tutor_6d",
+            context_fields=["conversation"],
+        )
         model_obj = resolve_ewan_model(model)
         max_score = get_max_score(rubric, dim_name)
         metrics.append(
@@ -200,6 +207,7 @@ def create_tutor_geval_metrics(
                 threshold=0.5,
                 model=model_obj,
                 max_score=max_score,
+                rubric_metadata=rubric_metadata,
             )
         )
     return metrics
@@ -347,6 +355,16 @@ def evaluate_tutor_dimensions(
                     threshold=0.5,
                     model=model_obj,
                     max_score=_dim_max_score[dim_name],
+                    rubric_metadata=build_rubric_metadata(
+                        rubric,
+                        dim_name,
+                        rubric_name="tutor_6d",
+                        context_fields=(
+                            ["conversation", "tool_enriched_conversation"]
+                            if dim_name in ENRICHED_DIMS
+                            else ["conversation"]
+                        ),
+                    ),
                 )
                 all_metrics.append(metric)
                 all_test_cases.append(_dim_test_cases[dim_name])
@@ -415,6 +433,9 @@ def evaluate_tutor_dimensions(
     model_evidences: dict[str, dict[str, list[list[str]]]] = {
         name: {d: [] for d in active_dims} for name in model_names
     }
+    model_run_indices: dict[str, dict[str, list[int]]] = {
+        name: {d: [] for d in active_dims} for name in model_names
+    }
     model_costs: dict[str, list[float]] = {name: [] for name in model_names}
     dim_errors: dict[str, list[str]] = {d: [] for d in active_dims}
 
@@ -458,7 +479,14 @@ def evaluate_tutor_dimensions(
         model_accumulated[mname][dim_name].append(score)
         model_reasons[mname][dim_name].append(reason)
         model_evidences[mname][dim_name].append(list(evidence or []))
+        model_run_indices[mname][dim_name].append(run_idx)
         model_costs[mname].append(cost)
+
+    metadata_by_task: dict[tuple[str, int, str], dict] = {}
+    for idx, key in enumerate(task_keys):
+        item = results[idx]
+        if isinstance(item, dict):
+            metadata_by_task[key] = item.get("judge_metadata", {})
 
     # ── Per-run raw scores ──
     _per_run_scores: dict[str, dict[str, dict[str, dict]]] = {}
@@ -468,19 +496,32 @@ def evaluate_tutor_dimensions(
         for mname in model_names:
             _per_run_scores[dim_name][mname] = {}
             run_scores = model_accumulated[mname][dim_name]
-            for ri in range(len(run_scores)):
-                _per_run_scores[dim_name][mname][f"run_{ri}"] = {
-                    "score": round(run_scores[ri], 4),
-                    "raw_int": int(round(run_scores[ri] * ms)),
+            run_indices = model_run_indices[mname][dim_name]
+            for pos, run_score in enumerate(run_scores):
+                original_run_idx = (
+                    run_indices[pos] if pos < len(run_indices) else pos
+                )
+                raw_int = (
+                    int(round(run_score * (ms - 1) + 1))
+                    if ms > 1
+                    else int(round(run_score))
+                )
+                _per_run_scores[dim_name][mname][f"run_{original_run_idx}"] = {
+                    "score": round(run_score, 4),
+                    "raw_int": max(1, min(ms, raw_int)),
                     "reason": (
-                        model_reasons[mname][dim_name][ri]
-                        if ri < len(model_reasons[mname][dim_name])
+                        model_reasons[mname][dim_name][pos]
+                        if pos < len(model_reasons[mname][dim_name])
                         else ""
                     ),
                     "evidence": (
-                        model_evidences[mname][dim_name][ri]
-                        if ri < len(model_evidences[mname][dim_name])
+                        model_evidences[mname][dim_name][pos]
+                        if pos < len(model_evidences[mname][dim_name])
                         else []
+                    ),
+                    "judge_metadata": metadata_by_task.get(
+                        (mname, original_run_idx, dim_name),
+                        {},
                     ),
                 }
 
@@ -502,6 +543,14 @@ def evaluate_tutor_dimensions(
                         model_evidences[mname][dim_name][0]
                         if model_evidences[mname][dim_name]
                         else []
+                    ),
+                    "judge_metadata": (
+                        metadata_by_task.get(
+                            (mname, model_run_indices[mname][dim_name][0], dim_name),
+                            {},
+                        )
+                        if model_run_indices[mname][dim_name]
+                        else {}
                     ),
                 }
 
