@@ -77,6 +77,10 @@ def _conversation_context(item: dict[str, Any]) -> str:
     return format_turns(turns)
 
 
+def _context_fields(item: dict[str, Any]) -> list[str]:
+    return ["context"] if item.get("context") else ["conversation"]
+
+
 def _rules_text(rules: list[str] | str) -> str:
     if isinstance(rules, list):
         return "\n".join(f"- {rule}" for rule in rules)
@@ -89,7 +93,7 @@ def _metric_for_item(item: dict[str, Any], *, model: str) -> EwanConvGEval:
     category = item.get("category")
     persona_id = item.get("persona_id", "double_novice")
     transcript_source = item.get("transcript_source", "pilot_corpus")
-    context_fields = ["conversation"]
+    context_fields = _context_fields(item)
     model_obj = resolve_ewan_model(model)
 
     if track == "tutor":
@@ -234,6 +238,9 @@ async def _judge_one(
         )
         metadata = result.get("judge_metadata") or metric.judge_metadata()
         if result.get("score") is None:
+            base["judge_metadata"] = metadata
+            if result.get("diagnostics"):
+                base["diagnostics"] = result["diagnostics"]
             return {
                 **base,
                 "status": "failed",
