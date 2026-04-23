@@ -132,11 +132,13 @@ If a batch driver is needed, it should be a thin wrapper around
 
 ## Judge Validation
 
-`bench/experiments/judge_validation/` is the Stage 1 judge reliability gate for
+`bench/experiments/judge_validation/` is the automated judge reliability gate for
 external-agent scoring. It owns a fixed pilot corpus, prompt rendering, repeated
-same-prompt judge runs, adversarial-pair ranking checks, and Markdown/HTML/JSON
-reliability reports. The Stage 1 report tracks mean absolute score delta,
-within-one score rate, pass/fail flip rate, adversarial ranking pass rate, raw
+same-prompt judge runs, prompt-format variants, one-factor sensitivity cases,
+adversarial-pair ranking checks, and Markdown/HTML/JSON reliability reports. The
+report tracks mean absolute score delta, within-one score rate, pass/fail flip
+rate, prompt-format score deltas, sensitivity pass rate, adversarial ranking
+pass rate, evidence/reason coverage, lightweight explanation consistency, raw
 disagreement examples, and residual risks.
 
 ## Public Reads

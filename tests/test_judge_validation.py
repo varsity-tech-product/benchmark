@@ -67,6 +67,23 @@ def test_pilot_corpus_items_match_registry_mappings():
         assert key in mapped[item["registry_rubric_id"]]
 
 
+def test_pilot_corpus_declares_stage2_sensitivity_cases():
+    root = Path(__file__).parent.parent
+    corpus = json.loads(
+        (
+            root / "bench/experiments/judge_validation/pilot_corpus.json"
+        ).read_text(encoding="utf-8")
+    )
+    sample_ids = {item["sample_id"] for item in corpus["items"]}
+
+    assert len(corpus["sensitivity_cases"]) >= 6
+    for case in corpus["sensitivity_cases"]:
+        assert case["baseline_sample_id"] in sample_ids
+        assert case["perturbed_sample_id"] in sample_ids
+        assert case["expected_direction"] == "baseline_higher"
+        assert case["minimum_margin"] >= 0
+
+
 def test_explicit_context_items_record_context_metadata():
     root = Path(__file__).parent.parent
     corpus = json.loads(
@@ -78,7 +95,74 @@ def test_explicit_context_items_record_context_metadata():
     metric = judge_run._metric_for_item(item, model="judge-model")
 
     assert judge_run._conversation_context(item).startswith("## Task")
+    assert judge_run._conversation_context(
+        item,
+        prompt_variant_id="role_blocks",
+    ) == judge_run._conversation_context(item)
     assert metric.judge_metadata()["context_fields_included"] == ["context"]
+
+
+def test_prompt_variant_context_rendering_preserves_metadata():
+    root = Path(__file__).parent.parent
+    corpus = json.loads(
+        (
+            root / "bench/experiments/judge_validation/pilot_corpus.json"
+        ).read_text(encoding="utf-8")
+    )
+    item = next(i for i in corpus["items"] if i["sample_id"] == "jv_quant_correct_good")
+    context = judge_run._conversation_context(item, prompt_variant_id="role_blocks")
+    metric = judge_run._metric_for_item(
+        item,
+        model="judge-model",
+        prompt_variant_id="role_blocks",
+    )
+
+    assert "Turn 1 - User" in context
+    assert "Turn 2 - Assistant" in context
+    assert metric.judge_metadata()["prompt_variant_id"] == "role_blocks"
+
+
+def test_render_expands_prompt_variants(tmp_path):
+    root = Path(__file__).parent.parent
+    corpus_path = root / "bench/experiments/judge_validation/pilot_corpus.json"
+    corpus = json.loads(corpus_path.read_text(encoding="utf-8"))
+
+    rc = judge_run.main(
+        [
+            "--corpus",
+            str(corpus_path),
+            "--output-dir",
+            str(tmp_path),
+            "--repeats",
+            "1",
+            "--prompt-variants",
+            "baseline,role_blocks",
+            "render",
+        ]
+    )
+    payload = json.loads((tmp_path / "judge_inputs.json").read_text(encoding="utf-8"))
+
+    assert rc == 0
+    assert payload["prompt_variants"] == ["baseline", "role_blocks"]
+    expected_prompts = sum(
+        1 if item.get("context") else 2
+        for item in corpus["items"]
+    )
+    assert payload["counts"]["prompts"] == expected_prompts
+    assert {row["prompt_variant_id"] for row in payload["prompts"]} == {
+        "baseline",
+        "role_blocks",
+    }
+    context_prompt_variants = {
+        row["prompt_variant_id"]
+        for row in payload["prompts"]
+        if next(
+            item
+            for item in corpus["items"]
+            if item["sample_id"] == row["sample_id"]
+        ).get("context")
+    }
+    assert context_prompt_variants == {"baseline"}
 
 
 def test_failed_validation_judge_record_preserves_retry_diagnostics(monkeypatch):
@@ -194,6 +278,97 @@ def test_reliability_stats_compute_stability_and_adversarial_pass_rate():
     assert stats["stability"]["within_one_score_rate"] == 1.0
     assert stats["stability"]["pass_fail_flip_rate"] == 0.0
     assert stats["adversarial"]["ranking_pass_rate"] == 1.0
+
+
+def test_reliability_stats_compute_stage2_robustness_metrics():
+    corpus = {
+        "pass_threshold": 3,
+        "items": [{"sample_id": "strong"}, {"sample_id": "weak"}],
+        "sensitivity_cases": [
+            {
+                "case_id": "sens",
+                "factor": "quant_error_only",
+                "registry_rubric_id": "quant_correctness.v1",
+                "dimension": "D4_instructional_accuracy",
+                "baseline_sample_id": "strong",
+                "perturbed_sample_id": "weak",
+                "expected_direction": "baseline_higher",
+                "minimum_margin": 1,
+            }
+        ],
+    }
+    records = [
+        {
+            "sample_id": "strong",
+            "registry_rubric_id": "quant_correctness.v1",
+            "dimension": "D4_instructional_accuracy",
+            "judge_model": "judge",
+            "prompt_variant_id": "baseline",
+            "run_index": 0,
+            "status": "success",
+            "raw_score": 5,
+            "evidence": ["shift the signal by one day"],
+            "reason": "Correctly catches lookahead timing.",
+        },
+        {
+            "sample_id": "strong",
+            "registry_rubric_id": "quant_correctness.v1",
+            "dimension": "D4_instructional_accuracy",
+            "judge_model": "judge",
+            "prompt_variant_id": "baseline",
+            "run_index": 1,
+            "status": "success",
+            "raw_score": 5,
+            "evidence": ["signal is shifted by one day"],
+            "reason": "Correctly identifies lookahead timing.",
+        },
+        {
+            "sample_id": "strong",
+            "registry_rubric_id": "quant_correctness.v1",
+            "dimension": "D4_instructional_accuracy",
+            "judge_model": "judge",
+            "prompt_variant_id": "role_blocks",
+            "run_index": 0,
+            "status": "success",
+            "raw_score": 4,
+            "evidence": ["uses prior-bar signal"],
+            "reason": "Still correct under role block formatting.",
+        },
+        {
+            "sample_id": "weak",
+            "registry_rubric_id": "quant_correctness.v1",
+            "dimension": "D4_instructional_accuracy",
+            "judge_model": "judge",
+            "prompt_variant_id": "baseline",
+            "run_index": 0,
+            "status": "success",
+            "raw_score": 2,
+            "evidence": ["allows same-close trading"],
+            "reason": "The answer keeps lookahead bias.",
+        },
+        {
+            "sample_id": "weak",
+            "registry_rubric_id": "quant_correctness.v1",
+            "dimension": "D4_instructional_accuracy",
+            "judge_model": "judge",
+            "prompt_variant_id": "role_blocks",
+            "run_index": 0,
+            "status": "success",
+            "raw_score": 2,
+            "evidence": ["same-close trading"],
+            "reason": "The answer keeps lookahead bias.",
+        },
+    ]
+    stats = compute_reliability_stats(corpus=corpus, records=records)
+
+    assert stats["prompt_format"]["mean_absolute_variant_delta"] == 0.5
+    assert stats["prompt_format"]["within_one_variant_rate"] == 1.0
+    assert stats["prompt_format"]["pass_fail_variant_flip_rate"] == 0.0
+    assert stats["sensitivity"]["pass_rate"] == 1.0
+    assert stats["sensitivity"]["cases"][0]["score_margin"] == 2.6667
+    assert stats["evidence_consistency"]["evidence_coverage_rate"] == 1.0
+    assert stats["evidence_consistency"]["reason_coverage_rate"] == 1.0
+    assert stats["evidence_consistency"]["mean_pairwise_text_jaccard"] is not None
 
 
 def test_adversarial_stats_filter_by_pair_rubric_and_dimension():
