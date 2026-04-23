@@ -110,6 +110,33 @@ class GithubOAuthAuthTests(unittest.TestCase):
                     self.assertTrue(auth._is_allowed({"login": "external"}, "tok"))
                     github_get.assert_not_called()
 
+    def test_access_policy_reports_public_when_allow_all_overrides_allowlist(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.dict(
+                "os.environ",
+                {
+                    "QTB_AUTH_MODE": "github",
+                    "QTB_GITHUB_ALLOW_ALL": "true",
+                    "QTB_GITHUB_ALLOWED_ORGS": "varsity-tech-product",
+                },
+                clear=True,
+            ):
+                auth = AuthService(Path(tmp))
+                self.assertEqual(auth.github_access_policy(), "public")
+
+    def test_access_policy_reports_invite_only_when_allowlist_is_active(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.dict(
+                "os.environ",
+                {
+                    "QTB_AUTH_MODE": "github",
+                    "QTB_GITHUB_ALLOWED_ORGS": "varsity-tech-product",
+                },
+                clear=True,
+            ):
+                auth = AuthService(Path(tmp))
+                self.assertEqual(auth.github_access_policy(), "invite_only")
+
     def test_org_allowlist_rejects_outsider(self):
         with tempfile.TemporaryDirectory() as tmp:
             with patch.dict(

@@ -109,6 +109,8 @@ jobs:
             sudo systemctl is-active quanttutor
             # /health deep probe: docker daemon + LEAN image + disk (returns 503 on any failure)
             curl -sf http://127.0.0.1:8000/health >/dev/null
+            AUTH_POLICY=$(curl -sf http://127.0.0.1:8000/ui/me | ~/benchmark/.venv/bin/python -c 'import json, sys; data = json.load(sys.stdin); print((data.get("auth_mode", "") or "") + ":" + (data.get("github_access_policy", "") or ""))')
+            test "$AUTH_POLICY" = "github:public"
             echo "--- disk ---"
             df -h /home | tail -1
             echo "--- tail log ---"

@@ -158,6 +158,7 @@ async def run_smoke(
     task_label: str,
     jsonl: Optional[str],
     api_key: str = "",
+    expect_public_oauth: bool = False,
 ) -> int:
     result = SmokeResult(jsonl_path=jsonl)
 
@@ -183,6 +184,29 @@ async def run_smoke(
         await hit(client, result, "T1", "GET", "/ui/tasks/catalog/labels")
         await hit(client, result, "T1", "GET", "/ui/runs")
         await hit(client, result, "T1", "GET", "/ui/results")
+        me = await hit(client, result, "T1", "GET", "/ui/me", expect="2xx")
+        if expect_public_oauth:
+            status = me.status_code if me is not None else 0
+            auth_mode = ""
+            policy = ""
+            if me is not None:
+                try:
+                    payload = me.json()
+                    auth_mode = str(payload.get("auth_mode") or "")
+                    policy = str(payload.get("github_access_policy") or "")
+                except (ValueError, json.JSONDecodeError):
+                    pass
+            ok = auth_mode == "github" and policy == "public"
+            result.record(
+                "T1",
+                "CHECK",
+                "/ui/me github_access_policy",
+                status,
+                ok,
+                0.0,
+                f"auth_mode={auth_mode or '<missing>'} "
+                f"github_access_policy={policy or '<missing>'}",
+            )
 
         # ------------------------------------------------------------------
         # T2 — Run creation (critical path)
@@ -341,8 +365,21 @@ def main() -> int:
         default=os.environ.get("QTB_CLIENT_API_KEY", ""),
         help="REST API key from the logged-in UI account (default: QTB_CLIENT_API_KEY)",
     )
+    p.add_argument(
+        "--expect-public-oauth",
+        action="store_true",
+        help="require /ui/me to report github_access_policy=public",
+    )
     args = p.parse_args()
-    return asyncio.run(run_smoke(args.base_url, args.task, args.jsonl, args.api_key))
+    return asyncio.run(
+        run_smoke(
+            args.base_url,
+            args.task,
+            args.jsonl,
+            args.api_key,
+            args.expect_public_oauth,
+        )
+    )
 
 
 if __name__ == "__main__":

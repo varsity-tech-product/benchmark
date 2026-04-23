@@ -302,9 +302,19 @@ class AuthService:
         user = self.get_current_user(request)
         return {
             "auth_mode": "github" if self.enabled else "disabled",
+            "github_access_policy": self.github_access_policy(),
             "authenticated": user is not None,
             "user": user.to_dict() if user else None,
         }
+
+    def github_access_policy(self) -> Literal["disabled", "public", "invite_only"]:
+        if not self.enabled:
+            return "disabled"
+        if _bool_env("QTB_GITHUB_ALLOW_ALL", False):
+            return "public"
+        if any(self._github_allowlists()):
+            return "invite_only"
+        return "public"
 
     async def login(self, request: Request) -> Response:
         next_url = request.query_params.get("next") or "/"
@@ -452,12 +462,10 @@ class AuthService:
             return True
 
         login = str(profile.get("login") or "")
-        allowed_logins = _csv_env("QTB_GITHUB_ALLOWED_LOGINS")
+        allowed_logins, allowed_orgs, allowed_teams = self._github_allowlists()
         if allowed_logins and login.lower() in allowed_logins:
             return True
 
-        allowed_orgs = _csv_env("QTB_GITHUB_ALLOWED_ORGS")
-        allowed_teams = _csv_env("QTB_GITHUB_ALLOWED_TEAMS")
         if not allowed_orgs and not allowed_teams and not allowed_logins:
             return True
 
@@ -482,6 +490,13 @@ class AuthService:
                 if slug in allowed_teams or f"{org_login}/{slug}" in allowed_teams:
                     return True
         return False
+
+    def _github_allowlists(self) -> tuple[set[str], set[str], set[str]]:
+        return (
+            _csv_env("QTB_GITHUB_ALLOWED_LOGINS"),
+            _csv_env("QTB_GITHUB_ALLOWED_ORGS"),
+            _csv_env("QTB_GITHUB_ALLOWED_TEAMS"),
+        )
 
     def _build_user(self, profile: dict) -> UserContext:
         login = str(profile.get("login") or "")
