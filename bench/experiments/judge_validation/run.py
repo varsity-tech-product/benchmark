@@ -46,7 +46,16 @@ from server.eval.judges.runtime.conv_geval import (  # noqa: E402
     Turn,
     format_turns,
 )
+from server.eval.judges.runtime.conv_pairwise import (  # noqa: E402
+    EwanPairwiseGEval,
+    PairwiseTestCase,
+)
 from server.eval.judges.runtime.model_resolver import resolve_ewan_model  # noqa: E402
+
+from experiments.judge_validation.pairwise_stats import (  # noqa: E402
+    compute_pairwise_stats,
+    write_pairwise_reports,
+)
 
 DEFAULT_CORPUS = Path(__file__).resolve().parent / "pilot_corpus.json"
 DEFAULT_HUMAN_LABELS = Path(__file__).resolve().parent / "human_labels.json"
@@ -522,6 +531,7 @@ def _export_review_packet(args: argparse.Namespace) -> int:
     rubric_registry = _load_json(_resolve(args.rubric_registry))
     sample_ids = _split_csv(args.sample_ids) if args.sample_ids else None
     limit = args.limit if args.limit and args.limit > 0 else None
+    language = str(args.language or "en").strip().lower()
     packet_output_dir = (
         _resolve(args.packet_output_dir)
         if args.packet_output_dir
@@ -532,6 +542,7 @@ def _export_review_packet(args: argparse.Namespace) -> int:
         rubric_registry=rubric_registry,
         sample_ids=sample_ids,
         limit=limit,
+        language=language,
     )
     paths = write_review_packet(
         packet=packet,
@@ -542,6 +553,7 @@ def _export_review_packet(args: argparse.Namespace) -> int:
             {
                 "review_packet": paths,
                 "items": packet["counts"]["items"],
+                "language": language,
             },
             indent=2,
         )
@@ -579,6 +591,390 @@ def _human_alignment(args: argparse.Namespace) -> int:
                 "html": paths["html"],
                 "overall": stats["overall"],
                 "stage3_gate": stats["stage3_gate"],
+            },
+            indent=2,
+        )
+    )
+    return 0
+
+
+DEFAULT_PAIRWISE_REPEATS = 3
+PAIRWISE_MAX_ATTEMPTS = 3
+PAIRWISE_RETRY_SLEEP_SECONDS = 1.0
+_PAIRWISE_SWAP_ASSIGNMENTS = [
+    ("stronger", "weaker"),  # A = stronger, B = weaker
+    ("weaker", "stronger"),  # A = weaker,   B = stronger
+]
+
+_QR_AGENT_RESULT_HEADER = "## Agent Result"
+
+
+def _pair_student_message(stronger_turns: list[Turn], weaker_turns: list[Turn]) -> str:
+    """First user turn of the pair — expected to be identical between sides.
+
+    If the two transcripts diverge in the student turn, return the stronger
+    side's student message and emit a warning — the prompt assumes a shared
+    opening turn.
+    """
+    if not stronger_turns or stronger_turns[0].role != "user":
+        return ""
+    msg = stronger_turns[0].content
+    if weaker_turns and weaker_turns[0].role == "user":
+        if weaker_turns[0].content != msg:
+            return msg
+    return msg
+
+
+def _tutor_response(turns: list[Turn]) -> str:
+    """Concatenate non-user turns into a single response string for pairwise.
+
+    Keeps role markers so a multi-turn tutor response still reads cleanly.
+    """
+    blocks = []
+    for turn in turns:
+        if turn.role == "user":
+            continue
+        role = turn.role.title() if turn.role else "Assistant"
+        blocks.append(f"[{role}]\n{turn.content}")
+    return "\n\n".join(blocks)
+
+
+def _split_qr_context(context: str) -> tuple[str, str]:
+    """Split a QR/QP context string into shared (task + RC) and per-side
+    (agent result) halves.
+
+    The corpus's QR context strings look like::
+
+        ## Task
+        ...
+        ## Required Capabilities (Acceptance Criteria)
+        ...
+        ## Agent Result
+        ...
+
+    Everything up to and excluding ``## Agent Result`` is shared; the
+    ``## Agent Result`` block onward is per-side. If the marker is
+    absent, the full context is returned as the shared half and the
+    per-side half is empty (the caller must fall back to conversation
+    turns).
+    """
+    marker = _QR_AGENT_RESULT_HEADER
+    idx = context.find(marker)
+    if idx < 0:
+        return context.rstrip(), ""
+    shared = context[:idx].rstrip()
+    agent_result = context[idx:].rstrip()
+    return shared, agent_result
+
+
+def _pairwise_inputs(
+    stronger_item: dict[str, Any],
+    weaker_item: dict[str, Any],
+) -> tuple[str, str, str]:
+    """Build (shared_context, stronger_response, weaker_response) for a pair.
+
+    QR/QP items carry a structured ``context`` block that holds both the
+    shared task/RC and the per-side agent result. Tutor items carry a
+    ``conversation`` list; the shared context is the student opening turn
+    and the per-side response is everything the tutor wrote.
+    """
+    track = str(stronger_item.get("track", "tutor"))
+    if track in {"qr", "qp"}:
+        stronger_ctx = str(stronger_item.get("context") or "")
+        weaker_ctx = str(weaker_item.get("context") or "")
+        stronger_shared, stronger_result = _split_qr_context(stronger_ctx)
+        weaker_shared, weaker_result = _split_qr_context(weaker_ctx)
+        shared = stronger_shared or weaker_shared
+        stronger_response = stronger_result or stronger_shared
+        weaker_response = weaker_result or weaker_shared
+        return shared, stronger_response, weaker_response
+
+    stronger_turns = [
+        Turn(role=str(t.get("role", "")), content=str(t.get("content", "")))
+        for t in stronger_item.get("conversation", [])
+    ]
+    weaker_turns = [
+        Turn(role=str(t.get("role", "")), content=str(t.get("content", "")))
+        for t in weaker_item.get("conversation", [])
+    ]
+    shared = _pair_student_message(stronger_turns, weaker_turns)
+    return shared, _tutor_response(stronger_turns), _tutor_response(weaker_turns)
+
+
+_PAIRWISE_RULES_SUFFIX = (
+    "- Compare Response A and Response B against the scoring rubric.\n"
+    "- The tutor (assistant) authored both responses; the student "
+    "opening message is shared.\n"
+    "- Pick the response that better satisfies the rubric. If the two "
+    "are effectively equivalent, answer \"tie\".\n"
+    "- Do not base the decision on slot letter, length, or ordering; "
+    "use only rubric-grounded content."
+)
+
+
+def _pairwise_metric(
+    *,
+    pair: dict[str, Any],
+    stronger_item: dict[str, Any],
+    model: str,
+) -> EwanPairwiseGEval:
+    dimension = str(pair["dimension"])
+    track = str(stronger_item.get("track", "tutor"))
+    category = stronger_item.get("category")
+    persona_id = stronger_item.get("persona_id", "double_novice")
+    model_obj = resolve_ewan_model(model)
+
+    extra = {
+        "registry_rubric_id": pair.get("registry_rubric_id"),
+        "pair_id": pair.get("pair_id"),
+    }
+    context_fields = ["response_a", "response_b"]
+    transcript_source = "adversarial_pair"
+
+    if track == "tutor":
+        rubric = load_6d_rubric()
+        criteria = build_rubric_text(rubric, dimension, persona_id, category)
+        role = str(rubric.get("role", ""))
+        rules_base = _rules_text(rubric.get("rules", []))
+        metadata = build_rubric_metadata(
+            rubric,
+            dimension,
+            rubric_name="tutor_6d",
+            context_fields=context_fields,
+            transcript_source=transcript_source,
+            extra=extra,
+        )
+    elif track in {"qp", "qr"}:
+        rubric = load_rubric(track)
+        params = build_eval_params(
+            rubric,
+            dimension,
+            rubric_name=track,
+            context_fields=context_fields,
+            transcript_source=transcript_source,
+        )
+        criteria = params["criteria"]
+        role = params["role"]
+        rules_base = params["rules"]
+        metadata = dict(params["rubric_metadata"])
+        metadata.update(extra)
+    else:
+        raise ValueError(f"Unsupported pairwise track: {track}")
+
+    rules = f"{rules_base}\n{_PAIRWISE_RULES_SUFFIX}" if rules_base else _PAIRWISE_RULES_SUFFIX
+    return EwanPairwiseGEval(
+        name=str(pair["pair_id"]),
+        criteria=criteria,
+        role=role,
+        rules=rules,
+        model=model_obj,
+        rubric_metadata=metadata,
+    )
+
+
+def _is_pairwise_json_error(exc: Exception, raw: str | None) -> bool:
+    text = str(exc).lower()
+    return bool(raw) or "invalid pairwise preferred" in text or "json" in text
+
+
+async def _pairwise_one(
+    *,
+    run_id: str,
+    pair: dict[str, Any],
+    items_by_id: dict[str, dict[str, Any]],
+    model: str,
+    a_side: str,
+    run_index: int,
+) -> dict[str, Any]:
+    stronger_item = items_by_id[pair["stronger_sample_id"]]
+    weaker_item = items_by_id[pair["weaker_sample_id"]]
+    shared_context, stronger_response, weaker_response = _pairwise_inputs(
+        stronger_item, weaker_item
+    )
+
+    if a_side == "stronger":
+        response_a, response_b = stronger_response, weaker_response
+    else:
+        response_a, response_b = weaker_response, stronger_response
+    b_side = "weaker" if a_side == "stronger" else "stronger"
+
+    run_timestamp = datetime.now(timezone.utc).isoformat()
+    base = {
+        "run_id": run_id,
+        "pair_id": pair["pair_id"],
+        "dimension": pair["dimension"],
+        "registry_rubric_id": pair.get("registry_rubric_id"),
+        "stronger_sample_id": pair["stronger_sample_id"],
+        "weaker_sample_id": pair["weaker_sample_id"],
+        "a_side": a_side,
+        "b_side": b_side,
+        "run_index": run_index,
+        "run_timestamp": run_timestamp,
+    }
+
+    test_case = PairwiseTestCase(
+        shared_context=shared_context,
+        response_a=response_a,
+        response_b=response_b,
+    )
+
+    start = time.time()
+    total_cost = 0.0
+    last_exc: Exception | None = None
+    last_raw: str | None = None
+    last_metric: EwanPairwiseGEval | None = None
+    for attempt in range(PAIRWISE_MAX_ATTEMPTS):
+        metric = _pairwise_metric(
+            pair=pair, stronger_item=stronger_item, model=model
+        )
+        last_metric = metric
+        try:
+            preferred = await metric.a_measure(test_case)
+            total_cost += float(metric.evaluation_cost)
+            metadata = dict(metric.judge_metadata())
+            metadata["run_timestamp"] = run_timestamp
+            metadata["attempts"] = attempt + 1
+            if preferred == "A":
+                preferred_side = a_side
+            elif preferred == "B":
+                preferred_side = b_side
+            else:
+                preferred_side = "tie"
+            return {
+                **base,
+                "judge_model": metadata.get("judge_model"),
+                "judge_metadata": metadata,
+                "status": "success",
+                "preferred_slot": preferred,
+                "preferred_side": preferred_side,
+                "margin": metric.margin,
+                "reason": metric.reason,
+                "evaluation_cost": round(total_cost, 6),
+                "duration_seconds": round(time.time() - start, 3),
+            }
+        except Exception as exc:  # noqa: BLE001 - retry transient JSON failures
+            last_exc = exc
+            total_cost += float(getattr(metric, "evaluation_cost", 0.0) or 0.0)
+            raw = getattr(metric, "_raw_failed_response", None)
+            if raw:
+                last_raw = str(raw)
+            if attempt < PAIRWISE_MAX_ATTEMPTS - 1 and _is_pairwise_json_error(
+                exc, last_raw
+            ):
+                await asyncio.sleep(PAIRWISE_RETRY_SLEEP_SECONDS)
+                continue
+            break
+
+    metadata = dict(last_metric.judge_metadata()) if last_metric else {}
+    metadata["run_timestamp"] = run_timestamp
+    metadata["attempts"] = PAIRWISE_MAX_ATTEMPTS
+    diagnostics: dict[str, Any] = {"attempts": PAIRWISE_MAX_ATTEMPTS}
+    if last_raw:
+        diagnostics["raw_response_excerpt"] = last_raw[:500]
+    return {
+        **base,
+        "judge_model": metadata.get("judge_model"),
+        "judge_metadata": metadata,
+        "status": "failed",
+        "preferred_slot": None,
+        "preferred_side": None,
+        "margin": "",
+        "reason": str(last_exc) if last_exc else "pairwise judge failed",
+        "evaluation_cost": round(total_cost, 6),
+        "duration_seconds": round(time.time() - start, 3),
+        "diagnostics": diagnostics,
+    }
+
+
+def _pairwise(args: argparse.Namespace) -> int:
+    corpus = _load_json(_resolve(args.corpus))
+    output_dir = _resolve(args.output_dir)
+    run_id = args.run_id or (
+        f"jvp_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}"
+    )
+    pairs = corpus.get("adversarial_pairs", [])
+    items_by_id = {item["sample_id"]: item for item in corpus.get("items", [])}
+    missing = [
+        pair["pair_id"]
+        for pair in pairs
+        if pair["stronger_sample_id"] not in items_by_id
+        or pair["weaker_sample_id"] not in items_by_id
+    ]
+    if missing:
+        parser_error = (
+            f"adversarial_pairs reference missing sample_id(s): {missing}"
+        )
+        raise ValueError(parser_error)
+
+    tasks = [
+        _pairwise_one(
+            run_id=run_id,
+            pair=pair,
+            items_by_id=items_by_id,
+            model=args.model,
+            a_side=a_side,
+            run_index=run_index,
+        )
+        for pair in pairs
+        for a_side, _b_side in _PAIRWISE_SWAP_ASSIGNMENTS
+        for run_index in range(args.repeats)
+    ]
+
+    async def _run_all() -> list[dict[str, Any]]:
+        sem = asyncio.Semaphore(max(1, args.workers))
+
+        async def _guarded(coro):
+            async with sem:
+                return await coro
+
+        return await asyncio.gather(*[_guarded(task) for task in tasks])
+
+    records = asyncio.run(_run_all())
+    payload = {
+        "version": "judge_pairwise_runs_v1",
+        "run_id": run_id,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "judge_model": args.model,
+        "repeat_count": args.repeats,
+        "pairs": len(pairs),
+        "swap_assignments": [list(pair) for pair in _PAIRWISE_SWAP_ASSIGNMENTS],
+        "counts": {
+            "records": len(records),
+            "success": sum(1 for record in records if record["status"] == "success"),
+            "failed": sum(1 for record in records if record["status"] == "failed"),
+        },
+        "records": records,
+    }
+    output_path = output_dir / "judge_pairwise_runs.json"
+    _atomic_write_json(output_path, payload)
+    print(
+        json.dumps(
+            {"judge_pairwise_runs": str(output_path), "counts": payload["counts"]},
+            indent=2,
+        )
+    )
+    return 1 if payload["counts"]["failed"] else 0
+
+
+def _report_pairwise(args: argparse.Namespace) -> int:
+    corpus = _load_json(_resolve(args.corpus))
+    runs = _load_json(_resolve(args.runs))
+    records = runs.get("records", [])
+    stats = compute_pairwise_stats(corpus=corpus, records=records)
+    output_dir = _resolve(args.output_dir)
+    paths = write_pairwise_reports(
+        stats=stats,
+        run_id=str(runs.get("run_id", "")),
+        output_dir=output_dir,
+    )
+    print(
+        json.dumps(
+            {
+                "run_id": runs.get("run_id"),
+                "stats": paths["stats"],
+                "markdown": paths["markdown"],
+                "overall": stats["overall"],
+                "stage_pairwise_gate": stats["gate"],
             },
             indent=2,
         )
@@ -684,6 +1080,12 @@ def _make_parser() -> argparse.ArgumentParser:
         default="",
         help="Optional comma-separated sample IDs for a targeted packet",
     )
+    review_packet_p.add_argument(
+        "--language",
+        choices=["en", "zh"],
+        default="en",
+        help="Language for rubric metadata and Google Form blueprint",
+    )
 
     human_alignment_p = sub.add_parser("human-alignment")
     add_common(human_alignment_p)
@@ -701,6 +1103,18 @@ def _make_parser() -> argparse.ArgumentParser:
         "--sample-map",
         default="",
         help="Optional blind review_sample_id to original_sample_id mapping",
+    )
+
+    pairwise_p = sub.add_parser("pairwise")
+    add_common(pairwise_p)
+    pairwise_p.add_argument("-w", "--workers", type=int, default=2)
+
+    report_pairwise_p = sub.add_parser("report-pairwise")
+    add_common(report_pairwise_p)
+    report_pairwise_p.add_argument(
+        "--runs",
+        default=str(DEFAULT_OUTPUT_DIR / "judge_pairwise_runs.json"),
+        help="Path to judge_pairwise_runs.json",
     )
 
     return parser
@@ -723,6 +1137,10 @@ def main(argv: list[str] | None = None) -> int:
         return _export_review_packet(args)
     if args.command == "human-alignment":
         return _human_alignment(args)
+    if args.command == "pairwise":
+        return _pairwise(args)
+    if args.command == "report-pairwise":
+        return _report_pairwise(args)
     parser.error(f"Unknown command: {args.command}")
     return 2
 

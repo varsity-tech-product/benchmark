@@ -94,6 +94,10 @@ bench/results/server/{task_id}/{persona_id}/{YYYYMMDD_HHMMSS}_{session_id[:12]}/
 does not write or require `run_state.md`, bundle manifests, or a sibling
 evaluation tree.
 
+Each `score_n/score.json` export carries `judge_reliability` metadata linking
+the evaluation report to the selected validated judge-validation run, its
+report paths, and the current-model match flag.
+
 `server.storage.result_writer.save_run_state()` writes `run_state.json`,
 `.session_id`, and the workspace snapshot. `server.storage.score_store` owns
 `evaluations/index.json` and append-only `score_n` directories.
@@ -133,19 +137,42 @@ If a batch driver is needed, it should be a thin wrapper around
 ## Judge Validation
 
 `bench/experiments/judge_validation/` is the automated judge reliability gate for
-external-agent scoring. It owns a fixed pilot corpus, prompt rendering, repeated
-same-prompt judge runs, prompt-format variants, one-factor sensitivity cases,
-adversarial-pair ranking checks, human label artifacts, Google Form CSV
-conversion, bilingual Google Form blueprint export, blind reviewer packet
-export, private sample-ID mapping, and Markdown/HTML/JSON reliability reports.
-The automated report tracks mean absolute score delta, within-one score rate,
-pass/fail flip rate, prompt-format score deltas, sensitivity pass rate,
-adversarial ranking pass rate, evidence/reason coverage, lightweight
-explanation consistency, raw disagreement examples, and residual risks. The
-human-alignment report joins `judge_runs.json` with `human_labels.json` and
-reports exact agreement, within-one agreement, mean absolute delta versus human
-labels, pass/fail agreement, large disagreement examples, and bias slices by
-dimension, category, persona, and transcript source.
+external-agent scoring. It owns a fixed pilot corpus (`pilot_corpus.json`;
+v3 = 20 real-run excerpts + 14 synthetic adversarial items, 7 adversarial
+good/bad pairs), prompt rendering, repeated same-prompt judge runs,
+prompt-format variants, one-factor sensitivity cases, adversarial-pair ranking
+checks, human label artifacts, Google Form CSV conversion, bilingual and
+Chinese-only Google Form blueprint exports, blind reviewer packet export
+(English and Chinese variants sharing the same English transcripts), private
+sample-ID mapping, and Markdown/HTML/JSON reliability reports.
+
+The automated Stage 1+2 report (`judge_validation_stats.json`) tracks mean
+absolute score delta, within-one score rate, pass/fail flip rate, prompt-format
+score deltas, sensitivity pass rate, adversarial ranking pass rate,
+evidence/reason coverage, lightweight explanation consistency, raw
+disagreement examples, and residual risks.
+
+The Stage 3 human-alignment report (`human_alignment_stats.json`) joins
+`judge_runs.json` with `human_labels.json` and reports exact agreement,
+within-one agreement, mean absolute delta versus human labels, pass/fail
+agreement, large disagreement examples, and bias slices by dimension, category,
+persona, and transcript source. It also exposes two multi-reviewer blocks:
+
+- `inter_rater_agreement` — pairwise reviewer-vs-reviewer comparisons on
+  `(sample_id, rubric_id, dimension)` groups that have ≥ 2 distinct reviewers.
+  Same-reviewer duplicate submissions are excluded from overlap counts and
+  pair comparisons. Produces overall + per-dimension + per-reviewer-pair
+  agreement metrics plus a list of disagreements ≥ 2.
+- `judge_vs_reviewer_mean` — judge delta against the per-reviewer-mean for
+  groups with ≥ 2 distinct reviewers. Duplicates from one reviewer are
+  collapsed into a per-reviewer mean first so one reviewer's two labels do
+  not double-count against another's single label. Reports both
+  `sample_dim_groups` (one row per sample/rubric/dimension) and
+  `distinct_samples` so consumers do not misread groups as unique samples.
+
+External-agent `score.json` exports carry the selected validation run through
+the `judge_reliability` metadata block, populated from
+`bench/server/eval/judge_reliability_reference.json`.
 
 ## Public Reads
 

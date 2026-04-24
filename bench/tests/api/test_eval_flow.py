@@ -165,6 +165,7 @@ class TestGetScores:
         assert data["status"] == "completed"
         assert data["score_id"] == "score_1"
         assert data["scores"]["overall_score"] == 0.775
+        assert data["scores"]["judge_reliability"]["validation_run_id"]
         assert "score" not in data
         assert "cost" not in data
         assert "eval_cost_usd" not in data["scores"]
