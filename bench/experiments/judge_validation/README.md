@@ -18,7 +18,9 @@ This experiment provides:
 - adversarial pair metrics: whether the stronger transcript scores higher
 - one-factor sensitivity metrics: whether targeted defects move the intended rubric score
 - evidence and reason coverage plus lightweight explanation consistency
-- human-alignment metrics against expert labels
+- human-alignment metrics against expert labels, including inter-rater
+  agreement (reviewer-vs-reviewer) and judge-vs-reviewer-mean for
+  multi-reviewer sample/dim groups
 - Markdown, HTML, and machine-readable JSON reports
 
 ## Rubrics and Validation Metrics
@@ -118,10 +120,22 @@ Outputs are written under `bench/experiments/judge_validation/results/` by defau
 External-agent `score.json` exports carry the selected validated run through a
 `judge_reliability` metadata block.
 
+The human-alignment report adds two multi-reviewer sections once the label set
+has ≥ 2 distinct reviewers on the same sample/rubric/dimension:
+
+- **Inter-rater agreement** — reviewer-vs-reviewer exact / within-one / mean
+  absolute delta, overall and per dimension and per reviewer pair. Answers
+  "do reviewers agree with each other?" independent of the judge.
+- **Judge vs. reviewer MEAN** — for each multi-reviewer group, collapses
+  duplicate submissions from one reviewer into that reviewer's mean first,
+  then averages across distinct reviewers to get the group human mean, and
+  reports judge delta against that group mean. Answers "does the judge match
+  the expert consensus on groups where consensus is measurable?"
+
 ## Scope
 
 The current automated gate covers repeated same-prompt stability, prompt-format
 robustness, one-factor sensitivity, obvious good-vs-bad adversarial ranking,
-lightweight evidence consistency, and human-alignment reporting. Broader
-real-transcript sampling and rubric-order sensitivity can extend the same report
-shape.
+lightweight evidence consistency, and human-alignment reporting (per-label,
+inter-rater, and judge-vs-reviewer-mean). Broader real-transcript sampling and
+rubric-order sensitivity can extend the same report shape.
