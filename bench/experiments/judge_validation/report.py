@@ -478,7 +478,7 @@ def compute_reliability_stats(
             "low_consistency_examples": low_consistency_examples[:25],
         },
         "residual_risks": [
-            "Automated robustness checks use a compact pilot corpus and should be expanded with more completed transcripts.",
+            "Real-run excerpts are a curated cut rather than a random sample of completed sessions; broader sampling across agents and personas is a next step.",
             "Evidence consistency uses lexical overlap as a lightweight proxy for explanation stability.",
             "Human quant expert alignment belongs to the next validation stage after automated robustness artifacts are stable.",
         ],

@@ -4,7 +4,12 @@ This experiment validates the scoring judge before external-agent results depend
 
 This experiment provides:
 
-- a fixed pilot corpus in `pilot_corpus.json`
+- a fixed pilot corpus in `pilot_corpus.json` — 34 items in the v3 cut, split
+  into 20 real-run single-trace excerpts across debug, implementation,
+  strategy, and end-to-end tasks plus 14 synthetic adversarial items (7
+  good/bad pairs across D1 finance adaptation, D2 code adaptation, D3
+  pedagogical method, D4 instructional accuracy, D6 safety boundaries, and the
+  QR result judge)
 - a human label schema and example artifact for expert review
 - rendered judge prompts with rubric and prompt metadata
 - repeated same-prompt judge runs

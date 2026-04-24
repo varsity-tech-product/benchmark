@@ -1,7 +1,7 @@
 {
   "version": "judge_reliability_reference_v1",
   "status": "validated_reference",
-  "validation_run_id": "jv_20260424_025507",
+  "validation_run_id": "jv_20260424_073751",
   "reference_judge_model": "anthropic/claude-sonnet-4-6",
   "prompt_variants": [
     "baseline",
@@ -18,31 +18,32 @@
     "report_html_path": "bench/experiments/judge_validation/results/judge_reliability_report.html"
   },
   "metrics": {
-    "corpus_items": 14,
-    "records": 102,
-    "successful_records": 102,
-    "stability_groups": 34,
-    "prompt_variant_groups": 10,
-    "adversarial_pairs": 6,
-    "comparable_adversarial_pairs": 6,
+    "corpus_items": 34,
+    "records": 282,
+    "successful_records": 282,
+    "stability_groups": 94,
+    "prompt_variant_groups": 30,
+    "adversarial_pairs": 7,
+    "comparable_adversarial_pairs": 7,
     "sensitivity_cases": 6,
     "comparable_sensitivity_cases": 6,
-    "mean_absolute_score_delta": 0.1176,
-    "within_one_score_rate": 0.9804,
-    "pass_fail_flip_rate": 0.0294,
-    "prompt_format_mean_variant_delta": 0.1556,
-    "prompt_format_within_one_rate": 1.0,
-    "prompt_format_pass_fail_flip_rate": 0.0,
+    "mean_absolute_score_delta": 0.1277,
+    "within_one_score_rate": 0.9858,
+    "pass_fail_flip_rate": 0.0426,
+    "prompt_format_mean_variant_delta": 0.2074,
+    "prompt_format_within_one_rate": 0.9778,
+    "prompt_format_pass_fail_flip_rate": 0.0667,
     "adversarial_ranking_pass_rate": 1.0,
     "sensitivity_pass_rate": 1.0,
     "evidence_coverage_rate": 1.0,
     "reason_coverage_rate": 1.0,
-    "mean_pairwise_text_jaccard": 0.6378,
-    "large_disagreement_count": 1
+    "mean_pairwise_text_jaccard": 0.6239,
+    "large_disagreement_count": 2
   },
   "residual_risks": [
-    "Automated robustness checks use a compact pilot corpus and should be expanded with more completed transcripts.",
     "Evidence consistency uses lexical overlap as a lightweight proxy for explanation stability.",
-    "Human quant expert alignment belongs to the next validation stage after automated robustness artifacts are stable."
+    "Human quant expert alignment belongs to the next validation stage after automated robustness artifacts are stable.",
+    "Prompt-format pass/fail flip rate rose from 0.0 on the v2 pilot to 0.0667 on the v3 corpus, driven mostly by medium-band real excerpts where one prompt variant lands on 2 while others land on 3 — the broader real-transcript mix surfaces borderline cases the v2 synthetic pilot did not.",
+    "One long gpt-5.2 excerpt (jv_real_i04_multitf_gpt52_excerpt) was removed from the v3 corpus because the judge returned python code instead of a JSON score even after truncation; if longer real-code-heavy tutor excerpts are added later, re-validate that the judge parses them stably before promoting the run."
   ]
 }
