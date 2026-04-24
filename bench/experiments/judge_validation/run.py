@@ -522,6 +522,7 @@ def _export_review_packet(args: argparse.Namespace) -> int:
     rubric_registry = _load_json(_resolve(args.rubric_registry))
     sample_ids = _split_csv(args.sample_ids) if args.sample_ids else None
     limit = args.limit if args.limit and args.limit > 0 else None
+    language = str(args.language or "en").strip().lower()
     packet_output_dir = (
         _resolve(args.packet_output_dir)
         if args.packet_output_dir
@@ -532,6 +533,7 @@ def _export_review_packet(args: argparse.Namespace) -> int:
         rubric_registry=rubric_registry,
         sample_ids=sample_ids,
         limit=limit,
+        language=language,
     )
     paths = write_review_packet(
         packet=packet,
@@ -542,6 +544,7 @@ def _export_review_packet(args: argparse.Namespace) -> int:
             {
                 "review_packet": paths,
                 "items": packet["counts"]["items"],
+                "language": language,
             },
             indent=2,
         )
@@ -683,6 +686,12 @@ def _make_parser() -> argparse.ArgumentParser:
         "--sample-ids",
         default="",
         help="Optional comma-separated sample IDs for a targeted packet",
+    )
+    review_packet_p.add_argument(
+        "--language",
+        choices=["en", "zh"],
+        default="en",
+        help="Language for rubric metadata and Google Form blueprint",
     )
 
     human_alignment_p = sub.add_parser("human-alignment")

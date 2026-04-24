@@ -140,8 +140,10 @@ If a batch driver is needed, it should be a thin wrapper around
 external-agent scoring. It owns a fixed pilot corpus, prompt rendering, repeated
 same-prompt judge runs, prompt-format variants, one-factor sensitivity cases,
 adversarial-pair ranking checks, human label artifacts, Google Form CSV
-conversion, bilingual Google Form blueprint export, blind reviewer packet
-export, private sample-ID mapping, and Markdown/HTML/JSON reliability reports.
+conversion, bilingual and Chinese-only Google Form blueprint exports, blind
+reviewer packet export (English and Chinese variants sharing the same
+English transcripts), private sample-ID mapping, and Markdown/HTML/JSON
+reliability reports.
 The automated report tracks mean absolute score delta, within-one score rate,
 pass/fail flip rate, prompt-format score deltas, sensitivity pass rate,
 adversarial ranking pass rate, evidence/reason coverage, lightweight
