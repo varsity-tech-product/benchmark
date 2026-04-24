@@ -17,6 +17,7 @@ from typing import Any
 from server.eval.contracts.output import EvalOutput, TrackResult
 from server.eval.contracts.request import EvalRequest, resolve_result_dir
 from server.eval.core.preflight import PreflightReport, run_preflight
+from server.eval.judge_reliability import build_judge_reliability_metadata
 from server.eval.inputs.enrichment import enrich_conversation_with_tools
 from server.schemas import QuantTutorTask, StudentPersona
 from server.storage.score_store import (
@@ -414,6 +415,7 @@ class EvalCoordinator:
             created_at=created_at or completed_at,
             completed_at=completed_at,
             duration_seconds=time.time() - started,
+            judge_reliability=build_judge_reliability_metadata(request.eval_model),
             interrupted=(status == "interrupted"),
             blocking_missing=blocking_missing or [],
             error=error,
@@ -473,6 +475,7 @@ class EvalCoordinator:
             created_at=created_at or completed_at,
             completed_at=completed_at,
             duration_seconds=time.time() - started,
+            judge_reliability=build_judge_reliability_metadata(request.eval_model),
             interrupted=interrupted,
             blocking_missing=blockers,
             error=error,

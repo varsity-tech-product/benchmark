@@ -1514,11 +1514,17 @@
   function renderScoreJsonReport(detail) {
     if (!detail.score_json) return '<p class="detail-empty-note">No score JSON available.</p>';
     var score = detail.score_json;
+    var judgeReliability = score.judge_reliability || {};
+    var validationRunId = judgeReliability.validation_run_id || '—';
+    var validationMatch = judgeReliability.current_eval_model_matches_reference;
+    var validationMatchText = validationMatch == null ? '—' : (validationMatch ? 'Yes' : 'No');
     var summary = [
       metaItem('Score ID', score.score_id || '—'),
       metaItem('Status', titleCase(score.score_status || 'unknown')),
       metaItem('Mode', titleCase(score.eval_mode || 'full')),
       metaItem('Overall Score', score.overall_score == null ? '—' : formatScore(score.overall_score)),
+      metaItem('Judge Validation Run', validationRunId),
+      metaItem('Judge Model Match', validationMatchText),
       metaItem('Completed', formatTimestamp(score.completed_at))
     ].join('');
     return buildInfoSection('Score Summary', summary) +

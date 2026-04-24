@@ -94,6 +94,10 @@ bench/results/server/{task_id}/{persona_id}/{YYYYMMDD_HHMMSS}_{session_id[:12]}/
 does not write or require `run_state.md`, bundle manifests, or a sibling
 evaluation tree.
 
+Each `score_n/score.json` export carries `judge_reliability` metadata linking
+the evaluation report to the selected validated judge-validation run, its
+report paths, and the current-model match flag.
+
 `server.storage.result_writer.save_run_state()` writes `run_state.json`,
 `.session_id`, and the workspace snapshot. `server.storage.score_store` owns
 `evaluations/index.json` and append-only `score_n` directories.
@@ -145,7 +149,9 @@ explanation consistency, raw disagreement examples, and residual risks. The
 human-alignment report joins `judge_runs.json` with `human_labels.json` and
 reports exact agreement, within-one agreement, mean absolute delta versus human
 labels, pass/fail agreement, large disagreement examples, and bias slices by
-dimension, category, persona, and transcript source.
+dimension, category, persona, and transcript source. External-agent
+`score.json` exports carry the selected validation run through
+`judge_reliability`.
 
 ## Public Reads
 

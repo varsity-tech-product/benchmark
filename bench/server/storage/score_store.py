@@ -243,6 +243,7 @@ def summarize_score(
         "tutor_score": tutor.get("score") if isinstance(tutor, dict) else None,
         "overall": score_data.get("overall_score"),
         "overall_score": score_data.get("overall_score"),
+        "judge_reliability": score_data.get("judge_reliability") or {},
         "blocking_missing": score_data.get("blocking_missing", []),
     }
     if cost_data:
