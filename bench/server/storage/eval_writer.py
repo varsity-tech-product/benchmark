@@ -9,6 +9,7 @@ from typing import Any
 
 from server.eval.contracts.output import EvalOutput, TrackResult
 from server.eval.contracts.request import EvalRequest, normalize_eval_mode
+from server.eval.judge_reliability import build_judge_reliability_metadata
 from server.storage.score_store import (
     allocate_score_run,
     summarize_score,
@@ -402,6 +403,7 @@ def _build_eval_output(
         created_at=created_at,
         completed_at=completed_at,
         duration_seconds=duration,
+        judge_reliability=build_judge_reliability_metadata(eval_model),
         blocking_missing=blockers,
     )
 
@@ -513,6 +515,7 @@ def save_terminal_eval_result(
         "eval_model": eval_model,
         "eval_mode": eval_mode,
         "duration_seconds": round(duration, 2),
+        "judge_reliability": build_judge_reliability_metadata(eval_model),
         "interrupted": interrupted,
         "blocking_missing": [],
         "overall_score": None,

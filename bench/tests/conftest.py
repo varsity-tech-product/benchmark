@@ -493,6 +493,7 @@ def mock_eval_pipeline():
     def _fake_run(*args, **kwargs):
         from datetime import datetime, timezone
 
+        from server.eval.judge_reliability import build_judge_reliability_metadata
         from server.storage.score_store import (
             allocate_score_run,
             summarize_score,
@@ -523,6 +524,9 @@ def mock_eval_pipeline():
             "eval_model": kwargs.get("eval_model"),
             "eval_mode": kwargs.get("eval_mode", "full"),
             "duration_seconds": 0.01,
+            "judge_reliability": build_judge_reliability_metadata(
+                kwargs.get("eval_model")
+            ),
             "interrupted": False,
             "blocking_missing": [],
             "overall_score": 0.775,

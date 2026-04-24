@@ -6,6 +6,7 @@ from types import SimpleNamespace
 from server.eval.contracts.output import TrackResult
 from server.eval.contracts.request import EvalRequest
 from server.eval.core.coordinator import EvalCoordinator
+from server.eval.judge_reliability import build_judge_reliability_metadata
 from server.storage.score_store import allocate_score_run, get_scores_payload
 
 
@@ -105,8 +106,18 @@ def test_coordinator_interrupt_sets_track_cancel_and_collects_completed_result(
     assert output.score_status == "interrupted"
     assert output.qr is not None
     assert output.qr.score == 0.42
+    assert output.to_dict()["judge_reliability"]["validation_run_id"]
     assert track_cancel_seen.is_set()
     assert time.time() - started < 0.8
+
+
+def test_judge_reliability_reference_marks_matching_eval_model():
+    metadata = build_judge_reliability_metadata("anthropic/claude-sonnet-4-6")
+
+    assert metadata["validation_run_id"]
+    assert metadata["reference_judge_model"] == "anthropic/claude-sonnet-4-6"
+    assert metadata["current_eval_model"] == "anthropic/claude-sonnet-4-6"
+    assert metadata["current_eval_model_matches_reference"] is True
 
 
 def test_qp_model_unavailable_preserves_programmatic_dimensions(monkeypatch):
@@ -244,5 +255,6 @@ def test_eval_single_persists_failed_score_for_invalid_run_state(tmp_path):
         (result_dir / "evaluations" / "index.json").read_text(encoding="utf-8")
     )
     assert score["score_status"] == "failed"
+    assert score["judge_reliability"]["validation_run_id"]
     assert score["preflight"]["hard_errors"][0]["code"] == "run_state_invalid"
     assert index["scores"][0]["status"] == "failed"

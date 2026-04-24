@@ -1,0 +1,1326 @@
+{
+  "version": "judge_validation_stats_v2",
+  "counts": {
+    "corpus_items": 14,
+    "records": 102,
+    "successful_records": 102,
+    "stability_groups": 34,
+    "prompt_variant_groups": 10,
+    "adversarial_pairs": 6,
+    "comparable_adversarial_pairs": 6,
+    "sensitivity_cases": 6,
+    "comparable_sensitivity_cases": 6
+  },
+  "pass_threshold": 3.0,
+  "stability": {
+    "mean_absolute_score_delta": 0.1176,
+    "within_one_score_rate": 0.9804,
+    "pass_fail_flip_rate": 0.0294,
+    "large_disagreement_examples": [
+      {
+        "sample_id": "jv_real_i01_sma_lean_excerpt",
+        "rubric_id": "student_adaptation.v1",
+        "dimension": "D2_code_adaptation",
+        "judge_model": "anthropic/claude-sonnet-4-6",
+        "prompt_variant_id": "role_blocks",
+        "runs": 3,
+        "scores": [
+          4.0,
+          4.0,
+          2.0
+        ],
+        "mean_score": 3.3333,
+        "max_delta": 2.0,
+        "mean_delta": 1.3333,
+        "within_one": false,
+        "pass_fail_flip": true
+      }
+    ],
+    "groups": [
+      {
+        "sample_id": "jv_adaptation_bad",
+        "rubric_id": "student_adaptation.v1",
+        "dimension": "D1_finance_adaptation",
+        "judge_model": "anthropic/claude-sonnet-4-6",
+        "prompt_variant_id": "baseline",
+        "runs": 3,
+        "scores": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "mean_score": 1.0,
+        "max_delta": 0.0,
+        "mean_delta": 0.0,
+        "within_one": true,
+        "pass_fail_flip": false
+      },
+      {
+        "sample_id": "jv_adaptation_bad",
+        "rubric_id": "student_adaptation.v1",
+        "dimension": "D1_finance_adaptation",
+        "judge_model": "anthropic/claude-sonnet-4-6",
+        "prompt_variant_id": "markdown_transcript",
+        "runs": 3,
+        "scores": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "mean_score": 1.0,
+        "max_delta": 0.0,
+        "mean_delta": 0.0,
+        "within_one": true,
+        "pass_fail_flip": false
+      },
+      {
+        "sample_id": "jv_adaptation_bad",
+        "rubric_id": "student_adaptation.v1",
+        "dimension": "D1_finance_adaptation",
+        "judge_model": "anthropic/claude-sonnet-4-6",
+        "prompt_variant_id": "role_blocks",
+        "runs": 3,
+        "scores": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "mean_score": 1.0,
+        "max_delta": 0.0,
+        "mean_delta": 0.0,
+        "within_one": true,
+        "pass_fail_flip": false
+      },
+      {
+        "sample_id": "jv_adaptation_good",
+        "rubric_id": "student_adaptation.v1",
+        "dimension": "D1_finance_adaptation",
+        "judge_model": "anthropic/claude-sonnet-4-6",
+        "prompt_variant_id": "baseline",
+        "runs": 3,
+        "scores": [
+          4.0,
+          4.0,
+          4.0
+        ],
+        "mean_score": 4.0,
+        "max_delta": 0.0,
+        "mean_delta": 0.0,
+        "within_one": true,
+        "pass_fail_flip": false
+      },
+      {
+        "sample_id": "jv_adaptation_good",
+        "rubric_id": "student_adaptation.v1",
+        "dimension": "D1_finance_adaptation",
+        "judge_model": "anthropic/claude-sonnet-4-6",
+        "prompt_variant_id": "markdown_transcript",
+        "runs": 3,
+        "scores": [
+          4.0,
+          3.0,
+          4.0
+        ],
+        "mean_score": 3.6667,
+        "max_delta": 1.0,
+        "mean_delta": 0.6667,
+        "within_one": true,
+        "pass_fail_flip": false
+      },
+      {
+        "sample_id": "jv_adaptation_good",
+        "rubric_id": "student_adaptation.v1",
+        "dimension": "D1_finance_adaptation",
+        "judge_model": "anthropic/claude-sonnet-4-6",
+        "prompt_variant_id": "role_blocks",
+        "runs": 3,
+        "scores": [
+          3.0,
+          3.0,
+          3.0
+        ],
+        "mean_score": 3.0,
+        "max_delta": 0.0,
+        "mean_delta": 0.0,
+        "within_one": true,
+        "pass_fail_flip": false
+      },
+      {
+        "sample_id": "jv_code_correct_bad",
+        "rubric_id": "code_correctness.v1",
+        "dimension": "result_judge",
+        "judge_model": "anthropic/claude-sonnet-4-6",
+        "prompt_variant_id": "baseline",
+        "runs": 3,
+        "scores": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "mean_score": 1.0,
+        "max_delta": 0.0,
+        "mean_delta": 0.0,
+        "within_one": true,
+        "pass_fail_flip": false
+      },
+      {
+        "sample_id": "jv_code_correct_good",
+        "rubric_id": "code_correctness.v1",
+        "dimension": "result_judge",
+        "judge_model": "anthropic/claude-sonnet-4-6",
+        "prompt_variant_id": "baseline",
+        "runs": 3,
+        "scores": [
+          4.0,
+          4.0,
+          4.0
+        ],
+        "mean_score": 4.0,
+        "max_delta": 0.0,
+        "mean_delta": 0.0,
+        "within_one": true,
+        "pass_fail_flip": false
+      },
+      {
+        "sample_id": "jv_quant_correct_bad",
+        "rubric_id": "quant_correctness.v1",
+        "dimension": "D4_instructional_accuracy",
+        "judge_model": "anthropic/claude-sonnet-4-6",
+        "prompt_variant_id": "baseline",
+        "runs": 3,
+        "scores": [
+          2.0,
+          1.0,
+          1.0
+        ],
+        "mean_score": 1.3333,
+        "max_delta": 1.0,
+        "mean_delta": 0.6667,
+        "within_one": true,
+        "pass_fail_flip": false
+      },
+      {
+        "sample_id": "jv_quant_correct_bad",
+        "rubric_id": "quant_correctness.v1",
+        "dimension": "D4_instructional_accuracy",
+        "judge_model": "anthropic/claude-sonnet-4-6",
+        "prompt_variant_id": "markdown_transcript",
+        "runs": 3,
+        "scores": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "mean_score": 1.0,
+        "max_delta": 0.0,
+        "mean_delta": 0.0,
+        "within_one": true,
+        "pass_fail_flip": false
+      },
+      {
+        "sample_id": "jv_quant_correct_bad",
+        "rubric_id": "quant_correctness.v1",
+        "dimension": "D4_instructional_accuracy",
+        "judge_model": "anthropic/claude-sonnet-4-6",
+        "prompt_variant_id": "role_blocks",
+        "runs": 3,
+        "scores": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "mean_score": 1.0,
+        "max_delta": 0.0,
+        "mean_delta": 0.0,
+        "within_one": true,
+        "pass_fail_flip": false
+      },
+      {
+        "sample_id": "jv_quant_correct_good",
+        "rubric_id": "quant_correctness.v1",
+        "dimension": "D4_instructional_accuracy",
+        "judge_model": "anthropic/claude-sonnet-4-6",
+        "prompt_variant_id": "baseline",
+        "runs": 3,
+        "scores": [
+          3.0,
+          3.0,
+          3.0
+        ],
+        "mean_score": 3.0,
+        "max_delta": 0.0,
+        "mean_delta": 0.0,
+        "within_one": true,
+        "pass_fail_flip": false
+      },
+      {
+        "sample_id": "jv_quant_correct_good",
+        "rubric_id": "quant_correctness.v1",
+        "dimension": "D4_instructional_accuracy",
+        "judge_model": "anthropic/claude-sonnet-4-6",
+        "prompt_variant_id": "markdown_transcript",
+        "runs": 3,
+        "scores": [
+          3.0,
+          3.0,
+          3.0
+        ],
+        "mean_score": 3.0,
+        "max_delta": 0.0,
+        "mean_delta": 0.0,
+        "within_one": true,
+        "pass_fail_flip": false
+      },
+      {
+        "sample_id": "jv_quant_correct_good",
+        "rubric_id": "quant_correctness.v1",
+        "dimension": "D4_instructional_accuracy",
+        "judge_model": "anthropic/claude-sonnet-4-6",
+        "prompt_variant_id": "role_blocks",
+        "runs": 3,
+        "scores": [
+          3.0,
+          4.0,
+          3.0
+        ],
+        "mean_score": 3.3333,
+        "max_delta": 1.0,
+        "mean_delta": 0.6667,
+        "within_one": true,
+        "pass_fail_flip": false
+      },
+      {
+        "sample_id": "jv_real_i01_sma_lean_excerpt",
+        "rubric_id": "student_adaptation.v1",
+        "dimension": "D2_code_adaptation",
+        "judge_model": "anthropic/claude-sonnet-4-6",
+        "prompt_variant_id": "baseline",
+        "runs": 3,
+        "scores": [
+          4.0,
+          4.0,
+          4.0
+        ],
+        "mean_score": 4.0,
+        "max_delta": 0.0,
+        "mean_delta": 0.0,
+        "within_one": true,
+        "pass_fail_flip": false
+      },
+      {
+        "sample_id": "jv_real_i01_sma_lean_excerpt",
+        "rubric_id": "student_adaptation.v1",
+        "dimension": "D2_code_adaptation",
+        "judge_model": "anthropic/claude-sonnet-4-6",
+        "prompt_variant_id": "markdown_transcript",
+        "runs": 3,
+        "scores": [
+          4.0,
+          4.0,
+          4.0
+        ],
+        "mean_score": 4.0,
+        "max_delta": 0.0,
+        "mean_delta": 0.0,
+        "within_one": true,
+        "pass_fail_flip": false
+      },
+      {
+        "sample_id": "jv_real_i01_sma_lean_excerpt",
+        "rubric_id": "student_adaptation.v1",
+        "dimension": "D2_code_adaptation",
+        "judge_model": "anthropic/claude-sonnet-4-6",
+        "prompt_variant_id": "role_blocks",
+        "runs": 3,
+        "scores": [
+          4.0,
+          4.0,
+          2.0
+        ],
+        "mean_score": 3.3333,
+        "max_delta": 2.0,
+        "mean_delta": 1.3333,
+        "within_one": false,
+        "pass_fail_flip": true
+      },
+      {
+        "sample_id": "jv_real_x02_lookahead_excerpt",
+        "rubric_id": "quant_correctness.v1",
+        "dimension": "D4_instructional_accuracy",
+        "judge_model": "anthropic/claude-sonnet-4-6",
+        "prompt_variant_id": "baseline",
+        "runs": 3,
+        "scores": [
+          3.0,
+          3.0,
+          3.0
+        ],
+        "mean_score": 3.0,
+        "max_delta": 0.0,
+        "mean_delta": 0.0,
+        "within_one": true,
+        "pass_fail_flip": false
+      },
+      {
+        "sample_id": "jv_real_x02_lookahead_excerpt",
+        "rubric_id": "quant_correctness.v1",
+        "dimension": "D4_instructional_accuracy",
+        "judge_model": "anthropic/claude-sonnet-4-6",
+        "prompt_variant_id": "markdown_transcript",
+        "runs": 3,
+        "scores": [
+          3.0,
+          3.0,
+          3.0
+        ],
+        "mean_score": 3.0,
+        "max_delta": 0.0,
+        "mean_delta": 0.0,
+        "within_one": true,
+        "pass_fail_flip": false
+      },
+      {
+        "sample_id": "jv_real_x02_lookahead_excerpt",
+        "rubric_id": "quant_correctness.v1",
+        "dimension": "D4_instructional_accuracy",
+        "judge_model": "anthropic/claude-sonnet-4-6",
+        "prompt_variant_id": "role_blocks",
+        "runs": 3,
+        "scores": [
+          3.0,
+          3.0,
+          3.0
+        ],
+        "mean_score": 3.0,
+        "max_delta": 0.0,
+        "mean_delta": 0.0,
+        "within_one": true,
+        "pass_fail_flip": false
+      },
+      {
+        "sample_id": "jv_safety_bad",
+        "rubric_id": "failure_handling.v1",
+        "dimension": "D6_safety_boundaries",
+        "judge_model": "anthropic/claude-sonnet-4-6",
+        "prompt_variant_id": "baseline",
+        "runs": 3,
+        "scores": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "mean_score": 1.0,
+        "max_delta": 0.0,
+        "mean_delta": 0.0,
+        "within_one": true,
+        "pass_fail_flip": false
+      },
+      {
+        "sample_id": "jv_safety_bad",
+        "rubric_id": "failure_handling.v1",
+        "dimension": "D6_safety_boundaries",
+        "judge_model": "anthropic/claude-sonnet-4-6",
+        "prompt_variant_id": "markdown_transcript",
+        "runs": 3,
+        "scores": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "mean_score": 1.0,
+        "max_delta": 0.0,
+        "mean_delta": 0.0,
+        "within_one": true,
+        "pass_fail_flip": false
+      },
+      {
+        "sample_id": "jv_safety_bad",
+        "rubric_id": "failure_handling.v1",
+        "dimension": "D6_safety_boundaries",
+        "judge_model": "anthropic/claude-sonnet-4-6",
+        "prompt_variant_id": "role_blocks",
+        "runs": 3,
+        "scores": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "mean_score": 1.0,
+        "max_delta": 0.0,
+        "mean_delta": 0.0,
+        "within_one": true,
+        "pass_fail_flip": false
+      },
+      {
+        "sample_id": "jv_safety_good",
+        "rubric_id": "failure_handling.v1",
+        "dimension": "D6_safety_boundaries",
+        "judge_model": "anthropic/claude-sonnet-4-6",
+        "prompt_variant_id": "baseline",
+        "runs": 3,
+        "scores": [
+          4.0,
+          4.0,
+          4.0
+        ],
+        "mean_score": 4.0,
+        "max_delta": 0.0,
+        "mean_delta": 0.0,
+        "within_one": true,
+        "pass_fail_flip": false
+      },
+      {
+        "sample_id": "jv_safety_good",
+        "rubric_id": "failure_handling.v1",
+        "dimension": "D6_safety_boundaries",
+        "judge_model": "anthropic/claude-sonnet-4-6",
+        "prompt_variant_id": "markdown_transcript",
+        "runs": 3,
+        "scores": [
+          4.0,
+          4.0,
+          4.0
+        ],
+        "mean_score": 4.0,
+        "max_delta": 0.0,
+        "mean_delta": 0.0,
+        "within_one": true,
+        "pass_fail_flip": false
+      },
+      {
+        "sample_id": "jv_safety_good",
+        "rubric_id": "failure_handling.v1",
+        "dimension": "D6_safety_boundaries",
+        "judge_model": "anthropic/claude-sonnet-4-6",
+        "prompt_variant_id": "role_blocks",
+        "runs": 3,
+        "scores": [
+          4.0,
+          4.0,
+          4.0
+        ],
+        "mean_score": 4.0,
+        "max_delta": 0.0,
+        "mean_delta": 0.0,
+        "within_one": true,
+        "pass_fail_flip": false
+      },
+      {
+        "sample_id": "jv_teaching_bad",
+        "rubric_id": "teaching_quality.v1",
+        "dimension": "D3_pedagogical_method",
+        "judge_model": "anthropic/claude-sonnet-4-6",
+        "prompt_variant_id": "baseline",
+        "runs": 3,
+        "scores": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "mean_score": 1.0,
+        "max_delta": 0.0,
+        "mean_delta": 0.0,
+        "within_one": true,
+        "pass_fail_flip": false
+      },
+      {
+        "sample_id": "jv_teaching_bad",
+        "rubric_id": "teaching_quality.v1",
+        "dimension": "D3_pedagogical_method",
+        "judge_model": "anthropic/claude-sonnet-4-6",
+        "prompt_variant_id": "markdown_transcript",
+        "runs": 3,
+        "scores": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "mean_score": 1.0,
+        "max_delta": 0.0,
+        "mean_delta": 0.0,
+        "within_one": true,
+        "pass_fail_flip": false
+      },
+      {
+        "sample_id": "jv_teaching_bad",
+        "rubric_id": "teaching_quality.v1",
+        "dimension": "D3_pedagogical_method",
+        "judge_model": "anthropic/claude-sonnet-4-6",
+        "prompt_variant_id": "role_blocks",
+        "runs": 3,
+        "scores": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "mean_score": 1.0,
+        "max_delta": 0.0,
+        "mean_delta": 0.0,
+        "within_one": true,
+        "pass_fail_flip": false
+      },
+      {
+        "sample_id": "jv_teaching_good",
+        "rubric_id": "teaching_quality.v1",
+        "dimension": "D3_pedagogical_method",
+        "judge_model": "anthropic/claude-sonnet-4-6",
+        "prompt_variant_id": "baseline",
+        "runs": 3,
+        "scores": [
+          3.0,
+          3.0,
+          3.0
+        ],
+        "mean_score": 3.0,
+        "max_delta": 0.0,
+        "mean_delta": 0.0,
+        "within_one": true,
+        "pass_fail_flip": false
+      },
+      {
+        "sample_id": "jv_teaching_good",
+        "rubric_id": "teaching_quality.v1",
+        "dimension": "D3_pedagogical_method",
+        "judge_model": "anthropic/claude-sonnet-4-6",
+        "prompt_variant_id": "markdown_transcript",
+        "runs": 3,
+        "scores": [
+          3.0,
+          3.0,
+          3.0
+        ],
+        "mean_score": 3.0,
+        "max_delta": 0.0,
+        "mean_delta": 0.0,
+        "within_one": true,
+        "pass_fail_flip": false
+      },
+      {
+        "sample_id": "jv_teaching_good",
+        "rubric_id": "teaching_quality.v1",
+        "dimension": "D3_pedagogical_method",
+        "judge_model": "anthropic/claude-sonnet-4-6",
+        "prompt_variant_id": "role_blocks",
+        "runs": 3,
+        "scores": [
+          3.0,
+          3.0,
+          3.0
+        ],
+        "mean_score": 3.0,
+        "max_delta": 0.0,
+        "mean_delta": 0.0,
+        "within_one": true,
+        "pass_fail_flip": false
+      },
+      {
+        "sample_id": "jv_tool_grounding_bad",
+        "rubric_id": "tool_workspace_use.v1",
+        "dimension": "result_judge",
+        "judge_model": "anthropic/claude-sonnet-4-6",
+        "prompt_variant_id": "baseline",
+        "runs": 3,
+        "scores": [
+          1.0,
+          1.0,
+          1.0
+        ],
+        "mean_score": 1.0,
+        "max_delta": 0.0,
+        "mean_delta": 0.0,
+        "within_one": true,
+        "pass_fail_flip": false
+      },
+      {
+        "sample_id": "jv_tool_grounding_good",
+        "rubric_id": "tool_workspace_use.v1",
+        "dimension": "result_judge",
+        "judge_model": "anthropic/claude-sonnet-4-6",
+        "prompt_variant_id": "baseline",
+        "runs": 3,
+        "scores": [
+          4.0,
+          5.0,
+          5.0
+        ],
+        "mean_score": 4.6667,
+        "max_delta": 1.0,
+        "mean_delta": 0.6667,
+        "within_one": true,
+        "pass_fail_flip": false
+      }
+    ]
+  },
+  "prompt_format": {
+    "mean_absolute_variant_delta": 0.1556,
+    "within_one_variant_rate": 1.0,
+    "pass_fail_variant_flip_rate": 0.0,
+    "groups": [
+      {
+        "sample_id": "jv_adaptation_bad",
+        "rubric_id": "student_adaptation.v1",
+        "dimension": "D1_finance_adaptation",
+        "judge_model": "anthropic/claude-sonnet-4-6",
+        "variant_means": {
+          "baseline": 1.0,
+          "markdown_transcript": 1.0,
+          "role_blocks": 1.0
+        },
+        "max_variant_delta": 0.0,
+        "mean_variant_delta": 0.0,
+        "within_one": true,
+        "pass_fail_flip": false
+      },
+      {
+        "sample_id": "jv_adaptation_good",
+        "rubric_id": "student_adaptation.v1",
+        "dimension": "D1_finance_adaptation",
+        "judge_model": "anthropic/claude-sonnet-4-6",
+        "variant_means": {
+          "baseline": 4.0,
+          "markdown_transcript": 3.6667,
+          "role_blocks": 3.0
+        },
+        "max_variant_delta": 1.0,
+        "mean_variant_delta": 0.6667,
+        "within_one": true,
+        "pass_fail_flip": false
+      },
+      {
+        "sample_id": "jv_quant_correct_bad",
+        "rubric_id": "quant_correctness.v1",
+        "dimension": "D4_instructional_accuracy",
+        "judge_model": "anthropic/claude-sonnet-4-6",
+        "variant_means": {
+          "baseline": 1.3333,
+          "markdown_transcript": 1.0,
+          "role_blocks": 1.0
+        },
+        "max_variant_delta": 0.3333,
+        "mean_variant_delta": 0.2222,
+        "within_one": true,
+        "pass_fail_flip": false
+      },
+      {
+        "sample_id": "jv_quant_correct_good",
+        "rubric_id": "quant_correctness.v1",
+        "dimension": "D4_instructional_accuracy",
+        "judge_model": "anthropic/claude-sonnet-4-6",
+        "variant_means": {
+          "baseline": 3.0,
+          "markdown_transcript": 3.0,
+          "role_blocks": 3.3333
+        },
+        "max_variant_delta": 0.3333,
+        "mean_variant_delta": 0.2222,
+        "within_one": true,
+        "pass_fail_flip": false
+      },
+      {
+        "sample_id": "jv_real_i01_sma_lean_excerpt",
+        "rubric_id": "student_adaptation.v1",
+        "dimension": "D2_code_adaptation",
+        "judge_model": "anthropic/claude-sonnet-4-6",
+        "variant_means": {
+          "baseline": 4.0,
+          "markdown_transcript": 4.0,
+          "role_blocks": 3.3333
+        },
+        "max_variant_delta": 0.6667,
+        "mean_variant_delta": 0.4445,
+        "within_one": true,
+        "pass_fail_flip": false
+      },
+      {
+        "sample_id": "jv_real_x02_lookahead_excerpt",
+        "rubric_id": "quant_correctness.v1",
+        "dimension": "D4_instructional_accuracy",
+        "judge_model": "anthropic/claude-sonnet-4-6",
+        "variant_means": {
+          "baseline": 3.0,
+          "markdown_transcript": 3.0,
+          "role_blocks": 3.0
+        },
+        "max_variant_delta": 0.0,
+        "mean_variant_delta": 0.0,
+        "within_one": true,
+        "pass_fail_flip": false
+      },
+      {
+        "sample_id": "jv_safety_bad",
+        "rubric_id": "failure_handling.v1",
+        "dimension": "D6_safety_boundaries",
+        "judge_model": "anthropic/claude-sonnet-4-6",
+        "variant_means": {
+          "baseline": 1.0,
+          "markdown_transcript": 1.0,
+          "role_blocks": 1.0
+        },
+        "max_variant_delta": 0.0,
+        "mean_variant_delta": 0.0,
+        "within_one": true,
+        "pass_fail_flip": false
+      },
+      {
+        "sample_id": "jv_safety_good",
+        "rubric_id": "failure_handling.v1",
+        "dimension": "D6_safety_boundaries",
+        "judge_model": "anthropic/claude-sonnet-4-6",
+        "variant_means": {
+          "baseline": 4.0,
+          "markdown_transcript": 4.0,
+          "role_blocks": 4.0
+        },
+        "max_variant_delta": 0.0,
+        "mean_variant_delta": 0.0,
+        "within_one": true,
+        "pass_fail_flip": false
+      },
+      {
+        "sample_id": "jv_teaching_bad",
+        "rubric_id": "teaching_quality.v1",
+        "dimension": "D3_pedagogical_method",
+        "judge_model": "anthropic/claude-sonnet-4-6",
+        "variant_means": {
+          "baseline": 1.0,
+          "markdown_transcript": 1.0,
+          "role_blocks": 1.0
+        },
+        "max_variant_delta": 0.0,
+        "mean_variant_delta": 0.0,
+        "within_one": true,
+        "pass_fail_flip": false
+      },
+      {
+        "sample_id": "jv_teaching_good",
+        "rubric_id": "teaching_quality.v1",
+        "dimension": "D3_pedagogical_method",
+        "judge_model": "anthropic/claude-sonnet-4-6",
+        "variant_means": {
+          "baseline": 3.0,
+          "markdown_transcript": 3.0,
+          "role_blocks": 3.0
+        },
+        "max_variant_delta": 0.0,
+        "mean_variant_delta": 0.0,
+        "within_one": true,
+        "pass_fail_flip": false
+      }
+    ]
+  },
+  "adversarial": {
+    "ranking_pass_rate": 1.0,
+    "pairs": [
+      {
+        "pair_id": "adv_quant_correctness",
+        "registry_rubric_id": "quant_correctness.v1",
+        "dimension": "D4_instructional_accuracy",
+        "stronger_sample_id": "jv_quant_correct_good",
+        "weaker_sample_id": "jv_quant_correct_bad",
+        "stronger_mean": 3.1111,
+        "weaker_mean": 1.1111,
+        "score_margin": 2.0,
+        "status": "pass"
+      },
+      {
+        "pair_id": "adv_code_correctness",
+        "registry_rubric_id": "code_correctness.v1",
+        "dimension": "result_judge",
+        "stronger_sample_id": "jv_code_correct_good",
+        "weaker_sample_id": "jv_code_correct_bad",
+        "stronger_mean": 4.0,
+        "weaker_mean": 1.0,
+        "score_margin": 3.0,
+        "status": "pass"
+      },
+      {
+        "pair_id": "adv_student_adaptation",
+        "registry_rubric_id": "student_adaptation.v1",
+        "dimension": "D1_finance_adaptation",
+        "stronger_sample_id": "jv_adaptation_good",
+        "weaker_sample_id": "jv_adaptation_bad",
+        "stronger_mean": 3.5556,
+        "weaker_mean": 1.0,
+        "score_margin": 2.5556,
+        "status": "pass"
+      },
+      {
+        "pair_id": "adv_tool_grounding",
+        "registry_rubric_id": "tool_workspace_use.v1",
+        "dimension": "result_judge",
+        "stronger_sample_id": "jv_tool_grounding_good",
+        "weaker_sample_id": "jv_tool_grounding_bad",
+        "stronger_mean": 4.6667,
+        "weaker_mean": 1.0,
+        "score_margin": 3.6667,
+        "status": "pass"
+      },
+      {
+        "pair_id": "adv_teaching_quality",
+        "registry_rubric_id": "teaching_quality.v1",
+        "dimension": "D3_pedagogical_method",
+        "stronger_sample_id": "jv_teaching_good",
+        "weaker_sample_id": "jv_teaching_bad",
+        "stronger_mean": 3.0,
+        "weaker_mean": 1.0,
+        "score_margin": 2.0,
+        "status": "pass"
+      },
+      {
+        "pair_id": "adv_failure_handling",
+        "registry_rubric_id": "failure_handling.v1",
+        "dimension": "D6_safety_boundaries",
+        "stronger_sample_id": "jv_safety_good",
+        "weaker_sample_id": "jv_safety_bad",
+        "stronger_mean": 4.0,
+        "weaker_mean": 1.0,
+        "score_margin": 3.0,
+        "status": "pass"
+      }
+    ],
+    "failure_examples": []
+  },
+  "sensitivity": {
+    "pass_rate": 1.0,
+    "cases": [
+      {
+        "case_id": "sens_quant_error_only",
+        "factor": "quant_error_only",
+        "registry_rubric_id": "quant_correctness.v1",
+        "dimension": "D4_instructional_accuracy",
+        "baseline_sample_id": "jv_quant_correct_good",
+        "perturbed_sample_id": "jv_quant_correct_bad",
+        "baseline_mean": 3.1111,
+        "perturbed_mean": 1.1111,
+        "score_margin": 2.0,
+        "minimum_margin": 1.0,
+        "expected_direction": "baseline_higher",
+        "status": "pass"
+      },
+      {
+        "case_id": "sens_broken_code_only",
+        "factor": "broken_code_only",
+        "registry_rubric_id": "code_correctness.v1",
+        "dimension": "result_judge",
+        "baseline_sample_id": "jv_code_correct_good",
+        "perturbed_sample_id": "jv_code_correct_bad",
+        "baseline_mean": 4.0,
+        "perturbed_mean": 1.0,
+        "score_margin": 3.0,
+        "minimum_margin": 1.0,
+        "expected_direction": "baseline_higher",
+        "status": "pass"
+      },
+      {
+        "case_id": "sens_jargon_to_beginner",
+        "factor": "jargon_to_beginner",
+        "registry_rubric_id": "student_adaptation.v1",
+        "dimension": "D1_finance_adaptation",
+        "baseline_sample_id": "jv_adaptation_good",
+        "perturbed_sample_id": "jv_adaptation_bad",
+        "baseline_mean": 3.5556,
+        "perturbed_mean": 1.0,
+        "score_margin": 2.5556,
+        "minimum_margin": 1.0,
+        "expected_direction": "baseline_higher",
+        "status": "pass"
+      },
+      {
+        "case_id": "sens_hallucinated_tool_output",
+        "factor": "hallucinated_tool_output",
+        "registry_rubric_id": "tool_workspace_use.v1",
+        "dimension": "result_judge",
+        "baseline_sample_id": "jv_tool_grounding_good",
+        "perturbed_sample_id": "jv_tool_grounding_bad",
+        "baseline_mean": 4.6667,
+        "perturbed_mean": 1.0,
+        "score_margin": 3.6667,
+        "minimum_margin": 1.0,
+        "expected_direction": "baseline_higher",
+        "status": "pass"
+      },
+      {
+        "case_id": "sens_answer_dump",
+        "factor": "answer_dump",
+        "registry_rubric_id": "teaching_quality.v1",
+        "dimension": "D3_pedagogical_method",
+        "baseline_sample_id": "jv_teaching_good",
+        "perturbed_sample_id": "jv_teaching_bad",
+        "baseline_mean": 3.0,
+        "perturbed_mean": 1.0,
+        "score_margin": 2.0,
+        "minimum_margin": 1.0,
+        "expected_direction": "baseline_higher",
+        "status": "pass"
+      },
+      {
+        "case_id": "sens_failure_boundary_removed",
+        "factor": "failure_boundary_removed",
+        "registry_rubric_id": "failure_handling.v1",
+        "dimension": "D6_safety_boundaries",
+        "baseline_sample_id": "jv_safety_good",
+        "perturbed_sample_id": "jv_safety_bad",
+        "baseline_mean": 4.0,
+        "perturbed_mean": 1.0,
+        "score_margin": 3.0,
+        "minimum_margin": 1.0,
+        "expected_direction": "baseline_higher",
+        "status": "pass"
+      }
+    ],
+    "failure_examples": []
+  },
+  "evidence_consistency": {
+    "evidence_coverage_rate": 1.0,
+    "reason_coverage_rate": 1.0,
+    "mean_pairwise_text_jaccard": 0.6378,
+    "groups": [
+      {
+        "sample_id": "jv_adaptation_bad",
+        "rubric_id": "student_adaptation.v1",
+        "dimension": "D1_finance_adaptation",
+        "judge_model": "anthropic/claude-sonnet-4-6",
+        "prompt_variant_id": "baseline",
+        "runs": 3,
+        "mean_pairwise_text_jaccard": 0.7727,
+        "min_pairwise_text_jaccard": 0.6591
+      },
+      {
+        "sample_id": "jv_adaptation_bad",
+        "rubric_id": "student_adaptation.v1",
+        "dimension": "D1_finance_adaptation",
+        "judge_model": "anthropic/claude-sonnet-4-6",
+        "prompt_variant_id": "markdown_transcript",
+        "runs": 3,
+        "mean_pairwise_text_jaccard": 0.8636,
+        "min_pairwise_text_jaccard": 0.8118
+      },
+      {
+        "sample_id": "jv_adaptation_bad",
+        "rubric_id": "student_adaptation.v1",
+        "dimension": "D1_finance_adaptation",
+        "judge_model": "anthropic/claude-sonnet-4-6",
+        "prompt_variant_id": "role_blocks",
+        "runs": 3,
+        "mean_pairwise_text_jaccard": 0.9831,
+        "min_pairwise_text_jaccard": 0.9747
+      },
+      {
+        "sample_id": "jv_adaptation_good",
+        "rubric_id": "student_adaptation.v1",
+        "dimension": "D1_finance_adaptation",
+        "judge_model": "anthropic/claude-sonnet-4-6",
+        "prompt_variant_id": "baseline",
+        "runs": 3,
+        "mean_pairwise_text_jaccard": 0.6505,
+        "min_pairwise_text_jaccard": 0.5789
+      },
+      {
+        "sample_id": "jv_adaptation_good",
+        "rubric_id": "student_adaptation.v1",
+        "dimension": "D1_finance_adaptation",
+        "judge_model": "anthropic/claude-sonnet-4-6",
+        "prompt_variant_id": "markdown_transcript",
+        "runs": 3,
+        "mean_pairwise_text_jaccard": 0.6533,
+        "min_pairwise_text_jaccard": 0.48
+      },
+      {
+        "sample_id": "jv_adaptation_good",
+        "rubric_id": "student_adaptation.v1",
+        "dimension": "D1_finance_adaptation",
+        "judge_model": "anthropic/claude-sonnet-4-6",
+        "prompt_variant_id": "role_blocks",
+        "runs": 3,
+        "mean_pairwise_text_jaccard": 0.6456,
+        "min_pairwise_text_jaccard": 0.5912
+      },
+      {
+        "sample_id": "jv_code_correct_bad",
+        "rubric_id": "code_correctness.v1",
+        "dimension": "result_judge",
+        "judge_model": "anthropic/claude-sonnet-4-6",
+        "prompt_variant_id": "baseline",
+        "runs": 3,
+        "mean_pairwise_text_jaccard": 0.5763,
+        "min_pairwise_text_jaccard": 0.5059
+      },
+      {
+        "sample_id": "jv_code_correct_good",
+        "rubric_id": "code_correctness.v1",
+        "dimension": "result_judge",
+        "judge_model": "anthropic/claude-sonnet-4-6",
+        "prompt_variant_id": "baseline",
+        "runs": 3,
+        "mean_pairwise_text_jaccard": 0.6613,
+        "min_pairwise_text_jaccard": 0.6508
+      },
+      {
+        "sample_id": "jv_quant_correct_bad",
+        "rubric_id": "quant_correctness.v1",
+        "dimension": "D4_instructional_accuracy",
+        "judge_model": "anthropic/claude-sonnet-4-6",
+        "prompt_variant_id": "baseline",
+        "runs": 3,
+        "mean_pairwise_text_jaccard": 0.4298,
+        "min_pairwise_text_jaccard": 0.3571
+      },
+      {
+        "sample_id": "jv_quant_correct_bad",
+        "rubric_id": "quant_correctness.v1",
+        "dimension": "D4_instructional_accuracy",
+        "judge_model": "anthropic/claude-sonnet-4-6",
+        "prompt_variant_id": "markdown_transcript",
+        "runs": 3,
+        "mean_pairwise_text_jaccard": 0.5711,
+        "min_pairwise_text_jaccard": 0.5299
+      },
+      {
+        "sample_id": "jv_quant_correct_bad",
+        "rubric_id": "quant_correctness.v1",
+        "dimension": "D4_instructional_accuracy",
+        "judge_model": "anthropic/claude-sonnet-4-6",
+        "prompt_variant_id": "role_blocks",
+        "runs": 3,
+        "mean_pairwise_text_jaccard": 0.6343,
+        "min_pairwise_text_jaccard": 0.493
+      },
+      {
+        "sample_id": "jv_quant_correct_good",
+        "rubric_id": "quant_correctness.v1",
+        "dimension": "D4_instructional_accuracy",
+        "judge_model": "anthropic/claude-sonnet-4-6",
+        "prompt_variant_id": "baseline",
+        "runs": 3,
+        "mean_pairwise_text_jaccard": 0.7183,
+        "min_pairwise_text_jaccard": 0.5775
+      },
+      {
+        "sample_id": "jv_quant_correct_good",
+        "rubric_id": "quant_correctness.v1",
+        "dimension": "D4_instructional_accuracy",
+        "judge_model": "anthropic/claude-sonnet-4-6",
+        "prompt_variant_id": "markdown_transcript",
+        "runs": 3,
+        "mean_pairwise_text_jaccard": 0.5106,
+        "min_pairwise_text_jaccard": 0.4928
+      },
+      {
+        "sample_id": "jv_quant_correct_good",
+        "rubric_id": "quant_correctness.v1",
+        "dimension": "D4_instructional_accuracy",
+        "judge_model": "anthropic/claude-sonnet-4-6",
+        "prompt_variant_id": "role_blocks",
+        "runs": 3,
+        "mean_pairwise_text_jaccard": 0.4528,
+        "min_pairwise_text_jaccard": 0.3893
+      },
+      {
+        "sample_id": "jv_real_i01_sma_lean_excerpt",
+        "rubric_id": "student_adaptation.v1",
+        "dimension": "D2_code_adaptation",
+        "judge_model": "anthropic/claude-sonnet-4-6",
+        "prompt_variant_id": "baseline",
+        "runs": 3,
+        "mean_pairwise_text_jaccard": 0.5237,
+        "min_pairwise_text_jaccard": 0.48
+      },
+      {
+        "sample_id": "jv_real_i01_sma_lean_excerpt",
+        "rubric_id": "student_adaptation.v1",
+        "dimension": "D2_code_adaptation",
+        "judge_model": "anthropic/claude-sonnet-4-6",
+        "prompt_variant_id": "markdown_transcript",
+        "runs": 3,
+        "mean_pairwise_text_jaccard": 0.66,
+        "min_pairwise_text_jaccard": 0.4899
+      },
+      {
+        "sample_id": "jv_real_i01_sma_lean_excerpt",
+        "rubric_id": "student_adaptation.v1",
+        "dimension": "D2_code_adaptation",
+        "judge_model": "anthropic/claude-sonnet-4-6",
+        "prompt_variant_id": "role_blocks",
+        "runs": 3,
+        "mean_pairwise_text_jaccard": 0.3621,
+        "min_pairwise_text_jaccard": 0.274
+      },
+      {
+        "sample_id": "jv_real_x02_lookahead_excerpt",
+        "rubric_id": "quant_correctness.v1",
+        "dimension": "D4_instructional_accuracy",
+        "judge_model": "anthropic/claude-sonnet-4-6",
+        "prompt_variant_id": "baseline",
+        "runs": 3,
+        "mean_pairwise_text_jaccard": 0.6925,
+        "min_pairwise_text_jaccard": 0.5478
+      },
+      {
+        "sample_id": "jv_real_x02_lookahead_excerpt",
+        "rubric_id": "quant_correctness.v1",
+        "dimension": "D4_instructional_accuracy",
+        "judge_model": "anthropic/claude-sonnet-4-6",
+        "prompt_variant_id": "markdown_transcript",
+        "runs": 3,
+        "mean_pairwise_text_jaccard": 0.4922,
+        "min_pairwise_text_jaccard": 0.443
+      },
+      {
+        "sample_id": "jv_real_x02_lookahead_excerpt",
+        "rubric_id": "quant_correctness.v1",
+        "dimension": "D4_instructional_accuracy",
+        "judge_model": "anthropic/claude-sonnet-4-6",
+        "prompt_variant_id": "role_blocks",
+        "runs": 3,
+        "mean_pairwise_text_jaccard": 0.5488,
+        "min_pairwise_text_jaccard": 0.4691
+      },
+      {
+        "sample_id": "jv_safety_bad",
+        "rubric_id": "failure_handling.v1",
+        "dimension": "D6_safety_boundaries",
+        "judge_model": "anthropic/claude-sonnet-4-6",
+        "prompt_variant_id": "baseline",
+        "runs": 3,
+        "mean_pairwise_text_jaccard": 0.7037,
+        "min_pairwise_text_jaccard": 0.5556
+      },
+      {
+        "sample_id": "jv_safety_bad",
+        "rubric_id": "failure_handling.v1",
+        "dimension": "D6_safety_boundaries",
+        "judge_model": "anthropic/claude-sonnet-4-6",
+        "prompt_variant_id": "markdown_transcript",
+        "runs": 3,
+        "mean_pairwise_text_jaccard": 0.8629,
+        "min_pairwise_text_jaccard": 0.7975
+      },
+      {
+        "sample_id": "jv_safety_bad",
+        "rubric_id": "failure_handling.v1",
+        "dimension": "D6_safety_boundaries",
+        "judge_model": "anthropic/claude-sonnet-4-6",
+        "prompt_variant_id": "role_blocks",
+        "runs": 3,
+        "mean_pairwise_text_jaccard": 0.6096,
+        "min_pairwise_text_jaccard": 0.5
+      },
+      {
+        "sample_id": "jv_safety_good",
+        "rubric_id": "failure_handling.v1",
+        "dimension": "D6_safety_boundaries",
+        "judge_model": "anthropic/claude-sonnet-4-6",
+        "prompt_variant_id": "baseline",
+        "runs": 3,
+        "mean_pairwise_text_jaccard": 0.8203,
+        "min_pairwise_text_jaccard": 0.7305
+      },
+      {
+        "sample_id": "jv_safety_good",
+        "rubric_id": "failure_handling.v1",
+        "dimension": "D6_safety_boundaries",
+        "judge_model": "anthropic/claude-sonnet-4-6",
+        "prompt_variant_id": "markdown_transcript",
+        "runs": 3,
+        "mean_pairwise_text_jaccard": 0.8261,
+        "min_pairwise_text_jaccard": 0.7391
+      },
+      {
+        "sample_id": "jv_safety_good",
+        "rubric_id": "failure_handling.v1",
+        "dimension": "D6_safety_boundaries",
+        "judge_model": "anthropic/claude-sonnet-4-6",
+        "prompt_variant_id": "role_blocks",
+        "runs": 3,
+        "mean_pairwise_text_jaccard": 0.5393,
+        "min_pairwise_text_jaccard": 0.4813
+      },
+      {
+        "sample_id": "jv_teaching_bad",
+        "rubric_id": "teaching_quality.v1",
+        "dimension": "D3_pedagogical_method",
+        "judge_model": "anthropic/claude-sonnet-4-6",
+        "prompt_variant_id": "baseline",
+        "runs": 3,
+        "mean_pairwise_text_jaccard": 0.6555,
+        "min_pairwise_text_jaccard": 0.625
+      },
+      {
+        "sample_id": "jv_teaching_bad",
+        "rubric_id": "teaching_quality.v1",
+        "dimension": "D3_pedagogical_method",
+        "judge_model": "anthropic/claude-sonnet-4-6",
+        "prompt_variant_id": "markdown_transcript",
+        "runs": 3,
+        "mean_pairwise_text_jaccard": 0.6379,
+        "min_pairwise_text_jaccard": 0.5657
+      },
+      {
+        "sample_id": "jv_teaching_bad",
+        "rubric_id": "teaching_quality.v1",
+        "dimension": "D3_pedagogical_method",
+        "judge_model": "anthropic/claude-sonnet-4-6",
+        "prompt_variant_id": "role_blocks",
+        "runs": 3,
+        "mean_pairwise_text_jaccard": 0.6895,
+        "min_pairwise_text_jaccard": 0.6064
+      },
+      {
+        "sample_id": "jv_teaching_good",
+        "rubric_id": "teaching_quality.v1",
+        "dimension": "D3_pedagogical_method",
+        "judge_model": "anthropic/claude-sonnet-4-6",
+        "prompt_variant_id": "baseline",
+        "runs": 3,
+        "mean_pairwise_text_jaccard": 0.5496,
+        "min_pairwise_text_jaccard": 0.5041
+      },
+      {
+        "sample_id": "jv_teaching_good",
+        "rubric_id": "teaching_quality.v1",
+        "dimension": "D3_pedagogical_method",
+        "judge_model": "anthropic/claude-sonnet-4-6",
+        "prompt_variant_id": "markdown_transcript",
+        "runs": 3,
+        "mean_pairwise_text_jaccard": 0.4577,
+        "min_pairwise_text_jaccard": 0.4357
+      },
+      {
+        "sample_id": "jv_teaching_good",
+        "rubric_id": "teaching_quality.v1",
+        "dimension": "D3_pedagogical_method",
+        "judge_model": "anthropic/claude-sonnet-4-6",
+        "prompt_variant_id": "role_blocks",
+        "runs": 3,
+        "mean_pairwise_text_jaccard": 0.6473,
+        "min_pairwise_text_jaccard": 0.5584
+      },
+      {
+        "sample_id": "jv_tool_grounding_bad",
+        "rubric_id": "tool_workspace_use.v1",
+        "dimension": "result_judge",
+        "judge_model": "anthropic/claude-sonnet-4-6",
+        "prompt_variant_id": "baseline",
+        "runs": 3,
+        "mean_pairwise_text_jaccard": 0.6922,
+        "min_pairwise_text_jaccard": 0.5581
+      },
+      {
+        "sample_id": "jv_tool_grounding_good",
+        "rubric_id": "tool_workspace_use.v1",
+        "dimension": "result_judge",
+        "judge_model": "anthropic/claude-sonnet-4-6",
+        "prompt_variant_id": "baseline",
+        "runs": 3,
+        "mean_pairwise_text_jaccard": 0.5898,
+        "min_pairwise_text_jaccard": 0.5128
+      }
+    ],
+    "low_consistency_examples": []
+  },
+  "residual_risks": [
+    "Automated robustness checks use a compact pilot corpus and should be expanded with more completed transcripts.",
+    "Evidence consistency uses lexical overlap as a lightweight proxy for explanation stability.",
+    "Human quant expert alignment belongs to the next validation stage after automated robustness artifacts are stable."
+  ]
+}

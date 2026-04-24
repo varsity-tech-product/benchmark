@@ -94,6 +94,8 @@ python -m experiments.judge_validation.run human-alignment \
 ```
 
 Outputs are written under `bench/experiments/judge_validation/results/` by default.
+External-agent `score.json` exports carry the selected validated run through a
+`judge_reliability` metadata block.
 
 ## Scope
 
