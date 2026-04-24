@@ -355,6 +355,258 @@ def _reviewer_coverage(labels: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def _group_labels_by_sample_dim(
+    labels: list[dict[str, Any]],
+) -> dict[tuple[str, str, str], list[dict[str, Any]]]:
+    grouped: dict[tuple[str, str, str], list[dict[str, Any]]] = defaultdict(list)
+    for label in labels:
+        key = (
+            str(label.get("sample_id", "")),
+            str(label.get("rubric_id", "")),
+            str(label.get("dimension", "")),
+        )
+        grouped[key].append(label)
+    return grouped
+
+
+def _reviewer_pair_key(a: str, b: str) -> str:
+    return " | ".join(sorted([a, b]))
+
+
+def compute_inter_rater_agreement(
+    labels: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Compute reviewer-vs-reviewer agreement across overlapping labels.
+
+    For each (sample_id, rubric_id, dimension) group with ≥ 2 reviewers,
+    compute all unordered reviewer-pair deltas. Aggregate overall, by
+    dimension, and by reviewer pair. Samples with only 1 reviewer are
+    skipped (inter-rater is only defined on overlap).
+
+    Output shape::
+
+        {
+            "counts": {
+                "overlapping_groups": int,
+                "reviewer_pair_comparisons": int,
+                "unique_reviewers": int,
+            },
+            "overall": {"exact_agreement": ..., ...},
+            "by_dimension": {"D1_...": {...}, ...},
+            "by_reviewer_pair": {"a | b": {...}, ...},
+            "disagreements": [{...}],  # top entries with |Δ| ≥ 2
+        }
+    """
+
+    grouped = _group_labels_by_sample_dim(labels)
+    overlap_rows: list[dict[str, Any]] = []
+    disagreements: list[dict[str, Any]] = []
+    overlapping_group_count = 0
+
+    for (sample_id, rubric_id, dimension), group in grouped.items():
+        distinct_reviewers = {
+            str(label.get("reviewer_id", "unknown")) for label in group
+        }
+        if len(distinct_reviewers) < 2:
+            continue
+        overlapping_group_count += 1
+        for i in range(len(group)):
+            for j in range(i + 1, len(group)):
+                a, b = group[i], group[j]
+                reviewer_a = str(a.get("reviewer_id", "unknown"))
+                reviewer_b = str(b.get("reviewer_id", "unknown"))
+                if reviewer_a == reviewer_b:
+                    # Same reviewer submitted multiple labels — not a
+                    # cross-reviewer comparison.
+                    continue
+                score_a = int(a.get("human_score", 0))
+                score_b = int(b.get("human_score", 0))
+                signed = score_a - score_b
+                absolute = abs(signed)
+                row = {
+                    "sample_id": sample_id,
+                    "rubric_id": rubric_id,
+                    "dimension": dimension,
+                    "reviewer_a": reviewer_a,
+                    "reviewer_b": reviewer_b,
+                    "reviewer_pair": _reviewer_pair_key(reviewer_a, reviewer_b),
+                    "score_a": score_a,
+                    "score_b": score_b,
+                    "signed_delta": signed,
+                    "absolute_delta": absolute,
+                    "exact_agreement": absolute == 0,
+                    "within_one_agreement": absolute <= 1,
+                }
+                overlap_rows.append(row)
+                if absolute >= LARGE_DISAGREEMENT_DELTA:
+                    disagreements.append(row)
+
+    def _aggregate(rows: list[dict[str, Any]]) -> dict[str, Any]:
+        if not rows:
+            return {
+                "comparisons": 0,
+                "exact_agreement": None,
+                "within_one_agreement": None,
+                "mean_absolute_delta": None,
+            }
+        abs_vals = [int(row["absolute_delta"]) for row in rows]
+        return {
+            "comparisons": len(rows),
+            "exact_agreement": _rate([row["exact_agreement"] for row in rows]),
+            "within_one_agreement": _rate(
+                [row["within_one_agreement"] for row in rows]
+            ),
+            "mean_absolute_delta": _safe_mean([float(v) for v in abs_vals]),
+        }
+
+    by_dimension = {
+        dimension: _aggregate(rows)
+        for dimension, rows in sorted(
+            _group_rows_by(overlap_rows, "dimension").items()
+        )
+    }
+    by_reviewer_pair = {
+        pair: _aggregate(rows)
+        for pair, rows in sorted(
+            _group_rows_by(overlap_rows, "reviewer_pair").items()
+        )
+    }
+    unique_reviewers = {
+        reviewer
+        for row in overlap_rows
+        for reviewer in (row["reviewer_a"], row["reviewer_b"])
+    }
+    return {
+        "counts": {
+            "overlapping_groups": overlapping_group_count,
+            "reviewer_pair_comparisons": len(overlap_rows),
+            "unique_reviewers": len(unique_reviewers),
+        },
+        "overall": _aggregate(overlap_rows),
+        "by_dimension": by_dimension,
+        "by_reviewer_pair": by_reviewer_pair,
+        "disagreements": disagreements[:25],
+    }
+
+
+def _group_rows_by(
+    rows: list[dict[str, Any]],
+    field: str,
+) -> dict[str, list[dict[str, Any]]]:
+    grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for row in rows:
+        grouped[str(row.get(field) or "unknown")].append(row)
+    return grouped
+
+
+def compute_judge_vs_reviewer_mean(
+    comparisons: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Aggregate judge deltas using the mean across reviewers as ground truth.
+
+    ``comparisons`` is the per-label row list from
+    :func:`compute_human_alignment_stats`. For each (sample_id,
+    rubric_id, dimension), average the human scores across reviewers
+    and recompute judge vs. that mean. Only groups with ≥ 2 reviewers
+    contribute; single-reviewer groups would collapse back to the
+    label-level numbers and are excluded so the slice is interpretable.
+    """
+
+    grouped: dict[tuple[str, str, str], list[dict[str, Any]]] = defaultdict(list)
+    for row in comparisons:
+        key = (
+            str(row.get("sample_id", "")),
+            str(row.get("rubric_id", "")),
+            str(row.get("dimension", "")),
+        )
+        grouped[key].append(row)
+
+    multi_reviewer_rows: list[dict[str, Any]] = []
+    for (sample_id, rubric_id, dimension), rows in grouped.items():
+        # Collapse duplicate submissions from the same reviewer first so
+        # the "reviewer mean" isn't inflated by one reviewer who labelled
+        # the same sample twice.
+        per_reviewer: dict[str, list[float]] = defaultdict(list)
+        for row in rows:
+            reviewer_id = str(row.get("reviewer_id", ""))
+            per_reviewer[reviewer_id].append(float(row["human_score"]))
+        if len(per_reviewer) < 2:
+            continue
+        per_reviewer_means = {
+            reviewer: sum(scores) / len(scores)
+            for reviewer, scores in per_reviewer.items()
+        }
+        score_values = list(per_reviewer_means.values())
+        human_mean = sum(score_values) / len(score_values)
+        human_span = max(score_values) - min(score_values)
+        judge_mean = float(rows[0]["judge_mean_score"])
+        signed = round(judge_mean - human_mean, 4)
+        absolute = round(abs(signed), 4)
+        nearest_judge = _nearest_score(judge_mean)
+        nearest_human_mean = _nearest_score(human_mean)
+        multi_reviewer_rows.append(
+            {
+                "sample_id": sample_id,
+                "rubric_id": rubric_id,
+                "dimension": dimension,
+                "reviewers": sorted(per_reviewer.keys()),
+                "human_scores_per_reviewer": {
+                    reviewer: round(score, 4)
+                    for reviewer, score in per_reviewer_means.items()
+                },
+                "human_mean_score": round(human_mean, 4),
+                "human_score_span": round(human_span, 4),
+                "judge_mean_score": round(judge_mean, 4),
+                "nearest_judge_score": nearest_judge,
+                "nearest_human_mean_score": nearest_human_mean,
+                "signed_delta": signed,
+                "absolute_delta": absolute,
+                "exact_agreement": nearest_judge == nearest_human_mean,
+                "within_one_agreement": absolute <= 1,
+            }
+        )
+
+    def _aggregate_multi(rows: list[dict[str, Any]]) -> dict[str, Any]:
+        if not rows:
+            return {
+                "sample_dim_groups": 0,
+                "exact_agreement": None,
+                "within_one_agreement": None,
+                "mean_absolute_delta": None,
+                "mean_signed_delta": None,
+            }
+        return {
+            "sample_dim_groups": len(rows),
+            "exact_agreement": _rate([row["exact_agreement"] for row in rows]),
+            "within_one_agreement": _rate(
+                [row["within_one_agreement"] for row in rows]
+            ),
+            "mean_absolute_delta": _safe_mean(
+                [float(row["absolute_delta"]) for row in rows]
+            ),
+            "mean_signed_delta": _safe_mean(
+                [float(row["signed_delta"]) for row in rows]
+            ),
+        }
+
+    by_dimension = {
+        dimension: _aggregate_multi(rows)
+        for dimension, rows in sorted(
+            _group_rows_by(multi_reviewer_rows, "dimension").items()
+        )
+    }
+    distinct_samples = len({row["sample_id"] for row in multi_reviewer_rows})
+    return {
+        "counts": {
+            "sample_dim_groups": len(multi_reviewer_rows),
+            "distinct_samples": distinct_samples,
+        },
+        "overall": _aggregate_multi(multi_reviewer_rows),
+        "by_dimension": by_dimension,
+        "sample_dim_groups": multi_reviewer_rows,
+    }
+
+
 def compute_human_alignment_stats(
     *,
     corpus: dict[str, Any],
@@ -474,6 +726,9 @@ def compute_human_alignment_stats(
         or (metrics["pass_fail_agreement"] or 0) < HUMAN_PASS_FAIL_TARGET
     ]
 
+    inter_rater = compute_inter_rater_agreement(normalized_labels)
+    judge_vs_mean = compute_judge_vs_reviewer_mean(comparisons)
+
     return {
         "version": HUMAN_ALIGNMENT_STATS_VERSION,
         "pass_threshold": threshold,
@@ -499,6 +754,8 @@ def compute_human_alignment_stats(
                 "transcript_source",
             ),
         },
+        "inter_rater_agreement": inter_rater,
+        "judge_vs_reviewer_mean": judge_vs_mean,
         "stage3_gate": {
             "status": "pass" if gate_passed else "needs_review",
             "large_disagreements_documented": large_disagreements_documented,
@@ -601,6 +858,90 @@ def markdown_human_alignment_report(
     lines.extend(["", "## Reviewer Coverage", ""])
     for reviewer_id, count in stats["reviewer_coverage"]["reviewers"].items():
         lines.append(f"- {reviewer_id}: {count}")
+
+    ir = stats.get("inter_rater_agreement") or {}
+    ir_counts = ir.get("counts") or {}
+    if ir_counts.get("reviewer_pair_comparisons"):
+        overall_ir = ir.get("overall") or {}
+        lines.extend(
+            [
+                "",
+                "## Inter-rater Agreement (reviewers vs. each other)",
+                "",
+                f"- Overlapping sample/dim groups: {ir_counts.get('overlapping_groups')}",
+                f"- Reviewer-pair comparisons: {ir_counts.get('reviewer_pair_comparisons')}",
+                f"- Unique reviewers: {ir_counts.get('unique_reviewers')}",
+                f"- Overall exact: {overall_ir.get('exact_agreement')}",
+                f"- Overall within-one: {overall_ir.get('within_one_agreement')}",
+                f"- Overall mean abs delta: {overall_ir.get('mean_absolute_delta')}",
+                "",
+                "| Dimension | Comparisons | Exact | Within One | Mean Abs Delta |",
+                "| --- | ---: | ---: | ---: | ---: |",
+            ]
+        )
+        for dimension, metrics in (ir.get("by_dimension") or {}).items():
+            lines.append(
+                "| {dim} | {n} | {exact} | {within_one} | {delta} |".format(
+                    dim=dimension,
+                    n=metrics.get("comparisons"),
+                    exact=metrics.get("exact_agreement"),
+                    within_one=metrics.get("within_one_agreement"),
+                    delta=metrics.get("mean_absolute_delta"),
+                )
+            )
+        lines.extend(
+            [
+                "",
+                "### Inter-rater disagreements (abs delta ≥ "
+                f"{int(LARGE_DISAGREEMENT_DELTA)})",
+                "",
+                "| Sample | Dimension | Reviewer A | Score A | Reviewer B | Score B | Abs Δ |",
+                "| --- | --- | --- | ---: | --- | ---: | ---: |",
+            ]
+        )
+        for row in ir.get("disagreements") or []:
+            lines.append(
+                "| {sid} | {dim} | {ra} | {sa} | {rb} | {sb} | {delta} |".format(
+                    sid=row.get("sample_id"),
+                    dim=row.get("dimension"),
+                    ra=row.get("reviewer_a"),
+                    sa=row.get("score_a"),
+                    rb=row.get("reviewer_b"),
+                    sb=row.get("score_b"),
+                    delta=row.get("absolute_delta"),
+                )
+            )
+
+    jvm = stats.get("judge_vs_reviewer_mean") or {}
+    jvm_counts = jvm.get("counts") or {}
+    if jvm_counts.get("sample_dim_groups"):
+        overall_jvm = jvm.get("overall") or {}
+        lines.extend(
+            [
+                "",
+                "## Judge vs. reviewer MEAN (multi-reviewer groups only)",
+                "",
+                f"- Sample/dim groups: {jvm_counts.get('sample_dim_groups')}",
+                f"- Distinct samples: {jvm_counts.get('distinct_samples')}",
+                f"- Overall exact: {overall_jvm.get('exact_agreement')}",
+                f"- Overall within-one: {overall_jvm.get('within_one_agreement')}",
+                f"- Overall mean abs delta: {overall_jvm.get('mean_absolute_delta')}",
+                f"- Overall mean signed delta: {overall_jvm.get('mean_signed_delta')}",
+                "",
+                "| Dimension | Groups | Within One | Mean Abs Delta | Mean Signed Delta |",
+                "| --- | ---: | ---: | ---: | ---: |",
+            ]
+        )
+        for dimension, metrics in (jvm.get("by_dimension") or {}).items():
+            lines.append(
+                "| {dim} | {n} | {within_one} | {abs_delta} | {signed} |".format(
+                    dim=dimension,
+                    n=metrics.get("sample_dim_groups"),
+                    within_one=metrics.get("within_one_agreement"),
+                    abs_delta=metrics.get("mean_absolute_delta"),
+                    signed=metrics.get("mean_signed_delta"),
+                )
+            )
     lines.append("")
     return "\n".join(lines)
 

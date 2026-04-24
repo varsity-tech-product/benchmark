@@ -8,6 +8,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "bench"))
 from experiments.judge_validation import run as judge_run
 from experiments.judge_validation.human_alignment import (
     compute_human_alignment_stats,
+    compute_inter_rater_agreement,
+    compute_judge_vs_reviewer_mean,
     convert_csv_to_human_labels,
     labels_from_csv_rows,
     load_sample_id_map,
@@ -880,3 +882,253 @@ def test_export_review_packet_cli_honors_output_dir(tmp_path):
 
     assert rc == 0
     assert (output_dir / "human_review_packet" / "google_form_bilingual.md").exists()
+
+
+def _label(
+    sample_id: str,
+    dimension: str,
+    score: int,
+    reviewer_id: str,
+    *,
+    rubric_id: str = "quant_correctness.v1",
+    rationale: str = "ok",
+):
+    return {
+        "sample_id": sample_id,
+        "transcript_id": sample_id,
+        "rubric_id": rubric_id,
+        "dimension": dimension,
+        "human_score": score,
+        "confidence": "medium",
+        "human_rationale": rationale,
+        "reviewer_id": reviewer_id,
+    }
+
+
+def test_inter_rater_skips_single_reviewer_samples():
+    labels = [
+        normalize_human_label(_label("s1", "D1_finance_adaptation", 3, "a")),
+        normalize_human_label(_label("s2", "D1_finance_adaptation", 4, "a")),
+    ]
+    stats = compute_inter_rater_agreement(labels)
+    assert stats["counts"]["overlapping_groups"] == 0
+    assert stats["counts"]["reviewer_pair_comparisons"] == 0
+    assert stats["overall"]["comparisons"] == 0
+
+
+def test_inter_rater_perfect_agreement_when_scores_match():
+    labels = [
+        normalize_human_label(_label("s1", "D1_finance_adaptation", 4, "a")),
+        normalize_human_label(_label("s1", "D1_finance_adaptation", 4, "b")),
+    ]
+    stats = compute_inter_rater_agreement(labels)
+    assert stats["counts"]["overlapping_groups"] == 1
+    assert stats["counts"]["reviewer_pair_comparisons"] == 1
+    assert stats["counts"]["unique_reviewers"] == 2
+    assert stats["overall"]["exact_agreement"] == 1.0
+    assert stats["overall"]["within_one_agreement"] == 1.0
+    assert stats["overall"]["mean_absolute_delta"] == 0.0
+
+
+def test_inter_rater_flags_large_disagreements():
+    labels = [
+        normalize_human_label(_label("s1", "D2_code_adaptation", 5, "a")),
+        normalize_human_label(_label("s1", "D2_code_adaptation", 1, "b")),
+        normalize_human_label(_label("s2", "D2_code_adaptation", 4, "a")),
+        normalize_human_label(_label("s2", "D2_code_adaptation", 3, "b")),
+    ]
+    stats = compute_inter_rater_agreement(labels)
+    assert stats["counts"]["reviewer_pair_comparisons"] == 2
+    assert stats["overall"]["exact_agreement"] == 0.0
+    assert stats["overall"]["within_one_agreement"] == 0.5
+    assert stats["overall"]["mean_absolute_delta"] == 2.5
+    assert len(stats["disagreements"]) == 1
+    disagreement = stats["disagreements"][0]
+    assert disagreement["sample_id"] == "s1"
+    assert disagreement["absolute_delta"] == 4
+
+
+def test_inter_rater_groups_by_dimension_and_reviewer_pair():
+    labels = [
+        normalize_human_label(_label("s1", "D1_finance_adaptation", 4, "a")),
+        normalize_human_label(_label("s1", "D1_finance_adaptation", 5, "b")),
+        normalize_human_label(_label("s2", "D3_pedagogical_method", 3, "a")),
+        normalize_human_label(_label("s2", "D3_pedagogical_method", 3, "c")),
+    ]
+    stats = compute_inter_rater_agreement(labels)
+    by_dim = stats["by_dimension"]
+    assert set(by_dim.keys()) == {"D1_finance_adaptation", "D3_pedagogical_method"}
+    assert by_dim["D1_finance_adaptation"]["mean_absolute_delta"] == 1.0
+    assert by_dim["D3_pedagogical_method"]["mean_absolute_delta"] == 0.0
+
+    by_pair = stats["by_reviewer_pair"]
+    assert set(by_pair.keys()) == {"a | b", "a | c"}
+    assert by_pair["a | b"]["comparisons"] == 1
+    assert by_pair["a | c"]["comparisons"] == 1
+
+
+def test_judge_vs_reviewer_mean_excludes_single_reviewer_samples():
+    comparisons = [
+        {
+            "sample_id": "s1",
+            "rubric_id": "quant_correctness.v1",
+            "dimension": "D4_instructional_accuracy",
+            "reviewer_id": "a",
+            "human_score": 4,
+            "judge_mean_score": 3.0,
+        },
+        {
+            "sample_id": "s1",
+            "rubric_id": "quant_correctness.v1",
+            "dimension": "D4_instructional_accuracy",
+            "reviewer_id": "b",
+            "human_score": 5,
+            "judge_mean_score": 3.0,
+        },
+        {
+            "sample_id": "s2",
+            "rubric_id": "quant_correctness.v1",
+            "dimension": "D4_instructional_accuracy",
+            "reviewer_id": "a",
+            "human_score": 4,
+            "judge_mean_score": 4.0,
+        },
+    ]
+    stats = compute_judge_vs_reviewer_mean(comparisons)
+    # Only s1 has 2 reviewers
+    assert stats["counts"]["sample_dim_groups"] == 1
+    assert stats["counts"]["distinct_samples"] == 1
+    sample_row = stats["sample_dim_groups"][0]
+    assert sample_row["sample_id"] == "s1"
+    # mean human score = (4 + 5) / 2 = 4.5; judge_mean = 3.0; signed_delta = -1.5
+    assert sample_row["human_mean_score"] == 4.5
+    assert sample_row["signed_delta"] == -1.5
+    assert sample_row["absolute_delta"] == 1.5
+    assert sample_row["within_one_agreement"] is False  # |1.5| > 1
+
+
+def test_inter_rater_skips_same_reviewer_duplicates():
+    """A reviewer submitting two labels on the same (sample,dim) is not an
+    inter-rater overlap and must not be counted as one."""
+
+    labels = [
+        normalize_human_label(_label("s1", "D1_finance_adaptation", 4, "a")),
+        normalize_human_label(_label("s1", "D1_finance_adaptation", 2, "a")),
+    ]
+    stats = compute_inter_rater_agreement(labels)
+    assert stats["counts"]["overlapping_groups"] == 0
+    assert stats["counts"]["reviewer_pair_comparisons"] == 0
+    assert stats["counts"]["unique_reviewers"] == 0
+    assert stats["overall"]["comparisons"] == 0
+
+
+def test_inter_rater_ignores_same_reviewer_row_in_mixed_group():
+    """Mixed group with one reviewer duplicating + another reviewer:
+    only the cross-reviewer comparisons count."""
+
+    labels = [
+        normalize_human_label(_label("s1", "D1_finance_adaptation", 4, "a")),
+        normalize_human_label(_label("s1", "D1_finance_adaptation", 2, "a")),
+        normalize_human_label(_label("s1", "D1_finance_adaptation", 3, "b")),
+    ]
+    stats = compute_inter_rater_agreement(labels)
+    assert stats["counts"]["overlapping_groups"] == 1
+    # Two cross-reviewer comparisons: (a=4, b=3) and (a=2, b=3).
+    # Skip the (a, a) pair.
+    assert stats["counts"]["reviewer_pair_comparisons"] == 2
+    assert stats["by_reviewer_pair"]["a | b"]["comparisons"] == 2
+
+
+def test_judge_vs_reviewer_mean_skips_same_reviewer_duplicates():
+    """Duplicate comparable rows from one reviewer do not constitute a
+    multi-reviewer sample."""
+
+    comparisons = [
+        {
+            "sample_id": "s1",
+            "rubric_id": "rubric.v1",
+            "dimension": "D4_instructional_accuracy",
+            "reviewer_id": "a",
+            "human_score": 4,
+            "judge_mean_score": 3.0,
+        },
+        {
+            "sample_id": "s1",
+            "rubric_id": "rubric.v1",
+            "dimension": "D4_instructional_accuracy",
+            "reviewer_id": "a",
+            "human_score": 2,
+            "judge_mean_score": 3.0,
+        },
+    ]
+    stats = compute_judge_vs_reviewer_mean(comparisons)
+    assert stats["counts"]["sample_dim_groups"] == 0
+    assert stats["counts"]["distinct_samples"] == 0
+
+
+def test_judge_vs_reviewer_mean_collapses_same_reviewer_duplicates_before_mean():
+    """If reviewer a submits twice (4, 2) and reviewer b submits once (3),
+    the reviewer mean uses a's average 3.0, not the per-label mean."""
+
+    comparisons = [
+        {
+            "sample_id": "s1",
+            "rubric_id": "rubric.v1",
+            "dimension": "D4_instructional_accuracy",
+            "reviewer_id": "a",
+            "human_score": 4,
+            "judge_mean_score": 3.0,
+        },
+        {
+            "sample_id": "s1",
+            "rubric_id": "rubric.v1",
+            "dimension": "D4_instructional_accuracy",
+            "reviewer_id": "a",
+            "human_score": 2,
+            "judge_mean_score": 3.0,
+        },
+        {
+            "sample_id": "s1",
+            "rubric_id": "rubric.v1",
+            "dimension": "D4_instructional_accuracy",
+            "reviewer_id": "b",
+            "human_score": 3,
+            "judge_mean_score": 3.0,
+        },
+    ]
+    stats = compute_judge_vs_reviewer_mean(comparisons)
+    assert stats["counts"]["sample_dim_groups"] == 1
+    row = stats["sample_dim_groups"][0]
+    # a_mean = 3, b_mean = 3, group mean = 3; judge 3 → signed 0
+    assert row["human_scores_per_reviewer"] == {"a": 3.0, "b": 3.0}
+    assert row["human_mean_score"] == 3.0
+    assert row["signed_delta"] == 0.0
+
+
+def test_judge_vs_reviewer_mean_handles_reviewer_agreement():
+    comparisons = [
+        {
+            "sample_id": "s1",
+            "rubric_id": "rubric.v1",
+            "dimension": "D1_finance_adaptation",
+            "reviewer_id": "a",
+            "human_score": 4,
+            "judge_mean_score": 3.5,
+        },
+        {
+            "sample_id": "s1",
+            "rubric_id": "rubric.v1",
+            "dimension": "D1_finance_adaptation",
+            "reviewer_id": "b",
+            "human_score": 4,
+            "judge_mean_score": 3.5,
+        },
+    ]
+    stats = compute_judge_vs_reviewer_mean(comparisons)
+    assert stats["counts"]["sample_dim_groups"] == 1
+    assert stats["counts"]["distinct_samples"] == 1
+    sample_row = stats["sample_dim_groups"][0]
+    assert sample_row["human_mean_score"] == 4.0
+    assert sample_row["human_score_span"] == 0.0
+    assert sample_row["signed_delta"] == -0.5
+    assert sample_row["within_one_agreement"] is True
