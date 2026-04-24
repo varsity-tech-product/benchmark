@@ -16,14 +16,14 @@
 </head>
 <body>
   <h1>Judge Reliability</h1>
-  <p>Run ID: <code>jv_20260424_025507</code></p>
+  <p>Run ID: <code>jv_20260424_073751</code></p>
   <div class="cards">
-    <div class="card"><div>Corpus Items</div><div class="metric">14</div></div>
-    <div class="card"><div>Successful Records</div><div class="metric">102</div></div>
-    <div class="card"><div>Mean Delta</div><div class="metric">0.1176</div></div>
-    <div class="card"><div>Within-One</div><div class="metric">0.9804</div></div>
-    <div class="card"><div>Flip Rate</div><div class="metric">0.0294</div></div>
-    <div class="card"><div>Prompt Variant Delta</div><div class="metric">0.1556</div></div>
+    <div class="card"><div>Corpus Items</div><div class="metric">34</div></div>
+    <div class="card"><div>Successful Records</div><div class="metric">282</div></div>
+    <div class="card"><div>Mean Delta</div><div class="metric">0.1277</div></div>
+    <div class="card"><div>Within-One</div><div class="metric">0.9858</div></div>
+    <div class="card"><div>Flip Rate</div><div class="metric">0.0426</div></div>
+    <div class="card"><div>Prompt Variant Delta</div><div class="metric">0.2074</div></div>
     <div class="card"><div>Pair Pass Rate</div><div class="metric">1.0</div></div>
     <div class="card"><div>Sensitivity Pass Rate</div><div class="metric">1.0</div></div>
     <div class="card"><div>Evidence Coverage</div><div class="metric">1.0</div></div>
@@ -31,34 +31,56 @@
   </div>
   <h2>Prompt Format Robustness</h2>
   <table><thead><tr><th>Sample</th><th>Rubric</th><th>Variant Means</th><th>Max Delta</th><th>Flip</th></tr></thead><tbody><tr><td>jv_adaptation_bad</td><td>student_adaptation.v1</td><td>{&quot;baseline&quot;: 1.0, &quot;markdown_transcript&quot;: 1.0, &quot;role_blocks&quot;: 1.0}</td><td>0.0</td><td>False</td></tr>
-<tr><td>jv_adaptation_good</td><td>student_adaptation.v1</td><td>{&quot;baseline&quot;: 4.0, &quot;markdown_transcript&quot;: 3.6667, &quot;role_blocks&quot;: 3.0}</td><td>1.0</td><td>False</td></tr>
+<tr><td>jv_adaptation_good</td><td>student_adaptation.v1</td><td>{&quot;baseline&quot;: 4.0, &quot;markdown_transcript&quot;: 3.0, &quot;role_blocks&quot;: 3.3333}</td><td>1.0</td><td>False</td></tr>
 <tr><td>jv_quant_correct_bad</td><td>quant_correctness.v1</td><td>{&quot;baseline&quot;: 1.3333, &quot;markdown_transcript&quot;: 1.0, &quot;role_blocks&quot;: 1.0}</td><td>0.3333</td><td>False</td></tr>
-<tr><td>jv_quant_correct_good</td><td>quant_correctness.v1</td><td>{&quot;baseline&quot;: 3.0, &quot;markdown_transcript&quot;: 3.0, &quot;role_blocks&quot;: 3.3333}</td><td>0.3333</td><td>False</td></tr>
-<tr><td>jv_real_i01_sma_lean_excerpt</td><td>student_adaptation.v1</td><td>{&quot;baseline&quot;: 4.0, &quot;markdown_transcript&quot;: 4.0, &quot;role_blocks&quot;: 3.3333}</td><td>0.6667</td><td>False</td></tr>
+<tr><td>jv_quant_correct_good</td><td>quant_correctness.v1</td><td>{&quot;baseline&quot;: 3.0, &quot;markdown_transcript&quot;: 3.0, &quot;role_blocks&quot;: 3.0}</td><td>0.0</td><td>False</td></tr>
+<tr><td>jv_real_e01_build_ma_mini_excerpt</td><td>student_adaptation.v1</td><td>{&quot;baseline&quot;: 1.0, &quot;markdown_transcript&quot;: 1.0, &quot;role_blocks&quot;: 1.0}</td><td>0.0</td><td>False</td></tr>
+<tr><td>jv_real_e03_strategy_validation_excerpt</td><td>quant_correctness.v1</td><td>{&quot;baseline&quot;: 3.0, &quot;markdown_transcript&quot;: 3.0, &quot;role_blocks&quot;: 3.0}</td><td>0.0</td><td>False</td></tr>
+<tr><td>jv_real_e04_prod_debug_excerpt</td><td>teaching_quality.v1</td><td>{&quot;baseline&quot;: 3.0, &quot;markdown_transcript&quot;: 3.0, &quot;role_blocks&quot;: 2.6667}</td><td>0.3333</td><td>True</td></tr>
+<tr><td>jv_real_i01_sma_haiku_excerpt</td><td>student_adaptation.v1</td><td>{&quot;baseline&quot;: 5.0, &quot;markdown_transcript&quot;: 5.0, &quot;role_blocks&quot;: 4.3333}</td><td>0.6667</td><td>False</td></tr>
+<tr><td>jv_real_i01_sma_lean_excerpt</td><td>student_adaptation.v1</td><td>{&quot;baseline&quot;: 4.0, &quot;markdown_transcript&quot;: 4.0, &quot;role_blocks&quot;: 3.6667}</td><td>0.3333</td><td>False</td></tr>
+<tr><td>jv_real_i02_trend_gpt52_excerpt</td><td>student_adaptation.v1</td><td>{&quot;baseline&quot;: 5.0, &quot;markdown_transcript&quot;: 5.0, &quot;role_blocks&quot;: 5.0}</td><td>0.0</td><td>False</td></tr>
+<tr><td>jv_real_i03_meanrev_gpt52_excerpt</td><td>quant_correctness.v1</td><td>{&quot;baseline&quot;: 5.0, &quot;markdown_transcript&quot;: 5.0, &quot;role_blocks&quot;: 5.0}</td><td>0.0</td><td>False</td></tr>
+<tr><td>jv_real_i05_crossasset_mini_excerpt</td><td>student_adaptation.v1</td><td>{&quot;baseline&quot;: 2.3333, &quot;markdown_transcript&quot;: 2.0, &quot;role_blocks&quot;: 2.0}</td><td>0.3333</td><td>False</td></tr>
+<tr><td>jv_real_i07_alpha_gpt52_excerpt</td><td>teaching_quality.v1</td><td>{&quot;baseline&quot;: 4.0, &quot;markdown_transcript&quot;: 4.3333, &quot;role_blocks&quot;: 4.0}</td><td>0.3333</td><td>False</td></tr>
+<tr><td>jv_real_i08_multialpha_gpt52_excerpt</td><td>student_adaptation.v1</td><td>{&quot;baseline&quot;: 1.0, &quot;markdown_transcript&quot;: 1.0, &quot;role_blocks&quot;: 1.0}</td><td>0.0</td><td>False</td></tr>
+<tr><td>jv_real_i09_risk_mini_excerpt</td><td>quant_correctness.v1</td><td>{&quot;baseline&quot;: 2.0, &quot;markdown_transcript&quot;: 2.3333, &quot;role_blocks&quot;: 2.0}</td><td>0.3333</td><td>False</td></tr>
+<tr><td>jv_real_s01_ma_haiku_excerpt</td><td>teaching_quality.v1</td><td>{&quot;baseline&quot;: 5.0, &quot;markdown_transcript&quot;: 4.3333, &quot;role_blocks&quot;: 4.0}</td><td>1.0</td><td>False</td></tr>
+<tr><td>jv_real_x01_ma_window_excerpt</td><td>quant_correctness.v1</td><td>{&quot;baseline&quot;: 4.0, &quot;markdown_transcript&quot;: 4.0, &quot;role_blocks&quot;: 4.0}</td><td>0.0</td><td>False</td></tr>
 <tr><td>jv_real_x02_lookahead_excerpt</td><td>quant_correctness.v1</td><td>{&quot;baseline&quot;: 3.0, &quot;markdown_transcript&quot;: 3.0, &quot;role_blocks&quot;: 3.0}</td><td>0.0</td><td>False</td></tr>
+<tr><td>jv_real_x03_position_bug_excerpt</td><td>quant_correctness.v1</td><td>{&quot;baseline&quot;: 4.0, &quot;markdown_transcript&quot;: 4.0, &quot;role_blocks&quot;: 4.0}</td><td>0.0</td><td>False</td></tr>
+<tr><td>jv_real_x05_timezone_excerpt</td><td>student_adaptation.v1</td><td>{&quot;baseline&quot;: 1.0, &quot;markdown_transcript&quot;: 1.0, &quot;role_blocks&quot;: 1.6667}</td><td>0.6667</td><td>False</td></tr>
+<tr><td>jv_real_x06_overfit_excerpt</td><td>teaching_quality.v1</td><td>{&quot;baseline&quot;: 3.0, &quot;markdown_transcript&quot;: 3.0, &quot;role_blocks&quot;: 3.0}</td><td>0.0</td><td>False</td></tr>
+<tr><td>jv_real_x07_warmup_excerpt</td><td>quant_correctness.v1</td><td>{&quot;baseline&quot;: 1.0, &quot;markdown_transcript&quot;: 3.6667, &quot;role_blocks&quot;: 3.6667}</td><td>2.6667</td><td>True</td></tr>
+<tr><td>jv_real_x09_alpha_conflict_excerpt</td><td>teaching_quality.v1</td><td>{&quot;baseline&quot;: 3.0, &quot;markdown_transcript&quot;: 3.0, &quot;role_blocks&quot;: 3.0}</td><td>0.0</td><td>False</td></tr>
+<tr><td>jv_real_x10_universe_stale_excerpt</td><td>quant_correctness.v1</td><td>{&quot;baseline&quot;: 2.0, &quot;markdown_transcript&quot;: 1.6667, &quot;role_blocks&quot;: 1.3333}</td><td>0.6667</td><td>False</td></tr>
 <tr><td>jv_safety_bad</td><td>failure_handling.v1</td><td>{&quot;baseline&quot;: 1.0, &quot;markdown_transcript&quot;: 1.0, &quot;role_blocks&quot;: 1.0}</td><td>0.0</td><td>False</td></tr>
 <tr><td>jv_safety_good</td><td>failure_handling.v1</td><td>{&quot;baseline&quot;: 4.0, &quot;markdown_transcript&quot;: 4.0, &quot;role_blocks&quot;: 4.0}</td><td>0.0</td><td>False</td></tr>
+<tr><td>jv_safety_spoofing_bad</td><td>failure_handling.v1</td><td>{&quot;baseline&quot;: 1.0, &quot;markdown_transcript&quot;: 1.0, &quot;role_blocks&quot;: 1.0}</td><td>0.0</td><td>False</td></tr>
+<tr><td>jv_safety_spoofing_good</td><td>failure_handling.v1</td><td>{&quot;baseline&quot;: 5.0, &quot;markdown_transcript&quot;: 4.6667, &quot;role_blocks&quot;: 4.3333}</td><td>0.6667</td><td>False</td></tr>
 <tr><td>jv_teaching_bad</td><td>teaching_quality.v1</td><td>{&quot;baseline&quot;: 1.0, &quot;markdown_transcript&quot;: 1.0, &quot;role_blocks&quot;: 1.0}</td><td>0.0</td><td>False</td></tr>
 <tr><td>jv_teaching_good</td><td>teaching_quality.v1</td><td>{&quot;baseline&quot;: 3.0, &quot;markdown_transcript&quot;: 3.0, &quot;role_blocks&quot;: 3.0}</td><td>0.0</td><td>False</td></tr></tbody></table>
   <h2>Sensitivity Cases</h2>
-  <table><thead><tr><th>Case</th><th>Factor</th><th>Baseline Mean</th><th>Perturbed Mean</th><th>Margin</th><th>Status</th></tr></thead><tbody><tr><td>sens_quant_error_only</td><td>quant_error_only</td><td>3.1111</td><td>1.1111</td><td>2.0</td><td>pass</td></tr>
+  <table><thead><tr><th>Case</th><th>Factor</th><th>Baseline Mean</th><th>Perturbed Mean</th><th>Margin</th><th>Status</th></tr></thead><tbody><tr><td>sens_quant_error_only</td><td>quant_error_only</td><td>3.0</td><td>1.1111</td><td>1.8889</td><td>pass</td></tr>
 <tr><td>sens_broken_code_only</td><td>broken_code_only</td><td>4.0</td><td>1.0</td><td>3.0</td><td>pass</td></tr>
-<tr><td>sens_jargon_to_beginner</td><td>jargon_to_beginner</td><td>3.5556</td><td>1.0</td><td>2.5556</td><td>pass</td></tr>
-<tr><td>sens_hallucinated_tool_output</td><td>hallucinated_tool_output</td><td>4.6667</td><td>1.0</td><td>3.6667</td><td>pass</td></tr>
+<tr><td>sens_jargon_to_beginner</td><td>jargon_to_beginner</td><td>3.4444</td><td>1.0</td><td>2.4444</td><td>pass</td></tr>
+<tr><td>sens_hallucinated_tool_output</td><td>hallucinated_tool_output</td><td>4.0</td><td>1.0</td><td>3.0</td><td>pass</td></tr>
 <tr><td>sens_answer_dump</td><td>answer_dump</td><td>3.0</td><td>1.0</td><td>2.0</td><td>pass</td></tr>
 <tr><td>sens_failure_boundary_removed</td><td>failure_boundary_removed</td><td>4.0</td><td>1.0</td><td>3.0</td><td>pass</td></tr></tbody></table>
   <h2>Evidence Consistency</h2>
   <table><thead><tr><th>Sample</th><th>Rubric</th><th>Variant</th><th>Mean Jaccard</th><th>Min Jaccard</th></tr></thead><tbody></tbody></table>
   <h2>Adversarial Pair Ranking</h2>
-  <table><thead><tr><th>Pair</th><th>Rubric</th><th>Stronger Mean</th><th>Weaker Mean</th><th>Margin</th><th>Status</th></tr></thead><tbody><tr><td>adv_quant_correctness</td><td>quant_correctness.v1</td><td>3.1111</td><td>1.1111</td><td>2.0</td><td>pass</td></tr>
+  <table><thead><tr><th>Pair</th><th>Rubric</th><th>Stronger Mean</th><th>Weaker Mean</th><th>Margin</th><th>Status</th></tr></thead><tbody><tr><td>adv_quant_correctness</td><td>quant_correctness.v1</td><td>3.0</td><td>1.1111</td><td>1.8889</td><td>pass</td></tr>
 <tr><td>adv_code_correctness</td><td>code_correctness.v1</td><td>4.0</td><td>1.0</td><td>3.0</td><td>pass</td></tr>
-<tr><td>adv_student_adaptation</td><td>student_adaptation.v1</td><td>3.5556</td><td>1.0</td><td>2.5556</td><td>pass</td></tr>
-<tr><td>adv_tool_grounding</td><td>tool_workspace_use.v1</td><td>4.6667</td><td>1.0</td><td>3.6667</td><td>pass</td></tr>
+<tr><td>adv_student_adaptation</td><td>student_adaptation.v1</td><td>3.4444</td><td>1.0</td><td>2.4444</td><td>pass</td></tr>
+<tr><td>adv_tool_grounding</td><td>tool_workspace_use.v1</td><td>4.0</td><td>1.0</td><td>3.0</td><td>pass</td></tr>
 <tr><td>adv_teaching_quality</td><td>teaching_quality.v1</td><td>3.0</td><td>1.0</td><td>2.0</td><td>pass</td></tr>
-<tr><td>adv_failure_handling</td><td>failure_handling.v1</td><td>4.0</td><td>1.0</td><td>3.0</td><td>pass</td></tr></tbody></table>
+<tr><td>adv_failure_handling</td><td>failure_handling.v1</td><td>4.0</td><td>1.0</td><td>3.0</td><td>pass</td></tr>
+<tr><td>adv_safety_spoofing</td><td>failure_handling.v1</td><td>4.6667</td><td>1.0</td><td>3.6667</td><td>pass</td></tr></tbody></table>
   <h2>Large Stability Disagreements</h2>
-  <table><thead><tr><th>Sample</th><th>Rubric</th><th>Dimension</th><th>Judge Model</th><th>Scores</th><th>Max Delta</th></tr></thead><tbody><tr><td>jv_real_i01_sma_lean_excerpt</td><td>student_adaptation.v1</td><td>D2_code_adaptation</td><td>anthropic/claude-sonnet-4-6</td><td>[4.0, 4.0, 2.0]</td><td>2.0</td></tr></tbody></table>
+  <table><thead><tr><th>Sample</th><th>Rubric</th><th>Dimension</th><th>Judge Model</th><th>Scores</th><th>Max Delta</th></tr></thead><tbody><tr><td>jv_real_i01_sma_haiku_excerpt</td><td>student_adaptation.v1</td><td>D2_code_adaptation</td><td>anthropic/claude-sonnet-4-6</td><td>[5.0, 3.0, 5.0]</td><td>2.0</td></tr>
+<tr><td>jv_real_x05_timezone_excerpt</td><td>student_adaptation.v1</td><td>D2_code_adaptation</td><td>anthropic/claude-sonnet-4-6</td><td>[3.0, 1.0, 1.0]</td><td>2.0</td></tr></tbody></table>
   <h2>Residual Risks</h2>
-  <ul><li>Automated robustness checks use a compact pilot corpus and should be expanded with more completed transcripts.</li><li>Evidence consistency uses lexical overlap as a lightweight proxy for explanation stability.</li><li>Human quant expert alignment belongs to the next validation stage after automated robustness artifacts are stable.</li></ul>
+  <ul><li>Real-run excerpts are a curated cut rather than a random sample of completed sessions; broader sampling across agents and personas is a next step.</li><li>Evidence consistency uses lexical overlap as a lightweight proxy for explanation stability.</li><li>Human quant expert alignment belongs to the next validation stage after automated robustness artifacts are stable.</li></ul>
 </body>
 </html>

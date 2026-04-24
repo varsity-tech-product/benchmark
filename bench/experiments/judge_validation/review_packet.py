@@ -799,7 +799,7 @@ def _markdown_review_packet_zh(packet: dict[str, Any]) -> str:
         "",
         "- 每条样本独立打分，不要与其他样本对照比较。",
         "- 对话内容保留英文原文（与自动判分器一致），评分锚点用中文。",
-        "- 所有样本使用盲 ID（`jv_review_001` … `jv_review_014`），不会告诉你哪一条是\"好\"或\"差\"。",
+        f"- 所有样本使用盲 ID（`jv_review_001` … `jv_review_{total:03d}`），不会告诉你哪一条是\"好\"或\"差\"。",
         "- 每题填写的字段：sample_id、rubric_id、dimension、human_score、confidence、human_rationale（必填），evidence_spans、failure_tags、notes（可选）。",
         "",
         "---",
