@@ -237,6 +237,57 @@ _DIM_LABELS = {
     "D6_safety_boundaries": "Safety Boundaries",
 }
 
+# Judge calibration clarifiers — issue #84 Stage 3 follow-up.
+# Human reviewers score D1/D2/D3 higher than the judge because the judge
+# treats persona known/unknown lists as ground truth; reviewers read the
+# transcript. These blocks add transcript-aware guidance for adaptation and
+# pedagogy dimensions only. D4/D6 stay strict.
+#
+# The two failure anchors work at opposite ends of the persona list and
+# need separate gates:
+#   - "Lectures on known material" fires on a persona-KNOWN concept.
+#     Keep the penalty, but only when the response restates the concept at
+#     the level the student already knows, not when the response builds
+#     higher-level scaffolding on top of it.
+#   - "Dense jargon to a beginner" fires on a persona-UNKNOWN concept.
+#     Keep the penalty, but only when the student has not themselves
+#     introduced the concept in the transcript.
+_ADAPTATION_CLARIFIER = (
+    "## Student knowledge inference\n"
+    "Persona known/unknown lists are priors, not ground truth. Apply the "
+    "two failure anchors separately:\n"
+    "- \"Lectures on known material\" (Score 1/2): fires only when the "
+    "response restates a persona-known concept at the level the student "
+    "already knows. Do not apply it to higher-level scaffolding built on "
+    "top of a known concept (e.g., architecture, timezone pitfalls, or "
+    "module organisation for a student who already uses pandas is new "
+    "material at a new level, not a lecture on what pandas is).\n"
+    "- \"Dense jargon to a beginner\" (Score 1/2): fires only when the "
+    "concept is persona-unknown AND the student does NOT demonstrate "
+    "understanding of it in their own messages. A student USING the "
+    "concept in context (writing pandas idioms, invoking `AddAlpha` in "
+    "code they wrote, or applying `Sharpe` in their own reasoning) "
+    "demonstrates understanding — skip the penalty. A student ASKING "
+    "ABOUT the concept (\"what is Sharpe?\", \"how does AddAlpha "
+    "work?\") does NOT demonstrate understanding — the penalty still "
+    "applies if the tutor's response uses the term as jargon without "
+    "defining it."
+)
+
+_PEDAGOGY_CLARIFIER = (
+    "## Requested depth\n"
+    "Reward responses that match the depth the student asked for. An "
+    "architecture or concept overview in response to an architecture or "
+    "concept question is not an answer dump. An answer dump is code with "
+    "no scaffolding when the student asked for concepts or explanation."
+)
+
+_DIM_CLARIFIERS = {
+    "D1_finance_adaptation": _ADAPTATION_CLARIFIER,
+    "D2_code_adaptation": _ADAPTATION_CLARIFIER,
+    "D3_pedagogical_method": _PEDAGOGY_CLARIFIER,
+}
+
 
 def build_rubric_text(
     rubric: dict,
@@ -282,9 +333,15 @@ def build_rubric_text(
     score_keys = sorted(scoring_guidance.keys(), key=int)
     max_score = int(score_keys[-1])
 
-    return f"## Dimension: {dim_label} (1-{max_score} scale)\n\n" + "\n".join(
+    rubric_text = f"## Dimension: {dim_label} (1-{max_score} scale)\n\n" + "\n".join(
         scoring_lines
     )
+
+    clarifier = _DIM_CLARIFIERS.get(dimension_name)
+    if clarifier:
+        rubric_text += "\n\n" + clarifier
+
+    return rubric_text
 
 
 def get_max_score(rubric: dict, dimension_name: str) -> int:
