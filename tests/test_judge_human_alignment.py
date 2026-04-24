@@ -598,6 +598,230 @@ def test_export_review_packet_cli(tmp_path):
     assert (output_dir / "human_review_sample_map.json").exists()
 
 
+_QUANT_CORRECTNESS_CANONICAL_REGISTRY = {
+    "rubrics": [
+        {
+            "rubric_id": "quant_correctness.v1",
+            "version": "v1",
+            "dimension": "quant_correctness",
+            "score_scale": {"min": 1, "max": 5},
+            "score_anchors": {
+                "1": "Quant formulas, definitions, or conclusions are materially wrong.",
+                "2": "Quant reasoning has notable omissions or imprecise claims.",
+                "3": "Quant reasoning is basically correct for the requested task.",
+                "4": "Quant reasoning is correct and flags relevant assumptions or pitfalls.",
+                "5": "Quant reasoning is correct, nuanced, and grounded in computed evidence.",
+            },
+            "required_evidence": [
+                "stated formula or method",
+                "computed result or trace evidence",
+                "explanation of assumptions",
+            ],
+            "common_failure_cases": [
+                "lookahead bias described as acceptable",
+                "Sharpe ratio or return formula misstated",
+                "backtest result treated as live-trading proof",
+            ],
+            "examples": {"high": "accurate"},
+        }
+    ]
+}
+
+
+def _make_zh_corpus():
+    return {
+        "items": [
+            {
+                "sample_id": "sample",
+                "task_id": "B03_lookahead_prevention",
+                "category": "backtest",
+                "persona_id": "finance_veteran",
+                "transcript_source": "synthetic_adversarial",
+                "track": "tutor",
+                "dimension": "D4_instructional_accuracy",
+                "registry_rubric_id": "quant_correctness.v1",
+                "conversation": [
+                    {"role": "user", "content": "Is today-close sizing lookahead bias?"},
+                    {"role": "assistant", "content": "Yes. Shift the signal one bar."},
+                ],
+            }
+        ]
+    }
+
+
+def test_review_packet_zh_language_translates_rubric_metadata_and_form(tmp_path):
+    packet = build_review_packet(
+        corpus=_make_zh_corpus(),
+        rubric_registry=_QUANT_CORRECTNESS_CANONICAL_REGISTRY,
+        language="zh",
+    )
+    item = packet["items"][0]
+    paths = write_review_packet(packet=packet, output_dir=tmp_path)
+
+    assert packet["language"] == "zh"
+    assert "前视偏差" in item["common_failure_cases"][0]
+    assert item["score_anchors"]["1"].endswith("。")
+    assert "Shift the signal one bar" in item["review_context"]
+    assert "Turn 1 - User" in item["review_context"]
+    assert "Turn 2 - Assistant" in item["review_context"]
+    assert item["content_kind"] == "conversation"
+
+    md_path = Path(paths["markdown"])
+    assert md_path.name == "human_review_packet_zh.md"
+    md_text = md_path.read_text(encoding="utf-8")
+    assert "裁判验证人工评审包" in md_text
+    assert "题目 1 / 1" in md_text
+    assert "B03 · 防止前视偏差" in md_text
+    assert "资深金融从业者" in md_text
+    assert "教学准确度" in md_text
+    assert "对话内容（请阅读下面这段英文对话）" in md_text
+    assert "User` = 用户" in md_text
+    assert "Turn 1 - User" in md_text
+    assert "Turn 2 - Assistant" in md_text
+    assert "评分锚点" in md_text
+    assert "填 Google Form 时复制以下字段" in md_text
+    assert "Shift the signal one bar" in md_text
+    assert "jv_review_001" in md_text
+
+    form_path = Path(paths["google_form_zh"])
+    assert form_path.name == "google_form_zh.md"
+    form_text = form_path.read_text(encoding="utf-8")
+    assert "专家 ID (reviewer_id)" in form_text
+    assert "高" in form_text and "低" in form_text
+    assert "reviewer_id / 专家 ID" not in form_text
+    assert "答非所问" not in form_text or "直接倾泻答案" in form_text
+
+
+def test_review_packet_zh_evaluation_context_uses_context_heading(tmp_path):
+    corpus = {
+        "items": [
+            {
+                "sample_id": "qr_sample",
+                "task_id": "X01_ma_offbyone",
+                "category": "debug",
+                "persona_id": "developer_crossover",
+                "transcript_source": "synthetic_adversarial",
+                "track": "qr",
+                "dimension": "result_judge",
+                "registry_rubric_id": "quant_correctness.v1",
+                "context": "## Task\nFix the lookahead bug.\n## Acceptance criteria\nSharpe > 0.",
+            }
+        ]
+    }
+
+    packet = build_review_packet(
+        corpus=corpus,
+        rubric_registry=_QUANT_CORRECTNESS_CANONICAL_REGISTRY,
+        language="zh",
+    )
+    paths = write_review_packet(packet=packet, output_dir=tmp_path)
+
+    assert packet["items"][0]["content_kind"] == "evaluation_context"
+    md_text = Path(paths["markdown"]).read_text(encoding="utf-8")
+    assert "评估上下文" in md_text
+    assert "对话内容（请阅读下面这段英文对话）" not in md_text
+    assert "Fix the lookahead bug" in md_text
+
+
+def test_review_packet_zh_raises_when_registry_text_diverges_from_translation():
+    registry = {
+        "rubrics": [
+            {
+                "rubric_id": "quant_correctness.v1",
+                "version": "v1",
+                "dimension": "quant_correctness",
+                "score_scale": {"min": 1, "max": 5},
+                "score_anchors": {"1": "wrong", "5": "excellent"},
+                "required_evidence": ["formula"],
+                "common_failure_cases": ["lookahead"],
+            }
+        ]
+    }
+
+    try:
+        build_review_packet(
+            corpus=_make_zh_corpus(),
+            rubric_registry=registry,
+            language="zh",
+        )
+    except ValueError as exc:
+        assert "quant_correctness.v1" in str(exc)
+        assert "score_anchors" in str(exc)
+        return
+    raise AssertionError("expected ValueError when rubric text diverges from bundled ZH baseline")
+
+
+def test_review_packet_zh_writes_suffixed_sample_map_to_preserve_en_exports(tmp_path):
+    write_review_packet(
+        packet=build_review_packet(
+            corpus=_make_zh_corpus(),
+            rubric_registry=_QUANT_CORRECTNESS_CANONICAL_REGISTRY,
+            language="en",
+        ),
+        output_dir=tmp_path,
+    )
+    en_sample_map_path = tmp_path / "human_review_sample_map.json"
+    assert en_sample_map_path.exists()
+    en_payload = json.loads(en_sample_map_path.read_text(encoding="utf-8"))
+
+    paths = write_review_packet(
+        packet=build_review_packet(
+            corpus=_make_zh_corpus(),
+            rubric_registry=_QUANT_CORRECTNESS_CANONICAL_REGISTRY,
+            language="zh",
+        ),
+        output_dir=tmp_path,
+    )
+
+    zh_sample_map_path = Path(paths["sample_map"])
+    assert zh_sample_map_path.name == "human_review_sample_map_zh.json"
+    assert en_sample_map_path.read_text(encoding="utf-8") == json.dumps(
+        en_payload, indent=2, ensure_ascii=False
+    )
+
+
+def test_review_packet_zh_csv_merges_with_en_labels_via_header_fallback(tmp_path):
+    rows = [
+        {
+            "专家 ID (reviewer_id)": "expert_zh_1",
+            "样本 ID (sample_id)": "jv_review_001",
+            "评分规则 ID (rubric_id)": "quant_correctness.v1",
+            "评分维度 (dimension)": "D4_instructional_accuracy",
+            "专家评分 (human_score)": "4",
+            "评分信心 (confidence)": "高",
+            "专家理由 (human_rationale)": "shift one bar 的结论正确",
+            "证据片段 (evidence_spans)": "Shift the signal one bar.",
+            "失败标签 (failure_tags)": "",
+            "备注 (notes)": "",
+        }
+    ]
+
+    labels = labels_from_csv_rows(rows)
+
+    assert len(labels) == 1
+    label = labels[0]
+    assert label["reviewer_id"] == "expert_zh_1"
+    assert label["sample_id"] == "jv_review_001"
+    assert label["rubric_id"] == "quant_correctness.v1"
+    assert label["human_score"] == 4
+    assert label["confidence"] == "high"
+
+
+def test_review_packet_zh_language_rejects_invalid_language(tmp_path):
+    corpus = {"items": []}
+    registry = {"rubrics": []}
+    try:
+        build_review_packet(
+            corpus=corpus,
+            rubric_registry=registry,
+            language="fr",
+        )
+    except ValueError as exc:
+        assert "language" in str(exc)
+        return
+    raise AssertionError("expected ValueError for unsupported language")
+
+
 def test_export_review_packet_cli_honors_output_dir(tmp_path):
     corpus_path = tmp_path / "corpus.json"
     registry_path = tmp_path / "registry.json"

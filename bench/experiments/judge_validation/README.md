@@ -54,6 +54,22 @@ This writes `human_review_packet.json`, `human_review_packet.md`,
 `human_review_sample_map.json` under
 `experiments/judge_validation/results/human_review_packet/`.
 
+Export a Chinese reviewer packet for Chinese-speaking experts. Conversation
+transcripts stay in English so the human and the judge score the same artifact;
+only rubric score anchors, required evidence, and common failure modes are
+translated.
+
+```bash
+python -m experiments.judge_validation.run export-review-packet --language zh
+```
+
+This adds `human_review_packet_zh.json`, `human_review_packet_zh.md`, and
+`google_form_zh.md` to the same directory. Use `google_form_bilingual.md` to
+build the English-track Google Form and `google_form_zh.md` to build a separate
+Chinese-track Google Form. Dropdown option values (`sample_id`, `rubric_id`,
+`human_score`) stay ASCII in both forms so the two CSV exports converge through
+the same `convert-human-labels` path without manual header alignment.
+
 Run the Stage 1 judge gate with three repeats per item:
 
 ```bash
