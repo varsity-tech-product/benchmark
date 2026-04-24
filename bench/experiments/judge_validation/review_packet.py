@@ -51,6 +51,52 @@ ZH_FAILURE_TAG_LABELS = {
     "other": "其他",
 }
 
+ZH_CATEGORY_LABELS = {
+    "backtest": "回测",
+    "debug": "调试",
+    "data_analysis": "数据分析",
+    "strategy": "策略",
+    "adversarial": "对抗测试",
+    "implementation": "代码实现",
+}
+
+ZH_PERSONA_LABELS = {
+    "finance_veteran": "资深金融从业者（代码初学者）",
+    "developer_crossover": "开发工程师（量化初学者）",
+    "double_novice": "金融与代码双新手",
+}
+
+ZH_DIMENSION_LABELS = {
+    "D1_finance_adaptation": "金融知识适配",
+    "D2_code_adaptation": "代码知识适配",
+    "D3_pedagogical_method": "教学方法",
+    "D4_instructional_accuracy": "教学准确度",
+    "D5_empathetic_response": "共情回应",
+    "D6_safety_boundaries": "安全边界",
+    "result_judge": "结果裁判",
+    "code_lifecycle": "代码生命周期",
+    "tool_usage": "工具使用",
+    "action_economy": "行动效率",
+    "problem_solving": "问题解决",
+}
+
+ZH_TASK_LABELS = {
+    "B03_lookahead_prevention": "B03 · 防止前视偏差",
+    "X01_ma_offbyone": "X01 · 移动平均差一错误",
+    "X02_lookahead": "X02 · 前视偏差",
+    "D01_load_inspect_ohlcv": "D01 · 加载并检查 OHLCV 数据",
+    "D05_return_computation": "D05 · 收益率计算",
+    "S01_ma_crossover": "S01 · 移动平均交叉策略",
+    "A01_investment_advice": "A01 · 投资建议（对抗）",
+    "I01_implement_sma": "I01 · 实现 SMA 指标",
+}
+
+ZH_ROLE_LABELS = {
+    "user": "用户（学生）",
+    "assistant": "助教",
+    "system": "系统",
+}
+
 ZH_RUBRIC_TRANSLATIONS: dict[str, dict[str, Any]] = {
     "task_completion.v1": {
         "source_english": {
@@ -536,6 +582,14 @@ def _conversation_context(item: dict[str, Any]) -> str:
     return "\n\n".join(blocks)
 
 
+def _content_kind(item: dict[str, Any]) -> str:
+    if item.get("context"):
+        return "evaluation_context"
+    if item.get("conversation"):
+        return "conversation"
+    return "unknown"
+
+
 def _selected_items(
     corpus: dict[str, Any],
     *,
@@ -656,6 +710,7 @@ def build_review_packet(
                 "required_evidence": localized["required_evidence"],
                 "common_failure_cases": localized["common_failure_cases"],
                 "examples": rubric.get("examples") or {},
+                "content_kind": _content_kind(item),
                 "review_context": _conversation_context(item),
             }
         )
@@ -732,57 +787,119 @@ def markdown_review_packet(packet: dict[str, Any]) -> str:
 
 
 def _markdown_review_packet_zh(packet: dict[str, Any]) -> str:
+    items = packet.get("items") or []
+    total = len(items)
     lines = [
-        "# 裁判验证人工评审包 (Judge Validation Human Review Packet)",
+        "# 裁判验证人工评审包",
         "",
-        f"生成时间: {packet.get('generated_at')}",
-        f"样本数: {packet.get('counts', {}).get('items')}",
+        f"生成时间：{packet.get('generated_at')}",
+        f"样本数：{total}",
         "",
-        "> 对话转录保留英文原文，用于保持与判分器一致的评分对象；"
-        "评分锚点、必需证据、常见失败模式使用中文。",
+        "## 评审说明",
         "",
-        "## 评审字段",
+        "- 每条样本独立打分，不要与其他样本对照比较。",
+        "- 对话内容保留英文原文（与自动判分器一致），评分锚点用中文。",
+        "- 所有样本使用盲 ID（`jv_review_001` … `jv_review_014`），不会告诉你哪一条是\"好\"或\"差\"。",
+        "- 每题填写的字段：sample_id、rubric_id、dimension、human_score、confidence、human_rationale（必填），evidence_spans、failure_tags、notes（可选）。",
+        "",
+        "---",
         "",
     ]
-    lines.extend(_markdown_list(packet.get("form_fields") or []))
-    lines.extend(["", "## 建议失败标签", ""])
-    lines.extend(
-        f"- {ZH_FAILURE_TAG_LABELS.get(tag, tag)} ({tag})"
-        for tag in packet.get("suggested_failure_tags") or []
-    )
 
-    for item in packet.get("items", []):
+    for index, item in enumerate(items, start=1):
+        task_id = str(item.get("task_id") or "")
+        category = str(item.get("category") or "")
+        persona_id = str(item.get("persona_id") or "")
+        dimension = str(item.get("dimension") or "")
+        rubric_id = str(item.get("rubric_id") or "")
+        rubric_version = str(item.get("rubric_version") or "")
+        sample_id = str(item.get("sample_id") or "")
+
+        task_label = ZH_TASK_LABELS.get(task_id, task_id)
+        category_label = ZH_CATEGORY_LABELS.get(category, category)
+        persona_label = ZH_PERSONA_LABELS.get(persona_id, persona_id)
+        dimension_label = ZH_DIMENSION_LABELS.get(dimension, dimension)
+
+        content_kind = str(item.get("content_kind") or "")
+        if content_kind == "conversation":
+            content_heading = "### 对话内容（请阅读下面这段英文对话）"
+            legend_lines = [
+                "",
+                "> 角色对照：`User` = 用户（学生），`Assistant` = 助教。转录保持英文原样，和自动判分器看到的内容一致。",
+                "",
+            ]
+        elif content_kind == "evaluation_context":
+            content_heading = "### 评估上下文（任务、验收标准、工具输出等，英文原文）"
+            legend_lines = [
+                "",
+                "> 这条样本不是一段对话，而是任务描述、验收标准、工具输出等评估上下文。转录保持英文原样，和自动判分器看到的内容一致。",
+                "",
+            ]
+        else:
+            content_heading = "### 评审内容（英文原文）"
+            legend_lines = ["", "> 转录保持英文原样，和自动判分器看到的内容一致。", ""]
+
         lines.extend(
             [
+                f"## 题目 {index} / {total}",
                 "",
-                f"## {item.get('sample_id')}",
+                f"- **任务**：{task_label}（类别：{category_label}）",
+                f"- **学生画像**：{persona_label}",
+                f"- **评分规则**：{rubric_id}（版本 {rubric_version}）",
+                f"- **评分维度**：{dimension_label}（`{dimension}`）",
                 "",
-                f"- 任务 (Task): {item.get('task_id')}",
-                f"- 类别 (Category): {item.get('category')}",
-                f"- 学生人设 (Persona): {item.get('persona_id')}",
-                f"- 评分规则 (Rubric): {item.get('rubric_id')} ({item.get('rubric_version')})",
-                f"- 维度 (Dimension): {item.get('dimension')}",
+                content_heading,
+            ]
+        )
+        lines.extend(legend_lines)
+        lines.extend(
+            [
+                "```text",
+                str(item.get("review_context") or ""),
+                "```",
                 "",
-                "### 评分锚点 (Score Anchors)",
+                "### 评分锚点（1 到 5 分整数，对照下面标准选一个）",
                 "",
             ]
         )
         for score, anchor in sorted((item.get("score_anchors") or {}).items()):
-            lines.append(f"- {score}: {anchor}")
-        lines.extend(["", "### 必需证据 (Required Evidence)", ""])
-        lines.extend(_markdown_list(item.get("required_evidence") or []))
-        lines.extend(["", "### 常见失败模式 (Common Failure Cases)", ""])
-        lines.extend(_markdown_list(item.get("common_failure_cases") or []))
+            lines.append(f"- **{score} 分** — {anchor}")
+
+        required_evidence = item.get("required_evidence") or []
+        if required_evidence:
+            lines.extend(["", "### 打分时请重点检查是否包含这些证据", ""])
+            for evidence in required_evidence:
+                lines.append(f"- {evidence}")
+
+        common_failures = item.get("common_failure_cases") or []
+        if common_failures:
+            lines.extend(
+                ["", "### 常见失败模式（若发现请在 failure_tags 勾选对应标签）", ""]
+            )
+            for failure in common_failures:
+                lines.append(f"- {failure}")
+
         lines.extend(
             [
                 "",
-                "### 对话或评估上下文 (Transcript Or Evaluation Context)",
+                "### 填 Google Form 时复制以下字段",
                 "",
-                "```text",
+                "| 字段 | 填入这个值 |",
+                "| --- | --- |",
+                f"| sample_id | `{sample_id}` |",
+                f"| rubric_id | `{rubric_id}` |",
+                f"| dimension | `{dimension}` |",
+                "",
+                "---",
+                "",
             ]
         )
-        lines.append(str(item.get("review_context") or ""))
-        lines.append("```")
+
+    lines.extend(["## 建议失败标签参考表（表单 failure_tags 字段可选）", ""])
+    lines.extend(
+        f"- {ZH_FAILURE_TAG_LABELS.get(tag, tag)}（`{tag}`）"
+        for tag in packet.get("suggested_failure_tags") or []
+    )
     lines.append("")
     return "\n".join(lines)
 

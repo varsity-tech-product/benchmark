@@ -662,13 +662,26 @@ def test_review_packet_zh_language_translates_rubric_metadata_and_form(tmp_path)
     assert "前视偏差" in item["common_failure_cases"][0]
     assert item["score_anchors"]["1"].endswith("。")
     assert "Shift the signal one bar" in item["review_context"]
+    assert "Turn 1 - User" in item["review_context"]
+    assert "Turn 2 - Assistant" in item["review_context"]
+    assert item["content_kind"] == "conversation"
 
     md_path = Path(paths["markdown"])
     assert md_path.name == "human_review_packet_zh.md"
     md_text = md_path.read_text(encoding="utf-8")
     assert "裁判验证人工评审包" in md_text
+    assert "题目 1 / 1" in md_text
+    assert "B03 · 防止前视偏差" in md_text
+    assert "资深金融从业者" in md_text
+    assert "教学准确度" in md_text
+    assert "对话内容（请阅读下面这段英文对话）" in md_text
+    assert "User` = 用户" in md_text
+    assert "Turn 1 - User" in md_text
+    assert "Turn 2 - Assistant" in md_text
     assert "评分锚点" in md_text
+    assert "填 Google Form 时复制以下字段" in md_text
     assert "Shift the signal one bar" in md_text
+    assert "jv_review_001" in md_text
 
     form_path = Path(paths["google_form_zh"])
     assert form_path.name == "google_form_zh.md"
@@ -677,6 +690,37 @@ def test_review_packet_zh_language_translates_rubric_metadata_and_form(tmp_path)
     assert "高" in form_text and "低" in form_text
     assert "reviewer_id / 专家 ID" not in form_text
     assert "答非所问" not in form_text or "直接倾泻答案" in form_text
+
+
+def test_review_packet_zh_evaluation_context_uses_context_heading(tmp_path):
+    corpus = {
+        "items": [
+            {
+                "sample_id": "qr_sample",
+                "task_id": "X01_ma_offbyone",
+                "category": "debug",
+                "persona_id": "developer_crossover",
+                "transcript_source": "synthetic_adversarial",
+                "track": "qr",
+                "dimension": "result_judge",
+                "registry_rubric_id": "quant_correctness.v1",
+                "context": "## Task\nFix the lookahead bug.\n## Acceptance criteria\nSharpe > 0.",
+            }
+        ]
+    }
+
+    packet = build_review_packet(
+        corpus=corpus,
+        rubric_registry=_QUANT_CORRECTNESS_CANONICAL_REGISTRY,
+        language="zh",
+    )
+    paths = write_review_packet(packet=packet, output_dir=tmp_path)
+
+    assert packet["items"][0]["content_kind"] == "evaluation_context"
+    md_text = Path(paths["markdown"]).read_text(encoding="utf-8")
+    assert "评估上下文" in md_text
+    assert "对话内容（请阅读下面这段英文对话）" not in md_text
+    assert "Fix the lookahead bug" in md_text
 
 
 def test_review_packet_zh_raises_when_registry_text_diverges_from_translation():
