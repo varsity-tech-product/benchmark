@@ -214,6 +214,271 @@ def test_human_alignment_gate_requires_full_label_coverage():
     assert stats["stage3_gate"]["status"] == "needs_review"
 
 
+def test_subjective_dimensions_use_relaxed_within_one_target():
+    """Subjective dimensions (D1-D4) hit the 0.70 target; objective ones
+    (D6 / result_judge) keep the 0.85 target.
+
+    Both samples here have judge=3 vs human=4 → within-one=1.0 per
+    sample but exact_agreement=0. With one out-of-band sample we can
+    drop within-one below 0.85 but stay above 0.70, isolating the
+    threshold flip per dimension."""
+
+    def _make(sample_id, dimension, judge_score, human_score, rubric_id):
+        record = {
+            "sample_id": sample_id,
+            "registry_rubric_id": rubric_id,
+            "dimension": dimension,
+            "status": "success",
+            "raw_score": judge_score,
+        }
+        label = {
+            "sample_id": sample_id,
+            "rubric_id": rubric_id,
+            "dimension": dimension,
+            "human_score": human_score,
+            "confidence": "high",
+            "human_rationale": "ok",
+            "reviewer_id": "expert_anon_1",
+        }
+        return record, label
+
+    corpus_items = []
+    records = []
+    labels = []
+
+    # 4 close pairs + 1 far pair on D2 → within-one 0.80, between 0.70 and 0.85.
+    for i in range(4):
+        rec, lab = _make(
+            f"d2_close_{i}",
+            "D2_code_adaptation",
+            judge_score=3,
+            human_score=4,
+            rubric_id="student_adaptation.v1",
+        )
+        records.append(rec)
+        labels.append(lab)
+        corpus_items.append({"sample_id": f"d2_close_{i}"})
+    rec, lab = _make(
+        "d2_far",
+        "D2_code_adaptation",
+        judge_score=1,
+        human_score=4,
+        rubric_id="student_adaptation.v1",
+    )
+    records.append(rec)
+    labels.append(lab)
+    corpus_items.append({"sample_id": "d2_far"})
+
+    # Same 4-close + 1-far pattern on result_judge (objective).
+    for i in range(4):
+        rec, lab = _make(
+            f"rj_close_{i}",
+            "result_judge",
+            judge_score=4,
+            human_score=5,
+            rubric_id="code_correctness.v1",
+        )
+        records.append(rec)
+        labels.append(lab)
+        corpus_items.append({"sample_id": f"rj_close_{i}"})
+    rec, lab = _make(
+        "rj_far",
+        "result_judge",
+        judge_score=2,
+        human_score=5,
+        rubric_id="code_correctness.v1",
+    )
+    records.append(rec)
+    labels.append(lab)
+    corpus_items.append({"sample_id": "rj_far"})
+
+    stats = compute_human_alignment_stats(
+        corpus={"pass_threshold": 3, "items": corpus_items},
+        records=records,
+        labels=labels,
+    )
+
+    weak = {row["dimension"]: row for row in stats["stage3_gate"]["weak_dimensions"]}
+    assert "D2_code_adaptation" not in weak, (
+        "D2 within-one 0.80 should pass the 0.70 subjective target"
+    )
+    assert "result_judge" in weak, (
+        "result_judge within-one 0.80 should fail the 0.85 objective target"
+    )
+    assert weak["result_judge"]["within_one_target"] == 0.85
+    assert weak["result_judge"]["is_subjective"] is False
+
+    targets = stats["targets"]
+    assert targets["subjective_within_one_agreement"] == 0.70
+    assert targets["subjective_pass_fail_agreement"] == 0.75
+    assert "D2_code_adaptation" in targets["subjective_dimensions"]
+
+
+def test_strict_objective_dimension_failure_blocks_gate_even_if_overall_passes():
+    """A small objective slice (D6 or result_judge) failing 0.85 must not
+    be masked by a large subjective slice pulling the overall within-one
+    above 0.85."""
+
+    records = []
+    labels = []
+    corpus_items = []
+
+    # 20 subjective D3 samples all matching exactly → within-one=1.0,
+    # pass-fail=1.0. Pulls overall up.
+    for i in range(20):
+        records.append(
+            {
+                "sample_id": f"d3_{i}",
+                "registry_rubric_id": "teaching_quality.v1",
+                "dimension": "D3_pedagogical_method",
+                "status": "success",
+                "raw_score": 4,
+            }
+        )
+        labels.append(
+            {
+                "sample_id": f"d3_{i}",
+                "rubric_id": "teaching_quality.v1",
+                "dimension": "D3_pedagogical_method",
+                "human_score": 4,
+                "confidence": "high",
+                "human_rationale": "ok",
+                "evidence_spans": ["x"],
+                "failure_tags": [],
+                "reviewer_id": "expert_anon_1",
+            }
+        )
+        corpus_items.append({"sample_id": f"d3_{i}"})
+
+    # 4 result_judge samples: 2 within-one, 2 with abs delta 3 → within-one=0.5
+    # which fails objective 0.85 target.
+    for i in range(2):
+        records.append(
+            {
+                "sample_id": f"rj_close_{i}",
+                "registry_rubric_id": "code_correctness.v1",
+                "dimension": "result_judge",
+                "status": "success",
+                "raw_score": 5,
+            }
+        )
+        labels.append(
+            {
+                "sample_id": f"rj_close_{i}",
+                "rubric_id": "code_correctness.v1",
+                "dimension": "result_judge",
+                "human_score": 5,
+                "confidence": "high",
+                "human_rationale": "ok",
+                "evidence_spans": ["x"],
+                "failure_tags": [],
+                "reviewer_id": "expert_anon_1",
+            }
+        )
+        corpus_items.append({"sample_id": f"rj_close_{i}"})
+    for i in range(2):
+        records.append(
+            {
+                "sample_id": f"rj_far_{i}",
+                "registry_rubric_id": "code_correctness.v1",
+                "dimension": "result_judge",
+                "status": "success",
+                "raw_score": 1,
+            }
+        )
+        labels.append(
+            {
+                "sample_id": f"rj_far_{i}",
+                "rubric_id": "code_correctness.v1",
+                "dimension": "result_judge",
+                "human_score": 5,
+                "confidence": "high",
+                "human_rationale": "ok",
+                "evidence_spans": ["x"],
+                "failure_tags": ["code_error"],
+                "reviewer_id": "expert_anon_1",
+            }
+        )
+        corpus_items.append({"sample_id": f"rj_far_{i}"})
+
+    stats = compute_human_alignment_stats(
+        corpus={"pass_threshold": 3, "items": corpus_items},
+        records=records,
+        labels=labels,
+    )
+
+    # Sanity: overall within-one should clear 0.85 because 22/24 samples
+    # are within-one — confirms the masking risk would exist.
+    assert stats["overall"]["within_one_agreement"] >= 0.85
+    weak = {row["dimension"] for row in stats["stage3_gate"]["weak_dimensions"]}
+    assert "result_judge" in weak
+    assert stats["stage3_gate"]["status"] == "needs_review"
+
+
+def test_subjective_dimension_below_relaxed_target_still_flags_weak():
+    """If a subjective dimension drops below even the relaxed 0.70
+    target, it should still appear in weak_dimensions."""
+
+    records = []
+    labels = []
+    corpus_items = []
+    # 5 D1 samples, only 2 within-one (40%) — below 0.70.
+    for i in range(2):
+        records.append(
+            {
+                "sample_id": f"close_{i}",
+                "registry_rubric_id": "student_adaptation.v1",
+                "dimension": "D1_finance_adaptation",
+                "status": "success",
+                "raw_score": 3,
+            }
+        )
+        labels.append(
+            {
+                "sample_id": f"close_{i}",
+                "rubric_id": "student_adaptation.v1",
+                "dimension": "D1_finance_adaptation",
+                "human_score": 4,
+                "confidence": "high",
+                "human_rationale": "ok",
+                "reviewer_id": "expert_anon_1",
+            }
+        )
+        corpus_items.append({"sample_id": f"close_{i}"})
+    for i in range(3):
+        records.append(
+            {
+                "sample_id": f"far_{i}",
+                "registry_rubric_id": "student_adaptation.v1",
+                "dimension": "D1_finance_adaptation",
+                "status": "success",
+                "raw_score": 1,
+            }
+        )
+        labels.append(
+            {
+                "sample_id": f"far_{i}",
+                "rubric_id": "student_adaptation.v1",
+                "dimension": "D1_finance_adaptation",
+                "human_score": 5,
+                "confidence": "high",
+                "human_rationale": "ok",
+                "reviewer_id": "expert_anon_1",
+            }
+        )
+        corpus_items.append({"sample_id": f"far_{i}"})
+
+    stats = compute_human_alignment_stats(
+        corpus={"pass_threshold": 3, "items": corpus_items},
+        records=records,
+        labels=labels,
+    )
+    weak = {row["dimension"]: row for row in stats["stage3_gate"]["weak_dimensions"]}
+    assert "D1_finance_adaptation" in weak
+    assert weak["D1_finance_adaptation"]["within_one_target"] == 0.70
+    assert weak["D1_finance_adaptation"]["is_subjective"] is True
+
+
 def test_human_label_score_must_be_integral():
     base = {
         "sample_id": "sample",

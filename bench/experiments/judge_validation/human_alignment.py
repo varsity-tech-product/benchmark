@@ -20,6 +20,33 @@ HUMAN_WITHIN_ONE_TARGET = 0.85
 HUMAN_PASS_FAIL_TARGET = 0.9
 LARGE_DISAGREEMENT_DELTA = 2.0
 
+# Subjective dimensions where reviewer-vs-reviewer within-one is itself
+# bounded (~0.75 on this corpus). Holding judge alignment to the objective
+# 0.85 target produces guaranteed needs_review; relax to a band the human
+# panel can actually reach. D6 / result_judge stay strict.
+SUBJECTIVE_DIMENSIONS = frozenset(
+    {
+        "D1_finance_adaptation",
+        "D2_code_adaptation",
+        "D3_pedagogical_method",
+        "D4_instructional_accuracy",
+    }
+)
+SUBJECTIVE_WITHIN_ONE_TARGET = 0.70
+SUBJECTIVE_PASS_FAIL_TARGET = 0.75
+
+
+def _within_one_target(dimension: str | None) -> float:
+    if dimension and dimension in SUBJECTIVE_DIMENSIONS:
+        return SUBJECTIVE_WITHIN_ONE_TARGET
+    return HUMAN_WITHIN_ONE_TARGET
+
+
+def _pass_fail_target(dimension: str | None) -> float:
+    if dimension and dimension in SUBJECTIVE_DIMENSIONS:
+        return SUBJECTIVE_PASS_FAIL_TARGET
+    return HUMAN_PASS_FAIL_TARGET
+
 REQUIRED_LABEL_FIELDS = {
     "sample_id",
     "rubric_id",
@@ -705,26 +732,35 @@ def compute_human_alignment_stats(
         for row in large_disagreements
     )
     overall = _aggregate_alignment(comparisons)
+
+    by_dimension_metrics = _grouped_alignment(comparisons, "dimension")
+    weak_dimensions = []
+    for dimension, metrics in by_dimension_metrics.items():
+        within_target = _within_one_target(dimension)
+        pf_target = _pass_fail_target(dimension)
+        within_value = metrics["within_one_agreement"] or 0
+        pf_value = metrics["pass_fail_agreement"] or 0
+        if within_value < within_target or pf_value < pf_target:
+            weak_dimensions.append(
+                {
+                    "dimension": dimension,
+                    "within_one_target": within_target,
+                    "pass_fail_target": pf_target,
+                    "is_subjective": dimension in SUBJECTIVE_DIMENSIONS,
+                    **metrics,
+                }
+            )
+
+    # Per-dimension targets are the gate. A small overall pass cannot
+    # mask a strict objective dimension failing its own slice, so we do
+    # not fall back to the corpus-wide 0.85 / 0.90 numbers — every
+    # dimension that has data must meet its own threshold.
     gate_passed = bool(
         comparisons
         and not missing
-        and (overall["within_one_agreement"] or 0) >= HUMAN_WITHIN_ONE_TARGET
-        and (overall["pass_fail_agreement"] or 0) >= HUMAN_PASS_FAIL_TARGET
+        and not weak_dimensions
         and large_disagreements_documented
     )
-
-    weak_dimensions = [
-        {
-            "dimension": dimension,
-            **metrics,
-        }
-        for dimension, metrics in _grouped_alignment(
-            comparisons,
-            "dimension",
-        ).items()
-        if (metrics["within_one_agreement"] or 0) < HUMAN_WITHIN_ONE_TARGET
-        or (metrics["pass_fail_agreement"] or 0) < HUMAN_PASS_FAIL_TARGET
-    ]
 
     inter_rater = compute_inter_rater_agreement(normalized_labels)
     judge_vs_mean = compute_judge_vs_reviewer_mean(comparisons)
@@ -735,6 +771,9 @@ def compute_human_alignment_stats(
         "targets": {
             "human_within_one_agreement": HUMAN_WITHIN_ONE_TARGET,
             "human_pass_fail_agreement": HUMAN_PASS_FAIL_TARGET,
+            "subjective_within_one_agreement": SUBJECTIVE_WITHIN_ONE_TARGET,
+            "subjective_pass_fail_agreement": SUBJECTIVE_PASS_FAIL_TARGET,
+            "subjective_dimensions": sorted(SUBJECTIVE_DIMENSIONS),
             "large_disagreement_delta": LARGE_DISAGREEMENT_DELTA,
         },
         "counts": {
