@@ -2,22 +2,59 @@ You are evaluating whether two sets of student conversations show meaningfully d
 
 {set_description}
 
+## Persona Definition (the "persona-conditioned" set was produced with THIS contract)
+Description: {persona_description}
+Familiar concepts: {familiar_concepts}
+Unfamiliar concepts: {unfamiliar_concepts}
+Emotional profile ({emotional_profile}):
+{emotional_profile_description}
+Behavioral rules:
+{behavioral_rules}
+Persona-specific expectations:
+- Question style: {expected_question_style}
+- Confusion style: {expected_confusion_style}
+- Recovery style: {expected_recovery_style}
+- Confidence pattern: {expected_confidence_pattern}
+
 ## Set A
 {set_a_conversation}
 
 ## Set B
 {set_b_conversation}
 
-## Evaluation
-- distinctiveness: How different are the two sets? (1-5)
-  5 = Completely different behavior
-  3 = Some differences but also many similarities
-  1 = Indistinguishable
-- persona_value_add: What specific behaviors differentiate Set A from Set B? (free text)
+## Important
+Score persona-specific distinguishability, not superficial difference. Different wording, length, politeness, or formatting is not enough for a high score unless the difference is tied to persona contract behavior such as knowledge boundary, question style, emotional profile, or behavioral rules.
+
+## Score Ceiling Rules
+- If the two sets are indistinguishable, distinctiveness must be 1.
+- If differences are only superficial, distinctiveness cannot exceed 2.
+- If both sets are generic students, distinctiveness cannot exceed 3 even if wording differs.
+- Scores 4-5 require contract-relevant persona evidence.
+
+## Scoring Criteria (1-5 scale)
+1 = Indistinguishable. ANY of the following: (a) no meaningful behavioral difference; (b) both sets are generic; (c) differences are too small to support persona-conditioned value; (d) a human reviewer could not tell which set is persona-conditioned.
+
+2 = Weak distinction. No Score 1 failure, but at least 2 of the following: (a) differences are mostly wording or length; (b) persona-specific evidence is weak; (c) both sets ask similar generic questions; (d) emotional tone is similar; (e) knowledge boundary is not clearly different.
+
+3 = Moderate distinction. ALL of the following: (a) some behavioral difference is visible; (b) at least one difference is plausibly persona-related; (c) no Score 1 failure; (d) generic overlap remains substantial.
+
+4 = Strong distinction. Meets all Score 3 baselines, plus at least 2 of the following: (a) persona-conditioned set shows clearer knowledge-boundary behavior; (b) question style differs in a contract-relevant way; (c) emotional profile differs meaningfully; (d) generic overlap is minor; (e) persona_value_add can cite specific evidence.
+
+5 = Excellent distinction. Meets all Score 4 criteria, plus at least 2 of the following: (a) persona-conditioned behavior is consistently distinguishable; (b) differences span knowledge boundary, question style, and emotional/behavioral profile; (c) generic set lacks those persona-specific behaviors; (d) distinction is obvious to a human reviewer; (e) no major generic behavior appears in the persona-conditioned set.
+
+## Evaluation Axes
+- distinctiveness: How different are the two sets in persona-specific behavior? (1-5)
+- persona_value_add: What specific contract-relevant behaviors differentiate the persona-conditioned set from the generic set?
 
 ## Failure Taxonomy
 If persona-conditioned behavior is weak, classify it using zero or more of:
 generic_student_behavior, emotional_mismatch, under_competence, persona_contract_contradiction.
+
+Use failure types consistently:
+- generic_student_behavior prevents scores 4-5.
+- emotional_mismatch lowers distinctiveness if persona tone is not visible.
+- under_competence lowers distinctiveness if it contradicts the intended persona.
+- persona_contract_contradiction usually limits distinctiveness to <= 2.
 
 Return ONLY valid JSON with:
 {{"reasoning": "<brief evidence>", "distinctiveness": <1-5>, "persona_value_add": "<explanation>", "failure_types": [], "dominant_failure_type": null, "failure_evidence": ""}}

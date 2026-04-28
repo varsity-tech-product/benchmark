@@ -1,21 +1,25 @@
 {
   "rubric_id": "D1_persona_adherence",
-  "version": "issue83-2026-04-23-r2",
+  "version": "v1.3.0",
   "dimension": "D1",
   "name": "Persona adherence per generated student message",
   "definition": "Evaluates whether one generated student message matches the assigned persona contract.",
   "unit": "student_model turn",
   "judge_context_inputs": [
     "persona description",
-    "emotional profile",
     "familiar concepts",
-    "no-prior-experience concepts",
+    "unfamiliar concepts",
+    "emotional profile (key + expanded description)",
     "behavioral rules",
+    "persona-specific expectations (question/confusion/recovery/confidence style)",
     "previous tutor message",
     "generated student message"
   ],
   "included_turn_source": "student_model",
-  "excluded_turn_sources": ["fixture_opening", "control_neutral_opening"],
+  "excluded_turn_sources": [
+    "fixture_opening",
+    "control_neutral_opening"
+  ],
   "score_fields": [
     "knowledge_boundary",
     "emotional_tone",
@@ -28,11 +32,11 @@
     "failure_evidence"
   ],
   "score_scales": {
-    "5": "Perfectly in-character.",
-    "4": "Mostly in-character with minor deviations.",
-    "3": "Partially in-character with noticeable inconsistencies.",
-    "2": "Mostly out-of-character.",
-    "1": "Completely out-of-character."
+    "1": "Severe persona failure. Any severe knowledge leak, severe under-competence, role collapse into co-teacher/expert, or direct persona-contract contradiction.",
+    "2": "Weak persona adherence. No Score 1 failure, but at least two moderate deviations across knowledge boundary, emotional tone, or behavioral rules.",
+    "3": "Acceptable persona adherence. Main knowledge boundary, emotional tone, and behavioral rules are respected; minor genericity or shallow persona signal may remain.",
+    "4": "Strong persona adherence. Score 3 baseline plus clear persona-specific question style, stable boundary handling, and only minor deviations.",
+    "5": "Excellent persona adherence. Highly distinctive persona signal with no boundary errors, no generic behavior, and natural emotional/behavioral consistency."
   },
   "failure_taxonomy_fields": [
     "knowledge_leak",

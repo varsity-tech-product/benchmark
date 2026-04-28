@@ -1,183 +1,276 @@
-# Student Simulator Stability Experiment
+# Student Simulator Stability
 
-This experiment evaluates whether `StudentSimulator` preserves persona behavior
-across tasks, repeated runs, student models, and tutor-temperature perturbations.
+A benchmark that asks: **does an LLM-driven student simulator preserve a
+specified persona across tasks, repeated runs, student-model swaps, and
+tutor-temperature perturbations?**
 
-Issue #83 version: static contracts/rubrics/policies live under `resources/`,
-and new outputs are written under `results/issue83/`. Final validation is strict:
-missing control outputs, fallback aggregates, untagged user turns, and
-template-like D4 duplicate score clusters are hard failures.
+The companion paper (the student-simulator-stability project) supports three independent claims:
 
-## Scope
+| Claim | Statement |
+|---|---|
+| **A — Stability** | The simulator preserves persona behavior under task / repeat / model / tutor-temperature perturbations. |
+| **B — Model selection** | Of the three candidate student backbones (GPT-5.4, Sonnet 4.6, Gemini 3.1 Pro), one is selected for the production benchmark on a D1+D2+D3 composite. |
+| **C — Metric calibration** | The LLM-judge panel agrees with a human quant expert within ±1 point on a 39-sample alignment study. |
 
-- **Tutor**: configured by
-  `server.config.llm_config.STUDENT_SIM_STABILITY_TUTOR_MODEL`
-- **Student models under test**:
-  - `openai/gpt-5.4`
-  - `anthropic/claude-sonnet-4-6`
-  - `google/gemini-3.1-pro-preview`
-- **Judge panel**: configured by
-  `server.config.llm_config.STUDENT_SIM_STABILITY_JUDGE_MODELS`; primary judge
-  outputs are mirrored to `judge_outputs/` for aggregation
-- 6 tasks × 2 personas per task, 3 repeats, tutor temperatures `0.0` and `1.0`
-- 8 tutor turns per conversation
-- 7 generated student-model turns per conversation; the initial opening is a
-  fixture/control stimulus and is excluded from student-behavior metrics
+Every reported number traces through the audit path
+`persona contract → generated transcript → rendered judge prompt → judge JSON
+→ aggregate → chart/table`. All seven stages live on disk and can be inspected.
 
-Total: 216 live trials + 36 control trials = 252 conversations.
+---
 
-## Prerequisites
+## What is in this repository
+
+```
+bench/experiments/student_sim_stability/
+├── cli.py                   # one entry point, all pipeline stages
+├── core/                    # config, paths, contracts, rubrics, snapshots, numerics
+├── pipeline/                # generate → render → judge → aggregate
+├── analysis/                # report (HTML/PDF/CSV/TeX), audit, validate, human-alignment
+│   └── components/          # per-chart / per-table Component framework
+├── judge_qualification/     # gate that qualifies the judge panel before the full run
+├── resources/               # rubrics, prompt templates, persona contracts, policies
+├── docs/HUMAN_ALIGNMENT.md  # bilingual operator reference for human evaluators
+└── results/                # canonical runs (entire tree is git-ignored — see below)
+```
+
+The whole `results/` tree (both the **raw artifacts** —
+`conversations/`, `probes/`, `judge_inputs/`, `judge_outputs/`,
+`judge_outputs_by_model/` — and the **aggregated outputs** —
+`evaluations/`, `report/`, `human_alignment/`, `*_snapshot/`) is git-ignored
+and hosted on HuggingFace following the repo's `data/` convention. To
+re-render the report or inspect the audit locally, fetch the canonical
+`results/main/` and `results/judge_qualification/` trees from HuggingFace
+into this path first.
+
+---
+
+## Quick start
+
+### Prerequisites
 
 ```bash
 pip install -r requirements.txt
-# Either export OPENROUTER_API_KEY or put it in bench/.env / repo-root .env.
+# Put your OpenRouter key in bench/.env or repo-root .env, or export it:
 export OPENROUTER_API_KEY=sk-or-...
 ```
 
-## Quick Start (one command)
-
-From `bench/`:
+### Re-render the report from the shipped canonical run (no LLM cost)
 
 ```bash
+cd bench
+python -m experiments.student_sim_stability.cli report
+# Open results/main/report/stability_report.html
+```
+
+### Re-run the full pipeline from scratch (uses OpenRouter budget)
+
+```bash
+cd bench
+
+# Step 0: qualify the judge panel against the fixed golden corpus
+python -m experiments.student_sim_stability.cli judge-qualification render
+python -m experiments.student_sim_stability.cli judge-qualification judge
+python -m experiments.student_sim_stability.cli judge-qualification report
+
+# Step 1-7: probes → generate → render → judge → aggregate → audit → report
 python -m experiments.student_sim_stability.cli all -w 6
 ```
 
-This runs the full issue83 pipeline: controlled probes → scripted dialogues →
-generate live/control conversations → render judge prompts → run the configured
-judge panel → compute judge agreement → aggregate primary-judge results → audit
-→ validate → generate HTML report.
+`cli all` only runs once `judge-qualification report` reports `ok=true`, so the
+gate must pass before the full pipeline can proceed.
 
-## Step-by-Step Pipeline
+### Bundle figures / tables for paper inclusion
 
-Each stage can also be run independently:
+After `cli report`, every chart/table component dumps its `.html`, `.csv`,
+`.tex`, and `.pdf` siblings under `results/main/report/components/`. To copy
+them into a paper-asset directory with a sha256 manifest:
 
 ```bash
-# Preview experiment scale
-python -m experiments.student_sim_stability.cli dry-run
-
-# Cheap issue83 pilot: controlled probes, scripted dialogues, 10 live trials,
-# matching controls, judge panel, aggregate, audit, report, and strict validation
-python -m experiments.student_sim_stability.cli pilot
-
-# Generate conversations (tutor + student via OpenRouter)
-python -m experiments.student_sim_stability.cli generate -w 6
-
-# Run controlled probes and scripted dialogues before full live robustness.
-# Omit --model to run all configured student models.
-python -m experiments.student_sim_stability.cli probes --model openai/gpt-5.4
-python -m experiments.student_sim_stability.cli scripted --model openai/gpt-5.4
-
-# Render judge prompt files from conversations
-python -m experiments.student_sim_stability.cli render-judges --dimension all --clean
-
-# Run judge evaluations (OpenRouter). Use --all-models for issue83 agreement.
-python -m experiments.student_sim_stability.cli judge --dimension all --workers 6 --all-models
-python -m experiments.student_sim_stability.cli judge-agreement
-
-# Aggregate judge outputs into report input JSON
-python -m experiments.student_sim_stability.cli aggregate --strict --profile full
-
-# Initialize human-alignment label artifacts and write data-quality audit
-python -m experiments.student_sim_stability.cli human-alignment
-python -m experiments.student_sim_stability.cli audit --profile full
-
-# Generate HTML report
-python -m experiments.student_sim_stability.cli report --profile full
-
-# Validate artifact counts and required report/audit artifacts
-python -m experiments.student_sim_stability.cli validate --strict --profile full
+python -m experiments.student_sim_stability.cli paper-export --target ./paper_assets
 ```
 
-## Layout
+---
 
-| Path | Purpose |
-|------|---------|
-| `cli.py` | CLI entry point for all pipeline stages |
-| `core/config.py` | Experiment matrix and output paths; model lists are re-exported from `server.config.llm_config` |
-| `core/paths.py` | Single source of truth for experiment, resource, and bench-root paths |
-| `core/contracts.py` | Loads experiment-private persona contracts |
-| `core/rubrics.py` | Loads named rubric IDs, versions, and required score keys |
-| `core/artifacts.py` | Snapshots static contracts, rubrics, policies, and runtime metadata into a results directory |
-| `pipeline/runner.py` | Conversation generation (tutor + student via OpenRouter) |
-| `pipeline/probes.py` | Single-turn targeted persona probe generation |
-| `pipeline/scripted_dialogues.py` | Deterministic multi-turn tutor scripts |
-| `pipeline/render_judge_prompts.py` | Renders judge prompts from conversation files using rubric prompt artifacts |
-| `pipeline/judge.py` | Executes judge prompts via OpenRouter |
-| `pipeline/aggregate.py` | Joins judge outputs with metadata |
-| `analysis/evaluator.py` | Legacy/programmatic evaluator helpers |
-| `analysis/judge_agreement.py` | Computes score agreement across configured judge models |
-| `analysis/validate.py` | Validates artifact counts and aggregation shape |
-| `analysis/report.py` | Generates HTML report with embedded charts |
-| `analysis/data_quality.py` | Writes strict issue83 data-quality audit artifacts |
-| `analysis/human_alignment.py` | Initializes human label artifacts and computes agreement when labels are filled |
-| `resources/contracts/` | Experiment-private copied persona, emotional-profile, tutor, and simulator contracts |
-| `resources/rubrics/` | Experiment-private D1-D4/control/P1/B1 rubric definitions and prompt templates |
-| `resources/policies/` | No-fallback, opener, control, judge, and model-comparison policies |
-| `resources/model_metadata_schema.json` | Static model metadata schema reference |
-| `docs/internal/` | Internal notes and historical fix reports |
-| `results/` | Git-ignored generated experiment outputs, including smoke runs |
+## Experiment scope
 
-## Evaluation Dimensions
+| Axis | Value |
+|---|---|
+| Tutor model | `STUDENT_SIM_STABILITY_TUTOR_MODEL` (configured in `server.config.llm_config`) |
+| Student models under test | `openai/gpt-5.4`, `anthropic/claude-sonnet-4-6`, `google/gemini-3.1-pro-preview` |
+| Judge panel | `STUDENT_SIM_STABILITY_JUDGE_MODELS` (multi-judge; primary judge mirrored to `judge_outputs/`) |
+| Tasks × personas | 6 tasks × 2 personas/task |
+| Repeats × tutor temperatures | 3 repeats × {0.0, 1.0} |
+| Conversation turns | 8 tutor + 7 generated student turns; the opening is a fixture, excluded from metrics |
+| Total trials | 216 live + 36 control = **252 conversations** |
+
+`cli dry-run` prints the live count from the current config without touching
+the network.
+
+---
+
+## Evaluation dimensions
 
 | Dimension | What it measures | Granularity |
-|-----------|-----------------|-------------|
-| D1 | Persona adherence per generated student message | 252 sampled evals by default |
-| D2 | Cross-run reproducibility (same config, 3 repeats) | 72 eval groups |
-| D3 | Cross-model consistency (3 models, anonymized) | 72 eval groups |
-| D4 | Persona drift over conversation turns | 252 evals before aggregation, 216 live rows in the report aggregate |
-| Control | Persona vs generic student distinctiveness | 36 eval pairs |
-| P1 | Targeted single-turn persona probes | 60 evals in full mode |
-| B1 | Blind persona identification from scripted dialogues | 24 evals in full mode |
+|---|---|---|
+| **D1** | Persona adherence per generated student message | 252 sampled evals |
+| **D2** | Cross-run reproducibility (same config, 3 repeats) | 72 eval groups |
+| **D3** | Persona drift over conversation turns | 252 evals before aggregation, 216 live rows in the report |
+| **Control / C1** | Persona vs generic-student distinctiveness | 36 eval pairs |
+| **P1** | Targeted single-turn persona probes | 60 evals |
+| **B1** | Blind persona identification from anonymized live conversations | 24 evals |
 
-## Score Path
+The 7 axes of the failure taxonomy (`knowledge_leak`, `under_competence`,
+`emotional_mismatch`, `generic_student_behavior`, `co_teacher_drift`,
+`task_forgetting`, `persona_contract_contradiction`) are emitted by every
+applicable judge call and aggregated under `report/failure_taxonomy_stats.json`.
 
-Every reported score follows the same audit path:
+---
 
-```text
-persona contract -> generated conversation or probe -> rendered judge prompt/context
--> judge JSON score -> aggregate metric -> chart/table -> interpretation
+## Pipeline stages
+
+`cli all` runs the seven stages below; each is also runnable independently.
+
+```bash
+cli dry-run                    # print experiment scale
+cli probes                     # P1 targeted persona probes (per student model)
+cli generate -w 6              # live + control conversations via OpenRouter
+cli render-judges --clean --dimension all
+cli judge --dimension all --workers 6 --all-models
+cli judge-agreement            # multi-judge agreement on shared evals
+cli aggregate --strict         # primary-judge → all_evaluations.json
+cli aggregate-multi-judge      # 5-view aggregate (sonnet, gpt54, gemini, panel_2, panel_3)
+cli human-alignment            # initialize 39-sample manifest + label CSV
+cli audit                      # data-quality audit (no fallback, no template clusters, ...)
+cli report                     # render stability_report.html + per-component dumps
+cli validate --strict          # final artifact-count and shape checks
 ```
 
-| Stage | Artifact | Validation role |
-|-------|----------|-----------------|
-| Persona contract | `contracts_snapshot/personas/*.json` | Stable source for expected knowledge, emotion, behavior, questions, confusion, and failure modes |
-| Generated transcript | `conversations/`, `probes/responses/`, `scripted/conversations/` | Contains explicit turn `source`; only `student_model` turns are scored |
-| Judge prompt/context | `judge_inputs/*.json` | Stores `rubric_id`, `rubric_version`, persona contract version, source file, and rendered prompt |
-| Judge score | `judge_outputs/*.json` and `judge_outputs_by_model/` | Stores judge model, temperature, input hash, rubric version, score fields, and failure taxonomy |
-| Aggregate metric | `evaluations/all_evaluations.json` and `report/stability_stats.json` | Applies the rubric aggregation formula for each dimension |
-| Report visual | `report/stability_report.html` | Shows rubric definition, inputs, score fields, scale, aggregation, chart/table, and action guidance |
+---
 
-## Output Structure
+## Output structure
 
-All new issue #83 outputs are written to `results/issue83/` (git-ignored):
+The whole `results/` tree is git-ignored and hosted on HuggingFace; nothing
+under it is tracked in this repository.
 
 ```
-results/issue83/
-├── conversations/          # 252 conversation JSON files
-├── contracts_snapshot/     # refreshed copy for this run
-├── rubrics_snapshot/
-├── policies_snapshot/
-├── probes/
-├── scripted/
-├── human_alignment/
-├── judge_inputs/           # rendered judge prompts + metadata
-├── judge_outputs/          # primary judge evaluation results
-├── judge_outputs_by_model/ # all configured judge-model outputs
+results/main/                # full pipeline run, fetched from HF
+├── contracts_snapshot/      # frozen copy of resources/contracts/ for this run
+├── rubrics_snapshot/        # frozen copy of resources/rubrics/ for this run
+├── policies_snapshot/       # frozen copy of resources/policies/ for this run
+├── conversations/           # 252 conversation JSON files
+├── probes/                  # P1 probe responses
+├── judge_inputs/            # rendered judge prompts + metadata
+├── judge_outputs/           # primary judge results
+├── judge_outputs_by_model/  # per-judge-model results
 ├── evaluations/
-│   └── all_evaluations.json
+│   ├── all_evaluations.json
+│   └── multi_judge_aggregates.json
+├── human_alignment/
+│   ├── sample_manifest.json
+│   ├── human_label_template.csv
+│   └── agreement_report.json (after `cli human-alignment --compute`)
 └── report/
     ├── stability_report.html
     ├── stability_stats.json
     ├── judge_agreement.json
-    ├── data_quality_audit.json
-    └── data_quality_audit.md
+    ├── data_quality_audit.{json,md}
+    ├── failure_taxonomy_stats.json
+    ├── failure_cases_candidates.json
+    └── components/         # per-component .html / .csv / .tex / .pdf dumps
+
+results/judge_qualification/ # gate run, fetched from HF, same shape minus
+                             # human_alignment/
 ```
 
-Conversation turn source values:
+Every conversation turn carries an explicit `source`:
 
-- `fixture_opening`: persona/task opening for live conversations; excluded from
-  metrics.
-- `control_neutral_opening`: neutral opening for control conversations; excluded
-  from metrics.
-- `student_model`: generated student simulator turn; included in student metrics.
-- `tutor_model`: generated tutor turn.
+| Source | Counted in student metrics? |
+|---|---|
+| `fixture_opening` | No — task fixture for live conversations |
+| `control_neutral_opening` | No — neutral opener for control conversations |
+| `student_model` | **Yes** — generated student simulator turn |
+| `tutor_model` | No — generated tutor turn (`Context only` in the D3 prompt) |
+
+---
+
+## Reproducing each claim
+
+| Claim | What to read |
+|---|---|
+| **A — Stability** | `report/stability_report.html` §1 (D1 / D2 / D3 charts and tables); raw aggregates in `evaluations/all_evaluations.json` |
+| **B — Model selection** | `report/stability_report.html` §2 (composite ranking); `report/components/d1_by_model*.{tex,csv}`, `d2_by_model*.{tex,csv}`, `d3_drift.{tex,csv}` |
+| **C — Metric calibration** | `human_alignment/agreement_report.json`; `report/stability_report.html` §3 (human-vs-LLM table); 39-sample labeling protocol in `docs/HUMAN_ALIGNMENT.md` |
+
+If a number in the report is unfamiliar, the chart card links back to
+`judge_outputs/<eval_id>.json` for that exact judge call. The whole
+`results/` tree must be fetched from HuggingFace first since none of it is
+tracked in git.
+
+---
+
+## Working with the human-alignment study
+
+39 samples, stratified by (dimension, persona). The full bilingual reference
+— workflow, persona contracts, per-dimension scoring rules — is in
+[`docs/HUMAN_ALIGNMENT.md`](docs/HUMAN_ALIGNMENT.md).
+
+```bash
+cli human-alignment              # initialize sample manifest + label CSV
+# ... a human grader fills in human_label_template.csv ...
+cli human-alignment --compute    # compute agreement against the LLM panel
+```
+
+Output: `human_alignment/agreement_report.json` and a top-15 disagreement
+breakdown.
+
+---
+
+## Layout reference
+
+| Path | Purpose |
+|---|---|
+| `cli.py` | CLI entry point for every pipeline stage |
+| `core/config.py` | Experiment matrix; model lists re-exported from `server.config.llm_config` |
+| `core/paths.py` | Single source of truth for experiment, resource, and bench-root paths |
+| `core/contracts.py` | Loads experiment-private persona contracts |
+| `core/rubrics.py` | Rubric IDs, versions, required score keys |
+| `core/artifacts.py` | Snapshots contracts/rubrics/policies and runtime metadata into the results dir |
+| `core/numerics.py` | Stdlib-only `safe_mean` / `safe_std` / `bootstrap_mean_ci` |
+| `pipeline/runner.py` | Live conversation generation (tutor + student via OpenRouter) |
+| `pipeline/probes.py` | Single-turn targeted persona probe generation |
+| `pipeline/render_judge_prompts.py` | Renders judge prompts from conversation files |
+| `pipeline/judge.py` | Executes judge prompts via OpenRouter (with sha256 resume-skip) |
+| `pipeline/aggregate.py` | Joins primary-judge outputs with metadata |
+| `pipeline/aggregate_multi_judge.py` | 5-view aggregate from `judge_outputs_by_model/` |
+| `analysis/report.py` | HTML report with embedded charts and Component dumps |
+| `analysis/components/` | Per-chart / per-table / per-section Component framework (HTML/CSV/TeX/PDF) |
+| `analysis/data_quality.py` | Strict data-quality audit |
+| `analysis/validate.py` | Final artifact-count and shape checks |
+| `analysis/judge_agreement.py` | Per-pair judge agreement on shared evals |
+| `analysis/human_alignment.py` | Sample manifest + human-vs-LLM agreement |
+| `analysis/failure_case_picker.py` | Selects representative failure cases for the report appendix |
+| `judge_qualification/` | Pre-experiment gate: render → judge → report on the fixed golden corpus |
+| `resources/contracts/` | Persona, emotional-profile, tutor, and simulator contracts (immutable per run) |
+| `resources/rubrics/` | D1-D3 / control / P1 / B1 rubric JSON + prompt templates |
+| `resources/policies/` | No-fallback, opener, control, judge, model-comparison policies |
+| `docs/HUMAN_ALIGNMENT.md` | Bilingual reference for the human evaluator |
+
+---
+
+## Editing rubric prompts safely
+
+Editing any prompt template under `resources/rubrics/prompts/*.txt` **must**
+be paired with a `RUBRIC_VERSION` bump in `core/rubrics.py`. The judge layer
+pins each output to `(input_sha256, judge_model, rubric_id, rubric_version)`;
+without a version bump, stale outputs silently survive a re-run because the
+SHA-256 of the prompt has changed but the version pin still matches.
+
+---
+
+## Citation
+
+A `CITATION.cff` will be added when the paper is public.
+
+## License
+
+See the repository root `LICENSE` file.

@@ -8,12 +8,10 @@ This stage consumes `judge_inputs/*.json` files produced by
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import logging
 import shutil
 import sys
-import tempfile
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -22,7 +20,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable
 
-from experiments.student_sim_stability.core.paths import BENCH_ROOT
+from experiments.student_sim_stability.core.io_utils import (
+    atomic_write_json,
+    input_payload_hash,
+    safe_model_dir,
+)
+from experiments.student_sim_stability.core.paths import BENCH_ROOT, default_results_dir
 
 if str(BENCH_ROOT) not in sys.path:
     sys.path.insert(0, str(BENCH_ROOT))
@@ -36,14 +39,17 @@ from experiments.student_sim_stability.core.config import (  # noqa: E402
     JUDGE_MODEL,
     JUDGE_MODELS,
     JUDGE_TEMPERATURE,
-    OUTPUT_DIR,
 )
 from experiments.student_sim_stability.core.rubrics import (
+    DIMENSION_TO_FILE,
     required_score_keys,
 )
 
 # noqa: E402
-from server.config.llm_config import OPENROUTER_BASE_URL  # noqa: E402
+from server.config.llm_config import (  # noqa: E402
+    get_openrouter_base_url,
+    require_openrouter_api_key,
+)
 from server.config.pricing import get_llm_cost_kwargs  # noqa: E402
 from server.eval.judges.runtime.llm_client import EwanLLMClient  # noqa: E402
 
@@ -51,7 +57,7 @@ log = logging.getLogger(__name__)
 
 _THREAD_LOCAL = threading.local()
 
-_DIMENSION_PREFIXES = ["D1", "D2", "D3", "D4", "control", "P1", "B1"]
+_DIMENSION_PREFIXES = tuple(DIMENSION_TO_FILE)
 
 
 @dataclass(frozen=True)
@@ -62,17 +68,16 @@ class JudgeConfig:
     retry_delay: float
 
 
-def default_results_dir() -> Path:
-    return BENCH_ROOT / OUTPUT_DIR
-
-
 def _client_for_thread(config: JudgeConfig) -> EwanLLMClient:
     key = (config.model, config.temperature)
     cached = getattr(_THREAD_LOCAL, "client_key", None)
     if cached != key:
         _THREAD_LOCAL.client = EwanLLMClient(
             model=config.model,
-            base_url=OPENROUTER_BASE_URL,
+            api_key=require_openrouter_api_key(
+                purpose=f"student-sim-stability judge model {config.model}"
+            ),
+            base_url=get_openrouter_base_url(),
             temperature=config.temperature,
             **get_llm_cost_kwargs(config.model),
         )
@@ -81,7 +86,18 @@ def _client_for_thread(config: JudgeConfig) -> EwanLLMClient:
 
 
 def extract_json_object(text: str) -> dict:
-    """Extract the first JSON object from a model response."""
+    """Extract the first JSON object from a model response.
+
+    Why this isn't ``server.eval.judges.runtime.scoring_utils.extract_json_from_response``:
+    that helper falls back to a flat-object regex (``\\{[^{}]*\\}``) and returns
+    ``{}`` on failure. Judge outputs for D1/D3/B1/control contain nested
+    structures (``per_turn`` is a list of dicts, ``scores_by_judge`` is a dict);
+    the regex would silently truncate them and the empty-dict fallback would
+    swallow malformed responses that we explicitly want to surface as retries.
+    This implementation uses ``JSONDecoder.raw_decode`` to walk the text and
+    parse the first complete JSON object, raising if none is found so the
+    caller sees the failure.
+    """
     decoder = json.JSONDecoder()
     for idx, char in enumerate(text):
         if char != "{":
@@ -102,39 +118,6 @@ def validate_scores(dimension: str, scores: dict) -> None:
         raise ValueError(f"{dimension} judge output missing keys: {missing}")
 
 
-def atomic_write_json(path: Path, data: dict) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.NamedTemporaryFile(
-        "w",
-        encoding="utf-8",
-        dir=path.parent,
-        prefix=f".{path.name}.",
-        suffix=".tmp",
-        delete=False,
-    ) as fh:
-        json.dump(data, fh, indent=2, ensure_ascii=False)
-        fh.write("\n")
-        tmp_path = Path(fh.name)
-    tmp_path.replace(path)
-
-
-def safe_model_dir(model: str) -> str:
-    return model.replace("/", "__").replace(".", "_")
-
-
-def _input_payload_hash(payload: dict) -> str:
-    relevant = {
-        "eval_id": payload.get("eval_id"),
-        "dimension": payload.get("dimension"),
-        "rubric_id": payload.get("rubric_id"),
-        "rubric_version": payload.get("rubric_version"),
-        "prompt": payload.get("prompt"),
-        "metadata": payload.get("metadata", {}),
-    }
-    encoded = json.dumps(relevant, sort_keys=True, ensure_ascii=False).encode("utf-8")
-    return hashlib.sha256(encoded).hexdigest()
-
-
 def _validate_existing_output(
     output_path: Path,
     payload: dict,
@@ -142,7 +125,7 @@ def _validate_existing_output(
 ) -> None:
     with open(output_path, encoding="utf-8") as fh:
         existing = json.load(fh)
-    expected_hash = _input_payload_hash(payload)
+    expected_hash = input_payload_hash(payload)
     expected = {
         "eval_id": payload["eval_id"],
         "dimension": payload["dimension"],
@@ -275,7 +258,7 @@ def judge_one(
         return eval_id, False, 0.0, None
 
     last_error: Exception | None = None
-    input_hash = _input_payload_hash(payload)
+    input_hash = input_payload_hash(payload)
     for attempt in range(1, config.max_retries + 1):
         try:
             client = _client_for_thread(config)
@@ -324,10 +307,7 @@ def run_judge(
     require_inputs: bool = False,
     exclude_dimensions: Iterable[str] | None = None,
 ) -> dict:
-    import os
-
-    if not os.environ.get("OPENROUTER_API_KEY"):
-        raise RuntimeError("OPENROUTER_API_KEY environment variable is not set")
+    require_openrouter_api_key(purpose="student-sim-stability judge run")
 
     files = select_inputs(
         input_dir,
@@ -519,7 +499,7 @@ def main(argv: Iterable[str] | None = None) -> int:
     parser.add_argument(
         "--dimension",
         default="all",
-        choices=["D1", "D2", "D3", "D4", "control", "P1", "B1", "all"],
+        choices=(*DIMENSION_TO_FILE, "all"),
     )
     parser.add_argument("--manifest", type=Path, default=None)
     parser.add_argument("--limit", type=int, default=None)

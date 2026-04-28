@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import functools
 import json
 from pathlib import Path
 from typing import Any
@@ -9,16 +10,48 @@ from typing import Any
 from experiments.student_sim_stability.core.paths import RESOURCE_ROOT
 
 RUBRICS_DIR = RESOURCE_ROOT / "rubrics"
-RUBRIC_VERSION = "issue83-2026-04-23"
+RUBRIC_VERSION = "v1.3.0"
 
 DIMENSION_TO_FILE = {
     "D1": "D1_persona_adherence.json",
     "D2": "D2_cross_run_reproducibility.json",
-    "D3": "D3_cross_model_consistency.json",
-    "D4": "D4_drift_detection.json",
+    "D3": "D3_drift_detection.json",
     "control": "C1_persona_distinguishability.json",
     "P1": "P1_targeted_probe.json",
     "B1": "B1_blind_persona_identification.json",
+}
+
+# Single source of truth for which score field carries the dimension's headline
+# numeric (used by judge-agreement, human-alignment, multi-judge, primary
+# report, and judge-qualification gate). Each entry must appear in the
+# corresponding rubric's ``score_fields`` list — `primary_score_field` enforces
+# this at lookup time.
+_PRIMARY_SCORE_FIELD: dict[str, str] = {
+    "D1": "overall",
+    "D2": "overall_reproducibility",
+    "D3": "overall_drift_score",
+    "control": "distinctiveness",
+    "P1": "overall_probe_pass",
+    "B1": "contract_fit",
+}
+
+# Numeric fields used by panel averaging. These are the ``score_fields`` minus
+# the categorical / structured ones (``identified_persona`` for B1,
+# ``persona_value_add`` for control, ``per_turn`` and ``drift_onset_turn`` for
+# D3) that cannot be element-wise averaged across judges.
+_NUMERIC_SCORE_FIELDS: dict[str, tuple[str, ...]] = {
+    "D1": ("knowledge_boundary", "emotional_tone", "behavioral_rules", "overall"),
+    "D2": (
+        "topic_trajectory",
+        "knowledge_display",
+        "emotional_consistency",
+        "question_patterns",
+        "overall_reproducibility",
+    ),
+    "D3": ("overall_drift_score",),
+    "control": ("distinctiveness",),
+    "P1": ("contract_fit", "facet_fit", "overall_probe_pass"),
+    "B1": ("confidence", "contract_fit"),
 }
 
 FAILURE_TAXONOMY_FIELDS = [
@@ -46,6 +79,7 @@ def rubric_path(dimension: str) -> Path:
     return RUBRICS_DIR / filename
 
 
+@functools.lru_cache(maxsize=None)
 def load_rubric(dimension: str) -> dict[str, Any]:
     path = rubric_path(dimension)
     with open(path, encoding="utf-8") as fh:
@@ -99,6 +133,49 @@ def required_score_keys(dimension: str) -> set[str]:
     keys.add("reasoning")
     keys.update(rubric.get("required_failure_output_fields", FAILURE_OUTPUT_FIELDS))
     return keys
+
+
+@functools.lru_cache(maxsize=None)
+def primary_score_field(dimension: str) -> str:
+    """Headline numeric score field for ``dimension``.
+
+    Validates on first lookup that the named field actually appears in the
+    rubric JSON's ``score_fields`` so the table here cannot silently drift
+    away from the rubric.
+    """
+    try:
+        field = _PRIMARY_SCORE_FIELD[dimension]
+    except KeyError as exc:
+        raise KeyError(f"Unknown rubric dimension: {dimension!r}") from exc
+    declared = set(load_rubric(dimension).get("score_fields", []))
+    if field not in declared:
+        raise ValueError(
+            f"primary score field {field!r} for {dimension} not declared in rubric "
+            f"score_fields {sorted(declared)}"
+        )
+    return field
+
+
+@functools.lru_cache(maxsize=None)
+def numeric_score_fields(dimension: str) -> tuple[str, ...]:
+    """Numeric score fields used for panel averaging on ``dimension``.
+
+    Strict subset of the rubric JSON's ``score_fields``. Excludes categorical
+    (``identified_persona``), structured (``per_turn``, ``persona_value_add``),
+    and incidental (``drift_onset_turn``) entries.
+    """
+    try:
+        fields = _NUMERIC_SCORE_FIELDS[dimension]
+    except KeyError as exc:
+        raise KeyError(f"Unknown rubric dimension: {dimension!r}") from exc
+    declared = set(load_rubric(dimension).get("score_fields", []))
+    extra = sorted(set(fields) - declared)
+    if extra:
+        raise ValueError(
+            f"numeric score fields {extra} for {dimension} not declared in rubric "
+            f"score_fields {sorted(declared)}"
+        )
+    return fields
 
 
 def all_rubrics() -> list[dict[str, Any]]:

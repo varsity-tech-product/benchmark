@@ -9,14 +9,16 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Iterable
 
-from experiments.student_sim_stability.core.paths import BENCH_ROOT
+from experiments.student_sim_stability.core.paths import (
+    BENCH_ROOT,
+    default_results_dir,
+)
 
 if str(BENCH_ROOT) not in sys.path:
     sys.path.insert(0, str(BENCH_ROOT))
 
 from experiments.student_sim_stability.core.config import (  # noqa: E402
     MAX_WORKERS,
-    OUTPUT_DIR,
     STUDENT_MODEL_SOURCE,
     STUDENT_MODELS,
     TEMPERATURE,
@@ -30,36 +32,218 @@ from experiments.student_sim_stability.pipeline.runner import _make_client  # no
 from server.core.student_sim import StudentSimulator  # noqa: E402
 
 PROBES = [
+    # Each probe is one natural tutor turn that a real QuantTutor session might
+    # produce — it embeds a task scenario and asks an indirect question whose
+    # answer should expose a specific persona facet.
+    #
+    # ``expected_signals_by_persona`` gives the P1 judge a per-persona cheat
+    # sheet of surface markers that justify a high facet_fit score; the
+    # student's response does not have to use the exact phrases, but the
+    # presence / absence pattern drives the score ceilings in
+    # ``resources/rubrics/prompts/P1_targeted_probe.txt``.
     {
-        "probe_id": "finance_boundary",
+        "probe_id": "data_sanity_check",
         "facet": "finance_knowledge_boundary",
-        "tutor_message": "Before we start, can you explain Sharpe ratio and look-ahead bias in your own words?",
+        "tutor_message": (
+            "I've got daily AAPL OHLCV data pulled from Yahoo, and before we "
+            "compute returns on it, I'd like your take — what's the first "
+            "sanity check you'd run on this price series to make sure it's "
+            "trustworthy enough to backtest on?"
+        ),
+        "expected_signals_by_persona": {
+            "finance_veteran": [
+                "adjusted close",
+                "stock splits",
+                "dividends",
+                "corporate actions",
+                "survivorship bias",
+            ],
+            "fullstack_practitioner": [
+                "adjusted close",
+                "splits",
+                "NaN",
+                "missing dates",
+                "business day calendar",
+                "dtype",
+            ],
+            "developer_crossover": [
+                "NaN",
+                "missing values",
+                "dtype",
+                "duplicates",
+                "null",
+                "date gaps",
+            ],
+            "double_novice": [
+                "not sure",
+                "missing",
+                "wrong",
+                "I don't know",
+                "ask tutor",
+                "maybe",
+            ],
+        },
     },
     {
-        "probe_id": "coding_boundary",
+        "probe_id": "returns_impl_choice",
         "facet": "coding_knowledge_boundary",
-        "tutor_message": "Could you sketch the Python or pandas code you would use for this analysis?",
+        "tutor_message": (
+            "Quick opinion before I write any code — for computing daily "
+            "returns from a pandas price column, which of these would you "
+            "reach for and why: (a) df['close'].pct_change(), (b) "
+            "df['close'].diff() / df['close'].shift(), or (c) a "
+            ".apply(lambda x: ...) version?"
+        ),
+        "expected_signals_by_persona": {
+            "fullstack_practitioner": [
+                "pct_change",
+                "vectorized",
+                "performance",
+                "first row NaN",
+                "idiomatic",
+                "readable",
+            ],
+            "developer_crossover": [
+                "pct_change",
+                "vectorized",
+                "apply is slow",
+                "broadcasting",
+                "pandas idiom",
+            ],
+            "finance_veteran": [
+                "I usually use Excel",
+                "you choose",
+                "not sure about Python",
+                "which is the standard",
+                "I'd trust your call",
+            ],
+            "double_novice": [
+                "what does pct_change do",
+                "I don't know",
+                "which one",
+                "can you explain",
+                "what is lambda",
+            ],
+        },
     },
     {
-        "probe_id": "emotional_style",
+        "probe_id": "debug_stress_signal",
         "facet": "emotional_profile",
-        "tutor_message": "This task involves returns, pandas, and a formula. How are you feeling about tackling it?",
+        "tutor_message": (
+            "Hmm — I ran your earlier idea and hit `KeyError: 'Close'` on "
+            "the first line. I haven't pasted the full traceback yet; any "
+            "guesses about what might be wrong?"
+        ),
+        "expected_signals_by_persona": {
+            "finance_veteran": [
+                "I'm not sure",
+                "could you show the traceback",
+                "not confident guessing",
+                "I don't want to guess wrong",
+                "something with the column name maybe",
+            ],
+            "fullstack_practitioner": [
+                "case sensitivity",
+                "column name",
+                "df.columns",
+                "probably 'close' lowercase",
+                "check the header",
+            ],
+            "developer_crossover": [
+                "column name",
+                "df.columns",
+                "case sensitivity",
+                "capital letter",
+                "probably renamed",
+            ],
+            "double_novice": [
+                "what does KeyError mean",
+                "I don't understand",
+                "can you explain the error",
+                "not sure",
+                "is it broken",
+            ],
+        },
     },
     {
-        "probe_id": "confusion_style",
+        "probe_id": "ambiguous_claim",
         "facet": "confusion_style",
-        "tutor_message": "Suppose my explanation suddenly used vectorized returns and annualized volatility. What would you ask next?",
+        "tutor_message": (
+            "You can compute a 20-day moving average with "
+            "df['returns'].rolling(20).mean(), but for returns specifically "
+            "that rolling-mean won't quite behave the way you might expect. "
+            "What part of that sounds off to you?"
+        ),
+        "expected_signals_by_persona": {
+            "fullstack_practitioner": [
+                "first 19 rows NaN",
+                "warm-up",
+                "return vs price",
+                "compounding",
+                "arithmetic vs geometric",
+            ],
+            "finance_veteran": [
+                "are you compounding",
+                "geometric mean",
+                "not the same as price SMA",
+                "is that the return interpretation",
+                "which return — simple or log",
+            ],
+            "developer_crossover": [
+                "what should it do vs what does it do",
+                "NaN at the start",
+                "windowing behavior",
+                "specifically what",
+                "min_periods",
+            ],
+            "double_novice": [
+                "what's a moving average",
+                "I'm not sure what's wrong",
+                "can you explain",
+                "what does rolling do",
+                "I need more context",
+            ],
+        },
     },
     {
-        "probe_id": "recovery_style",
+        "probe_id": "wrong_claim_recovery",
         "facet": "recovery_style",
-        "tutor_message": "If I gave you one concrete example and one analogy, what would help you recover from confusion fastest?",
+        "tutor_message": (
+            "Quick side note: to annualize a Sharpe ratio computed from "
+            "daily returns you just multiply by 252 — that's the number of "
+            "trading days in a year. Does that match how you'd do it?"
+        ),
+        "expected_signals_by_persona": {
+            "finance_veteran": [
+                "not quite",
+                "it's sqrt(252)",
+                "square root of 252",
+                "volatility scales with sqrt of time",
+                "the numerator scales linearly but the denominator scales by sqrt",
+            ],
+            "fullstack_practitioner": [
+                "sqrt(252)",
+                "not 252",
+                "square root",
+                "volatility scaling",
+                "that's wrong",
+            ],
+            "developer_crossover": [
+                "I thought it was sqrt(252)",
+                "could you double-check",
+                "is it really 252",
+                "I've seen sqrt somewhere",
+            ],
+            "double_novice": [
+                "if you say so",
+                "I'll go with that",
+                "okay",
+                "I don't know",
+                "that sounds right",
+            ],
+        },
     },
 ]
-
-
-def default_results_dir() -> Path:
-    return BENCH_ROOT / OUTPUT_DIR
 
 
 def run_probes(
@@ -101,11 +285,15 @@ def run_probes(
             }
         ]
         message = sim.generate_message(conversation)
+        expected_signals = (probe.get("expected_signals_by_persona") or {}).get(
+            persona_id, []
+        )
         output = {
             "probe_id": probe["probe_id"],
             "facet": probe["facet"],
             "persona_id": persona_id,
             "student_model": selected_model,
+            "expected_signals": expected_signals,
             "turn": {
                 "role": "user",
                 "content": message,

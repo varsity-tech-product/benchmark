@@ -1,14 +1,14 @@
 {
   "rubric_id": "B1_blind_persona_identification",
-  "version": "issue83-2026-04-23",
+  "version": "v1.3.0",
   "dimension": "B1",
   "name": "Blind persona identification",
   "definition": "Evaluates whether a judge can identify or score the intended persona from anonymized generated-student behavior.",
   "unit": "anonymized transcript or probe response set",
   "judge_context_inputs": [
-    "candidate persona contracts",
+    "candidate persona contracts (full contract including description, familiar/unfamiliar concepts, emotional profile with expanded description, behavioral rules, persona-specific expectations, failure modes)",
     "anonymized generated-student transcript",
-    "task/probe context without model identity"
+    "context label (script/pressure) without model identity"
   ],
   "score_fields": [
     "identified_persona",
@@ -21,9 +21,11 @@
     "failure_evidence"
   ],
   "score_scales": {
-    "5": "Correct persona with high confidence and strong evidence.",
-    "3": "Ambiguous persona evidence.",
-    "1": "Incorrect or indistinguishable persona evidence."
+    "1": "Incorrect or indistinguishable. The identified persona is wrong, or the transcript is generic enough that no persona can be justified.",
+    "2": "Weak identification. No Score 1 failure, but evidence is sparse, mostly generic, or conflicts with important parts of the intended persona.",
+    "3": "Ambiguous but plausible. The intended persona is recoverable, but evidence is incomplete or another candidate remains plausible.",
+    "4": "Strong identification. The intended persona is identified with clear evidence and only minor ambiguity.",
+    "5": "Excellent identification. The intended persona is identified with high confidence and specific evidence across knowledge boundary, emotional profile, and behavioral rules."
   },
   "failure_taxonomy_fields": [
     "generic_student_behavior",

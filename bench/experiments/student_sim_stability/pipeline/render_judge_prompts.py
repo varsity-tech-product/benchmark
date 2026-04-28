@@ -5,14 +5,17 @@ and writes rendered prompts + metadata to judge_inputs/ for batch processing.
 
 Usage:
     python -m experiments.student_sim_stability.pipeline.render_judge_prompts \
-        --conv-dir results/issue83/conversations \
-        --output-dir results/issue83/judge_inputs --dimension D1
+        --conv-dir results/main/conversations \
+        --output-dir results/main/judge_inputs --dimension D1
 """
 
 import argparse
+import functools
 import json
 import random
+import re
 import sys
+from collections import defaultdict
 from pathlib import Path
 
 from experiments.student_sim_stability.core.paths import BENCH_ROOT, EXPERIMENT_ROOT
@@ -33,28 +36,37 @@ from experiments.student_sim_stability.core.contracts import (
     render_persona_contract_text,
 )
 from experiments.student_sim_stability.core.rubrics import (
+    DIMENSION_TO_FILE,
     rubric_metadata,
     rubric_prompt_template,
+)
+from experiments.student_sim_stability.pipeline._render_common import (
+    TURN_EXCERPT_CHAR_LIMIT as _TURN_EXCERPT_CHAR_LIMIT,
+)
+from experiments.student_sim_stability.pipeline._render_common import (
+    persona_block_kwargs as _persona_block_kwargs,
+)
+from experiments.student_sim_stability.pipeline._render_common import (
+    truncate as _truncate,
 )
 from server.schemas import QuantTutorTask, StudentPersona
 
 _D1_PROMPT = rubric_prompt_template("D1")
 _D2_PROMPT = rubric_prompt_template("D2")
 _D3_PROMPT = rubric_prompt_template("D3")
-_D4_PROMPT = rubric_prompt_template("D4")
 _DISTINGUISH_PROMPT = rubric_prompt_template("control")
 _P1_PROMPT = rubric_prompt_template("P1")
 _B1_PROMPT = rubric_prompt_template("B1")
 _SYSTEM_LABELS = ["System A", "System B", "System C", "System D", "System E"]
-_D4_CONTEXT_CHAR_LIMIT = 700
 
 
 def _load_persona(persona_id: str) -> StudentPersona:
     return load_student_persona(persona_id)
 
 
+@functools.lru_cache(maxsize=None)
 def _load_task(task_id: str) -> QuantTutorTask:
-    """Find and load a task JSON by task_id."""
+    """Find and load a task JSON by task_id. Cached for the duration of a run."""
     tasks_dir = BENCH_ROOT / "tasks" / "layer2"
     for cat_dir in tasks_dir.iterdir():
         if cat_dir.is_dir():
@@ -110,7 +122,7 @@ def _quoted_excerpt(content: str, limit: int) -> str:
     return json.dumps(content, ensure_ascii=False)
 
 
-def _d4_conversation_context(
+def _d3_conversation_context(
     conv: list[dict], source_file: str = ""
 ) -> tuple[str, int]:
     """Format the full conversation while marking only generated student turns scored."""
@@ -141,7 +153,7 @@ def _d4_conversation_context(
         else:
             label = f"Context only - {role or 'unknown'} turn {idx}"
 
-        lines.append(f"{label}: {_quoted_excerpt(content, _D4_CONTEXT_CHAR_LIMIT)}")
+        lines.append(f"{label}: {_quoted_excerpt(content, _TURN_EXCERPT_CHAR_LIMIT)}")
 
     return "\n".join(lines), scored_student_turn
 
@@ -181,7 +193,7 @@ def render_d1(conv_dir: Path, output_dir: Path, sample_policy: str = "all"):
             continue
 
         try:
-            persona = _load_persona(pid)
+            persona_block = _persona_block_kwargs(pid)
         except FileNotFoundError:
             continue
 
@@ -191,25 +203,17 @@ def render_d1(conv_dir: Path, output_dir: Path, sample_policy: str = "all"):
         student_turns = _generated_student_turns(conv, conv_file.name)
         total = len(student_turns)
 
-        known = json.dumps(persona.known_concepts, ensure_ascii=False)
-        unknown = json.dumps(persona.unknown_concepts, ensure_ascii=False)
-        rules = "\n".join(f"  - {r}" for r in persona.behavioral_rules) or "  (none)"
-
         for turn_idx, (conv_idx, turn) in enumerate(student_turns):
             tutor_msg = ""
             if conv_idx > 0 and conv[conv_idx - 1]["role"] == "assistant":
                 tutor_msg = conv[conv_idx - 1]["content"]
 
             prompt = _D1_PROMPT.format(
-                persona_description=persona.description,
-                emotional_profile=persona.emotional_profile,
-                known_concepts=known,
-                unknown_concepts=unknown,
-                behavioral_rules=rules,
+                **persona_block,
                 turn_number=turn_idx + 1,
                 total_turns=total,
-                tutor_message=tutor_msg[:500],
-                student_message=turn["content"][:500],
+                tutor_message=_truncate(tutor_msg),
+                student_message=_truncate(turn["content"]),
             )
             rubric_meta, prompt = _rubric_prompt("D1", prompt)
 
@@ -241,8 +245,8 @@ def render_d1(conv_dir: Path, output_dir: Path, sample_policy: str = "all"):
     print(f"D1: rendered {count} prompts")
 
 
-def render_d4(conv_dir: Path, output_dir: Path):
-    """Render D4 prompts: one per conversation."""
+def render_d3(conv_dir: Path, output_dir: Path):
+    """Render D3 prompts: one per conversation."""
     output_dir.mkdir(parents=True, exist_ok=True)
     count = 0
 
@@ -253,34 +257,28 @@ def render_d4(conv_dir: Path, output_dir: Path):
             continue
 
         try:
-            persona = _load_persona(pid)
+            persona_block = _persona_block_kwargs(pid)
         except FileNotFoundError:
             continue
 
         with open(conv_file) as f:
             conv = json.load(f)
 
-        context_text, scored_turn_count = _d4_conversation_context(conv, conv_file.name)
+        context_text, scored_turn_count = _d3_conversation_context(conv, conv_file.name)
         if not scored_turn_count:
             continue
 
-        known = json.dumps(persona.known_concepts, ensure_ascii=False)
-        unknown = json.dumps(persona.unknown_concepts, ensure_ascii=False)
-
-        prompt = _D4_PROMPT.format(
-            persona_description=persona.description,
-            known_concepts=known,
-            unknown_concepts=unknown,
-            emotional_profile=persona.emotional_profile,
+        prompt = _D3_PROMPT.format(
+            **persona_block,
             student_messages_text=context_text,
             total_turns=scored_turn_count,
         )
-        rubric_meta, prompt = _rubric_prompt("D4", prompt)
+        rubric_meta, prompt = _rubric_prompt("D3", prompt)
 
-        eval_id = f"D4__{conv_file.stem}"
+        eval_id = f"D3__{conv_file.stem}"
         out = {
             "eval_id": eval_id,
-            "dimension": "D4",
+            "dimension": "D3",
             "rubric_id": rubric_meta["rubric_id"],
             "rubric_version": rubric_meta["rubric_version"],
             "prompt": prompt,
@@ -302,14 +300,11 @@ def render_d4(conv_dir: Path, output_dir: Path):
             json.dump(out, f, indent=2, ensure_ascii=False)
         count += 1
 
-    print(f"D4: rendered {count} prompts")
+    print(f"D3: rendered {count} prompts")
 
 
 def render_d2(conv_dir: Path, output_dir: Path):
     """Render D2 prompts: one per (task, persona, model, tutor_t) group of 3 repeats."""
-    import re
-    from collections import defaultdict
-
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Group conversations by (task, persona, model, tutor_t)
@@ -340,7 +335,7 @@ def render_d2(conv_dir: Path, output_dir: Path):
         task_id, persona_id, model, tutor_t = parts[0], parts[1], parts[2], parts[3]
 
         try:
-            persona = _load_persona(persona_id)
+            persona_block = _persona_block_kwargs(persona_id)
             task = _load_task(task_id)
         except FileNotFoundError:
             continue
@@ -351,13 +346,13 @@ def render_d2(conv_dir: Path, output_dir: Path):
             runs_parts.append(
                 f"### Run {i+1}\n"
                 + "\n".join(
-                    f'  Student turn {j+1}: "{m[:200]}"'
+                    f'  Student turn {j+1}: "{_truncate(m)}"'
                     for j, m in enumerate(student_msgs)
                 )
             )
 
         prompt = _D2_PROMPT.format(
-            persona_description=persona.description,
+            **persona_block,
             task_description=task.description,
             runs_text="\n\n".join(runs_parts),
         )
@@ -389,106 +384,11 @@ def render_d2(conv_dir: Path, output_dir: Path):
     print(f"D2: rendered {count} prompts")
 
 
-def render_d3(conv_dir: Path, output_dir: Path):
-    """Render D3 prompts: one per (task, persona, tutor_t, repeat) comparing 3 models.
-
-    Models are anonymized as System A/B/C with randomized order.
-    """
-    from collections import defaultdict
-
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    # Group by (task, persona, repeat_idx, tutor_t)
-    # Each group should have up to 3 conversations (one per model)
-    groups: dict[str, dict[str, tuple[str, list]]] = defaultdict(dict)
-    for conv_file in sorted(conv_dir.glob("live__*.json")):
-        parts = conv_file.stem.split("__")
-        if len(parts) < 5:
-            continue
-        task_id = parts[1]
-        persona_id = parts[2]
-        model = parts[3]
-        repeat_tag = parts[4]  # e.g. "r0_tt0"
-
-        group_key = f"{task_id}__{persona_id}__{repeat_tag}"
-        with open(conv_file) as f:
-            conv = json.load(f)
-        groups[group_key][model] = (conv_file.name, conv)
-
-    count = 0
-    for group_key, model_convs in sorted(groups.items()):
-        if len(model_convs) < 3:
-            continue
-
-        parts = group_key.split("__")
-        task_id, persona_id, repeat_tag = parts[0], parts[1], parts[2]
-
-        try:
-            persona = _load_persona(persona_id)
-            task = _load_task(task_id)
-        except FileNotFoundError:
-            continue
-
-        known = json.dumps(persona.known_concepts, ensure_ascii=False)
-        unknown = json.dumps(persona.unknown_concepts, ensure_ascii=False)
-
-        # Randomize model order for anonymization
-        model_items = list(model_convs.items())
-        random.Random(group_key).shuffle(model_items)
-
-        label_to_model = {}
-        models_parts = []
-        for idx, (model_name, (fname, conv)) in enumerate(model_items):
-            label = _SYSTEM_LABELS[idx]
-            label_to_model[label] = model_name
-            student_msgs = _generated_student_messages(conv, fname)
-            models_parts.append(
-                f"### {label}\n"
-                + "\n".join(
-                    f'  Student turn {j+1}: "{m[:200]}"'
-                    for j, m in enumerate(student_msgs)
-                )
-            )
-
-        prompt = _D3_PROMPT.format(
-            persona_description=persona.description,
-            emotional_profile=persona.emotional_profile,
-            known_concepts=known,
-            unknown_concepts=unknown,
-            task_description=task.description,
-            models_text="\n\n".join(models_parts),
-        )
-        rubric_meta, prompt = _rubric_prompt("D3", prompt)
-
-        eval_id = f"D3__{group_key}"
-        out = {
-            "eval_id": eval_id,
-            "dimension": "D3",
-            "rubric_id": rubric_meta["rubric_id"],
-            "rubric_version": rubric_meta["rubric_version"],
-            "prompt": prompt,
-            "metadata": {
-                "task_id": task_id,
-                "persona_id": persona_id,
-                **rubric_meta,
-                **_contract_metadata(persona_id),
-                "repeat_tag": repeat_tag,
-                "label_to_model": label_to_model,
-                "source_files": [fname for _, (fname, _) in model_items],
-                "student_turn_source": STUDENT_MODEL_SOURCE,
-            },
-        }
-        with open(output_dir / f"{eval_id}.json", "w") as f:
-            json.dump(out, f, indent=2, ensure_ascii=False)
-        count += 1
-
-    print(f"D3: rendered {count} prompts")
-
-
 def _student_messages_text(conv: list[dict]) -> str:
     student_msgs = _generated_student_messages(conv)
     return "\n".join(
-        f'  Turn {i+1}: "{message[:200]}"' for i, message in enumerate(student_msgs)
+        f'  Turn {i+1}: "{_truncate(message)}"'
+        for i, message in enumerate(student_msgs)
     )
 
 
@@ -537,10 +437,11 @@ def render_control(conv_dir: Path, output_dir: Path):
             set_a, set_b = control_msgs, persona_msgs
 
         prompt = _DISTINGUISH_PROMPT.format(
+            **_persona_block_kwargs(persona_id),
             set_description=(
                 "One set was produced with a detailed persona definition. "
                 "The other used a generic student description. "
-                "You do not know which is which."
+                "You do not know which set is which."
             ),
             set_a_conversation=set_a,
             set_b_conversation=set_b,
@@ -585,7 +486,13 @@ def render_control(conv_dir: Path, output_dir: Path):
 
 
 def render_p1(results_dir: Path, output_dir: Path):
-    """Render P1 targeted-probe judge prompts."""
+    """Render P1 targeted-probe judge prompts.
+
+    Threads each probe's ``expected_signals`` list (persona-specific indirect
+    signal markers authored in ``probes.py``) into the judge prompt so the
+    judge anchors ``facet_fit`` to the designed signal instead of free-form
+    reasoning about what the facet means.
+    """
     output_dir.mkdir(parents=True, exist_ok=True)
     response_dir = results_dir / "probes" / "responses"
     count = 0
@@ -602,11 +509,18 @@ def render_p1(results_dir: Path, output_dir: Path):
         student_response = (payload.get("turn") or {}).get("content", "")
         if not student_response:
             continue
+        expected_signals = payload.get("expected_signals") or []
+        expected_signals_text = (
+            "\n".join(f"- {signal}" for signal in expected_signals)
+            if expected_signals
+            else "- (no persona-specific indirect signals authored)"
+        )
         prompt = _P1_PROMPT.format(
             persona_contract=render_persona_contract_text(persona_id),
             probe_facet=payload.get("facet", ""),
-            probe_message=probe_message[:800],
-            student_response=student_response[:1200],
+            probe_message=_truncate(probe_message),
+            student_response=_truncate(student_response),
+            expected_signals=expected_signals_text,
         )
         rubric_meta, prompt = _rubric_prompt("P1", prompt)
         model = payload.get("student_model", "")
@@ -624,6 +538,7 @@ def render_p1(results_dir: Path, output_dir: Path):
                 "model": model.split("/")[-1] if "/" in model else model,
                 "probe_id": payload.get("probe_id"),
                 "facet": payload.get("facet"),
+                "expected_signals": expected_signals,
                 "source_file": str(response_file.relative_to(results_dir)),
                 "student_turn_source": STUDENT_MODEL_SOURCE,
             },
@@ -635,42 +550,46 @@ def render_p1(results_dir: Path, output_dir: Path):
     print(f"P1: rendered {count} prompts")
 
 
-def render_b1(results_dir: Path, output_dir: Path):
-    """Render B1 blind persona-identification prompts from scripted dialogues."""
+def render_b1(conv_dir: Path, output_dir: Path):
+    """Render B1 blind persona-identification prompts from live conversations.
+
+    Source: ``conversations/live__*.json`` produced by ``ExperimentRunner``.
+    Only model-generated student turns (``STUDENT_MODEL_SOURCE``) are included in
+    the transcript; the fixture opening (``FIXTURE_OPENING_SOURCE``) and tutor
+    turns are filtered out, so the B1 judge never sees persona-labeling text
+    from the scripted opener or adaptive tutor references.
+    """
     output_dir.mkdir(parents=True, exist_ok=True)
-    dialogue_dir = results_dir / "scripted" / "conversations"
     candidate_contracts = "\n\n".join(
         render_persona_contract_text(contract["persona_id"])
         for contract in list_persona_contracts()
     )
     count = 0
-    for dialogue_file in sorted(dialogue_dir.glob("*.json")):
-        with open(dialogue_file, encoding="utf-8") as fh:
-            payload = json.load(fh)
-        persona_id = payload.get("persona_id", "")
-        conversation = payload.get("conversation") or []
-        student_turns = [
-            turn.get("content", "")
-            for turn in conversation
-            if turn.get("role") == "user" and turn.get("source") == STUDENT_MODEL_SOURCE
-        ]
-        if not persona_id or not student_turns:
+    for live_file in sorted(conv_dir.glob("live__*.json")):
+        meta = _parse_conv_filename(live_file.name)
+        task_id = meta.get("task_id", "")
+        persona_id = meta.get("persona_id", "")
+        model = meta.get("model", "")
+        repeat_tag = meta.get("repeat_tag", "")
+        if not (task_id and persona_id and model):
+            continue
+        with open(live_file, encoding="utf-8") as fh:
+            conv = json.load(fh)
+        student_msgs = _generated_student_messages(conv, live_file.name)
+        if not student_msgs:
             continue
         transcript = "\n".join(
-            f'Student turn {idx + 1}: "{text[:350]}"'
-            for idx, text in enumerate(student_turns)
+            f'Student turn {idx + 1}: "{_truncate(text)}"'
+            for idx, text in enumerate(student_msgs)
         )
-        context_label = (
-            f"script={payload.get('script_id')}; pressure={payload.get('pressure')}"
-        )
+        context_label = f"task={task_id}; repeat_tag={repeat_tag}"
         prompt = _B1_PROMPT.format(
             candidate_contracts=candidate_contracts,
             context_label=context_label,
             transcript=transcript,
         )
         rubric_meta, prompt = _rubric_prompt("B1", prompt)
-        model = payload.get("student_model", "")
-        eval_id = f"B1__{dialogue_file.stem}"
+        eval_id = f"B1__{live_file.stem}"
         out = {
             "eval_id": eval_id,
             "dimension": "B1",
@@ -681,10 +600,10 @@ def render_b1(results_dir: Path, output_dir: Path):
                 **rubric_meta,
                 **_contract_metadata(persona_id),
                 "persona_id": persona_id,
-                "model": model.split("/")[-1] if "/" in model else model,
-                "script_id": payload.get("script_id"),
-                "pressure": payload.get("pressure"),
-                "source_file": str(dialogue_file.relative_to(results_dir)),
+                "task_id": task_id,
+                "model": model,
+                "repeat_tag": repeat_tag,
+                "source_file": str(live_file.relative_to(conv_dir.parent)),
                 "student_turn_source": STUDENT_MODEL_SOURCE,
             },
         }
@@ -698,11 +617,7 @@ def render_b1(results_dir: Path, output_dir: Path):
 def clean_rendered_prompts(output_dir: Path, dimension: str) -> int:
     """Remove previously rendered prompt files for a dimension."""
     output_dir.mkdir(parents=True, exist_ok=True)
-    prefixes = (
-        ["D1", "D2", "D3", "D4", "control", "P1", "B1"]
-        if dimension == "all"
-        else [dimension]
-    )
+    prefixes = tuple(DIMENSION_TO_FILE) if dimension == "all" else (dimension,)
     removed = 0
     for prefix in prefixes:
         for path in output_dir.glob(f"{prefix}__*.json"):
@@ -722,7 +637,7 @@ def main():
     parser.add_argument(
         "--dimension",
         default="all",
-        choices=["D1", "D2", "D3", "D4", "control", "P1", "B1", "all"],
+        choices=(*DIMENSION_TO_FILE, "all"),
     )
     parser.add_argument(
         "--d1-sample-policy",
@@ -751,15 +666,13 @@ def main():
         render_d2(conv_dir, output_dir)
     if args.dimension in ("D3", "all"):
         render_d3(conv_dir, output_dir)
-    if args.dimension in ("D4", "all"):
-        render_d4(conv_dir, output_dir)
     if args.dimension in ("control", "all"):
         render_control(conv_dir, output_dir)
     results_dir = conv_dir.parent
     if args.dimension in ("P1", "all"):
         render_p1(results_dir, output_dir)
     if args.dimension in ("B1", "all"):
-        render_b1(results_dir, output_dir)
+        render_b1(conv_dir, output_dir)
 
 
 if __name__ == "__main__":

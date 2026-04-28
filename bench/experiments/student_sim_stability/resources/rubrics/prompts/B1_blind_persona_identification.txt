@@ -9,6 +9,41 @@ Context label: {context_label}
 Anonymized generated-student transcript:
 {transcript}
 
+## Important
+Correct identity matters. The `contract_fit` score is the fit between the transcript and the persona you identify, but if the transcript is generic or the identified persona is not well supported, the score must be low. Use candidate persona_ids exactly as written.
+
+## Score Ceiling Rules
+- If no persona can be justified, identified_persona should be the closest candidate but contract_fit must be 1.
+- If evidence supports the wrong persona, contract_fit must be <= 2.
+- If behavior is generic and could fit most candidates, contract_fit cannot exceed 3.
+- If the transcript contradicts the identified persona's core knowledge boundary, contract_fit cannot exceed 2.
+
+## Scoring Criteria (1-5 scale)
+1 = Incorrect or indistinguishable. ANY of the following: (a) transcript is generic enough that no candidate is justified; (b) selected persona is contradicted by the transcript; (c) evidence points to a different persona; (d) severe knowledge-boundary or emotional mismatch.
+
+2 = Weak identification. No Score 1 failure, but at least 2 of the following: (a) evidence is sparse; (b) behavior is mostly generic; (c) another candidate remains more plausible; (d) knowledge boundary only weakly matches; (e) emotional or behavioral rules are unclear.
+
+3 = Ambiguous but plausible. ALL of the following: (a) selected persona is plausible; (b) at least one contract-specific signal is present; (c) no severe contradiction; (d) another candidate may still be plausible. Generic or incomplete evidence is allowed.
+
+4 = Strong identification. Meets all Score 3 baselines, plus at least 2 of the following: (a) selected persona has clear evidence; (b) knowledge boundary matches; (c) emotional profile matches; (d) behavioral/question style matches; (e) alternative candidates are less plausible.
+
+5 = Excellent identification. Meets all Score 4 criteria, plus at least 2 of the following: (a) selected persona is strongly supported by multiple specific transcript details; (b) no meaningful ambiguity; (c) transcript shows distinctive persona behavior; (d) knowledge, emotion, and behavior all align; (e) a human reviewer would confidently select the same persona.
+
+## Evaluation Axes
+- identified_persona: one candidate persona_id.
+- confidence: confidence in the identification (1-5).
+- contract_fit: fit between transcript and identified persona after applying score ceilings.
+
+## Failure Taxonomy
+If there is a problem, classify it using zero or more of:
+generic_student_behavior, emotional_mismatch, under_competence, persona_contract_contradiction.
+
+Use failure types consistently:
+- generic_student_behavior prevents scores 4-5.
+- emotional_mismatch lowers contract_fit when tone conflicts with the selected persona.
+- under_competence lowers contract_fit when the selected persona should know the concept.
+- persona_contract_contradiction usually limits contract_fit to <= 2, severe cases score 1.
+
 Return ONLY valid JSON with:
 {{
   "reasoning": "brief evidence",

@@ -1,4 +1,4 @@
-"""Refresh static issue83 artifacts inside a result directory."""
+"""Refresh static student-sim-stability artifacts inside a result directory."""
 
 from __future__ import annotations
 
@@ -11,18 +11,21 @@ from experiments.student_sim_stability.core.config import (
     JUDGE_MODEL,
     JUDGE_MODELS,
     JUDGE_TEMPERATURE,
-    OUTPUT_DIR,
     STUDENT_MODELS,
     TUTOR_MODEL,
     TUTOR_TEMPERATURES,
     compute_trial_count,
 )
-from experiments.student_sim_stability.core.paths import BENCH_ROOT, RESOURCE_ROOT
-from server.config.pricing import _resolve_pricing
-
-
-def default_results_dir() -> Path:
-    return BENCH_ROOT / OUTPUT_DIR
+from experiments.student_sim_stability.core.io_utils import (
+    atomic_write_json,
+    sha256_directory,
+)
+from experiments.student_sim_stability.core.paths import (
+    BENCH_ROOT,
+    RESOURCE_ROOT,
+    default_results_dir,
+)
+from server.config.pricing import resolve_pricing
 
 
 def _copytree_refresh(src: Path, dst: Path) -> None:
@@ -42,7 +45,7 @@ def _provider_from_model(model: str) -> str:
 
 
 def _pricing_metadata(model: str) -> dict:
-    pricing = _resolve_pricing(model)
+    pricing = resolve_pricing(model)
     if not pricing:
         return {
             "pricing_status": "missing_from_local_pricing_table",
@@ -82,16 +85,6 @@ def _model_source_url(model: str) -> str:
     return f"https://openrouter.ai/{model}"
 
 
-def _hash_tree(root: Path) -> dict[str, str]:
-    import hashlib
-
-    hashes: dict[str, str] = {}
-    for path in sorted(p for p in root.rglob("*") if p.is_file()):
-        rel = str(path.relative_to(root))
-        hashes[rel] = hashlib.sha256(path.read_bytes()).hexdigest()
-    return hashes
-
-
 def _write_runtime_tutor_contract(contracts_snapshot: Path) -> None:
     path = contracts_snapshot / "tutor_contract.json"
     if not path.exists():
@@ -103,9 +96,7 @@ def _write_runtime_tutor_contract(contracts_snapshot: Path) -> None:
         "server.config.llm_config.STUDENT_SIM_STABILITY_TUTOR_MODEL"
     )
     contract["temperature_conditions"] = TUTOR_TEMPERATURES
-    with open(path, "w", encoding="utf-8") as fh:
-        json.dump(contract, fh, indent=2, ensure_ascii=False)
-        fh.write("\n")
+    atomic_write_json(path, contract)
 
 
 def _build_model_metadata() -> dict:
@@ -177,52 +168,40 @@ def snapshot_static_artifacts(results_dir: Path | None = None) -> dict:
     static_manifest = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "snapshots": {
-            "contracts": _hash_tree(snapshots["contracts"]),
-            "rubrics": _hash_tree(snapshots["rubrics"]),
-            "policies": _hash_tree(snapshots["policies"]),
+            "contracts": sha256_directory(snapshots["contracts"]),
+            "rubrics": sha256_directory(snapshots["rubrics"]),
+            "policies": sha256_directory(snapshots["policies"]),
         },
     }
-    with open(static_manifest_path, "w", encoding="utf-8") as fh:
-        json.dump(static_manifest, fh, indent=2, ensure_ascii=False)
-        fh.write("\n")
-    with open(model_metadata_dst, "w", encoding="utf-8") as fh:
-        json.dump(_build_model_metadata(), fh, indent=2, ensure_ascii=False)
-        fh.write("\n")
+    atomic_write_json(static_manifest_path, static_manifest)
+    atomic_write_json(model_metadata_dst, _build_model_metadata())
     judge_agreement_path = out / "report" / "judge_agreement.json"
-    with open(judge_agreement_path, "w", encoding="utf-8") as fh:
-        json.dump(
-            {
-                "primary_judge": JUDGE_MODEL,
-                "judge_models": JUDGE_MODELS,
-                "temperature": JUDGE_TEMPERATURE,
-                "multi_judge_status": "not_run",
-                "agreement_metrics": None,
-                "notes": "Reset by static snapshot; recompute after current judge outputs are complete.",
-            },
-            fh,
-            indent=2,
-            ensure_ascii=False,
-        )
-        fh.write("\n")
+    atomic_write_json(
+        judge_agreement_path,
+        {
+            "primary_judge": JUDGE_MODEL,
+            "judge_models": JUDGE_MODELS,
+            "temperature": JUDGE_TEMPERATURE,
+            "multi_judge_status": "not_run",
+            "agreement_metrics": None,
+            "notes": "Reset by static snapshot; recompute after current judge outputs are complete.",
+        },
+    )
     human_alignment_dir = out / "human_alignment"
     human_alignment_dir.mkdir(parents=True, exist_ok=True)
     human_status_path = human_alignment_dir / "agreement_report.json"
     if not human_status_path.exists():
-        with open(human_status_path, "w", encoding="utf-8") as fh:
-            json.dump(
-                {
-                    "human_alignment_status": "not_run",
-                    "agreement_metrics": None,
-                    "disagreement_examples": [],
-                },
-                fh,
-                indent=2,
-                ensure_ascii=False,
-            )
-            fh.write("\n")
+        atomic_write_json(
+            human_status_path,
+            {
+                "human_alignment_status": "not_run",
+                "agreement_metrics": None,
+                "disagreement_examples": [],
+            },
+        )
 
     metadata = {
-        "run_contract": "issue83_student_sim_validation",
+        "run_contract": "student_sim_validation",
         "student_models": STUDENT_MODELS,
         "tutor_model": TUTOR_MODEL,
         "tutor_temperatures": TUTOR_TEMPERATURES,
@@ -239,7 +218,5 @@ def snapshot_static_artifacts(results_dir: Path | None = None) -> dict:
     }
     report_dir = out / "report"
     report_dir.mkdir(parents=True, exist_ok=True)
-    with open(report_dir / "stability_metadata.json", "w", encoding="utf-8") as fh:
-        json.dump(metadata, fh, indent=2, ensure_ascii=False)
-        fh.write("\n")
+    atomic_write_json(report_dir / "stability_metadata.json", metadata)
     return metadata

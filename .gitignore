@@ -57,12 +57,12 @@ logs/
 # Benchmark results (traces, scores, agent files)
 bench/results/
 /results/
+
+# student_sim_stability — entire results/ tree is HuggingFace-hosted (like
+# data/). Both raw artifacts (conversations, probes, judge inputs/outputs)
+# and aggregated outputs (evaluations, report, human_alignment, snapshots)
+# live there; none are tracked in git so the repo stays small.
 bench/experiments/student_sim_stability/results/
-bench/experiments/student_sim_stability/results_issue83/
-bench/experiments/student_sim_stability/results_issue83_*/
-bench/experiments/student_sim_stability_legacy_20260423/
-bench/experiments/student_sim_stability/pilot/
-bench/experiments/student_sim_stability/docs/internal/
 
 # Claude Code local state
 # Claude Code config — local user settings stay private, but project-scoped

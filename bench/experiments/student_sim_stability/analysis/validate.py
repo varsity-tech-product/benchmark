@@ -11,7 +11,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
 
-from experiments.student_sim_stability.core.paths import BENCH_ROOT
+from experiments.student_sim_stability.core.io_utils import (
+    input_payload_hash,
+    load_json,
+    safe_model_dir,
+    sha256_directory,
+)
+from experiments.student_sim_stability.core.paths import BENCH_ROOT, default_results_dir
 
 if str(BENCH_ROOT) not in sys.path:
     sys.path.insert(0, str(BENCH_ROOT))
@@ -23,26 +29,20 @@ from experiments.student_sim_stability.core.config import (  # noqa: E402
     GENERATED_STUDENT_TURNS,
     JUDGE_MODELS,
     NEUTRAL_CONTROL_OPENING,
-    OUTPUT_DIR,
-    REPEATS,
     STUDENT_MODEL_SOURCE,
-    STUDENT_MODELS,
-    TASK_PERSONA_MAP,
     TUTOR_MODEL_SOURCE,
-    TUTOR_TEMPERATURES,
     compute_trial_count,
+    expected_artifact_counts,
 )
 from experiments.student_sim_stability.core.contracts import (  # noqa: E402
     load_persona_contract,
 )
 from experiments.student_sim_stability.core.rubrics import (  # noqa: E402
+    DIMENSION_TO_FILE,
     required_score_keys,
     rubric_metadata,
 )
 from experiments.student_sim_stability.pipeline.probes import PROBES  # noqa: E402
-from experiments.student_sim_stability.pipeline.scripted_dialogues import (
-    SCRIPTS,
-)
 
 
 @dataclass
@@ -53,44 +53,8 @@ class Check:
     required: bool = True
 
 
-def default_results_dir() -> Path:
-    return BENCH_ROOT / OUTPUT_DIR
-
-
 def _count_files(path: Path, pattern: str = "*.json") -> int:
     return len(list(path.glob(pattern))) if path.exists() else 0
-
-
-def _load_json(path: Path):
-    with open(path, encoding="utf-8") as fh:
-        return json.load(fh)
-
-
-def _safe_model_dir(model: str) -> str:
-    return model.replace("/", "__").replace(".", "_")
-
-
-def _expected_counts() -> dict[str, int]:
-    combos = sum(len(v) for v in TASK_PERSONA_MAP.values())
-    n_models = len(STUDENT_MODELS)
-    n_temps = len(TUTOR_TEMPERATURES)
-    n_personas = len({pid for ids in TASK_PERSONA_MAP.values() for pid in ids})
-    live = combos * n_models * REPEATS * n_temps
-    control = combos * n_models
-    return {
-        "conversations": live + control,
-        "live_conversations": live,
-        "control_conversations": control,
-        "d1_sample": combos * n_models * GENERATED_STUDENT_TURNS,
-        "d1_full": (live + control) * GENERATED_STUDENT_TURNS,
-        "d2": combos * n_models * n_temps,
-        "d3": combos * REPEATS * n_temps,
-        "d4": live + control,
-        "control": control,
-        "aggregate_d4": live,
-        "p1": n_personas * len(PROBES) * n_models,
-        "b1": n_personas * len(SCRIPTS) * n_models,
-    }
 
 
 def _parse_conversation_name(path: Path) -> dict[str, str]:
@@ -120,8 +84,8 @@ def _validate_conversation_provenance(conv_dir: Path) -> list[Check]:
     failures: list[str] = []
     for conv_file in sorted(conv_dir.glob("*.json")):
         try:
-            conv = _load_json(conv_file)
-        except Exception as exc:  # pragma: no cover - validation diagnostic path
+            conv = load_json(conv_file)
+        except (OSError, json.JSONDecodeError) as exc:
             failures.append(f"{conv_file.name}: cannot load JSON ({exc})")
             continue
 
@@ -223,14 +187,14 @@ def _validate_judge_output_quality(output_dir: Path) -> list[Check]:
             )
         ]
 
-    d4_outputs = []
+    d3_outputs = []
     outputs_by_dimension: dict[str, list[dict]] = defaultdict(list)
     malformed: list[str] = []
     missing_score_keys: list[str] = []
     for path in sorted(output_dir.glob("*.json")):
         try:
-            output = _load_json(path)
-        except Exception as exc:  # pragma: no cover - validation diagnostic path
+            output = load_json(path)
+        except (OSError, json.JSONDecodeError) as exc:
             malformed.append(f"{path.name}: cannot load JSON ({exc})")
             continue
         scores = output.get("scores")
@@ -247,8 +211,8 @@ def _validate_judge_output_quality(output_dir: Path) -> list[Check]:
         if missing:
             missing_score_keys.append(f"{path.name}: missing score keys {missing}")
         outputs_by_dimension[dimension].append(output)
-        if dimension == "D4":
-            d4_outputs.append(output)
+        if dimension == "D3":
+            d3_outputs.append(output)
 
     duplicate_payloads: list[str] = []
     for dimension, outputs in sorted(outputs_by_dimension.items()):
@@ -271,22 +235,22 @@ def _validate_judge_output_quality(output_dir: Path) -> list[Check]:
         )
     )
 
-    duplicate_counts = Counter(_score_signature(output) for output in d4_outputs)
+    duplicate_counts = Counter(_score_signature(output) for output in d3_outputs)
     template_like = [count for count in duplicate_counts.values() if count > 1]
     checks.append(
         Check(
-            "d4_no_template_duplicate_score_clusters",
+            "d3_no_template_duplicate_score_clusters",
             not template_like,
             (
-                "no D4 score signature appears more than once"
+                "no D3 score signature appears more than once"
                 if not template_like
-                else f"D4 duplicate score clusters detected: {sorted(template_like)}"
+                else f"D3 duplicate score clusters detected: {sorted(template_like)}"
             ),
         )
     )
     checks.append(
         Check(
-            "d4_output_scores_present",
+            "judge_output_scores_present",
             not malformed,
             "; ".join(malformed[:5]) if malformed else "all judge outputs have scores",
         )
@@ -306,21 +270,13 @@ def _validate_judge_output_quality(output_dir: Path) -> list[Check]:
 
 
 def _dimension_counts(path: Path) -> dict[str, int]:
-    return {
-        "D1": _count_files(path, "D1__*.json"),
-        "D2": _count_files(path, "D2__*.json"),
-        "D3": _count_files(path, "D3__*.json"),
-        "D4": _count_files(path, "D4__*.json"),
-        "control": _count_files(path, "control__*.json"),
-        "P1": _count_files(path, "P1__*.json"),
-        "B1": _count_files(path, "B1__*.json"),
-    }
+    return {dim: _count_files(path, f"{dim}__*.json") for dim in DIMENSION_TO_FILE}
 
 
 def _validate_static_snapshots(results_dir: Path) -> list[Check]:
     checks: list[Check] = []
     manifest_path = results_dir / "report" / "static_artifact_manifest.json"
-    manifest = _load_json(manifest_path) if manifest_path.exists() else {}
+    manifest = load_json(manifest_path) if manifest_path.exists() else {}
     expected_snapshots = {
         "contracts": "contracts_snapshot",
         "rubrics": "rubrics_snapshot",
@@ -339,7 +295,7 @@ def _validate_static_snapshots(results_dir: Path) -> list[Check]:
         if not exists:
             continue
         expected_hashes = (manifest.get("snapshots") or {}).get(manifest_key)
-        snapshot_hashes = _hash_tree(path)
+        snapshot_hashes = sha256_directory(path)
         checks.append(
             Check(
                 f"snapshot_{snapshot_name}_manifest",
@@ -359,14 +315,6 @@ def _validate_static_snapshots(results_dir: Path) -> list[Check]:
         )
     )
     return checks
-
-
-def _hash_tree(root: Path) -> dict[str, str]:
-    hashes: dict[str, str] = {}
-    for path in sorted(p for p in root.rglob("*") if p.is_file()):
-        rel = str(path.relative_to(root))
-        hashes[rel] = hashlib.sha256(path.read_bytes()).hexdigest()
-    return hashes
 
 
 def _validate_status_artifacts(
@@ -412,7 +360,7 @@ def _validate_status_artifacts(
     ]
     audit_path = results_dir / "report" / "data_quality_audit.json"
     if require_audit and audit_path.exists():
-        audit = _load_json(audit_path)
+        audit = load_json(audit_path)
         checks.append(
             Check(
                 "data_quality_audit_passed",
@@ -493,7 +441,7 @@ def _validate_status_artifacts(
                     (
                         "; ".join(missing[:5])
                         if missing
-                        else "model metadata includes issue83 comparison fields"
+                        else "model metadata includes required comparison fields"
                     ),
                 )
             )
@@ -533,7 +481,7 @@ def _validate_judge_input_metadata(input_dir: Path) -> list[Check]:
         ]
     missing: list[str] = []
     for path in sorted(input_dir.glob("*.json")):
-        payload = _load_json(path)
+        payload = load_json(path)
         metadata = payload.get("metadata", {})
         for field in ["rubric_id", "rubric_version"]:
             if not metadata.get(field):
@@ -563,7 +511,7 @@ def _validate_judge_input_metadata(input_dir: Path) -> list[Check]:
                         missing.append(
                             f"{path.name}: persona_contract_version mismatch"
                         )
-                except Exception as exc:  # noqa: BLE001 - validation diagnostic
+                except (OSError, KeyError, ValueError, json.JSONDecodeError) as exc:
                     missing.append(f"{path.name}: cannot load persona contract ({exc})")
         rubric_id = metadata.get("rubric_id") or payload.get("rubric_id")
         if rubric_id and rubric_id not in payload.get("prompt", ""):
@@ -581,24 +529,12 @@ def _validate_judge_input_metadata(input_dir: Path) -> list[Check]:
     ]
 
 
-def _input_payload_hash(payload: dict) -> str:
-    relevant = {
-        "eval_id": payload.get("eval_id"),
-        "dimension": payload.get("dimension"),
-        "rubric_id": payload.get("rubric_id"),
-        "rubric_version": payload.get("rubric_version"),
-        "prompt": payload.get("prompt"),
-        "metadata": payload.get("metadata", {}),
-    }
-    encoded = json.dumps(relevant, sort_keys=True, ensure_ascii=False).encode("utf-8")
-    return hashlib.sha256(encoded).hexdigest()
-
-
 def _validate_judge_output_metadata(
     input_dir: Path,
     output_dir: Path,
     *,
     expected_judge_model: str | None = None,
+    input_hash_index: dict[str, str] | None = None,
 ) -> list[Check]:
     if not output_dir.exists():
         return [
@@ -622,7 +558,7 @@ def _validate_judge_output_metadata(
     if extra_outputs:
         missing.append(f"judge outputs without matching inputs {extra_outputs[:5]}")
     for path in sorted(output_dir.glob("*.json")):
-        payload = _load_json(path)
+        payload = load_json(path)
         for field in ["rubric_id", "rubric_version", "judge_model", "input_sha256"]:
             if not payload.get(field):
                 missing.append(f"{path.name}: missing {field}")
@@ -633,7 +569,12 @@ def _validate_judge_output_metadata(
             )
         input_path = input_dir / path.name
         if input_path.exists() and payload.get("input_sha256"):
-            input_hash = _input_payload_hash(_load_json(input_path))
+            if input_hash_index is not None:
+                input_hash = input_hash_index.get(path.name)
+                if input_hash is None:
+                    input_hash = input_payload_hash(load_json(input_path))
+            else:
+                input_hash = input_payload_hash(load_json(input_path))
             if payload["input_sha256"] != input_hash:
                 missing.append(f"{path.name}: input_sha256 mismatch")
         elif not input_path.exists():
@@ -677,15 +618,22 @@ def _validate_judge_panel_outputs(
     if profile == "pilot" and total_inputs == 0 and not by_model_dir.exists():
         return checks
 
+    input_dir = results_dir / "judge_inputs"
+    input_hash_index: dict[str, str] = (
+        {p.name: input_payload_hash(load_json(p)) for p in input_dir.glob("*.json")}
+        if input_dir.exists()
+        else {}
+    )
+
     for model in JUDGE_MODELS:
-        model_dir = by_model_dir / _safe_model_dir(model)
+        model_dir = by_model_dir / safe_model_dir(model)
         model_counts = _dimension_counts(model_dir)
         model_total = sum(model_counts.values())
         expected_total = total_inputs
         required = profile == "full"
         checks.append(
             Check(
-                f"judge_panel_outputs_{_safe_model_dir(model)}",
+                f"judge_panel_outputs_{safe_model_dir(model)}",
                 model_dir.exists() and model_total == expected_total,
                 (
                     f"{model_total}/{expected_total} outputs for {model}"
@@ -699,25 +647,26 @@ def _validate_judge_panel_outputs(
             checks.extend(
                 _prefix_checks(
                     _validate_judge_output_quality(model_dir),
-                    f"judge_panel_{_safe_model_dir(model)}",
+                    f"judge_panel_{safe_model_dir(model)}",
                     required=True,
                 )
             )
             checks.extend(
                 _prefix_checks(
                     _validate_judge_output_metadata(
-                        results_dir / "judge_inputs",
+                        input_dir,
                         model_dir,
                         expected_judge_model=model,
+                        input_hash_index=input_hash_index,
                     ),
-                    f"judge_panel_{_safe_model_dir(model)}",
+                    f"judge_panel_{safe_model_dir(model)}",
                     required=True,
                 )
             )
 
     agreement_path = results_dir / "report" / "judge_agreement.json"
     if agreement_path.exists():
-        agreement = _load_json(agreement_path)
+        agreement = load_json(agreement_path)
         computed = (
             agreement.get("multi_judge_status") == "computed"
             and not agreement.get("missing_model_dirs")
@@ -773,7 +722,7 @@ def validate(
 ) -> tuple[list[Check], dict]:
     if profile not in {"full", "pilot"}:
         raise ValueError(f"Unknown validation profile: {profile}")
-    expected = _expected_counts()
+    expected = expected_artifact_counts(profile)
     counts = compute_trial_count()
     checks: list[Check] = []
 
@@ -843,15 +792,9 @@ def validate(
             )
         )
         probe_manifest_path = results_dir / "probes" / "manifest.json"
-        scripted_manifest_path = results_dir / "scripted" / "manifest.json"
         probe_written = (
-            _load_json(probe_manifest_path).get("written", 0)
+            load_json(probe_manifest_path).get("written", 0)
             if probe_manifest_path.exists()
-            else 0
-        )
-        scripted_written = (
-            _load_json(scripted_manifest_path).get("written", 0)
-            if scripted_manifest_path.exists()
             else 0
         )
         checks.append(
@@ -861,20 +804,13 @@ def validate(
                 f"probe responses={probe_written}/{4 * len(PROBES)}",
             )
         )
-        checks.append(
-            Check(
-                "pilot_scripted_dialogues_all_personas",
-                scripted_written >= 4 * len(SCRIPTS),
-                f"scripted conversations={scripted_written}/{4 * len(SCRIPTS)}",
-            )
-        )
     checks.extend(_validate_static_snapshots(results_dir))
     checks.extend(_validate_status_artifacts(results_dir, require_audit=require_audit))
     checks.extend(_validate_conversation_provenance(conv_dir))
 
     input_counts = _dimension_counts(input_dir)
     d1_input_ok = (
-        input_counts["D1"] in {expected["d1_sample"], expected["d1_full"]}
+        input_counts["D1"] in {expected["D1_sample"], expected["D1_full"]}
         if profile == "full"
         else input_counts["D1"] > 0
     )
@@ -884,33 +820,29 @@ def validate(
             d1_input_ok,
             (
                 f"D1 inputs={input_counts['D1']} "
-                f"(expected sample {expected['d1_sample']} or full {expected['d1_full']})"
+                f"(expected sample {expected['D1_sample']} or full {expected['D1_full']})"
             ),
         )
     )
-    for dim, key in [
-        ("D2", "d2"),
-        ("D3", "d3"),
-        ("D4", "d4"),
-        ("P1", "p1"),
-        ("B1", "b1"),
-    ]:
+    for dim in ("D2", "D3", "P1", "B1"):
         if profile == "pilot" and dim == "P1":
             input_ok = input_counts[dim] >= 4 * len(PROBES)
         elif profile == "pilot" and dim == "B1":
-            input_ok = input_counts[dim] >= 4 * len(SCRIPTS)
-        elif profile == "pilot" and dim == "D4":
+            # B1 now renders from live conversations; pilot generates a handful
+            # of live__*.json files so just require the dimension was produced.
+            input_ok = input_counts[dim] > 0
+        elif profile == "pilot" and dim == "D3":
             input_ok = input_counts[dim] > 0
         elif profile == "pilot":
             input_ok = True
         else:
-            input_ok = input_counts[dim] == expected[key]
+            input_ok = input_counts[dim] == expected[dim]
         checks.append(
             Check(
                 f"judge_input_{dim.lower()}",
                 input_ok,
                 (
-                    f"{dim} inputs={input_counts[dim]}/{expected[key]}"
+                    f"{dim} inputs={input_counts[dim]}/{expected[dim]}"
                     if profile == "full"
                     else f"{dim} pilot inputs={input_counts[dim]}"
                 ),
@@ -936,7 +868,7 @@ def validate(
     output_counts = _dimension_counts(output_dir)
     d1_output_ok = (
         output_counts["D1"] == input_counts["D1"]
-        and input_counts["D1"] in {expected["d1_sample"], expected["d1_full"]}
+        and input_counts["D1"] in {expected["D1_sample"], expected["D1_full"]}
         if profile == "full"
         else output_counts["D1"] == input_counts["D1"] and input_counts["D1"] > 0
     )
@@ -951,20 +883,14 @@ def validate(
             ),
         )
     )
-    for dim, key in [
-        ("D2", "d2"),
-        ("D3", "d3"),
-        ("D4", "d4"),
-        ("P1", "p1"),
-        ("B1", "b1"),
-    ]:
-        expected_output = expected[key] if profile == "full" else input_counts[dim]
+    for dim in ("D2", "D3", "P1", "B1"):
+        expected_output = expected[dim] if profile == "full" else input_counts[dim]
         output_ok = output_counts[dim] == expected_output
         if profile == "pilot" and dim == "P1":
             output_ok = output_ok and input_counts[dim] >= 4 * len(PROBES)
         elif profile == "pilot" and dim == "B1":
-            output_ok = output_ok and input_counts[dim] >= 4 * len(SCRIPTS)
-        elif profile == "pilot" and dim == "D4":
+            output_ok = output_ok and input_counts[dim] > 0
+        elif profile == "pilot" and dim == "D3":
             output_ok = output_ok and input_counts[dim] > 0
         checks.append(
             Check(
@@ -994,40 +920,26 @@ def validate(
 
     aggregate_counts: dict[str, int] = {}
     if eval_path.exists():
-        aggregate = _load_json(eval_path)
+        aggregate = load_json(eval_path)
         aggregate_counts = {
-            key: len(aggregate.get(key, []))
-            for key in ["D1", "D2", "D3", "D4", "control", "P1", "B1"]
+            key: len(aggregate.get(key, [])) for key in DIMENSION_TO_FILE
         }
         expected_aggregate = {
-            "D1": expected["d1_sample"],
-            "D2": expected["d2"],
-            "D3": expected["d3"],
-            "D4": expected["aggregate_d4"],
+            "D1": expected["D1_sample"],
+            "D2": expected["D2"],
+            # D3 aggregate excludes control: ``live`` is the per-conversation
+            # live-arm count, which equals the number of D3 records that pass
+            # downstream filtering.
+            "D3": expected["live"],
             "control": expected["control"],
-            "P1": expected["p1"],
-            "B1": expected["b1"],
+            "P1": expected["P1"],
+            "B1": expected["B1"],
         }
         for key, expected_count in expected_aggregate.items():
-            actual_expected = (
-                output_counts["D1"]
-                if profile == "full" and key == "D1"
-                else (
-                    expected_count
-                    if profile == "full"
-                    else (
-                        output_counts[key]
-                        if key != "D4"
-                        else len(
-                            [
-                                path
-                                for path in output_dir.glob("D4__*.json")
-                                if "D4__control__" not in path.name
-                            ]
-                        )
-                    )
-                )
-            )
+            if profile == "full":
+                actual_expected = output_counts["D1"] if key == "D1" else expected_count
+            else:
+                actual_expected = output_counts[key]
             checks.append(
                 Check(
                     f"aggregate_{key.lower()}",

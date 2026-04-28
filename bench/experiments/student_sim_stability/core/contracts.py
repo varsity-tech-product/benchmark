@@ -2,25 +2,47 @@
 
 from __future__ import annotations
 
+import functools
 import json
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from experiments.student_sim_stability.core.io_utils import load_json
 from experiments.student_sim_stability.core.paths import RESOURCE_ROOT
+from server.config.prompt_config import (
+    build_user_description as _server_build_user_description,
+)
 from server.schemas import StudentPersona
 
 if TYPE_CHECKING:
     from server.schemas import QuantTutorTask
 
 CONTRACTS_DIR = RESOURCE_ROOT / "contracts"
-CONTRACT_VERSION = "issue83-2026-04-23"
+CONTRACT_VERSION = "v1.0.0"
+
+# Experiment-private copy of emotional profile descriptions. The byte-identity
+# of this file and bench/personas/emotional_profiles.json is enforced by
+# tests/test_persona_source_consistency.py so the judge side (which reads this
+# path) and the student side (which reads the canonical file through
+# server.config.prompt_config) never diverge.
+_EMOTIONAL_PROFILES_PATH = CONTRACTS_DIR / "emotional_profiles.json"
+
+
+@functools.lru_cache(maxsize=1)
+def _emotional_profiles() -> dict[str, str]:
+    if not _EMOTIONAL_PROFILES_PATH.exists():
+        raise FileNotFoundError(
+            f"Missing experiment-private emotional profiles at {_EMOTIONAL_PROFILES_PATH}"
+        )
+    return json.loads(_EMOTIONAL_PROFILES_PATH.read_text(encoding="utf-8"))
+
 
 PERSONA_REQUIRED_FIELDS = {
     "persona_id",
     "knowledge_level",
     "description",
-    "known_concepts",
-    "unknown_concepts",
+    "familiar_concepts",
+    "unfamiliar_concepts",
     "emotional_profile",
     "behavioral_rules",
     "contract_version",
@@ -32,87 +54,49 @@ PERSONA_REQUIRED_FIELDS = {
 }
 
 
-def _load_json(path: Path) -> dict[str, Any]:
-    with open(path, encoding="utf-8") as fh:
-        data = json.load(fh)
-    if not isinstance(data, dict):
-        raise ValueError(f"Contract is not a JSON object: {path}")
-    return data
-
-
 def persona_contract_path(persona_id: str) -> Path:
     return CONTRACTS_DIR / "personas" / f"{persona_id}.json"
 
 
+@functools.lru_cache(maxsize=None)
 def load_persona_contract(persona_id: str) -> dict[str, Any]:
     path = persona_contract_path(persona_id)
     if not path.exists():
         raise FileNotFoundError(f"Missing persona contract: {path}")
-    data = _load_json(path)
+    data = load_json(path)
+    if not isinstance(data, dict):
+        raise ValueError(f"Contract is not a JSON object: {path}")
     missing = sorted(PERSONA_REQUIRED_FIELDS - set(data))
     if missing:
         raise ValueError(f"Persona contract {persona_id} missing fields: {missing}")
     return data
 
 
+@functools.lru_cache(maxsize=None)
 def load_student_persona(persona_id: str) -> StudentPersona:
     contract = load_persona_contract(persona_id)
     schema_fields = {
         "persona_id",
         "knowledge_level",
         "description",
-        "known_concepts",
-        "unknown_concepts",
+        "familiar_concepts",
+        "unfamiliar_concepts",
         "emotional_profile",
         "behavioral_rules",
     }
     return StudentPersona(**{key: contract[key] for key in schema_fields})
 
 
-def _flatten_concepts(value: object) -> list[str]:
-    if isinstance(value, dict):
-        return [str(item) for items in value.values() for item in items]
-    if isinstance(value, list):
-        return [str(item) for item in value]
-    return []
-
-
 def build_contract_user_description(persona_id: str) -> str:
-    """Build simulator user_description from experiment-private contracts."""
-    contract = load_persona_contract(persona_id)
-    known = _flatten_concepts(contract.get("known_concepts"))
-    unknown = _flatten_concepts(contract.get("unknown_concepts"))
-    parts = [f"Your profile: {contract['description']}"]
+    """Build simulator user_description for experiment trials.
 
-    if known:
-        parts.append(f"- You are familiar with: {', '.join(known)}")
-    if unknown:
-        parts.append(f"- You have no experience with: {', '.join(unknown)}")
-
-    rules = contract.get("behavioral_rules", [])
-    if rules:
-        parts.append("\nBehavioral rules (follow strictly):")
-        parts.extend(f"  - {rule}" for rule in rules)
-
-    parts.extend(
-        [
-            "",
-            "Persona-specific expectations:",
-            f"- Question style: {contract['expected_question_style']}",
-            f"- Confusion style: {contract['expected_confusion_style']}",
-            f"- Recovery style: {contract['expected_recovery_style']}",
-            f"- Confidence pattern: {contract['expected_confidence_pattern']}",
-            "",
-            "Interaction rules:",
-            "- If the tutor asks you a question, answer it first before asking your next question.",
-            "- Respond naturally to what the tutor just said.",
-            "- Do not ask about concepts you are already familiar with unless the tutor introduced a new nuance.",
-            "- If the tutor drifts from your question, bring it back.",
-            "- Never fabricate data, code, or files. If asked to upload or share anything, say you have no files.",
-            "- You interact through text-only chat and can only see what appears in this chat.",
-        ]
-    )
-    return "\n".join(parts)
+    This is a thin wrapper around ``server.config.prompt_config.build_user_description``
+    so that experiment student prompts are byte-identical to production REST session
+    prompts. Experiment-private contract fields (``expected_*``, ``failure_modes``)
+    are intentionally not injected here — they are judge-side metadata and are
+    consumed through ``render_persona_contract_text`` in judge prompt rendering.
+    """
+    return _server_build_user_description(load_student_persona(persona_id))
 
 
 def build_contract_scenario(task: "QuantTutorTask", persona_id: str) -> str:
@@ -145,19 +129,44 @@ def build_contract_scenario(task: "QuantTutorTask", persona_id: str) -> str:
     return "\n".join(parts)
 
 
-def render_persona_contract_text(persona_id: str) -> str:
+def resolve_emotional_profile(persona_id: str) -> tuple[str, str]:
+    """Return ``(key, expanded_description)`` for a persona's emotional profile.
+
+    Reads the experiment-private ``resources/contracts/emotional_profiles.json``
+    (kept byte-identical to ``bench/personas/emotional_profiles.json`` by the
+    ``tests/test_persona_source_consistency.py`` lock) so the judge side of the
+    experiment never accidentally pulls a mutated canonical file.
+
+    Falls back to ``(key, key)`` if the key is not present in the private copy
+    so callers can always render something.
+    """
     contract = load_persona_contract(persona_id)
-    known = json.dumps(contract["known_concepts"], ensure_ascii=False)
-    unknown = json.dumps(contract["unknown_concepts"], ensure_ascii=False)
+    key = contract.get("emotional_profile", "")
+    description = _emotional_profiles().get(key, key)
+    return key, description
+
+
+def render_persona_contract_text(persona_id: str) -> str:
+    """Render the full persona contract for judge-side consumption (P1/B1/C1/D1-D3).
+
+    Judges see the full contract including ``expected_*`` and ``failure_modes`` so
+    they have the complete rubric anchor when scoring persona fidelity. The student
+    simulator does NOT see this text — student prompt is built from the slimmer
+    ``server.config.prompt_config.build_user_description`` via the thin wrapper.
+    """
+    contract = load_persona_contract(persona_id)
+    familiar = json.dumps(contract["familiar_concepts"], ensure_ascii=False)
+    unfamiliar = json.dumps(contract["unfamiliar_concepts"], ensure_ascii=False)
+    emo_key, emo_desc = resolve_emotional_profile(persona_id)
     rules = "\n".join(f"- {rule}" for rule in contract["behavioral_rules"])
     failures = "\n".join(f"- {item}" for item in contract["failure_modes"])
     return (
         f"Persona contract: {contract['persona_id']}\n"
         f"Version: {contract['contract_version']}\n"
         f"Description: {contract['description']}\n"
-        f"Known concepts: {known}\n"
-        f"Unknown concepts: {unknown}\n"
-        f"Emotional profile: {contract['emotional_profile']}\n"
+        f"Familiar concepts: {familiar}\n"
+        f"Unfamiliar concepts: {unfamiliar}\n"
+        f"Emotional profile ({emo_key}): {emo_desc}\n"
         f"Behavioral rules:\n{rules}\n"
         f"Expected question style: {contract['expected_question_style']}\n"
         f"Expected confusion style: {contract['expected_confusion_style']}\n"

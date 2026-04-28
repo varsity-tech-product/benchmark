@@ -4,90 +4,41 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
 import sys
-import tempfile
 from pathlib import Path
 from typing import Iterable
 
-from experiments.student_sim_stability.core.paths import BENCH_ROOT
+from experiments.student_sim_stability.core.io_utils import (
+    atomic_write_json,
+    load_json,
+    safe_model_dir,
+)
+from experiments.student_sim_stability.core.paths import BENCH_ROOT, default_results_dir
 
 if str(BENCH_ROOT) not in sys.path:
     sys.path.insert(0, str(BENCH_ROOT))
 
 from experiments.student_sim_stability.core.config import (  # noqa: E402
-    GENERATED_STUDENT_TURNS,
-    OUTPUT_DIR,
-    REPEATS,
-    STUDENT_MODELS,
-    TASK_PERSONA_MAP,
-    TUTOR_TEMPERATURES,
+    expected_artifact_counts,
 )
 from experiments.student_sim_stability.core.rubrics import (
+    DIMENSION_TO_FILE,
+    numeric_score_fields,
     required_score_keys,
 )
-from experiments.student_sim_stability.pipeline.probes import PROBES  # noqa: E402
-
-# noqa: E402
-from experiments.student_sim_stability.pipeline.scripted_dialogues import (
-    SCRIPTS,
-)
-
-
-def default_results_dir() -> Path:
-    return BENCH_ROOT / OUTPUT_DIR
-
-
-def atomic_write_json(path: Path, data: dict) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.NamedTemporaryFile(
-        "w",
-        encoding="utf-8",
-        dir=path.parent,
-        prefix=f".{path.name}.",
-        suffix=".tmp",
-        delete=False,
-    ) as fh:
-        json.dump(data, fh, indent=2, ensure_ascii=False)
-        fh.write("\n")
-        tmp_path = Path(fh.name)
-    tmp_path.replace(path)
-
-
-def _load_json(path: Path) -> dict:
-    with open(path, encoding="utf-8") as fh:
-        return json.load(fh)
 
 
 def _dimension_counts(path: Path) -> dict[str, int]:
-    return {
-        "D1": len(list(path.glob("D1__*.json"))) if path.exists() else 0,
-        "D2": len(list(path.glob("D2__*.json"))) if path.exists() else 0,
-        "D3": len(list(path.glob("D3__*.json"))) if path.exists() else 0,
-        "D4": len(list(path.glob("D4__*.json"))) if path.exists() else 0,
-        "control": len(list(path.glob("control__*.json"))) if path.exists() else 0,
-        "P1": len(list(path.glob("P1__*.json"))) if path.exists() else 0,
-        "B1": len(list(path.glob("B1__*.json"))) if path.exists() else 0,
-    }
-
-
-def _expected_full_input_counts() -> dict[str, int]:
-    combos = sum(len(v) for v in TASK_PERSONA_MAP.values())
-    n_models = len(STUDENT_MODELS)
-    n_temps = len(TUTOR_TEMPERATURES)
-    n_personas = len({pid for ids in TASK_PERSONA_MAP.values() for pid in ids})
-    live = combos * n_models * REPEATS * n_temps
-    control = combos * n_models
-    return {
-        "D1": combos * n_models * GENERATED_STUDENT_TURNS,
-        "D1_full": (live + control) * GENERATED_STUDENT_TURNS,
-        "D2": combos * n_models * n_temps,
-        "D3": combos * REPEATS * n_temps,
-        "D4": live + control,
-        "control": control,
-        "P1": n_personas * len(PROBES) * n_models,
-        "B1": n_personas * len(SCRIPTS) * n_models,
-    }
+    counts = {dim: 0 for dim in DIMENSION_TO_FILE}
+    if not path.exists():
+        return counts
+    for entry in path.iterdir():
+        if entry.suffix != ".json":
+            continue
+        prefix = entry.name.split("__", 1)[0]
+        if prefix in counts:
+            counts[prefix] += 1
+    return counts
 
 
 def _validate_strict_input_output_sets(
@@ -105,31 +56,35 @@ def _validate_strict_input_output_sets(
         raise ValueError(f"Judge outputs without matching inputs: {extra[:5]}")
     if profile == "full":
         counts = _dimension_counts(judge_input_dir)
-        expected = _expected_full_input_counts()
+        base = expected_artifact_counts("full")
         errors = []
-        for dim, expected_count in expected.items():
-            if dim == "D1_full":
-                continue
-            if dim == "D1":
-                if counts[dim] not in {expected["D1"], expected["D1_full"]}:
-                    errors.append(
-                        f"D1 inputs={counts[dim]}/"
-                        f"{expected['D1']} sample or {expected['D1_full']} full"
-                    )
-                continue
-            if counts[dim] != expected_count:
-                errors.append(f"{dim} inputs={counts[dim]}/{expected_count}")
+        # D1 is allowed to be either the sampled subset or the full set.
+        if counts["D1"] not in {base["D1_sample"], base["D1_full"]}:
+            errors.append(
+                f"D1 inputs={counts['D1']}/"
+                f"{base['D1_sample']} sample or {base['D1_full']} full"
+            )
+        for dim in ("D2", "D3", "control", "P1", "B1"):
+            if counts[dim] != base[dim]:
+                errors.append(f"{dim} inputs={counts[dim]}/{base[dim]}")
         if errors:
             raise ValueError(
                 "Strict full aggregate has incomplete inputs: " + "; ".join(errors)
             )
 
 
-def _input_metadata(input_dir: Path, output_file: Path) -> dict:
-    input_path = input_dir / output_file.name
-    if not input_path.exists():
-        raise FileNotFoundError(f"Missing judge input metadata for {output_file.name}")
-    return _load_json(input_path).get("metadata", {})
+def _build_input_metadata_index(input_dir: Path) -> dict[str, dict]:
+    """Pre-load every judge input's metadata block keyed by filename.
+
+    The aggregate stage reads each input file at most once instead of doing a
+    fresh ``exists()`` + ``load_json`` per output file.
+    """
+    if not input_dir.exists():
+        return {}
+    return {
+        path.name: (load_json(path).get("metadata") or {})
+        for path in sorted(input_dir.glob("*.json"))
+    }
 
 
 def _per_turn_fidelity(scores: dict) -> list[float]:
@@ -154,7 +109,7 @@ def _per_turn_field(scores: dict, field: str) -> list[float]:
     return [turn.get(field, 0) for turn in per_turn if isinstance(turn, dict)]
 
 
-def _normalize_d4_scores(scores: dict) -> dict:
+def _normalize_d3_scores(scores: dict) -> dict:
     normalized = dict(scores)
     normalized["per_turn_fidelity"] = _per_turn_fidelity(scores)
     normalized["per_turn_knowledge_leak"] = _per_turn_field(scores, "knowledge_leak")
@@ -162,14 +117,6 @@ def _normalize_d4_scores(scores: dict) -> dict:
         scores, "co_teacher_drift"
     )
     return normalized
-
-
-def _resolve_label(label_text: object, label_to_model: dict) -> str:
-    text = "" if label_text is None else str(label_text)
-    labels = re.findall(r"System [A-Z]", text)
-    if labels:
-        return label_to_model.get(labels[0], labels[0])
-    return label_to_model.get(text, text)
 
 
 def _validate_score_schema(dimension: str, scores: object, eval_id: str) -> None:
@@ -183,19 +130,104 @@ def _validate_score_schema(dimension: str, scores: object, eval_id: str) -> None
         )
 
 
+# Models that compose panel_2. Sonnet output lives in primary judge_outputs/;
+# GPT-5.4 output lives in judge_outputs_by_model/openai__gpt-5_4/.
+_PANEL_2_SECONDARY = "openai/gpt-5.4"
+
+
+def _merge_panel_2_scores(
+    primary_scores: dict, secondary_scores: dict, dimension: str
+) -> dict:
+    """Synthesize panel_2 score record from two judges.
+
+    Numeric fields (per :func:`numeric_score_fields`) become element-wise
+    means. Categorical / list / text fields are preserved from the primary
+    judge for backward compatibility, and a per-judge breakdown for B1's
+    ``identified_persona`` is added so the report can compute panel-2
+    accuracy semantics (both must be correct).
+    """
+    out = dict(primary_scores)  # start from primary, overwrite numerics
+    try:
+        numeric_fields = numeric_score_fields(dimension)
+    except KeyError:
+        numeric_fields = ()
+    for field in numeric_fields:
+        p_val = primary_scores.get(field)
+        s_val = secondary_scores.get(field)
+        if isinstance(p_val, (int, float)) and isinstance(s_val, (int, float)):
+            out[field] = round((float(p_val) + float(s_val)) / 2, 4)
+        elif isinstance(p_val, (int, float)):
+            out[field] = float(p_val)
+        elif isinstance(s_val, (int, float)):
+            out[field] = float(s_val)
+    if dimension == "B1":
+        out["identified_persona_by_judge"] = {
+            "sonnet": str(primary_scores.get("identified_persona", "")),
+            "gpt54": str(secondary_scores.get("identified_persona", "")),
+        }
+    # Failure types: union (preserves any signal either judge raised)
+    if isinstance(primary_scores.get("failure_types"), list) or isinstance(
+        secondary_scores.get("failure_types"), list
+    ):
+        a = primary_scores.get("failure_types") or []
+        b = secondary_scores.get("failure_types") or []
+        if isinstance(a, str):
+            a = [a]
+        if isinstance(b, str):
+            b = [b]
+        out["failure_types"] = sorted({str(x) for x in (list(a) + list(b)) if x})
+    # Reasoning / failure_evidence: keep both attributed for transparency
+    out["reasoning_by_judge"] = {
+        "sonnet": primary_scores.get("reasoning", ""),
+        "gpt54": secondary_scores.get("reasoning", ""),
+    }
+    if "failure_evidence" in primary_scores or "failure_evidence" in secondary_scores:
+        out["failure_evidence_by_judge"] = {
+            "sonnet": primary_scores.get("failure_evidence", ""),
+            "gpt54": secondary_scores.get("failure_evidence", ""),
+        }
+    return out
+
+
 def aggregate(
     judge_input_dir: Path,
     judge_output_dir: Path,
     output_path: Path,
     strict: bool = False,
     profile: str = "full",
+    judge_view: str = "panel_2",
+    secondary_judge_output_dir: Path | None = None,
 ) -> dict:
+    """Aggregate judge outputs into ``all_evaluations.json``.
+
+    Args:
+        judge_view: ``"panel_2"`` (default, mean of Sonnet + GPT-5.4) or
+            ``"primary"`` (Sonnet only — legacy single-judge behavior).
+        secondary_judge_output_dir: explicit GPT-5.4 dir for panel_2 mode;
+            defaults to ``<results>/judge_outputs_by_model/openai__gpt-5_4``.
+    """
+    if judge_view not in ("panel_2", "primary"):
+        raise ValueError(
+            f"Unknown judge_view {judge_view!r}; use 'panel_2' or 'primary'"
+        )
+    panel_2 = judge_view == "panel_2"
+    if panel_2 and secondary_judge_output_dir is None:
+        # Infer from results layout: judge_output_dir is the primary mirror,
+        # secondary lives under judge_outputs_by_model/<gpt-5.4_safe>/
+        results_root = judge_output_dir.parent
+        secondary_judge_output_dir = (
+            results_root / "judge_outputs_by_model" / safe_model_dir(_PANEL_2_SECONDARY)
+        )
+    if panel_2 and not secondary_judge_output_dir.exists():
+        raise FileNotFoundError(
+            f"panel_2 view requires GPT-5.4 outputs at {secondary_judge_output_dir}; "
+            "either run the full judge panel or pass judge_view='primary'"
+        )
     records: dict[str, list[dict]] = {
         "D1": [],
         "D2": [],
-        "D3": [],
         "control": [],
-        "D4": [],
+        "D3": [],
         "P1": [],
         "B1": [],
     }
@@ -203,41 +235,51 @@ def aggregate(
     if strict:
         _validate_strict_input_output_sets(judge_input_dir, judge_output_dir, profile)
 
-    d4_control_outputs = 0
+    metadata_by_name = _build_input_metadata_index(judge_input_dir)
+    d3_control_outputs = 0
 
     for output_file in sorted(judge_output_dir.glob("*.json")):
-        output = _load_json(output_file)
+        output = load_json(output_file)
         eval_id = output.get("eval_id") or output_file.stem
         dimension = output.get("dimension") or eval_id.split("__", 1)[0]
         scores = output.get("scores", {})
+
+        # Panel_2 averaging: blend Sonnet (primary) with GPT-5.4 (secondary)
+        # before downstream aggregation. Falls back to primary alone if the
+        # secondary judge does not have a matching output for this eval_id
+        # (e.g., partial run, OpenRouter credit exhaustion).
+        if panel_2:
+            secondary_path = secondary_judge_output_dir / output_file.name
+            if secondary_path.exists():
+                secondary = load_json(secondary_path)
+                scores = _merge_panel_2_scores(
+                    scores, secondary.get("scores", {}), dimension
+                )
+            else:
+                # Secondary missing — preserve primary scores; tag for transparency
+                scores = dict(scores)
+                scores["panel_2_secondary_missing"] = True
+
         if strict:
             _validate_score_schema(dimension, scores, eval_id)
-        try:
-            metadata = _input_metadata(judge_input_dir, output_file)
-        except FileNotFoundError:
-            if strict:
-                raise
+        if output_file.name in metadata_by_name:
+            metadata = metadata_by_name[output_file.name]
+        elif strict:
+            raise FileNotFoundError(
+                f"Missing judge input metadata for {output_file.name}"
+            )
+        else:
             metadata = {}
 
         if dimension == "D3":
             metadata = dict(metadata)
-            label_to_model = metadata.get("label_to_model", {})
-            metadata["best_model"] = _resolve_label(
-                scores.get("best_set"), label_to_model
-            )
-            metadata["worst_model"] = _resolve_label(
-                scores.get("worst_set"), label_to_model
-            )
-
-        if dimension == "D4":
-            metadata = dict(metadata)
-            normalized = _normalize_d4_scores(scores)
+            normalized = _normalize_d3_scores(scores)
             metadata["drift_onset_turn"] = normalized.get("drift_onset_turn")
             record = {"eval_id": eval_id, "scores": normalized, "metadata": metadata}
             if metadata.get("phase") == "control":
-                d4_control_outputs += 1
+                d3_control_outputs += 1
             else:
-                records["D4"].append(record)
+                records["D3"].append(record)
             continue
 
         if dimension == "control":
@@ -257,10 +299,10 @@ def aggregate(
             {"eval_id": eval_id, "scores": scores, "metadata": metadata}
         )
 
-    if strict and d4_control_outputs and not records["control"]:
+    if strict and d3_control_outputs and not records["control"]:
         raise ValueError(
-            "D4 control outputs were present but no real control__ judge outputs "
-            "were found. Control-from-D4 fallback is disabled."
+            "D3 control outputs were present but no real control__ judge outputs "
+            "were found. Control-from-D3 fallback is disabled."
         )
 
     atomic_write_json(output_path, records)

@@ -168,7 +168,7 @@ def create_tutor_geval_metrics(
     """Create one EwanConvGEval metric per active dimension.
 
     Uses rubric_builder to select the correct scoring variant
-    (per-quadrant / per-category / universal) and inject [KNOWN]/[UNKNOWN]
+    (per-quadrant / per-category / universal) and inject [FAMILIAR]/[UNFAMILIAR]
     concept lists from the persona file.
 
     Reads role/rules from rubric_6d.json top-level fields and passes
@@ -238,7 +238,7 @@ def evaluate_tutor_dimensions(
 
     Args:
         persona_id: Persona identifier (e.g. "developer_crossover") for
-            rubric variant selection and [KNOWN]/[UNKNOWN] injection.
+            rubric variant selection and [FAMILIAR]/[UNFAMILIAR] injection.
         dimension_order: If provided, evaluate only these dimensions
             (e.g. ["D3_pedagogical_method", "D4_instructional_accuracy"]).
             If None, evaluates all dimensions with non-zero weight.

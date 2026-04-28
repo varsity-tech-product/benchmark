@@ -7,7 +7,8 @@ model names are resolved via ``_NATIVE_TO_OR`` alias table.
 # (input_price_per_token, output_price_per_token)
 MODEL_PRICING: dict[str, tuple[float, float]] = {
     "openai/gpt-5.2": (0.00000175, 0.000014),
-    "openai/gpt-5.4": (0.0000025, 0.00001),
+    "openai/gpt-5.4": (0.0000025, 0.000015),
+    "google/gemini-3.1-pro-preview": (0.000002, 0.000012),
     "openai/gpt-4o-mini": (0.00000015, 0.0000006),
     "gpt-4o-mini": (0.00000015, 0.0000006),
     "anthropic/claude-haiku-4.5": (0.0000008, 0.000004),
@@ -29,7 +30,7 @@ _NATIVE_TO_OR: dict[str, str] = {
 }
 
 
-def _resolve_pricing(model: str) -> tuple[float, float] | None:
+def resolve_pricing(model: str) -> tuple[float, float] | None:
     """Look up pricing, trying direct match then native→OR alias."""
     pricing = MODEL_PRICING.get(model)
     if pricing is None:
@@ -39,10 +40,16 @@ def _resolve_pricing(model: str) -> tuple[float, float] | None:
     return pricing
 
 
+# Legacy alias retained only for in-server callers that still reach for the
+# private name. New callers should use ``resolve_pricing`` (or the higher-level
+# ``get_llm_cost_kwargs``).
+_resolve_pricing = resolve_pricing
+
+
 def get_llm_cost_kwargs(model: str) -> dict:
     """Return ``cost_per_input_token`` / ``cost_per_output_token`` kwargs
     suitable for ``EwanLLMClient``."""
-    pricing = _resolve_pricing(model)
+    pricing = resolve_pricing(model)
     if pricing is None:
         return {}
     return {

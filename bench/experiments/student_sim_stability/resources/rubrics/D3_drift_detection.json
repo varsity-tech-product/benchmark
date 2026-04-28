@@ -1,0 +1,56 @@
+{
+  "rubric_id": "D3_drift_detection",
+  "version": "v1.3.0",
+  "dimension": "D3",
+  "name": "Persona drift detection",
+  "definition": "Evaluates whether generated student messages maintain persona fidelity across a full conversation.",
+  "unit": "one conversation",
+  "judge_context_inputs": [
+    "persona description",
+    "familiar concepts",
+    "unfamiliar concepts",
+    "emotional profile (key + expanded description)",
+    "behavioral rules",
+    "persona-specific expectations (question/confusion/recovery/confidence style)",
+    "interleaved conversation context with generated student turns labeled for scoring"
+  ],
+  "included_turn_source": "student_model",
+  "excluded_turn_sources": [
+    "fixture_opening",
+    "control_neutral_opening"
+  ],
+  "score_fields": [
+    "per_turn",
+    "overall_drift_score",
+    "drift_onset_turn"
+  ],
+  "required_failure_output_fields": [
+    "failure_types",
+    "dominant_failure_type",
+    "failure_evidence"
+  ],
+  "per_turn_fields": [
+    "persona_fidelity",
+    "knowledge_leak",
+    "co_teacher_drift"
+  ],
+  "score_scales": {
+    "1": "Severe early drift. Persona collapses in the first third of scored turns, with severe knowledge leak, co-teacher drift, or direct contract contradiction.",
+    "2": "Significant drift. No Score 1 failure, but multiple scored turns show clear persona weakening, or the persona largely breaks down by the middle or final third.",
+    "3": "Moderate drift. Persona remains identifiable, but there are noticeable deviations, generic behavior, or one clear boundary violation.",
+    "4": "Minimal drift. Persona is stable with only minor, isolated deviations that do not change the student's apparent identity.",
+    "5": "No drift. Persona remains stable across all scored turns; learning from prior tutor context is handled without knowledge leaks or co-teacher behavior."
+  },
+  "failure_taxonomy_fields": [
+    "knowledge_leak",
+    "under_competence",
+    "emotional_mismatch",
+    "generic_student_behavior",
+    "co_teacher_drift",
+    "task_forgetting",
+    "persona_contract_contradiction"
+  ],
+  "aggregation_formula": "mean(live overall_drift_score), mean per-turn persona_fidelity, drift_onset distribution, and failure taxonomy counts by model/persona/task",
+  "prompt_template": "rubrics/prompts/D3_drift_detection.txt",
+  "prompt_template_path": "prompts/D3_drift_detection.txt"
+}

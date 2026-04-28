@@ -5,7 +5,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import Optional, Union
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class Difficulty(str, Enum):
@@ -101,10 +101,31 @@ class StudentPersona(BaseModel):
     persona_id: str
     knowledge_level: str
     description: str
-    known_concepts: dict[str, list[str]] | list[str] = Field(default_factory=dict)
-    unknown_concepts: dict[str, list[str]] | list[str] = Field(default_factory=dict)
+    familiar_concepts: dict[str, list[str]] | list[str] = Field(default_factory=dict)
+    unfamiliar_concepts: dict[str, list[str]] | list[str] = Field(default_factory=dict)
     emotional_profile: str = ""
     behavioral_rules: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _reject_legacy_concept_keys(cls, data):
+        """Hard-fail on pre-2026-04-24 field names so renamed-schema silently
+        dropping legacy keys (Pydantic default ``extra='ignore'``) can never
+        produce a student with empty knowledge boundaries. See the 2026-04-24
+        persona migration: ``known_concepts``/``unknown_concepts`` were
+        renamed to ``familiar_concepts``/``unfamiliar_concepts``.
+        """
+        if isinstance(data, dict):
+            for legacy, current in (
+                ("known_concepts", "familiar_concepts"),
+                ("unknown_concepts", "unfamiliar_concepts"),
+            ):
+                if legacy in data:
+                    raise ValueError(
+                        f"StudentPersona received legacy field {legacy!r}; "
+                        f"rename to {current!r} (2026-04-24 schema migration)."
+                    )
+        return data
 
 
 class ConversationTurn(BaseModel):

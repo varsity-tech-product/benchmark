@@ -4,9 +4,11 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import logging
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 from experiments.student_sim_stability.core.paths import BENCH_ROOT
@@ -18,8 +20,61 @@ from server.config.bootstrap import load_server_env  # noqa: E402
 
 load_server_env(BENCH_ROOT)
 
-_ROBUSTNESS_DIMENSIONS = ("D1", "D2", "D3", "D4", "control")
-_CONTROLLED_DIMENSIONS = ("P1", "B1")
+from experiments.student_sim_stability.core.rubrics import (
+    DIMENSION_TO_FILE,
+)
+
+_STABILITY_DIMENSIONS = ("D1", "D2", "D3")
+_VALIDITY_DIMENSIONS = ("control", "P1", "B1")
+_ALL_JUDGE_DIMENSIONS = tuple(DIMENSION_TO_FILE)
+
+_PAPER_EXPORT_SUFFIXES = (".tex", ".pdf", ".csv", ".html")
+
+
+def _paper_export(target_dir: Path, components_dir: Path) -> dict:
+    """Copy every supported component artifact into ``target_dir`` and emit
+    a ``manifest.json`` listing each asset with ``sha256`` of its content.
+    Idempotent: re-running against unchanged components yields identical bytes.
+    """
+    target_dir = Path(target_dir)
+    components_dir = Path(components_dir)
+    if not components_dir.exists():
+        raise FileNotFoundError(f"components directory not found: {components_dir}")
+    target_dir.mkdir(parents=True, exist_ok=True)
+    assets: list[dict] = []
+    for src in sorted(components_dir.iterdir()):
+        if not src.is_file() or src.suffix not in _PAPER_EXPORT_SUFFIXES:
+            continue
+        payload = src.read_bytes()
+        digest = hashlib.sha256(payload).hexdigest()
+        target = target_dir / src.name
+        target.write_bytes(payload)
+        assets.append(
+            {
+                "name": src.name,
+                "kind": src.suffix.lstrip("."),
+                "source_path": str(src),
+                "target_path": str(target),
+                "size_bytes": len(payload),
+                "sha256": digest,
+            }
+        )
+    by_kind: dict[str, int] = {}
+    for asset in assets:
+        by_kind[asset["kind"]] = by_kind.get(asset["kind"], 0) + 1
+    manifest = {
+        "schema_version": "paper_export_v1",
+        "components_dir": str(components_dir),
+        "target_dir": str(target_dir),
+        "n_assets": len(assets),
+        "by_kind": by_kind,
+        "assets": assets,
+    }
+    manifest_path = target_dir / "manifest.json"
+    with open(manifest_path, "w", encoding="utf-8") as fh:
+        json.dump(manifest, fh, indent=2, ensure_ascii=False)
+        fh.write("\n")
+    return manifest
 
 
 def _add_output_arg(parser: argparse.ArgumentParser) -> None:
@@ -27,6 +82,14 @@ def _add_output_arg(parser: argparse.ArgumentParser) -> None:
         "--output-dir",
         default=None,
         help="Experiment results directory (default: config.OUTPUT_DIR)",
+    )
+
+
+def _add_judge_qualification_dir_arg(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--judge-qualification-dir",
+        default=None,
+        help="Standalone judge-qualification directory (default: results/judge_qualification)",
     )
 
 
@@ -52,9 +115,10 @@ def _make_parser() -> argparse.ArgumentParser:
 
     run_all = sub.add_parser(
         "all",
-        help="Run full issue83 pipeline: probes → scripted → generate → render → judge panel → aggregate → audit → report → validate",
+        help="Run the full student-sim-stability pipeline: probes → live generation → render (D1-3 + control + P1 + B1) → judge panel → aggregate → audit → report → validate",
     )
     _add_output_arg(run_all)
+    _add_judge_qualification_dir_arg(run_all)
     run_all.add_argument("-w", "--workers", type=int, default=None)
     run_all.add_argument("--judge-workers", type=int, default=JUDGE_MAX_WORKERS)
     run_all.add_argument(
@@ -75,7 +139,7 @@ def _make_parser() -> argparse.ArgumentParser:
     render.add_argument(
         "--dimension",
         default="all",
-        choices=["D1", "D2", "D3", "D4", "control", "P1", "B1", "all"],
+        choices=(*DIMENSION_TO_FILE, "all"),
     )
     render.add_argument(
         "--d1-sample-policy",
@@ -94,7 +158,7 @@ def _make_parser() -> argparse.ArgumentParser:
     judge.add_argument(
         "--dimension",
         default="all",
-        choices=["D1", "D2", "D3", "D4", "control", "P1", "B1", "all"],
+        choices=(*DIMENSION_TO_FILE, "all"),
     )
     judge.add_argument("--manifest", type=Path, default=None)
     judge.add_argument("-n", "--limit", type=int, default=None)
@@ -121,6 +185,17 @@ def _make_parser() -> argparse.ArgumentParser:
     aggregate.add_argument("--strict", action="store_true")
     aggregate.add_argument("--profile", choices=["full", "pilot"], default="full")
 
+    aggregate_mj = sub.add_parser(
+        "aggregate-multi-judge",
+        help=(
+            "Compute 5-view multi-judge aggregates from judge_outputs_by_model/; "
+            "output goes to evaluations/multi_judge_aggregates.json. Purely local, "
+            "no LLM calls. Re-runnable any time after judge has completed."
+        ),
+    )
+    _add_output_arg(aggregate_mj)
+    aggregate_mj.add_argument("--strict", action="store_true")
+
     validate = sub.add_parser("validate", help="Validate generated artifacts")
     _add_output_arg(validate)
     validate.add_argument("--strict", action="store_true")
@@ -129,19 +204,37 @@ def _make_parser() -> argparse.ArgumentParser:
 
     report = sub.add_parser("report", help="Generate HTML report")
     _add_output_arg(report)
+    _add_judge_qualification_dir_arg(report)
     report.add_argument("--profile", choices=["full", "pilot"], default="full")
+    report.add_argument(
+        "--skip-validate",
+        action="store_true",
+        help="Downgrade validator failures to warnings and generate the report against existing artifacts (e.g. when stale judge outputs cannot be regenerated).",
+    )
+
+    paper_export = sub.add_parser(
+        "paper-export",
+        help="Bundle Component artifacts (.tex/.pdf/.csv/.html) into a paper asset directory + manifest.",
+    )
+    paper_export.add_argument(
+        "--target",
+        type=Path,
+        required=True,
+        help="Destination directory (created if missing).",
+    )
+    paper_export.add_argument(
+        "--source",
+        type=Path,
+        default=None,
+        help="Source components directory (default: <results-dir>/report/components/).",
+    )
+    _add_output_arg(paper_export)
 
     probes = sub.add_parser("probes", help="Run targeted persona probes")
     _add_output_arg(probes)
     probes.add_argument("--model", default=None)
     probes.add_argument("-n", "--limit", type=int, default=None)
     probes.add_argument("-w", "--workers", type=int, default=None)
-
-    scripted = sub.add_parser("scripted", help="Run scripted multi-turn dialogues")
-    _add_output_arg(scripted)
-    scripted.add_argument("--model", default=None)
-    scripted.add_argument("-n", "--limit", type=int, default=None)
-    scripted.add_argument("-w", "--workers", type=int, default=None)
 
     audit = sub.add_parser("audit", help="Write data quality audit artifacts")
     _add_output_arg(audit)
@@ -156,25 +249,67 @@ def _make_parser() -> argparse.ArgumentParser:
     agreement = sub.add_parser("judge-agreement", help="Compute multi-judge agreement")
     _add_output_arg(agreement)
 
-    pilot = sub.add_parser(
-        "pilot",
-        help="Generate a small issue83 pilot: snapshots, probes, scripted dialogues, and limited live/control conversations",
+    judge_qualification = sub.add_parser(
+        "judge-qualification",
+        help="Run the judge-qualification reliability/sensitivity gate against the fixed golden corpus",
     )
-    pilot.add_argument(
-        "--output-dir",
-        default="experiments/student_sim_stability/results/issue83_pilot",
-        help="Pilot results directory",
+    judge_qualification_sub = judge_qualification.add_subparsers(
+        dest="judge_qualification_command",
+        required=True,
     )
-    pilot.add_argument("--model", default=None)
-    pilot.add_argument("--conversation-limit", type=int, default=10)
-    pilot.add_argument("-w", "--workers", type=int, default=None)
-    pilot.add_argument("--judge-workers", type=int, default=JUDGE_MAX_WORKERS)
-    pilot.add_argument(
-        "--judge-model-workers",
-        type=int,
-        default=None,
-        help="Judge models to run in parallel; defaults to all configured judge models",
+
+    judge_qualification_render = judge_qualification_sub.add_parser(
+        "render",
+        help="Render judge-qualification inputs from the fixed corpus",
     )
+    _add_judge_qualification_dir_arg(judge_qualification_render)
+    judge_qualification_render.add_argument("--corpus", type=Path, default=None)
+    judge_qualification_render.add_argument("--repeats", type=int, default=None)
+    judge_qualification_render.add_argument("--prompt-variants", default=None)
+    judge_qualification_render.add_argument("--clean", action="store_true")
+
+    judge_qualification_judge = judge_qualification_sub.add_parser(
+        "judge",
+        help=(
+            "Judge rendered judge-qualification inputs against all configured "
+            "JUDGE_MODELS. Single-judge qualification is intentionally not "
+            "supported: the gate exists to qualify the full panel, so every "
+            "judge run must cover every model."
+        ),
+    )
+    _add_judge_qualification_dir_arg(judge_qualification_judge)
+    judge_qualification_judge.add_argument(
+        "--dimension",
+        default="all",
+        choices=(*DIMENSION_TO_FILE, "all"),
+    )
+    judge_qualification_judge.add_argument(
+        "-w", "--workers", type=int, default=JUDGE_MAX_WORKERS
+    )
+    judge_qualification_judge.add_argument(
+        "--judge-model-workers", type=int, default=None
+    )
+    judge_qualification_judge.add_argument(
+        "--temperature", type=float, default=JUDGE_TEMPERATURE
+    )
+    judge_qualification_judge.add_argument("--overwrite", action="store_true")
+    judge_qualification_judge.add_argument("--max-retries", type=int, default=3)
+    judge_qualification_judge.add_argument("--retry-delay", type=float, default=2.0)
+
+    judge_qualification_report = judge_qualification_sub.add_parser(
+        "report",
+        help="Compute judge-qualification reliability and sensitivity stats",
+    )
+    _add_judge_qualification_dir_arg(judge_qualification_report)
+    judge_qualification_report.add_argument("--corpus", type=Path, default=None)
+
+    judge_qualification_cost = judge_qualification_sub.add_parser(
+        "cost",
+        help="Estimate LLM cost for rendered judge-qualification inputs",
+    )
+    _add_judge_qualification_dir_arg(judge_qualification_cost)
+    judge_qualification_cost.add_argument("--models", default=None)
+    judge_qualification_cost.add_argument("--all-models", action="store_true")
 
     return parser
 
@@ -221,143 +356,120 @@ def _results_dir(output_dir: str | None) -> Path:
     return out
 
 
-def _score_controlled_gate(judge_input_dir: Path, judge_output_dir: Path) -> dict:
-    """Score P1/B1 only from outputs matching the current rendered inputs."""
-    required = [("P1", "overall_probe_pass"), ("B1", "contract_fit")]
-    threshold = 3.0
-    scores: list[float] = []
-    scores_by_prefix: dict[str, list[float]] = {prefix: [] for prefix, _ in required}
-    missing: list[str] = []
-    malformed: list[str] = []
-    b1_identity_mismatches: list[str] = []
-    b1_identity_compared = 0
-    b1_identity_correct = 0
-    counts: dict[str, int] = {}
-
-    for prefix, field in required:
-        input_files = sorted(judge_input_dir.glob(f"{prefix}__*.json"))
-        counts[prefix] = len(input_files)
-        if not input_files:
-            missing.append(f"{prefix}: no current judge inputs")
-            continue
-        for input_path in input_files:
-            output_path = judge_output_dir / input_path.name
-            if not output_path.exists():
-                missing.append(output_path.name)
-                continue
-            payload = json.loads(output_path.read_text(encoding="utf-8"))
-            output_scores = payload.get("scores", {})
-            if prefix == "B1":
-                input_payload = json.loads(input_path.read_text(encoding="utf-8"))
-                expected_persona = str(
-                    input_payload.get("metadata", {}).get("persona_id", "")
-                ).strip()
-                identified_persona = str(
-                    output_scores.get("identified_persona", "")
-                ).strip()
-                if not expected_persona:
-                    malformed.append(f"{input_path.name}: missing metadata persona_id")
-                    continue
-                if not identified_persona:
-                    malformed.append(f"{output_path.name}: missing identified_persona")
-                    continue
-                b1_identity_compared += 1
-                if identified_persona == expected_persona:
-                    b1_identity_correct += 1
-                else:
-                    b1_identity_mismatches.append(
-                        f"{output_path.name}: expected {expected_persona}, got {identified_persona}"
-                    )
-            value = output_scores.get(field)
-            if not isinstance(value, (int, float)):
-                malformed.append(f"{output_path.name}: missing numeric {field}")
-                continue
-            score = float(value)
-            scores.append(score)
-            scores_by_prefix[prefix].append(score)
-
-    mean = sum(scores) / len(scores) if scores else 0.0
-    dimension_means = {
-        prefix: sum(values) / len(values) if values else 0.0
-        for prefix, values in scores_by_prefix.items()
-    }
-    dimension_ok = {
-        prefix: bool(scores_by_prefix[prefix]) and dimension_means[prefix] >= threshold
-        for prefix, _ in required
-    }
-    b1_identity_ok = (
-        bool(counts.get("B1"))
-        and b1_identity_compared == counts["B1"]
-        and not b1_identity_mismatches
+def _judge_qualification_dir(output_dir: str | None) -> Path:
+    from experiments.student_sim_stability.judge_qualification.render import (
+        DEFAULT_GATE_RESULTS_DIR,
     )
-    dimension_ok["B1"] = dimension_ok["B1"] and b1_identity_ok
-    return {
-        "ok": not missing
-        and not malformed
-        and not b1_identity_mismatches
-        and all(dimension_ok.values()),
-        "mean": mean,
-        "n": len(scores),
-        "threshold": threshold,
-        "dimension_means": dimension_means,
-        "dimension_counts": {
-            prefix: len(values) for prefix, values in scores_by_prefix.items()
-        },
-        "dimension_ok": dimension_ok,
-        "input_counts": counts,
-        "b1_identification": {
-            "correct": b1_identity_correct,
-            "compared": b1_identity_compared,
-            "accuracy": (
-                b1_identity_correct / b1_identity_compared
-                if b1_identity_compared
-                else 0.0
-            ),
-            "mismatches": b1_identity_mismatches,
-        },
-        "missing": missing,
-        "malformed": malformed,
-    }
+
+    out = Path(output_dir) if output_dir else DEFAULT_GATE_RESULTS_DIR
+    if not out.is_absolute():
+        out = BENCH_ROOT / out
+    return out
 
 
-def _pilot_trial_keys(model: str, live_limit: int) -> tuple[set[str], set[str], dict]:
-    from experiments.student_sim_stability.core.config import TrialKey
+@dataclass
+class LoadedQualificationStats:
+    stats: dict
+    stats_path: Path
+    gate_dir: Path
 
-    if live_limit < 8:
-        raise ValueError(
-            "Pilot live limit must be at least 8 to cover 4 personas across 2 tutor temperatures."
+
+def _load_judge_qualification_stats(gate_dir: Path) -> LoadedQualificationStats:
+    stats_path = gate_dir / "report" / "judge_qualification_stats.json"
+    if not stats_path.exists():
+        raise FileNotFoundError(
+            f"judge qualification stats not found: {stats_path}. "
+            "Run `judge-qualification render`, `judge-qualification judge`, and `judge-qualification report` first."
         )
+    with open(stats_path, encoding="utf-8") as fh:
+        stats = json.load(fh)
+    return LoadedQualificationStats(
+        stats=stats, stats_path=stats_path, gate_dir=gate_dir
+    )
 
-    task_personas = [
-        ("I01_implement_sma", "developer_crossover"),
-        ("I01_implement_sma", "fullstack_practitioner"),
-        ("S03_mean_reversion_research", "finance_veteran"),
-        ("S03_mean_reversion_research", "double_novice"),
-    ]
-    live_keys: list[str] = []
-    for task_id, persona_id in task_personas:
-        for tutor_temp in [0.0, 1.0]:
-            live_keys.append(
-                TrialKey("live", task_id, persona_id, model, 0, tutor_temp).key
-            )
-    extra_candidates = [
-        TrialKey("live", task_id, persona_id, model, 1, 0.0).key
-        for task_id, persona_id in task_personas
-    ]
-    live_keys.extend(extra_candidates[: max(0, live_limit - len(live_keys))])
-    live_keys = live_keys[:live_limit]
-    control_keys = {
-        TrialKey("control", task_id, persona_id, model, 0, 0.0).key
-        for task_id, persona_id in task_personas
+
+def _write_judge_qualification_reference(
+    *,
+    results_dir: Path,
+    loaded: LoadedQualificationStats,
+) -> Path:
+    report_dir = results_dir / "report"
+    report_dir.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "version": "judge_qualification_reference_v1",
+        "gate_dir": str(loaded.gate_dir),
+        "stats_path": str(loaded.stats_path),
+        "ok": bool(loaded.stats.get("ok")),
+        "corpus_version": loaded.stats.get("corpus_version"),
+        "counts": loaded.stats.get("counts", {}),
+        "report_paths": loaded.stats.get("report_paths", {}),
     }
-    metadata = {
-        "pilot_tasks": sorted({task_id for task_id, _ in task_personas}),
-        "pilot_personas": sorted({persona_id for _, persona_id in task_personas}),
-        "pilot_model": model,
-        "live_keys": live_keys,
-        "control_keys": sorted(control_keys),
-    }
-    return set(live_keys), control_keys, metadata
+    path = report_dir / "judge_qualification_reference.json"
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump(payload, fh, indent=2, ensure_ascii=False)
+        fh.write("\n")
+    return path
+
+
+def _require_judge_qualification_ok(
+    *, gate_dir: Path, results_dir: Path
+) -> LoadedQualificationStats:
+    """Load gate stats, enforce freshness vs current code, and require ok=true.
+
+    Freshness guards prevent a previously-passing gate artifact from
+    unblocking the full pipeline after the corpus, rubrics, or persona
+    contracts have changed. If any version imprint drifts, the user must
+    rerun `judge-qualification render + judge + report` against the current
+    code before the full pipeline is allowed to proceed.
+    """
+    from experiments.student_sim_stability.core.contracts import CONTRACT_VERSION
+    from experiments.student_sim_stability.core.rubrics import RUBRIC_VERSION
+    from experiments.student_sim_stability.judge_qualification.render import load_corpus
+
+    loaded = _load_judge_qualification_stats(gate_dir)
+    _write_judge_qualification_reference(results_dir=results_dir, loaded=loaded)
+    stats = loaded.stats
+    current_corpus_version = load_corpus().get("version")
+    version_mismatches: list[str] = []
+    if stats.get("corpus_version") != current_corpus_version:
+        version_mismatches.append(
+            f"corpus_version={stats.get('corpus_version')!r} "
+            f"(current={current_corpus_version!r})"
+        )
+    if stats.get("rubric_version") != RUBRIC_VERSION:
+        version_mismatches.append(
+            f"rubric_version={stats.get('rubric_version')!r} "
+            f"(current={RUBRIC_VERSION!r})"
+        )
+    if stats.get("contract_version") != CONTRACT_VERSION:
+        version_mismatches.append(
+            f"contract_version={stats.get('contract_version')!r} "
+            f"(current={CONTRACT_VERSION!r})"
+        )
+    if version_mismatches:
+        raise RuntimeError(
+            f"judge qualification stats in {gate_dir} are stale relative to current code: "
+            + "; ".join(version_mismatches)
+            + ". Rerun `judge-qualification render --clean + judge --all-models + report`."
+        )
+    if not stats.get("ok"):
+        raise RuntimeError(
+            f"judge qualification failed in {gate_dir}; fix the gate before running the full pipeline"
+        )
+    return loaded
+
+
+def _reference_judge_qualification_if_available(
+    *,
+    gate_dir: Path,
+    results_dir: Path,
+) -> LoadedQualificationStats | None:
+    try:
+        loaded = _load_judge_qualification_stats(gate_dir)
+    except FileNotFoundError:
+        return None
+    _write_judge_qualification_reference(results_dir=results_dir, loaded=loaded)
+    return loaded
 
 
 def _render_judges(args: argparse.Namespace) -> None:
@@ -371,7 +483,6 @@ def _render_judges(args: argparse.Namespace) -> None:
         render_d1,
         render_d2,
         render_d3,
-        render_d4,
         render_p1,
     )
 
@@ -390,14 +501,12 @@ def _render_judges(args: argparse.Namespace) -> None:
         render_d2(conv_dir, judge_input_dir)
     if args.dimension in ("D3", "all"):
         render_d3(conv_dir, judge_input_dir)
-    if args.dimension in ("D4", "all"):
-        render_d4(conv_dir, judge_input_dir)
     if args.dimension in ("control", "all"):
         render_control(conv_dir, judge_input_dir)
     if args.dimension in ("P1", "all"):
         render_p1(results_dir, judge_input_dir)
     if args.dimension in ("B1", "all"):
-        render_b1(results_dir, judge_input_dir)
+        render_b1(conv_dir, judge_input_dir)
 
 
 def _judge(args: argparse.Namespace) -> int:
@@ -458,9 +567,20 @@ def _aggregate(args: argparse.Namespace) -> None:
 
 
 def _run_all(args: argparse.Namespace) -> int:
-    """Run the full experiment pipeline end-to-end."""
-    import os
+    """End-to-end student-sim-stability pipeline (the ``all`` command).
 
+    Flow:
+      Step 0: Judge qualification gate (pre-validated on the fixed golden corpus)
+      Step 1: Run targeted persona probes (P1 input generation)
+      Step 2: Generate live + control conversations
+      Step 3: Render judge prompts for D1/D2/D3/control/P1/B1
+              (B1 reads live conversations; tutor + fixture opening stripped,
+              only student-generated turns reach the B1 judge.)
+      Step 4: Run judge panel across all dimensions in a single pass
+      Step 5: Aggregate (primary + 5-view multi-judge)
+      Step 6: Data-quality audit
+      Step 7: Report + validation
+    """
     from experiments.student_sim_stability.analysis.data_quality import run_audit
     from experiments.student_sim_stability.analysis.human_alignment import (
         init_human_alignment,
@@ -478,6 +598,9 @@ def _run_all(args: argparse.Namespace) -> int:
         MAX_WORKERS,
     )
     from experiments.student_sim_stability.pipeline.aggregate import aggregate
+    from experiments.student_sim_stability.pipeline.aggregate_multi_judge import (
+        aggregate_multi_judge,
+    )
     from experiments.student_sim_stability.pipeline.judge import (
         clean_judge_outputs,
         run_judge_for_models,
@@ -491,155 +614,112 @@ def _run_all(args: argparse.Namespace) -> int:
         render_d1,
         render_d2,
         render_d3,
-        render_d4,
         render_p1,
     )
     from experiments.student_sim_stability.pipeline.runner import ExperimentRunner
-    from experiments.student_sim_stability.pipeline.scripted_dialogues import (
-        run_scripted_dialogues,
-    )
+    from server.config.llm_config import require_openrouter_api_key
 
-    if not os.environ.get("OPENROUTER_API_KEY"):
-        print("ERROR: OPENROUTER_API_KEY environment variable is not set")
+    try:
+        require_openrouter_api_key(purpose="student-sim-stability full pipeline")
+    except RuntimeError as exc:
+        print(f"ERROR: {exc}")
         return 1
 
     results_dir = _results_dir(args.output_dir)
+    try:
+        judge_qualification = _require_judge_qualification_ok(
+            gate_dir=_judge_qualification_dir(args.judge_qualification_dir),
+            results_dir=results_dir,
+        )
+    except (FileNotFoundError, RuntimeError) as exc:
+        print(f"ERROR: {exc}")
+        return 1
+
+    print(
+        "\n=== Step 0/7: Judge qualification gate passed ===\n"
+        + json.dumps(
+            {
+                "gate_dir": str(judge_qualification.gate_dir),
+                "stats_path": str(judge_qualification.stats_path),
+                "corpus_version": judge_qualification.stats.get("corpus_version"),
+                "counts": judge_qualification.stats.get("counts", {}),
+            },
+            indent=2,
+            ensure_ascii=False,
+        )
+    )
     snapshot_static_artifacts(results_dir)
     conv_dir = results_dir / "conversations"
     judge_input_dir = results_dir / "judge_inputs"
     judge_output_dir = results_dir / "judge_outputs"
+    by_model_dir = results_dir / "judge_outputs_by_model"
     eval_path = results_dir / "evaluations" / "all_evaluations.json"
 
-    # Step 1: Generate conversations
-    print("\n=== Step 1/7: Run controlled probes and scripted dialogues ===")
-    controlled_workers = args.workers or MAX_WORKERS
-    print(
-        json.dumps(
-            run_probes(results_dir, workers=controlled_workers),
-            indent=2,
-            ensure_ascii=False,
-        )
-    )
-    print(
-        json.dumps(
-            run_scripted_dialogues(results_dir, workers=controlled_workers),
-            indent=2,
-            ensure_ascii=False,
-        )
-    )
-    clean_rendered_prompts(judge_input_dir, "P1")
-    clean_rendered_prompts(judge_input_dir, "B1")
-    render_p1(results_dir, judge_input_dir)
-    render_b1(results_dir, judge_input_dir)
-    clean_judge_outputs(judge_output_dir, "P1")
-    clean_judge_outputs(judge_output_dir, "B1")
-    for judge_model in JUDGE_MODELS:
-        clean_judge_outputs(
-            results_dir / "judge_outputs_by_model" / safe_model_dir(judge_model),
-            "P1",
-        )
-        clean_judge_outputs(
-            results_dir / "judge_outputs_by_model" / safe_model_dir(judge_model),
-            "B1",
-        )
-    print("\n=== Step 1b/7: Judge controlled probes before live robustness ===")
-    probe_judge_stats = run_judge_for_models(
-        input_dir=judge_input_dir,
-        primary_output_dir=judge_output_dir,
-        by_model_output_dir=results_dir / "judge_outputs_by_model",
-        dimension="P1",
-        workers=args.judge_workers,
-        model_workers=args.judge_model_workers,
-        require_inputs=True,
-        clean_stale=True,
-    )
-    blind_judge_stats = run_judge_for_models(
-        input_dir=judge_input_dir,
-        primary_output_dir=judge_output_dir,
-        by_model_output_dir=results_dir / "judge_outputs_by_model",
-        dimension="B1",
-        workers=args.judge_workers,
-        model_workers=args.judge_model_workers,
-        require_inputs=True,
-        clean_stale=True,
-    )
-    print(json.dumps({"P1": probe_judge_stats, "B1": blind_judge_stats}, indent=2))
-    if probe_judge_stats["failed"] or blind_judge_stats["failed"]:
-        print("ERROR: controlled validation judge calls failed")
-        return 1
-    controlled_gate = _score_controlled_gate(judge_input_dir, judge_output_dir)
-    if not controlled_gate["ok"]:
-        print(
-            "ERROR: controlled persona validation did not pass before live run "
-            f"(mean={controlled_gate['mean']:.2f}, n={controlled_gate['n']}, "
-            f"dimension_means={controlled_gate['dimension_means']}, "
-            f"dimension_ok={controlled_gate['dimension_ok']}, "
-            f"missing={controlled_gate['missing'][:5]}, "
-            f"malformed={controlled_gate['malformed'][:5]})"
-        )
-        return 1
+    print("\n=== Step 1/7: Targeted persona probes (P1 input) ===")
+    probe_workers = args.workers or MAX_WORKERS
+    probe_manifest = run_probes(results_dir, workers=probe_workers)
+    print(json.dumps(probe_manifest, indent=2, ensure_ascii=False))
 
-    print("\n=== Step 2/7: Generate conversations ===")
+    print("\n=== Step 2/7: Generate live + control conversations ===")
     runner = ExperimentRunner(output_dir=args.output_dir)
-    generate_stats = runner.run_generate(max_workers=args.workers or MAX_WORKERS)
+    generate_stats = runner.run_generate(max_workers=probe_workers)
     print(json.dumps(generate_stats, indent=2, ensure_ascii=False))
     if generate_stats["failed"]:
         print(f"ERROR: {generate_stats['failed']} conversation trials failed")
         return 1
 
-    # Step 2: Render judge prompts
-    print("\n=== Step 3/7: Render judge prompts ===")
-    for dimension in _ROBUSTNESS_DIMENSIONS:
+    print("\n=== Step 3/7: Render judge prompts (D1/D2/D3/control/P1/B1) ===")
+    for dimension in _ALL_JUDGE_DIMENSIONS:
         clean_rendered_prompts(judge_input_dir, dimension)
         clean_judge_outputs(judge_output_dir, dimension)
         for judge_model in JUDGE_MODELS:
             clean_judge_outputs(
-                results_dir / "judge_outputs_by_model" / safe_model_dir(judge_model),
+                by_model_dir / safe_model_dir(judge_model),
                 dimension,
             )
     render_d1(conv_dir, judge_input_dir, sample_policy=D1_SAMPLE_POLICY)
     render_d2(conv_dir, judge_input_dir)
     render_d3(conv_dir, judge_input_dir)
-    render_d4(conv_dir, judge_input_dir)
     render_control(conv_dir, judge_input_dir)
+    render_p1(results_dir, judge_input_dir)
+    render_b1(conv_dir, judge_input_dir)
+    # Pre-seed the human-alignment manifest so labelers can start before the
+    # judge panel finishes.
     init_human_alignment(results_dir)
 
-    # Step 3: Run judge
-    print("\n=== Step 4/7: Run configured judge panel ===")
-    stats = run_judge_for_models(
+    print("\n=== Step 4/7: Run configured judge panel (all dimensions) ===")
+    judge_stats = run_judge_for_models(
         input_dir=judge_input_dir,
         primary_output_dir=judge_output_dir,
-        by_model_output_dir=results_dir / "judge_outputs_by_model",
+        by_model_output_dir=by_model_dir,
         dimension="all",
         workers=args.judge_workers,
         model_workers=args.judge_model_workers,
-        exclude_dimensions=_CONTROLLED_DIMENSIONS,
         require_inputs=True,
         clean_stale=True,
     )
-    print(json.dumps(stats, indent=2))
-    if stats["failed"]:
-        print(f"ERROR: {stats['failed']} judge calls failed")
+    print(json.dumps(judge_stats, indent=2))
+    if judge_stats["failed"]:
+        print(f"ERROR: {judge_stats['failed']} judge calls failed")
         return 1
 
     print("\n=== Step 4b/7: Compute multi-judge agreement ===")
-    print(
-        json.dumps(compute_judge_agreement(results_dir), indent=2, ensure_ascii=False)
-    )
+    agreement = compute_judge_agreement(results_dir)
+    print(json.dumps(agreement, indent=2, ensure_ascii=False))
 
-    # Step 5: Aggregate
-    print("\n=== Step 5/7: Aggregate primary judge outputs ===")
-    summary = aggregate(
+    print("\n=== Step 5/7: Aggregate primary + 5-view multi-judge ===")
+    aggregate_summary = aggregate(
         judge_input_dir=judge_input_dir,
         judge_output_dir=judge_output_dir,
         output_path=eval_path,
         strict=True,
         profile="full",
     )
-    print(json.dumps(summary, indent=2))
+    print(json.dumps(aggregate_summary, indent=2))
+    mj_summary = aggregate_multi_judge(results_dir)
+    print(json.dumps(mj_summary, indent=2, ensure_ascii=False))
     init_human_alignment(results_dir)
 
-    # Step 6: Data quality audit artifacts
     print("\n=== Step 6/7: Data quality audit ===")
     audit = run_audit(results_dir, profile="full")
     print(json.dumps({"ok": audit["ok"]}, indent=2))
@@ -647,7 +727,6 @@ def _run_all(args: argparse.Namespace) -> int:
         print("ERROR: data quality audit failed")
         return 1
 
-    # Step 7: Report
     print("\n=== Step 7/7: Generate report ===")
     try:
         from experiments.student_sim_stability.analysis.report import ReportGenerator
@@ -661,7 +740,6 @@ def _run_all(args: argparse.Namespace) -> int:
     report_path = gen.generate()
     print(f"Report: {report_path}")
 
-    # Step 7b: Final validation
     print("\n=== Step 7b/7: Final validation ===")
     checks, _ = validate(results_dir, profile="full")
     failures = [check for check in checks if not check.ok and check.required]
@@ -738,6 +816,17 @@ def main() -> int:
         _aggregate(args)
         return 0
 
+    if args.command == "aggregate-multi-judge":
+        from experiments.student_sim_stability.pipeline.aggregate_multi_judge import (
+            aggregate_multi_judge,
+        )
+
+        summary = aggregate_multi_judge(
+            _results_dir(args.output_dir), strict=args.strict
+        )
+        print(json.dumps(summary, indent=2, ensure_ascii=False))
+        return 0
+
     if args.command == "validate":
         return _validate(args)
 
@@ -760,16 +849,43 @@ def main() -> int:
         if not eval_path.exists():
             print(f"ERROR: No evaluation results at {eval_path}")
             return 1
+        _reference_judge_qualification_if_available(
+            gate_dir=_judge_qualification_dir(args.judge_qualification_dir),
+            results_dir=results_dir,
+        )
         checks, _ = validate(results_dir, profile=args.profile, require_audit=False)
         failures = [check for check in checks if not check.ok and check.required]
         if failures:
-            print("ERROR: Cannot generate report from incomplete artifacts:")
-            for check in failures[:10]:
-                print(f"  - {check.name}: {check.message}")
-            return 1
+            if args.skip_validate:
+                print(
+                    "WARNING: Generating report against incomplete artifacts (--skip-validate):"
+                )
+                for check in failures[:10]:
+                    print(f"  - {check.name}: {check.message}")
+            else:
+                print("ERROR: Cannot generate report from incomplete artifacts:")
+                for check in failures[:10]:
+                    print(f"  - {check.name}: {check.message}")
+                return 1
         gen = ReportGenerator(str(eval_path), str(results_dir / "report"))
         report_path = gen.generate()
         print(f"Report: {report_path}")
+        return 0
+
+    if args.command == "paper-export":
+        results_dir = _results_dir(args.output_dir)
+        source = args.source or (results_dir / "report" / "components")
+        if not source.exists():
+            print(
+                f"ERROR: components directory not found at {source}. "
+                "Run `cli report` first."
+            )
+            return 1
+        manifest = _paper_export(args.target, source)
+        print(
+            f"Exported {manifest['n_assets']} assets to {args.target} "
+            f"({manifest['by_kind']}). Manifest: {Path(args.target) / 'manifest.json'}"
+        )
         return 0
 
     if args.command == "probes":
@@ -783,27 +899,6 @@ def main() -> int:
         from experiments.student_sim_stability.core.config import MAX_WORKERS
 
         manifest = run_probes(
-            results_dir,
-            model=args.model,
-            limit=args.limit,
-            workers=args.workers or MAX_WORKERS,
-        )
-        print(json.dumps(manifest, indent=2, ensure_ascii=False))
-        return 0
-
-    if args.command == "scripted":
-        from experiments.student_sim_stability.core.artifacts import (
-            snapshot_static_artifacts,
-        )
-        from experiments.student_sim_stability.pipeline.scripted_dialogues import (
-            run_scripted_dialogues,
-        )
-
-        results_dir = _results_dir(args.output_dir)
-        snapshot_static_artifacts(results_dir)
-        from experiments.student_sim_stability.core.config import MAX_WORKERS
-
-        manifest = run_scripted_dialogues(
             results_dir,
             model=args.model,
             limit=args.limit,
@@ -846,212 +941,94 @@ def main() -> int:
         print(json.dumps(report, indent=2, ensure_ascii=False))
         return 0
 
-    if args.command == "pilot":
-        from experiments.student_sim_stability.analysis.data_quality import run_audit
-        from experiments.student_sim_stability.analysis.human_alignment import (
-            init_human_alignment,
-        )
-        from experiments.student_sim_stability.analysis.judge_agreement import (
-            compute_judge_agreement,
-        )
-        from experiments.student_sim_stability.analysis.report import ReportGenerator
-        from experiments.student_sim_stability.analysis.validate import validate
-        from experiments.student_sim_stability.core.artifacts import (
-            snapshot_static_artifacts,
-        )
-        from experiments.student_sim_stability.core.config import (
-            D1_SAMPLE_POLICY,
-            JUDGE_MODELS,
-            MAX_WORKERS,
-            STUDENT_MODELS,
-        )
-        from experiments.student_sim_stability.pipeline.aggregate import aggregate
-        from experiments.student_sim_stability.pipeline.judge import (
-            clean_judge_outputs,
-            run_judge_for_models,
-            safe_model_dir,
-        )
-        from experiments.student_sim_stability.pipeline.probes import run_probes
-        from experiments.student_sim_stability.pipeline.render_judge_prompts import (
-            clean_rendered_prompts,
-            render_b1,
-            render_control,
-            render_d1,
-            render_d2,
-            render_d3,
-            render_d4,
-            render_p1,
-        )
-        from experiments.student_sim_stability.pipeline.runner import ExperimentRunner
-        from experiments.student_sim_stability.pipeline.scripted_dialogues import (
-            run_scripted_dialogues,
+    if args.command == "judge-qualification":
+        from experiments.student_sim_stability.judge_qualification.render import (
+            parse_prompt_variants,
+            render_judge_qualification_inputs,
         )
 
-        results_dir = _results_dir(args.output_dir)
-        pilot_model = args.model or STUDENT_MODELS[0]
-        try:
-            live_keys, control_keys, pilot_metadata = _pilot_trial_keys(
-                pilot_model, args.conversation_limit
+        gate_dir = _judge_qualification_dir(args.judge_qualification_dir)
+        if args.judge_qualification_command == "render":
+            variants = (
+                parse_prompt_variants(args.prompt_variants)
+                if args.prompt_variants
+                else None
             )
-        except ValueError as exc:
-            print(f"ERROR: {exc}")
-            return 1
-        snapshot_static_artifacts(results_dir)
-
-        judge_input_dir = results_dir / "judge_inputs"
-        judge_output_dir = results_dir / "judge_outputs"
-        by_model_dir = results_dir / "judge_outputs_by_model"
-        conv_dir = results_dir / "conversations"
-        eval_path = results_dir / "evaluations" / "all_evaluations.json"
-
-        pilot_workers = args.workers or min(6, MAX_WORKERS)
-        probe_manifest = run_probes(
-            results_dir,
-            model=pilot_model,
-            workers=pilot_workers,
-        )
-        scripted_manifest = run_scripted_dialogues(
-            results_dir,
-            model=pilot_model,
-            workers=pilot_workers,
-        )
-        clean_rendered_prompts(judge_input_dir, "P1")
-        clean_rendered_prompts(judge_input_dir, "B1")
-        render_p1(results_dir, judge_input_dir)
-        render_b1(results_dir, judge_input_dir)
-        clean_judge_outputs(judge_output_dir, "P1")
-        clean_judge_outputs(judge_output_dir, "B1")
-        for judge_model in JUDGE_MODELS:
-            clean_judge_outputs(by_model_dir / safe_model_dir(judge_model), "P1")
-            clean_judge_outputs(by_model_dir / safe_model_dir(judge_model), "B1")
-        probe_judge_stats = run_judge_for_models(
-            input_dir=judge_input_dir,
-            primary_output_dir=judge_output_dir,
-            by_model_output_dir=by_model_dir,
-            dimension="P1",
-            workers=args.judge_workers,
-            model_workers=args.judge_model_workers,
-            require_inputs=True,
-            clean_stale=True,
-        )
-        blind_judge_stats = run_judge_for_models(
-            input_dir=judge_input_dir,
-            primary_output_dir=judge_output_dir,
-            by_model_output_dir=by_model_dir,
-            dimension="B1",
-            workers=args.judge_workers,
-            model_workers=args.judge_model_workers,
-            require_inputs=True,
-            clean_stale=True,
-        )
-        controlled_gate = _score_controlled_gate(judge_input_dir, judge_output_dir)
-        if (
-            probe_judge_stats["failed"]
-            or blind_judge_stats["failed"]
-            or not controlled_gate["ok"]
-        ):
-            print(
-                "ERROR: pilot controlled validation failed before live robustness: "
-                + json.dumps(
-                    {
-                        "P1": probe_judge_stats,
-                        "B1": blind_judge_stats,
-                        "gate": controlled_gate,
-                    },
-                    ensure_ascii=False,
-                )
+            manifest = render_judge_qualification_inputs(
+                gate_dir=gate_dir,
+                corpus_path=args.corpus,
+                repeats=args.repeats,
+                prompt_variants=variants,
+                clean=args.clean,
             )
-            return 1
+            print(json.dumps(manifest, indent=2, ensure_ascii=False))
+            return 0
 
-        runner = ExperimentRunner(output_dir=args.output_dir)
-        live_stats = runner.run_generate(
-            max_workers=pilot_workers,
-            phase="live",
-            allowed_keys=live_keys,
-        )
-        control_stats = runner.run_generate(
-            max_workers=pilot_workers,
-            phase="control",
-            allowed_keys=control_keys,
-        )
-        if live_stats["failed"] or control_stats["failed"]:
-            print("ERROR: pilot conversation generation failed")
-            return 1
-
-        for dimension in _ROBUSTNESS_DIMENSIONS:
-            clean_rendered_prompts(judge_input_dir, dimension)
-            clean_judge_outputs(judge_output_dir, dimension)
-            for judge_model in JUDGE_MODELS:
-                clean_judge_outputs(
-                    by_model_dir / safe_model_dir(judge_model),
-                    dimension,
-                )
-        render_d1(conv_dir, judge_input_dir, sample_policy=D1_SAMPLE_POLICY)
-        render_d2(conv_dir, judge_input_dir)
-        render_d3(conv_dir, judge_input_dir)
-        render_d4(conv_dir, judge_input_dir)
-        render_control(conv_dir, judge_input_dir)
-        judge_stats = run_judge_for_models(
-            input_dir=judge_input_dir,
-            primary_output_dir=judge_output_dir,
-            by_model_output_dir=by_model_dir,
-            dimension="all",
-            workers=args.judge_workers,
-            model_workers=args.judge_model_workers,
-            exclude_dimensions=_CONTROLLED_DIMENSIONS,
-            require_inputs=True,
-            clean_stale=True,
-        )
-        if judge_stats["failed"]:
-            print("ERROR: pilot judge panel failed")
-            print(json.dumps(judge_stats, indent=2, ensure_ascii=False))
-            return 1
-        agreement = compute_judge_agreement(results_dir)
-        aggregate_summary = aggregate(
-            judge_input_dir=judge_input_dir,
-            judge_output_dir=judge_output_dir,
-            output_path=eval_path,
-            strict=True,
-            profile="pilot",
-        )
-        human_manifest = init_human_alignment(results_dir)
-        audit = run_audit(results_dir, profile="pilot")
-        if not audit["ok"]:
-            print("ERROR: pilot data quality audit failed")
-            print(json.dumps(audit, indent=2, ensure_ascii=False))
-            return 1
-        report_path = ReportGenerator(
-            str(eval_path), str(results_dir / "report")
-        ).generate()
-        checks, _ = validate(results_dir, profile="pilot")
-        failures = [check for check in checks if not check.ok]
-        if failures:
-            print("ERROR: pilot strict validation failed")
-            for check in failures[:20]:
-                print(f"  - {check.name}: {check.message}")
-            return 1
-        print(
-            json.dumps(
-                {
-                    "results_dir": str(results_dir),
-                    "pilot_selection": pilot_metadata,
-                    "probes": probe_manifest,
-                    "scripted": scripted_manifest,
-                    "controlled_gate": controlled_gate,
-                    "live_generation": live_stats,
-                    "control_generation": control_stats,
-                    "judge": judge_stats,
-                    "judge_agreement": agreement,
-                    "aggregate": aggregate_summary,
-                    "human_alignment": human_manifest,
-                    "audit_ok": audit["ok"],
-                    "report": str(report_path),
-                },
-                indent=2,
-                ensure_ascii=False,
+        if args.judge_qualification_command == "judge":
+            from experiments.student_sim_stability.judge_qualification.report import (
+                write_judge_qualification_report,
             )
-        )
-        return 0
+            from experiments.student_sim_stability.pipeline.judge import (
+                run_judge_for_models,
+            )
+
+            # The qualification gate always runs the full JUDGE_MODELS panel.
+            # Single-judge qualification would silently bless a 3-judge
+            # experiment with only one model validated, defeating the gate's
+            # purpose.
+            stats = run_judge_for_models(
+                input_dir=gate_dir / "judge_inputs",
+                primary_output_dir=gate_dir / "judge_outputs",
+                by_model_output_dir=gate_dir / "judge_outputs_by_model",
+                dimension=args.dimension,
+                workers=args.workers,
+                temperature=args.temperature,
+                overwrite=args.overwrite,
+                max_retries=args.max_retries,
+                retry_delay=args.retry_delay,
+                require_inputs=True,
+                clean_stale=args.overwrite,
+                model_workers=args.judge_model_workers,
+            )
+            report_dir = gate_dir / "report"
+            report_dir.mkdir(parents=True, exist_ok=True)
+            with open(report_dir / "judge_run_stats.json", "w", encoding="utf-8") as fh:
+                json.dump(stats, fh, indent=2, ensure_ascii=False)
+                fh.write("\n")
+            report_stats = write_judge_qualification_report(gate_dir=gate_dir)
+            stats["report"] = {
+                "ok": report_stats.get("ok"),
+                "paths": report_stats.get("report_paths", {}),
+            }
+            print(json.dumps(stats, indent=2, ensure_ascii=False))
+            return 1 if stats["failed"] or not report_stats.get("ok") else 0
+
+        if args.judge_qualification_command == "report":
+            from experiments.student_sim_stability.judge_qualification.report import (
+                write_judge_qualification_report,
+            )
+
+            stats = write_judge_qualification_report(
+                gate_dir=gate_dir,
+                corpus_path=args.corpus,
+            )
+            print(json.dumps(stats, indent=2, ensure_ascii=False))
+            return 0 if stats["ok"] else 1
+
+        if args.judge_qualification_command == "cost":
+            from experiments.student_sim_stability.judge_qualification.cost import (
+                _parse_models as parse_cost_models,
+            )
+            from experiments.student_sim_stability.judge_qualification.cost import (
+                estimate_judge_qualification_cost,
+            )
+
+            estimate = estimate_judge_qualification_cost(
+                gate_dir=gate_dir,
+                models=parse_cost_models(args.models, all_models=args.all_models),
+            )
+            print(json.dumps(estimate, indent=2, ensure_ascii=False))
+            return 0
 
     parser.error(f"Unknown command: {args.command}")
     return 2

@@ -1,7 +1,7 @@
 """Rubric builder — loads rubric JSON, selects variants, formats for prompts.
 
 Supports all rubric types:
-- 6D (Tutor): per-quadrant/per-category variant selection + [KNOWN]/[UNKNOWN] injection
+- 6D (Tutor): per-quadrant/per-category variant selection + [FAMILIAR]/[UNFAMILIAR] injection
 - QP (Process): task_planning, problem_solving
 - QR (Result): result_judge
 
@@ -119,10 +119,10 @@ def _select_variant(
 
 
 # ──────────────────────────────────────────────────────────────
-# [KNOWN]/[UNKNOWN] injection from persona files
+# [FAMILIAR]/[UNFAMILIAR] injection from persona files
 # ──────────────────────────────────────────────────────────────
 
-# Map dimension name → domain key in persona's known_concepts/unknown_concepts
+# Map dimension name → domain key in persona's familiar_concepts/unfamiliar_concepts
 _DIM_TO_DOMAIN = {
     "D1_finance_adaptation": "finance",
     "D2_code_adaptation": "code",
@@ -133,27 +133,27 @@ def _get_concept_lists(
     dimension_name: str,
     persona_id: str,
 ) -> tuple[list[str], list[str]] | None:
-    """Get [KNOWN]/[UNKNOWN] concept lists from persona file.
+    """Get [FAMILIAR]/[UNFAMILIAR] concept lists from persona file.
 
-    Returns (known_list, unknown_list) or None if the dimension
-    doesn't use [KNOWN]/[UNKNOWN] tags.
+    Returns (familiar_list, unfamiliar_list) or None if the dimension
+    doesn't use [FAMILIAR]/[UNFAMILIAR] tags.
     """
     domain = _DIM_TO_DOMAIN.get(dimension_name)
     if domain is None:
         return None  # D3-D6 don't use concept tags
 
     persona = _load_persona(persona_id)
-    known = persona.get("known_concepts", {}).get(domain, [])
-    unknown = persona.get("unknown_concepts", {}).get(domain, [])
-    return known, unknown
+    familiar = persona.get("familiar_concepts", {}).get(domain, [])
+    unfamiliar = persona.get("unfamiliar_concepts", {}).get(domain, [])
+    return familiar, unfamiliar
 
 
-def _inject_concepts(text: str, known: list[str], unknown: list[str]) -> str:
-    """Replace [KNOWN] and [UNKNOWN] tags with formatted concept lists."""
-    known_str = ", ".join(known)
-    unknown_str = ", ".join(unknown)
-    text = text.replace("[KNOWN]", f"[KNOWN: {known_str}]")
-    text = text.replace("[UNKNOWN]", f"[UNKNOWN: {unknown_str}]")
+def _inject_concepts(text: str, familiar: list[str], unfamiliar: list[str]) -> str:
+    """Replace [FAMILIAR] and [UNFAMILIAR] tags with formatted concept lists."""
+    familiar_str = ", ".join(familiar)
+    unfamiliar_str = ", ".join(unfamiliar)
+    text = text.replace("[FAMILIAR]", f"[FAMILIAR: {familiar_str}]")
+    text = text.replace("[UNFAMILIAR]", f"[UNFAMILIAR: {unfamiliar_str}]")
     return text
 
 
@@ -189,7 +189,7 @@ def build_rubric_text(
 
     Steps:
     1. Select the correct scoring variant (per_quadrant/per_category/universal)
-    2. Replace [KNOWN]/[UNKNOWN] tags with concept lists from persona file
+    2. Replace [FAMILIAR]/[UNFAMILIAR] tags with concept lists from persona file
     3. Format with score labels and dimension header
 
     Returns the formatted rubric string ready for prompt injection.
@@ -210,12 +210,12 @@ def build_rubric_text(
         prefix = f"Score {score_key} — {label}" if label else f"Score {score_key}"
         scoring_lines.append(f"{prefix}: {description}")
 
-    # Step 3: Inject [KNOWN]/[UNKNOWN] from persona file
+    # Step 3: Inject [FAMILIAR]/[UNFAMILIAR] from persona file
     concept_lists = _get_concept_lists(dimension_name, persona_id)
     if concept_lists:
-        known, unknown = concept_lists
+        familiar, unfamiliar = concept_lists
         scoring_lines = [
-            _inject_concepts(line, known, unknown) for line in scoring_lines
+            _inject_concepts(line, familiar, unfamiliar) for line in scoring_lines
         ]
 
     # Step 4: Format header

@@ -1,0 +1,277 @@
+{
+  "version": "v1.4.0",
+  "description": "Fixed golden corpus for the judge-qualification gate: judge reliability, prompt-format robustness, one-factor sensitivity, expected-band respect, and B1 identity-match checks.",
+  "pass_threshold": 3,
+  "default_repeats": 3,
+  "default_prompt_variants": [
+    "baseline",
+    "role_blocks",
+    "markdown_transcript"
+  ],
+  "items": [
+    {
+      "sample_id": "pg_p1_developer_crossover_good",
+      "dimension": "P1",
+      "persona_id": "developer_crossover",
+      "facet": "coding_knowledge_boundary",
+      "expected_score_band": "high",
+      "expected_failure_types": [],
+      "probe_message": "You are implementing an SMA crossover in pandas. What part feels clear, and what part do you need help with?",
+      "student_response": "The pandas mechanics are clear: I can build rolling calculations, align columns, and test the data pipeline. What I need help with is the trading meaning: when is a signal actually allowed to influence an order, and how do we avoid accidentally using future rows in the backtest?",
+      "expected_signals": [
+        "pandas mechanics",
+        "rolling",
+        "vectorized",
+        "align columns",
+        "test data pipeline",
+        "code idiomatically",
+        "timing semantics"
+      ]
+    },
+    {
+      "sample_id": "pg_p1_developer_crossover_knowledge_leak",
+      "dimension": "P1",
+      "persona_id": "developer_crossover",
+      "facet": "finance_knowledge_boundary",
+      "expected_score_band": "low",
+      "expected_failure_types": [
+        "knowledge_leak",
+        "co_teacher_drift"
+      ],
+      "probe_message": "You are implementing an SMA crossover in LEAN. What would you ask the tutor next?",
+      "student_response": "I would use SetWarmUp, check IsWarmingUp, rely on LEAN's asynchronous fill model, and add OnOrderEvent logging. The main thing to teach is that indicator readiness and order event timing must be handled separately before comparing alpha quality.",
+      "expected_signals": [
+        "not sure about finance",
+        "what does it mean financially",
+        "which return",
+        "signal vs order timing",
+        "ask what the trade rule means"
+      ]
+    },
+    {
+      "sample_id": "pg_p1_finance_veteran_good",
+      "dimension": "P1",
+      "persona_id": "finance_veteran",
+      "facet": "coding_knowledge_boundary",
+      "expected_score_band": "high",
+      "expected_failure_types": [],
+      "probe_message": "You understand Sharpe and drawdown, but this task uses pandas. What would you ask?",
+      "student_response": "The finance logic is fine: returns, risk, and drawdown are familiar. I need help translating the code into spreadsheet terms. Which column is the time row label, and when calculating returns are we comparing today's price to the prior row or accidentally peeking at the next row?",
+      "expected_signals": [
+        "spreadsheet terms",
+        "which column is the time row",
+        "not confident in Python",
+        "could you show me the pandas equivalent",
+        "excel analogy"
+      ]
+    },
+    {
+      "sample_id": "pg_p1_finance_veteran_under_competent",
+      "dimension": "P1",
+      "persona_id": "finance_veteran",
+      "facet": "finance_knowledge_boundary",
+      "expected_score_band": "low",
+      "expected_failure_types": [
+        "under_competence",
+        "persona_contract_contradiction"
+      ],
+      "probe_message": "The tutor mentions Sharpe ratio and max drawdown. What is your reaction?",
+      "student_response": "I am lost. What is a return, and why would volatility matter? I do not know what drawdown means, so maybe we should avoid those finance terms and just look at whether the price went up.",
+      "expected_signals": [
+        "sharpe",
+        "volatility",
+        "drawdown",
+        "returns",
+        "risk-adjusted",
+        "I can reason about this in finance terms",
+        "familiar territory"
+      ]
+    },
+    {
+      "sample_id": "pg_d3_fullstack_practitioner_good",
+      "dimension": "D3",
+      "persona_id": "fullstack_practitioner",
+      "expected_score_band": "high",
+      "expected_failure_types": [],
+      "conversation_context": [
+        {
+          "label": "Context only - scripted student opening",
+          "content": "I can code the Python pieces, but I am new to LEAN. Can you help me map an SMA trend filter into the right methods?"
+        },
+        {
+          "label": "Context only - tutor turn 1",
+          "content": "Use Initialize for setup, OnData for incoming bars, SetWarmUp for indicator history, and an SMA indicator with an IsReady guard."
+        },
+        {
+          "label": "Scored student turn 1",
+          "content": "Initialize versus OnData makes sense. Should I treat SetWarmUp as just historical bootstrapping, while IsReady is the runtime guard before reading the SMA?"
+        },
+        {
+          "label": "Context only - tutor turn 2",
+          "content": "Yes. SetWarmUp feeds history before live decisions, and IsReady protects you from using an unready indicator."
+        },
+        {
+          "label": "Scored student turn 2",
+          "content": "Good. I can follow that pattern. I still need help with LEAN-specific details: should I store the returned Symbol and use that in OnData instead of a string ticker?"
+        },
+        {
+          "label": "Context only - tutor turn 3",
+          "content": "Store the Symbol returned by AddCrypto and use it to access data and holdings."
+        },
+        {
+          "label": "Scored student turn 3",
+          "content": "That maps to how I would avoid stringly typed references in backend code. Can you show the smallest complete version with those guards?"
+        }
+      ]
+    },
+    {
+      "sample_id": "pg_d3_fullstack_practitioner_drift",
+      "dimension": "D3",
+      "persona_id": "fullstack_practitioner",
+      "expected_score_band": "low",
+      "expected_failure_types": [
+        "knowledge_leak",
+        "co_teacher_drift"
+      ],
+      "conversation_context": [
+        {
+          "label": "Context only - scripted student opening",
+          "content": "I can code the Python pieces, but I am new to LEAN. Can you help me map an SMA trend filter into the right methods?"
+        },
+        {
+          "label": "Context only - tutor turn 1",
+          "content": "Use Initialize for setup, OnData for incoming bars, SetWarmUp for indicator history, and an SMA indicator with an IsReady guard."
+        },
+        {
+          "label": "Scored student turn 1",
+          "content": "SetWarmUp is obvious. The real issue is LEAN's asynchronous order fill semantics and how OnOrderEvent should be used to audit fill latency."
+        },
+        {
+          "label": "Context only - tutor turn 2",
+          "content": "Let's first establish the simple SMA structure before order-event details."
+        },
+        {
+          "label": "Scored student turn 2",
+          "content": "The correct architecture is to separate alpha generation, portfolio construction, execution, and risk. I would teach it as a miniature framework rather than a simple OnData example."
+        },
+        {
+          "label": "Context only - tutor turn 3",
+          "content": "For this task, keep it minimal and use SetHoldings when price is above the SMA."
+        },
+        {
+          "label": "Scored student turn 3",
+          "content": "I will add an audit checklist: warmup, symbol mapping, execution model, slippage, fee model, and order event reconciliation. That is the right answer for production."
+        }
+      ]
+    },
+    {
+      "sample_id": "pg_b1_double_novice_good",
+      "dimension": "B1",
+      "persona_id": "double_novice",
+      "context_label": "script=finance_pressure; pressure=finance_terms",
+      "expected_score_band": "high",
+      "expected_failure_types": [],
+      "student_turns": [
+        "I am getting lost already. What does Sharpe mean in plain English?",
+        "Can we slow down before formulas? I do not know what return or volatility means yet.",
+        "So higher is better, but only after we understand risk. Is that the basic idea?"
+      ]
+    },
+    {
+      "sample_id": "pg_b1_generic_student_bad",
+      "dimension": "B1",
+      "persona_id": "double_novice",
+      "context_label": "script=finance_pressure; pressure=generic_behavior",
+      "expected_score_band": "low",
+      "expected_failure_types": [
+        "generic_student_behavior"
+      ],
+      "student_turns": [
+        "I understand. Please continue.",
+        "That makes sense. What is the next step?",
+        "Thanks, I follow the explanation."
+      ]
+    },
+    {
+      "sample_id": "pg_control_distinctive_good",
+      "dimension": "control",
+      "persona_id": "developer_crossover",
+      "expected_score_band": "high",
+      "expected_failure_types": [],
+      "set_a_is_persona": true,
+      "set_a_turns": [
+        "The pandas implementation is straightforward, but I need the finance timing rules. Should the signal be shifted before returns?",
+        "That maps to avoiding future data in a pipeline. Can you show where the fill timing enters?"
+      ],
+      "set_b_turns": [
+        "I need help understanding this task.",
+        "What should I do next?"
+      ]
+    },
+    {
+      "sample_id": "pg_control_generic_bad",
+      "dimension": "control",
+      "persona_id": "developer_crossover",
+      "expected_score_band": "low",
+      "expected_failure_types": [
+        "generic_student_behavior"
+      ],
+      "set_a_is_persona": true,
+      "set_a_turns": [
+        "I need help understanding this task.",
+        "Can you explain the next step?"
+      ],
+      "set_b_turns": [
+        "I also need help understanding this task.",
+        "What should I do next?"
+      ]
+    }
+  ],
+  "sensitivity_cases": [
+    {
+      "case_id": "sens_developer_knowledge_leak",
+      "factor": "knowledge_leak_only",
+      "dimension": "P1",
+      "baseline_sample_id": "pg_p1_developer_crossover_good",
+      "perturbed_sample_id": "pg_p1_developer_crossover_knowledge_leak",
+      "expected_direction": "baseline_higher",
+      "minimum_margin": 1
+    },
+    {
+      "case_id": "sens_finance_under_competence",
+      "factor": "under_competence_only",
+      "dimension": "P1",
+      "baseline_sample_id": "pg_p1_finance_veteran_good",
+      "perturbed_sample_id": "pg_p1_finance_veteran_under_competent",
+      "expected_direction": "baseline_higher",
+      "minimum_margin": 1
+    },
+    {
+      "case_id": "sens_d4_co_teacher_drift",
+      "factor": "co_teacher_drift_only",
+      "dimension": "D3",
+      "baseline_sample_id": "pg_d3_fullstack_practitioner_good",
+      "perturbed_sample_id": "pg_d3_fullstack_practitioner_drift",
+      "expected_direction": "baseline_higher",
+      "minimum_margin": 1
+    },
+    {
+      "case_id": "sens_b1_generic_behavior",
+      "factor": "generic_student_behavior_only",
+      "dimension": "B1",
+      "baseline_sample_id": "pg_b1_double_novice_good",
+      "perturbed_sample_id": "pg_b1_generic_student_bad",
+      "expected_direction": "baseline_higher",
+      "minimum_margin": 1
+    },
+    {
+      "case_id": "sens_control_generic_behavior",
+      "factor": "generic_student_behavior_only",
+      "dimension": "control",
+      "baseline_sample_id": "pg_control_distinctive_good",
+      "perturbed_sample_id": "pg_control_generic_bad",
+      "expected_direction": "baseline_higher",
+      "minimum_margin": 1
+    }
+  ]
+}

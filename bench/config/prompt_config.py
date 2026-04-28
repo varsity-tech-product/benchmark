@@ -184,6 +184,21 @@ def get_filtered_prompt_segments(
     return segments
 
 
+def flatten_concepts(value: object) -> list[str]:
+    """Flatten a persona ``familiar_concepts`` / ``unfamiliar_concepts`` value.
+
+    The schema accepts either a flat list of concept strings or a dict that
+    groups them by domain (``{"finance": [...], "code": [...]}``). This helper
+    returns the flattened list in either case so prompt builders can iterate
+    uniformly. Anything else returns an empty list.
+    """
+    if isinstance(value, dict):
+        return [str(item) for items in value.values() for item in items]
+    if isinstance(value, list):
+        return [str(item) for item in value]
+    return []
+
+
 def _get_max_bt(task: QuantTutorTask) -> int:
     """Extract max_backtest_trials from a task, defaulting to 0."""
     if task.environment and hasattr(task.environment, "max_backtest_trials"):
@@ -354,24 +369,12 @@ def build_tutor_context(
     parts.append(f"Knowledge level: {persona.knowledge_level}")
     parts.append(f"Background: {persona.description}")
 
-    if persona.known_concepts:
-        if isinstance(persona.known_concepts, dict):
-            all_known = [
-                c for domain in persona.known_concepts.values() for c in domain
-            ]
-        else:
-            all_known = persona.known_concepts
-        if all_known:
-            parts.append(f"Known concepts: {', '.join(all_known)}")
-    if persona.unknown_concepts:
-        if isinstance(persona.unknown_concepts, dict):
-            all_unknown = [
-                c for domain in persona.unknown_concepts.values() for c in domain
-            ]
-        else:
-            all_unknown = persona.unknown_concepts
-        if all_unknown:
-            parts.append(f"Concepts to teach: {', '.join(all_unknown)}")
+    all_familiar = flatten_concepts(persona.familiar_concepts)
+    if all_familiar:
+        parts.append(f"Familiar concepts: {', '.join(all_familiar)}")
+    all_unfamiliar = flatten_concepts(persona.unfamiliar_concepts)
+    if all_unfamiliar:
+        parts.append(f"Concepts to teach: {', '.join(all_unfamiliar)}")
     if persona.emotional_profile:
         parts.append(f"Emotional profile: {persona.emotional_profile}")
         parts.append(
@@ -596,24 +599,12 @@ def build_user_description(
         f"- Background: {persona.description}",
     ]
 
-    if persona.known_concepts:
-        if isinstance(persona.known_concepts, dict):
-            all_known = [
-                c for domain in persona.known_concepts.values() for c in domain
-            ]
-        else:
-            all_known = persona.known_concepts
-        if all_known:
-            parts.append(f"- You know: {', '.join(all_known)}")
-    if persona.unknown_concepts:
-        if isinstance(persona.unknown_concepts, dict):
-            all_unknown = [
-                c for domain in persona.unknown_concepts.values() for c in domain
-            ]
-        else:
-            all_unknown = persona.unknown_concepts
-        if all_unknown:
-            parts.append(f"- You do NOT know: {', '.join(all_unknown)}")
+    all_familiar = flatten_concepts(persona.familiar_concepts)
+    if all_familiar:
+        parts.append(f"- You are familiar with: {', '.join(all_familiar)}")
+    all_unfamiliar = flatten_concepts(persona.unfamiliar_concepts)
+    if all_unfamiliar:
+        parts.append(f"- You are not familiar with: {', '.join(all_unfamiliar)}")
     if persona.emotional_profile:
         expanded = EMOTIONAL_PROFILE_DESCRIPTIONS.get(
             persona.emotional_profile,

@@ -10,6 +10,57 @@ Tutor probe message:
 Generated student response:
 "{student_response}"
 
+Expected persona-specific indirect signals for this probe (the student does
+not need to use these phrases verbatim; look for conceptually equivalent
+surface markers):
+{expected_signals}
+
+## Important
+Evaluate whether the generated student response matches the assigned persona and the specific probe facet. A response can be fluent and still fail if it leaks knowledge, underplays familiar knowledge, acts like a teacher, or becomes generic.
+
+Use the "Expected persona-specific indirect signals" list to anchor your
+``facet_fit`` judgment: a strong response hits multiple of these signals
+(semantically, not literally); a response that articulately answers the
+question but never surfaces any listed signal still only deserves
+``facet_fit`` 2-3 because it fails to expose the specific persona facet the
+probe was designed to elicit.
+
+## Score Ceiling Rules
+- Severe confident expertise in an unfamiliar concept caps overall_probe_pass at 2, and usually scores 1.
+- Severe under-competence in a familiar concept caps overall_probe_pass at 2.
+- Generic student behavior caps overall_probe_pass at 3.
+- Co-teacher or expert-explainer behavior caps overall_probe_pass at 2.
+- If the response does not address the probe facet, facet_fit cannot exceed 2 and overall_probe_pass cannot exceed 3.
+- If the response fails to surface any of the persona-specific indirect signals listed above, facet_fit cannot exceed 3 regardless of fluency.
+
+## Scoring Criteria (1-5 scale)
+1 = Severe probe failure. ANY of the following: (a) response contradicts the persona contract; (b) severe knowledge leak; (c) severe under-competence; (d) response ignores the targeted facet; (e) student acts like a co-teacher or expert evaluator.
+
+2 = Weak probe fit. No Score 1 failure, but at least 2 of the following: (a) weak or incomplete facet response; (b) moderate knowledge-boundary issue; (c) emotional or question style does not match persona; (d) behavioral rules are mostly absent; (e) response is mostly generic.
+
+3 = Acceptable probe fit. ALL of the following: (a) main persona boundaries are respected; (b) response addresses the probe facet; (c) no severe failure; (d) at least one persona-specific signal is visible. Shallow or somewhat generic wording is allowed.
+
+4 = Strong probe fit. Meets all Score 3 baselines, plus at least 2 of the following: (a) response clearly expresses the targeted facet; (b) familiar vs unfamiliar concepts are handled accurately; (c) emotional profile is natural; (d) behavioral/question style fits the persona; (e) response is not generic.
+
+5 = Excellent probe fit. Meets all Score 4 criteria, plus at least 2 of the following: (a) response is highly specific to the persona and facet; (b) no boundary errors; (c) distinctive student behavior; (d) no co-teacher drift; (e) a human reviewer could confidently identify the persona from this response.
+
+## Evaluation Axes
+Score each axis independently:
+- contract_fit: Overall fit to the full persona contract.
+- facet_fit: Fit to the specific probe facet.
+- overall_probe_pass: Holistic probe pass after applying score ceilings.
+
+## Failure Taxonomy
+If there is a problem, classify it using zero or more of:
+knowledge_leak, under_competence, emotional_mismatch, generic_student_behavior, co_teacher_drift, task_forgetting, persona_contract_contradiction.
+
+Use failure types consistently:
+- knowledge_leak usually limits overall_probe_pass to <= 2 unless minor and tutor-primed.
+- under_competence usually limits overall_probe_pass to <= 2 when the concept is familiar.
+- generic_student_behavior prevents scores 4-5.
+- co_teacher_drift usually limits overall_probe_pass to <= 2.
+- persona_contract_contradiction usually limits overall_probe_pass to <= 2, severe cases score 1.
+
 Return ONLY valid JSON with:
 {{
   "reasoning": "brief evidence",

@@ -1,31 +1,60 @@
-You are evaluating the behavioral consistency of a student across multiple conversation runs under identical conditions.
+You are evaluating whether repeated runs of the same student simulator preserve the same persona-level behavior.
 
-## Persona
-{persona_description}
+## Persona Definition
+Description: {persona_description}
+Familiar concepts: {familiar_concepts}
+Unfamiliar concepts: {unfamiliar_concepts}
+Emotional profile ({emotional_profile}):
+{emotional_profile_description}
+Behavioral rules:
+{behavioral_rules}
+Persona-specific expectations:
+- Question style: {expected_question_style}
+- Confusion style: {expected_confusion_style}
+- Recovery style: {expected_recovery_style}
+- Confidence pattern: {expected_confidence_pattern}
 
 ## Task
 {task_description}
 
-## Three conversation runs
+## Three Conversation Runs
 {runs_text}
 
-## Evaluation Criteria
-Assess how consistent the student's behavior is across the 3 runs:
-- topic_trajectory: Do the runs cover similar topics in similar order? (1-5)
-- knowledge_display: Does the student show the same level of knowledge? (1-5)
-- emotional_consistency: Is the emotional tone similar across runs? (1-5)
-- question_patterns: Does the student ask similar types of questions? (1-5)
-- overall_reproducibility: Overall behavioral consistency across runs (1-5)
+## Important
+Evaluate behavioral reproducibility, not exact wording. Natural variation in phrasing, examples, or topic order is acceptable if the same knowledge boundary, emotional profile, question style, and learning behavior remain stable.
 
-5 = Nearly identical behavior patterns across all runs
-4 = Very similar with minor variations in phrasing
-3 = Same general direction but noticeable differences in topic order or depth
-2 = Significant behavioral differences across runs
-1 = Completely different behaviors
+## Score Ceiling Rules
+- If any run implies a different persona or incompatible knowledge level, overall_reproducibility cannot exceed 2.
+- If two or more runs are generic with little persona signal, overall_reproducibility cannot exceed 3.
+- If the same severe failure type appears inconsistently across runs, treat that as poor reproducibility and cap at 2.
+
+## Scoring Criteria (1-5 scale)
+1 = Severe unreliability. ANY of the following: (a) runs imply different personas; (b) knowledge levels contradict each other across runs; (c) emotional or behavioral profile changes so much that the student identity is not stable; (d) one or more runs collapse into generic or co-teacher behavior while others do not.
+
+2 = Weak reproducibility. No Score 1 failure, but at least 2 of the following: (a) materially different topic trajectories; (b) inconsistent knowledge display; (c) inconsistent emotional tone; (d) different question patterns; (e) persona-specific behavior is present in only one run.
+
+3 = Acceptable reproducibility. ALL of the following: (a) the same broad persona is recoverable across runs; (b) core knowledge boundaries are mostly stable; (c) emotional tone does not conflict across runs; (d) no Score 1 failure. Noticeable differences in order, depth, or wording are allowed.
+
+4 = Strong reproducibility. Meets all Score 3 baselines, plus at least 2 of the following: (a) all runs preserve the same knowledge boundary; (b) emotional profile is stable; (c) question style is similar; (d) learning trajectory is comparable; (e) differences are mostly natural wording or example variation.
+
+5 = Excellent reproducibility. Meets all Score 4 criteria, plus at least 2 of the following: (a) all runs show highly distinctive same-persona behavior; (b) no meaningful knowledge-boundary inconsistency; (c) no run is generic; (d) all runs ask/learn in a consistent style; (e) the same persona could be identified from each run independently.
+
+## Evaluation Axes
+Score each axis independently:
+- topic_trajectory: Do the runs cover similar student concerns and learning progression?
+- knowledge_display: Does the student show the same level of familiar vs unfamiliar knowledge across runs?
+- emotional_consistency: Is the emotional tone stable across runs?
+- question_patterns: Does the student ask similar kinds of questions?
+- overall_reproducibility: Overall behavioral consistency after applying score ceilings.
 
 ## Failure Taxonomy
 If there is a problem, classify it using zero or more of:
 knowledge_leak, under_competence, emotional_mismatch, generic_student_behavior, co_teacher_drift, task_forgetting, persona_contract_contradiction.
+
+Use failure types consistently:
+- inconsistent knowledge_leak or under_competence across runs should lower knowledge_display.
+- generic_student_behavior prevents scores 4-5 if it affects multiple runs.
+- co_teacher_drift or persona_contract_contradiction in any run should be reflected in overall_reproducibility.
 
 Return ONLY valid JSON with:
 {{"reasoning": "<brief evidence>", "topic_trajectory": <1-5>, "knowledge_display": <1-5>, "emotional_consistency": <1-5>, "question_patterns": <1-5>, "overall_reproducibility": <1-5>, "failure_types": [], "dominant_failure_type": null, "failure_evidence": ""}}

@@ -37,7 +37,7 @@ TEMPERATURE: float = 0.0  # Matches production (EVAL_JUDGE_TEMPERATURE)
 TUTOR_TEMPERATURES: list[float] = [0.0, 1.0]  # Ablation: consistent vs diverse tutor
 MAX_WORKERS: int = 100  # Parallel trial execution (OpenRouter paid = no rate limit)
 
-# Conversation turn provenance. Judge prompts for D1-D4 and control use only
+# Conversation turn provenance. Judge prompts for D1-D3 and control use only
 # generated student turns, never fixture/control opening turns.
 FIXTURE_OPENING_SOURCE: str = "fixture_opening"
 CONTROL_OPENING_SOURCE: str = "control_neutral_opening"
@@ -109,7 +109,7 @@ TASK_PERSONA_MAP: dict[str, list[str]] = {
 # ---------------------------------------------------------------------------
 # Paths (relative to bench/)
 # ---------------------------------------------------------------------------
-OUTPUT_DIR = "experiments/student_sim_stability/results/issue83"
+OUTPUT_DIR = "experiments/student_sim_stability/results/main"
 
 
 @dataclass
@@ -132,6 +132,38 @@ class TrialKey:
             f"{self.phase}__{self.task_id}__{self.persona_id}"
             f"__{model_short}__r{self.repeat_index}{t_tag}"
         )
+
+
+def expected_artifact_counts(profile: str = "full") -> dict[str, int]:
+    """Canonical per-dimension expected artifact counts for the experiment.
+
+    The shape is profile-independent: pilot consumers branch on profile
+    separately (the pilot runs a subset whose exact size depends on
+    command-line flags that aren't visible here), so this returns the
+    full-profile numbers in either case.
+    """
+    del profile
+    # Lazy import: probes is part of the pipeline layer and importing it at
+    # module top would create a config -> pipeline cycle.
+    from experiments.student_sim_stability.pipeline.probes import PROBES
+
+    combos = sum(len(v) for v in TASK_PERSONA_MAP.values())
+    n_models = len(STUDENT_MODELS)
+    n_temps = len(TUTOR_TEMPERATURES)
+    n_personas = len({pid for ids in TASK_PERSONA_MAP.values() for pid in ids})
+    live = combos * n_models * REPEATS * n_temps
+    control = combos * n_models
+    return {
+        "live": live,
+        "control": control,
+        "conversations": live + control,
+        "D1_sample": combos * n_models * GENERATED_STUDENT_TURNS,
+        "D1_full": (live + control) * GENERATED_STUDENT_TURNS,
+        "D2": combos * n_models * n_temps,
+        "D3": live + control,
+        "P1": n_personas * len(PROBES) * n_models,
+        "B1": live,
+    }
 
 
 def compute_trial_count() -> dict[str, int]:

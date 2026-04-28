@@ -9,6 +9,8 @@ import json
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from config.prompt_config import flatten_concepts
+
 if TYPE_CHECKING:
     from server.schemas import QuantTutorTask, StudentPersona
 
@@ -46,24 +48,19 @@ def build_user_description(
         f"Your profile: {persona.description}",
     ]
 
-    if persona.known_concepts:
-        if isinstance(persona.known_concepts, dict):
-            all_known = [
-                c for domain in persona.known_concepts.values() for c in domain
-            ]
-        else:
-            all_known = persona.known_concepts
-        if all_known:
-            parts.append(f"- You are familiar with: {', '.join(all_known)}")
-    if persona.unknown_concepts:
-        if isinstance(persona.unknown_concepts, dict):
-            all_unknown = [
-                c for domain in persona.unknown_concepts.values() for c in domain
-            ]
-        else:
-            all_unknown = persona.unknown_concepts
-        if all_unknown:
-            parts.append(f"- You have no experience with: {', '.join(all_unknown)}")
+    all_familiar = flatten_concepts(persona.familiar_concepts)
+    if all_familiar:
+        parts.append(f"- You are familiar with: {', '.join(all_familiar)}")
+    all_unfamiliar = flatten_concepts(persona.unfamiliar_concepts)
+    if all_unfamiliar:
+        parts.append(f"- You are not familiar with: {', '.join(all_unfamiliar)}")
+
+    if persona.emotional_profile:
+        expanded = EMOTIONAL_PROFILE_DESCRIPTIONS.get(
+            persona.emotional_profile,
+            persona.emotional_profile,
+        )
+        parts.append(f"\nEmotional profile ({persona.emotional_profile}):\n{expanded}")
 
     if persona.behavioral_rules:
         parts.append("\nBehavioral rules (follow strictly):")
@@ -79,7 +76,7 @@ def build_user_description(
         "and continue asking if your question wasn't addressed.\n"
         "- Do not ask about concepts you are already familiar with. "
         "During the conversation you may encounter topics beyond your "
-        "listed knowledge — react naturally based on your profile.\n"
+        "familiar list — react naturally based on your profile.\n"
         "- If the tutor drifts from your question, bring it back. If "
         "explanations are at the wrong level, say so directly.\n"
         "- 【NEVER fabricate data, code, or files. If the tutor asks "

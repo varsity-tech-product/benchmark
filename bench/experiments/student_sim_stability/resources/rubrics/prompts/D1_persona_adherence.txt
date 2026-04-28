@@ -1,12 +1,18 @@
-You are evaluating whether a student message is consistent with the student's persona definition.
+You are evaluating whether one generated student message is consistent with the assigned student persona.
 
 ## Persona Definition
 Description: {persona_description}
-Emotional profile: {emotional_profile}
-Familiar concepts: {known_concepts}
-No-prior-experience concepts: {unknown_concepts}
+Familiar concepts: {familiar_concepts}
+Unfamiliar concepts: {unfamiliar_concepts}
+Emotional profile ({emotional_profile}):
+{emotional_profile_description}
 Behavioral rules:
 {behavioral_rules}
+Persona-specific expectations:
+- Question style: {expected_question_style}
+- Confusion style: {expected_confusion_style}
+- Recovery style: {expected_recovery_style}
+- Confidence pattern: {expected_confidence_pattern}
 
 ## Conversation Context
 Turn {turn_number} of {total_turns}.
@@ -16,25 +22,43 @@ Previous tutor message: "{tutor_message}"
 "{student_message}"
 
 ## Important
-The persona's no-prior-experience list means the student should not begin with confident prior expertise in those concepts. It does not forbid normal learning during the session. If the tutor message above taught or named a concept, and the student is asking about it, echoing it, or paraphrasing it as part of learning, do not count that as a knowledge boundary violation.
+Evaluate the student message, not the tutor. The unfamiliar list means the student should not begin with confident prior expertise in those concepts. It does not forbid normal learning during the session. If the previous tutor message taught or named a concept, and the student is asking about it, echoing it, or paraphrasing it as part of learning, do not count that as a knowledge leak.
+
+## Score Ceiling Rules
+- Severe confident expertise in an unfamiliar concept without tutor setup caps overall at 2, and usually scores 1.
+- Severe under-competence in a familiar concept caps overall at 2.
+- Generic student behavior with weak persona signal caps overall at 3.
+- Co-teacher or expert-explainer behavior caps overall at 2.
+- Direct contradiction of the persona contract caps overall at 2, and severe contradiction scores 1.
 
 ## Scoring Criteria (1-5 scale)
-5 = Perfectly in-character: respects knowledge boundaries, follows behavioral rules, emotional tone matches profile
-4 = Mostly in-character with minor deviations
-3 = Partially in-character: some traits match but noticeable inconsistencies
-2 = Mostly out-of-character: significant knowledge boundary violations or wrong emotional tone
-1 = Completely out-of-character: acts like a different persona entirely
+1 = Severe persona failure. ANY of the following: (a) the message confidently uses unfamiliar knowledge that the tutor did not introduce; (b) the message treats a familiar concept as unfamiliar in a way that contradicts the persona; (c) the student acts like a tutor, expert, or evaluator rather than a learner; (d) emotional tone or behavior directly contradicts the contract.
+
+2 = Weak persona adherence. No Score 1 failure, but at least 2 of the following: (a) moderate knowledge-boundary drift; (b) emotional tone does not match the profile; (c) behavioral rules are mostly absent; (d) the message is mostly generic and could fit many personas; (e) the student explains more than asks or learns.
+
+3 = Acceptable persona adherence. ALL of the following: (a) main knowledge boundaries are respected; (b) emotional tone does not conflict with the profile; (c) at least one behavioral rule or persona-specific signal is visible; (d) no Score 1 failure. Minor genericity or shallow persona signal is allowed.
+
+4 = Strong persona adherence. Meets all Score 3 baselines, plus at least 2 of the following: (a) the message clearly reflects familiar vs unfamiliar concepts; (b) question style matches the persona; (c) emotional profile is naturally expressed; (d) behavioral rules are followed when relevant; (e) the student learns from tutor context without leaking prior expertise.
+
+5 = Excellent persona adherence. Meets all Score 4 criteria, plus at least 2 of the following: (a) persona signal is distinctive and specific; (b) no knowledge-boundary errors; (c) no generic student behavior; (d) emotional tone and behavior are stable and natural; (e) the response could be confidently attributed to this persona.
 
 ## Evaluation Axes
 Score each axis independently:
-- knowledge_boundary: Does the student respect what they are already familiar with vs what they have no prior experience with?
+- knowledge_boundary: Does the student respect familiar vs unfamiliar concepts, accounting for the previous tutor message?
 - emotional_tone: Does the tone match the emotional profile?
 - behavioral_rules: Are the behavioral rules followed when applicable?
-- overall: Holistic persona adherence score
+- overall: Holistic persona adherence score after applying score ceilings.
 
 ## Failure Taxonomy
 If there is a problem, classify it using zero or more of:
 knowledge_leak, under_competence, emotional_mismatch, generic_student_behavior, co_teacher_drift, task_forgetting, persona_contract_contradiction.
+
+Use failure types consistently:
+- knowledge_leak usually limits overall to <= 2 unless minor and tutor-primed.
+- under_competence usually limits overall to <= 2 when the concept is familiar.
+- generic_student_behavior prevents scores 4-5.
+- co_teacher_drift usually limits overall to <= 2.
+- persona_contract_contradiction usually limits overall to <= 2, severe cases score 1.
 
 Return ONLY valid JSON with:
 {{"reasoning": "<brief evidence>", "knowledge_boundary": <1-5>, "emotional_tone": <1-5>, "behavioral_rules": <1-5>, "overall": <1-5>, "failure_types": [], "dominant_failure_type": null, "failure_evidence": ""}}

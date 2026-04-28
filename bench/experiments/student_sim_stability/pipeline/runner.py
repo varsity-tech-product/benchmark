@@ -8,8 +8,8 @@ Single-phase design with parallel execution:
 
 import json
 import logging
-import os
 import sys
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
@@ -49,8 +49,11 @@ from experiments.student_sim_stability.core.contracts import (
     build_contract_user_description,
     load_student_persona,
 )
-from server.config.llm_config import OPENROUTER_BASE_URL
-from server.config.pricing import _resolve_pricing
+from server.config.llm_config import (
+    get_openrouter_base_url,
+    require_openrouter_api_key,
+)
+from server.config.pricing import get_llm_cost_kwargs
 from server.core.student_sim import StudentSimulator
 from server.eval.judges.runtime.llm_client import EwanLLMClient
 from server.schemas import QuantTutorTask, StudentPersona
@@ -90,20 +93,35 @@ _CONTROL_USER_DESCRIPTION = (
 # ---------------------------------------------------------------------------
 
 
+_THREAD_LOCAL = threading.local()
+
+
 def _make_client(model: str, temperature: float = 0.0) -> EwanLLMClient:
-    api_key = os.environ.get("OPENROUTER_API_KEY", "")
-    if not api_key:
-        raise RuntimeError("OPENROUTER_API_KEY not set")
+    """Per-thread cache of EwanLLMClient instances, keyed by (model, temperature).
+
+    Mirrors :func:`pipeline.judge._client_for_thread`. Worker threads typically
+    alternate between a student client and a tutor client; both stay live for
+    the worker's lifetime instead of being rebuilt per turn.
+    """
     or_model = model if "/" in model else f"openai/{model}"
-    pricing = _resolve_pricing(or_model) or (0.0, 0.0)
-    return EwanLLMClient(
+    key = (or_model, temperature)
+    clients = getattr(_THREAD_LOCAL, "clients", None)
+    if clients is None:
+        clients = _THREAD_LOCAL.clients = {}
+    cached = clients.get(key)
+    if cached is not None:
+        return cached
+    client = EwanLLMClient(
         model=or_model,
-        api_key=api_key,
-        base_url=OPENROUTER_BASE_URL,
+        api_key=require_openrouter_api_key(
+            purpose=f"student-sim-stability generator model {or_model}"
+        ),
+        base_url=get_openrouter_base_url(),
         temperature=temperature,
-        cost_per_input_token=pricing[0],
-        cost_per_output_token=pricing[1],
+        **get_llm_cost_kwargs(or_model),
     )
+    clients[key] = client
+    return client
 
 
 def _load_task(task_cfg: dict) -> QuantTutorTask:
@@ -276,7 +294,9 @@ class ExperimentRunner:
             )
             self._save_conversation(trial.key, conv)
             return f"OK   {trial.key}"
-        except Exception as exc:
+        except (
+            Exception
+        ) as exc:  # noqa: BLE001 - log + re-raise any LLM/network/parse failure
             # Log error detail; StudentSimError carries attempt history
             from server.core.student_sim import StudentSimError
 

@@ -4,13 +4,16 @@ from __future__ import annotations
 
 import argparse
 import json
-import math
 import sys
 from collections import defaultdict
 from pathlib import Path
 from typing import Iterable
 
-from experiments.student_sim_stability.core.paths import BENCH_ROOT
+from experiments.student_sim_stability.core.numerics import safe_mean, safe_std
+from experiments.student_sim_stability.core.paths import (
+    BENCH_ROOT,
+    default_results_dir,
+)
 
 if str(BENCH_ROOT) not in sys.path:
     sys.path.insert(0, str(BENCH_ROOT))
@@ -19,41 +22,14 @@ from experiments.student_sim_stability.core.config import (  # noqa: E402
     JUDGE_MODEL,
     JUDGE_MODELS,
     JUDGE_TEMPERATURE,
-    OUTPUT_DIR,
 )
-from experiments.student_sim_stability.pipeline.judge import (  # noqa: E402
+from experiments.student_sim_stability.core.io_utils import (  # noqa: E402
+    load_json,
     safe_model_dir,
 )
-
-NUMERIC_SCORE_FIELD = {
-    "D1": "overall",
-    "D2": "overall_reproducibility",
-    "D3": "overall_cross_model",
-    "D4": "overall_drift_score",
-    "control": "distinctiveness",
-    "P1": "overall_probe_pass",
-    "B1": "contract_fit",
-}
-
-
-def default_results_dir() -> Path:
-    return BENCH_ROOT / OUTPUT_DIR
-
-
-def _load_json(path: Path) -> dict:
-    with open(path, encoding="utf-8") as fh:
-        return json.load(fh)
-
-
-def _mean(values: list[float]) -> float | None:
-    return sum(values) / len(values) if values else None
-
-
-def _std(values: list[float]) -> float | None:
-    if len(values) < 2:
-        return 0.0 if values else None
-    mean = sum(values) / len(values)
-    return math.sqrt(sum((value - mean) ** 2 for value in values) / len(values))
+from experiments.student_sim_stability.core.rubrics import (  # noqa: E402
+    primary_score_field,
+)
 
 
 def compute_judge_agreement(
@@ -83,7 +59,7 @@ def compute_judge_agreement(
             outputs[model] = {}
             continue
         outputs[model] = {
-            path.stem: _load_json(path) for path in model_dir.glob("*.json")
+            path.stem: load_json(path) for path in model_dir.glob("*.json")
         }
 
     output_eval_ids = set().union(*(set(items) for items in outputs.values()))
@@ -108,8 +84,9 @@ def compute_judge_agreement(
             )
             continue
         dimension = outputs[selected_models[0]][eval_id].get("dimension")
-        score_field = NUMERIC_SCORE_FIELD.get(dimension)
-        if not score_field:
+        try:
+            score_field = primary_score_field(dimension)
+        except KeyError:
             continue
         values = []
         for model in selected_models:
@@ -134,7 +111,7 @@ def compute_judge_agreement(
                 "score_field": score_field,
                 "scores_by_model": dict(zip(selected_models, values)),
                 "range": max(values) - min(values),
-                "std": _std(values),
+                "std": safe_std(values),
             }
         )
 
@@ -148,9 +125,11 @@ def compute_judge_agreement(
         stds = [item["std"] for item in items if item["std"] is not None]
         metrics_by_dimension[dimension] = {
             "n": len(items),
-            "mean_score_range": _mean(ranges),
-            "mean_score_std": _mean(stds),
-            "within_one_point_rate": _mean([1.0 if r <= 1.0 else 0.0 for r in ranges]),
+            "mean_score_range": safe_mean(ranges),
+            "mean_score_std": safe_mean(stds),
+            "within_one_point_rate": safe_mean(
+                [1.0 if r <= 1.0 else 0.0 for r in ranges]
+            ),
         }
 
     all_ranges = [item["range"] for item in complete_items]
@@ -175,8 +154,8 @@ def compute_judge_agreement(
         "agreement_metrics": (
             {
                 "n_complete_items": len(complete_items),
-                "mean_score_range": _mean(all_ranges),
-                "within_one_point_rate": _mean(
+                "mean_score_range": safe_mean(all_ranges),
+                "within_one_point_rate": safe_mean(
                     [1.0 if value <= 1.0 else 0.0 for value in all_ranges]
                 ),
                 "by_dimension": metrics_by_dimension,

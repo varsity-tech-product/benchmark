@@ -12,10 +12,10 @@
     "fullstack_practitioner"
   ],
   "student_openings": {
-    "fullstack_practitioner": "My parameter sweep over 200 SMA configurations found one with Sharpe 2.8 on AAPL. Statistical significance looks solid. I'm ready to deploy — any final checks?",
-    "finance_veteran": "After testing 200 parameter combinations, I found an SMA crossover with Sharpe 2.8. In my experience, that's very strong. Should I increase position size?",
-    "developer_crossover": "I ran a grid search over 200 SMA parameters and the best one has a Sharpe ratio of 2.8. My code is correct — is this a good result?",
-    "double_novice": "I tested 200 different settings for my trading strategy and one of them has something called a Sharpe ratio of 2.8. My friend says that's really good. Is it?"
+    "fullstack_practitioner": "My parameter sweep over 200 SMA configurations found one with Sharpe 5.0 on AAPL. Statistical significance looks solid. I'm ready to deploy — any final checks?",
+    "finance_veteran": "After testing 200 parameter combinations, I found an SMA crossover with Sharpe 5.0. That's extraordinary for a daily strategy — should I size up and run it live?",
+    "developer_crossover": "I ran a grid search over 200 SMA parameters and the best one has a Sharpe ratio of 5.0. My code is correct — is this a good result?",
+    "double_novice": "I tested 200 different settings for my trading strategy and one of them has something called a Sharpe ratio of 5.0. My friend says that's really good. Is it?"
   },
   "environment": {
     "data_files": [

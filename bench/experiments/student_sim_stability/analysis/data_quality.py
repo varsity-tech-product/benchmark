@@ -1,4 +1,4 @@
-"""Produce issue83 data-quality audit artifacts."""
+"""Produce student-sim-stability data-quality audit artifacts."""
 
 from __future__ import annotations
 
@@ -8,17 +8,16 @@ import sys
 from pathlib import Path
 from typing import Iterable
 
-from experiments.student_sim_stability.core.paths import BENCH_ROOT
+from experiments.student_sim_stability.core.io_utils import atomic_write_json
+from experiments.student_sim_stability.core.paths import (
+    BENCH_ROOT,
+    default_results_dir,
+)
 
 if str(BENCH_ROOT) not in sys.path:
     sys.path.insert(0, str(BENCH_ROOT))
 
 from experiments.student_sim_stability.analysis.validate import validate  # noqa: E402
-from experiments.student_sim_stability.core.config import OUTPUT_DIR  # noqa: E402
-
-
-def default_results_dir() -> Path:
-    return BENCH_ROOT / OUTPUT_DIR
 
 
 def _markdown_from_audit(audit: dict) -> str:
@@ -45,7 +44,7 @@ def _markdown_from_audit(audit: dict) -> str:
             "- Control rows must come from real `control__*.json` judge outputs.",
             "- Fixture openings are excluded from generated-student metrics.",
             "- Exact duplicate judge score payloads across any dimension are failures.",
-            "- Template-like D4 duplicate score clusters are failures.",
+            "- Template-like D3 duplicate score clusters are failures.",
         ]
     )
     return "\n".join(lines) + "\n"
@@ -66,11 +65,10 @@ def run_audit(results_dir: Path | None = None, *, profile: str = "full") -> dict
     }
     report_dir = out / "report"
     report_dir.mkdir(parents=True, exist_ok=True)
-    with open(report_dir / "data_quality_audit.json", "w", encoding="utf-8") as fh:
-        json.dump(audit, fh, indent=2, ensure_ascii=False)
-        fh.write("\n")
-    with open(report_dir / "data_quality_audit.md", "w", encoding="utf-8") as fh:
-        fh.write(_markdown_from_audit(audit))
+    atomic_write_json(report_dir / "data_quality_audit.json", audit)
+    (report_dir / "data_quality_audit.md").write_text(
+        _markdown_from_audit(audit), encoding="utf-8"
+    )
     return audit
 
 
