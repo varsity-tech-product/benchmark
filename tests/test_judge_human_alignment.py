@@ -665,6 +665,79 @@ def test_convert_human_labels_and_human_alignment_cli(tmp_path):
     assert (output_dir / "human_alignment_report.html").exists()
 
 
+def test_human_alignment_cli_auto_sample_map_skips_custom_labels(tmp_path):
+    sample_id = "jv_review_001"
+    corpus_path = tmp_path / "corpus.json"
+    runs_path = tmp_path / "judge_runs.json"
+    labels_path = tmp_path / "human_labels.json"
+    output_dir = tmp_path / "reports"
+    corpus_path.write_text(
+        json.dumps(
+            {
+                "pass_threshold": 3,
+                "items": [{"sample_id": sample_id}],
+            }
+        ),
+        encoding="utf-8",
+    )
+    runs_path.write_text(
+        json.dumps(
+            {
+                "run_id": "custom_blind_ids",
+                "records": [
+                    {
+                        "sample_id": sample_id,
+                        "registry_rubric_id": "quant_correctness.v1",
+                        "dimension": "D4_instructional_accuracy",
+                        "status": "success",
+                        "raw_score": 5,
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    labels_path.write_text(
+        json.dumps(
+            {
+                "labels": [
+                    {
+                        "sample_id": sample_id,
+                        "rubric_id": "quant_correctness.v1",
+                        "dimension": "D4_instructional_accuracy",
+                        "human_score": 5,
+                        "confidence": "high",
+                        "human_rationale": "Correct.",
+                        "reviewer_id": "expert_anon_1",
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    rc = judge_run.main(
+        [
+            "--corpus",
+            str(corpus_path),
+            "--output-dir",
+            str(output_dir),
+            "human-alignment",
+            "--runs",
+            str(runs_path),
+            "--labels",
+            str(labels_path),
+        ]
+    )
+
+    assert rc == 0
+    stats = json.loads((output_dir / "human_alignment_stats.json").read_text())
+    assert stats["counts"]["comparable_labels"] == 1
+    assert stats["counts"]["missing_judge_comparisons"] == 0
+    assert stats["comparisons"][0]["sample_id"] == sample_id
+    assert stats["comparisons"][0]["review_sample_id"] is None
+
+
 def test_human_alignment_uses_blind_sample_map():
     corpus = {"pass_threshold": 3, "items": [{"sample_id": "original"}]}
     records = [
@@ -700,6 +773,67 @@ def test_human_alignment_uses_blind_sample_map():
     assert stats["comparisons"][0]["review_sample_id"] == "jv_review_001"
     assert stats["stage3_gate"]["status"] == "diagnostic_only"
     assert stats["absolute_alignment_diagnostic"]["status"] == "clear"
+
+
+def test_tracked_human_alignment_pilot_matches_current_stage3_run():
+    corpus = json.loads(judge_run.DEFAULT_CORPUS.read_text(encoding="utf-8"))
+    runs_path = judge_run._resolve(judge_run.DEFAULT_OUTPUT_DIR / "judge_runs.json")
+    runs = json.loads(runs_path.read_text(encoding="utf-8"))
+    labels_payload = json.loads(
+        judge_run.DEFAULT_HUMAN_LABELS.read_text(encoding="utf-8")
+    )
+    sample_id_map = load_sample_id_map(judge_run.DEFAULT_HUMAN_SAMPLE_MAP)
+
+    stats = compute_human_alignment_stats(
+        corpus=corpus,
+        records=runs["records"],
+        labels=labels_payload["labels"],
+        sample_id_map=sample_id_map,
+    )
+
+    assert runs["run_id"] == "jv_20260429_stage3_combined"
+    assert stats["counts"]["labels"] == 68
+    assert stats["counts"]["comparable_labels"] == 68
+    assert stats["counts"]["missing_judge_comparisons"] == 0
+    assert stats["overall"]["within_one_agreement"] == 0.6912
+    assert stats["overall"]["pass_fail_agreement"] == 0.7794
+    assert (
+        stats["inter_rater_agreement"]["overall"]["within_one_agreement"]
+        == 0.8529
+    )
+    assert (
+        stats["judge_vs_reviewer_mean"]["overall"]["within_one_agreement"]
+        == 0.7059
+    )
+    assert stats["stage3_gate"]["status"] == "diagnostic_only"
+    assert stats["absolute_alignment_diagnostic"]["status"] == "needs_review"
+    weak_dimensions = {
+        row["dimension"] for row in stats["stage3_gate"]["weak_dimensions"]
+    }
+    assert weak_dimensions == {
+        "D1_finance_adaptation",
+        "D2_code_adaptation",
+        "D4_instructional_accuracy",
+        "result_judge",
+    }
+
+
+def test_human_alignment_cli_auto_sample_map_uses_tracked_pilot(tmp_path):
+    rc = judge_run.main(
+        [
+            "--output-dir",
+            str(tmp_path),
+            "human-alignment",
+        ]
+    )
+
+    assert rc == 0
+    stats = json.loads((tmp_path / "human_alignment_stats.json").read_text())
+    assert stats["counts"]["labels"] == 68
+    assert stats["counts"]["comparable_labels"] == 68
+    assert stats["counts"]["missing_judge_comparisons"] == 0
+    assert stats["comparisons"][0]["sample_id"] == "jv_quant_correct_good"
+    assert stats["comparisons"][0]["review_sample_id"] == "jv_review_001"
 
 
 def test_review_packet_exports_reviewer_materials_without_expected_scores(tmp_path):
