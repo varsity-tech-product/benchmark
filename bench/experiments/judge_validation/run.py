@@ -473,6 +473,11 @@ def _report(args: argparse.Namespace) -> int:
                 "stats": paths["stats"],
                 "markdown": paths["markdown"],
                 "html": paths["html"],
+                "stage3_primary_gate": stats["stage3_primary_gate"],
+                "multi_judge": {
+                    "overall": stats["multi_judge"]["overall"],
+                    "gate": stats["multi_judge"]["gate"],
+                },
                 "stability": stats["stability"],
                 "prompt_format": {
                     "mean_absolute_variant_delta": stats["prompt_format"][
@@ -1013,7 +1018,7 @@ def _make_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Judge reliability validation")
     parser.add_argument("--corpus", default=str(DEFAULT_CORPUS))
     parser.add_argument("--output-dir", default=str(DEFAULT_OUTPUT_DIR))
-    parser.add_argument("--model", default="anthropic/claude-sonnet-4-6")
+    parser.add_argument("--model", default="anthropic/claude-sonnet-4.6")
     parser.add_argument("--repeats", type=int, default=DEFAULT_REPEAT_COUNT)
     parser.add_argument("--run-id", default=None)
     parser.add_argument("--prompt-variants", default=DEFAULT_PROMPT_VARIANT)

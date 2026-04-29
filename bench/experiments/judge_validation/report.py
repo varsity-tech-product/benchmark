@@ -11,6 +11,9 @@ from pathlib import Path
 from statistics import mean
 from typing import Any
 
+PRIMARY_RANKING_ACCURACY_TARGET = 0.85
+PRIMARY_MULTI_JUDGE_WITHIN_ONE_TARGET = 0.85
+
 
 def _safe_mean(values: list[float]) -> float | None:
     return round(mean(values), 4) if values else None
@@ -44,6 +47,11 @@ def _record_prompt_variant(record: dict[str, Any]) -> str:
         or metadata.get("prompt_variant_id")
         or "baseline"
     )
+
+
+def _record_judge_model(record: dict[str, Any]) -> str:
+    metadata = record.get("judge_metadata") or {}
+    return str(record.get("judge_model") or metadata.get("judge_model") or "")
 
 
 def _raw_score(record: dict[str, Any]) -> float | None:
@@ -110,6 +118,182 @@ def _mean_scores_by_sample(
         )
         if score is not None
     ]
+
+
+def _aggregate_within_one(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    deltas = [float(row["absolute_delta"]) for row in rows]
+    return {
+        "comparisons": len(rows),
+        "within_one_rate": (
+            round(sum(1 for row in rows if row["within_one"]) / len(rows), 4)
+            if rows
+            else None
+        ),
+        "mean_absolute_delta": _safe_mean(deltas),
+    }
+
+
+def _compute_multi_judge_consistency(
+    successful: list[dict[str, Any]],
+    *,
+    expected_dimensions: set[str],
+) -> dict[str, Any]:
+    grouped: dict[
+        tuple[str, str, str, str],
+        dict[str, list[float]],
+    ] = defaultdict(lambda: defaultdict(list))
+    judge_models = set()
+    for record in successful:
+        judge_model = _record_judge_model(record)
+        if not judge_model:
+            continue
+        score = _raw_score(record)
+        if score is None:
+            continue
+        judge_models.add(judge_model)
+        key = (
+            str(record.get("sample_id", "")),
+            _record_rubric_id(record),
+            _record_dimension(record),
+            _record_prompt_variant(record),
+        )
+        grouped[key][judge_model].append(float(score))
+
+    comparison_rows: list[dict[str, Any]] = []
+    comparable_groups = 0
+    for key, by_model in sorted(grouped.items()):
+        model_means = {
+            model: mean(scores)
+            for model, scores in sorted(by_model.items())
+            if scores
+        }
+        if len(model_means) < 2:
+            continue
+        comparable_groups += 1
+        sample_id, rubric_id, dimension, prompt_variant_id = key
+        for left_model, right_model in itertools.combinations(
+            sorted(model_means),
+            2,
+        ):
+            left_score = model_means[left_model]
+            right_score = model_means[right_model]
+            absolute_delta = round(abs(left_score - right_score), 4)
+            comparison_rows.append(
+                {
+                    "sample_id": sample_id,
+                    "rubric_id": rubric_id,
+                    "dimension": dimension,
+                    "prompt_variant_id": prompt_variant_id,
+                    "judge_model_a": left_model,
+                    "judge_model_b": right_model,
+                    "judge_model_a_mean": round(left_score, 4),
+                    "judge_model_b_mean": round(right_score, 4),
+                    "absolute_delta": absolute_delta,
+                    "within_one": absolute_delta <= 1,
+                }
+            )
+
+    grouped_by_dimension = _group_rows_by(comparison_rows, "dimension")
+    by_dimension = {
+        dimension: {
+            **_aggregate_within_one(rows),
+            "target": PRIMARY_MULTI_JUDGE_WITHIN_ONE_TARGET,
+        }
+        for dimension, rows in sorted(grouped_by_dimension.items())
+    }
+    missing_dimensions = sorted(expected_dimensions - set(by_dimension))
+    for dimension in missing_dimensions:
+        by_dimension[dimension] = {
+            "comparisons": 0,
+            "within_one_rate": None,
+            "mean_absolute_delta": None,
+            "target": PRIMARY_MULTI_JUDGE_WITHIN_ONE_TARGET,
+        }
+    weak_dimensions = [
+        {"dimension": dimension, **metrics}
+        for dimension, metrics in by_dimension.items()
+        if metrics["comparisons"] == 0
+        or (metrics["within_one_rate"] or 0) < PRIMARY_MULTI_JUDGE_WITHIN_ONE_TARGET
+    ]
+    overall = {
+        **_aggregate_within_one(comparison_rows),
+        "comparable_groups": comparable_groups,
+        "judge_models": sorted(judge_models),
+        "distinct_judge_models": len(judge_models),
+        "expected_dimensions": sorted(expected_dimensions),
+        "missing_dimensions": missing_dimensions,
+        "target": PRIMARY_MULTI_JUDGE_WITHIN_ONE_TARGET,
+    }
+    if not comparison_rows:
+        status = "missing"
+    elif weak_dimensions:
+        status = "needs_review"
+    else:
+        status = "pass"
+    return {
+        "overall": overall,
+        "by_dimension": by_dimension,
+        "weak_dimensions": weak_dimensions,
+        "comparisons": comparison_rows,
+        "gate": {
+            "status": status,
+            "target": PRIMARY_MULTI_JUDGE_WITHIN_ONE_TARGET,
+            "weak_dimensions": weak_dimensions,
+        },
+    }
+
+
+def _group_rows_by(
+    rows: list[dict[str, Any]],
+    field: str,
+) -> dict[str, list[dict[str, Any]]]:
+    grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for row in rows:
+        grouped[str(row.get(field) or "unknown")].append(row)
+    return grouped
+
+
+def _stage3_primary_gate(
+    *,
+    adversarial: dict[str, Any],
+    multi_judge: dict[str, Any],
+) -> dict[str, Any]:
+    failures: list[str] = []
+    ranking_accuracy = adversarial.get("ranking_pass_rate")
+    missing_pairs = adversarial.get("missing_pairs") or []
+    missing_model_pairs = adversarial.get("missing_model_pairs") or []
+    if ranking_accuracy is None:
+        failures.append("missing_adversarial_ranking")
+    elif float(ranking_accuracy) < PRIMARY_RANKING_ACCURACY_TARGET:
+        failures.append("ranking_accuracy_below_target")
+    if missing_pairs:
+        failures.append("missing_adversarial_pair_results")
+    if missing_model_pairs:
+        failures.append("missing_adversarial_judge_model_results")
+
+    multi_status = (multi_judge.get("gate") or {}).get("status")
+    if multi_status == "missing":
+        failures.append("missing_multi_judge_agreement")
+    elif multi_status != "pass":
+        failures.append("multi_judge_dimension_below_target")
+
+    return {
+        "status": "pass" if not failures else "needs_review",
+        "failures": failures or None,
+        "thresholds": {
+            "adversarial_ranking_accuracy": PRIMARY_RANKING_ACCURACY_TARGET,
+            "multi_judge_within_one_by_dimension": (
+                PRIMARY_MULTI_JUDGE_WITHIN_ONE_TARGET
+            ),
+        },
+        "adversarial_ranking_accuracy": ranking_accuracy,
+        "missing_adversarial_pairs": missing_pairs or None,
+        "missing_adversarial_model_pairs": missing_model_pairs or None,
+        "multi_judge_status": multi_status,
+        "multi_judge_within_one": multi_judge.get("overall", {}).get(
+            "within_one_rate"
+        ),
+    }
 
 
 def compute_reliability_stats(
@@ -179,11 +363,7 @@ def compute_reliability_stats(
                 str(record.get("sample_id", "")),
                 _record_rubric_id(record),
                 _record_dimension(record),
-                str(
-                    record.get("judge_model")
-                    or (record.get("judge_metadata") or {}).get("judge_model")
-                    or ""
-                ),
+                _record_judge_model(record),
             )
         ][_record_prompt_variant(record)].append(record)
 
@@ -259,7 +439,11 @@ def compute_reliability_stats(
         )
 
     by_sample = _records_by_sample(successful)
+    observed_judge_models = sorted(
+        {_record_judge_model(record) for record in successful if _record_judge_model(record)}
+    )
     adversarial_rows: list[dict[str, Any]] = []
+    adversarial_model_rows: list[dict[str, Any]] = []
     for pair in corpus.get("adversarial_pairs", []):
         stronger_id = str(pair.get("stronger_sample_id", ""))
         weaker_id = str(pair.get("weaker_sample_id", ""))
@@ -308,10 +492,94 @@ def compute_reliability_stats(
             }
         )
 
+        pair_judge_models = sorted(
+            {
+                _record_judge_model(record)
+                for record in matching_records(stronger_id)
+                + matching_records(weaker_id)
+                if _record_judge_model(record)
+            }
+        )
+        missing_pair_models = set(observed_judge_models) - set(pair_judge_models)
+        for judge_model in sorted(missing_pair_models):
+            adversarial_model_rows.append(
+                {
+                    "pair_id": pair.get("pair_id"),
+                    "registry_rubric_id": pair.get("registry_rubric_id"),
+                    "dimension": pair.get("dimension"),
+                    "judge_model": judge_model,
+                    "stronger_sample_id": stronger_id,
+                    "weaker_sample_id": weaker_id,
+                    "stronger_mean": None,
+                    "weaker_mean": None,
+                    "score_margin": None,
+                    "status": "missing",
+                }
+            )
+        for judge_model in pair_judge_models:
+            model_stronger_scores = [
+                score
+                for score in (
+                    _raw_score(record)
+                    for record in matching_records(stronger_id)
+                    if _record_judge_model(record) == judge_model
+                )
+                if score is not None
+            ]
+            model_weaker_scores = [
+                score
+                for score in (
+                    _raw_score(record)
+                    for record in matching_records(weaker_id)
+                    if _record_judge_model(record) == judge_model
+                )
+                if score is not None
+            ]
+            model_stronger_mean = _safe_mean(
+                [float(score) for score in model_stronger_scores]
+            )
+            model_weaker_mean = _safe_mean(
+                [float(score) for score in model_weaker_scores]
+            )
+            model_comparable = (
+                model_stronger_mean is not None and model_weaker_mean is not None
+            )
+            model_passed = bool(
+                model_comparable and model_stronger_mean > model_weaker_mean
+            )
+            adversarial_model_rows.append(
+                {
+                    "pair_id": pair.get("pair_id"),
+                    "registry_rubric_id": pair.get("registry_rubric_id"),
+                    "dimension": pair.get("dimension"),
+                    "judge_model": judge_model,
+                    "stronger_sample_id": stronger_id,
+                    "weaker_sample_id": weaker_id,
+                    "stronger_mean": model_stronger_mean,
+                    "weaker_mean": model_weaker_mean,
+                    "score_margin": (
+                        round(model_stronger_mean - model_weaker_mean, 4)
+                        if model_comparable
+                        else None
+                    ),
+                    "status": (
+                        "pass"
+                        if model_passed
+                        else ("fail" if model_comparable else "missing")
+                    ),
+                }
+            )
+
     comparable_pairs = [
         row for row in adversarial_rows if row["status"] in {"pass", "fail"}
     ]
     pass_pairs = [row for row in comparable_pairs if row["status"] == "pass"]
+    comparable_model_pairs = [
+        row for row in adversarial_model_rows if row["status"] in {"pass", "fail"}
+    ]
+    pass_model_pairs = [
+        row for row in comparable_model_pairs if row["status"] == "pass"
+    ]
 
     sensitivity_rows: list[dict[str, Any]] = []
     for case in corpus.get("sensitivity_cases", []):
@@ -366,12 +634,48 @@ def compute_reliability_stats(
     pass_sensitivity = [
         row for row in comparable_sensitivity if row["status"] == "pass"
     ]
+    adversarial_failures = [
+        row for row in adversarial_rows if row["status"] != "pass"
+    ]
+    adversarial_model_failures = [
+        row for row in adversarial_model_rows if row["status"] != "pass"
+    ]
+    missing_pairs = [
+        row for row in adversarial_rows if row["status"] == "missing"
+    ]
+    missing_model_pairs = [
+        row for row in adversarial_model_rows if row["status"] == "missing"
+    ]
+    adversarial = {
+        "ranking_pass_rate": (
+            round(len(pass_model_pairs) / len(comparable_model_pairs), 4)
+            if comparable_model_pairs
+            else None
+        ),
+        "aggregate_ranking_pass_rate": (
+            round(len(pass_pairs) / len(comparable_pairs), 4)
+            if comparable_pairs
+            else None
+        ),
+        "pairs": adversarial_rows,
+        "model_pair_results": adversarial_model_rows,
+        "missing_pairs": missing_pairs,
+        "missing_model_pairs": missing_model_pairs,
+        "failure_examples": adversarial_model_failures[:25],
+        "aggregate_failure_examples": adversarial_failures[:25],
+    }
+    expected_dimensions = {
+        str(item.get("dimension") or "")
+        for item in corpus.get("items", [])
+        if item.get("dimension")
+    }
+    multi_judge = _compute_multi_judge_consistency(
+        successful,
+        expected_dimensions=expected_dimensions,
+    )
 
     large_disagreements = [
         row for row in stability_groups if row["max_delta"] >= 2
-    ]
-    adversarial_failures = [
-        row for row in adversarial_rows if row["status"] != "pass"
     ]
     sensitivity_failures = [
         row for row in sensitivity_rows if row["status"] != "pass"
@@ -386,7 +690,7 @@ def compute_reliability_stats(
     ]
 
     return {
-        "version": "judge_validation_stats_v2",
+        "version": "judge_validation_stats_v3",
         "counts": {
             "corpus_items": len(corpus.get("items", [])),
             "records": len(records),
@@ -395,10 +699,21 @@ def compute_reliability_stats(
             "prompt_variant_groups": len(prompt_variant_rows),
             "adversarial_pairs": len(corpus.get("adversarial_pairs", [])),
             "comparable_adversarial_pairs": len(comparable_pairs),
+            "comparable_adversarial_model_pairs": len(comparable_model_pairs),
+            "missing_adversarial_pairs": len(missing_pairs),
+            "missing_adversarial_model_pairs": len(missing_model_pairs),
             "sensitivity_cases": len(corpus.get("sensitivity_cases", [])),
             "comparable_sensitivity_cases": len(comparable_sensitivity),
+            "multi_judge_comparable_groups": (
+                multi_judge["overall"]["comparable_groups"]
+            ),
+            "multi_judge_comparisons": multi_judge["overall"]["comparisons"],
         },
         "pass_threshold": threshold,
+        "stage3_primary_gate": _stage3_primary_gate(
+            adversarial=adversarial,
+            multi_judge=multi_judge,
+        ),
         "stability": {
             "mean_absolute_score_delta": _safe_mean(score_deltas),
             "within_one_score_rate": (
@@ -436,15 +751,8 @@ def compute_reliability_stats(
             ),
             "groups": prompt_variant_rows,
         },
-        "adversarial": {
-            "ranking_pass_rate": (
-                round(len(pass_pairs) / len(comparable_pairs), 4)
-                if comparable_pairs
-                else None
-            ),
-            "pairs": adversarial_rows,
-            "failure_examples": adversarial_failures[:25],
-        },
+        "adversarial": adversarial,
+        "multi_judge": multi_judge,
         "sensitivity": {
             "pass_rate": (
                 round(len(pass_sensitivity) / len(comparable_sensitivity), 4)
@@ -480,7 +788,7 @@ def compute_reliability_stats(
         "residual_risks": [
             "Real-run excerpts are a curated cut rather than a random sample of completed sessions; broader sampling across agents and personas is a next step.",
             "Evidence consistency uses lexical overlap as a lightweight proxy for explanation stability.",
-            "Human quant expert alignment belongs to the next validation stage after automated robustness artifacts are stable.",
+            "Human absolute-score agreement is reported as a diagnostic; the primary acceptance gate is adversarial ranking accuracy plus multi-judge agreement.",
         ],
     }
 
@@ -497,9 +805,11 @@ def _table(headers: list[str], rows: list[list[Any]]) -> str:
 
 
 def markdown_report(stats: dict[str, Any], *, run_id: str = "") -> str:
+    gate = stats["stage3_primary_gate"]
     stability = stats["stability"]
     prompt_format = stats["prompt_format"]
     adversarial = stats["adversarial"]
+    multi_judge = stats["multi_judge"]
     sensitivity = stats["sensitivity"]
     evidence = stats["evidence_consistency"]
     counts = stats["counts"]
@@ -507,26 +817,74 @@ def markdown_report(stats: dict[str, Any], *, run_id: str = "") -> str:
         "# Judge Reliability Report",
         "",
         f"- Run ID: {run_id or 'unrecorded'}",
+        f"- Stage 3 primary gate: {gate['status']}",
+        f"- Adversarial ranking accuracy: {gate['adversarial_ranking_accuracy']}",
+        f"- Multi-judge within-one: {gate['multi_judge_within_one']}",
+        f"- Multi-judge status: {gate['multi_judge_status']}",
         f"- Corpus items: {counts['corpus_items']}",
         f"- Successful judge records: {counts['successful_records']}",
-        f"- Stability groups: {counts['stability_groups']}",
-        f"- Mean absolute score delta: {stability['mean_absolute_score_delta']}",
-        f"- Within-one score rate: {stability['within_one_score_rate']}",
-        f"- Pass/fail flip rate: {stability['pass_fail_flip_rate']}",
+        f"- Comparable adversarial pairs: {counts['comparable_adversarial_pairs']}",
+        f"- Comparable adversarial judge-model pairs: {counts['comparable_adversarial_model_pairs']}",
+        f"- Missing adversarial pairs: {counts['missing_adversarial_pairs']}",
+        f"- Missing adversarial judge-model pairs: {counts['missing_adversarial_model_pairs']}",
+        f"- Multi-judge comparable groups: {counts['multi_judge_comparable_groups']}",
+        f"- Multi-judge comparisons: {counts['multi_judge_comparisons']}",
+        f"- Diagnostic stability groups: {counts['stability_groups']}",
+        f"- Diagnostic mean absolute score delta: {stability['mean_absolute_score_delta']}",
+        f"- Diagnostic within-one score rate: {stability['within_one_score_rate']}",
+        f"- Diagnostic pass/fail flip rate: {stability['pass_fail_flip_rate']}",
         f"- Prompt-format mean variant delta: {prompt_format['mean_absolute_variant_delta']}",
         f"- Prompt-format within-one rate: {prompt_format['within_one_variant_rate']}",
         f"- Prompt-format pass/fail flip rate: {prompt_format['pass_fail_variant_flip_rate']}",
-        f"- Adversarial ranking pass rate: {adversarial['ranking_pass_rate']}",
         f"- Sensitivity pass rate: {sensitivity['pass_rate']}",
         f"- Evidence coverage rate: {evidence['evidence_coverage_rate']}",
         f"- Reason coverage rate: {evidence['reason_coverage_rate']}",
         f"- Evidence/reason consistency: {evidence['mean_pairwise_text_jaccard']}",
         "",
-        "## Prompt Format Robustness",
+        "## Adversarial Pair Ranking",
         "",
-        "| Sample | Rubric | Variant Means | Max Delta | Flip |",
-        "| --- | --- | --- | ---: | --- |",
+        "| Pair | Rubric | Stronger Mean | Weaker Mean | Margin | Status |",
+        "| --- | --- | ---: | ---: | ---: | --- |",
     ]
+    for row in adversarial["pairs"]:
+        lines.append(
+            "| {pair_id} | {rubric} | {stronger} | {weaker} | {margin} | {status} |".format(
+                pair_id=row.get("pair_id"),
+                rubric=row.get("registry_rubric_id"),
+                stronger=row.get("stronger_mean"),
+                weaker=row.get("weaker_mean"),
+                margin=row.get("score_margin"),
+                status=row.get("status"),
+            )
+        )
+    lines.extend(
+        [
+            "",
+            "## Multi-Judge Consistency",
+            "",
+            "| Dimension | Comparisons | Within One | Mean Abs Delta | Target |",
+            "| --- | ---: | ---: | ---: | ---: |",
+        ]
+    )
+    for dimension, metrics in multi_judge["by_dimension"].items():
+        lines.append(
+            "| {dimension} | {comparisons} | {within_one} | {delta} | {target} |".format(
+                dimension=dimension,
+                comparisons=metrics["comparisons"],
+                within_one=metrics["within_one_rate"],
+                delta=metrics["mean_absolute_delta"],
+                target=metrics["target"],
+            )
+        )
+    lines.extend(
+        [
+            "",
+            "## Prompt Format Robustness",
+            "",
+            "| Sample | Rubric | Variant Means | Max Delta | Flip |",
+            "| --- | --- | --- | ---: | --- |",
+        ]
+    )
     for row in prompt_format["groups"]:
         lines.append(
             "| {sample_id} | {rubric} | {means} | {delta} | {flip} |".format(
@@ -540,7 +898,7 @@ def markdown_report(stats: dict[str, Any], *, run_id: str = "") -> str:
     lines.extend(
         [
             "",
-            "## Sensitivity Cases",
+            "## Sensitivity Diagnostics",
             "",
             "| Case | Factor | Baseline Mean | Perturbed Mean | Margin | Status |",
             "| --- | --- | ---: | ---: | ---: | --- |",
@@ -560,7 +918,7 @@ def markdown_report(stats: dict[str, Any], *, run_id: str = "") -> str:
     lines.extend(
         [
             "",
-            "## Evidence Consistency",
+            "## Evidence Diagnostics",
             "",
             "| Sample | Rubric | Variant | Mean Jaccard | Min Jaccard |",
             "| --- | --- | --- | ---: | ---: |",
@@ -576,26 +934,6 @@ def markdown_report(stats: dict[str, Any], *, run_id: str = "") -> str:
                 min_score=row.get("min_pairwise_text_jaccard"),
             )
         )
-    lines.extend(
-        [
-            "",
-            "## Adversarial Pairs",
-            "",
-            "| Pair | Rubric | Stronger Mean | Weaker Mean | Margin | Status |",
-            "| --- | --- | ---: | ---: | ---: | --- |",
-        ]
-    )
-    for row in adversarial["pairs"]:
-        lines.append(
-            "| {pair_id} | {rubric} | {stronger} | {weaker} | {margin} | {status} |".format(
-                pair_id=row.get("pair_id"),
-                rubric=row.get("registry_rubric_id"),
-                stronger=row.get("stronger_mean"),
-                weaker=row.get("weaker_mean"),
-                margin=row.get("score_margin"),
-                status=row.get("status"),
-            )
-        )
     lines.extend(["", "## Residual Risks", ""])
     for risk in stats["residual_risks"]:
         lines.append(f"- {risk}")
@@ -604,9 +942,11 @@ def markdown_report(stats: dict[str, Any], *, run_id: str = "") -> str:
 
 
 def html_report(stats: dict[str, Any], *, run_id: str = "") -> str:
+    gate = stats["stage3_primary_gate"]
     stability = stats["stability"]
     prompt_format = stats["prompt_format"]
     adversarial = stats["adversarial"]
+    multi_judge = stats["multi_judge"]
     sensitivity = stats["sensitivity"]
     evidence = stats["evidence_consistency"]
     counts = stats["counts"]
@@ -652,6 +992,16 @@ def html_report(stats: dict[str, Any], *, run_id: str = "") -> str:
         ]
         for row in adversarial["pairs"]
     ]
+    multi_judge_rows = [
+        [
+            dimension,
+            metrics.get("comparisons"),
+            metrics.get("within_one_rate"),
+            metrics.get("mean_absolute_delta"),
+            metrics.get("target"),
+        ]
+        for dimension, metrics in multi_judge["by_dimension"].items()
+    ]
     disagreement_rows = [
         [
             row.get("sample_id"),
@@ -684,25 +1034,30 @@ def html_report(stats: dict[str, Any], *, run_id: str = "") -> str:
   <h1>Judge Reliability</h1>
   <p>Run ID: <code>{html.escape(run_id or "unrecorded")}</code></p>
   <div class="cards">
+    <div class="card"><div>Stage 3 Gate</div><div class="metric">{gate["status"]}</div></div>
+    <div class="card"><div>Ranking Accuracy</div><div class="metric">{gate["adversarial_ranking_accuracy"]}</div></div>
+    <div class="card"><div>Multi-Judge Within-One</div><div class="metric">{gate["multi_judge_within_one"]}</div></div>
+    <div class="card"><div>Multi-Judge Status</div><div class="metric">{gate["multi_judge_status"]}</div></div>
     <div class="card"><div>Corpus Items</div><div class="metric">{counts["corpus_items"]}</div></div>
     <div class="card"><div>Successful Records</div><div class="metric">{counts["successful_records"]}</div></div>
-    <div class="card"><div>Mean Delta</div><div class="metric">{stability["mean_absolute_score_delta"]}</div></div>
-    <div class="card"><div>Within-One</div><div class="metric">{stability["within_one_score_rate"]}</div></div>
-    <div class="card"><div>Flip Rate</div><div class="metric">{stability["pass_fail_flip_rate"]}</div></div>
+    <div class="card"><div>Diagnostic Mean Delta</div><div class="metric">{stability["mean_absolute_score_delta"]}</div></div>
+    <div class="card"><div>Diagnostic Within-One</div><div class="metric">{stability["within_one_score_rate"]}</div></div>
+    <div class="card"><div>Diagnostic Flip Rate</div><div class="metric">{stability["pass_fail_flip_rate"]}</div></div>
     <div class="card"><div>Prompt Variant Delta</div><div class="metric">{prompt_format["mean_absolute_variant_delta"]}</div></div>
-    <div class="card"><div>Pair Pass Rate</div><div class="metric">{adversarial["ranking_pass_rate"]}</div></div>
     <div class="card"><div>Sensitivity Pass Rate</div><div class="metric">{sensitivity["pass_rate"]}</div></div>
     <div class="card"><div>Evidence Coverage</div><div class="metric">{evidence["evidence_coverage_rate"]}</div></div>
     <div class="card"><div>Reason Coverage</div><div class="metric">{evidence["reason_coverage_rate"]}</div></div>
   </div>
-  <h2>Prompt Format Robustness</h2>
-  {_table(["Sample", "Rubric", "Variant Means", "Max Delta", "Flip"], variant_rows)}
-  <h2>Sensitivity Cases</h2>
-  {_table(["Case", "Factor", "Baseline Mean", "Perturbed Mean", "Margin", "Status"], sensitivity_rows)}
-  <h2>Evidence Consistency</h2>
-  {_table(["Sample", "Rubric", "Variant", "Mean Jaccard", "Min Jaccard"], consistency_rows)}
   <h2>Adversarial Pair Ranking</h2>
   {_table(["Pair", "Rubric", "Stronger Mean", "Weaker Mean", "Margin", "Status"], pair_rows)}
+  <h2>Multi-Judge Consistency</h2>
+  {_table(["Dimension", "Comparisons", "Within One", "Mean Abs Delta", "Target"], multi_judge_rows)}
+  <h2>Prompt Format Robustness</h2>
+  {_table(["Sample", "Rubric", "Variant Means", "Max Delta", "Flip"], variant_rows)}
+  <h2>Sensitivity Diagnostics</h2>
+  {_table(["Case", "Factor", "Baseline Mean", "Perturbed Mean", "Margin", "Status"], sensitivity_rows)}
+  <h2>Evidence Diagnostics</h2>
+  {_table(["Sample", "Rubric", "Variant", "Mean Jaccard", "Min Jaccard"], consistency_rows)}
   <h2>Large Stability Disagreements</h2>
   {_table(["Sample", "Rubric", "Dimension", "Judge Model", "Scores", "Max Delta"], disagreement_rows)}
   <h2>Residual Risks</h2>
