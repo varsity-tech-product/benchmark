@@ -412,6 +412,109 @@ def init_human_alignment(
     return manifest
 
 
+# Mapping from human label CSV column → (judge score field by dimension).
+# Used for per-judge alignment on the numeric fields that can be paired
+# across (human label, judge raw score). The dimension key set is exactly
+# the dimensions where the rubric exposes a comparable scalar.
+_PER_JUDGE_ALIGNMENT_SPECS: list[tuple[str, str, dict[str, str]]] = [
+    (
+        "persona_fidelity",
+        "persona_fidelity",
+        {
+            "D1": "overall",
+            "D2": "overall_reproducibility",
+            "D3": "overall_drift_score",
+            "P1": "overall_probe_pass",
+            "B1": "contract_fit",
+        },
+    ),
+    (
+        "knowledge_boundary_pass",
+        "knowledge_boundary_pass",
+        {"D1": "knowledge_boundary"},
+    ),
+    (
+        "emotional_match",
+        "emotional_match",
+        {"D1": "emotional_tone", "D2": "emotional_consistency"},
+    ),
+    (
+        "p1_facet_fit",
+        "human_facet_fit",
+        {"P1": "facet_fit"},
+    ),
+    (
+        "control_distinctiveness",
+        "human_distinctiveness",
+        {"control": "distinctiveness"},
+    ),
+]
+
+
+def _compute_per_judge_alignment(
+    labels_path: Path,
+    llm_snapshot_path: Path,
+) -> dict:
+    """Per-judge MAD / within-1pt / n for each (numeric field, dimension).
+
+    The aggregate-level metrics in ``compute_human_agreement`` collapse all
+    judges into a single Panel-3 / primary score, which is fine for a
+    "do judges roughly track humans" description but useless for the
+    "which judge tracks humans best" question. This helper reads each
+    judge's raw score from the ``llm_judge_labels.json`` snapshot
+    (``scores_by_judge``) and pairs it against the human-labelled CSV row
+    on a per-field, per-dimension, per-judge basis.
+
+    Returns ``{field: {dimension: {judge_label: {n, mean_absolute_difference,
+    within_one_point_rate}}}}`` — empty when the inputs are missing.
+    """
+    if not (labels_path.exists() and llm_snapshot_path.exists()):
+        return {}
+    snapshot = load_json(llm_snapshot_path) or {}
+    labels_by_eval = {
+        item.get("eval_id"): item for item in snapshot.get("labels", []) or []
+    }
+    bucket: dict[str, dict[str, dict[str, list[float]]]] = defaultdict(
+        lambda: defaultdict(lambda: defaultdict(list))
+    )
+    with open(labels_path, encoding="utf-8", newline="") as fh:
+        for row in csv.DictReader(fh):
+            eid = str(row.get("eval_id") or "").strip()
+            dim = str(row.get("dimension") or "").strip()
+            label_data = labels_by_eval.get(eid)
+            if not label_data:
+                continue
+            sbj = label_data.get("scores_by_judge") or {}
+            for field_name, csv_col, dim_to_judge_field in _PER_JUDGE_ALIGNMENT_SPECS:
+                judge_field = dim_to_judge_field.get(dim)
+                if not judge_field:
+                    continue
+                hv = _as_float(row.get(csv_col))
+                if hv is None:
+                    continue
+                for j_label in ("sonnet", "gpt54", "gemini"):
+                    j_scores = sbj.get(j_label) or {}
+                    jv = _as_float(j_scores.get(judge_field))
+                    if jv is None:
+                        continue
+                    bucket[field_name][dim][j_label].append(abs(hv - jv))
+    out: dict = {}
+    for field_name, by_dim in bucket.items():
+        out[field_name] = {}
+        for dim, by_judge in by_dim.items():
+            out[field_name][dim] = {}
+            for j_label, diffs in by_judge.items():
+                n = len(diffs)
+                if n == 0:
+                    continue
+                out[field_name][dim][j_label] = {
+                    "n": n,
+                    "mean_absolute_difference": sum(diffs) / n,
+                    "within_one_point_rate": sum(1 for d in diffs if d <= 1.0) / n,
+                }
+    return out
+
+
 def _per_judge_b1_match(
     eval_id: str,
     expected_human: str,
@@ -727,6 +830,9 @@ def compute_human_agreement(
             }
             if p1_signals_recall
             else None
+        ),
+        "per_judge_alignment": _compute_per_judge_alignment(
+            labels, align_dir / "llm_judge_labels.json"
         ),
     }
 
