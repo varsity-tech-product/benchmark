@@ -15,7 +15,7 @@ from typing import Any, Iterable
 from .report import _raw_score, _record_dimension, _record_rubric_id
 
 HUMAN_LABELS_VERSION = "judge_validation_human_labels_v1"
-HUMAN_ALIGNMENT_STATS_VERSION = "judge_validation_human_alignment_stats_v1"
+HUMAN_ALIGNMENT_STATS_VERSION = "judge_validation_human_alignment_stats_v2"
 HUMAN_WITHIN_ONE_TARGET = 0.85
 HUMAN_PASS_FAIL_TARGET = 0.9
 LARGE_DISAGREEMENT_DELTA = 2.0
@@ -751,16 +751,16 @@ def compute_human_alignment_stats(
                 }
             )
 
-    # Per-dimension targets are the gate. A small overall pass cannot
-    # mask a strict objective dimension failing its own slice, so we do
-    # not fall back to the corpus-wide 0.85 / 0.90 numbers — every
-    # dimension that has data must meet its own threshold.
-    gate_passed = bool(
-        comparisons
-        and not missing
-        and not weak_dimensions
-        and large_disagreements_documented
-    )
+    diagnostic_flags = []
+    if not comparisons:
+        diagnostic_flags.append("missing_comparable_labels")
+    if missing:
+        diagnostic_flags.append("missing_judge_comparisons")
+    if weak_dimensions:
+        diagnostic_flags.append("weak_absolute_alignment_dimensions")
+    if not large_disagreements_documented:
+        diagnostic_flags.append("undocumented_large_disagreements")
+    absolute_alignment_status = "needs_review" if diagnostic_flags else "clear"
 
     inter_rater = compute_inter_rater_agreement(normalized_labels)
     judge_vs_mean = compute_judge_vs_reviewer_mean(comparisons)
@@ -795,10 +795,19 @@ def compute_human_alignment_stats(
         },
         "inter_rater_agreement": inter_rater,
         "judge_vs_reviewer_mean": judge_vs_mean,
-        "stage3_gate": {
-            "status": "pass" if gate_passed else "needs_review",
+        "absolute_alignment_diagnostic": {
+            "status": absolute_alignment_status,
+            "flags": diagnostic_flags or None,
             "large_disagreements_documented": large_disagreements_documented,
             "weak_dimensions": weak_dimensions,
+        },
+        "stage3_gate": {
+            "status": "diagnostic_only",
+            "primary_gate_source": "judge_validation_stats.stage3_primary_gate",
+            "absolute_alignment_status": absolute_alignment_status,
+            "large_disagreements_documented": large_disagreements_documented,
+            "weak_dimensions": weak_dimensions,
+            "diagnostic_flags": diagnostic_flags or None,
         },
         "comparisons": comparisons,
         "missing_judge_comparisons": missing,
@@ -824,10 +833,12 @@ def markdown_human_alignment_report(
 ) -> str:
     overall = stats["overall"]
     counts = stats["counts"]
+    absolute = stats["absolute_alignment_diagnostic"]
     lines = [
-        "# Human Alignment Report",
+        "# Human Alignment Diagnostic Report",
         "",
         f"- Judge run ID: {run_id or 'unrecorded'}",
+        f"- Absolute alignment diagnostic: {absolute['status']}",
         f"- Human labels: {counts['labels']}",
         f"- Comparable labels: {counts['comparable_labels']}",
         f"- Missing judge comparisons: {counts['missing_judge_comparisons']}",
@@ -835,9 +846,8 @@ def markdown_human_alignment_report(
         f"- Within-one agreement: {overall['within_one_agreement']}",
         f"- Mean absolute delta: {overall['mean_absolute_delta']}",
         f"- Pass/fail agreement: {overall['pass_fail_agreement']}",
-        f"- Stage 3 gate: {stats['stage3_gate']['status']}",
         "",
-        "## Dimension Metrics",
+        "## Dimension Diagnostics",
         "",
         "| Dimension | Labels | Exact | Within One | Mean Abs Delta | Pass/Fail |",
         "| --- | ---: | ---: | ---: | ---: | ---: |",
@@ -857,7 +867,7 @@ def markdown_human_alignment_report(
     lines.extend(
         [
             "",
-            "## Large Disagreements",
+            "## Large Disagreement Diagnostics",
             "",
             "| Sample | Rubric | Human | Judge Mean | Delta | Tags |",
             "| --- | --- | ---: | ---: | ---: | --- |",
@@ -878,7 +888,7 @@ def markdown_human_alignment_report(
     lines.extend(
         [
             "",
-            "## Missing Judge Comparisons",
+            "## Missing Judge Comparison Diagnostics",
             "",
             "| Sample | Rubric | Dimension | Reviewer |",
             "| --- | --- | --- | --- |",
@@ -992,6 +1002,7 @@ def html_human_alignment_report(
 ) -> str:
     overall = stats["overall"]
     counts = stats["counts"]
+    absolute = stats["absolute_alignment_diagnostic"]
     dimension_rows = [
         [
             dimension,
@@ -1027,7 +1038,7 @@ def html_human_alignment_report(
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>Human Alignment</title>
+  <title>Human Alignment Diagnostics</title>
   <style>
     body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 32px; color: #1f2933; }}
     h1, h2 {{ color: #102a43; }}
@@ -1040,22 +1051,22 @@ def html_human_alignment_report(
   </style>
 </head>
 <body>
-  <h1>Human Alignment</h1>
+  <h1>Human Alignment Diagnostics</h1>
   <p>Judge run ID: <code>{html.escape(run_id or "unrecorded")}</code></p>
   <div class="cards">
+    <div class="card"><div>Absolute Diagnostic</div><div class="metric">{absolute["status"]}</div></div>
     <div class="card"><div>Human Labels</div><div class="metric">{counts["labels"]}</div></div>
     <div class="card"><div>Comparable Labels</div><div class="metric">{counts["comparable_labels"]}</div></div>
     <div class="card"><div>Exact Agreement</div><div class="metric">{overall["exact_agreement"]}</div></div>
     <div class="card"><div>Within-One</div><div class="metric">{overall["within_one_agreement"]}</div></div>
     <div class="card"><div>Mean Abs Delta</div><div class="metric">{overall["mean_absolute_delta"]}</div></div>
     <div class="card"><div>Pass/Fail Agreement</div><div class="metric">{overall["pass_fail_agreement"]}</div></div>
-    <div class="card"><div>Stage 3 Gate</div><div class="metric">{stats["stage3_gate"]["status"]}</div></div>
   </div>
-  <h2>Dimension Metrics</h2>
+  <h2>Dimension Diagnostics</h2>
   {_table(["Dimension", "Labels", "Exact", "Within One", "Mean Abs Delta", "Pass/Fail"], dimension_rows)}
-  <h2>Large Disagreements</h2>
+  <h2>Large Disagreement Diagnostics</h2>
   {_table(["Sample", "Rubric", "Human", "Judge Mean", "Delta", "Tags"], disagreement_rows)}
-  <h2>Missing Judge Comparisons</h2>
+  <h2>Missing Judge Comparison Diagnostics</h2>
   {_table(["Sample", "Rubric", "Dimension", "Reviewer"], missing_rows)}
 </body>
 </html>

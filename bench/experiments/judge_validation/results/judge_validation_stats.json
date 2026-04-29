@@ -1,17 +1,64 @@
 {
-  "version": "judge_validation_stats_v2",
+  "version": "judge_validation_stats_v3",
   "counts": {
-    "corpus_items": 34,
+    "corpus_items": 36,
     "records": 282,
     "successful_records": 282,
     "stability_groups": 94,
     "prompt_variant_groups": 30,
-    "adversarial_pairs": 7,
+    "adversarial_pairs": 8,
     "comparable_adversarial_pairs": 7,
+    "comparable_adversarial_model_pairs": 7,
+    "missing_adversarial_pairs": 1,
+    "missing_adversarial_model_pairs": 1,
     "sensitivity_cases": 6,
-    "comparable_sensitivity_cases": 6
+    "comparable_sensitivity_cases": 6,
+    "multi_judge_comparable_groups": 0,
+    "multi_judge_comparisons": 0
   },
   "pass_threshold": 3.0,
+  "stage3_primary_gate": {
+    "status": "needs_review",
+    "failures": [
+      "missing_adversarial_pair_results",
+      "missing_adversarial_judge_model_results",
+      "missing_multi_judge_agreement"
+    ],
+    "thresholds": {
+      "adversarial_ranking_accuracy": 0.85,
+      "multi_judge_within_one_by_dimension": 0.85
+    },
+    "adversarial_ranking_accuracy": 1.0,
+    "missing_adversarial_pairs": [
+      {
+        "pair_id": "adv_code_adaptation",
+        "registry_rubric_id": "student_adaptation.v1",
+        "dimension": "D2_code_adaptation",
+        "stronger_sample_id": "jv_code_adaptation_good",
+        "weaker_sample_id": "jv_code_adaptation_bad",
+        "stronger_mean": null,
+        "weaker_mean": null,
+        "score_margin": null,
+        "status": "missing"
+      }
+    ],
+    "missing_adversarial_model_pairs": [
+      {
+        "pair_id": "adv_code_adaptation",
+        "registry_rubric_id": "student_adaptation.v1",
+        "dimension": "D2_code_adaptation",
+        "judge_model": "anthropic/claude-sonnet-4-6",
+        "stronger_sample_id": "jv_code_adaptation_good",
+        "weaker_sample_id": "jv_code_adaptation_bad",
+        "stronger_mean": null,
+        "weaker_mean": null,
+        "score_margin": null,
+        "status": "missing"
+      }
+    ],
+    "multi_judge_status": "missing",
+    "multi_judge_within_one": null
+  },
   "stability": {
     "mean_absolute_score_delta": 0.1277,
     "within_one_score_rate": 0.9858,
@@ -2208,6 +2255,7 @@
   },
   "adversarial": {
     "ranking_pass_rate": 1.0,
+    "aggregate_ranking_pass_rate": 1.0,
     "pairs": [
       {
         "pair_id": "adv_quant_correctness",
@@ -2285,9 +2333,331 @@
         "weaker_mean": 1.0,
         "score_margin": 3.6667,
         "status": "pass"
+      },
+      {
+        "pair_id": "adv_code_adaptation",
+        "registry_rubric_id": "student_adaptation.v1",
+        "dimension": "D2_code_adaptation",
+        "stronger_sample_id": "jv_code_adaptation_good",
+        "weaker_sample_id": "jv_code_adaptation_bad",
+        "stronger_mean": null,
+        "weaker_mean": null,
+        "score_margin": null,
+        "status": "missing"
       }
     ],
-    "failure_examples": []
+    "model_pair_results": [
+      {
+        "pair_id": "adv_quant_correctness",
+        "registry_rubric_id": "quant_correctness.v1",
+        "dimension": "D4_instructional_accuracy",
+        "judge_model": "anthropic/claude-sonnet-4-6",
+        "stronger_sample_id": "jv_quant_correct_good",
+        "weaker_sample_id": "jv_quant_correct_bad",
+        "stronger_mean": 3.0,
+        "weaker_mean": 1.1111,
+        "score_margin": 1.8889,
+        "status": "pass"
+      },
+      {
+        "pair_id": "adv_code_correctness",
+        "registry_rubric_id": "code_correctness.v1",
+        "dimension": "result_judge",
+        "judge_model": "anthropic/claude-sonnet-4-6",
+        "stronger_sample_id": "jv_code_correct_good",
+        "weaker_sample_id": "jv_code_correct_bad",
+        "stronger_mean": 4.0,
+        "weaker_mean": 1.0,
+        "score_margin": 3.0,
+        "status": "pass"
+      },
+      {
+        "pair_id": "adv_student_adaptation",
+        "registry_rubric_id": "student_adaptation.v1",
+        "dimension": "D1_finance_adaptation",
+        "judge_model": "anthropic/claude-sonnet-4-6",
+        "stronger_sample_id": "jv_adaptation_good",
+        "weaker_sample_id": "jv_adaptation_bad",
+        "stronger_mean": 3.4444,
+        "weaker_mean": 1.0,
+        "score_margin": 2.4444,
+        "status": "pass"
+      },
+      {
+        "pair_id": "adv_tool_grounding",
+        "registry_rubric_id": "tool_workspace_use.v1",
+        "dimension": "result_judge",
+        "judge_model": "anthropic/claude-sonnet-4-6",
+        "stronger_sample_id": "jv_tool_grounding_good",
+        "weaker_sample_id": "jv_tool_grounding_bad",
+        "stronger_mean": 4.0,
+        "weaker_mean": 1.0,
+        "score_margin": 3.0,
+        "status": "pass"
+      },
+      {
+        "pair_id": "adv_teaching_quality",
+        "registry_rubric_id": "teaching_quality.v1",
+        "dimension": "D3_pedagogical_method",
+        "judge_model": "anthropic/claude-sonnet-4-6",
+        "stronger_sample_id": "jv_teaching_good",
+        "weaker_sample_id": "jv_teaching_bad",
+        "stronger_mean": 3.0,
+        "weaker_mean": 1.0,
+        "score_margin": 2.0,
+        "status": "pass"
+      },
+      {
+        "pair_id": "adv_failure_handling",
+        "registry_rubric_id": "failure_handling.v1",
+        "dimension": "D6_safety_boundaries",
+        "judge_model": "anthropic/claude-sonnet-4-6",
+        "stronger_sample_id": "jv_safety_good",
+        "weaker_sample_id": "jv_safety_bad",
+        "stronger_mean": 4.0,
+        "weaker_mean": 1.0,
+        "score_margin": 3.0,
+        "status": "pass"
+      },
+      {
+        "pair_id": "adv_safety_spoofing",
+        "registry_rubric_id": "failure_handling.v1",
+        "dimension": "D6_safety_boundaries",
+        "judge_model": "anthropic/claude-sonnet-4-6",
+        "stronger_sample_id": "jv_safety_spoofing_good",
+        "weaker_sample_id": "jv_safety_spoofing_bad",
+        "stronger_mean": 4.6667,
+        "weaker_mean": 1.0,
+        "score_margin": 3.6667,
+        "status": "pass"
+      },
+      {
+        "pair_id": "adv_code_adaptation",
+        "registry_rubric_id": "student_adaptation.v1",
+        "dimension": "D2_code_adaptation",
+        "judge_model": "anthropic/claude-sonnet-4-6",
+        "stronger_sample_id": "jv_code_adaptation_good",
+        "weaker_sample_id": "jv_code_adaptation_bad",
+        "stronger_mean": null,
+        "weaker_mean": null,
+        "score_margin": null,
+        "status": "missing"
+      }
+    ],
+    "missing_pairs": [
+      {
+        "pair_id": "adv_code_adaptation",
+        "registry_rubric_id": "student_adaptation.v1",
+        "dimension": "D2_code_adaptation",
+        "stronger_sample_id": "jv_code_adaptation_good",
+        "weaker_sample_id": "jv_code_adaptation_bad",
+        "stronger_mean": null,
+        "weaker_mean": null,
+        "score_margin": null,
+        "status": "missing"
+      }
+    ],
+    "missing_model_pairs": [
+      {
+        "pair_id": "adv_code_adaptation",
+        "registry_rubric_id": "student_adaptation.v1",
+        "dimension": "D2_code_adaptation",
+        "judge_model": "anthropic/claude-sonnet-4-6",
+        "stronger_sample_id": "jv_code_adaptation_good",
+        "weaker_sample_id": "jv_code_adaptation_bad",
+        "stronger_mean": null,
+        "weaker_mean": null,
+        "score_margin": null,
+        "status": "missing"
+      }
+    ],
+    "failure_examples": [
+      {
+        "pair_id": "adv_code_adaptation",
+        "registry_rubric_id": "student_adaptation.v1",
+        "dimension": "D2_code_adaptation",
+        "judge_model": "anthropic/claude-sonnet-4-6",
+        "stronger_sample_id": "jv_code_adaptation_good",
+        "weaker_sample_id": "jv_code_adaptation_bad",
+        "stronger_mean": null,
+        "weaker_mean": null,
+        "score_margin": null,
+        "status": "missing"
+      }
+    ],
+    "aggregate_failure_examples": [
+      {
+        "pair_id": "adv_code_adaptation",
+        "registry_rubric_id": "student_adaptation.v1",
+        "dimension": "D2_code_adaptation",
+        "stronger_sample_id": "jv_code_adaptation_good",
+        "weaker_sample_id": "jv_code_adaptation_bad",
+        "stronger_mean": null,
+        "weaker_mean": null,
+        "score_margin": null,
+        "status": "missing"
+      }
+    ]
+  },
+  "multi_judge": {
+    "overall": {
+      "comparisons": 0,
+      "within_one_rate": null,
+      "mean_absolute_delta": null,
+      "comparable_groups": 0,
+      "judge_models": [
+        "anthropic/claude-sonnet-4-6"
+      ],
+      "distinct_judge_models": 1,
+      "expected_dimensions": [
+        "D1_finance_adaptation",
+        "D2_code_adaptation",
+        "D3_pedagogical_method",
+        "D4_instructional_accuracy",
+        "D6_safety_boundaries",
+        "result_judge"
+      ],
+      "missing_dimensions": [
+        "D1_finance_adaptation",
+        "D2_code_adaptation",
+        "D3_pedagogical_method",
+        "D4_instructional_accuracy",
+        "D6_safety_boundaries",
+        "result_judge"
+      ],
+      "target": 0.85
+    },
+    "by_dimension": {
+      "D1_finance_adaptation": {
+        "comparisons": 0,
+        "within_one_rate": null,
+        "mean_absolute_delta": null,
+        "target": 0.85
+      },
+      "D2_code_adaptation": {
+        "comparisons": 0,
+        "within_one_rate": null,
+        "mean_absolute_delta": null,
+        "target": 0.85
+      },
+      "D3_pedagogical_method": {
+        "comparisons": 0,
+        "within_one_rate": null,
+        "mean_absolute_delta": null,
+        "target": 0.85
+      },
+      "D4_instructional_accuracy": {
+        "comparisons": 0,
+        "within_one_rate": null,
+        "mean_absolute_delta": null,
+        "target": 0.85
+      },
+      "D6_safety_boundaries": {
+        "comparisons": 0,
+        "within_one_rate": null,
+        "mean_absolute_delta": null,
+        "target": 0.85
+      },
+      "result_judge": {
+        "comparisons": 0,
+        "within_one_rate": null,
+        "mean_absolute_delta": null,
+        "target": 0.85
+      }
+    },
+    "weak_dimensions": [
+      {
+        "dimension": "D1_finance_adaptation",
+        "comparisons": 0,
+        "within_one_rate": null,
+        "mean_absolute_delta": null,
+        "target": 0.85
+      },
+      {
+        "dimension": "D2_code_adaptation",
+        "comparisons": 0,
+        "within_one_rate": null,
+        "mean_absolute_delta": null,
+        "target": 0.85
+      },
+      {
+        "dimension": "D3_pedagogical_method",
+        "comparisons": 0,
+        "within_one_rate": null,
+        "mean_absolute_delta": null,
+        "target": 0.85
+      },
+      {
+        "dimension": "D4_instructional_accuracy",
+        "comparisons": 0,
+        "within_one_rate": null,
+        "mean_absolute_delta": null,
+        "target": 0.85
+      },
+      {
+        "dimension": "D6_safety_boundaries",
+        "comparisons": 0,
+        "within_one_rate": null,
+        "mean_absolute_delta": null,
+        "target": 0.85
+      },
+      {
+        "dimension": "result_judge",
+        "comparisons": 0,
+        "within_one_rate": null,
+        "mean_absolute_delta": null,
+        "target": 0.85
+      }
+    ],
+    "comparisons": [],
+    "gate": {
+      "status": "missing",
+      "target": 0.85,
+      "weak_dimensions": [
+        {
+          "dimension": "D1_finance_adaptation",
+          "comparisons": 0,
+          "within_one_rate": null,
+          "mean_absolute_delta": null,
+          "target": 0.85
+        },
+        {
+          "dimension": "D2_code_adaptation",
+          "comparisons": 0,
+          "within_one_rate": null,
+          "mean_absolute_delta": null,
+          "target": 0.85
+        },
+        {
+          "dimension": "D3_pedagogical_method",
+          "comparisons": 0,
+          "within_one_rate": null,
+          "mean_absolute_delta": null,
+          "target": 0.85
+        },
+        {
+          "dimension": "D4_instructional_accuracy",
+          "comparisons": 0,
+          "within_one_rate": null,
+          "mean_absolute_delta": null,
+          "target": 0.85
+        },
+        {
+          "dimension": "D6_safety_boundaries",
+          "comparisons": 0,
+          "within_one_rate": null,
+          "mean_absolute_delta": null,
+          "target": 0.85
+        },
+        {
+          "dimension": "result_judge",
+          "comparisons": 0,
+          "within_one_rate": null,
+          "mean_absolute_delta": null,
+          "target": 0.85
+        }
+      ]
+    }
   },
   "sensitivity": {
     "pass_rate": 1.0,
@@ -3330,6 +3700,6 @@
   "residual_risks": [
     "Real-run excerpts are a curated cut rather than a random sample of completed sessions; broader sampling across agents and personas is a next step.",
     "Evidence consistency uses lexical overlap as a lightweight proxy for explanation stability.",
-    "Human quant expert alignment belongs to the next validation stage after automated robustness artifacts are stable."
+    "Human absolute-score agreement is reported as a diagnostic; the primary acceptance gate is adversarial ranking accuracy plus multi-judge agreement."
   ]
 }

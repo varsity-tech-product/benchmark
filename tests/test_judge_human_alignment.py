@@ -104,7 +104,8 @@ def test_human_alignment_stats_compute_agreement_metrics():
     assert stats["overall"]["mean_absolute_delta"] == 0.75
     assert stats["overall"]["pass_fail_agreement"] == 1.0
     assert stats["slices"]["by_dimension"]["D4_instructional_accuracy"]["labels"] == 2
-    assert stats["stage3_gate"]["status"] == "pass"
+    assert stats["stage3_gate"]["status"] == "diagnostic_only"
+    assert stats["absolute_alignment_diagnostic"]["status"] == "clear"
 
 
 def test_human_alignment_reports_large_disagreements_and_missing_scores():
@@ -168,7 +169,8 @@ def test_human_alignment_reports_large_disagreements_and_missing_scores():
         "unclear_rubric"
     ]
     assert stats["stage3_gate"]["large_disagreements_documented"] is True
-    assert stats["stage3_gate"]["status"] == "needs_review"
+    assert stats["stage3_gate"]["status"] == "diagnostic_only"
+    assert stats["absolute_alignment_diagnostic"]["status"] == "needs_review"
 
 
 def test_human_alignment_gate_requires_full_label_coverage():
@@ -211,7 +213,8 @@ def test_human_alignment_gate_requires_full_label_coverage():
 
     assert stats["overall"]["within_one_agreement"] == 1.0
     assert stats["counts"]["missing_judge_comparisons"] == 1
-    assert stats["stage3_gate"]["status"] == "needs_review"
+    assert stats["stage3_gate"]["status"] == "diagnostic_only"
+    assert stats["absolute_alignment_diagnostic"]["status"] == "needs_review"
 
 
 def test_subjective_dimensions_use_relaxed_within_one_target():
@@ -412,7 +415,8 @@ def test_strict_objective_dimension_failure_blocks_gate_even_if_overall_passes()
     assert stats["overall"]["within_one_agreement"] >= 0.85
     weak = {row["dimension"] for row in stats["stage3_gate"]["weak_dimensions"]}
     assert "result_judge" in weak
-    assert stats["stage3_gate"]["status"] == "needs_review"
+    assert stats["stage3_gate"]["status"] == "diagnostic_only"
+    assert stats["absolute_alignment_diagnostic"]["status"] == "needs_review"
 
 
 def test_subjective_dimension_below_relaxed_target_still_flags_weak():
@@ -694,7 +698,8 @@ def test_human_alignment_uses_blind_sample_map():
     assert stats["counts"]["comparable_labels"] == 1
     assert stats["comparisons"][0]["sample_id"] == "original"
     assert stats["comparisons"][0]["review_sample_id"] == "jv_review_001"
-    assert stats["stage3_gate"]["status"] == "pass"
+    assert stats["stage3_gate"]["status"] == "diagnostic_only"
+    assert stats["absolute_alignment_diagnostic"]["status"] == "clear"
 
 
 def test_review_packet_exports_reviewer_materials_without_expected_scores(tmp_path):

@@ -1,20 +1,53 @@
 # Judge Reliability Report
 
 - Run ID: jv_20260424_073751
-- Corpus items: 34
+- Stage 3 primary gate: needs_review
+- Adversarial ranking accuracy: 1.0
+- Multi-judge within-one: None
+- Multi-judge status: missing
+- Corpus items: 36
 - Successful judge records: 282
-- Stability groups: 94
-- Mean absolute score delta: 0.1277
-- Within-one score rate: 0.9858
-- Pass/fail flip rate: 0.0426
+- Comparable adversarial pairs: 7
+- Comparable adversarial judge-model pairs: 7
+- Missing adversarial pairs: 1
+- Missing adversarial judge-model pairs: 1
+- Multi-judge comparable groups: 0
+- Multi-judge comparisons: 0
+- Diagnostic stability groups: 94
+- Diagnostic mean absolute score delta: 0.1277
+- Diagnostic within-one score rate: 0.9858
+- Diagnostic pass/fail flip rate: 0.0426
 - Prompt-format mean variant delta: 0.2074
 - Prompt-format within-one rate: 0.9778
 - Prompt-format pass/fail flip rate: 0.0667
-- Adversarial ranking pass rate: 1.0
 - Sensitivity pass rate: 1.0
 - Evidence coverage rate: 1.0
 - Reason coverage rate: 1.0
 - Evidence/reason consistency: 0.6239
+
+## Adversarial Pair Ranking
+
+| Pair | Rubric | Stronger Mean | Weaker Mean | Margin | Status |
+| --- | --- | ---: | ---: | ---: | --- |
+| adv_quant_correctness | quant_correctness.v1 | 3.0 | 1.1111 | 1.8889 | pass |
+| adv_code_correctness | code_correctness.v1 | 4.0 | 1.0 | 3.0 | pass |
+| adv_student_adaptation | student_adaptation.v1 | 3.4444 | 1.0 | 2.4444 | pass |
+| adv_tool_grounding | tool_workspace_use.v1 | 4.0 | 1.0 | 3.0 | pass |
+| adv_teaching_quality | teaching_quality.v1 | 3.0 | 1.0 | 2.0 | pass |
+| adv_failure_handling | failure_handling.v1 | 4.0 | 1.0 | 3.0 | pass |
+| adv_safety_spoofing | failure_handling.v1 | 4.6667 | 1.0 | 3.6667 | pass |
+| adv_code_adaptation | student_adaptation.v1 | None | None | None | missing |
+
+## Multi-Judge Consistency
+
+| Dimension | Comparisons | Within One | Mean Abs Delta | Target |
+| --- | ---: | ---: | ---: | ---: |
+| D1_finance_adaptation | 0 | None | None | 0.85 |
+| D2_code_adaptation | 0 | None | None | 0.85 |
+| D3_pedagogical_method | 0 | None | None | 0.85 |
+| D4_instructional_accuracy | 0 | None | None | 0.85 |
+| D6_safety_boundaries | 0 | None | None | 0.85 |
+| result_judge | 0 | None | None | 0.85 |
 
 ## Prompt Format Robustness
 
@@ -51,7 +84,7 @@
 | jv_teaching_bad | teaching_quality.v1 | {"baseline": 1.0, "markdown_transcript": 1.0, "role_blocks": 1.0} | 0.0 | False |
 | jv_teaching_good | teaching_quality.v1 | {"baseline": 3.0, "markdown_transcript": 3.0, "role_blocks": 3.0} | 0.0 | False |
 
-## Sensitivity Cases
+## Sensitivity Diagnostics
 
 | Case | Factor | Baseline Mean | Perturbed Mean | Margin | Status |
 | --- | --- | ---: | ---: | ---: | --- |
@@ -62,25 +95,13 @@
 | sens_answer_dump | answer_dump | 3.0 | 1.0 | 2.0 | pass |
 | sens_failure_boundary_removed | failure_boundary_removed | 4.0 | 1.0 | 3.0 | pass |
 
-## Evidence Consistency
+## Evidence Diagnostics
 
 | Sample | Rubric | Variant | Mean Jaccard | Min Jaccard |
 | --- | --- | --- | ---: | ---: |
-
-## Adversarial Pairs
-
-| Pair | Rubric | Stronger Mean | Weaker Mean | Margin | Status |
-| --- | --- | ---: | ---: | ---: | --- |
-| adv_quant_correctness | quant_correctness.v1 | 3.0 | 1.1111 | 1.8889 | pass |
-| adv_code_correctness | code_correctness.v1 | 4.0 | 1.0 | 3.0 | pass |
-| adv_student_adaptation | student_adaptation.v1 | 3.4444 | 1.0 | 2.4444 | pass |
-| adv_tool_grounding | tool_workspace_use.v1 | 4.0 | 1.0 | 3.0 | pass |
-| adv_teaching_quality | teaching_quality.v1 | 3.0 | 1.0 | 2.0 | pass |
-| adv_failure_handling | failure_handling.v1 | 4.0 | 1.0 | 3.0 | pass |
-| adv_safety_spoofing | failure_handling.v1 | 4.6667 | 1.0 | 3.6667 | pass |
 
 ## Residual Risks
 
 - Real-run excerpts are a curated cut rather than a random sample of completed sessions; broader sampling across agents and personas is a next step.
 - Evidence consistency uses lexical overlap as a lightweight proxy for explanation stability.
-- Human quant expert alignment belongs to the next validation stage after automated robustness artifacts are stable.
+- Human absolute-score agreement is reported as a diagnostic; the primary acceptance gate is adversarial ranking accuracy plus multi-judge agreement.

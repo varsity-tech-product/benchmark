@@ -473,6 +473,11 @@ def _report(args: argparse.Namespace) -> int:
                 "stats": paths["stats"],
                 "markdown": paths["markdown"],
                 "html": paths["html"],
+                "stage3_primary_gate": stats["stage3_primary_gate"],
+                "multi_judge": {
+                    "overall": stats["multi_judge"]["overall"],
+                    "gate": stats["multi_judge"]["gate"],
+                },
                 "stability": stats["stability"],
                 "prompt_format": {
                     "mean_absolute_variant_delta": stats["prompt_format"][

@@ -278,6 +278,229 @@ def test_reliability_stats_compute_stability_and_adversarial_pass_rate():
     assert stats["stability"]["within_one_score_rate"] == 1.0
     assert stats["stability"]["pass_fail_flip_rate"] == 0.0
     assert stats["adversarial"]["ranking_pass_rate"] == 1.0
+    assert stats["stage3_primary_gate"]["status"] == "needs_review"
+    assert "missing_multi_judge_agreement" in (
+        stats["stage3_primary_gate"]["failures"] or []
+    )
+
+
+def test_stage3_primary_gate_uses_ranking_and_multi_judge_consistency():
+    corpus = {
+        "pass_threshold": 3,
+        "items": [{"sample_id": "strong"}, {"sample_id": "weak"}],
+        "adversarial_pairs": [
+            {
+                "pair_id": "p1",
+                "registry_rubric_id": "quant_correctness.v1",
+                "dimension": "D4_instructional_accuracy",
+                "stronger_sample_id": "strong",
+                "weaker_sample_id": "weak",
+            }
+        ],
+    }
+    records = [
+        {
+            "sample_id": "strong",
+            "registry_rubric_id": "quant_correctness.v1",
+            "dimension": "D4_instructional_accuracy",
+            "judge_model": "judge_a",
+            "status": "success",
+            "raw_score": 5,
+        },
+        {
+            "sample_id": "strong",
+            "registry_rubric_id": "quant_correctness.v1",
+            "dimension": "D4_instructional_accuracy",
+            "judge_model": "judge_b",
+            "status": "success",
+            "raw_score": 4,
+        },
+        {
+            "sample_id": "weak",
+            "registry_rubric_id": "quant_correctness.v1",
+            "dimension": "D4_instructional_accuracy",
+            "judge_model": "judge_a",
+            "status": "success",
+            "raw_score": 2,
+        },
+        {
+            "sample_id": "weak",
+            "registry_rubric_id": "quant_correctness.v1",
+            "dimension": "D4_instructional_accuracy",
+            "judge_model": "judge_b",
+            "status": "success",
+            "raw_score": 2,
+        },
+    ]
+
+    stats = compute_reliability_stats(corpus=corpus, records=records)
+
+    assert stats["adversarial"]["ranking_pass_rate"] == 1.0
+    assert stats["multi_judge"]["overall"]["within_one_rate"] == 1.0
+    assert stats["multi_judge"]["by_dimension"]["D4_instructional_accuracy"][
+        "comparisons"
+    ] == 2
+    assert stats["stage3_primary_gate"]["status"] == "pass"
+
+
+def test_stage3_primary_gate_flags_weak_multi_judge_dimension():
+    corpus = {
+        "pass_threshold": 3,
+        "items": [{"sample_id": "strong"}, {"sample_id": "weak"}],
+        "adversarial_pairs": [
+            {
+                "pair_id": "p1",
+                "registry_rubric_id": "quant_correctness.v1",
+                "dimension": "D4_instructional_accuracy",
+                "stronger_sample_id": "strong",
+                "weaker_sample_id": "weak",
+            }
+        ],
+    }
+    records = [
+        {
+            "sample_id": "strong",
+            "registry_rubric_id": "quant_correctness.v1",
+            "dimension": "D4_instructional_accuracy",
+            "judge_model": "judge_a",
+            "status": "success",
+            "raw_score": 5,
+        },
+        {
+            "sample_id": "strong",
+            "registry_rubric_id": "quant_correctness.v1",
+            "dimension": "D4_instructional_accuracy",
+            "judge_model": "judge_b",
+            "status": "success",
+            "raw_score": 3,
+        },
+        {
+            "sample_id": "weak",
+            "registry_rubric_id": "quant_correctness.v1",
+            "dimension": "D4_instructional_accuracy",
+            "judge_model": "judge_a",
+            "status": "success",
+            "raw_score": 2,
+        },
+        {
+            "sample_id": "weak",
+            "registry_rubric_id": "quant_correctness.v1",
+            "dimension": "D4_instructional_accuracy",
+            "judge_model": "judge_b",
+            "status": "success",
+            "raw_score": 2,
+        },
+    ]
+
+    stats = compute_reliability_stats(corpus=corpus, records=records)
+
+    weak = {row["dimension"] for row in stats["multi_judge"]["weak_dimensions"]}
+    assert stats["adversarial"]["ranking_pass_rate"] == 1.0
+    assert "D4_instructional_accuracy" in weak
+    assert stats["stage3_primary_gate"]["status"] == "needs_review"
+    assert "multi_judge_dimension_below_target" in (
+        stats["stage3_primary_gate"]["failures"] or []
+    )
+
+
+def test_stage3_primary_gate_requires_all_adversarial_pairs():
+    corpus = {
+        "pass_threshold": 3,
+        "items": [
+            {"sample_id": "s1", "dimension": "D4_instructional_accuracy"},
+            {"sample_id": "w1", "dimension": "D4_instructional_accuracy"},
+            {"sample_id": "s2", "dimension": "D2_code_adaptation"},
+            {"sample_id": "w2", "dimension": "D2_code_adaptation"},
+        ],
+        "adversarial_pairs": [
+            {
+                "pair_id": "covered",
+                "registry_rubric_id": "quant_correctness.v1",
+                "dimension": "D4_instructional_accuracy",
+                "stronger_sample_id": "s1",
+                "weaker_sample_id": "w1",
+            },
+            {
+                "pair_id": "missing",
+                "registry_rubric_id": "student_adaptation.v1",
+                "dimension": "D2_code_adaptation",
+                "stronger_sample_id": "s2",
+                "weaker_sample_id": "w2",
+            },
+        ],
+    }
+    records = [
+        {
+            "sample_id": "s1",
+            "registry_rubric_id": "quant_correctness.v1",
+            "dimension": "D4_instructional_accuracy",
+            "judge_model": "judge_a",
+            "status": "success",
+            "raw_score": 5,
+        },
+        {
+            "sample_id": "w1",
+            "registry_rubric_id": "quant_correctness.v1",
+            "dimension": "D4_instructional_accuracy",
+            "judge_model": "judge_a",
+            "status": "success",
+            "raw_score": 1,
+        },
+    ]
+
+    stats = compute_reliability_stats(corpus=corpus, records=records)
+
+    assert stats["adversarial"]["ranking_pass_rate"] == 1.0
+    assert stats["counts"]["missing_adversarial_pairs"] == 1
+    assert stats["adversarial"]["missing_pairs"][0]["pair_id"] == "missing"
+    assert "missing_adversarial_pair_results" in (
+        stats["stage3_primary_gate"]["failures"] or []
+    )
+
+
+def test_multi_judge_gate_requires_each_corpus_dimension():
+    corpus = {
+        "pass_threshold": 3,
+        "items": [
+            {"sample_id": "d1", "dimension": "D1_finance_adaptation"},
+            {"sample_id": "d2", "dimension": "D2_code_adaptation"},
+        ],
+    }
+    records = [
+        {
+            "sample_id": "d1",
+            "registry_rubric_id": "student_adaptation.v1",
+            "dimension": "D1_finance_adaptation",
+            "judge_model": "judge_a",
+            "status": "success",
+            "raw_score": 4,
+        },
+        {
+            "sample_id": "d1",
+            "registry_rubric_id": "student_adaptation.v1",
+            "dimension": "D1_finance_adaptation",
+            "judge_model": "judge_b",
+            "status": "success",
+            "raw_score": 4,
+        },
+        {
+            "sample_id": "d2",
+            "registry_rubric_id": "student_adaptation.v1",
+            "dimension": "D2_code_adaptation",
+            "judge_model": "judge_a",
+            "status": "success",
+            "raw_score": 4,
+        },
+    ]
+
+    stats = compute_reliability_stats(corpus=corpus, records=records)
+
+    weak = {row["dimension"]: row for row in stats["multi_judge"]["weak_dimensions"]}
+    assert stats["multi_judge"]["gate"]["status"] == "needs_review"
+    assert weak["D2_code_adaptation"]["comparisons"] == 0
+    assert "D2_code_adaptation" in stats["multi_judge"]["overall"][
+        "missing_dimensions"
+    ]
 
 
 def test_reliability_stats_compute_stage2_robustness_metrics():

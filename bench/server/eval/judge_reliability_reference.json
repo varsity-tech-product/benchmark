@@ -1,6 +1,6 @@
 {
   "version": "judge_reliability_reference_v1",
-  "status": "validated_reference",
+  "status": "primary_gate_pending_multi_judge",
   "validation_run_id": "jv_20260424_073751",
   "reference_judge_model": "anthropic/claude-sonnet-4-6",
   "prompt_variants": [
@@ -18,15 +18,31 @@
     "report_html_path": "bench/experiments/judge_validation/results/judge_reliability_report.html"
   },
   "metrics": {
-    "corpus_items": 34,
+    "corpus_items": 36,
     "records": 282,
     "successful_records": 282,
     "stability_groups": 94,
     "prompt_variant_groups": 30,
-    "adversarial_pairs": 7,
+    "adversarial_pairs": 8,
     "comparable_adversarial_pairs": 7,
+    "comparable_adversarial_model_pairs": 7,
     "sensitivity_cases": 6,
     "comparable_sensitivity_cases": 6,
+    "stage3_primary_gate_status": "needs_review",
+    "stage3_primary_gate_failures": [
+      "missing_adversarial_pair_results",
+      "missing_adversarial_judge_model_results",
+      "missing_multi_judge_agreement"
+    ],
+    "primary_adversarial_ranking_target": 0.85,
+    "primary_multi_judge_within_one_target": 0.85,
+    "adversarial_ranking_accuracy": 1.0,
+    "multi_judge_status": "missing",
+    "multi_judge_within_one": null,
+    "multi_judge_comparable_groups": 0,
+    "multi_judge_comparisons": 0,
+    "missing_adversarial_pairs": 1,
+    "missing_adversarial_model_pairs": 1,
     "mean_absolute_score_delta": 0.1277,
     "within_one_score_rate": 0.9858,
     "pass_fail_flip_rate": 0.0426,
@@ -42,7 +58,7 @@
   },
   "residual_risks": [
     "Evidence consistency uses lexical overlap as a lightweight proxy for explanation stability.",
-    "Human quant expert alignment belongs to the next validation stage after automated robustness artifacts are stable.",
+    "Human absolute-score agreement is reported as a diagnostic; primary promotion is waiting for a second judge-model run.",
     "Prompt-format pass/fail flip rate rose from 0.0 on the v2 pilot to 0.0667 on the v3 corpus, driven mostly by medium-band real excerpts where one prompt variant lands on 2 while others land on 3 — the broader real-transcript mix surfaces borderline cases the v2 synthetic pilot did not.",
     "One long gpt-5.2 excerpt (jv_real_i04_multitf_gpt52_excerpt) was removed from the v3 corpus because the judge returned python code instead of a JSON score even after truncation; if longer real-code-heavy tutor excerpts are added later, re-validate that the judge parses them stably before promoting the run."
   ]
