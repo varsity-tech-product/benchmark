@@ -151,8 +151,26 @@ def _build_qp_llm_tasks(
     Returns: list of (model_name, metric_name, coroutine).
     """
     rubric = load_rubric("qp")
-    tp_params = build_eval_params(rubric, "task_planning")
-    ps_params = build_eval_params(rubric, "problem_solving")
+    tp_params = build_eval_params(
+        rubric,
+        "task_planning",
+        rubric_name="qp",
+        context_fields=[
+            "task_description",
+            "required_capabilities",
+            "enriched_conversation",
+        ],
+    )
+    ps_params = build_eval_params(
+        rubric,
+        "problem_solving",
+        rubric_name="qp",
+        context_fields=[
+            "task_description",
+            "tool_logs",
+            "enriched_conversation",
+        ],
+    )
 
     # Build contexts
     tp_context = build_task_planning_context(
@@ -489,6 +507,9 @@ def evaluate_all_process_metrics(
                     ),
                     "evidence": [],
                     "per_model": per_metric,
+                    "judge_metadata": next(iter(per_metric.values())).get(
+                        "judge_metadata", {}
+                    ),
                     "_eval_cost": total_cost,
                 }
                 continue
@@ -511,6 +532,7 @@ def evaluate_all_process_metrics(
                         for mname in model_names
                         if model_llm_results[mname].get(metric_name)
                     },
+                    "judge_metadata": base.get("judge_metadata", {}),
                     "_eval_cost": total_cost,
                 }
                 if multi_model:

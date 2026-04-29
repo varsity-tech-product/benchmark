@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Callable
+from datetime import datetime, timezone
 from typing import Any
 
 
@@ -36,20 +37,32 @@ async def llm_call_with_retry(
     total_cost = 0.0
     last_exc: Exception | None = None
     last_raw: str | None = None
+    last_metadata: dict[str, Any] = {}
 
     for attempt in range(max_attempts):
         metric = metric_factory()
+        if hasattr(metric, "judge_metadata"):
+            last_metadata = dict(metric.judge_metadata())
+        last_metadata["run_timestamp"] = datetime.now(timezone.utc).isoformat()
+        last_metadata["attempt_index"] = attempt
         cost_before = float(getattr(metric, "evaluation_cost", 0.0) or 0.0)
         try:
             score = await metric.a_measure(test_case)
             cost_after = float(getattr(metric, "evaluation_cost", 0.0) or 0.0)
             total_cost += max(0.0, cost_after - cost_before)
+            if hasattr(metric, "judge_metadata"):
+                last_metadata.update(metric.judge_metadata())
+            last_metadata["run_timestamp"] = last_metadata.get(
+                "run_timestamp"
+            ) or datetime.now(timezone.utc).isoformat()
+            last_metadata["attempts"] = attempt + 1
             return {
                 "score": score,
                 "status": "success",
                 "required_for_track_score": required_for_track_score,
                 "reason": getattr(metric, "reason", "") or "",
                 "evidence": list(getattr(metric, "evidence", []) or []),
+                "judge_metadata": last_metadata,
                 "_eval_cost": round(total_cost, 6),
             }
         except Exception as exc:  # noqa: BLE001 - caller needs structured failure
@@ -69,12 +82,14 @@ async def llm_call_with_retry(
     if last_raw:
         diagnostics["raw_response_excerpt"] = last_raw[:500]
     diagnostics["attempts"] = max_attempts
+    last_metadata["attempts"] = max_attempts
     return {
         "score": None,
         "status": "failed",
         "required_for_track_score": required_for_track_score,
         "reason": message,
         "evidence": [],
+        "judge_metadata": last_metadata,
         "error": message,
         "diagnostics": diagnostics,
         "_eval_cost": round(total_cost, 6),

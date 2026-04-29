@@ -79,7 +79,20 @@ async def async_evaluate_result_quality(
 
     # ── Load rubric and build eval params ──
     rubric = load_rubric("qr")
-    params = build_eval_params(rubric, "result_judge")
+    params = build_eval_params(
+        rubric,
+        "result_judge",
+        rubric_name="qr",
+        context_fields=[
+            "task_description",
+            "category",
+            "required_capabilities",
+            "tool_logs",
+            "workspace",
+            "conversation",
+            "reference",
+        ],
+    )
 
     # ── Call all models in parallel with abort protection ──
     async def _call_single_model(m):
@@ -117,6 +130,7 @@ async def async_evaluate_result_quality(
             "status": raw.get("status", "success"),
             "reason": raw.get("reason", ""),
             "evidence": raw.get("evidence", []),
+            "judge_metadata": raw.get("judge_metadata", {}),
         }
         if raw.get("error"):
             per_model[m]["error"] = raw.get("error")
@@ -136,6 +150,7 @@ async def async_evaluate_result_quality(
             "evidence": [],
             "has_reference": reference is not None,
             "per_model": per_model,
+            "judge_metadata": per_model[eval_models[0]].get("judge_metadata", {}),
             "_eval_cost": total_eval_cost,
             "_eval_cost_by_model": cost_by_model,
         }
@@ -160,6 +175,7 @@ async def async_evaluate_result_quality(
         "evidence": per_model[eval_models[0]].get("evidence", []),
         "has_reference": reference is not None,
         "per_model": per_model,
+        "judge_metadata": per_model[eval_models[0]].get("judge_metadata", {}),
         "_eval_cost": total_eval_cost,
         "_eval_cost_by_model": cost_by_model,
     }

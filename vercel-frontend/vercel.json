@@ -9,6 +9,7 @@
     { "source": "/session/:path*", "destination": "https://217-15-165-83.sslip.io/session/:path*" },
     { "source": "/client/:path*", "destination": "https://217-15-165-83.sslip.io/client/:path*" },
     { "source": "/ui/:path*", "destination": "https://217-15-165-83.sslip.io/ui/:path*" },
+    { "source": "/skills/:path*", "destination": "https://217-15-165-83.sslip.io/skills/:path*" },
     { "source": "/static/:path*", "destination": "https://217-15-165-83.sslip.io/static/:path*" },
     { "source": "/mcp/:path*", "destination": "https://217-15-165-83.sslip.io/mcp/:path*" },
     { "source": "/mcp", "destination": "https://217-15-165-83.sslip.io/mcp" }

@@ -51,6 +51,7 @@ class EvalOutput:
     created_at: str
     completed_at: str | None
     duration_seconds: float
+    judge_reliability: dict[str, Any] | None = None
     interrupted: bool = False
     blocking_missing: list[dict[str, Any]] = field(default_factory=list)
     error: str | None = None
@@ -66,6 +67,7 @@ class EvalOutput:
             "eval_model": self.eval_model,
             "eval_mode": self.eval_mode,
             "duration_seconds": round(self.duration_seconds, 2),
+            "judge_reliability": self.judge_reliability or {},
             "interrupted": self.interrupted,
             "blocking_missing": self.blocking_missing,
             "overall_score": self.overall_score,
@@ -84,6 +86,7 @@ class EvalOutput:
             "quant_process": self.qp.score if self.qp else None,
             "tutor_score": self.tutor.score if self.tutor else None,
             "overall_score": self.overall_score,
+            "judge_reliability": self.judge_reliability or {},
             "eval_mode": self.eval_mode,
             "blocking_missing": self.blocking_missing,
             "interrupted": self.interrupted,
