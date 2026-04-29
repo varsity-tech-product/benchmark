@@ -85,13 +85,13 @@ the same `convert-human-labels` path without manual header alignment.
 Run the Stage 1 judge gate with three repeats per item:
 
 ```bash
-python -m experiments.judge_validation.run judge --repeats 3 --model anthropic/claude-sonnet-4-6
+python -m experiments.judge_validation.run judge --repeats 3 --model anthropic/claude-sonnet-4.6
 ```
 
 Run prompt-format robustness variants:
 
 ```bash
-python -m experiments.judge_validation.run judge --repeats 3 --prompt-variants baseline,role_blocks,markdown_transcript --model anthropic/claude-sonnet-4-6
+python -m experiments.judge_validation.run judge --repeats 3 --prompt-variants baseline,role_blocks,markdown_transcript --model anthropic/claude-sonnet-4.6
 ```
 
 Items with prebuilt evaluation context use the baseline context once, because
@@ -107,7 +107,7 @@ python -m experiments.judge_validation.run report
 Run the direct pairwise adversarial ranking gate:
 
 ```bash
-python -m experiments.judge_validation.run pairwise --repeats 3 --model anthropic/claude-sonnet-4-6
+python -m experiments.judge_validation.run pairwise --repeats 3 --model anthropic/claude-sonnet-4.6
 python -m experiments.judge_validation.run report-pairwise
 ```
 
