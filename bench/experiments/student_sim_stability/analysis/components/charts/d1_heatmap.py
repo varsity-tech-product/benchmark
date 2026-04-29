@@ -219,11 +219,15 @@ class D1Heatmap(Component):
         x_ticklabels = ",".join(pgf_label_escape(p) for p in personas)
         y_ticklabels = ",".join(pgf_label_escape(m) for m in models)
         csv_ref = pgf_csv_path(self.name)
+        # ``resizebox`` scales the entire tikzpicture (axis + colorbar) to
+        # exactly ``\linewidth`` so the colorbar never pushes the figure off
+        # centre inside the surrounding ``figure`` environment.
         return (
             f"% Auto-generated; data: {csv_ref}\n"
+            "\\resizebox{\\linewidth}{!}{%\n"
             "\\begin{tikzpicture}\n"
             "\\begin{axis}[\n"
-            "  width=\\linewidth, height=0.5\\linewidth,\n"
+            "  width=10cm, height=5cm,\n"
             "  view={0}{90}, colormap/viridis,\n"
             "  xlabel={Persona}, ylabel={Student model},\n"
             f"  xtick={{{','.join(str(j) for j in range(len(personas)))}}},\n"
@@ -240,7 +244,8 @@ class D1Heatmap(Component):
             f"  coordinates {{{plot_table}}};\n"
             f"{nodes_near_coords}\n"
             "\\end{axis}\n"
-            "\\end{tikzpicture}\n"
+            "\\end{tikzpicture}%\n"
+            "}\n"
         )
 
     def _build_primary_from(

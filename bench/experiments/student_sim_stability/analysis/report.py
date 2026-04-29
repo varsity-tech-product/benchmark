@@ -518,6 +518,11 @@ class ReportGenerator:
         all_curves: dict[str, list[list]] = defaultdict(list)
 
         score_field = primary_score_field("D3")
+        # Canonical conversation length is seven scored student turns
+        # (see method.tex / matrix). One judge output occasionally emits an
+        # extra trailing per-turn entry; truncate to the canonical length so
+        # downstream curves are well-defined and the chart x-axis is stable.
+        canonical_turns = 7
         for rec in self._iter_records("D3"):
             score = rec.scores.get(score_field, 0)
             if score <= 0:
@@ -530,16 +535,36 @@ class ReportGenerator:
                 drift_onsets.append(onset)
             fidelity = rec.scores.get("per_turn_fidelity", [])
             if fidelity:
-                all_curves[rec.model].append(fidelity)
+                all_curves[rec.model].append(list(fidelity)[:canonical_turns])
 
-        avg_curves = {}
+        avg_curves: dict[str, list[dict]] = {}
         for model, curves in all_curves.items():
-            if curves:
-                max_len = max(len(c) for c in curves)
-                padded = [c + [c[-1]] * (max_len - len(c)) for c in curves]
-                avg_curves[model] = [
-                    float(np.mean([p[i] for p in padded])) for i in range(max_len)
-                ]
+            if not curves:
+                continue
+            per_turn_stats: list[dict] = []
+            for t in range(canonical_turns):
+                values = [c[t] for c in curves if t < len(c)]
+                if not values:
+                    continue
+                arr = np.asarray(values, dtype=float)
+                mean = float(arr.mean())
+                n = int(arr.size)
+                if n >= 2:
+                    se = float(arr.std(ddof=1)) / float(np.sqrt(n))
+                    ci_lo = mean - 1.96 * se
+                    ci_hi = mean + 1.96 * se
+                else:
+                    ci_lo = ci_hi = mean
+                per_turn_stats.append(
+                    {
+                        "turn": t + 1,
+                        "mean": mean,
+                        "ci_lo": ci_lo,
+                        "ci_hi": ci_hi,
+                        "n": n,
+                    }
+                )
+            avg_curves[model] = per_turn_stats
 
         return {
             "by_model": {k: _cell(v) for k, v in by_model.items()},
