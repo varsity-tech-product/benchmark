@@ -271,6 +271,42 @@ def test_stats_gate_passes_on_perfect_judge():
     assert stats["gate"]["status"] == "pass"
 
 
+def test_stats_gate_fails_when_declared_pair_has_no_records():
+    pairs = [
+        {
+            "pair_id": "covered_pair",
+            "dimension": "D4",
+            "registry_rubric_id": "quant_correctness.v1",
+            "stronger_sample_id": "s1",
+            "weaker_sample_id": "w1",
+        },
+        {
+            "pair_id": "missing_pair",
+            "dimension": "D2",
+            "registry_rubric_id": "student_adaptation.v1",
+            "stronger_sample_id": "s2",
+            "weaker_sample_id": "w2",
+        },
+    ]
+    records = [
+        {
+            "status": "success",
+            "pair_id": "covered_pair",
+            "dimension": "D4",
+            "a_side": "stronger",
+            "run_index": 0,
+            "preferred_slot": "A",
+            "preferred_side": "stronger",
+        }
+    ]
+    stats = compute_pairwise_stats(corpus={"adversarial_pairs": pairs}, records=records)
+    assert stats["counts"]["covered_pairs"] == 1
+    assert stats["counts"]["missing_pairs"] == 1
+    assert stats["gate"]["status"] == "fail"
+    assert stats["gate"]["missing_pair_ids"] == ["missing_pair"]
+    assert "missing_declared_pair_results" in (stats["gate"]["failures"] or [])
+
+
 def test_stats_gate_flags_a_side_bias():
     pairs = [
         {
@@ -305,8 +341,12 @@ def test_stats_gate_flags_a_side_bias():
     assert stats["overall"]["swap_consistency"] == 0.0
     assert stats["overall"]["a_side_preference_rate"] == 1.0
     assert stats["gate"]["status"] != "pass"
-    assert "a_side_preference_drift" in (stats["gate"]["failures"] or [])
-    assert "swap_consistency_below_target" in (stats["gate"]["failures"] or [])
+    assert "a_side_preference_drift" in (
+        stats["gate"]["diagnostic_warnings"] or []
+    )
+    assert "swap_consistency_below_target" in (
+        stats["gate"]["diagnostic_warnings"] or []
+    )
     assert "stronger_preferred_rate_below_target" in (stats["gate"]["failures"] or [])
 
 

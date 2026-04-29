@@ -1,4 +1,4 @@
-"""Reference metadata for the validated judge-reliability gate."""
+"""Reference metadata for the selected judge-reliability bundle."""
 
 from __future__ import annotations
 
@@ -9,11 +9,22 @@ from pathlib import Path
 from typing import Any
 
 _REFERENCE_PATH = Path(__file__).with_name("judge_reliability_reference.json")
+_MODEL_ALIASES = {
+    "anthropic/claude-sonnet-4-6": "anthropic/claude-sonnet-4.6",
+    "claude-sonnet-4-6": "anthropic/claude-sonnet-4.6",
+}
+
+
+def _canonical_model_name(model: str | None) -> str | None:
+    if not model:
+        return None
+    model_name = str(model).strip()
+    return _MODEL_ALIASES.get(model_name, model_name)
 
 
 @lru_cache(maxsize=1)
 def load_judge_reliability_reference() -> dict[str, Any]:
-    """Load the selected validated judge-reliability reference bundle."""
+    """Load the selected judge-reliability reference bundle."""
 
     payload = json.loads(_REFERENCE_PATH.read_text(encoding="utf-8"))
     if not isinstance(payload, dict):
@@ -22,11 +33,11 @@ def load_judge_reliability_reference() -> dict[str, Any]:
 
 
 def build_judge_reliability_metadata(eval_model: str | None) -> dict[str, Any]:
-    """Return score-export metadata linking the run to a validated judge gate."""
+    """Return score-export metadata linking the run to judge validation."""
 
     reference = copy.deepcopy(load_judge_reliability_reference())
-    current_eval_model = str(eval_model).strip() if eval_model else None
-    reference_judge_model = str(reference.get("reference_judge_model") or "").strip()
+    current_eval_model = _canonical_model_name(eval_model)
+    reference_judge_model = _canonical_model_name(reference.get("reference_judge_model"))
     model_match = (
         current_eval_model == reference_judge_model
         if current_eval_model and reference_judge_model

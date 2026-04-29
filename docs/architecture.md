@@ -138,25 +138,32 @@ If a batch driver is needed, it should be a thin wrapper around
 
 `bench/experiments/judge_validation/` is the automated judge reliability gate for
 external-agent scoring. It owns a fixed pilot corpus (`pilot_corpus.json`;
-v3 = 20 real-run excerpts + 14 synthetic adversarial items, 7 adversarial
+v4 = 20 real-run excerpts + 16 synthetic adversarial items, 8 adversarial
 good/bad pairs), prompt rendering, repeated same-prompt judge runs,
 prompt-format variants, one-factor sensitivity cases, adversarial-pair ranking
-checks, human label artifacts, Google Form CSV conversion, bilingual and
-Chinese-only Google Form blueprint exports, blind reviewer packet export
-(English and Chinese variants sharing the same English transcripts), private
-sample-ID mapping, and Markdown/HTML/JSON reliability reports.
+checks, multi-judge consistency aggregation, human label artifacts, Google Form
+CSV conversion, bilingual and Chinese-only Google Form blueprint exports, blind
+reviewer packet export (English and Chinese variants sharing the same English
+transcripts), private sample-ID mapping, and Markdown/HTML/JSON reliability
+reports.
 
-The automated Stage 1+2 report (`judge_validation_stats.json`) tracks mean
-absolute score delta, within-one score rate, pass/fail flip rate, prompt-format
-score deltas, sensitivity pass rate, adversarial ranking pass rate,
-evidence/reason coverage, lightweight explanation consistency, raw
-disagreement examples, and residual risks.
+The automated Stage 3 primary gate (`judge_validation_stats.json`) follows the
+PR #99 pattern: categorical correctness through adversarial ranking accuracy
+(`adversarial.ranking_pass_rate >= 0.85`) and cross-judge robustness through
+per-dimension multi-judge within-one agreement (`multi_judge.by_dimension[*]
+>= 0.85`). Repeated-run score delta, pass/fail flip rate, prompt-format score
+deltas, sensitivity pass rate, evidence/reason coverage, lightweight
+explanation consistency, raw disagreement examples, and residual risks are
+diagnostics.
 
-The Stage 3 human-alignment report (`human_alignment_stats.json`) joins
+The human-alignment report (`human_alignment_stats.json`) is the absolute-score
+diagnostic appendix. It joins
 `judge_runs.json` with `human_labels.json` and reports exact agreement,
 within-one agreement, mean absolute delta versus human labels, pass/fail
 agreement, large disagreement examples, and bias slices by dimension, category,
-persona, and transcript source. It also exposes two multi-reviewer blocks:
+persona, and transcript source. It also exposes the historical weak-dimension
+list under `absolute_alignment_diagnostic.weak_dimensions` and two
+multi-reviewer blocks:
 
 - `inter_rater_agreement` — pairwise reviewer-vs-reviewer comparisons on
   `(sample_id, rubric_id, dimension)` groups that have ≥ 2 distinct reviewers.

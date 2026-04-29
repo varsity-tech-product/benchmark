@@ -3,9 +3,10 @@
 Metrics:
     stronger_preferred_rate: fraction of successful records where the
         judge preferred the stronger response (ties count as 0.5).
-        Target ≥ 0.9.
+        Primary target ≥ 0.85.
     swap_consistency: fraction of (pair_id, run_index) triplets where
-        the two swap orderings agreed on the stronger side. Target ≥ 0.9.
+        the two swap orderings agreed on the stronger side. Diagnostic
+        target ≥ 0.9.
     a_side_preference_rate: fraction of records where the judge picked
         slot "A". Ideal ~0.5 on balanced swap data; deviation evidences
         position bias.
@@ -23,7 +24,7 @@ from pathlib import Path
 from typing import Any
 
 PASS_THRESHOLD = {
-    "stronger_preferred_rate": 0.9,
+    "stronger_preferred_rate": 0.85,
     "swap_consistency": 0.9,
     "a_side_preference_tolerance": 0.15,
 }
@@ -117,25 +118,42 @@ def _per_dimension(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return rows
 
 
-def _gate(overall: dict[str, Any], swap_consistency: float) -> dict[str, Any]:
+def _pair_coverage(per_pair: list[dict[str, Any]]) -> dict[str, Any]:
+    missing_pair_ids = [row["pair_id"] for row in per_pair if row["records"] == 0]
+    return {
+        "declared_pairs": len(per_pair),
+        "covered_pairs": len(per_pair) - len(missing_pair_ids),
+        "missing_pair_ids": missing_pair_ids,
+    }
+
+
+def _gate(
+    overall: dict[str, Any],
+    swap_consistency: float,
+    coverage: dict[str, Any],
+) -> dict[str, Any]:
     failures: list[str] = []
+    diagnostic_warnings: list[str] = []
     status = "pass"
     if overall["records"] == 0:
         failures.append("no_successful_records")
+        status = "fail"
+    if coverage["missing_pair_ids"]:
+        failures.append("missing_declared_pair_results")
         status = "fail"
     if overall["stronger_preferred_rate"] < PASS_THRESHOLD["stronger_preferred_rate"]:
         failures.append("stronger_preferred_rate_below_target")
         status = "needs_review" if status == "pass" else status
     if swap_consistency < PASS_THRESHOLD["swap_consistency"]:
-        failures.append("swap_consistency_below_target")
-        status = "needs_review" if status == "pass" else status
+        diagnostic_warnings.append("swap_consistency_below_target")
     a_side_rate = overall["a_side_preference_rate"]
     if abs(a_side_rate - 0.5) > PASS_THRESHOLD["a_side_preference_tolerance"]:
-        failures.append("a_side_preference_drift")
-        status = "needs_review" if status == "pass" else status
+        diagnostic_warnings.append("a_side_preference_drift")
     return {
         "status": status,
         "failures": failures or None,
+        "diagnostic_warnings": diagnostic_warnings or None,
+        "missing_pair_ids": coverage["missing_pair_ids"] or None,
         "thresholds": dict(PASS_THRESHOLD),
     }
 
@@ -152,17 +170,21 @@ def compute_pairwise_stats(
     overall_out["swap_consistency"] = swap
     per_pair = _per_pair(records, pairs)
     per_dimension = _per_dimension(records)
+    coverage = _pair_coverage(per_pair)
     return {
-        "version": "judge_pairwise_stats_v1",
+        "version": "judge_pairwise_stats_v2",
         "counts": {
             "pairs": len(pairs),
+            "covered_pairs": coverage["covered_pairs"],
+            "missing_pairs": len(coverage["missing_pair_ids"]),
             "records": len(records),
             "successful_records": overall["records"],
         },
+        "coverage": coverage,
         "overall": overall_out,
         "per_pair": per_pair,
         "per_dimension": per_dimension,
-        "gate": _gate(overall_out, swap),
+        "gate": _gate(overall_out, swap, coverage),
     }
 
 
@@ -214,6 +236,10 @@ def _markdown(stats: dict[str, Any], run_id: str) -> str:
     ]
     if gate["failures"]:
         lines.append("Failures: " + ", ".join(gate["failures"]))
+    if gate["missing_pair_ids"]:
+        lines.append("Missing pair results: " + ", ".join(gate["missing_pair_ids"]))
+    if gate["diagnostic_warnings"]:
+        lines.append("Diagnostic warnings: " + ", ".join(gate["diagnostic_warnings"]))
     lines.extend(
         [
             "",

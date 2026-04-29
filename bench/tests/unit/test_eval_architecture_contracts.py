@@ -112,12 +112,20 @@ def test_coordinator_interrupt_sets_track_cancel_and_collects_completed_result(
 
 
 def test_judge_reliability_reference_marks_matching_eval_model():
-    metadata = build_judge_reliability_metadata("anthropic/claude-sonnet-4-6")
+    metadata = build_judge_reliability_metadata("anthropic/claude-sonnet-4.6")
 
     assert metadata["validation_run_id"]
-    assert metadata["reference_judge_model"] == "anthropic/claude-sonnet-4-6"
-    assert metadata["current_eval_model"] == "anthropic/claude-sonnet-4-6"
+    assert metadata["reference_judge_model"] == "anthropic/claude-sonnet-4.6"
+    assert metadata["current_eval_model"] == "anthropic/claude-sonnet-4.6"
     assert metadata["current_eval_model_matches_reference"] is True
+
+
+def test_judge_reliability_reference_matches_legacy_sonnet_aliases():
+    for model in ("anthropic/claude-sonnet-4-6", "claude-sonnet-4-6"):
+        metadata = build_judge_reliability_metadata(model)
+
+        assert metadata["current_eval_model"] == "anthropic/claude-sonnet-4.6"
+        assert metadata["current_eval_model_matches_reference"] is True
 
 
 def test_qp_model_unavailable_preserves_programmatic_dimensions(monkeypatch):
