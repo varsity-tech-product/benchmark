@@ -57,6 +57,17 @@ def _count_files(path: Path, pattern: str = "*.json") -> int:
     return len(list(path.glob(pattern))) if path.exists() else 0
 
 
+def _rel_path(path: Path, results_dir: Path) -> str:
+    """Render ``path`` relative to ``results_dir`` so audit messages don't
+    leak absolute filesystem paths into shipped artifacts. Falls back to the
+    file name if ``path`` is not anchored under ``results_dir`` (e.g. when
+    a user passes an external override)."""
+    try:
+        return str(path.resolve().relative_to(results_dir.resolve()))
+    except ValueError:
+        return path.name
+
+
 def _parse_conversation_name(path: Path) -> dict[str, str]:
     parts = path.stem.split("__")
     if len(parts) < 5:
@@ -285,11 +296,12 @@ def _validate_static_snapshots(results_dir: Path) -> list[Check]:
     for manifest_key, snapshot_name in expected_snapshots.items():
         path = results_dir / snapshot_name
         exists = path.exists() and any(path.rglob("*"))
+        rel = _rel_path(path, results_dir)
         checks.append(
             Check(
                 f"snapshot_{snapshot_name}",
                 exists,
-                f"{path} {'exists' if path.exists() else 'missing'}",
+                f"{rel} {'exists' if path.exists() else 'missing'}",
             )
         )
         if not exists:
@@ -303,15 +315,17 @@ def _validate_static_snapshots(results_dir: Path) -> list[Check]:
                 (
                     "snapshot matches result-local static artifact manifest"
                     if expected_hashes == snapshot_hashes
-                    else f"snapshot differs from result-local manifest at {manifest_path}"
+                    else "snapshot differs from result-local manifest at "
+                    f"{_rel_path(manifest_path, results_dir)}"
                 ),
             )
         )
+    rel_manifest = _rel_path(manifest_path, results_dir)
     checks.append(
         Check(
             "static_artifact_manifest",
             manifest_path.exists(),
-            f"{manifest_path} {'exists' if manifest_path.exists() else 'missing'}",
+            f"{rel_manifest} {'exists' if manifest_path.exists() else 'missing'}",
         )
     )
     return checks
@@ -354,7 +368,8 @@ def _validate_status_artifacts(
         Check(
             name,
             path.exists(),
-            f"{path} {'exists' if path.exists() else 'missing'}",
+            f"{_rel_path(path, results_dir)} "
+            f"{'exists' if path.exists() else 'missing'}",
         )
         for name, path in required_paths.items()
     ]
@@ -707,7 +722,7 @@ def _validate_judge_panel_outputs(
             Check(
                 "multi_judge_agreement_status",
                 False,
-                f"missing {agreement_path}",
+                f"missing {_rel_path(agreement_path, results_dir)}",
                 required=profile == "full",
             )
         )
@@ -949,14 +964,20 @@ def validate(
             )
     else:
         checks.append(
-            Check("aggregate_file", False, f"missing {eval_path}", required=False)
+            Check(
+                "aggregate_file",
+                False,
+                f"missing {_rel_path(eval_path, results_dir)}",
+                required=False,
+            )
         )
 
     checks.append(
         Check(
             "report_html",
             report_path.exists(),
-            f"{report_path} {'exists' if report_path.exists() else 'missing'}",
+            f"{_rel_path(report_path, results_dir)} "
+            f"{'exists' if report_path.exists() else 'missing'}",
             required=False,
         )
     )

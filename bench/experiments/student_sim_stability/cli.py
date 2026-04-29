@@ -28,33 +28,77 @@ _STABILITY_DIMENSIONS = ("D1", "D2", "D3")
 _VALIDITY_DIMENSIONS = ("control", "P1", "B1")
 _ALL_JUDGE_DIMENSIONS = tuple(DIMENSION_TO_FILE)
 
-_PAPER_EXPORT_SUFFIXES = (".tex", ".pdf", ".csv", ".html")
+# The paper appendix carries exactly these 23 artifacts. Anything else
+# emitted by the report (HTML wrappers, unused matplotlib PDFs, drift
+# tables, intermediate manifests) stays in the components directory but is
+# not copied into ``paper/figs/student_sim/``.
+_PAPER_EXPORT_TEX = (
+    "judge_qualification.tex",
+    "d1_by_model.tex",
+    "d1_by_persona.tex",
+    "d1_by_task.tex",
+    "d2_by_model.tex",
+    "d2_by_model_temp.tex",
+    "d3_drift.tex",
+    "judge_configuration.tex",
+    "multi_judge_view.tex",
+    "ranking_table.tex",
+    "failure_taxonomy.tex",
+    "failure_by_dimension.tex",
+    "human_alignment_metrics.tex",
+    "human_alignment_b1_breakdown.tex",
+    "human_alignment_b1_per_judge.tex",
+)
+_PAPER_EXPORT_PGF = (
+    "d1_heatmap.pgf.tex",
+    "d3_curves.pgf.tex",
+    "b1_identification.pgf.tex",
+    "control_bars.pgf.tex",
+)
+_PAPER_EXPORT_CSV = (
+    "d1_heatmap.csv",
+    "d3_curves.csv",
+    "b1_identification.csv",
+    "control_bars.csv",
+)
 
 
 def _paper_export(target_dir: Path, components_dir: Path) -> dict:
-    """Copy every supported component artifact into ``target_dir`` and emit
-    a ``manifest.json`` listing each asset with ``sha256`` of its content.
-    Idempotent: re-running against unchanged components yields identical bytes.
+    """Copy the appendix-bound subset of component artifacts into
+    ``target_dir`` and emit a ``manifest.json`` with ``sha256`` per asset.
+
+    The paper allowlist is the 23 artifacts defined above (15 ``.tex``
+    tables, 4 ``.pgf.tex`` figures, 4 backing CSVs). Stale files that match
+    the legacy ``.tex/.pdf/.csv/.html`` glob but are no longer in the
+    allowlist (e.g. ``d2_bars.pdf``, ``data_quality_audit.tex``) are
+    deleted from ``target_dir`` so the directory ends each run with
+    exactly the allowlisted contents plus the manifest. Idempotent against
+    unchanged components.
     """
     target_dir = Path(target_dir)
     components_dir = Path(components_dir)
     if not components_dir.exists():
         raise FileNotFoundError(f"components directory not found: {components_dir}")
     target_dir.mkdir(parents=True, exist_ok=True)
+    allowlist = set(_PAPER_EXPORT_TEX) | set(_PAPER_EXPORT_PGF) | set(_PAPER_EXPORT_CSV)
+    keep = allowlist | {"manifest.json"}
+    for stale in target_dir.iterdir():
+        if stale.is_file() and stale.name not in keep:
+            stale.unlink()
     assets: list[dict] = []
-    for src in sorted(components_dir.iterdir()):
-        if not src.is_file() or src.suffix not in _PAPER_EXPORT_SUFFIXES:
+    for name in sorted(allowlist):
+        src = components_dir / name
+        if not src.exists():
             continue
         payload = src.read_bytes()
         digest = hashlib.sha256(payload).hexdigest()
-        target = target_dir / src.name
+        target = target_dir / name
         target.write_bytes(payload)
+        kind = "pgf" if name.endswith(".pgf.tex") else name.rsplit(".", 1)[-1]
         assets.append(
             {
-                "name": src.name,
-                "kind": src.suffix.lstrip("."),
-                "source_path": str(src),
-                "target_path": str(target),
+                "name": name,
+                "kind": kind,
                 "size_bytes": len(payload),
                 "sha256": digest,
             }
@@ -63,9 +107,7 @@ def _paper_export(target_dir: Path, components_dir: Path) -> dict:
     for asset in assets:
         by_kind[asset["kind"]] = by_kind.get(asset["kind"], 0) + 1
     manifest = {
-        "schema_version": "paper_export_v1",
-        "components_dir": str(components_dir),
-        "target_dir": str(target_dir),
+        "schema_version": "paper_export_v2",
         "n_assets": len(assets),
         "by_kind": by_kind,
         "assets": assets,

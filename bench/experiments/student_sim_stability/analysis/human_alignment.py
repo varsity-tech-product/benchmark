@@ -6,7 +6,7 @@ and ``persona_set_a`` (placebo-test correctness), P1 ``facet_fit`` +
 ``expected_signals_hit``, and D2 ``persona_fidelity``.
 
 The agreement report exposes per-judge accuracy (Sonnet alone vs GPT-5.4
-alone vs panel_2 strict consensus) for the categorical fields so the
+alone vs panel-3 consensus) for the categorical fields so the
 question "which judge is more reliable" gets a data-backed answer.
 """
 
@@ -282,7 +282,7 @@ def _stratified_sample(
 
 def _write_llm_label_snapshot(out: Path, samples: list[dict]) -> dict:
     """Snapshot the LLM judges' labels for the chosen samples — three judges
-    if available, plus the panel_2 mean already computed in the aggregate.
+    if available, plus the panel-3 mean already computed in the aggregate.
     """
     primary_dir = out / "judge_outputs"
     by_model_dir = out / "judge_outputs_by_model"
@@ -320,7 +320,7 @@ def _write_llm_label_snapshot(out: Path, samples: list[dict]) -> dict:
                 "dimension": sample["dimension"],
                 "judge_input_file": sample["judge_input_file"],
                 "rubric_id": primary.get("rubric_id"),
-                "panel_2_scores": agg_record.get("scores") or primary.get("scores"),
+                "panel_3_scores": agg_record.get("scores") or primary.get("scores"),
                 "scores_by_judge": per_judge,
             }
         )
@@ -419,18 +419,16 @@ def _per_judge_b1_match(
     by_model_dir: Path,
 ) -> dict:
     """Compare human's identified_persona to each judge's identified_persona
-    on a B1 sample. Returns dict with per-judge match (bool) + panel_2
-    strict consensus."""
-    out = {"sonnet": None, "gpt54": None, "gemini": None, "panel_2_strict": None}
-    # Try aggregate first (panel_2 has identified_persona_by_judge)
+    on a B1 sample. Returns dict with per-judge match (bool) for the three
+    panel members."""
+    out: dict[str, bool | None] = {"sonnet": None, "gpt54": None, "gemini": None}
+    # Try aggregate first (panel-3 has identified_persona_by_judge)
     rec = aggregate_by_eval.get(eval_id) or {}
     by_judge = (rec.get("scores") or {}).get("identified_persona_by_judge") or {}
-    s = str(by_judge.get("sonnet", "")).strip()
-    g = str(by_judge.get("gpt54", "")).strip()
-    if s:
-        out["sonnet"] = s == expected_human
-    if g:
-        out["gpt54"] = g == expected_human
+    for label in ("sonnet", "gpt54", "gemini"):
+        v = str(by_judge.get(label, "")).strip()
+        if v:
+            out[label] = v == expected_human
     # Fall back to by_model dirs for fields not in aggregate
     for label, dir_name in (
         ("sonnet", "anthropic__claude-sonnet-4-6"),
@@ -447,8 +445,6 @@ def _per_judge_b1_match(
             ).strip()
             if judged:
                 out[label] = judged == expected_human
-    if out["sonnet"] is not None and out["gpt54"] is not None:
-        out["panel_2_strict"] = bool(out["sonnet"] and out["gpt54"])
     return out
 
 
@@ -497,7 +493,7 @@ def compute_human_agreement(
     # New v2 buckets
     b1_per_judge: list[dict] = (
         []
-    )  # {eval_id, persona_id, sonnet_match, gpt54_match, panel_2_strict}
+    )  # {eval_id, persona_id, sonnet_match, gpt54_match, gemini_match}
     control_dist: list[dict] = []  # numeric agreement
     control_set_a: list[dict] = []  # per-judge accuracy
     p1_facet_fit: list[dict] = []  # numeric agreement
@@ -710,7 +706,6 @@ def compute_human_agreement(
             "sonnet_vs_human": _b1_judge_accuracy("sonnet"),
             "gpt54_vs_human": _b1_judge_accuracy("gpt54"),
             "gemini_vs_human": _b1_judge_accuracy("gemini"),
-            "panel_2_strict_vs_human": _b1_judge_accuracy("panel_2_strict"),
             "n": len(b1_per_judge),
         },
         "control_distinctiveness": _numeric_agreement(control_dist, "abs_diff"),
@@ -783,13 +778,13 @@ def compute_human_agreement(
 
 def _b1_breakdown_by_persona(rows: list[dict]) -> dict:
     """Per-persona B1 per-judge accuracy (the breakdown that exposes
-    fp-specific judge weakness)."""
+    persona-specific judge weakness)."""
     by_persona: dict[str, dict] = defaultdict(
         lambda: {
             "n": 0,
             "sonnet_correct": 0,
             "gpt54_correct": 0,
-            "panel_2_strict_correct": 0,
+            "gemini_correct": 0,
         }
     )
     for r in rows:
@@ -799,16 +794,14 @@ def _b1_breakdown_by_persona(rows: list[dict]) -> dict:
             by_persona[p]["sonnet_correct"] += 1
         if r.get("gpt54"):
             by_persona[p]["gpt54_correct"] += 1
-        if r.get("panel_2_strict"):
-            by_persona[p]["panel_2_strict_correct"] += 1
+        if r.get("gemini"):
+            by_persona[p]["gemini_correct"] += 1
     return {
         p: {
             "n": d["n"],
             "sonnet_accuracy": d["sonnet_correct"] / d["n"] if d["n"] else None,
             "gpt54_accuracy": d["gpt54_correct"] / d["n"] if d["n"] else None,
-            "panel_2_strict_accuracy": (
-                d["panel_2_strict_correct"] / d["n"] if d["n"] else None
-            ),
+            "gemini_accuracy": d["gemini_correct"] / d["n"] if d["n"] else None,
         }
         for p, d in by_persona.items()
     }

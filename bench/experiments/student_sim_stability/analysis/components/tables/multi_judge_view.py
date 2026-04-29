@@ -18,14 +18,15 @@ from experiments.student_sim_stability.core.rubrics import (
     primary_score_field,
 )
 
-_MULTI_VIEW_COLUMNS = ["sonnet", "gpt54", "gemini", "panel_3", "panel_2"]
+_MULTI_VIEW_COLUMNS = ["sonnet", "gpt54", "gemini", "panel_3"]
 _MULTI_VIEW_LABELS = {
     "sonnet": "Sonnet",
     "gpt54": "GPT-5.4",
     "gemini": "Gemini",
     "panel_3": "Panel-3 mean",
-    "panel_2": "Panel-2 (no Gemini)",
 }
+# Paper-side: only the three persona-stability dimensions ship to the appendix.
+_TEX_DIMENSIONS = ("D1", "D2", "D3")
 _MULTI_GROUP_KEY = {
     "D1": ("model", "Student model"),
     "D2": ("model", "Student model"),
@@ -125,6 +126,14 @@ class MultiJudgeView(Component):
             lambda: defaultdict(list)
         )
         for row in dim.get("per_eval", []):
+            # D3 inputs include both live and control conversations; the
+            # paper-side D3 view aggregates only live items so it lines up
+            # with d3_drift / ranking_table (which read all_evaluations.json
+            # and route control out into its own bucket).
+            if dimension == "D3":
+                eid = str(row.get("eval_id") or "")
+                if "__control__" in eid:
+                    continue
             meta_group = self._extract_group(row, group_key)
             if meta_group is None:
                 continue
@@ -132,10 +141,9 @@ class MultiJudgeView(Component):
                 v = (row["scores_by_judge"].get(view) or {}).get(field)
                 if isinstance(v, (int, float)):
                     grouped[meta_group][view].append(float(v))
-            for view in ("panel_3", "panel_2"):
-                v = (row["aggregates"].get(view) or {}).get(field)
-                if isinstance(v, (int, float)):
-                    grouped[meta_group][view].append(float(v))
+            v = (row["aggregates"].get("panel_3") or {}).get(field)
+            if isinstance(v, (int, float)):
+                grouped[meta_group]["panel_3"].append(float(v))
         out = {}
         for g, views in grouped.items():
             out[g] = {}
@@ -156,15 +164,16 @@ class MultiJudgeView(Component):
         return str(value)
 
     def render_tex(self) -> str | None:
-        """Concatenate one booktabs table per dimension (D1, D2, D3, control,
-        P1, B1) into a single tex snippet. Each dim is preceded by a centered
-        ``\\textbf{}`` header so the snippet remains a single ``\\input{}``-able
-        unit."""
+        """Concatenate one booktabs table per persona-stability dimension
+        (D1, D2, D3) into a single tex snippet. Each dim is preceded by a
+        centered ``\\textbf{}`` header so the snippet remains a single
+        ``\\input{}``-able unit. Cell format is the compact ``mean (std)``
+        so the table fits a single-column NeurIPS textwidth."""
         if not self.multi:
             return None
         view_headers = [_MULTI_VIEW_LABELS[v] for v in _MULTI_VIEW_COLUMNS]
         sections: list[str] = []
-        for dim in DIMENSION_TO_FILE:
+        for dim in _TEX_DIMENSIONS:
             group_key, group_label = _MULTI_GROUP_KEY.get(dim, ("model", ""))
             grouped = self._score_by(dim, group_key)
             if not grouped:
@@ -179,10 +188,10 @@ class MultiJudgeView(Component):
                     else:
                         mean = cell["mean"]
                         std = cell.get("std") or 0.0
-                        row.append(f"{mean:.2f} $\\pm$ {std:.2f}")
+                        row.append(f"{mean:.2f} ({std:.2f})")
                 rows.append(row)
             header = f"\\par\\smallskip\\textbf{{{dim} -- by {tex_escape(group_label)}}}\\par"
-            col_align = "l" + "l" * len(_MULTI_VIEW_COLUMNS)
+            col_align = "l" + "r" * len(_MULTI_VIEW_COLUMNS)
             tbl = booktabs_table(
                 [tex_escape(group_label)] + [tex_escape(h) for h in view_headers],
                 col_align,

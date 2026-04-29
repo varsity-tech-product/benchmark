@@ -64,7 +64,7 @@ class D2ByModelTemp(Component):
             model = parts[0]
             temp = parts[1] if len(parts) > 1 else "?"
             d = self.d2[key]
-            ci = f"[{d.get('ci_low', 0):.2f}, {d.get('ci_high', 0):.2f}]"
+            ci = f"({d.get('ci_low', 0):.2f}, {d.get('ci_high', 0):.2f})"
             rows.append(
                 [model, temp, f"{d['mean']:.2f}", ci, f"{d['std']:.2f}", d["n"]]
             )

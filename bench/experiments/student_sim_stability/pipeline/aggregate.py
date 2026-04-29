@@ -130,21 +130,25 @@ def _validate_score_schema(dimension: str, scores: object, eval_id: str) -> None
         )
 
 
-# Models that compose panel_2. Sonnet output lives in primary judge_outputs/;
-# GPT-5.4 output lives in judge_outputs_by_model/openai__gpt-5_4/.
-_PANEL_2_SECONDARY = "openai/gpt-5.4"
+# Models that compose panel_3. Sonnet output lives in primary judge_outputs/;
+# GPT-5.4 and Gemini outputs live in judge_outputs_by_model/<judge>/.
+_PANEL_3_SECONDARY = "openai/gpt-5.4"
+_PANEL_3_TERTIARY = "google/gemini-3.1-pro-preview"
 
 
-def _merge_panel_2_scores(
-    primary_scores: dict, secondary_scores: dict, dimension: str
+def _merge_panel_3_scores(
+    primary_scores: dict,
+    secondary_scores: dict,
+    tertiary_scores: dict,
+    dimension: str,
 ) -> dict:
-    """Synthesize panel_2 score record from two judges.
+    """Synthesize panel_3 score record from three judges.
 
     Numeric fields (per :func:`numeric_score_fields`) become element-wise
-    means. Categorical / list / text fields are preserved from the primary
-    judge for backward compatibility, and a per-judge breakdown for B1's
-    ``identified_persona`` is added so the report can compute panel-2
-    accuracy semantics (both must be correct).
+    means across whichever judges supplied a numeric value. Categorical /
+    list / text fields are preserved from the primary judge for backward
+    compatibility, and a per-judge breakdown for B1's ``identified_persona``
+    is added so the report can compute per-judge accuracy.
     """
     out = dict(primary_scores)  # start from primary, overwrite numerics
     try:
@@ -152,39 +156,50 @@ def _merge_panel_2_scores(
     except KeyError:
         numeric_fields = ()
     for field in numeric_fields:
-        p_val = primary_scores.get(field)
-        s_val = secondary_scores.get(field)
-        if isinstance(p_val, (int, float)) and isinstance(s_val, (int, float)):
-            out[field] = round((float(p_val) + float(s_val)) / 2, 4)
-        elif isinstance(p_val, (int, float)):
-            out[field] = float(p_val)
-        elif isinstance(s_val, (int, float)):
-            out[field] = float(s_val)
+        vals = [
+            float(v)
+            for v in (
+                primary_scores.get(field),
+                secondary_scores.get(field),
+                tertiary_scores.get(field),
+            )
+            if isinstance(v, (int, float))
+        ]
+        if vals:
+            out[field] = round(sum(vals) / len(vals), 4)
     if dimension == "B1":
         out["identified_persona_by_judge"] = {
             "sonnet": str(primary_scores.get("identified_persona", "")),
             "gpt54": str(secondary_scores.get("identified_persona", "")),
+            "gemini": str(tertiary_scores.get("identified_persona", "")),
         }
-    # Failure types: union (preserves any signal either judge raised)
-    if isinstance(primary_scores.get("failure_types"), list) or isinstance(
-        secondary_scores.get("failure_types"), list
-    ):
-        a = primary_scores.get("failure_types") or []
-        b = secondary_scores.get("failure_types") or []
-        if isinstance(a, str):
-            a = [a]
-        if isinstance(b, str):
-            b = [b]
-        out["failure_types"] = sorted({str(x) for x in (list(a) + list(b)) if x})
-    # Reasoning / failure_evidence: keep both attributed for transparency
+    # Failure types: union (preserves any signal any judge raised)
+    has_failure_types = any(
+        isinstance(s.get("failure_types"), list)
+        for s in (primary_scores, secondary_scores, tertiary_scores)
+    )
+    if has_failure_types:
+        union: set[str] = set()
+        for s in (primary_scores, secondary_scores, tertiary_scores):
+            ft = s.get("failure_types") or []
+            if isinstance(ft, str):
+                ft = [ft]
+            union.update(str(x) for x in ft if x)
+        out["failure_types"] = sorted(union)
+    # Reasoning / failure_evidence: keep all attributed for transparency
     out["reasoning_by_judge"] = {
         "sonnet": primary_scores.get("reasoning", ""),
         "gpt54": secondary_scores.get("reasoning", ""),
+        "gemini": tertiary_scores.get("reasoning", ""),
     }
-    if "failure_evidence" in primary_scores or "failure_evidence" in secondary_scores:
+    if any(
+        "failure_evidence" in s
+        for s in (primary_scores, secondary_scores, tertiary_scores)
+    ):
         out["failure_evidence_by_judge"] = {
             "sonnet": primary_scores.get("failure_evidence", ""),
             "gpt54": secondary_scores.get("failure_evidence", ""),
+            "gemini": tertiary_scores.get("failure_evidence", ""),
         }
     return out
 
@@ -195,34 +210,48 @@ def aggregate(
     output_path: Path,
     strict: bool = False,
     profile: str = "full",
-    judge_view: str = "panel_2",
+    judge_view: str = "panel_3",
     secondary_judge_output_dir: Path | None = None,
+    tertiary_judge_output_dir: Path | None = None,
 ) -> dict:
     """Aggregate judge outputs into ``all_evaluations.json``.
 
     Args:
-        judge_view: ``"panel_2"`` (default, mean of Sonnet + GPT-5.4) or
-            ``"primary"`` (Sonnet only — legacy single-judge behavior).
-        secondary_judge_output_dir: explicit GPT-5.4 dir for panel_2 mode;
+        judge_view: ``"panel_3"`` (default, mean of Sonnet + GPT-5.4 + Gemini)
+            or ``"primary"`` (Sonnet only — legacy single-judge behavior).
+        secondary_judge_output_dir: explicit GPT-5.4 dir for panel_3 mode;
             defaults to ``<results>/judge_outputs_by_model/openai__gpt-5_4``.
+        tertiary_judge_output_dir: explicit Gemini dir for panel_3 mode;
+            defaults to ``<results>/judge_outputs_by_model/google__gemini-3_1-pro-preview``.
     """
-    if judge_view not in ("panel_2", "primary"):
+    if judge_view not in ("panel_3", "primary"):
         raise ValueError(
-            f"Unknown judge_view {judge_view!r}; use 'panel_2' or 'primary'"
+            f"Unknown judge_view {judge_view!r}; use 'panel_3' or 'primary'"
         )
-    panel_2 = judge_view == "panel_2"
-    if panel_2 and secondary_judge_output_dir is None:
-        # Infer from results layout: judge_output_dir is the primary mirror,
-        # secondary lives under judge_outputs_by_model/<gpt-5.4_safe>/
+    panel_3 = judge_view == "panel_3"
+    if panel_3:
         results_root = judge_output_dir.parent
-        secondary_judge_output_dir = (
-            results_root / "judge_outputs_by_model" / safe_model_dir(_PANEL_2_SECONDARY)
-        )
-    if panel_2 and not secondary_judge_output_dir.exists():
-        raise FileNotFoundError(
-            f"panel_2 view requires GPT-5.4 outputs at {secondary_judge_output_dir}; "
-            "either run the full judge panel or pass judge_view='primary'"
-        )
+        if secondary_judge_output_dir is None:
+            secondary_judge_output_dir = (
+                results_root
+                / "judge_outputs_by_model"
+                / safe_model_dir(_PANEL_3_SECONDARY)
+            )
+        if tertiary_judge_output_dir is None:
+            tertiary_judge_output_dir = (
+                results_root
+                / "judge_outputs_by_model"
+                / safe_model_dir(_PANEL_3_TERTIARY)
+            )
+        for label, path in (
+            ("GPT-5.4", secondary_judge_output_dir),
+            ("Gemini", tertiary_judge_output_dir),
+        ):
+            if not path.exists():
+                raise FileNotFoundError(
+                    f"panel_3 view requires {label} outputs at {path}; "
+                    "either run the full judge panel or pass judge_view='primary'"
+                )
     records: dict[str, list[dict]] = {
         "D1": [],
         "D2": [],
@@ -244,21 +273,32 @@ def aggregate(
         dimension = output.get("dimension") or eval_id.split("__", 1)[0]
         scores = output.get("scores", {})
 
-        # Panel_2 averaging: blend Sonnet (primary) with GPT-5.4 (secondary)
-        # before downstream aggregation. Falls back to primary alone if the
-        # secondary judge does not have a matching output for this eval_id
-        # (e.g., partial run, OpenRouter credit exhaustion).
-        if panel_2:
+        # Panel-3 averaging: blend Sonnet (primary) with GPT-5.4 (secondary)
+        # and Gemini (tertiary) before downstream aggregation. Falls back to
+        # whichever judges produced an output for this eval_id when one is
+        # absent (e.g., partial run, OpenRouter credit exhaustion).
+        if panel_3:
             secondary_path = secondary_judge_output_dir / output_file.name
-            if secondary_path.exists():
-                secondary = load_json(secondary_path)
-                scores = _merge_panel_2_scores(
-                    scores, secondary.get("scores", {}), dimension
-                )
-            else:
-                # Secondary missing — preserve primary scores; tag for transparency
+            tertiary_path = tertiary_judge_output_dir / output_file.name
+            secondary_scores = (
+                load_json(secondary_path).get("scores", {})
+                if secondary_path.exists()
+                else {}
+            )
+            tertiary_scores = (
+                load_json(tertiary_path).get("scores", {})
+                if tertiary_path.exists()
+                else {}
+            )
+            scores = _merge_panel_3_scores(
+                scores, secondary_scores, tertiary_scores, dimension
+            )
+            if not secondary_path.exists() or not tertiary_path.exists():
                 scores = dict(scores)
-                scores["panel_2_secondary_missing"] = True
+                scores["panel_3_partial"] = {
+                    "secondary_missing": not secondary_path.exists(),
+                    "tertiary_missing": not tertiary_path.exists(),
+                }
 
         if strict:
             _validate_score_schema(dimension, scores, eval_id)

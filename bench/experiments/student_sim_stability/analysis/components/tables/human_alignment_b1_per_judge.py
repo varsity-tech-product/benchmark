@@ -12,7 +12,6 @@ _VIEWS = (
     ("sonnet_vs_human", "Sonnet"),
     ("gpt54_vs_human", "GPT-5.4"),
     ("gemini_vs_human", "Gemini"),
-    ("panel_2_strict_vs_human", "Panel-2 strict"),
 )
 
 

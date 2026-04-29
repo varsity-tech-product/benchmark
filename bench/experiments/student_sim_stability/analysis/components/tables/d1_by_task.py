@@ -50,7 +50,7 @@ class D1ByTask(Component):
     def render_tex(self) -> str:
         rows: list[list[object]] = []
         for t, d in sorted(self.by_task.items()):
-            ci = f"[{d.get('ci_low', 0):.2f}, {d.get('ci_high', 0):.2f}]"
+            ci = f"({d.get('ci_low', 0):.2f}, {d.get('ci_high', 0):.2f})"
             rows.append([t, f"{d['mean']:.2f}", ci, f"{d['std']:.2f}", d["n"]])
         return booktabs_table(
             ["Task", "D1 Mean", "95% CI", "Std", "N"],

@@ -50,7 +50,7 @@ class D1ByPersona(Component):
     def render_tex(self) -> str:
         rows: list[list[object]] = []
         for p, d in sorted(self.by_persona.items()):
-            ci = f"[{d.get('ci_low', 0):.2f}, {d.get('ci_high', 0):.2f}]"
+            ci = f"({d.get('ci_low', 0):.2f}, {d.get('ci_high', 0):.2f})"
             rows.append([p, f"{d['mean']:.2f}", ci, f"{d['std']:.2f}", d["n"]])
         return booktabs_table(
             ["Persona", "D1 Mean", "95% CI", "Std", "N"],

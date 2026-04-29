@@ -152,6 +152,35 @@ def booktabs_table(
     return "\n".join(out)
 
 
+# PgfPlots shared assets used by chart Components that ship to the paper.
+# Color names assume the LaTeX preamble defines simSonnet / simGPT / simGemini
+# (see paper/main.tex). The keys mirror the multi-judge view aliases.
+JUDGE_PGF_COLORS = {
+    "sonnet": "simSonnet",
+    "gpt54": "simGPT",
+    "gemini": "simGemini",
+}
+JUDGE_PGF_LABELS = {
+    "sonnet": "Sonnet",
+    "gpt54": "GPT-5.4",
+    "gemini": "Gemini",
+}
+
+
+def pgf_csv_path(name: str) -> str:
+    """Path used inside ``.pgf.tex`` to reference the sibling CSV when the
+    figure is ``\\input``-ed from the paper root."""
+    return f"figs/student_sim/{name}.csv"
+
+
+def pgf_label_escape(value: object) -> str:
+    """Escape a text-mode label for use inside ``xticklabels=`` / ``yticklabels=``
+    / ``symbolic x coords=`` etc. Underscores in pgfplots tick labels would
+    otherwise be parsed as math-mode subscript operators."""
+    s = "" if value is None else str(value)
+    return s.replace("_", r"\_")
+
+
 # Deterministic PDF metadata so re-running paper-export with unchanged
 # inputs produces byte-identical PDFs (and hence stable sha256 hashes).
 _PDF_METADATA = {
@@ -234,6 +263,13 @@ class Component(ABC):
         leave it ``None`` and ship a PDF figure instead."""
         return None
 
+    def render_pgf(self) -> str | None:
+        """Return a pgfplots-native LaTeX snippet, or None if not
+        applicable. Chart Components that ship to the paper appendix override
+        this to render via pgfplots (reading from a sibling CSV) so the paper
+        builds the figure natively without ``\\includegraphics``."""
+        return None
+
     def _compute(self) -> dict:
         """Aggregate the data this component needs into a dict.
 
@@ -288,5 +324,8 @@ class Component(ABC):
         tex_text = self.render_tex()
         if tex_text is not None:
             (directory / f"{self.name}.tex").write_text(tex_text, encoding="utf-8")
+        pgf_text = self.render_pgf()
+        if pgf_text is not None:
+            (directory / f"{self.name}.pgf.tex").write_text(pgf_text, encoding="utf-8")
         pdf_target = directory / f"{self.name}.pdf"
         self.render_pdf(pdf_target)

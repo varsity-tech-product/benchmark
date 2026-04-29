@@ -111,48 +111,19 @@ class RankingTable(Component):
         return csv_bytes(rows)
 
     def render_tex(self) -> str:
-        def _fmt_ci(ci: dict | None) -> str:
-            if not ci:
-                return "n/a"
-            lo, hi = ci.get("low"), ci.get("high")
-            if isinstance(lo, (int, float)) and isinstance(hi, (int, float)):
-                return f"[{lo:.2f}, {hi:.2f}]"
-            return "n/a"
-
         rows: list[list[object]] = []
         for i, r in enumerate(self.ranking):
-            scores_ci = r.get("scores_ci") or {}
-            comp_ci = {
-                "low": r.get("composite_ci_low"),
-                "high": r.get("composite_ci_high"),
-            }
             rows.append(
                 [
                     i + 1,
                     r["model"],
                     _fmt_score(r["scores"].get("D1")),
-                    _fmt_ci(scores_ci.get("D1")),
                     _fmt_score(r["scores"].get("D2")),
-                    _fmt_ci(scores_ci.get("D2")),
                     _fmt_score(r["scores"].get("D3")),
-                    _fmt_ci(scores_ci.get("D3")),
-                    f"{r['composite']:.2f}",
-                    _fmt_ci(comp_ci),
                 ]
             )
         return booktabs_table(
-            [
-                "Rank",
-                "Model",
-                "D1",
-                "D1 95% CI",
-                "D2",
-                "D2 95% CI",
-                "D3",
-                "D3 95% CI",
-                "Composite",
-                "Composite 95% CI",
-            ],
-            "rlrlrlrlrl",
+            ["Rank", "Model", "D1", "D2", "D3"],
+            "rlrrr",
             rows,
         )

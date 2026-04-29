@@ -1,13 +1,12 @@
-"""Multi-judge aggregator — produces per-eval five-view breakdown.
+"""Multi-judge aggregator — produces per-eval four-view breakdown.
 
 For every judge eval, reads all three judges' scores from
-``judge_outputs_by_model/{model}/{eval_id}.json`` and emits five views:
+``judge_outputs_by_model/{model}/{eval_id}.json`` and emits four views:
 
 1. ``sonnet``    — Claude Sonnet (primary)
 2. ``gpt54``     — GPT-5.4
 3. ``gemini``    — Gemini 3.1 Pro
 4. ``panel_3``   — mean of all three
-5. ``panel_2``   — mean of Sonnet + GPT-5.4 (drops Gemini)
 
 Produces ``evaluations/multi_judge_aggregates.json`` with per-eval rows keyed
 by dimension. The main ``all_evaluations.json`` (primary-only) stays untouched
@@ -52,7 +51,7 @@ SONNET_DIR = safe_model_dir(SONNET_KEY)  # anthropic__claude-sonnet-4-6
 GPT54_DIR = safe_model_dir(GPT54_KEY)  # openai__gpt-5_4
 GEMINI_DIR = safe_model_dir(GEMINI_KEY)  # google__gemini-3_1-pro-preview
 
-VIEW_ORDER = ["sonnet", "gpt54", "gemini", "panel_3", "panel_2"]
+VIEW_ORDER = ["sonnet", "gpt54", "gemini", "panel_3"]
 
 
 def _score_fields_for(dimension: str) -> list[str]:
@@ -113,19 +112,16 @@ def _aggregate_eval(
             row[f] = float(v) if isinstance(v, (int, float)) else None
         scores_by_judge[view_key] = row
 
-    aggregates = {"panel_3": {}, "panel_2": {}}
+    aggregates = {"panel_3": {}}
     for f in numeric_fields:
         v_sonnet = scores_by_judge["sonnet"].get(f)
         v_gpt54 = scores_by_judge["gpt54"].get(f)
         v_gemini = scores_by_judge["gemini"].get(f)
 
         panel_3_vals = [v for v in (v_sonnet, v_gpt54, v_gemini) if v is not None]
-        panel_2_vals = [v for v in (v_sonnet, v_gpt54) if v is not None]
 
         aggregates["panel_3"][f] = safe_mean(panel_3_vals)
         aggregates["panel_3"][f"{f}__std"] = safe_std(panel_3_vals)
-        aggregates["panel_2"][f] = safe_mean(panel_2_vals)
-        aggregates["panel_2"][f"{f}__std"] = safe_std(panel_2_vals)
 
     # Use any judge's metadata (they should all have the same metadata since
     # judge inputs were identical). Prefer Sonnet, fall back to others.
@@ -178,8 +174,8 @@ def aggregate_multi_judge(
     .. code-block:: json
 
         {
-          "version": "multi_judge_v1",
-          "views": ["sonnet", "gpt54", "gemini", "panel_3", "panel_2"],
+          "version": "multi_judge_v3",
+          "views": ["sonnet", "gpt54", "gemini", "panel_3"],
           "judge_model_map": {"sonnet": "anthropic/claude-sonnet-4-6", ...},
           "dimensions": {"D1": {"per_eval": [...], "n": 252, ...}, ...}
         }
@@ -251,7 +247,7 @@ def aggregate_multi_judge(
         )
 
     summary = {
-        "version": "multi_judge_v2",
+        "version": "multi_judge_v3",
         "views": VIEW_ORDER,
         "judge_model_map": {
             "sonnet": SONNET_KEY,
