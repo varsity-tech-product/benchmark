@@ -5,7 +5,7 @@
  * 2. Poll /ui/runs/{id} for status changes (waiting → claimed → active)
  * 3. Poll /ui/runs/{id}/live for real-time conversation + tool logs
  * 4. Cancel button → POST /ui/runs/{id}/cancel
- * 5. On completed → show link to Results
+ * 5. On completed → show link to Human Review
  */
 (function () {
   'use strict';
@@ -107,16 +107,31 @@
 
     // Otherwise show task selection + create run form
     loadCatalog(function (tasks) {
-      _renderCreatePage(app, tasks);
+      _renderCreatePage(app, tasks, payload && payload.tasks);
     });
   };
 
-  function _renderCreatePage(app, tasks) {
-    var taskOptions = tasks.map(function (t) {
-      return '<option value="' + escapeHtml(t.label) + '">' +
-        escapeHtml(t.label) +
+  function _taskLabels(tasks, fallbackTasks) {
+    var labels = [];
+    var seen = {};
+    (tasks || []).concat(fallbackTasks || []).forEach(function (task) {
+      var label = task && (task.label || publicTaskLabel(task.task_id || task.id));
+      if (!label || seen[label]) return;
+      seen[label] = true;
+      labels.push(label);
+    });
+    return labels;
+  }
+
+  function _renderCreatePage(app, tasks, fallbackTasks) {
+    var labels = _taskLabels(tasks, fallbackTasks);
+    var hasTasks = labels.length > 0;
+    var selectedLabel = hasTasks ? labels[0] : '';
+    var taskOptions = hasTasks ? labels.map(function (label) {
+      return '<option value="' + escapeHtml(label) + '">' +
+        escapeHtml(label) +
         '</option>';
-    }).join('');
+    }).join('') : '<option value="">No tasks available</option>';
 
     app.innerHTML =
       '<section class="page run-page">' +
@@ -128,20 +143,35 @@
           '</div>' +
         '</header>' +
         '<div class="run-agent-create-panel">' +
-          '<aside class="panel">' +
-            '<h2>Agent Connection</h2>' +
-            '<p class="detail-empty-note">Use the REST agent skill for API-key based agents, or create a run here to receive a run token and connection details.</p>' +
+          '<aside class="panel run-agent-create-card">' +
+            '<div class="run-agent-card-head">' +
+              '<div>' +
+                '<h2>Agent Connection</h2>' +
+                '<p class="detail-empty-note">Create a task-specific run to receive a run token and connection details.</p>' +
+              '</div>' +
+              '<span class="run-selected-badge" id="myagent-selected-badge">' + escapeHtml(selectedLabel || 'No task') + '</span>' +
+            '</div>' +
             '<label class="filter-field">' +
               '<span class="filter-label">Task</span>' +
-              '<select id="myagent-task-select" class="filter-select">' + taskOptions + '</select>' +
+              '<select id="myagent-task-select" class="filter-select"' + (hasTasks ? '' : ' disabled') + '>' + taskOptions + '</select>' +
             '</label>' +
-            '<div class="run-actions" style="margin-top:1rem;">' +
-              '<button class="btn btn-primary" id="myagent-create-btn" type="button">Create Run</button>' +
-              '<button class="btn btn-secondary" id="myagent-api-key-btn" type="button">API Key</button>' +
-              '<a class="btn btn-secondary" href="/skills/quanttutorbench-rest-agent" target="_blank" rel="noreferrer">REST Agent Skill</a>' +
+            '<div class="run-task-reflection" id="myagent-task-reflection" aria-live="polite">' +
+              '<span>Selected task</span>' +
+              '<strong id="myagent-task-reflection-value">' + escapeHtml(selectedLabel || 'Unavailable') + '</strong>' +
+            '</div>' +
+            '<div class="run-actions">' +
+              '<button class="btn btn-primary" id="myagent-create-btn" type="button"' + (hasTasks ? '' : ' disabled') + '>Create Run</button>' +
             '</div>' +
             '<div id="myagent-error" class="run-error" style="display:none;"></div>' +
           '</aside>' +
+          '<section class="panel run-agent-api-card">' +
+            '<h2>Agent API</h2>' +
+            '<p class="detail-empty-note">Use the REST agent skill for API-key based agents, or open the API key manager before connecting an external agent.</p>' +
+            '<div class="run-agent-api-actions">' +
+              '<button class="btn btn-secondary" id="myagent-api-key-btn" type="button">API Key</button>' +
+              '<a class="btn btn-secondary" href="/skills/quanttutorbench-rest-agent" target="_blank" rel="noreferrer">REST Agent Skill</a>' +
+            '</div>' +
+          '</section>' +
         '</div>' +
       '</section>';
 
@@ -150,6 +180,10 @@
     var apiKeyBtn = document.getElementById('myagent-api-key-btn');
     var taskSelect = document.getElementById('myagent-task-select');
     var errorDiv = document.getElementById('myagent-error');
+    var selectedBadge = document.getElementById('myagent-selected-badge');
+    var taskReflection = document.getElementById('myagent-task-reflection');
+    var taskReflectionValue = document.getElementById('myagent-task-reflection-value');
+    var pulseTimer = null;
 
     if (apiKeyBtn) {
       apiKeyBtn.addEventListener('click', function () {
@@ -157,6 +191,31 @@
           window.QTB.openApiKeyModal();
         }
       });
+    }
+
+    function updateTaskReflection(active, pulse) {
+      var value = taskSelect && taskSelect.value ? taskSelect.value : 'Unavailable';
+      if (selectedBadge) selectedBadge.textContent = value;
+      if (taskReflectionValue) taskReflectionValue.textContent = value;
+      if (taskSelect) taskSelect.classList.toggle('is-active', !!active);
+      if (taskReflection) {
+        taskReflection.classList.toggle('is-active', !!active);
+        if (pulse) {
+          taskReflection.classList.add('is-updated');
+          clearTimeout(pulseTimer);
+          pulseTimer = setTimeout(function () {
+            taskReflection.classList.remove('is-updated');
+          }, 520);
+        }
+      }
+    }
+
+    if (taskSelect) {
+      updateTaskReflection(false, false);
+      taskSelect.addEventListener('focus', function () { updateTaskReflection(true, false); });
+      taskSelect.addEventListener('pointerdown', function () { updateTaskReflection(true, false); });
+      taskSelect.addEventListener('blur', function () { updateTaskReflection(false, false); });
+      taskSelect.addEventListener('change', function () { updateTaskReflection(true, true); });
     }
 
     if (createBtn) {
