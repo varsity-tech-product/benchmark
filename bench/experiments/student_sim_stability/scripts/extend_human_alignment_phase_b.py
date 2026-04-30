@@ -40,7 +40,7 @@ PHASE_B_TARGET = {
     "S2": 3,  # 36
     "S5": 2,  # 4 x 3 x 2 = 24
     "S4": 3,  # 36 (random, no disagreement priority)
-    "control": 1,  # 12
+    "S6": 1,  # 12
 }
 
 # 36 + 12 + 36 + 24 + 36 + 12 = 156 target total

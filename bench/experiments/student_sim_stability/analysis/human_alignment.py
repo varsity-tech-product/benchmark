@@ -95,7 +95,7 @@ DEFAULT_SAMPLE_PLAN: dict[str, dict[str, int]] = {
         "finance_veteran": 2,
         "fullstack_practitioner": 2,
     },
-    "control": {
+    "S6": {
         "developer_crossover": 1,
         "double_novice": 1,
         "finance_veteran": 1,
@@ -446,7 +446,7 @@ _PER_JUDGE_ALIGNMENT_SPECS: list[tuple[str, str, dict[str, str]]] = [
     (
         "control_distinctiveness",
         "human_distinctiveness",
-        {"control": "distinctiveness"},
+        {"S6": "distinctiveness"},
     ),
 ]
 
