@@ -39,6 +39,7 @@ from experiments.student_sim_stability.core.contracts import (  # noqa: E402
 )
 from experiments.student_sim_stability.core.rubrics import (  # noqa: E402
     DIMENSION_TO_FILE,
+    LEGACY_RUBRIC_ID_BY_ID,
     required_score_keys,
     rubric_metadata,
 )
@@ -198,7 +199,7 @@ def _validate_judge_output_quality(output_dir: Path) -> list[Check]:
             )
         ]
 
-    d3_outputs = []
+    s2_outputs = []
     outputs_by_dimension: dict[str, list[dict]] = defaultdict(list)
     malformed: list[str] = []
     missing_score_keys: list[str] = []
@@ -222,8 +223,8 @@ def _validate_judge_output_quality(output_dir: Path) -> list[Check]:
         if missing:
             missing_score_keys.append(f"{path.name}: missing score keys {missing}")
         outputs_by_dimension[dimension].append(output)
-        if dimension == "D3":
-            d3_outputs.append(output)
+        if dimension == "S2":
+            s2_outputs.append(output)
 
     duplicate_payloads: list[str] = []
     for dimension, outputs in sorted(outputs_by_dimension.items()):
@@ -246,16 +247,16 @@ def _validate_judge_output_quality(output_dir: Path) -> list[Check]:
         )
     )
 
-    duplicate_counts = Counter(_score_signature(output) for output in d3_outputs)
+    duplicate_counts = Counter(_score_signature(output) for output in s2_outputs)
     template_like = [count for count in duplicate_counts.values() if count > 1]
     checks.append(
         Check(
-            "d3_no_template_duplicate_score_clusters",
+            "s2_no_template_duplicate_score_clusters",
             not template_like,
             (
-                "no D3 score signature appears more than once"
+                "no S2 score signature appears more than once"
                 if not template_like
-                else f"D3 duplicate score clusters detected: {sorted(template_like)}"
+                else f"S2 duplicate score clusters detected: {sorted(template_like)}"
             ),
         )
     )
@@ -511,7 +512,7 @@ def _validate_judge_input_metadata(input_dir: Path) -> list[Check]:
                     missing.append(f"{path.name}: rubric_version mismatch")
             except ValueError:
                 missing.append(f"{path.name}: unknown rubric dimension {dimension}")
-        if payload.get("dimension") != "control":
+        if payload.get("dimension") != "S6":
             for field in ["persona_contract_id", "persona_contract_version"]:
                 if not metadata.get(field):
                     missing.append(f"{path.name}: missing {field}")
@@ -529,7 +530,9 @@ def _validate_judge_input_metadata(input_dir: Path) -> list[Check]:
                 except (OSError, KeyError, ValueError, json.JSONDecodeError) as exc:
                     missing.append(f"{path.name}: cannot load persona contract ({exc})")
         rubric_id = metadata.get("rubric_id") or payload.get("rubric_id")
-        if rubric_id and rubric_id not in payload.get("prompt", ""):
+        prompt = payload.get("prompt", "")
+        legacy_rubric_id = LEGACY_RUBRIC_ID_BY_ID.get(rubric_id or "")
+        if rubric_id and rubric_id not in prompt and legacy_rubric_id not in prompt:
             missing.append(f"{path.name}: prompt missing rubric_id text")
     return [
         Check(
@@ -824,29 +827,29 @@ def validate(
     checks.extend(_validate_conversation_provenance(conv_dir))
 
     input_counts = _dimension_counts(input_dir)
-    d1_input_ok = (
-        input_counts["D1"] in {expected["D1_sample"], expected["D1_full"]}
+    s1_input_ok = (
+        input_counts["S1"] in {expected["S1_sample"], expected["S1_full"]}
         if profile == "full"
-        else input_counts["D1"] > 0
+        else input_counts["S1"] > 0
     )
     checks.append(
         Check(
-            "judge_input_d1_policy",
-            d1_input_ok,
+            "judge_input_s1_policy",
+            s1_input_ok,
             (
-                f"D1 inputs={input_counts['D1']} "
-                f"(expected sample {expected['D1_sample']} or full {expected['D1_full']})"
+                f"S1 inputs={input_counts['S1']} "
+                f"(expected sample {expected['S1_sample']} or full {expected['S1_full']})"
             ),
         )
     )
-    for dim in ("D2", "D3", "P1", "B1"):
-        if profile == "pilot" and dim == "P1":
+    for dim in ("S2", "S3", "S4", "S5", "S6"):
+        if profile == "pilot" and dim == "S5":
             input_ok = input_counts[dim] >= 4 * len(PROBES)
-        elif profile == "pilot" and dim == "B1":
-            # B1 now renders from live conversations; pilot generates a handful
+        elif profile == "pilot" and dim == "S4":
+            # S4 now renders from live conversations; pilot generates a handful
             # of live__*.json files so just require the dimension was produced.
             input_ok = input_counts[dim] > 0
-        elif profile == "pilot" and dim == "D3":
+        elif profile == "pilot" and dim == "S2":
             input_ok = input_counts[dim] > 0
         elif profile == "pilot":
             input_ok = True
@@ -863,49 +866,34 @@ def validate(
                 ),
             )
         )
-    checks.append(
-        Check(
-            "judge_input_control",
-            (
-                input_counts["control"] == expected["control"]
-                if profile == "full"
-                else input_counts["control"] > 0
-            ),
-            (
-                f"control inputs={input_counts['control']}/{expected['control']}"
-                if profile == "full"
-                else f"control pilot inputs={input_counts['control']}"
-            ),
-        )
-    )
     checks.extend(_validate_judge_input_metadata(input_dir))
 
     output_counts = _dimension_counts(output_dir)
-    d1_output_ok = (
-        output_counts["D1"] == input_counts["D1"]
-        and input_counts["D1"] in {expected["D1_sample"], expected["D1_full"]}
+    s1_output_ok = (
+        output_counts["S1"] == input_counts["S1"]
+        and input_counts["S1"] in {expected["S1_sample"], expected["S1_full"]}
         if profile == "full"
-        else output_counts["D1"] == input_counts["D1"] and input_counts["D1"] > 0
+        else output_counts["S1"] == input_counts["S1"] and input_counts["S1"] > 0
     )
     checks.append(
         Check(
-            "judge_output_d1_sample",
-            d1_output_ok,
+            "judge_output_s1_sample",
+            s1_output_ok,
             (
-                f"D1 outputs={output_counts['D1']}/{input_counts['D1']}"
+                f"S1 outputs={output_counts['S1']}/{input_counts['S1']}"
                 if profile == "full"
-                else f"D1 outputs={output_counts['D1']}/{input_counts['D1']} pilot inputs"
+                else f"S1 outputs={output_counts['S1']}/{input_counts['S1']} pilot inputs"
             ),
         )
     )
-    for dim in ("D2", "D3", "P1", "B1"):
+    for dim in ("S2", "S3", "S4", "S5", "S6"):
         expected_output = expected[dim] if profile == "full" else input_counts[dim]
         output_ok = output_counts[dim] == expected_output
-        if profile == "pilot" and dim == "P1":
+        if profile == "pilot" and dim == "S5":
             output_ok = output_ok and input_counts[dim] >= 4 * len(PROBES)
-        elif profile == "pilot" and dim == "B1":
+        elif profile == "pilot" and dim == "S4":
             output_ok = output_ok and input_counts[dim] > 0
-        elif profile == "pilot" and dim == "D3":
+        elif profile == "pilot" and dim == "S2":
             output_ok = output_ok and input_counts[dim] > 0
         checks.append(
             Check(
@@ -914,19 +902,6 @@ def validate(
                 f"{dim} outputs={output_counts[dim]}/{expected_output}",
             )
         )
-    checks.append(
-        Check(
-            "judge_output_control",
-            (
-                output_counts["control"] == expected["control"]
-                if profile == "full"
-                else output_counts["control"] == input_counts["control"]
-                and input_counts["control"] > 0
-            ),
-            f"control outputs={output_counts['control']}/"
-            f"{expected['control'] if profile == 'full' else input_counts['control']}",
-        )
-    )
     checks.extend(_validate_judge_output_quality(output_dir))
     checks.extend(_validate_judge_output_metadata(input_dir, output_dir))
     checks.extend(
@@ -940,19 +915,19 @@ def validate(
             key: len(aggregate.get(key, [])) for key in DIMENSION_TO_FILE
         }
         expected_aggregate = {
-            "D1": expected["D1_sample"],
-            "D2": expected["D2"],
-            # D3 aggregate excludes control: ``live`` is the per-conversation
-            # live-arm count, which equals the number of D3 records that pass
+            "S1": expected["S1_sample"],
+            "S2": expected["live"],
+            "S3": expected["S3"],
+            # S2 aggregate excludes control: ``live`` is the per-conversation
+            # live-arm count, which equals the number of S2 records that pass
             # downstream filtering.
-            "D3": expected["live"],
-            "control": expected["control"],
-            "P1": expected["P1"],
-            "B1": expected["B1"],
+            "S4": expected["S4"],
+            "S5": expected["S5"],
+            "S6": expected["S6"],
         }
         for key, expected_count in expected_aggregate.items():
             if profile == "full":
-                actual_expected = output_counts["D1"] if key == "D1" else expected_count
+                actual_expected = output_counts["S1"] if key == "S1" else expected_count
             else:
                 actual_expected = output_counts[key]
             checks.append(

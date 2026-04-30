@@ -18,5 +18,5 @@
     "emotional_profile",
     "behavioral_rules"
   ],
-  "judge_use": "D1, D2, D3, B1, P1, and control prompts must evaluate behavior against these copied contracts."
+  "judge_use": "S1, S3, S2, S4, S5, and control prompts must evaluate behavior against these copied contracts."
 }

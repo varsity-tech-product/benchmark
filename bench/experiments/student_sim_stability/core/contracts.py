@@ -147,7 +147,7 @@ def resolve_emotional_profile(persona_id: str) -> tuple[str, str]:
 
 
 def render_persona_contract_text(persona_id: str) -> str:
-    """Render the full persona contract for judge-side consumption (P1/B1/C1/D1-D3).
+    """Render the full persona contract for judge-side consumption (S5/S4/S6/S1-S2).
 
     Judges see the full contract including ``expected_*`` and ``failure_modes`` so
     they have the complete rubric anchor when scoring persona fidelity. The student

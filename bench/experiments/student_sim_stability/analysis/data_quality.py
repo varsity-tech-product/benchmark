@@ -43,7 +43,7 @@ def _markdown_from_audit(audit: dict) -> str:
             "- Control rows must come from real `control__*.json` judge outputs.",
             "- Fixture openings are excluded from generated-student metrics.",
             "- Exact duplicate judge score payloads across any dimension are failures.",
-            "- Template-like D3 duplicate score clusters are failures.",
+            "- Template-like S2 duplicate score clusters are failures.",
         ]
     )
     return "\n".join(lines) + "\n"

@@ -1,4 +1,4 @@
-"""Human-vs-judge B1 breakdown by persona table Component."""
+"""Human-vs-judge S4 breakdown by persona table Component."""
 
 from __future__ import annotations
 
@@ -36,7 +36,7 @@ class HumanAlignmentB1Breakdown(Component):
         if not breakdown_rows:
             return ""
         return (
-            "<h3>B1 Breakdown by Persona</h3>"
+            "<h3>S4 Breakdown by Persona</h3>"
             "<table><tr><th>Persona</th><th>N</th><th>Sonnet</th>"
             "<th>GPT-5.4</th><th>Gemini</th></tr>"
             f"{breakdown_rows}</table>"

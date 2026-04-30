@@ -1,4 +1,4 @@
-"""B1 blind persona identification chart Component."""
+"""S4 blind persona identification chart Component."""
 
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ from experiments.student_sim_stability.analysis.components.base import (
 
 
 class B1Identification(Component):
-    """Grouped bar chart: B1 identification accuracy per persona × model."""
+    """Grouped bar chart: S4 identification accuracy per persona × model."""
 
     name = "b1_identification"
 
@@ -76,9 +76,9 @@ class B1Identification(Component):
             ax.set_xticks(range(len(personas)))
             ax.set_xticklabels([_wrap_label(p) for p in personas], fontsize=9)
             ax.set_ylim(0, 1.05)
-            ax.set_ylabel("B1 identification accuracy", fontsize=11)
+            ax.set_ylabel("S4 identification accuracy", fontsize=11)
             ax.set_title(
-                "B1 — Blind Persona Identification on Live Transcripts", size=13
+                "S4 — Blind Persona Identification on Live Transcripts", size=13
             )
             ax.axhline(
                 y=0.9, color="green", linestyle="--", alpha=0.35, label="90% strong"
@@ -101,7 +101,7 @@ class B1Identification(Component):
             fig, ax = plt.subplots(figsize=(max(7.0, len(personas) * 1.5), 4.4))
             ax.bar(personas, accuracies, color="#3498db", alpha=0.85)
             ax.set_ylim(0, 1.05)
-            ax.set_ylabel("B1 identification accuracy", fontsize=11)
+            ax.set_ylabel("S4 identification accuracy", fontsize=11)
             ax.axhline(y=0.9, color="green", linestyle="--", alpha=0.35)
             ax.axhline(y=0.8, color="orange", linestyle="--", alpha=0.35)
             ax.set_xticklabels([_wrap_label(p) for p in personas], fontsize=9)
@@ -116,7 +116,7 @@ class B1Identification(Component):
         fig = self.figure()
         if fig is None:
             return ""
-        return _embed_img(_fig_to_base64(fig), "B1 identification accuracy")
+        return _embed_img(_fig_to_base64(fig), "S4 identification accuracy")
 
     def _persona_judge_rows(self) -> list[tuple[str, str, float]]:
         by_pj = self.b1.get("by_persona_judge") or {}
@@ -178,7 +178,7 @@ class B1Identification(Component):
             "  width=\\linewidth, height=0.4\\linewidth,\n"
             "  ybar, bar width=6pt, enlarge x limits=0.18,\n"
             "  ymin=0, ymax=1.05,\n"
-            "  ylabel={B1 identification accuracy},\n"
+            "  ylabel={S4 identification accuracy},\n"
             f"  symbolic x coords={{{symbolic}}},\n"
             f"  xticklabels={{{ticklabels}}},\n"
             "  xtick=data, xticklabel style={font=\\footnotesize},\n"

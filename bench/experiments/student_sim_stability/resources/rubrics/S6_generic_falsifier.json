@@ -1,7 +1,7 @@
 {
-  "rubric_id": "C1_persona_distinguishability",
+  "rubric_id": "S6_generic_falsifier",
   "version": "v1.3.0",
-  "dimension": "control",
+  "dimension": "S6",
   "name": "Persona-vs-generic distinguishability",
   "definition": "Evaluates whether persona-conditioned generated student messages are distinguishable from matching generic-control generated student messages.",
   "unit": "paired live r0 tutor-t0 conversation and matching control conversation",
@@ -39,6 +39,6 @@
     "persona_contract_contradiction"
   ],
   "aggregation_formula": "mean(distinctiveness) and high_score_ratio=count(distinctiveness >= 4)/n by persona/model",
-  "prompt_template": "rubrics/prompts/C1_persona_distinguishability.txt",
-  "prompt_template_path": "prompts/C1_persona_distinguishability.txt"
+  "prompt_template": "rubrics/prompts/S6_generic_falsifier.txt",
+  "prompt_template_path": "prompts/S6_generic_falsifier.txt"
 }

@@ -1,4 +1,4 @@
-"""D3 per-turn fidelity curve Component (mean + 95% CI bands)."""
+"""S2 per-turn fidelity curve Component (mean + 95% CI bands)."""
 
 from __future__ import annotations
 
@@ -91,7 +91,7 @@ class D3Curves(Component):
         ax.set_ylabel("Persona Fidelity (1-5)", fontsize=11)
         lower = data["lower"]
         ax.set_ylim(lower, 5.1)
-        ax.set_title("D3 Per-turn Persona Fidelity (mean + 95% CI)", size=13)
+        ax.set_title("S2 Per-turn Persona Fidelity (mean + 95% CI)", size=13)
         ax.legend(fontsize=9)
         ax.xaxis.set_major_locator(ticker.MaxNLocator(integer=True))
         ax.axhline(y=4, color="green", linestyle="--", alpha=0.4, label="_nolegend_")
@@ -104,7 +104,7 @@ class D3Curves(Component):
         fig = self.figure()
         if fig is None:
             return ""
-        return _embed_img(_fig_to_base64(fig), "D3 drift curves")
+        return _embed_img(_fig_to_base64(fig), "S2 drift curves")
 
     def render_csv(self) -> bytes | None:
         data = self._data

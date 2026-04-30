@@ -1,4 +1,4 @@
-"""Per-dimension failure mini-table Component (D1 / D2 / D3 inline)."""
+"""Per-dimension failure mini-table Component (S1 / S3 / S2 inline)."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from experiments.student_sim_stability.analysis.components.base import (
 class FailureInline(Component):
     """Small failure-type table filtered to one dimension.
 
-    Embedded at the end of each D1 / D2 / D3 section so the reader sees the
+    Embedded at the end of each S1 / S3 / S2 section so the reader sees the
     failure mix that drives the score on that dimension without leaving the
     section to consult the full Methodology Appendix cross-tab.
     """

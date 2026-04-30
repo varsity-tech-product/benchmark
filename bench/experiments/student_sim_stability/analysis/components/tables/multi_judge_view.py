@@ -26,14 +26,14 @@ _MULTI_VIEW_LABELS = {
     "panel_3": "Panel-3 mean",
 }
 # Paper-side: only the three persona-stability dimensions ship to the appendix.
-_TEX_DIMENSIONS = ("D1", "D2", "D3")
+_TEX_DIMENSIONS = ("S1", "S3", "S2")
 _MULTI_GROUP_KEY = {
-    "D1": ("model", "Student model"),
-    "D2": ("model", "Student model"),
-    "D3": ("model", "Student model"),
+    "S1": ("model", "Student model"),
+    "S3": ("model", "Student model"),
+    "S2": ("model", "Student model"),
     "control": ("persona_id", "Persona"),
-    "P1": ("persona_id", "Persona"),
-    "B1": ("persona_id", "Persona"),
+    "S5": ("persona_id", "Persona"),
+    "S4": ("persona_id", "Persona"),
 }
 
 
@@ -126,11 +126,11 @@ class MultiJudgeView(Component):
             lambda: defaultdict(list)
         )
         for row in dim.get("per_eval", []):
-            # D3 inputs include both live and control conversations; the
-            # paper-side D3 view aggregates only live items so it lines up
+            # S2 inputs include both live and control conversations; the
+            # paper-side S2 view aggregates only live items so it lines up
             # with d3_drift / ranking_table (which read all_evaluations.json
             # and route control out into its own bucket).
-            if dimension == "D3":
+            if dimension == "S2":
                 eid = str(row.get("eval_id") or "")
                 if "__control__" in eid:
                     continue
@@ -165,7 +165,7 @@ class MultiJudgeView(Component):
 
     def render_tex(self) -> str | None:
         """Concatenate one booktabs table per persona-stability dimension
-        (D1, D2, D3) into a single tex snippet. Each dim is preceded by a
+        (S1, S3, S2) into a single tex snippet. Each dim is preceded by a
         centered ``\\textbf{}`` header so the snippet remains a single
         ``\\input{}``-able unit. Cell format is the compact ``mean (std)``
         so the table fits a single-column NeurIPS textwidth."""

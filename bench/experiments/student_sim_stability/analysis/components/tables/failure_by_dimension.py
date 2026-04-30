@@ -1,6 +1,6 @@
 """Cross-dimension failure mini-table Component (paper-side).
 
-Rolls the per-dimension failure mix (D1 / D2 / D3) into a single five-column
+Rolls the per-dimension failure mix (S1 / S3 / S2) into a single five-column
 table so the appendix carries one failure-mix table instead of three. Each
 row is one ``(dimension, failure_type)`` pair, ordered by descending count
 within each dimension.
@@ -14,7 +14,7 @@ from experiments.student_sim_stability.analysis.components.base import (
     csv_bytes,
 )
 
-_DIMENSIONS = ("D1", "D2", "D3")
+_DIMENSIONS = ("S1", "S3", "S2")
 
 
 class FailureByDimension(Component):
@@ -50,7 +50,7 @@ class FailureByDimension(Component):
             return (
                 "<table><tr><th>Dimension</th><th>Failure type</th>"
                 "<th>Count</th><th>Mean severity</th><th>N</th></tr>"
-                "<tr><td colspan='5'>No failure-type labels emitted on D1-D3.</td>"
+                "<tr><td colspan='5'>No failure-type labels emitted on S1-S2.</td>"
                 "</tr></table>"
             )
         body = "".join(

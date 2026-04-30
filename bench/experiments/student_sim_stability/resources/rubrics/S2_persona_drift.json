@@ -1,7 +1,7 @@
 {
-  "rubric_id": "D3_drift_detection",
+  "rubric_id": "S2_persona_drift",
   "version": "v1.3.0",
-  "dimension": "D3",
+  "dimension": "S2",
   "name": "Persona drift detection",
   "definition": "Evaluates whether generated student messages maintain persona fidelity across a full conversation.",
   "unit": "one conversation",
@@ -51,6 +51,6 @@
     "persona_contract_contradiction"
   ],
   "aggregation_formula": "mean(live overall_drift_score), mean per-turn persona_fidelity, drift_onset distribution, and failure taxonomy counts by model/persona/task",
-  "prompt_template": "rubrics/prompts/D3_drift_detection.txt",
-  "prompt_template_path": "prompts/D3_drift_detection.txt"
+  "prompt_template": "rubrics/prompts/S2_persona_drift.txt",
+  "prompt_template_path": "prompts/S2_persona_drift.txt"
 }

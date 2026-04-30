@@ -1,4 +1,4 @@
-"""D2 reproducibility × tutor-temperature table Component."""
+"""S3 reproducibility × tutor-temperature table Component."""
 
 from __future__ import annotations
 
@@ -31,7 +31,7 @@ class D2ByModelTemp(Component):
                 f'<td>{d["n"]}</td></tr>'
             )
         return (
-            "<table><tr><th>Model</th><th>Tutor Temp</th><th>D2 Score</th>"
+            "<table><tr><th>Model</th><th>Tutor Temp</th><th>S3 Score</th>"
             f"<th>95% CI</th><th>Std</th><th>N</th></tr>{rows}</table>"
         )
 
@@ -69,7 +69,7 @@ class D2ByModelTemp(Component):
                 [model, temp, f"{d['mean']:.2f}", ci, f"{d['std']:.2f}", d["n"]]
             )
         return booktabs_table(
-            ["Model", "Tutor Temp", "D2 Mean", "95% CI", "Std", "N"],
+            ["Model", "Tutor Temp", "S3 Mean", "95% CI", "Std", "N"],
             "llrlrr",
             rows,
         )

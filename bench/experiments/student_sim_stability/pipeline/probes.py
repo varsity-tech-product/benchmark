@@ -36,11 +36,11 @@ PROBES = [
     # produce — it embeds a task scenario and asks an indirect question whose
     # answer should expose a specific persona facet.
     #
-    # ``expected_signals_by_persona`` gives the P1 judge a per-persona cheat
+    # ``expected_signals_by_persona`` gives the S5 judge a per-persona cheat
     # sheet of surface markers that justify a high facet_fit score; the
     # student's response does not have to use the exact phrases, but the
     # presence / absence pattern drives the score ceilings in
-    # ``resources/rubrics/prompts/P1_targeted_probe.txt``.
+    # ``resources/rubrics/prompts/S5_targeted_probes.txt``.
     {
         "probe_id": "data_sanity_check",
         "facet": "finance_knowledge_boundary",

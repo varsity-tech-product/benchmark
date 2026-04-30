@@ -177,7 +177,7 @@ def aggregate_multi_judge(
           "version": "multi_judge_v3",
           "views": ["sonnet", "gpt54", "gemini", "panel_3"],
           "judge_model_map": {"sonnet": "anthropic/claude-sonnet-4-6", ...},
-          "dimensions": {"D1": {"per_eval": [...], "n": 252, ...}, ...}
+          "dimensions": {"S1": {"per_eval": [...], "n": 252, ...}, ...}
         }
     """
     out = output_path or results_dir / "evaluations" / "multi_judge_aggregates.json"

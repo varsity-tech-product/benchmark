@@ -1,4 +1,4 @@
-"""Human-vs-judge B1 accuracy per-judge table Component."""
+"""Human-vs-judge S4 accuracy per-judge table Component."""
 
 from __future__ import annotations
 
@@ -38,7 +38,7 @@ class HumanAlignmentB1PerJudge(Component):
         if not b1_rows:
             return ""
         return (
-            "<h3>B1 Per-Judge Accuracy vs Human</h3>"
+            "<h3>S4 Per-Judge Accuracy vs Human</h3>"
             "<table><tr><th>Judge view</th><th>Accuracy vs human</th><th>N</th></tr>"
             f"{b1_rows}</table>"
         )

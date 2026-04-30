@@ -180,7 +180,7 @@ class ControlBars(Component):
             "  width=\\linewidth, height=0.45\\linewidth,\n"
             "  ybar, bar width=6pt, enlarge x limits=0.18,\n"
             "  ymin=0, ymax=5.2,\n"
-            "  ylabel={C1 distinctiveness mean},\n"
+            "  ylabel={S6 distinctiveness mean},\n"
             f"  symbolic x coords={{{symbolic}}},\n"
             f"  xticklabels={{{ticklabels}}},\n"
             "  xtick=data, xticklabel style={font=\\footnotesize},\n"

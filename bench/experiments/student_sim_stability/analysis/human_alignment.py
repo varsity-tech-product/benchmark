@@ -1,9 +1,9 @@
 """Human quant-expert alignment artifact helpers.
 
-Schema v2 (2026-04-27): expanded to cover B1 ``identified_persona`` (judges
+Schema v2 (2026-04-27): expanded to cover S4 ``identified_persona`` (judges
 the LLM panel can't be validated on without this), control ``distinctiveness``
-and ``persona_set_a`` (placebo-test correctness), P1 ``facet_fit`` +
-``expected_signals_hit``, and D2 ``persona_fidelity``.
+and ``persona_set_a`` (placebo-test correctness), S5 ``facet_fit`` +
+``expected_signals_hit``, and S3 ``persona_fidelity``.
 
 The agreement report exposes per-judge accuracy (Sonnet alone vs GPT-5.4
 alone vs panel-3 consensus) for the categorical fields so the
@@ -46,50 +46,50 @@ LABEL_FIELDS = [
     "task_id",
     "model",
     # Always-applicable scoring
-    "persona_fidelity",  # 1-5 numeric, applies to D1/D2/D3/P1/B1
-    "knowledge_boundary_pass",  # 1-5, D1
-    "emotional_match",  # 1-5, D1/D2
-    "drift_onset_turn",  # int, D3
+    "persona_fidelity",  # 1-5 numeric, applies to S1/S3/S2/S5/S4
+    "knowledge_boundary_pass",  # 1-5, S1
+    "emotional_match",  # 1-5, S1/S3
+    "drift_onset_turn",  # int, S2
     "failure_type",  # categorical, all dims
     "human_comment",  # free text (Chinese OK)
-    # B1-specific
+    # S4-specific
     "human_identified_persona",  # one of: developer_crossover/double_novice/finance_veteran/fullstack_practitioner/uncertain
     "human_b1_confidence",  # 1-5
     # control-specific
     "human_distinctiveness",  # 1-5
     "human_persona_set_a",  # 'true'/'false'/'unknown'
-    # P1-specific
+    # S5-specific
     "human_facet_fit",  # 1-5
     "human_facet_signals_hit",  # comma-separated string
 ]
 
 KNOWLEDGE_FIELD_BY_DIMENSION = {
-    "D1": "knowledge_boundary",
+    "S1": "knowledge_boundary",
 }
 
 EMOTIONAL_FIELD_BY_DIMENSION = {
-    "D1": "emotional_tone",
-    "D2": "emotional_consistency",
+    "S1": "emotional_tone",
+    "S3": "emotional_consistency",
 }
 
 # Stratified sampling targets (40-sample budget). Persona quotas matter
 # because different personas surface different judge weaknesses (e.g.
-# fullstack_practitioner is the close-neighbor case for B1 ambiguity).
+# fullstack_practitioner is the close-neighbor case for S4 ambiguity).
 DEFAULT_SAMPLE_PLAN: dict[str, dict[str, int]] = {
-    # dim: { persona_id: count } — all 4 personas covered for D1/D3/P1/B1
-    "D1": {
+    # dim: { persona_id: count } — all 4 personas covered for S1/S2/S5/S4
+    "S1": {
         "developer_crossover": 2,
         "double_novice": 2,
         "finance_veteran": 2,
         "fullstack_practitioner": 2,
     },
-    "D2": {
+    "S3": {
         "developer_crossover": 1,
         "double_novice": 1,
         "finance_veteran": 1,
         "fullstack_practitioner": 1,
     },
-    "D3": {
+    "S2": {
         "developer_crossover": 2,
         "double_novice": 2,
         "finance_veteran": 2,
@@ -101,13 +101,13 @@ DEFAULT_SAMPLE_PLAN: dict[str, dict[str, int]] = {
         "finance_veteran": 1,
         "fullstack_practitioner": 1,
     },
-    "P1": {
+    "S5": {
         "developer_crossover": 2,
         "double_novice": 2,
         "finance_veteran": 2,
         "fullstack_practitioner": 2,
     },
-    "B1": {
+    "S4": {
         # fp is overweighted because it is the close-neighbor judge-disagreement
         # case (Sonnet 41% vs GPT-5.4 76% accuracy). Extra fp samples give
         # higher statistical power for the Sonnet-vs-GPT-5.4 question.
@@ -198,7 +198,7 @@ def _stratified_sample(
     input_dir: Path, plan: dict[str, dict[str, int]], seed: int = 42
 ) -> list[dict]:
     """Pick samples per (dimension, persona) quota from the rendered judge
-    inputs. For B1 specifically, prioritise samples where the two-judge panel
+    inputs. For S4 specifically, prioritise samples where the two-judge panel
     disagrees most (read identified_persona_by_judge from the corresponding
     primary aggregate if available) — these are the most informative cases.
     """
@@ -212,14 +212,14 @@ def _stratified_sample(
         if dim and persona:
             payloads[(dim, persona)].append((path, payload))
 
-    # For B1: rank candidates so that fp samples where Sonnet and GPT-5.4
+    # For S4: rank candidates so that fp samples where Sonnet and GPT-5.4
     # disagreed are chosen first. Falls back to random if no aggregate yet.
     b1_priority: dict[str, int] = {}
     eval_path = input_dir.parent / "evaluations" / "all_evaluations.json"
     if eval_path.exists():
         try:
             ag = load_json(eval_path)
-            for r in ag.get("B1", []):
+            for r in ag.get("S4", []):
                 by_judge = (r.get("scores") or {}).get(
                     "identified_persona_by_judge"
                 ) or {}
@@ -245,7 +245,7 @@ def _stratified_sample(
         bucket = payloads.get((dim, persona), [])
         if not bucket:
             continue
-        if dim == "B1":
+        if dim == "S4":
             # Sort by descending priority then deterministic eval_id for ties
             bucket = sorted(
                 bucket,
@@ -361,7 +361,7 @@ def init_human_alignment(
         "sample_count": len(samples),
         "sampling_policy": (
             "stratified per (dimension, persona) per DEFAULT_SAMPLE_PLAN; "
-            "B1 prioritises judge-disagreement cases when available"
+            "S4 prioritises judge-disagreement cases when available"
         ),
         "llm_judge_label_count": llm_snapshot["llm_label_count"],
         "samples": samples,
@@ -421,27 +421,27 @@ _PER_JUDGE_ALIGNMENT_SPECS: list[tuple[str, str, dict[str, str]]] = [
         "persona_fidelity",
         "persona_fidelity",
         {
-            "D1": "overall",
-            "D2": "overall_reproducibility",
-            "D3": "overall_drift_score",
-            "P1": "overall_probe_pass",
-            "B1": "contract_fit",
+            "S1": "overall",
+            "S3": "overall_reproducibility",
+            "S2": "overall_drift_score",
+            "S5": "overall_probe_pass",
+            "S4": "contract_fit",
         },
     ),
     (
         "knowledge_boundary_pass",
         "knowledge_boundary_pass",
-        {"D1": "knowledge_boundary"},
+        {"S1": "knowledge_boundary"},
     ),
     (
         "emotional_match",
         "emotional_match",
-        {"D1": "emotional_tone", "D2": "emotional_consistency"},
+        {"S1": "emotional_tone", "S3": "emotional_consistency"},
     ),
     (
         "p1_facet_fit",
         "human_facet_fit",
-        {"P1": "facet_fit"},
+        {"S5": "facet_fit"},
     ),
     (
         "control_distinctiveness",
@@ -522,7 +522,7 @@ def _per_judge_b1_match(
     by_model_dir: Path,
 ) -> dict:
     """Compare human's identified_persona to each judge's identified_persona
-    on a B1 sample. Returns dict with per-judge match (bool) for the three
+    on a S4 sample. Returns dict with per-judge match (bool) for the three
     panel members."""
     out: dict[str, bool | None] = {"sonnet": None, "gpt54": None, "gemini": None}
     # Try aggregate first (panel-3 has identified_persona_by_judge)
@@ -638,7 +638,7 @@ def compute_human_agreement(
                 disagreements=all_disagreements,
             )
 
-            # --- knowledge_boundary_pass (D1 only) ---
+            # --- knowledge_boundary_pass (S1 only) ---
             kf = KNOWLEDGE_FIELD_BY_DIMENSION.get(dimension)
             _record_numeric(
                 category="knowledge_boundary_pass",
@@ -652,7 +652,7 @@ def compute_human_agreement(
                 disagreements=all_disagreements,
             )
 
-            # --- emotional_match (D1/D2) ---
+            # --- emotional_match (S1/S3) ---
             ef = EMOTIONAL_FIELD_BY_DIMENSION.get(dimension)
             _record_numeric(
                 category="emotional_match",
@@ -666,7 +666,7 @@ def compute_human_agreement(
                 disagreements=all_disagreements,
             )
 
-            # --- drift_onset_turn (D3) ---
+            # --- drift_onset_turn (S2) ---
             _record_numeric(
                 category="drift_onset_turn",
                 eval_id=eval_id,
@@ -711,8 +711,8 @@ def compute_human_agreement(
                         }
                     )
 
-            # --- B1 identified_persona (per-judge accuracy) ---
-            if dimension == "B1":
+            # --- S4 identified_persona (per-judge accuracy) ---
+            if dimension == "S4":
                 human_id = str(row.get("human_identified_persona", "")).strip()
                 if human_id and human_id != "uncertain":
                     matches = _per_judge_b1_match(
@@ -733,7 +733,7 @@ def compute_human_agreement(
                     )
 
             # --- control distinctiveness (numeric) + persona_set_a (categorical) ---
-            if dimension == "control":
+            if dimension == "S6":
                 _record_numeric(
                     category="control_distinctiveness",
                     eval_id=eval_id,
@@ -757,8 +757,8 @@ def compute_human_agreement(
                         }
                     )
 
-            # --- P1 facet_fit + expected_signals recall ---
-            if dimension == "P1":
+            # --- S5 facet_fit + expected_signals recall ---
+            if dimension == "S5":
                 _record_numeric(
                     category="p1_facet_fit",
                     eval_id=eval_id,
@@ -804,7 +804,7 @@ def compute_human_agreement(
         "emotional_match": _numeric_agreement(emotional, "abs_diff"),
         "drift_onset_turn": _numeric_agreement(drift, "abs_diff"),
         "failure_type": _failure_type_agreement(failure_match),
-        # Per-judge B1 vs human (the load-bearing question)
+        # Per-judge S4 vs human (the load-bearing question)
         "b1_identification": {
             "sonnet_vs_human": _b1_judge_accuracy("sonnet"),
             "gpt54_vs_human": _b1_judge_accuracy("gpt54"),
@@ -883,7 +883,7 @@ def compute_human_agreement(
 
 
 def _b1_breakdown_by_persona(rows: list[dict]) -> dict:
-    """Per-persona B1 per-judge accuracy (the breakdown that exposes
+    """Per-persona S4 per-judge accuracy (the breakdown that exposes
     persona-specific judge weakness)."""
     by_persona: dict[str, dict] = defaultdict(
         lambda: {

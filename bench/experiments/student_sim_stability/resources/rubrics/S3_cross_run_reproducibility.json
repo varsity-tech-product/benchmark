@@ -1,7 +1,7 @@
 {
-  "rubric_id": "D2_cross_run_reproducibility",
+  "rubric_id": "S3_cross_run_reproducibility",
   "version": "v1.3.0",
-  "dimension": "D2",
+  "dimension": "S3",
   "name": "Cross-run reproducibility",
   "definition": "Evaluates whether three repeated live conversations under identical conditions preserve similar student behavior.",
   "unit": "three repeated live conversations",
@@ -45,6 +45,6 @@
     "persona_contract_contradiction"
   ],
   "aggregation_formula": "mean(overall_reproducibility), std(overall_reproducibility), high_score_ratio=count(overall_reproducibility >= 4)/n by model and tutor_temperature",
-  "prompt_template": "rubrics/prompts/D2_cross_run_reproducibility.txt",
-  "prompt_template_path": "prompts/D2_cross_run_reproducibility.txt"
+  "prompt_template": "rubrics/prompts/S3_cross_run_reproducibility.txt",
+  "prompt_template_path": "prompts/S3_cross_run_reproducibility.txt"
 }

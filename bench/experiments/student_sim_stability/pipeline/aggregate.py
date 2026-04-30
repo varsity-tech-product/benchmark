@@ -58,13 +58,13 @@ def _validate_strict_input_output_sets(
         counts = _dimension_counts(judge_input_dir)
         base = expected_artifact_counts("full")
         errors = []
-        # D1 is allowed to be either the sampled subset or the full set.
-        if counts["D1"] not in {base["D1_sample"], base["D1_full"]}:
+        # S1 is allowed to be either the sampled subset or the full set.
+        if counts["S1"] not in {base["S1_sample"], base["S1_full"]}:
             errors.append(
-                f"D1 inputs={counts['D1']}/"
-                f"{base['D1_sample']} sample or {base['D1_full']} full"
+                f"S1 inputs={counts['S1']}/"
+                f"{base['S1_sample']} sample or {base['S1_full']} full"
             )
-        for dim in ("D2", "D3", "control", "P1", "B1"):
+        for dim in ("S3", "S2", "S6", "S5", "S4"):
             if counts[dim] != base[dim]:
                 errors.append(f"{dim} inputs={counts[dim]}/{base[dim]}")
         if errors:
@@ -147,7 +147,7 @@ def _merge_panel_3_scores(
     Numeric fields (per :func:`numeric_score_fields`) become element-wise
     means across whichever judges supplied a numeric value. Categorical /
     list / text fields are preserved from the primary judge for backward
-    compatibility, and a per-judge breakdown for B1's ``identified_persona``
+    compatibility, and a per-judge breakdown for S4's ``identified_persona``
     is added so the report can compute per-judge accuracy.
     """
     out = dict(primary_scores)  # start from primary, overwrite numerics
@@ -167,7 +167,7 @@ def _merge_panel_3_scores(
         ]
         if vals:
             out[field] = round(sum(vals) / len(vals), 4)
-    if dimension == "B1":
+    if dimension == "S4":
         out["identified_persona_by_judge"] = {
             "sonnet": str(primary_scores.get("identified_persona", "")),
             "gpt54": str(secondary_scores.get("identified_persona", "")),
@@ -253,12 +253,12 @@ def aggregate(
                     "either run the full judge panel or pass judge_view='primary'"
                 )
     records: dict[str, list[dict]] = {
-        "D1": [],
-        "D2": [],
-        "control": [],
-        "D3": [],
-        "P1": [],
-        "B1": [],
+        "S1": [],
+        "S2": [],
+        "S3": [],
+        "S4": [],
+        "S5": [],
+        "S6": [],
     }
 
     if strict:
@@ -311,7 +311,7 @@ def aggregate(
         else:
             metadata = {}
 
-        if dimension == "D3":
+        if dimension == "S2":
             metadata = dict(metadata)
             normalized = _normalize_d3_scores(scores)
             metadata["drift_onset_turn"] = normalized.get("drift_onset_turn")
@@ -319,13 +319,13 @@ def aggregate(
             if metadata.get("phase") == "control":
                 d3_control_outputs += 1
             else:
-                records["D3"].append(record)
+                records["S2"].append(record)
             continue
 
-        if dimension == "control":
+        if dimension == "S6":
             if strict and "distinctiveness" not in scores:
-                raise ValueError(f"Control output missing distinctiveness: {eval_id}")
-            records["control"].append(
+                raise ValueError(f"S6 output missing distinctiveness: {eval_id}")
+            records["S6"].append(
                 {"eval_id": eval_id, "scores": scores, "metadata": metadata}
             )
             continue
@@ -339,10 +339,10 @@ def aggregate(
             {"eval_id": eval_id, "scores": scores, "metadata": metadata}
         )
 
-    if strict and d3_control_outputs and not records["control"]:
+    if strict and d3_control_outputs and not records["S6"]:
         raise ValueError(
-            "D3 control outputs were present but no real control__ judge outputs "
-            "were found. Control-from-D3 fallback is disabled."
+            "S2 control-conversation outputs were present but no real S6 judge "
+            "outputs were found. S6-from-S2 fallback is disabled."
         )
 
     atomic_write_json(output_path, records)

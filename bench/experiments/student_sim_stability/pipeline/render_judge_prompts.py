@@ -6,7 +6,7 @@ and writes rendered prompts + metadata to judge_inputs/ for batch processing.
 Usage:
     python -m experiments.student_sim_stability.pipeline.render_judge_prompts \
         --conv-dir results/main/conversations \
-        --output-dir results/main/judge_inputs --dimension D1
+        --output-dir results/main/judge_inputs --dimension S1
 """
 
 import argparse
@@ -51,12 +51,12 @@ from experiments.student_sim_stability.pipeline._render_common import (
 )
 from server.schemas import QuantTutorTask, StudentPersona
 
-_D1_PROMPT = rubric_prompt_template("D1")
-_D2_PROMPT = rubric_prompt_template("D2")
-_D3_PROMPT = rubric_prompt_template("D3")
-_DISTINGUISH_PROMPT = rubric_prompt_template("control")
-_P1_PROMPT = rubric_prompt_template("P1")
-_B1_PROMPT = rubric_prompt_template("B1")
+_D1_PROMPT = rubric_prompt_template("S1")
+_D2_PROMPT = rubric_prompt_template("S3")
+_D3_PROMPT = rubric_prompt_template("S2")
+_DISTINGUISH_PROMPT = rubric_prompt_template("S6")
+_P1_PROMPT = rubric_prompt_template("S5")
+_B1_PROMPT = rubric_prompt_template("S4")
 _SYSTEM_LABELS = ["System A", "System B", "System C", "System D", "System E"]
 
 
@@ -177,7 +177,7 @@ def _rubric_prompt(dimension: str, prompt: str) -> tuple[dict, str]:
 
 
 def render_d1(conv_dir: Path, output_dir: Path, sample_policy: str = "all"):
-    """Render D1 prompts: one per student message."""
+    """Render S1 prompts: one per student message."""
     output_dir.mkdir(parents=True, exist_ok=True)
     count = 0
 
@@ -215,12 +215,12 @@ def render_d1(conv_dir: Path, output_dir: Path, sample_policy: str = "all"):
                 tutor_message=_truncate(tutor_msg),
                 student_message=_truncate(turn["content"]),
             )
-            rubric_meta, prompt = _rubric_prompt("D1", prompt)
+            rubric_meta, prompt = _rubric_prompt("S1", prompt)
 
-            eval_id = f"D1__{conv_file.stem}__turn{turn_idx}"
+            eval_id = f"S1__{conv_file.stem}__turn{turn_idx}"
             out = {
                 "eval_id": eval_id,
-                "dimension": "D1",
+                "dimension": "S1",
                 "rubric_id": rubric_meta["rubric_id"],
                 "rubric_version": rubric_meta["rubric_version"],
                 "prompt": prompt,
@@ -242,11 +242,11 @@ def render_d1(conv_dir: Path, output_dir: Path, sample_policy: str = "all"):
                 json.dump(out, f, indent=2, ensure_ascii=False)
             count += 1
 
-    print(f"D1: rendered {count} prompts")
+    print(f"S1: rendered {count} prompts")
 
 
 def render_d3(conv_dir: Path, output_dir: Path):
-    """Render D3 prompts: one per conversation."""
+    """Render S2 prompts: one per conversation."""
     output_dir.mkdir(parents=True, exist_ok=True)
     count = 0
 
@@ -273,12 +273,12 @@ def render_d3(conv_dir: Path, output_dir: Path):
             student_messages_text=context_text,
             total_turns=scored_turn_count,
         )
-        rubric_meta, prompt = _rubric_prompt("D3", prompt)
+        rubric_meta, prompt = _rubric_prompt("S2", prompt)
 
-        eval_id = f"D3__{conv_file.stem}"
+        eval_id = f"S2__{conv_file.stem}"
         out = {
             "eval_id": eval_id,
-            "dimension": "D3",
+            "dimension": "S2",
             "rubric_id": rubric_meta["rubric_id"],
             "rubric_version": rubric_meta["rubric_version"],
             "prompt": prompt,
@@ -300,11 +300,11 @@ def render_d3(conv_dir: Path, output_dir: Path):
             json.dump(out, f, indent=2, ensure_ascii=False)
         count += 1
 
-    print(f"D3: rendered {count} prompts")
+    print(f"S2: rendered {count} prompts")
 
 
 def render_d2(conv_dir: Path, output_dir: Path):
-    """Render D2 prompts: one per (task, persona, model, tutor_t) group of 3 repeats."""
+    """Render S3 prompts: one per (task, persona, model, tutor_t) group of 3 repeats."""
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Group conversations by (task, persona, model, tutor_t)
@@ -329,7 +329,7 @@ def render_d2(conv_dir: Path, output_dir: Path):
     count = 0
     for group_key, convs in sorted(groups.items()):
         if len(convs) < REPEATS:
-            continue  # need all repeats for the D2 rubric
+            continue  # need all repeats for the S3 rubric
 
         parts = group_key.split("__")
         task_id, persona_id, model, tutor_t = parts[0], parts[1], parts[2], parts[3]
@@ -356,12 +356,12 @@ def render_d2(conv_dir: Path, output_dir: Path):
             task_description=task.description,
             runs_text="\n\n".join(runs_parts),
         )
-        rubric_meta, prompt = _rubric_prompt("D2", prompt)
+        rubric_meta, prompt = _rubric_prompt("S3", prompt)
 
-        eval_id = f"D2__{group_key}"
+        eval_id = f"S3__{group_key}"
         out = {
             "eval_id": eval_id,
-            "dimension": "D2",
+            "dimension": "S3",
             "rubric_id": rubric_meta["rubric_id"],
             "rubric_version": rubric_meta["rubric_version"],
             "prompt": prompt,
@@ -381,7 +381,7 @@ def render_d2(conv_dir: Path, output_dir: Path):
             json.dump(out, f, indent=2, ensure_ascii=False)
         count += 1
 
-    print(f"D2: rendered {count} prompts")
+    print(f"S3: rendered {count} prompts")
 
 
 def _student_messages_text(conv: list[dict]) -> str:
@@ -427,7 +427,7 @@ def render_control(conv_dir: Path, output_dir: Path):
         with open(control_file) as f:
             control_conv = json.load(f)
 
-        eval_id = f"control__{task_id}__{persona_id}__{model}__r0_tt0"
+        eval_id = f"S6__{task_id}__{persona_id}__{model}__r0_tt0"
         persona_is_set_a = random.Random(eval_id).choice([True, False])
         persona_msgs = _student_messages_text(persona_conv)
         control_msgs = _student_messages_text(control_conv)
@@ -446,11 +446,11 @@ def render_control(conv_dir: Path, output_dir: Path):
             set_a_conversation=set_a,
             set_b_conversation=set_b,
         )
-        rubric_meta, prompt = _rubric_prompt("control", prompt)
+        rubric_meta, prompt = _rubric_prompt("S6", prompt)
 
         out = {
             "eval_id": eval_id,
-            "dimension": "control",
+            "dimension": "S6",
             "rubric_id": rubric_meta["rubric_id"],
             "rubric_version": rubric_meta["rubric_version"],
             "prompt": prompt,
@@ -482,11 +482,11 @@ def render_control(conv_dir: Path, output_dir: Path):
             f"for every control conversation; missing for {sample}"
         )
 
-    print(f"control: rendered {count} prompts")
+    print(f"S6: rendered {count} prompts")
 
 
 def render_p1(results_dir: Path, output_dir: Path):
-    """Render P1 targeted-probe judge prompts.
+    """Render S5 targeted-probe judge prompts.
 
     Threads each probe's ``expected_signals`` list (persona-specific indirect
     signal markers authored in ``probes.py``) into the judge prompt so the
@@ -522,12 +522,12 @@ def render_p1(results_dir: Path, output_dir: Path):
             student_response=_truncate(student_response),
             expected_signals=expected_signals_text,
         )
-        rubric_meta, prompt = _rubric_prompt("P1", prompt)
+        rubric_meta, prompt = _rubric_prompt("S5", prompt)
         model = payload.get("student_model", "")
-        eval_id = f"P1__{response_file.stem}"
+        eval_id = f"S5__{response_file.stem}"
         out = {
             "eval_id": eval_id,
-            "dimension": "P1",
+            "dimension": "S5",
             "rubric_id": rubric_meta["rubric_id"],
             "rubric_version": rubric_meta["rubric_version"],
             "prompt": prompt,
@@ -547,16 +547,16 @@ def render_p1(results_dir: Path, output_dir: Path):
             json.dump(out, fh, indent=2, ensure_ascii=False)
             fh.write("\n")
         count += 1
-    print(f"P1: rendered {count} prompts")
+    print(f"S5: rendered {count} prompts")
 
 
 def render_b1(conv_dir: Path, output_dir: Path):
-    """Render B1 blind persona-identification prompts from live conversations.
+    """Render S4 blind persona-identification prompts from live conversations.
 
     Source: ``conversations/live__*.json`` produced by ``ExperimentRunner``.
     Only model-generated student turns (``STUDENT_MODEL_SOURCE``) are included in
     the transcript; the fixture opening (``FIXTURE_OPENING_SOURCE``) and tutor
-    turns are filtered out, so the B1 judge never sees persona-labeling text
+    turns are filtered out, so the S4 judge never sees persona-labeling text
     from the scripted opener or adaptive tutor references.
     """
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -588,11 +588,11 @@ def render_b1(conv_dir: Path, output_dir: Path):
             context_label=context_label,
             transcript=transcript,
         )
-        rubric_meta, prompt = _rubric_prompt("B1", prompt)
-        eval_id = f"B1__{live_file.stem}"
+        rubric_meta, prompt = _rubric_prompt("S4", prompt)
+        eval_id = f"S4__{live_file.stem}"
         out = {
             "eval_id": eval_id,
-            "dimension": "B1",
+            "dimension": "S4",
             "rubric_id": rubric_meta["rubric_id"],
             "rubric_version": rubric_meta["rubric_version"],
             "prompt": prompt,
@@ -611,7 +611,7 @@ def render_b1(conv_dir: Path, output_dir: Path):
             json.dump(out, fh, indent=2, ensure_ascii=False)
             fh.write("\n")
         count += 1
-    print(f"B1: rendered {count} prompts")
+    print(f"S4: rendered {count} prompts")
 
 
 def clean_rendered_prompts(output_dir: Path, dimension: str) -> int:
@@ -640,10 +640,10 @@ def main():
         choices=(*DIMENSION_TO_FILE, "all"),
     )
     parser.add_argument(
-        "--d1-sample-policy",
+        "--s1-sample-policy",
         default="all",
         choices=["all", "live-r0-tt0"],
-        help="D1 prompt sampling policy. Use live-r0-tt0 for the report sample.",
+        help="S1 prompt sampling policy. Use live-r0-tt0 for the report sample.",
     )
     parser.add_argument(
         "--clean",
@@ -660,18 +660,18 @@ def main():
         removed = clean_rendered_prompts(output_dir, args.dimension)
         print(f"clean: removed {removed} old prompts")
 
-    if args.dimension in ("D1", "all"):
-        render_d1(conv_dir, output_dir, sample_policy=args.d1_sample_policy)
-    if args.dimension in ("D2", "all"):
+    if args.dimension in ("S1", "all"):
+        render_d1(conv_dir, output_dir, sample_policy=args.s1_sample_policy)
+    if args.dimension in ("S3", "all"):
         render_d2(conv_dir, output_dir)
-    if args.dimension in ("D3", "all"):
+    if args.dimension in ("S2", "all"):
         render_d3(conv_dir, output_dir)
-    if args.dimension in ("control", "all"):
+    if args.dimension in ("S6", "all"):
         render_control(conv_dir, output_dir)
     results_dir = conv_dir.parent
-    if args.dimension in ("P1", "all"):
+    if args.dimension in ("S5", "all"):
         render_p1(results_dir, output_dir)
-    if args.dimension in ("B1", "all"):
+    if args.dimension in ("S4", "all"):
         render_b1(conv_dir, output_dir)
 
 

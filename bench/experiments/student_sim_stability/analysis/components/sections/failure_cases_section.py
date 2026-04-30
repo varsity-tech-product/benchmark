@@ -16,7 +16,7 @@ class FailureCasesSection(Component):
 
     Renders the curated case-study cards (preferred) or the picker
     candidates (fallback) at the top, then the full failure-taxonomy
-    cross-tab tables, then the D3 numeric-events insight box. Phase 3
+    cross-tab tables, then the S2 numeric-events insight box. Phase 3
     populates the cards from ``failure_cases_curated.json`` if it exists,
     otherwise from ``failure_cases_candidates.json`` written by the
     standalone ``failure_case_picker``.
@@ -43,7 +43,7 @@ class FailureCasesSection(Component):
         return f"""<h2>D. Failure Case Studies</h2>
 <div class="rubric">
 <strong>Definition:</strong> Failure taxonomy explains how persona behavior fails across generated outputs.<br>
-<strong>Context:</strong> judge failure_types, dominant_failure_type, failure_evidence, metadata persona/task/model/phase/rubric, and D3 per-turn numeric fields.<br>
+<strong>Context:</strong> judge failure_types, dominant_failure_type, failure_evidence, metadata persona/task/model/phase/rubric, and S2 per-turn numeric fields.<br>
 <strong>Fields:</strong> knowledge_leak, under_competence, emotional_mismatch, generic_student_behavior, co_teacher_drift, task_forgetting, persona_contract_contradiction.<br>
 <strong>Aggregation:</strong> counts by type, persona, task, model, phase, and rubric; severity is estimated as 5 minus the primary score when available.
 </div>
@@ -51,7 +51,7 @@ class FailureCasesSection(Component):
 <h3>Failure-taxonomy Cross-tab</h3>
 {tables_html}
 <div class="insight">
-<strong>D3 numeric events:</strong> knowledge leak = {numeric.get('knowledge_leak_events', 0)}, co-teacher drift = {numeric.get('co_teacher_drift_events', 0)}.
+<strong>S2 numeric events:</strong> knowledge leak = {numeric.get('knowledge_leak_events', 0)}, co-teacher drift = {numeric.get('co_teacher_drift_events', 0)}.
 </div>"""
 
     def render_csv(self) -> bytes | None:
@@ -105,10 +105,10 @@ class FailureCasesSection(Component):
         eval_id text instead).
 
         eval_id → conversation source mapping:
-          - ``D1`` records carry a trailing ``__turnN`` (one judge call per
+          - ``S1`` records carry a trailing ``__turnN`` (one judge call per
             turn); the conversation file has no such suffix, so we strip it
             after stripping the leading dim prefix.
-          - ``D2/D3/B1/P1`` records: strip the leading ``<DIM>__`` only.
+          - ``S3/S2/S4/S5`` records: strip the leading ``<DIM>__`` only.
           - ``control__...`` records: the eval_id IS the placebo conversation
             filename; we additionally surface a sibling persona-side link.
         """
@@ -118,9 +118,9 @@ class FailureCasesSection(Component):
         judge_href = f"../judge_outputs/{eval_id}.json"
         parts = eval_id.split("__", 1)
         conv_links: list[tuple[str, str]] = []
-        if len(parts) == 2 and parts[0] in ("D1", "D2", "D3", "B1", "P1"):
+        if len(parts) == 2 and parts[0] in ("S1", "S3", "S2", "S4", "S5"):
             source = parts[1]
-            if parts[0] == "D1":
+            if parts[0] == "S1":
                 # Strip trailing __turnN if present.
                 tail_idx = source.rfind("__turn")
                 if tail_idx > 0 and source[tail_idx + len("__turn") :].isdigit():

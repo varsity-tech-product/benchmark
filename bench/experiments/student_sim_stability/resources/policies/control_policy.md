@@ -12,4 +12,4 @@ Required properties:
 - Control requires real `control__*.json` judge inputs and outputs.
 - Control aggregate rows must come only from the distinguishability rubric.
 
-The aggregate step must not synthesize control rows from D3 drift scores.
+The aggregate step must not synthesize control rows from S2 drift scores.

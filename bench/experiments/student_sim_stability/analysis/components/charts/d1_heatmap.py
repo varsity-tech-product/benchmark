@@ -1,4 +1,4 @@
-"""D1 persona-adherence heatmap Component.
+"""S1 persona-adherence heatmap Component.
 
 Renders one heatmap per judge (Sonnet / GPT-5.4 / Gemini) when multi-judge data
 is available, otherwise falls back to a single primary-judge heatmap.
@@ -70,7 +70,7 @@ class D1Heatmap(Component):
         fig = self.figure()
         if fig is None:
             return ""
-        alt = "D1 heatmap per judge" if data.get("mode") == "multi" else "D1 heatmap"
+        alt = "S1 heatmap per judge" if data.get("mode") == "multi" else "S1 heatmap"
         return _embed_img(_fig_to_base64(fig), alt)
 
     def _matrices_per_judge(
@@ -78,7 +78,7 @@ class D1Heatmap(Component):
     ) -> dict[str, np.ndarray] | None:
         if not self.multi:
             return None
-        d1_rows = (self.multi.get("dimensions") or {}).get("D1", {}).get("per_eval", [])
+        d1_rows = (self.multi.get("dimensions") or {}).get("S1", {}).get("per_eval", [])
         if not d1_rows:
             return None
         model_idx = {m: i for i, m in enumerate(models)}
@@ -149,11 +149,11 @@ class D1Heatmap(Component):
                         fontweight="bold",
                     )
         fig.suptitle(
-            "D1 Persona Adherence — Student Model × Persona, per Judge",
+            "S1 Persona Adherence — Student Model × Persona, per Judge",
             size=14,
             y=1.02,
         )
-        fig.colorbar(ims[-1], ax=axes, label="D1 overall (1-5)", shrink=0.85, pad=0.02)
+        fig.colorbar(ims[-1], ax=axes, label="S1 overall (1-5)", shrink=0.85, pad=0.02)
         return fig
 
     def _paper_matrix(self) -> tuple[list[str], list[str], list[list[float]]]:
@@ -270,9 +270,9 @@ class D1Heatmap(Component):
                     fontsize=11,
                     fontweight="bold",
                 )
-        fig.colorbar(im, ax=ax, label="D1 Score (1-5)", shrink=0.8)
+        fig.colorbar(im, ax=ax, label="S1 Score (1-5)", shrink=0.8)
         ax.set_title(
-            "D1 Persona Adherence — Student Model × Persona "
+            "S1 Persona Adherence — Student Model × Persona "
             "(judged by Claude Sonnet, primary)",
             size=13,
             pad=10,

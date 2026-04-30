@@ -1,4 +1,4 @@
-"""D3 drift-by-model table Component."""
+"""S2 drift-by-model table Component."""
 
 from __future__ import annotations
 

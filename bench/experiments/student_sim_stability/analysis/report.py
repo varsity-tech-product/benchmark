@@ -151,7 +151,7 @@ _FAILURE_RECOMMENDATIONS = {
     "under_competence": "Clarify minimum expected baseline knowledge and add examples of acceptable partial understanding.",
     "emotional_mismatch": "Strengthen emotional profile examples and add scripted pressure cases.",
     "generic_student_behavior": "Add more persona-specific question style and confusion style examples.",
-    "co_teacher_drift": "Add explicit anti-teaching behavioral rules and D3 examples.",
+    "co_teacher_drift": "Add explicit anti-teaching behavioral rules and S2 examples.",
     "task_forgetting": "Add task-retention reminders and redirect behavior examples.",
     "persona_contract_contradiction": "Resolve inconsistent contract clauses or add explicit precedence rules.",
 }
@@ -205,12 +205,12 @@ class ReportGenerator:
 
         Report layout — headline first, drill-down later:
           1. Headline conclusion (TL;DR) + judge qualification gate status
-          2. Cross-vendor candidate ranking (D1+D2+D3 composite) +
+          2. Cross-vendor candidate ranking (S1+S3+S2 composite) +
              judge-invariance check across Sonnet/GPT-5.4/Gemini/panel-3
-          3. Stability per dimension: D1 / D2 / D3
-          4. Temperature ablation (D2 × tutor temperature)
+          3. Stability per dimension: S1 / S3 / S2
+          4. Temperature ablation (S3 × tutor temperature)
           5. Multi-judge 5-view comparison table
-          6. Validity diagnostics: control + P1 + B1 on live data
+          6. Validity diagnostics: control + S5 + S4 on live data
           7. Human alignment (post-hoc)
           8. Failure taxonomy
           9. Appendix: judge configuration + data quality audit
@@ -319,9 +319,9 @@ class ReportGenerator:
             ),
             "failure_taxonomy": FailureTaxonomy(stats["failure_taxonomy"]),
             "failure_by_dimension": FailureByDimension(stats["failure_taxonomy"]),
-            "failure_inline_d1": FailureInline(stats["failure_taxonomy"], "D1"),
-            "failure_inline_d2": FailureInline(stats["failure_taxonomy"], "D2"),
-            "failure_inline_d3": FailureInline(stats["failure_taxonomy"], "D3"),
+            "failure_inline_d1": FailureInline(stats["failure_taxonomy"], "S1"),
+            "failure_inline_d2": FailureInline(stats["failure_taxonomy"], "S3"),
+            "failure_inline_d3": FailureInline(stats["failure_taxonomy"], "S2"),
             "judge_qualification": JudgeQualification(stats["judge_qualification"]),
             "judge_configuration": JudgeConfiguration(by_dimension_agreement),
             "data_quality_audit": DataQualityAudit(self._audit),
@@ -477,8 +477,8 @@ class ReportGenerator:
         by_task: dict[str, list] = defaultdict(list)
         by_model_persona: dict[str, list] = defaultdict(list)
 
-        score_field = primary_score_field("D1")
-        for rec in self._iter_records("D1"):
+        score_field = primary_score_field("S1")
+        for rec in self._iter_records("S1"):
             score = rec.scores.get(score_field, 0)
             if score <= 0:
                 continue
@@ -498,8 +498,8 @@ class ReportGenerator:
         by_model: dict[str, list] = defaultdict(list)
         by_model_temp: dict[str, list] = defaultdict(list)
 
-        score_field = primary_score_field("D2")
-        for rec in self._iter_records("D2"):
+        score_field = primary_score_field("S3")
+        for rec in self._iter_records("S3"):
             score = rec.scores.get(score_field, 0)
             if score <= 0:
                 continue
@@ -517,13 +517,13 @@ class ReportGenerator:
         drift_onsets: list = []
         all_curves: dict[str, list[list]] = defaultdict(list)
 
-        score_field = primary_score_field("D3")
+        score_field = primary_score_field("S2")
         # Canonical conversation length is seven scored student turns
         # (see method.tex / matrix). One judge output occasionally emits an
         # extra trailing per-turn entry; truncate to the canonical length so
         # downstream curves are well-defined and the chart x-axis is stable.
         canonical_turns = 7
-        for rec in self._iter_records("D3"):
+        for rec in self._iter_records("S2"):
             score = rec.scores.get(score_field, 0)
             if score <= 0:
                 continue
@@ -637,7 +637,7 @@ class ReportGenerator:
                                 "severity": severity,
                             }
                         )
-                if dimension == "D3":
+                if dimension == "S2":
                     leaks = scores.get("per_turn_knowledge_leak", [])
                     drifts = scores.get("per_turn_co_teacher_drift", [])
                     d3_numeric["knowledge_leak_events"] += sum(1 for x in leaks if x)
@@ -675,10 +675,10 @@ class ReportGenerator:
         }
 
     def _control_by_persona_judge(self) -> dict[str, dict[str, dict]]:
-        """Compute persona × judge mean of the C1 distinctiveness score.
+        """Compute persona × judge mean of the S6 distinctiveness score.
 
         Reads ``self.multi`` (per-eval scores by judge) so the paper-side
-        ``control_bars`` figure can break the C1 mean down by judge. Returns
+        ``control_bars`` figure can break the S6 mean down by judge. Returns
         ``{persona: {judge: {mean, n}}}``; empty when multi-judge data is
         unavailable.
         """
@@ -687,7 +687,7 @@ class ReportGenerator:
             return out
         block = (self.multi.get("dimensions") or {}).get("control") or {}
         try:
-            field = primary_score_field("control")
+            field = primary_score_field("S6")
         except KeyError:
             return out
         per_persona: dict[str, dict[str, list[float]]] = defaultdict(
@@ -714,7 +714,7 @@ class ReportGenerator:
     def _aggregate_control(self) -> dict:
         """Aggregate control / persona-vs-placebo evidence.
 
-        ``distinctiveness`` is the C1 rubric's per-record score (1-5) for how
+        ``distinctiveness`` is the S6 rubric's per-record score (1-5) for how
         clearly the persona-conditioned conversation differs from the
         no-persona placebo, judged side-by-side. The rubric prescribes the
         aggregation: ``mean(distinctiveness)`` and ``high_score_ratio =
@@ -722,13 +722,13 @@ class ReportGenerator:
         standardized effect against the rubric's "1 = no detectable
         difference" baseline — that is the persona-vs-placebo effect size on
         the rubric's own scale, and avoids the cross-rubric comparison that
-        a Cohen's d against D1 ``overall`` would imply (D1 measures fit to
+        a Cohen's d against S1 ``overall`` would imply (S1 measures fit to
         contract on the persona-on side only; it has no placebo counterpart
         in the existing artifacts).
         """
         by_persona: dict[str, list] = defaultdict(list)
-        score_field = primary_score_field("control")
-        for rec in self._iter_records("control"):
+        score_field = primary_score_field("S6")
+        for rec in self._iter_records("S6"):
             s = rec.scores.get(score_field, 0)
             if s <= 0:
                 continue
@@ -749,7 +749,7 @@ class ReportGenerator:
         else:
             standardized_effect_vs_baseline = None
 
-        # Per-persona high-score ratio (matches C1 ``aggregation_formula``).
+        # Per-persona high-score ratio (matches S6 ``aggregation_formula``).
         by_persona_evidence: dict[str, dict] = {}
         for pid, vals in by_persona.items():
             cell = _cell(vals)
@@ -777,8 +777,8 @@ class ReportGenerator:
     def _aggregate_p1(self) -> dict:
         by_persona: dict[str, list] = defaultdict(list)
         by_facet: dict[str, list] = defaultdict(list)
-        score_field = primary_score_field("P1")
-        for rec in self._iter_records("P1"):
+        score_field = primary_score_field("S5")
+        for rec in self._iter_records("S5"):
             score = rec.scores.get(score_field, 0)
             if score <= 0:
                 continue
@@ -805,7 +805,7 @@ class ReportGenerator:
         by_persona_hits: dict[str, list[int]] = defaultdict(list)
         by_persona_model_hits: dict[str, list[int]] = defaultdict(list)
         by_task_hits: dict[str, list[int]] = defaultdict(list)
-        # D2-pair consistency: same (persona, task, model, repeat_tag-family)
+        # S3-pair consistency: same (persona, task, model, repeat_tag-family)
         # across multiple runs should identify the same persona every time.
         pair_groups: dict[str, list[str]] = defaultdict(list)
         # Panel-3 per-judge accuracy. ``identified_persona_by_judge`` is
@@ -819,7 +819,7 @@ class ReportGenerator:
         per_persona_judge: dict[str, dict[str, list[int]]] = defaultdict(
             lambda: {"sonnet": [], "gpt54": [], "gemini": []}
         )
-        for rec in self._iter_records("B1"):
+        for rec in self._iter_records("S4"):
             scores = rec.scores
             identified = str(scores.get("identified_persona", "")).strip()
             expected = rec.persona_id.strip()
@@ -874,9 +874,9 @@ class ReportGenerator:
             for task, hits in by_task_hits.items()
         }
         # Cross-run identification consistency: for each (persona, task, model)
-        # group with >= 2 B1 samples, did every sample produce the same
+        # group with >= 2 S4 samples, did every sample produce the same
         # identified_persona? Reports as fraction of groups that were fully
-        # consistent. This is the B1 analogue of D2 reproducibility.
+        # consistent. This is the S4 analogue of S3 reproducibility.
         consistent = 0
         total_multi_run_groups = 0
         for group, identifications in pair_groups.items():
@@ -945,7 +945,7 @@ class ReportGenerator:
         # composite-CI bootstrap therefore reflects the joint sampling
         # variability across all three dimensions for that model.
         per_record_by_model: dict[str, list[float]] = defaultdict(list)
-        for dim in ("D1", "D2", "D3"):
+        for dim in ("S1", "S3", "S2"):
             field = primary_score_field(dim)
             for r in self.raw.get(dim, []):
                 score = r.get("scores", {}).get(field, 0)
@@ -957,22 +957,22 @@ class ReportGenerator:
         rankings = []
         for m in models:
             scores = {
-                "D1": d1.get(m, {}).get("mean"),
-                "D2": d2.get(m, {}).get("mean"),
-                "D3": d3.get(m, {}).get("mean"),
+                "S1": d1.get(m, {}).get("mean"),
+                "S3": d2.get(m, {}).get("mean"),
+                "S2": d3.get(m, {}).get("mean"),
             }
             scores_ci = {
-                "D1": {
+                "S1": {
                     "low": d1.get(m, {}).get("ci_low"),
                     "high": d1.get(m, {}).get("ci_high"),
                     "n": d1.get(m, {}).get("n"),
                 },
-                "D2": {
+                "S3": {
                     "low": d2.get(m, {}).get("ci_low"),
                     "high": d2.get(m, {}).get("ci_high"),
                     "n": d2.get(m, {}).get("n"),
                 },
-                "D3": {
+                "S2": {
                     "low": d3.get(m, {}).get("ci_low"),
                     "high": d3.get(m, {}).get("ci_high"),
                     "n": d3.get(m, {}).get("n"),
@@ -1176,7 +1176,7 @@ treat the Panel-3 mean as the canonical aggregate.
         scope = """<div class="rubric">
 <strong>Scope:</strong> This experiment supports three independent paper claims about the StudentSimulator.
 <ul>
-<li><strong>Claim A — Stability:</strong> StudentSimulator preserves persona behavior under task / repeat / model / tutor-temperature perturbations (sections D1, D2, D3).</li>
+<li><strong>Claim A — Stability:</strong> StudentSimulator preserves persona behavior under task / repeat / model / tutor-temperature perturbations (sections S1, S3, S2).</li>
 <li><strong>Claim B — Model selection:</strong> Of three candidate student backbones, GPT-5.4 is selected for the QTB main benchmark (Model Selection section).</li>
 <li><strong>Claim C — Metric calibration:</strong> The LLM-judge numbers underlying Claims A and B agree with a human quant expert within 1 point at a high rate on the sampled alignment study (Human-LLM Alignment section).</li>
 </ul>
@@ -1219,7 +1219,7 @@ treat the Panel-3 mean as the canonical aggregate.
                 return f"{dim} = {mean:.2f}"
             return f"{dim} = n/a"
 
-        evidence_lines = "<br>".join(cell(d) for d in ("D1", "D2", "D3"))
+        evidence_lines = "<br>".join(cell(d) for d in ("S1", "S3", "S2"))
         return (
             '<div class="card" style="text-align:left">'
             "<strong>Claim A — Stability</strong>"
@@ -1335,8 +1335,8 @@ treat the Panel-3 mean as the canonical aggregate.
 
         composite_block = """<div class="rubric">
 <strong>Composite metric policy:</strong> cross-vendor candidate selection, not parameter-matched same-level ranking.<br>
-<strong>Context:</strong> primary table uses the Panel-3 mean (Sonnet + GPT-5.4 + Gemini per-eval mean). D1 persona adherence, D2 cross-run reproducibility, and D3 anti-drift scores are aggregated per student model.<br>
-<strong>Aggregation:</strong> Composite = mean of available D1, D2, and D3 scores. Lower-priority diagnostic dimensions (control, P1, B1) are reported separately in their own section.
+<strong>Context:</strong> primary table uses the Panel-3 mean (Sonnet + GPT-5.4 + Gemini per-eval mean). S1 persona adherence, S3 cross-run reproducibility, and S2 anti-drift scores are aggregated per student model.<br>
+<strong>Aggregation:</strong> Composite = mean of available S1, S3, and S2 scores. Lower-priority diagnostic dimensions (control, S5, S4) are reported separately in their own section.
 </div>"""
 
         cards = f"""<h2>7. Model Selection (Claim B)</h2>
@@ -1358,20 +1358,20 @@ treat the Panel-3 mean as the canonical aggregate.
             + f"""
 <h3>Cross-vendor Candidate Selection Ranking (Panel-3 mean)</h3>
 {ranking_table}
-<p><em>Composite = mean of available D1, D2, and D3 scores under the Panel-3 mean (Sonnet + GPT-5.4 + Gemini).</em></p>
+<p><em>Composite = mean of available S1, S3, and S2 scores under the Panel-3 mean (Sonnet + GPT-5.4 + Gemini).</em></p>
 {invariance_block}"""
         )
 
     def _headline_block(self, stats: dict, ranking: list[dict]) -> str:
-        """One-paragraph TL;DR. Evidence-based: D1 mean + 95% CI for the
+        """One-paragraph TL;DR. Evidence-based: S1 mean + 95% CI for the
         top model, judge-invariance verdict, and Cohen's d for persona vs
         placebo. No threshold-based pass/fail language."""
         if not ranking:
             return ""
         best = ranking[0]
         n_models = len(ranking)
-        d1_mean = best.get("scores", {}).get("D1")
-        d1_ci = (best.get("scores_ci") or {}).get("D1") or {}
+        d1_mean = best.get("scores", {}).get("S1")
+        d1_ci = (best.get("scores_ci") or {}).get("S1") or {}
         d1_lo = d1_ci.get("low")
         d1_hi = d1_ci.get("high")
         if (
@@ -1380,11 +1380,11 @@ treat the Panel-3 mean as the canonical aggregate.
             and isinstance(d1_hi, (int, float))
         ):
             d1_phrase = (
-                f"<strong>{best['model']}</strong> D1 = {d1_mean:.2f} "
+                f"<strong>{best['model']}</strong> S1 = {d1_mean:.2f} "
                 f"[{d1_lo:.2f}, {d1_hi:.2f}]"
             )
         elif isinstance(d1_mean, (int, float)):
-            d1_phrase = f"<strong>{best['model']}</strong> D1 = {d1_mean:.2f}"
+            d1_phrase = f"<strong>{best['model']}</strong> S1 = {d1_mean:.2f}"
         else:
             d1_phrase = f"<strong>{best['model']}</strong>"
 
@@ -1416,7 +1416,7 @@ treat the Panel-3 mean as the canonical aggregate.
         ratio = control.get("high_score_ratio")
         eff = control.get("standardized_effect_vs_baseline")
         if ctrl_n and isinstance(ctrl_mean, (int, float)):
-            persona_msg_parts = [f"C1 distinctiveness = {ctrl_mean:.2f}"]
+            persona_msg_parts = [f"S6 distinctiveness = {ctrl_mean:.2f}"]
             if isinstance(ctrl_lo, (int, float)) and isinstance(ctrl_hi, (int, float)):
                 persona_msg_parts[0] += f" [{ctrl_lo:.2f}, {ctrl_hi:.2f}]"
             persona_msg_parts[0] += f" (n={ctrl_n})"
@@ -1432,24 +1432,24 @@ treat the Panel-3 mean as the canonical aggregate.
 
         return f"""<div class="insight">
 <strong>Evidence summary:</strong> {d1_phrase}; {invariance_msg};
-{persona_msg}. Composite {best['composite']:.2f}/5.0 across D1+D2+D3 of
+{persona_msg}. Composite {best['composite']:.2f}/5.0 across S1+S3+S2 of
 {n_models} candidates evaluated.
 </div>"""
 
     @functools.cached_property
     def _composite_judge_invariance(self) -> dict | None:
-        """Compute D1+D2+D3 composite per student model under each judge view.
+        """Compute S1+S3+S2 composite per student model under each judge view.
         Returns dict with per-view rankings + invariance verdict, or None if
         multi-judge data not loaded."""
         if not self.multi:
             return None
         from statistics import mean
 
-        # by_view: { view: { model: [scores across all D1+D2+D3 evals] } }
+        # by_view: { view: { model: [scores across all S1+S3+S2 evals] } }
         by_view: dict[str, dict[str, list[float]]] = {
             v: defaultdict(list) for v in ("sonnet", "gpt54", "gemini", "panel_3")
         }
-        for dim in ("D1", "D2", "D3"):
+        for dim in ("S1", "S3", "S2"):
             field = primary_score_field(dim)
             block = self.multi.get("dimensions", {}).get(dim, {})
             for row in block.get("per_eval", []):
@@ -1538,7 +1538,7 @@ treat the Panel-3 mean as the canonical aggregate.
         )
         return f"""
 <h3>Judge-invariance check — does the ranking hold regardless of judge?</h3>
-<p>{verdict}. The table below shows the composite (D1+D2+D3 mean) under
+<p>{verdict}. The table below shows the composite (S1+S3+S2 mean) under
 each judge view. If rankings match across views, the model-selection conclusion
 is robust to judge choice.</p>
 <table>{head}{rows_html}</table>
@@ -1550,13 +1550,13 @@ depend on which judge we trust.
 </div>"""
 
     def _section_premise_check(self, stats: dict) -> str:
-        """§1: Premise check (control + B1 per-judge + P1).
+        """§1: Premise check (control + S4 per-judge + S5).
 
         Verifies the experiment's premise: persona contract changes student
-        output (control), targeted probes elicit expected signals (P1), and
-        blind judges can identify the persona from live transcripts (B1).
-        B1 is reported per-judge — the mixed-record overall accuracy is
-        intentionally omitted (decisions §3, B1 mixed accuracy hides the
+        output (control), targeted probes elicit expected signals (S5), and
+        blind judges can identify the persona from live transcripts (S4).
+        S4 is reported per-judge — the mixed-record overall accuracy is
+        intentionally omitted (decisions §3, S4 mixed accuracy hides the
         per-judge spread).
         """
         control = stats["control"]
@@ -1591,7 +1591,7 @@ depend on which judge we trust.
             persona_evidence_line = (
                 "<p>"
                 + "<br>".join(evidence_bits)
-                + " &mdash; per the C1 rubric's <code>aggregation_formula</code>; "
+                + " &mdash; per the S6 rubric's <code>aggregation_formula</code>; "
                 "the standardized effect treats <code>distinctiveness=1</code> "
                 "(no detectable difference) as the persona-absent null." + "</p>"
             )
@@ -1629,12 +1629,12 @@ depend on which judge we trust.
                 "(records missing identified_persona_by_judge).</p>"
             )
 
-        return f"""<h2>1. Premise Check (control + B1 per-judge + P1)</h2>
+        return f"""<h2>1. Premise Check (control + S4 per-judge + S5)</h2>
 <p>These three diagnostics verify the experiment's premise: the persona
 contract actually changes student output (<strong>control</strong>),
-targeted probes elicit the expected persona signals (<strong>P1</strong>),
+targeted probes elicit the expected persona signals (<strong>S5</strong>),
 and a blind judge can identify the persona from live transcripts
-(<strong>B1</strong>). They support — but do not gate — the D1-D3 stability
+(<strong>S4</strong>). They support — but do not gate — the S1-S2 stability
 numbers in the dimension sections below.</p>
 
 <h3>1.1 Control — Persona vs Placebo Distinguishability</h3>
@@ -1644,17 +1644,17 @@ numbers in the dimension sections below.</p>
 <div class="lbl">Overall Distinctiveness (1-5) {control_ci}</div></div></div>
 {persona_evidence_line}
 
-<h3>1.2 P1 — Targeted Persona Probes</h3>
-{self._rubric_block("P1")}
+<h3>1.2 S5 — Targeted Persona Probes</h3>
+{self._rubric_block("S5")}
 <table><tr><th>Metric</th><th>Value</th><th>N</th></tr>
 <tr><td>Overall probe pass</td><td class="{_score_class(p1.get('overall_mean', 0))}">{p1.get('overall_mean', 0):.2f}</td><td>{p1.get('n', 0)}</td></tr>
 </table>
 
-<h3>1.3 B1 — Blind Persona Identification (per judge)</h3>
-{self._rubric_block("B1")}
+<h3>1.3 S4 — Blind Persona Identification (per judge)</h3>
+{self._rubric_block("S4")}
 {b1_table}
 <div class="insight">
-<strong>Why per-judge only:</strong> B1's mixed-record overall accuracy
+<strong>Why per-judge only:</strong> S4's mixed-record overall accuracy
 collapses the spread between judges. Reporting Sonnet, GPT-5.4, strict
 (both-correct), and lenient (either-correct) separately preserves that
 information for downstream interpretation.
@@ -1663,39 +1663,39 @@ information for downstream interpretation.
     def _section_d1(self, stats: dict) -> str:
         heatmap = self._components["d1_heatmap"].render_html()
         failure_inline = self._components["failure_inline_d1"].render_html()
-        return f"""<h2>2. D1 — Persona Adherence</h2>
-{self._rubric_block("D1")}
+        return f"""<h2>2. S1 — Persona Adherence</h2>
+{self._rubric_block("S1")}
 {heatmap}
 <div class="insight">
 <strong>Insight guide:</strong> Low cells identify a persona/task/model combination where generated
 student turns do not visibly match the contract. First check knowledge-boundary and emotional-tone
 subscores, then tighten the copied persona contract rather than changing shared source personas.
 </div>
-<h3>2.1 D1 Failure Mix</h3>
+<h3>2.1 S1 Failure Mix</h3>
 {failure_inline}"""
 
     def _section_d2(self, stats: dict) -> str:
         chart = self._components["d2_bars"].render_html()
         temp_table = self._components["d2_by_model_temp"].render_html()
         failure_inline = self._components["failure_inline_d2"].render_html()
-        return f"""<h2>3. D2 — Cross-run Reproducibility</h2>
-{self._rubric_block("D2")}
+        return f"""<h2>3. S3 — Cross-run Reproducibility</h2>
+{self._rubric_block("S3")}
 {chart}
 <div class="insight">
 <strong>Ceiling effect note:</strong> At tutor t=0, both student and tutor are near-deterministic,
-so high D2 scores are expected by design. The meaningful comparison is t=0 vs t=1:
+so high S3 scores are expected by design. The meaningful comparison is t=0 vs t=1:
 a small gap means student stability is genuinely robust, not just an artifact of determinism.
 </div>
 <h3>3.1 Tutor-temperature Ablation</h3>
-<p>Context: the same D2 reproducibility rubric is grouped by tutor temperature to separate
+<p>Context: the same S3 reproducibility rubric is grouped by tutor temperature to separate
 deterministic tutor effects from true student-simulator stability.</p>
 {temp_table}
 <div class="insight">
-<strong>Interpretation:</strong> If D2 scores are similar across t=0 and t=1 for the same model,
+<strong>Interpretation:</strong> If S3 scores are similar across t=0 and t=1 for the same model,
 the student simulator is robust to tutor variance — its persona behavior is driven by the prompt,
 not by what the tutor says.
 </div>
-<h3>3.2 D2 Failure Mix</h3>
+<h3>3.2 S3 Failure Mix</h3>
 {failure_inline}"""
 
     def _section_d3(self, stats: dict) -> str:
@@ -1705,12 +1705,12 @@ not by what the tutor says.
         onset_text = f"{onset:.1f}" if onset else "N/A"
         drift_table = self._components["d3_drift"].render_html()
         failure_inline = self._components["failure_inline_d3"].render_html()
-        return f"""<h2>4. D3 — Drift Detection</h2>
-{self._rubric_block("D3")}
+        return f"""<h2>4. S2 — Drift Detection</h2>
+{self._rubric_block("S2")}
 {chart}
 {drift_table}
 <div class="insight"><strong>Average drift onset turn:</strong> {onset_text} (later = better)</div>
-<h3>4.1 D3 Failure Mix</h3>
+<h3>4.1 S2 Failure Mix</h3>
 {failure_inline}"""
 
     def _section_human_alignment(self) -> str:
@@ -1723,10 +1723,10 @@ not by what the tutor says.
         ].render_html()
         return f"""<h2>6. Human-LLM Judge Alignment (Claim C)</h2>
 <div class="rubric">
-<strong>Definition:</strong> Human quant-expert calibration compares sampled judge inputs against human labels across stability (D1/D2/D3), validity (control/P1), and B1 identification.<br>
+<strong>Definition:</strong> Human quant-expert calibration compares sampled judge inputs against human labels across stability (S1/S3/S2), validity (control/S5), and S4 identification.<br>
 <strong>Context:</strong> sample manifest, human label CSV, same-sample LLM judge label snapshot, aggregate judge scores, and disagreement notes.<br>
-<strong>Fields:</strong> persona_fidelity, knowledge_boundary_pass, emotional_match, drift_onset_turn, failure_type, control_distinctiveness, control_persona_set_a, p1_facet_fit, p1_expected_signals_recall, B1 identified_persona (per-judge).<br>
-<strong>Aggregation:</strong> numeric labels use mean absolute difference and within-one-point rate; failure_type uses exact/contained match rate; B1 identification reports per-judge accuracy vs human.
+<strong>Fields:</strong> persona_fidelity, knowledge_boundary_pass, emotional_match, drift_onset_turn, failure_type, control_distinctiveness, control_persona_set_a, p1_facet_fit, p1_expected_signals_recall, S4 identified_persona (per-judge).<br>
+<strong>Aggregation:</strong> numeric labels use mean absolute difference and within-one-point rate; failure_type uses exact/contained match rate; S4 identification reports per-judge accuracy vs human.
 </div>
 <p>Status: <code>{human.get('human_alignment_status', 'not_run')}</code></p>
 {metrics_html}
@@ -1788,7 +1788,7 @@ not by what the tutor says.
             claim_a = (
                 f"<p><strong>Claim A — Stability.</strong> Top student model "
                 f"<strong>{_html(best['model'])}</strong>: "
-                f"{fmt('D1')}; {fmt('D2')}; {fmt('D3')}. "
+                f"{fmt('S1')}; {fmt('S3')}; {fmt('S2')}. "
                 f"Mean drift onset turn = "
                 f"{d3.get('drift_onset_mean', 0):.1f}.</p>"
             )
@@ -1859,7 +1859,7 @@ not by what the tutor says.
         ctrl_mean = control.get("overall_mean")
         if isinstance(ratio, (int, float)) and isinstance(eff, (int, float)) and n_ctrl:
             persona_evidence_line = (
-                "<p><em>Persona-vs-placebo evidence (C1 distinctiveness, n="
+                "<p><em>Persona-vs-placebo evidence (S6 distinctiveness, n="
                 f"{n_ctrl}): mean = {ctrl_mean:.2f}; high-score ratio "
                 f"(≥4) = {ratio:.0%}; standardized effect vs unrecognizable "
                 f"baseline = {eff:.1f}σ.</em></p>"

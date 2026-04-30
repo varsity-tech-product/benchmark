@@ -11,8 +11,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from experiments.student_sim_stability.core.paths import BENCH_ROOT
-
+BENCH_ROOT = Path(__file__).resolve().parents[2]
 if str(BENCH_ROOT) not in sys.path:
     sys.path.insert(0, str(BENCH_ROOT))
 
@@ -24,8 +23,8 @@ from experiments.student_sim_stability.core.rubrics import (
     DIMENSION_TO_FILE,
 )
 
-_STABILITY_DIMENSIONS = ("D1", "D2", "D3")
-_VALIDITY_DIMENSIONS = ("control", "P1", "B1")
+_STABILITY_DIMENSIONS = ("S1", "S3", "S2")
+_VALIDITY_DIMENSIONS = ("S6", "S5", "S4")
 _ALL_JUDGE_DIMENSIONS = tuple(DIMENSION_TO_FILE)
 
 # The paper appendix carries exactly these 23 artifacts. Anything else
@@ -137,10 +136,10 @@ def _add_judge_qualification_dir_arg(parser: argparse.ArgumentParser) -> None:
 
 def _make_parser() -> argparse.ArgumentParser:
     from experiments.student_sim_stability.core.config import (
-        D1_SAMPLE_POLICY,
         JUDGE_MAX_WORKERS,
         JUDGE_MODEL,
         JUDGE_TEMPERATURE,
+        S1_SAMPLE_POLICY,
     )
 
     parser = argparse.ArgumentParser(
@@ -157,7 +156,7 @@ def _make_parser() -> argparse.ArgumentParser:
 
     run_all = sub.add_parser(
         "all",
-        help="Run the full student-sim-stability pipeline: probes → live generation → render (D1-3 + control + P1 + B1) → judge panel → aggregate → audit → report → validate",
+        help="Run the full student-sim-stability pipeline: probes → live generation → render (S1-S6) → judge panel → aggregate → audit → report → validate",
     )
     _add_output_arg(run_all)
     _add_judge_qualification_dir_arg(run_all)
@@ -184,10 +183,10 @@ def _make_parser() -> argparse.ArgumentParser:
         choices=(*DIMENSION_TO_FILE, "all"),
     )
     render.add_argument(
-        "--d1-sample-policy",
-        default=D1_SAMPLE_POLICY,
+        "--s1-sample-policy",
+        default=S1_SAMPLE_POLICY,
         choices=["all", "live-r0-tt0"],
-        help="D1 prompt sampling policy for rendered judge inputs",
+        help="S1 prompt sampling policy for rendered judge inputs",
     )
     render.add_argument(
         "--clean",
@@ -537,17 +536,17 @@ def _render_judges(args: argparse.Namespace) -> None:
         removed = clean_rendered_prompts(judge_input_dir, args.dimension)
         print(f"clean: removed {removed} old prompts")
 
-    if args.dimension in ("D1", "all"):
-        render_d1(conv_dir, judge_input_dir, sample_policy=args.d1_sample_policy)
-    if args.dimension in ("D2", "all"):
+    if args.dimension in ("S1", "all"):
+        render_d1(conv_dir, judge_input_dir, sample_policy=args.s1_sample_policy)
+    if args.dimension in ("S3", "all"):
         render_d2(conv_dir, judge_input_dir)
-    if args.dimension in ("D3", "all"):
+    if args.dimension in ("S2", "all"):
         render_d3(conv_dir, judge_input_dir)
-    if args.dimension in ("control", "all"):
+    if args.dimension in ("S6", "all"):
         render_control(conv_dir, judge_input_dir)
-    if args.dimension in ("P1", "all"):
+    if args.dimension in ("S5", "all"):
         render_p1(results_dir, judge_input_dir)
-    if args.dimension in ("B1", "all"):
+    if args.dimension in ("S4", "all"):
         render_b1(conv_dir, judge_input_dir)
 
 
@@ -613,11 +612,11 @@ def _run_all(args: argparse.Namespace) -> int:
 
     Flow:
       Step 0: Judge qualification gate (pre-validated on the fixed golden corpus)
-      Step 1: Run targeted persona probes (P1 input generation)
+      Step 1: Run targeted persona probes (S5 input generation)
       Step 2: Generate live + control conversations
-      Step 3: Render judge prompts for D1/D2/D3/control/P1/B1
-              (B1 reads live conversations; tutor + fixture opening stripped,
-              only student-generated turns reach the B1 judge.)
+      Step 3: Render judge prompts for S1/S2/S3/S4/S5/S6
+              (S4 reads live conversations; tutor + fixture opening stripped,
+              only student-generated turns reach the S4 judge.)
       Step 4: Run judge panel across all dimensions in a single pass
       Step 5: Aggregate (primary + 5-view multi-judge)
       Step 6: Data-quality audit
@@ -635,9 +634,9 @@ def _run_all(args: argparse.Namespace) -> int:
         snapshot_static_artifacts,
     )
     from experiments.student_sim_stability.core.config import (
-        D1_SAMPLE_POLICY,
         JUDGE_MODELS,
         MAX_WORKERS,
+        S1_SAMPLE_POLICY,
     )
     from experiments.student_sim_stability.pipeline.aggregate import aggregate
     from experiments.student_sim_stability.pipeline.aggregate_multi_judge import (
@@ -697,7 +696,7 @@ def _run_all(args: argparse.Namespace) -> int:
     by_model_dir = results_dir / "judge_outputs_by_model"
     eval_path = results_dir / "evaluations" / "all_evaluations.json"
 
-    print("\n=== Step 1/7: Targeted persona probes (P1 input) ===")
+    print("\n=== Step 1/7: Targeted persona probes (S5 input) ===")
     probe_workers = args.workers or MAX_WORKERS
     probe_manifest = run_probes(results_dir, workers=probe_workers)
     print(json.dumps(probe_manifest, indent=2, ensure_ascii=False))
@@ -710,7 +709,7 @@ def _run_all(args: argparse.Namespace) -> int:
         print(f"ERROR: {generate_stats['failed']} conversation trials failed")
         return 1
 
-    print("\n=== Step 3/7: Render judge prompts (D1/D2/D3/control/P1/B1) ===")
+    print("\n=== Step 3/7: Render judge prompts (S1/S2/S3/S4/S5/S6) ===")
     for dimension in _ALL_JUDGE_DIMENSIONS:
         clean_rendered_prompts(judge_input_dir, dimension)
         clean_judge_outputs(judge_output_dir, dimension)
@@ -719,7 +718,7 @@ def _run_all(args: argparse.Namespace) -> int:
                 by_model_dir / safe_model_dir(judge_model),
                 dimension,
             )
-    render_d1(conv_dir, judge_input_dir, sample_policy=D1_SAMPLE_POLICY)
+    render_d1(conv_dir, judge_input_dir, sample_policy=S1_SAMPLE_POLICY)
     render_d2(conv_dir, judge_input_dir)
     render_d3(conv_dir, judge_input_dir)
     render_control(conv_dir, judge_input_dir)

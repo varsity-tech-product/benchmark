@@ -1,4 +1,4 @@
-"""D2 reproducibility by model table Component (CSV-only export today).
+"""S3 reproducibility by model table Component (CSV-only export today).
 
 The HTML form is not currently embedded in the main report; it is exported
 under ``results/main/report/components/d2_by_model.{html,csv}`` so the data
@@ -31,7 +31,7 @@ class D2ByModel(Component):
             for m, d in sorted(self.by_model.items())
         )
         return (
-            "<table><tr><th>Model</th><th>D2 Mean</th><th>95% CI</th>"
+            "<table><tr><th>Model</th><th>S3 Mean</th><th>95% CI</th>"
             f"<th>Std</th><th>N</th></tr>{rows}</table>"
         )
 
@@ -56,7 +56,7 @@ class D2ByModel(Component):
             ci = f"({d.get('ci_low', 0):.2f}, {d.get('ci_high', 0):.2f})"
             rows.append([m, f"{d['mean']:.2f}", ci, f"{d['std']:.2f}", d["n"]])
         return booktabs_table(
-            ["Model", "D2 Mean", "95% CI", "Std", "N"],
+            ["Model", "S3 Mean", "95% CI", "Std", "N"],
             "lrlrr",
             rows,
         )

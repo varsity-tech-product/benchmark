@@ -1,7 +1,7 @@
 {
-  "rubric_id": "D1_persona_adherence",
+  "rubric_id": "S1_persona_adherence",
   "version": "v1.3.0",
-  "dimension": "D1",
+  "dimension": "S1",
   "name": "Persona adherence per generated student message",
   "definition": "Evaluates whether one generated student message matches the assigned persona contract.",
   "unit": "student_model turn",
@@ -48,6 +48,6 @@
     "persona_contract_contradiction"
   ],
   "aggregation_formula": "mean(overall), std(overall), high_score_ratio=count(overall >= 4)/n by model/persona/task",
-  "prompt_template": "rubrics/prompts/D1_persona_adherence.txt",
-  "prompt_template_path": "prompts/D1_persona_adherence.txt"
+  "prompt_template": "rubrics/prompts/S1_persona_adherence.txt",
+  "prompt_template_path": "prompts/S1_persona_adherence.txt"
 }

@@ -2,7 +2,7 @@
 
 Preserves all 39 existing labels (rows 1-39 in human_label_template.csv).
 Adds ~117 new samples via stratified random draw from (dim, persona, model)
-cells, with random B1 (no disagreement-priority).
+cells, with random S4 (no disagreement-priority).
 
 Outputs (overwrites/appends in place):
 - results/main/human_alignment/sample_manifest.json (combined manifest)
@@ -35,11 +35,11 @@ MODELS = ["claude-sonnet-4-6", "gpt-5.4", "gemini-3.1-pro-preview"]
 
 # Phase B target per (dim, persona, model) cell.
 PHASE_B_TARGET = {
-    "D1": 3,  # 4 personas x 3 models x 3 = 36
-    "D2": 1,  # 4 x 3 x 1 = 12
-    "D3": 3,  # 36
-    "P1": 2,  # 4 x 3 x 2 = 24
-    "B1": 3,  # 36 (random, no disagreement priority)
+    "S1": 3,  # 4 personas x 3 models x 3 = 36
+    "S3": 1,  # 4 x 3 x 1 = 12
+    "S2": 3,  # 36
+    "S5": 2,  # 4 x 3 x 2 = 24
+    "S4": 3,  # 36 (random, no disagreement priority)
     "control": 1,  # 12
 }
 
@@ -145,8 +145,8 @@ def main() -> int:
         "sample_count": len(combined_samples),
         "sampling_policy": (
             "Phase A (rows 0-{phase_a}): stratified per (dimension, persona); "
-            "B1 disagreement-prioritized. Phase B (rows {phase_a}-{combined}): "
-            "stratified per (dimension, persona, model) with random B1. "
+            "S4 disagreement-prioritized. Phase B (rows {phase_a}-{combined}): "
+            "stratified per (dimension, persona, model) with random S4. "
             "Existing labels preserved; new rows have empty label fields."
         ).format(phase_a=len(existing_samples) - 1, combined=len(combined_samples) - 1),
         "phase_a_count": len(existing_samples),
