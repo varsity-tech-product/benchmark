@@ -4,6 +4,8 @@
   "outputDirectory": "public",
   "rewrites": [
     { "source": "/", "destination": "https://217-15-165-83.sslip.io/" },
+    { "source": "/review", "destination": "https://217-15-165-83.sslip.io/review" },
+    { "source": "/review/:path*", "destination": "https://217-15-165-83.sslip.io/review/:path*" },
     { "source": "/health", "destination": "https://217-15-165-83.sslip.io/health" },
     { "source": "/auth/:path*", "destination": "https://217-15-165-83.sslip.io/auth/:path*" },
     { "source": "/session/:path*", "destination": "https://217-15-165-83.sslip.io/session/:path*" },

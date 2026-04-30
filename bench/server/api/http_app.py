@@ -1897,6 +1897,8 @@ def create_app(
 
     all_routes = [
         Route("/", serve_index, methods=["GET"]),
+        Route("/review", serve_index, methods=["GET"]),
+        Route("/review/{path:path}", serve_index, methods=["GET"]),
         Route("/health", rest_health, methods=["GET"]),
         *ui_routes(manager),
         *rest_routes,

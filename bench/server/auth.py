@@ -34,6 +34,7 @@ class UserContext:
     email: str
     display_name: str
     avatar_url: str
+    github_user_id: str = ""
     role: Literal["admin", "user"] = "user"
 
     @property
@@ -48,6 +49,7 @@ class UserContext:
         return cls(
             user_id=str(data.get("user_id") or ""),
             github_login=str(data.get("github_login") or ""),
+            github_user_id=str(data.get("github_user_id") or ""),
             email=str(data.get("email") or ""),
             display_name=str(data.get("display_name") or ""),
             avatar_url=str(data.get("avatar_url") or ""),
@@ -508,6 +510,7 @@ class AuthService:
         return UserContext(
             user_id=f"github:{login.lower()}",
             github_login=login,
+            github_user_id=str(profile.get("id") or ""),
             email=email,
             display_name=str(profile.get("name") or login),
             avatar_url=str(profile.get("avatar_url") or ""),
@@ -572,6 +575,7 @@ def _client_api_keys() -> dict[str, UserContext]:
         users[key] = UserContext(
             user_id=user_id,
             github_login=github_login,
+            github_user_id=user_id,
             email=email,
             display_name=github_login or user_id,
             avatar_url="",
@@ -620,6 +624,7 @@ def _local_dev_user() -> UserContext:
     return UserContext(
         user_id="local-dev",
         github_login="local-dev",
+        github_user_id="local-dev",
         email="",
         display_name="Local Dev",
         avatar_url="",

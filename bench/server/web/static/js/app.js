@@ -17,6 +17,12 @@
     workspaceIndexCache: {},
     workspacePreviewCache: {},
     activeSessionId: null,
+    review: {
+      bundles: null,
+      bundleCache: {},
+      search: '',
+      opinionFilter: 'all'
+    },
     run: {
       mode: '',
       taskId: '',
@@ -238,7 +244,12 @@
 
   function routeFromHash() {
     var hash = location.hash.slice(1);
-    return hash || '/results';
+    if (hash) return hash;
+    var path = window.location.pathname || '/';
+    if (path.indexOf('/review') === 0) {
+      return path.replace(/\/$/, '') || '/review';
+    }
+    return '/results';
   }
 
   function setAppDetailMode(enabled) {
@@ -249,6 +260,7 @@
   function setActiveNav(route) {
     var current;
     if (route.indexOf('/flow-demo') === 0) current = 'flow';
+    else if (route.indexOf('/review') === 0) current = 'review';
     else if (route.indexOf('/tasks') === 0) current = 'tasks';
     else if (route === '/runs') current = 'runs';
     else if (route.indexOf('/run') === 0) current = 'run';
@@ -319,6 +331,24 @@
       encodePathPreservingSlashes(relativePath)
     ).then(function (payload) {
       state.workspacePreviewCache[cacheKey] = payload;
+      return payload;
+    });
+  }
+
+  function ensureReviewBundles(force) {
+    if (state.review.bundles && !force) return Promise.resolve(state.review.bundles);
+    return api('/review/bundles').then(function (payload) {
+      state.review.bundles = payload.bundles || [];
+      return state.review.bundles;
+    });
+  }
+
+  function ensureReviewBundle(bundleId, force) {
+    if (state.review.bundleCache[bundleId] && !force) {
+      return Promise.resolve(state.review.bundleCache[bundleId]);
+    }
+    return api('/review/bundles/' + encodeURIComponent(bundleId)).then(function (payload) {
+      state.review.bundleCache[bundleId] = payload;
       return payload;
     });
   }
@@ -2132,6 +2162,598 @@
     }
   }
 
+  var REVIEW_SECTIONS = ['task_spec', 'conversation', 'tool_log', 'workspace', 'judge_eval', 'overall'];
+  var REVIEW_SECTION_LABELS = {
+    task_spec: 'Task Spec',
+    conversation: 'Conversation',
+    tool_log: 'Tutor Tool Log',
+    workspace: 'Workspace State',
+    judge_eval: 'Judge Evaluation',
+    overall: 'Overall'
+  };
+
+  function reviewSectionLabel(section) {
+    return REVIEW_SECTION_LABELS[section] || titleCase(section);
+  }
+
+  function filteredReviewBundles(bundles) {
+    var query = String(state.review.search || '').trim().toLowerCase();
+    if (!query) return bundles;
+    return bundles.filter(function (item) {
+      var haystack = [
+        item.bundle_id,
+        item.session_id,
+        item.task_id,
+        item.persona_id,
+        item.category,
+        item.model
+      ].join(' ').toLowerCase();
+      return haystack.indexOf(query) !== -1;
+    });
+  }
+
+  function renderReviewListPage(bundles) {
+    var visible = filteredReviewBundles(bundles);
+    var reviewed = bundles.filter(function (item) { return item.reviewed_by_current_user; }).length;
+
+    app.innerHTML =
+      '<section class="page review-page">' +
+        '<header class="page-header">' +
+          '<div class="page-title-wrap">' +
+            '<p class="eyebrow">Review</p>' +
+            '<h1>Human reviewer console.</h1>' +
+            '<p class="subtitle">Inspect archived session bundles across task, conversation, tool, workspace, and judge layers. Opinion cards are stored as structured JSON per bundle and GitHub reviewer.</p>' +
+          '</div>' +
+          '<div class="summary-strip">' +
+            buildSummaryPill('Bundles', String(bundles.length)) +
+            buildSummaryPill('Reviewed By You', String(reviewed)) +
+          '</div>' +
+        '</header>' +
+        '<section class="panel filter-bar">' +
+          '<label class="filter-field">' +
+            '<span class="filter-label">Search</span>' +
+            '<input id="review-search" class="filter-input" type="search" placeholder="bundle, task, persona, model" value="' + escapeHtml(state.review.search) + '">' +
+          '</label>' +
+          '<div class="review-refresh-wrap">' +
+            '<button class="btn btn-secondary" id="review-refresh-btn" type="button">Refresh</button>' +
+          '</div>' +
+        '</section>' +
+        '<div class="results-meta">' +
+          '<div class="results-count">' + escapeHtml(String(visible.length)) + ' bundle(s) shown</div>' +
+        '</div>' +
+        (visible.length ? '<div class="results-grid">' + visible.map(renderReviewBundleCard).join('') + '</div>' : renderEmptyInline('Matching review bundles will appear here.')) +
+      '</section>';
+
+    var searchInput = document.getElementById('review-search');
+    if (searchInput) {
+      searchInput.addEventListener('input', function (event) {
+        state.review.search = String(event.target.value || '').trim().toLowerCase();
+        renderReviewListPage(bundles);
+      });
+    }
+    var refresh = document.getElementById('review-refresh-btn');
+    if (refresh) {
+      refresh.addEventListener('click', function () {
+        ensureReviewBundles(true).then(renderReviewListPage).catch(function (error) {
+          renderError('Review unavailable', error);
+        });
+      });
+    }
+  }
+
+  function renderReviewBundleCard(item) {
+    var reviewed = item.reviewed_by_current_user
+      ? '<span class="meta-chip score-chip">Reviewed by you</span>'
+      : '<span class="meta-chip unknown-chip">Awaiting your card</span>';
+    return '' +
+      '<a class="session-card" href="#/review/' + encodeURIComponent(item.bundle_id || item.session_id) + '">' +
+        '<div class="session-top">' +
+          '<div>' +
+            '<h2 class="session-title">' +
+              '<span>' + escapeHtml(item.task_id || item.bundle_id || 'Bundle') + '</span>' +
+              '<span class="badge">' + escapeHtml(titleCase(item.category || 'unknown')) + '</span>' +
+              '<span class="badge">' + escapeHtml(titleCase(item.difficulty || 'unknown')) + '</span>' +
+            '</h2>' +
+            '<p class="session-subtitle">' +
+              'Bundle <code>' + escapeHtml(item.bundle_id || item.session_id || '') + '</code> · Persona <code>' + escapeHtml(item.persona_id || '') + '</code> · ' + escapeHtml(formatTimestamp(item.timestamp)) +
+            '</p>' +
+          '</div>' +
+          '<span class="status-pill ' + escapeHtml(item.evaluation_status || 'pending') + '">' + escapeHtml(titleCase(item.evaluation_status || 'pending')) + '</span>' +
+        '</div>' +
+        '<div class="session-meta-row">' +
+          '<span class="meta-chip">' + escapeHtml((item.turn_count || 0) + ' turns') + '</span>' +
+          '<span class="meta-chip">' + escapeHtml((item.tool_count || 0) + ' tools') + '</span>' +
+          '<span class="meta-chip">' + escapeHtml((item.review_count || 0) + ' review file(s)') + '</span>' +
+          reviewed +
+        '</div>' +
+      '</a>';
+  }
+
+  function reviewAddButton(section, label, targetType, targetValue) {
+    return '<button class="btn btn-secondary btn-small review-add-btn" type="button" data-section="' +
+      escapeHtml(section) + '" data-target-type="' + escapeHtml(targetType || '') +
+      '" data-target-value="' + escapeHtml(targetValue == null ? '' : targetValue) + '">' +
+      escapeHtml(label || 'Add Card') + '</button>';
+  }
+
+  function renderReviewLayerPanel(section, title, bodyHtml, metaHtml) {
+    return '' +
+      '<section class="panel review-layer" id="review-section-' + escapeHtml(section) + '">' +
+        '<header class="review-layer-head">' +
+          '<div>' +
+            '<p class="eyebrow">' + escapeHtml(section.replace(/_/g, ' ')) + '</p>' +
+            '<h2>' + escapeHtml(title) + '</h2>' +
+          '</div>' +
+          '<div class="review-layer-actions">' +
+            (metaHtml || '') +
+            reviewAddButton(section, 'Add Section Card') +
+          '</div>' +
+        '</header>' +
+        bodyHtml +
+      '</section>';
+  }
+
+  function renderReviewTaskSpec(layer) {
+    layer = layer || {};
+    var task = layer.task || {};
+    var persona = layer.persona || {};
+    var rubric = layer.judge_rubric || {};
+    var tracks = rubric.tracks || [];
+    var tracksHtml = tracks.length
+      ? '<div class="review-rubric-track-list">' + tracks.map(function (track) {
+        return '<span class="meta-chip">' + escapeHtml((track.track || '').toUpperCase()) + ' ' +
+          escapeHtml(track.score == null ? 'pending' : formatScore(track.score)) + '</span>';
+      }).join('') + '</div>'
+      : '<p class="detail-empty-note">Judge rubric metadata appears after scoring completes.</p>';
+    var body =
+      '<div class="review-spec-grid">' +
+        '<article class="review-spec-block">' +
+          '<h3>Task</h3>' +
+          '<div class="detail-meta-grid">' +
+            metaItem('Task ID', task.task_id || '') +
+            metaItem('Category', titleCase(task.category || 'unknown')) +
+            metaItem('Difficulty', titleCase(task.difficulty || 'unknown')) +
+            metaItem('Requires Code', task.requires_code ? 'Yes' : 'No') +
+          '</div>' +
+          '<div class="review-markdown">' + safeRenderMarkdown(task.description || 'Task description unavailable.') + '</div>' +
+        '</article>' +
+        '<article class="review-spec-block">' +
+          '<h3>Student Persona</h3>' +
+          '<div class="detail-meta-grid">' +
+            metaItem('Persona ID', persona.persona_id || '') +
+            metaItem('Knowledge Level', persona.knowledge_level || 'Unspecified') +
+          '</div>' +
+          '<p class="detail-empty-note">' + escapeHtml(persona.description || 'Persona description unavailable.') + '</p>' +
+        '</article>' +
+        '<article class="review-spec-block">' +
+          '<h3>Judge Rubric</h3>' +
+          '<div class="detail-meta-grid">' +
+            metaItem('Score ID', rubric.score_id || 'Pending') +
+            metaItem('Eval Model', rubric.eval_model || 'Pending') +
+            metaItem('Eval Mode', rubric.eval_mode || 'Pending') +
+            metaItem('Validation Run', rubric.judge_validation_run || 'Pending') +
+          '</div>' +
+          tracksHtml +
+        '</article>' +
+      '</div>';
+    return renderReviewLayerPanel('task_spec', 'Task Spec', body);
+  }
+
+  function renderReviewConversation(layer) {
+    var turns = layer && layer.turns ? layer.turns : [];
+    var body = turns.length
+      ? '<div class="review-turn-list">' + turns.map(function (turn, index) {
+        var role = turn.role || 'message';
+        var label = titleCase(role);
+        var content = turn.content || '';
+        return '' +
+          '<article class="review-turn" id="turn-' + escapeHtml(index) + '">' +
+            '<header class="review-row-head">' +
+              '<div><strong>' + escapeHtml(label) + '</strong><span class="meta-chip">turn ' + escapeHtml(String(index)) + '</span></div>' +
+              reviewAddButton('conversation', 'Review Turn', 'turn_index', index) +
+            '</header>' +
+            '<div class="review-markdown">' + safeRenderMarkdown(content) + '</div>' +
+          '</article>';
+      }).join('') + '</div>'
+      : '<p class="detail-empty-note">Conversation turns will appear here when the bundle contains a transcript.</p>';
+    return renderReviewLayerPanel('conversation', 'Conversation', body, '<span class="meta-chip">' + escapeHtml(String(turns.length)) + ' turns</span>');
+  }
+
+  function renderReviewToolLog(layer) {
+    var calls = layer && layer.tool_calls ? layer.tool_calls : [];
+    var body = calls.length
+      ? '<div class="review-tool-list">' + calls.map(function (call, index) {
+        var name = call.name || call.tool_name || 'tool';
+        var duration = call.duration_ms == null ? '' : formatDuration(Number(call.duration_ms) / 1000);
+        return '' +
+          '<article class="review-tool-call" id="tool-call-' + escapeHtml(index) + '">' +
+            '<header class="review-row-head">' +
+              '<div><strong>' + escapeHtml(name) + '</strong><span class="meta-chip">call ' + escapeHtml(String(index)) + '</span>' +
+                (duration ? '<span class="meta-chip">' + escapeHtml(duration) + '</span>' : '') +
+              '</div>' +
+              reviewAddButton('tool_log', 'Review Call', 'tool_call_index', index) +
+            '</header>' +
+            '<details>' +
+              '<summary>Arguments</summary>' +
+              '<pre class="detail-json-block">' + escapeHtml(JSON.stringify(call.args || call.input || {}, null, 2)) + '</pre>' +
+            '</details>' +
+            '<details>' +
+              '<summary>Result</summary>' +
+              '<pre class="detail-json-block">' + escapeHtml(stringifyReviewValue(call.result || call.output || call.error || '')) + '</pre>' +
+            '</details>' +
+          '</article>';
+      }).join('') + '</div>'
+      : '<p class="detail-empty-note">Tool calls will appear here when the tutor used tools.</p>';
+    return renderReviewLayerPanel('tool_log', 'Tutor Tool Log', body, '<span class="meta-chip">' + escapeHtml(String(calls.length)) + ' calls</span>');
+  }
+
+  function stringifyReviewValue(value) {
+    if (typeof value === 'string') return value;
+    try {
+      return JSON.stringify(value, null, 2);
+    } catch (error) {
+      return String(value == null ? '' : value);
+    }
+  }
+
+  function renderReviewWorkspace(layer) {
+    layer = layer || {};
+    var files = layer.tree || [];
+    var diffs = layer.diffs || [];
+    var stdout = layer.stdout || '';
+    var stderr = layer.stderr || '';
+    var filesHtml = files.length
+      ? '<div class="review-file-list">' + files.map(function (file) {
+        var path = file.path || file.name || '';
+        return '' +
+          '<div class="review-file-row">' +
+            '<div><strong>' + escapeHtml(path) + '</strong><span class="meta-chip">' + escapeHtml(titleCase(file.kind || 'file')) + '</span></div>' +
+            reviewAddButton('workspace', 'Review File', 'file_path', path) +
+          '</div>';
+      }).join('') + '</div>'
+      : '<p class="detail-empty-note">Archived workspace files will appear here.</p>';
+    var body =
+      '<details open>' +
+        '<summary>Final Tree</summary>' +
+        filesHtml +
+      '</details>' +
+      '<details>' +
+        '<summary>Diffs</summary>' +
+        (diffs.length ? '<pre class="detail-json-block">' + escapeHtml(JSON.stringify(diffs, null, 2)) + '</pre>' : '<p class="detail-empty-note">Diff data is empty for this bundle.</p>') +
+      '</details>' +
+      '<details>' +
+        '<summary>Stdout</summary>' +
+        (stdout ? '<pre class="detail-json-block">' + escapeHtml(stdout) + '</pre>' : '<p class="detail-empty-note">Stdout is empty for this bundle.</p>') +
+      '</details>' +
+      '<details>' +
+        '<summary>Stderr</summary>' +
+        (stderr ? '<pre class="detail-json-block">' + escapeHtml(stderr) + '</pre>' : '<p class="detail-empty-note">Stderr is empty for this bundle.</p>') +
+      '</details>';
+    return renderReviewLayerPanel('workspace', 'Workspace State', body, '<span class="meta-chip">' + escapeHtml(String(files.length)) + ' files</span>');
+  }
+
+  function renderReviewJudgeEval(layer) {
+    layer = layer || {};
+    var rows = layer.rows || [];
+    var rowsHtml = rows.length
+      ? '<div class="review-judge-table">' + rows.map(function (row) {
+        var score = row.score == null ? 'pending' : formatScore(Number(row.score));
+        return '' +
+          '<article class="review-judge-row" id="criterion-' + escapeHtml(row.criterion_id || '') + '">' +
+            '<header class="review-row-head">' +
+              '<div><strong>' + escapeHtml(row.criterion || row.criterion_id || 'criterion') + '</strong>' +
+                '<span class="meta-chip">' + escapeHtml((row.track || '').toUpperCase()) + '</span>' +
+                '<span class="meta-chip">score ' + escapeHtml(score) + '</span>' +
+                (row.verdict ? '<span class="meta-chip">' + escapeHtml(titleCase(row.verdict)) + '</span>' : '') +
+              '</div>' +
+              reviewAddButton('judge_eval', 'Review Criterion', 'criterion_id', row.criterion_id || '') +
+            '</header>' +
+            (row.reasoning ? '<p class="detail-empty-note">' + escapeHtml(row.reasoning) + '</p>' : '<p class="detail-empty-note">Reasoning field is empty.</p>') +
+          '</article>';
+      }).join('') + '</div>'
+      : '<p class="detail-empty-note">Judge criteria will appear here after scoring completes.</p>';
+    var body =
+      '<div class="detail-meta-grid">' +
+        metaItem('Status', titleCase(layer.status || 'pending')) +
+        metaItem('Overall Score', layer.overall_score == null ? 'Pending' : formatScore(layer.overall_score)) +
+      '</div>' +
+      rowsHtml +
+      '<details>' +
+        '<summary>Raw Score JSON</summary>' +
+        renderJsonBlock(layer.score_json) +
+      '</details>';
+    return renderReviewLayerPanel('judge_eval', 'Judge Evaluation', body, '<span class="meta-chip">' + escapeHtml(String(rows.length)) + ' rows</span>');
+  }
+
+  function reviewOpinionCounts(opinions) {
+    var counts = {};
+    REVIEW_SECTIONS.forEach(function (section) { counts[section] = 0; });
+    (opinions || []).forEach(function (opinion) {
+      var section = opinion.section || 'overall';
+      counts[section] = (counts[section] || 0) + 1;
+    });
+    return counts;
+  }
+
+  function renderReviewOpinionPanel(bundle) {
+    var review = bundle.review || {};
+    var opinions = review.opinions || [];
+    var counts = reviewOpinionCounts(opinions);
+    var filter = state.review.opinionFilter || 'all';
+    var visible = opinions.filter(function (opinion) {
+      return filter === 'all' || opinion.section === filter;
+    });
+    var options = ['<option value="all">All sections</option>'].concat(REVIEW_SECTIONS.map(function (section) {
+      return '<option value="' + escapeHtml(section) + '"' + (filter === section ? ' selected' : '') + '>' +
+        escapeHtml(reviewSectionLabel(section)) + '</option>';
+    })).join('');
+    var slots = REVIEW_SECTIONS.map(function (section) {
+      return '<div class="review-slot">' +
+        '<span>' + escapeHtml(reviewSectionLabel(section)) + '</span>' +
+        '<strong>' + escapeHtml(String(counts[section] || 0)) + '</strong>' +
+      '</div>';
+    }).join('');
+    return '' +
+      '<aside class="panel review-opinion-panel">' +
+        '<header class="review-layer-head">' +
+          '<div>' +
+            '<p class="eyebrow">Opinion Cards</p>' +
+            '<h2>Structured Feedback</h2>' +
+          '</div>' +
+          reviewAddButton('overall', 'Add Overall Card') +
+        '</header>' +
+        '<div class="review-slot-grid">' + slots + '</div>' +
+        '<label class="filter-field">' +
+          '<span class="filter-label">Section Filter</span>' +
+          '<select id="review-opinion-filter" class="filter-select">' + options + '</select>' +
+        '</label>' +
+        '<div class="review-opinion-list">' +
+          (visible.length ? visible.map(renderReviewOpinionCard).join('') : '<p class="detail-empty-note">Cards for the selected section will appear here.</p>') +
+        '</div>' +
+      '</aside>';
+  }
+
+  function renderReviewOpinionCard(opinion) {
+    var tags = opinion.tags && opinion.tags.length
+      ? '<div class="detail-chip-list">' + opinion.tags.map(function (tag) {
+        return '<span class="detail-chip">' + escapeHtml(tag) + '</span>';
+      }).join('') + '</div>'
+      : '';
+    return '' +
+      '<article class="review-opinion-card severity-' + escapeHtml(opinion.severity || 'info') + '">' +
+        '<header class="review-row-head">' +
+          '<div><strong>' + escapeHtml(reviewSectionLabel(opinion.section)) + '</strong>' +
+            '<span class="meta-chip">' + escapeHtml(titleCase(opinion.severity || 'info')) + '</span></div>' +
+          '<span class="review-card-time">' + escapeHtml(formatTimestamp(opinion.created_at || opinion.timestamp)) + '</span>' +
+        '</header>' +
+        '<p>' + escapeHtml(opinion.comment || '') + '</p>' +
+        '<p class="detail-empty-note">' + escapeHtml(describeOpinionTarget(opinion.target || {})) + '</p>' +
+        tags +
+      '</article>';
+  }
+
+  function describeOpinionTarget(target) {
+    if (target.turn_index != null) return 'Target: turn ' + target.turn_index;
+    if (target.tool_call_index != null) return 'Target: tool call ' + target.tool_call_index;
+    if (target.file_path) return 'Target: ' + target.file_path;
+    if (target.criterion_id) return 'Target: ' + target.criterion_id;
+    return 'Target: section-level';
+  }
+
+  function renderReviewBundlePage(bundle) {
+    var layers = bundle.layers || {};
+    var detail = bundle.detail || {};
+    app.innerHTML =
+      '<section class="page review-page review-bundle-page">' +
+        '<header class="page-header">' +
+          '<div class="page-title-wrap">' +
+            '<a class="detail-back" href="#/review">Back</a>' +
+            '<p class="eyebrow">Review Bundle</p>' +
+            '<h1>' + escapeHtml(detail.task_id || bundle.bundle_id || 'Session Bundle') + '</h1>' +
+            '<p class="subtitle">Bundle <code>' + escapeHtml(bundle.bundle_id || '') + '</code> · Persona <code>' + escapeHtml(detail.persona_id || '') + '</code> · ' + escapeHtml(formatTimestamp(detail.timestamp)) + '</p>' +
+          '</div>' +
+          '<div class="summary-strip">' +
+            buildSummaryPill('Turns', String(detail.turn_count || 0)) +
+            buildSummaryPill('Tools', String(detail.tool_count || 0)) +
+            buildSummaryPill('Score', detail.overall_score == null ? 'Pending' : formatScore(detail.overall_score)) +
+          '</div>' +
+        '</header>' +
+        '<div class="review-layout">' +
+          '<main class="review-layer-stack">' +
+            renderReviewTaskSpec(layers.task_spec) +
+            renderReviewConversation(layers.conversation) +
+            renderReviewToolLog(layers.tool_log) +
+            renderReviewWorkspace(layers.workspace) +
+            renderReviewJudgeEval(layers.judge_eval) +
+          '</main>' +
+          renderReviewOpinionPanel(bundle) +
+        '</div>' +
+      '</section>';
+    rewriteImages(app.querySelector('.review-layer-stack'), bundle.bundle_id || detail.session_id);
+    bindReviewBundleControls(bundle);
+  }
+
+  function bindReviewBundleControls(bundle) {
+    Array.prototype.forEach.call(document.querySelectorAll('.review-add-btn'), function (button) {
+      button.addEventListener('click', function () {
+        var targetType = button.getAttribute('data-target-type') || '';
+        var targetValue = button.getAttribute('data-target-value') || '';
+        openReviewOpinionModal(bundle, {
+          section: button.getAttribute('data-section') || 'overall',
+          targetType: targetType,
+          targetValue: targetValue
+        });
+      });
+    });
+    var filter = document.getElementById('review-opinion-filter');
+    if (filter) {
+      filter.addEventListener('change', function (event) {
+        state.review.opinionFilter = event.target.value || 'all';
+        renderReviewBundlePage(bundle);
+      });
+    }
+  }
+
+  function openReviewOpinionModal(bundle, preset) {
+    preset = preset || {};
+    var sectionOptions = REVIEW_SECTIONS.map(function (section) {
+      return '<option value="' + escapeHtml(section) + '"' + (preset.section === section ? ' selected' : '') + '>' +
+        escapeHtml(reviewSectionLabel(section)) + '</option>';
+    }).join('');
+    var targetOptions = [
+      ['none', 'Section-level'],
+      ['turn_index', 'Turn'],
+      ['tool_call_index', 'Tool Call'],
+      ['file_path', 'File Path'],
+      ['criterion_id', 'Criterion']
+    ].map(function (item) {
+      return '<option value="' + item[0] + '"' + (preset.targetType === item[0] ? ' selected' : '') + '>' + item[1] + '</option>';
+    }).join('');
+    var html =
+      '<form id="review-opinion-form" class="review-opinion-form">' +
+        '<label class="filter-field">' +
+          '<span class="filter-label">Section</span>' +
+          '<select id="review-card-section" class="filter-select" required>' + sectionOptions + '</select>' +
+        '</label>' +
+        '<div class="review-form-grid">' +
+          '<label class="filter-field">' +
+            '<span class="filter-label">Target Type</span>' +
+            '<select id="review-card-target-type" class="filter-select">' + targetOptions + '</select>' +
+          '</label>' +
+          '<label class="filter-field">' +
+            '<span class="filter-label">Target</span>' +
+            '<input id="review-card-target-value" class="filter-input" type="text" value="' + escapeHtml(preset.targetValue || '') + '">' +
+          '</label>' +
+        '</div>' +
+        '<label class="filter-field">' +
+          '<span class="filter-label">Severity</span>' +
+          '<select id="review-card-severity" class="filter-select">' +
+            '<option value="info">Info</option>' +
+            '<option value="concern">Concern</option>' +
+            '<option value="blocker">Blocker</option>' +
+          '</select>' +
+        '</label>' +
+        '<label class="filter-field">' +
+          '<span class="filter-label">Tags</span>' +
+          '<input id="review-card-tags" class="filter-input" type="text" placeholder="rubric_mismatch, persona_break">' +
+        '</label>' +
+        '<div id="review-judge-disagreement" class="review-form-grid">' +
+          '<label class="filter-field">' +
+            '<span class="filter-label">Judge Score</span>' +
+            '<input id="review-card-judge-score" class="filter-input" type="number" step="0.01">' +
+          '</label>' +
+          '<label class="filter-field">' +
+            '<span class="filter-label">Human Score</span>' +
+            '<input id="review-card-human-score" class="filter-input" type="number" step="0.01">' +
+          '</label>' +
+        '</div>' +
+        '<label class="filter-field">' +
+          '<span class="filter-label">Comment</span>' +
+          '<textarea id="review-card-comment" class="run-textarea" rows="5" required></textarea>' +
+        '</label>' +
+        '<div id="review-card-error" class="run-error" hidden></div>' +
+        '<div class="run-actions">' +
+          '<button class="btn btn-primary" type="submit">Save Card</button>' +
+        '</div>' +
+      '</form>';
+    showModal('Opinion Card', html);
+    bindReviewOpinionForm(bundle);
+  }
+
+  function bindReviewOpinionForm(bundle) {
+    var form = document.getElementById('review-opinion-form');
+    var section = document.getElementById('review-card-section');
+    var judgeBlock = document.getElementById('review-judge-disagreement');
+
+    function syncJudgeFields() {
+      if (!judgeBlock || !section) return;
+      judgeBlock.style.display = section.value === 'judge_eval' ? 'grid' : 'none';
+    }
+
+    if (section) section.addEventListener('change', syncJudgeFields);
+    syncJudgeFields();
+    if (!form) return;
+    form.addEventListener('submit', function (event) {
+      event.preventDefault();
+      submitReviewOpinion(bundle);
+    });
+  }
+
+  function submitReviewOpinion(bundle) {
+    var section = document.getElementById('review-card-section');
+    var targetType = document.getElementById('review-card-target-type');
+    var targetValue = document.getElementById('review-card-target-value');
+    var severity = document.getElementById('review-card-severity');
+    var tags = document.getElementById('review-card-tags');
+    var comment = document.getElementById('review-card-comment');
+    var judgeScore = document.getElementById('review-card-judge-score');
+    var humanScore = document.getElementById('review-card-human-score');
+    var errorEl = document.getElementById('review-card-error');
+
+    var payload = {
+      section: section ? section.value : 'overall',
+      target: parseReviewTarget(targetType ? targetType.value : '', targetValue ? targetValue.value : ''),
+      severity: severity ? severity.value : 'info',
+      tags: String(tags ? tags.value : '').split(',').map(function (item) { return item.trim(); }).filter(Boolean),
+      comment: String(comment ? comment.value : '').trim()
+    };
+    if (payload.section === 'judge_eval') {
+      payload.judge_disagreement = {
+        judge_score: judgeScore ? judgeScore.value : '',
+        human_score: humanScore ? humanScore.value : ''
+      };
+    }
+
+    restApi('/ui/review/bundles/' + encodeURIComponent(bundle.bundle_id) + '/opinions', {
+      method: 'POST',
+      body: JSON.stringify({opinion: payload})
+    }).then(function (updated) {
+      state.review.bundleCache[updated.bundle_id] = updated;
+      state.review.bundles = null;
+      closeModal();
+      renderReviewBundlePage(updated);
+    }).catch(function (error) {
+      if (errorEl) {
+        errorEl.hidden = false;
+        errorEl.textContent = error && error.message ? error.message : String(error || 'Unable to save card');
+      }
+    });
+  }
+
+  function parseReviewTarget(type, value) {
+    var cleanType = String(type || '');
+    var cleanValue = String(value || '').trim();
+    var target = {};
+    if (!cleanValue || cleanType === 'none') return target;
+    if (cleanType === 'turn_index' || cleanType === 'tool_call_index') {
+      var index = parseInt(cleanValue, 10);
+      if (isFinite(index) && index >= 0) target[cleanType] = index;
+      return target;
+    }
+    if (cleanType === 'file_path' || cleanType === 'criterion_id') {
+      target[cleanType] = cleanValue;
+    }
+    return target;
+  }
+
+  function showReviewList() {
+    state.activeSessionId = null;
+    setAppDetailMode(false);
+    renderLoading('Loading review bundles', 'Fetching archived session bundles and review-card counts.');
+    ensureReviewBundles(false).then(renderReviewListPage).catch(function (error) {
+      renderError('Review unavailable', error);
+    });
+  }
+
+  function showReviewBundle(bundleId) {
+    state.activeSessionId = bundleId;
+    setAppDetailMode(false);
+    renderLoading('Loading review bundle', 'Fetching the bundle layers and current reviewer cards.');
+    ensureReviewBundle(bundleId, true).then(renderReviewBundlePage).catch(function (error) {
+      renderError('Review bundle unavailable', error);
+    });
+  }
+
   function renderEmptyInline(message) {
     return '<section class="empty-state"><p class="eyebrow">Empty</p><h1>No results to show.</h1><p>' + escapeHtml(message) + '</p></section>';
   }
@@ -2197,6 +2819,11 @@
       return;
     }
 
+    if (route === '/review') {
+      showReviewList();
+      return;
+    }
+
     if (route === '/flow-demo') {
       if (window.QTB && typeof window.QTB.renderFlowDemoPage === 'function') {
         window.QTB.renderFlowDemoPage(app, state);
@@ -2208,6 +2835,11 @@
 
     if (route.indexOf('/results/') === 0) {
       showResultDetail(decodeURIComponent(route.slice('/results/'.length)));
+      return;
+    }
+
+    if (route.indexOf('/review/') === 0) {
+      showReviewBundle(decodeURIComponent(route.slice('/review/'.length)));
       return;
     }
 

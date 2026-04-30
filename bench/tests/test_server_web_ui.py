@@ -3,6 +3,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from starlette.applications import Starlette
 from starlette.testclient import TestClient
@@ -10,6 +11,7 @@ from starlette.testclient import TestClient
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from server.api.http_app import create_app
+from server.auth import AuthService, SESSION_COOKIE, UserContext
 from server.web.ui_app import ui_routes
 from server.web.ui_indexer import ResultIndexer
 
@@ -456,6 +458,36 @@ class UiRoutesTests(unittest.TestCase):
                 f"/ui/results/{session_id}/workspace/preview/%2E%2E/secret.txt"
             )
             skill_response = client.get("/skills/quanttutorbench-rest-agent")
+            review_list_response = client.get("/ui/review/bundles")
+            review_bundle_response = client.get(f"/ui/review/bundles/{session_id}")
+            review_post_response = client.post(
+                f"/ui/review/bundles/{session_id}/opinions",
+                json={
+                    "opinion": {
+                        "section": "conversation",
+                        "target": {"turn_index": 0},
+                        "severity": "concern",
+                        "comment": "Student acknowledgement is terse.",
+                        "tags": ["persona_signal"],
+                    }
+                },
+            )
+            review_reload_response = client.get(f"/ui/review/bundles/{session_id}")
+            session_prefix = session_id[:7]
+            review_prefix_post_response = client.post(
+                f"/ui/review/bundles/{session_prefix}/opinions",
+                json={
+                    "opinion": {
+                        "section": "overall",
+                        "severity": "info",
+                        "comment": "Prefix routes use the canonical bundle id.",
+                    }
+                },
+            )
+            review_prefix_reload_response = client.get(
+                f"/ui/review/bundles/{session_prefix}"
+            )
+            review_list_after_response = client.get("/ui/review/bundles")
 
             self.assertEqual(tasks_response.status_code, 200)
             self.assertEqual(results_response.status_code, 200)
@@ -467,6 +499,13 @@ class UiRoutesTests(unittest.TestCase):
             self.assertEqual(image_preview_response.status_code, 200)
             self.assertEqual(file_response.status_code, 200)
             self.assertEqual(skill_response.status_code, 200)
+            self.assertEqual(review_list_response.status_code, 200)
+            self.assertEqual(review_bundle_response.status_code, 200)
+            self.assertEqual(review_post_response.status_code, 200)
+            self.assertEqual(review_reload_response.status_code, 200)
+            self.assertEqual(review_prefix_post_response.status_code, 200)
+            self.assertEqual(review_prefix_reload_response.status_code, 200)
+            self.assertEqual(review_list_after_response.status_code, 200)
             self.assertEqual(file_response.text, "report")
             self.assertIn("QuantTutorBench REST Agent", skill_response.text)
             self.assertIn("POST /client/runs/start", skill_response.text)
@@ -510,6 +549,170 @@ class UiRoutesTests(unittest.TestCase):
             self.assertEqual(image_payload["kind"], "image")
             self.assertIn("/ui/results/", image_payload["raw_url"])
 
+            review_list_payload = review_list_response.json()
+            self.assertEqual(review_list_payload["bundles"][0]["bundle_id"], session_id)
+            review_bundle_payload = review_bundle_response.json()
+            self.assertEqual(review_bundle_payload["bundle_id"], session_id)
+            self.assertEqual(
+                review_bundle_payload["layers"]["conversation"]["turns"][0]["content"],
+                "Answer",
+            )
+            self.assertEqual(
+                review_bundle_payload["layers"]["workspace"]["tree"][0]["path"],
+                "artifacts/report.md",
+            )
+
+            review_payload = review_post_response.json()
+            opinions = review_payload["review"]["opinions"]
+            self.assertEqual(len(opinions), 1)
+            self.assertEqual(opinions[0]["section"], "conversation")
+            self.assertEqual(opinions[0]["target"], {"turn_index": 0})
+            self.assertEqual(opinions[0]["reviewer_id"], "local-dev")
+            review_file = (
+                root
+                / "experiments"
+                / "human_review"
+                / session_id
+                / "local-dev.json"
+            )
+            self.assertTrue(review_file.exists())
+            saved = json.loads(review_file.read_text(encoding="utf-8"))
+            self.assertEqual(saved["sample_id"], session_id)
+            self.assertEqual(saved["github_user_id"], "local-dev")
+            self.assertEqual(
+                review_reload_response.json()["review"]["opinions"][0]["comment"],
+                "Student acknowledgement is terse.",
+            )
+            prefix_payload = review_prefix_post_response.json()
+            self.assertEqual(prefix_payload["bundle_id"], session_id)
+            self.assertEqual(prefix_payload["review"]["sample_id"], session_id)
+            self.assertEqual(len(prefix_payload["review"]["opinions"]), 2)
+            self.assertEqual(
+                prefix_payload["review"]["opinions"][1]["sample_id"], session_id
+            )
+            self.assertEqual(
+                prefix_payload["review"]["opinions"][1]["comment"],
+                "Prefix routes use the canonical bundle id.",
+            )
+            self.assertEqual(
+                review_prefix_reload_response.json()["review"]["opinions"][1][
+                    "bundle_id"
+                ],
+                session_id,
+            )
+            review_list_after_payload = review_list_after_response.json()
+            self.assertTrue(
+                review_list_after_payload["bundles"][0]["reviewed_by_current_user"]
+            )
+            self.assertEqual(review_list_after_payload["bundles"][0]["review_count"], 1)
+            alias_review_file = (
+                root
+                / "experiments"
+                / "human_review"
+                / session_prefix
+                / "local-dev.json"
+            )
+            self.assertFalse(alias_review_file.exists())
+
+    def test_review_routes_preserve_private_result_visibility(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            _write_json(
+                root / "tasks" / "layer2" / "data_analysis" / "D01_demo.json",
+                {
+                    "task_id": "D01_demo",
+                    "category": "data_analysis",
+                    "difficulty": "easy",
+                    "description": "Demo task",
+                    "persona_ids": ["beginner_persona"],
+                },
+            )
+            _write_json(
+                root / "personas" / "beginner_persona.json",
+                {"persona_id": "beginner_persona", "description": "Demo persona"},
+            )
+
+            for session_id, owner_user_id in (
+                ("alice-session-001", "github:alice"),
+                ("bob-session-001", "github:bob"),
+            ):
+                result_dir = _make_server_result_dir(
+                    root, "D01_demo", "beginner_persona", session_id
+                )
+                _write_json(
+                    result_dir / "run_state.json",
+                    {
+                        "session_id": session_id,
+                        "task_id": "D01_demo",
+                        "persona_id": "beginner_persona",
+                        "owner_user_id": owner_user_id,
+                        "visibility": "private",
+                        "conversation": [
+                            {"role": "assistant", "content": f"Answer {session_id}"}
+                        ],
+                        "tool_logs": [],
+                        "workspace_files": [],
+                    },
+                )
+
+            with patch.dict("os.environ", {"QTB_AUTH_MODE": "github"}, clear=False):
+                app = Starlette(routes=ui_routes(_Manager(root)))
+                auth = AuthService(root)
+                alice_session = auth.store.create_session(
+                    UserContext(
+                        user_id="github:alice",
+                        github_login="alice",
+                        email="alice@example.com",
+                        display_name="Alice",
+                        avatar_url="",
+                        github_user_id="101",
+                    )
+                )
+                admin_session = auth.store.create_session(
+                    UserContext(
+                        user_id="github:admin",
+                        github_login="admin",
+                        email="admin@example.com",
+                        display_name="Admin",
+                        avatar_url="",
+                        github_user_id="999",
+                        role="admin",
+                    )
+                )
+
+                alice_client = TestClient(app)
+                alice_client.cookies.set(SESSION_COOKIE, alice_session)
+                alice_list = alice_client.get("/ui/review/bundles")
+                alice_own = alice_client.get("/ui/review/bundles/alice-session-001")
+                alice_bob = alice_client.get("/ui/review/bundles/bob-session-001")
+                alice_bob_post = alice_client.post(
+                    "/ui/review/bundles/bob-session-001/opinions",
+                    json={
+                        "opinion": {
+                            "section": "overall",
+                            "comment": "Should be denied.",
+                        }
+                    },
+                )
+
+                admin_client = TestClient(app)
+                admin_client.cookies.set(SESSION_COOKIE, admin_session)
+                admin_list = admin_client.get("/ui/review/bundles")
+
+            self.assertEqual(alice_list.status_code, 200)
+            self.assertEqual(alice_own.status_code, 200)
+            self.assertEqual(alice_bob.status_code, 403)
+            self.assertEqual(alice_bob_post.status_code, 403)
+            self.assertEqual(
+                {item["bundle_id"] for item in alice_list.json()["bundles"]},
+                {"alice-session-001"},
+            )
+            self.assertEqual(admin_list.status_code, 200)
+            self.assertEqual(
+                {item["bundle_id"] for item in admin_list.json()["bundles"]},
+                {"alice-session-001", "bob-session-001"},
+            )
+
 
 class HttpAppSmokeTests(unittest.TestCase):
     def test_create_app_serves_isolated_shell_and_static_assets(self):
@@ -524,11 +727,17 @@ class HttpAppSmokeTests(unittest.TestCase):
         self.assertEqual(index_response.status_code, 200)
         self.assertEqual(script_response.status_code, 200)
         self.assertEqual(render_response.status_code, 200)
+        review_response = client.get("/review")
+        review_detail_response = client.get("/review/demo-bundle")
+        self.assertEqual(review_response.status_code, 200)
+        self.assertEqual(review_detail_response.status_code, 200)
         self.assertIn("/static/js/chat.js", index_response.text)
         self.assertIn("/static/js/tools.js", index_response.text)
         self.assertIn("/static/js/app.js", index_response.text)
         self.assertIn("/static/js/run-agent.js", index_response.text)
         self.assertIn('href="#/run"', index_response.text)
+        self.assertIn('href="#/review"', index_response.text)
+        self.assertIn('data-route="review"', index_response.text)
         self.assertIn('data-route="run"', index_response.text)
         self.assertIn("Isolated UI", index_response.text)
 

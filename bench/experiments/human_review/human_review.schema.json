@@ -1,0 +1,162 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://quanttutorbench.local/schemas/human_review_opinions_v1.json",
+  "title": "Human Review Opinion Cards",
+  "type": "object",
+  "required": [
+    "version",
+    "bundle_id",
+    "sample_id",
+    "github_username",
+    "github_user_id",
+    "reviewer_id",
+    "opinions"
+  ],
+  "additionalProperties": true,
+  "properties": {
+    "version": {
+      "const": "human_review_opinions_v1"
+    },
+    "bundle_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "sample_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "github_username": {
+      "type": "string"
+    },
+    "github_user_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "reviewer_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "created_at": {
+      "type": "string"
+    },
+    "updated_at": {
+      "type": "string"
+    },
+    "opinions": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/opinion"
+      }
+    }
+  },
+  "$defs": {
+    "opinion": {
+      "type": "object",
+      "required": [
+        "opinion_id",
+        "bundle_id",
+        "sample_id",
+        "section",
+        "severity",
+        "comment",
+        "tags",
+        "github_username",
+        "github_user_id",
+        "reviewer_id",
+        "created_at",
+        "timestamp",
+        "label_version"
+      ],
+      "additionalProperties": true,
+      "properties": {
+        "opinion_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "bundle_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sample_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "section": {
+          "enum": [
+            "task_spec",
+            "conversation",
+            "tool_log",
+            "workspace",
+            "judge_eval",
+            "overall"
+          ]
+        },
+        "target": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "turn_index": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "tool_call_index": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "file_path": {
+              "type": "string"
+            },
+            "criterion_id": {
+              "type": "string"
+            }
+          }
+        },
+        "severity": {
+          "enum": ["info", "concern", "blocker"]
+        },
+        "comment": {
+          "type": "string",
+          "minLength": 1
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "judge_disagreement": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "judge_score": {
+              "type": "number"
+            },
+            "human_score": {
+              "type": "number"
+            }
+          }
+        },
+        "github_username": {
+          "type": "string"
+        },
+        "github_user_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "reviewer_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "created_at": {
+          "type": "string"
+        },
+        "timestamp": {
+          "type": "string"
+        },
+        "label_version": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

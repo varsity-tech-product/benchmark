@@ -181,6 +181,26 @@ External-agent `score.json` exports carry the selected validation run through
 the `judge_reliability` metadata block, populated from
 `bench/server/eval/judge_reliability_reference.json`.
 
+## Human Review Console
+
+`bench/server/web/review_store.py` exposes archived session bundles for human
+inspection through `/ui/review/*`. The Vercel-facing shell serves `/review` and
+`/review/{bundle_id}` as SPA routes backed by the existing GitHub OAuth cookie.
+Any authenticated GitHub reviewer can inspect the task spec, transcript, tutor
+tool log, workspace tree, and judge evaluation for a completed bundle.
+
+Reviewer output is stored separately from judge-validation labels:
+
+```text
+bench/experiments/human_review/{bundle_id}/{github_user_id}.json
+```
+
+Each file follows `human_review_opinions_v1` and contains structured opinion
+cards with `section`, optional `target`, `severity`, `comment`, `tags`, reviewer
+metadata, and optional judge-disagreement scores. Overlapping fields such as
+`sample_id`, `reviewer_id`, `label_version`, and `timestamp` are preserved for
+downstream joins with `judge_validation/human_labels*.json`.
+
 ## Public Reads
 
 `GET /session/{sid}/results` returns only export-scope run fields such as
@@ -202,6 +222,9 @@ debugging.
 `bench/server/web/ui_indexer.py` walks the canonical result tree and reads
 in-bundle `evaluations/index.json` plus `score_n/score.json` and `cost.json`.
 It also applies owner filtering for private/org/admin views.
+`bench/server/web/review_store.py` builds the review read model from the same
+result indexer and writes per-reviewer opinion files under
+`bench/experiments/human_review/`.
 
 ## Tests
 

@@ -153,9 +153,11 @@ class ResultIndexer:
             raise PermissionError("Result access denied")
 
         task_id = str(run_state.get("task_id") or result_dir.parent.name)
+        persona_id = str(run_state.get("persona_id") or "unknown")
         task_meta = self._task_meta_cache.get(
             task_id, self._make_fallback_task_meta(task_id)
         )
+        persona_meta = self._persona_cache.get(persona_id, {})
         client_trace = self._load_client_trace(session_id)
         latest_score_id = self._resolve_latest_score_id(result_dir)
         latest_score = self._load_score_json(result_dir, latest_score_id)
@@ -187,7 +189,11 @@ class ResultIndexer:
             "category": task_meta.get("category", "unknown"),
             "difficulty": task_meta.get("difficulty", "unknown"),
             "description": task_meta.get("description", ""),
-            "persona_id": str(run_state.get("persona_id") or "unknown"),
+            "persona_id": persona_id,
+            "persona_description": str(persona_meta.get("description") or ""),
+            "persona_knowledge_level": str(
+                persona_meta.get("knowledge_level") or ""
+            ),
             "duration_seconds": self._coerce_float(
                 run_state.get("duration_seconds"), default=0.0
             ),
@@ -210,6 +216,15 @@ class ResultIndexer:
             "all_tool_logs": raw_tool_logs,
             "send_message_events": send_message_events,
             "workspace_files": workspace_files,
+            "workspace_diffs": self._ensure_list(
+                run_state.get("workspace_diffs") or run_state.get("diffs")
+            ),
+            "stdout": str(
+                run_state.get("stdout") or run_state.get("stdout_text") or ""
+            ),
+            "stderr": str(
+                run_state.get("stderr") or run_state.get("stderr_text") or ""
+            ),
             "distractor_names": distractor_names,
             "score_json": latest_score,
             "cost_json": latest_cost,
