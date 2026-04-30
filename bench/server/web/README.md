@@ -40,6 +40,9 @@ Run route scope:
 - External agents create or claim runs through the REST skill workflow; hidden task metadata stays in the server/client execution context.
 - Session Flow owns run lifecycle browsing. Human Review owns archived session inspection.
 
+Task route scope:
+- `#/tasks` renders a task-class selector first, then shows tasks only for the selected class.
+
 Result detail read model:
 - `tool_logs`: domain tool calls only; excludes `send_message`
 - `all_tool_logs`: raw server `run_state.tool_logs`

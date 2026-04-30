@@ -13,6 +13,9 @@
     },
     results: null,
     tasksPayload: null,
+    taskCatalog: {
+      selectedClass: ''
+    },
     detailCache: {},
     workspaceIndexCache: {},
     workspacePreviewCache: {},
@@ -649,25 +652,32 @@
     });
 
     var categories = Object.keys(grouped).sort();
-    var groupsHtml = categories.map(function (category) {
-      var items = grouped[category];
+    var selectedClass = state.taskCatalog.selectedClass;
+    if (selectedClass && !grouped[selectedClass]) {
+      selectedClass = '';
+      state.taskCatalog.selectedClass = '';
+    }
+    var selectedTasks = grouped[selectedClass] || [];
+    var classButtons = categories.map(function (category) {
+      var active = category === selectedClass ? ' is-active' : '';
       return '' +
-        '<section class="tasks-group">' +
-          '<header class="tasks-group-header">' +
-            '<h2 class="tasks-group-title">' + escapeHtml(titleCase(category)) + '</h2>' +
-            '<span class="summary-pill"><strong>Tasks</strong> ' + escapeHtml(String(items.length)) + '</span>' +
-          '</header>' +
-          '<div class="tasks-grid">' + items.map(renderTaskCard).join('') + '</div>' +
-        '</section>';
+        '<button class="task-class-btn' + active + '" type="button" data-task-class="' + escapeHtml(category) + '">' +
+          '<span>' + escapeHtml(titleCase(category)) + '</span>' +
+          '<strong>' + escapeHtml(String((grouped[category] || []).length)) + '</strong>' +
+        '</button>';
     }).join('');
+    var tasksHtml = selectedTasks.length
+      ? '<div class="tasks-grid">' + selectedTasks.map(renderTaskCard).join('') + '</div>'
+      : renderEmptyInline('Select a task class to view its tasks.');
+    var selectedClassLabel = selectedClass ? titleCase(selectedClass) : 'Select a class';
 
     app.innerHTML =
       '<section class="page">' +
         '<header class="page-header">' +
           '<div class="page-title-wrap">' +
             '<p class="eyebrow">Task Catalog</p>' +
-            '<h1>Task inventory for the new session-centric UI.</h1>' +
-            '<p class="subtitle">Grouped by benchmark category and served from the new isolated API layer.</p>' +
+            '<h1>Task inventory by class.</h1>' +
+            '<p class="subtitle">Select a task class first, then inspect the tasks in that class.</p>' +
           '</div>' +
           '<div class="summary-strip">' +
             buildSummaryPill('Tasks', String(tasks.length)) +
@@ -675,8 +685,36 @@
             buildSummaryPill('Categories', String(categories.length)) +
           '</div>' +
         '</header>' +
-        groupsHtml +
+        '<div class="task-catalog-layout">' +
+          '<aside class="panel task-class-panel">' +
+            '<div class="task-class-panel-head">' +
+              '<h2>Task Class</h2>' +
+              '<span class="summary-pill"><strong>Total</strong> ' + escapeHtml(String(categories.length)) + '</span>' +
+            '</div>' +
+            '<div class="task-class-list">' + classButtons + '</div>' +
+          '</aside>' +
+          '<section class="tasks-group">' +
+            '<header class="tasks-group-header">' +
+              '<div>' +
+                '<p class="eyebrow">Selected Class</p>' +
+                '<h2 class="tasks-group-title">' + escapeHtml(selectedClassLabel) + '</h2>' +
+              '</div>' +
+              '<span class="summary-pill"><strong>Tasks</strong> ' + escapeHtml(String(selectedTasks.length)) + '</span>' +
+            '</header>' +
+            tasksHtml +
+          '</section>' +
+        '</div>' +
       '</section>';
+    bindTaskCatalog();
+  }
+
+  function bindTaskCatalog() {
+    document.querySelectorAll('.task-class-btn').forEach(function (button) {
+      button.addEventListener('click', function () {
+        state.taskCatalog.selectedClass = button.getAttribute('data-task-class') || '';
+        renderTasksPage(state.tasksPayload || {tasks: [], personas: []});
+      });
+    });
   }
 
   function renderTaskCard(task) {
