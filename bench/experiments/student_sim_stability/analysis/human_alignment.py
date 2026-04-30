@@ -1195,8 +1195,8 @@ def compute_human_agreement(
     report = {
         "human_alignment_status": "agreement_reported" if has_data else "labeled",
         "schema_version": "human_alignment_v2",
-        "labels_file": str(labels),
-        "llm_judge_labels_file": str(align_dir / "llm_judge_labels.json"),
+        "labels_file": labels.name,
+        "llm_judge_labels_file": "llm_judge_labels.json",
         "agreement_metrics": metrics if has_data else None,
         "b1_breakdown_by_persona": _b1_breakdown_by_persona(b1_per_judge),
         "disagreement_examples": disagreements,
