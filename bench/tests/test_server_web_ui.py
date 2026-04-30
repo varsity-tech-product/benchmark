@@ -555,6 +555,7 @@ class UiRoutesTests(unittest.TestCase):
             )
             skill_response = client.get("/skills/quanttutorbench-rest-agent")
             skill_raw_response = client.get("/skills/quanttutorbench-rest-agent/raw")
+            skill_md_response = client.get("/skill.md")
             review_list_response = client.get("/ui/review/bundles")
             review_bundle_response = client.get(f"/ui/review/bundles/{session_id}")
             review_post_response = client.post(
@@ -597,6 +598,7 @@ class UiRoutesTests(unittest.TestCase):
             self.assertEqual(file_response.status_code, 200)
             self.assertEqual(skill_response.status_code, 200)
             self.assertEqual(skill_raw_response.status_code, 200)
+            self.assertEqual(skill_md_response.status_code, 200)
             self.assertEqual(review_list_response.status_code, 200)
             self.assertEqual(review_bundle_response.status_code, 200)
             self.assertEqual(review_post_response.status_code, 200)
@@ -609,6 +611,7 @@ class UiRoutesTests(unittest.TestCase):
             self.assertIn("POST /client/runs/start", skill_response.text)
             self.assertIn("QuantTutorBench REST Agent", skill_raw_response.text)
             self.assertIn("POST /client/runs/start", skill_raw_response.text)
+            self.assertEqual(skill_md_response.text, skill_raw_response.text)
             self.assertTrue(
                 skill_raw_response.headers.get("content-type", "").startswith(
                     "text/markdown"

@@ -441,40 +441,20 @@
   }
 
   function agentSkillRawUrl() {
-    return window.location.origin + '/skills/quanttutorbench-rest-agent/raw';
+    return window.location.origin + '/skill.md';
   }
 
   function buildAgentPrompt(apiKey) {
-    var skillUrl = agentSkillUrl();
     var rawSkillUrl = agentSkillRawUrl();
     var baseUrl = window.location.origin;
-    var taskLabel = '<public_task_label>';
     return [
-      'You are connecting to QuantTutorBench as my external agent.',
-      '',
-      'Load the REST agent skill first:',
-      skillUrl,
-      '',
-      'Fetch the raw skill file with:',
-      'curl -L "' + rawSkillUrl + '"',
+      'Read ' + rawSkillUrl + ' and follow the instructions to join QuantTutorBench.',
       '',
       'Benchmark base URL:',
       baseUrl,
       '',
-      'Public task label for /client/runs/start:',
-      taskLabel,
-      'When this value is <public_task_label>, ask the operator for the public task label before starting the run.',
-      '',
-      'Start-run payload:',
-      '{"task": "' + taskLabel + '", "mode": "agent"}',
-      '',
       'REST API key:',
-      apiKey,
-      '',
-      'Use this auth header for REST calls:',
-      'Authorization: Bearer ' + apiKey,
-      '',
-      'Follow the skill workflow exactly. Create or claim a run through the REST API, tutor the student through the server endpoints, call allowed tools through the benchmark service, monitor terminal status, and return the Human Review link when the session is archived.'
+      apiKey
     ].join('\n');
   }
 

@@ -191,8 +191,8 @@ tool log, workspace tree, and judge evaluation for a completed bundle.
 
 The isolated frontend treats Human Review as the archive-facing session view:
 completed runs from Session Flow link to `/review/{session_id}`. New Run hands
-external agents a copyable REST prompt with a public task label, API key, browser
-skill URL, and raw Markdown skill URL for `curl`.
+external agents a copyable REST prompt with a Moltbook-style skill instruction,
+`/skill.md`, base URL, and API key.
 
 Reviewer output is stored separately from judge-validation labels:
 

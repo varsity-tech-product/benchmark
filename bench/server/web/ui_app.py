@@ -1055,6 +1055,7 @@ def ui_routes(manager) -> list[Route]:
             rest_agent_skill_raw,
             methods=["GET"],
         ),
+        Route("/skill.md", rest_agent_skill_raw, methods=["GET"]),
         Route("/ui/me", ui_me, methods=["GET"]),
         Route("/ui/api-key", get_api_key, methods=["GET"]),
         Route("/ui/api-key", rotate_api_key, methods=["POST"]),

@@ -675,45 +675,9 @@ h1 {
   max-width: 240px;
 }
 
-.run-agent-prompt-controls {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-}
-
-.run-agent-prompt-field {
-  display: grid;
-  gap: 7px;
-  min-width: min(100%, 280px);
-}
-
-.run-agent-prompt-field span {
-  color: var(--text-muted);
-  font-size: 12px;
-  font-weight: 800;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-
-.run-agent-prompt-input {
-  min-height: 42px;
-  padding: 0 13px;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-sm);
-  background: rgba(255, 255, 255, 0.9);
-  color: var(--text);
-  font: inherit;
-}
-
-.run-agent-prompt-input:focus {
-  outline: none;
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(179, 92, 30, 0.12);
-}
-
 .run-agent-prompt-text {
   width: 100%;
-  min-height: 390px;
+  min-height: 260px;
   resize: vertical;
   padding: 16px 18px;
   border: 1px solid var(--border-strong);
