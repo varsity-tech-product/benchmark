@@ -203,7 +203,6 @@ def run_single_trial(
     ]
 
     for turn_idx in range(n_turns):
-        # Tutor responds
         tutor_msg = _generate_tutor_response(
             tutor_client, task.description, conversation
         )
@@ -216,7 +215,6 @@ def run_single_trial(
             }
         )
 
-        # Student responds (except after last tutor turn)
         if turn_idx < n_turns - 1:
             student_msg = sim.generate_message(conversation)
             conversation.append(
@@ -331,7 +329,6 @@ class ExperimentRunner:
             raise ValueError(f"Unknown generation phase: {phase}")
         trials: list[tuple[TrialKey, bool]] = []
 
-        # Main experiment — all tutor temperatures
         for task_id in self.tasks:
             for pid in TASK_PERSONA_MAP.get(task_id, []):
                 for model in STUDENT_MODELS:
@@ -365,7 +362,6 @@ class ExperimentRunner:
                 if trial.key in allowed_keys
             ]
 
-        # Filter out already completed, apply limit
         pending = [(t, p) for t, p in trials if not self._exists(t.key)]
         already_done = len(trials) - len(pending)
         if limit is not None and limit < len(pending):
@@ -404,7 +400,6 @@ class ExperimentRunner:
                 except Exception as exc:  # noqa: BLE001 - surface failed trials
                     failed += 1
                     logger.error("Trial failed: %s: %s", futures[future].key, exc)
-                # Progress update every 10 trials
                 if completed % 10 == 0 or completed == len(pending):
                     elapsed = time.time() - start
                     logger.info(

@@ -306,7 +306,6 @@ def render_d2(conv_dir: Path, output_dir: Path):
     """Render S3 prompts: one per (task, persona, model, tutor_t) group of 3 repeats."""
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # Group conversations by (task, persona, model, tutor_t)
     groups: dict[str, list[tuple[str, list]]] = defaultdict(list)
     for conv_file in sorted(conv_dir.glob("live__*.json")):
         parts = conv_file.stem.split("__")

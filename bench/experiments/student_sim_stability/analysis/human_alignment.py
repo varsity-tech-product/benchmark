@@ -265,7 +265,6 @@ def _stratified_sample(
             chosen = shuffled[:wanted]
         selected.extend(chosen)
 
-    # Build out the per-sample dicts
     samples = []
     for path, payload in selected:
         metadata = payload.get("metadata", {})
@@ -936,13 +935,11 @@ def compute_human_agreement(
         for record in records
     }
 
-    # Comparison buckets — each list collects per-eval comparisons
     persona_fid: list[dict] = []
     knowledge: list[dict] = []
     emotional: list[dict] = []
     drift: list[dict] = []
     failure_match: list[dict] = []
-    # New v2 buckets
     b1_per_judge: list[dict] = (
         []
     )  # {eval_id, persona_id, sonnet_match, gpt54_match, gemini_match}
@@ -968,7 +965,6 @@ def compute_human_agreement(
 
             comment = row.get("human_comment", "")
 
-            # --- persona_fidelity (numeric, multiple dims) ---
             try:
                 primary_field = primary_score_field(dimension)
             except KeyError:
@@ -987,7 +983,6 @@ def compute_human_agreement(
                 disagreements=all_disagreements,
             )
 
-            # --- knowledge_boundary_pass (S1 only) ---
             kf = KNOWLEDGE_FIELD_BY_DIMENSION.get(dimension)
             _record_numeric(
                 category="knowledge_boundary_pass",
@@ -1001,7 +996,6 @@ def compute_human_agreement(
                 disagreements=all_disagreements,
             )
 
-            # --- emotional_match (S1/S3) ---
             ef = EMOTIONAL_FIELD_BY_DIMENSION.get(dimension)
             _record_numeric(
                 category="emotional_match",
@@ -1015,7 +1009,6 @@ def compute_human_agreement(
                 disagreements=all_disagreements,
             )
 
-            # --- drift_onset_turn (S2) ---
             _record_numeric(
                 category="drift_onset_turn",
                 eval_id=eval_id,
@@ -1028,7 +1021,6 @@ def compute_human_agreement(
                 disagreements=all_disagreements,
             )
 
-            # --- failure_type ---
             human_f = str(row.get("failure_type", "")).strip()
             if human_f:
                 judge_failures = scores.get("failure_types") or []
@@ -1060,7 +1052,6 @@ def compute_human_agreement(
                         }
                     )
 
-            # --- S4 identified_persona (per-judge accuracy) ---
             if dimension == "S4":
                 human_id = str(row.get("human_identified_persona", "")).strip()
                 if human_id and human_id != "uncertain":
@@ -1081,7 +1072,6 @@ def compute_human_agreement(
                         }
                     )
 
-            # --- control distinctiveness (numeric) + persona_set_a (categorical) ---
             if dimension == "S6":
                 _record_numeric(
                     category="control_distinctiveness",
@@ -1094,7 +1084,6 @@ def compute_human_agreement(
                     human_comment=comment,
                     disagreements=all_disagreements,
                 )
-                # persona_set_a check (was the human right about which set was conditioned?)
                 human_a = str(row.get("human_persona_set_a", "")).strip().lower()
                 if human_a in ("true", "false"):
                     human_bool = human_a == "true"
@@ -1106,7 +1095,6 @@ def compute_human_agreement(
                         }
                     )
 
-            # --- S5 facet_fit + expected_signals recall ---
             if dimension == "S5":
                 _record_numeric(
                     category="p1_facet_fit",
@@ -1135,9 +1123,6 @@ def compute_human_agreement(
                     )
                     p1_signals_recall.append({"eval_id": eval_id, "recall": recall})
 
-    # ------------------------------------------------------------------
-    # Aggregate metrics
-    # ------------------------------------------------------------------
     def _b1_judge_accuracy(view: str) -> dict | None:
         vals = [r[view] for r in b1_per_judge if r.get(view) is not None]
         if not vals:

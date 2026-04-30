@@ -1463,13 +1463,11 @@ treat the Panel-3 mean as the canonical aggregate.
                 v_p3 = (row.get("aggregates", {}).get("panel_3") or {}).get(field)
                 if isinstance(v_p3, (int, float)):
                     by_view["panel_3"][model].append(float(v_p3))
-        # Mean per (view, model)
         composites: dict[str, dict[str, float]] = {}
         for view, mm in by_view.items():
             composites[view] = {
                 model: float(mean(vals)) if vals else 0.0 for model, vals in mm.items()
             }
-        # Ranking per view (descending composite)
         rankings = {
             view: [m for m, _ in sorted(c.items(), key=lambda x: -x[1])]
             for view, c in composites.items()
@@ -1477,7 +1475,6 @@ treat the Panel-3 mean as the canonical aggregate.
         ranks_match = len(rankings) >= 2 and all(
             rankings[v] == rankings["panel_3"] for v in rankings
         )
-        # Max pairwise composite spread per model
         all_models = set().union(*(c.keys() for c in composites.values()))
         max_spread = 0.0
         for m in all_models:
@@ -1509,7 +1506,6 @@ treat the Panel-3 mean as the canonical aggregate.
             "gemini": "Gemini only",
             "panel_3": "Panel-3 mean",
         }
-        # Header
         view_columns = ("sonnet", "gpt54", "gemini", "panel_3")
         head = (
             "<tr><th>Student model</th>"
@@ -1766,7 +1762,6 @@ not by what the tutor says.
         d3 = stats.get("d3") or {}
         control = stats.get("control") or {}
 
-        # Claim A: stability
         if best:
             scores = best.get("scores") or {}
             scores_ci = best.get("scores_ci") or {}
@@ -1798,7 +1793,6 @@ not by what the tutor says.
                 "available; cannot restate verdict.</p>"
             )
 
-        # Claim B: model selection
         if best:
             invariant = self._composite_judge_invariance
             if invariant is not None:
@@ -1831,7 +1825,6 @@ not by what the tutor says.
                 "ranking available.</p>"
             )
 
-        # Claim C: metric calibration — pull from human alignment
         metrics = self._human.get("agreement_metrics") or {}
         chosen_name = None
         chosen = None
@@ -1867,7 +1860,6 @@ not by what the tutor says.
         else:
             persona_evidence_line = ""
 
-        # Data-quality caveat — list the failing audit checks (if any)
         audit = self._audit or {}
         checks = audit.get("checks") or []
         failing = [c for c in checks if not c.get("ok")]
