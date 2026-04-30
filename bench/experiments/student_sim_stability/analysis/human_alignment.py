@@ -69,11 +69,11 @@ LABEL_FIELDS = [
     "human_facet_signals_hit",  # comma-separated string
 ]
 
-KNOWLEDGE_FIELD_BY_DIMENSION = {
+PANEL_AGG_KNOWLEDGE_FIELD_BY_DIM = {
     "S1": "knowledge_boundary",
 }
 
-EMOTIONAL_FIELD_BY_DIMENSION = {
+PANEL_AGG_EMOTIONAL_FIELD_BY_DIM = {
     "S1": "emotional_tone",
     "S3": "emotional_consistency",
 }
@@ -982,7 +982,7 @@ def compute_human_agreement(
                 disagreements=all_disagreements,
             )
 
-            kf = KNOWLEDGE_FIELD_BY_DIMENSION.get(dimension)
+            kf = PANEL_AGG_KNOWLEDGE_FIELD_BY_DIM.get(dimension)
             _record_numeric(
                 category="knowledge_boundary_pass",
                 eval_id=eval_id,
@@ -995,7 +995,7 @@ def compute_human_agreement(
                 disagreements=all_disagreements,
             )
 
-            ef = EMOTIONAL_FIELD_BY_DIMENSION.get(dimension)
+            ef = PANEL_AGG_EMOTIONAL_FIELD_BY_DIM.get(dimension)
             _record_numeric(
                 category="emotional_match",
                 eval_id=eval_id,
