@@ -189,6 +189,9 @@ inspection through `/ui/review/*`. The Vercel-facing shell serves `/review` and
 Any authenticated GitHub reviewer can inspect the task spec, transcript, tutor
 tool log, workspace tree, and judge evaluation for a completed bundle.
 
+The isolated frontend treats Human Review as the archive-facing session view:
+completed runs from Session Flow and New Run link to `/review/{session_id}`.
+
 Reviewer output is stored separately from judge-validation labels:
 
 ```text

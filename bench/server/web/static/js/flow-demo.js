@@ -219,7 +219,7 @@
     var conversation = run.conversation || [];
     var logs = run.recent_tool_logs || [];
     var href = run.status === 'completed' && run.session_id
-      ? '#/results/' + encodeURIComponent(run.session_id)
+      ? '#/review/' + encodeURIComponent(run.session_id)
       : '';
     var tag = href ? 'a' : 'article';
     var open = href ? ' href="' + href + '"' : '';
@@ -304,7 +304,7 @@
     if (status === 'claimed') return 'Agent connected.';
     if (status === 'active') return 'Session starting.';
     if (status === 'stale') return 'Previous server process ended before archive creation.';
-    if (status === 'completed') return 'Open Results for the archived replay.';
+    if (status === 'completed') return 'Open Human Review for the archived replay.';
     if (status === 'failed') return run.error || 'Run failed.';
     if (status === 'cancelled') return 'Run cancelled.';
     return 'Waiting for session activity.';
@@ -313,7 +313,7 @@
   function emptyToolText(run) {
     var status = displayStatus(run);
     if (status === 'active') return 'Tool calls will appear as the agent works.';
-    if (status === 'completed') return 'Archived tool calls are available in Results.';
+    if (status === 'completed') return 'Archived tool calls are available in Human Review.';
     return statusLabel(status || 'pending');
   }
 

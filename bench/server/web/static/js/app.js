@@ -250,7 +250,7 @@
     if (path.indexOf('/review') === 0) {
       return path.replace(/\/$/, '') || '/review';
     }
-    return '/results';
+    return '/flow-demo';
   }
 
   function setAppDetailMode(enabled) {
@@ -263,9 +263,8 @@
     if (route.indexOf('/flow-demo') === 0) current = 'flow';
     else if (route.indexOf('/review') === 0) current = 'review';
     else if (route.indexOf('/tasks') === 0) current = 'tasks';
-    else if (route === '/runs') current = 'runs';
     else if (route.indexOf('/run') === 0) current = 'run';
-    else current = 'results';
+    else current = 'flow';
     var links = document.querySelectorAll('.nav-link');
     Array.prototype.forEach.call(links, function (link) {
       if (link.getAttribute('data-route') === current) link.classList.add('active');
@@ -400,6 +399,8 @@
       });
   }
 
+  window.QTB.openApiKeyModal = openApiKeyModal;
+
   function renderApiKeyModalBody(status) {
     var created = status && status.created_at ? formatTimestamp(status.created_at * 1000) : '';
     var skillUrl = '/skills/quanttutorbench-rest-agent';
@@ -485,7 +486,7 @@
       '<section class="page">' +
         '<header class="page-header">' +
           '<div class="page-title-wrap">' +
-            '<p class="eyebrow">Results Archive</p>' +
+            '<p class="eyebrow">Archived Sessions</p>' +
             '<h1>Archived sessions, rebuilt around the new session model.</h1>' +
             '<p class="subtitle">This view reads from the isolated <code>bench/server/web/</code> stack, not the legacy <code>bench/web/</code> app.</p>' +
           '</div>' +
@@ -539,7 +540,7 @@
     var model = item.model || 'Unknown';
 
     return '' +
-      '<a class="session-card" href="#/results/' + encodeURIComponent(item.session_id) + '">' +
+      '<a class="session-card" href="#/review/' + encodeURIComponent(item.session_id) + '">' +
         '<div class="session-top">' +
           '<div>' +
             '<h2 class="session-title">' +
@@ -685,268 +686,21 @@
     return !!state.run.busy || !!(state.run.action && state.run.action !== 'idle');
   }
 
-  function runCanSend() {
-    return state.run.mode === 'human' &&
-      state.run.sessionId &&
-      state.run.phase === 'in_session' &&
-      !runIsBusy();
-  }
-
-  function runStatusLabel() {
-    if (state.run.action && state.run.action !== 'idle') return titleCase(state.run.action);
-    if (!state.run.mode) return 'Choose Mode';
-    if (!state.run.sessionId) return 'Not Started';
-    return titleCase(state.run.phase || 'unknown');
-  }
-
   function runModeLabel() {
-    if (state.run.mode === 'agent') return 'Agent Test';
-    if (state.run.mode === 'human') return 'Human Test';
-    return 'Unselected';
-  }
-
-  function setRunAction(action) {
-    state.run.action = action || 'idle';
-    state.run.busy = state.run.action !== 'idle';
-  }
-
-  function addRunToolEvent(name, status, detail) {
-    state.run.toolEvents = state.run.toolEvents || [];
-    state.run.toolEvents.push({
-      name: name,
-      status: status || 'ok',
-      detail: detail || '',
-      timestamp: new Date().toISOString()
-    });
-    if (state.run.toolEvents.length > 20) {
-      state.run.toolEvents = state.run.toolEvents.slice(state.run.toolEvents.length - 20);
-    }
-  }
-
-  function renderRunMessage(message) {
-    var role = message.role === 'tutor' ? 'tutor' : 'student';
-    var label = role === 'tutor' ? 'Tutor' : 'Student';
-    var body = window.QTB && typeof window.QTB.renderMarkdown === 'function'
-      ? window.QTB.renderMarkdown(message.content || '')
-      : '<pre>' + escapeHtml(message.content || '') + '</pre>';
-    var attachments = message.attachments && message.attachments.length
-      ? '<div class="run-message-attachments">' + message.attachments.map(function (item) {
-        return '<span class="meta-chip">' + escapeHtml(item) + '</span>';
-      }).join('') + '</div>'
-      : '';
-
-    return '' +
-      '<article class="run-message ' + role + '">' +
-        '<div class="run-message-label">' + escapeHtml(label) + '</div>' +
-        '<div class="run-message-bubble">' + body + attachments + '</div>' +
-      '</article>';
-  }
-
-  function renderRunTools() {
-    if (!state.run.tools || !state.run.tools.length) {
-      return '<p class="detail-empty-note">Visible tools will appear after the session starts.</p>';
-    }
-    return '<div class="run-tool-list">' + state.run.tools.map(function (tool) {
-      var isProtocol = tool.name === 'send_message' || tool.name === 'get_background';
-      return '' +
-        '<div class="run-tool-chip ' + (isProtocol ? 'protocol' : 'domain') + '">' +
-          '<span>' + escapeHtml(tool.name || 'unknown') + '</span>' +
-          '<small>' + escapeHtml(isProtocol ? 'protocol' : 'domain') + '</small>' +
-        '</div>';
-    }).join('') + '</div>';
-  }
-
-  function renderRunToolEvents() {
-    var events = state.run.toolEvents || [];
-    if (!events.length) {
-      return '<p class="detail-empty-note">Live tool activity will appear here while this browser-driven session runs.</p>';
-    }
-    return '<div class="run-event-list">' + events.slice().reverse().map(function (event) {
-      return '' +
-        '<article class="run-event ' + escapeHtml(event.status || 'ok') + '">' +
-          '<div class="run-event-head">' +
-            '<strong>' + escapeHtml(event.name || 'event') + '</strong>' +
-            '<span>' + escapeHtml(formatTimestamp(event.timestamp)) + '</span>' +
-          '</div>' +
-          (event.detail ? '<p>' + escapeHtml(event.detail) + '</p>' : '') +
-        '</article>';
-    }).join('') + '</div>';
-  }
-
-  // ── Run list / history page ──
-
-  var runsState = {
-    runs: null,
-    statusFilter: 'all'
-  };
-
-  function ensureRuns(force) {
-    if (runsState.runs && !force) return Promise.resolve(runsState.runs);
-    return authFetch('/ui/runs').then(function (r) { return r.json(); })
-      .then(function (data) {
-        runsState.runs = data.runs || [];
-        return runsState.runs;
-      });
-  }
-
-  function filteredRuns(runs) {
-    if (runsState.statusFilter === 'all') return runs;
-    return runs.filter(function (r) { return r.status === runsState.statusFilter; });
-  }
-
-  function renderRunCard(run) {
-    var statusLabels = {
-      waiting: '● Waiting',
-      claimed: '● Claimed',
-      active: '● Active',
-      completed: '✓ Completed',
-      failed: '✗ Failed',
-      cancelled: '— Cancelled'
-    };
-    var label = run.public_task_label || '—';
-    var statusText = statusLabels[run.status] || run.status;
-    var isTerminal = run.status === 'completed' || run.status === 'failed' || run.status === 'cancelled';
-    var href;
-    if (run.status === 'completed' && run.session_id) {
-      href = '#/results/' + encodeURIComponent(run.session_id);
-    } else if (!isTerminal) {
-      href = '#/run';
-    } else {
-      href = 'javascript:void(0)';
-    }
-
-    return '' +
-      '<a class="run-card" href="' + href + '">' +
-        '<div class="run-card-top">' +
-          '<span class="run-card-label">' + escapeHtml(label) + '</span>' +
-          '<span class="summary-pill run-status-' + escapeHtml(run.status) + '">' + escapeHtml(statusText) + '</span>' +
-        '</div>' +
-        '<div class="run-card-mode">' + escapeHtml(run.mode || 'agent') + '</div>' +
-        '<div class="run-card-meta">' +
-          (run.persona_id ? '<span class="meta-chip">' + escapeHtml(run.persona_id) + '</span>' : '') +
-          (run.eval_status && run.eval_status !== 'pending' ? '<span class="meta-chip">Eval: ' + escapeHtml(run.eval_status) + '</span>' : '') +
-        '</div>' +
-        '<div class="run-card-time">' +
-          escapeHtml(formatTimestamp(run.created_at)) +
-          (run.completed_at ? ' → ' + escapeHtml(formatTimestamp(run.completed_at)) : '') +
-        '</div>' +
-      '</a>';
-  }
-
-  function renderRunsListPage(runs) {
-    var statuses = sortedUnique(runs.map(function (r) { return r.status; }));
-    var visible = filteredRuns(runs);
-
-    var statusOptions = ['<option value="all">All</option>'].concat(statuses.map(function (s) {
-      var sel = s === runsState.statusFilter ? ' selected' : '';
-      return '<option value="' + escapeHtml(s) + '"' + sel + '>' + escapeHtml(titleCase(s)) + '</option>';
-    }));
-
-    app.innerHTML =
-      '<section class="page">' +
-        '<header class="page-header">' +
-          '<div class="page-title-wrap">' +
-            '<p class="eyebrow">Run History</p>' +
-            '<h1>Run history and active sessions.</h1>' +
-            '<p class="subtitle">All runs created through the Run layer, with real-time status tracking.</p>' +
-          '</div>' +
-          '<div class="summary-strip">' +
-            buildSummaryPill('Total', String(runs.length)) +
-            buildSummaryPill('Active', String(runs.filter(function (r) { return r.status === 'active'; }).length)) +
-            buildSummaryPill('Completed', String(runs.filter(function (r) { return r.status === 'completed'; }).length)) +
-          '</div>' +
-        '</header>' +
-        '<section class="panel filter-bar">' +
-          '<label class="filter-field">' +
-            '<span class="filter-label">Status</span>' +
-            '<select id="runs-status-filter" class="filter-select">' + statusOptions.join('') + '</select>' +
-          '</label>' +
-        '</section>' +
-        '<div class="results-meta">' +
-          '<div class="results-count">' + escapeHtml(String(visible.length)) + ' run(s) shown</div>' +
-        '</div>' +
-        (visible.length
-          ? '<div class="runs-grid">' + visible.map(renderRunCard).join('') + '</div>'
-          : renderEmptyInline('No runs match the current filter.')) +
-      '</section>';
-
-    var filterEl = document.getElementById('runs-status-filter');
-    if (filterEl) {
-      filterEl.addEventListener('change', function (e) {
-        runsState.statusFilter = e.target.value || 'all';
-        renderRunsListPage(runs);
-      });
-    }
-  }
-
-  function showRuns() {
-    state.activeSessionId = null;
-    setAppDetailMode(false);
-    renderLoading('Loading runs', 'Fetching run history from the /ui/runs endpoint.');
-    ensureRuns(true).then(renderRunsListPage).catch(function (error) {
-      renderError('Runs unavailable', error);
-    });
+    return 'Agent Connection';
   }
 
   function renderRunPage(payload) {
     var tasks = payload.tasks || [];
     var selectedTask = getRunTask(tasks);
     if (selectedTask && !state.run.taskId) state.run.taskId = selectedTask.task_id;
+    state.run.mode = 'agent';
 
-    if (!state.run.mode) {
-      renderRunModePicker(payload);
+    if (window.QTB && typeof window.QTB.renderMyAgentPage === 'function') {
+      window.QTB.renderMyAgentPage(app, state, payload);
       return;
     }
-
-    if (state.run.mode === 'agent') {
-      if (window.QTB && typeof window.QTB.renderMyAgentPage === 'function') {
-        window.QTB.renderMyAgentPage(app, state, payload);
-      } else {
-        renderAgentRunPage(payload);
-      }
-      return;
-    }
-
-    renderHumanRunPage(payload);
-  }
-
-  function renderRunModePicker(payload) {
-    var tasks = payload.tasks || [];
-    app.innerHTML =
-      '<section class="page run-page">' +
-        '<header class="page-header">' +
-          '<div class="page-title-wrap">' +
-            '<p class="eyebrow">New Run</p>' +
-            '<h1>Choose how to run the benchmark.</h1>' +
-            '<p class="subtitle">Connect your own agent, try it yourself in the browser, or watch the baseline agent run.</p>' +
-          '</div>' +
-          '<div class="summary-strip">' +
-            buildSummaryPill('Mode', runModeLabel()) +
-            buildSummaryPill('Tasks', String(tasks.length)) +
-          '</div>' +
-        '</header>' +
-        '<div class="run-mode-grid">' +
-          '<article class="panel run-mode-card">' +
-            '<p class="eyebrow">Your Agent</p>' +
-            '<h2>My Agent</h2>' +
-            '<p>Create a run and get connection details (MCP URL + token or REST endpoints). Connect your own agent to execute the benchmark.</p>' +
-            '<button class="btn btn-primary" id="run-mode-agent" type="button">My Agent</button>' +
-          '</article>' +
-          '<article class="panel run-mode-card">' +
-            '<p class="eyebrow">Manual</p>' +
-            '<h2>Try it myself</h2>' +
-            '<p>Use the browser-driven REST harness to manually tutor the student. Useful for understanding the benchmark tasks.</p>' +
-            '<button class="btn btn-secondary" id="run-mode-human" type="button">Try it myself</button>' +
-          '</article>' +
-          '<article class="panel run-mode-card">' +
-            '<p class="eyebrow">Demo</p>' +
-            '<h2>Watch Baseline</h2>' +
-            '<p>Watch the baseline agent (Claude) complete the task automatically. Server starts the agent — just observe.</p>' +
-            '<button class="btn btn-secondary" id="run-mode-baseline" type="button" disabled title="Coming soon">Watch Baseline</button>' +
-          '</article>' +
-        '</div>' +
-      '</section>';
-    bindRunModeControls();
+    renderAgentRunPage(payload);
   }
 
   function renderAgentRunPage(payload) {
@@ -1000,14 +754,13 @@
             '</label>' +
             '<div class="run-actions">' +
               '<button class="btn btn-primary" type="button" disabled>Start Agent Run</button>' +
-              '<button class="btn btn-secondary" id="run-mode-reset-btn" type="button">Change Mode</button>' +
             '</div>' +
           '</aside>' +
           '<section class="panel run-conversation-panel run-agent-main">' +
             '<div class="run-panel-header">' +
               '<div>' +
                 '<h2>Execution Boundary</h2>' +
-                '<p>The automated flow is not a chat form. It should be a backend job that launches the client runner, polls job state, captures stdout/stderr, and links to the archived result when the client trace is written.</p>' +
+                '<p>The automated flow launches the client runner, polls job state, captures stdout/stderr, and links to Human Review after archive creation.</p>' +
               '</div>' +
             '</div>' +
             '<ol class="run-flow-list">' +
@@ -1015,180 +768,25 @@
               '<li><strong>start_session</strong> returns the client-visible background and student opening.</li>' +
               '<li><strong>list_tools</strong> exposes <code>send_message</code>, <code>get_background</code>, and domain tools to the agent.</li>' +
               '<li><strong>adapter.generate_response</strong> runs once; the tool runner handles domain tools and student communication.</li>' +
-              '<li><strong>save_client_trace</strong> writes <code>results/client/{session_id}/client_trace.json</code>, then Results can render the merged replay.</li>' +
+              '<li><strong>save_client_trace</strong> writes <code>results/client/{session_id}/client_trace.json</code>, then Human Review renders the archived replay.</li>' +
             '</ol>' +
             '<div class="run-status-note">' +
-              '<strong>Required before enabling this button:</strong> add server endpoints for creating/cancelling agent jobs, safe subprocess lifecycle, result-dir wiring, live log/tool polling, and completion mapping back to Results.' +
+              '<strong>Required before enabling this button:</strong> add server endpoints for creating/cancelling agent jobs, safe subprocess lifecycle, result-dir wiring, live log/tool polling, and completion mapping back to Human Review.' +
             '</div>' +
           '</section>' +
           '<aside class="panel run-tools-panel">' +
             '<h2>Live Tools</h2>' +
-            '<p class="detail-empty-note">Agent tool events cannot be streamed here until the backend job layer exposes them. Result detail already renders them after archive creation.</p>' +
+            '<p class="detail-empty-note">Agent tool events appear here when the backend job layer exposes them. Human Review renders archived tool logs after completion.</p>' +
           '</aside>' +
         '</div>' +
       '</section>';
     bindRunControls(tasks);
-  }
-
-  function renderHumanRunPage(payload) {
-    var tasks = payload.tasks || [];
-    var personas = payload.personas || [];
-    var selectedTask = getRunTask(tasks);
-    var visiblePersonas = personasForTask(selectedTask, personas);
-    var selectedPersona = state.run.personaId || 'auto';
-    var isBusy = runIsBusy();
-    var isLocked = !!state.run.sessionId || isBusy;
-    var taskOptions = tasks.map(function (task) {
-      return '<option value="' + escapeHtml(task.task_id) + '"' + (task.task_id === state.run.taskId ? ' selected' : '') + '>' +
-        escapeHtml(publicTaskLabel(task.task_id)) +
-      '</option>';
-    }).join('');
-    var personaOptions =
-      '<option value="auto"' + (selectedPersona === 'auto' ? ' selected' : '') + '>Auto select</option>' +
-      visiblePersonas.map(function (persona) {
-        return '<option value="' + escapeHtml(persona.persona_id) + '"' + (persona.persona_id === selectedPersona ? ' selected' : '') + '>' +
-          escapeHtml(persona.persona_id) +
-        '</option>';
-      }).join('');
-    var messagesHtml = state.run.messages.length
-      ? state.run.messages.map(renderRunMessage).join('')
-      : '<div class="run-empty-conversation">Start a human test session to see the student opening message here.</div>';
-    var sessionMeta = state.run.sessionId
-      ? [
-        metaItem('Session ID', state.run.sessionId),
-        metaItem('Phase', runStatusLabel()),
-        metaItem('Task', publicTaskLabel(state.run.taskId)),
-        metaItem('Client Context', state.run.background ? 'Loaded' : 'Waiting')
-      ].join('')
-      : '<p class="detail-empty-note">No active run yet. This panel will only show client-visible runtime context after start_session.</p>';
-    var actionButton = state.run.sessionId
-      ? '<button class="btn btn-secondary" id="run-refresh-btn" type="button"' + (isBusy ? ' disabled' : '') + '>Refresh</button>'
-      : '<button class="btn btn-primary" id="run-start-btn" type="button"' + (isBusy || !selectedTask ? ' disabled' : '') + '>Create & Start Session</button>';
-    var openResult = state.run.sessionId && state.run.phase === 'completed'
-      ? '<a class="btn btn-secondary" href="#/results/' + encodeURIComponent(state.run.sessionId) + '">Open Result</a>'
-      : '';
-    var cancelButton = state.run.sessionId && state.run.phase !== 'completed'
-      ? '<button class="btn btn-secondary" id="run-cancel-btn" type="button"' + (isBusy ? ' disabled' : '') + '>Cancel</button>'
-      : '';
-
-    app.innerHTML =
-      '<section class="page run-page">' +
-        '<header class="page-header run-sticky-header">' +
-          '<div class="page-title-wrap">' +
-            '<p class="eyebrow">Run · Human Test</p>' +
-            '<h1>Browser-driven REST session harness.</h1>' +
-            '<p class="subtitle">Manual mode is kept for human testing. The visible task label and info panel avoid exposing hidden task metadata during execution.</p>' +
-          '</div>' +
-          '<div class="summary-strip">' +
-            buildSummaryPill('Mode', runModeLabel()) +
-            buildSummaryPill('Status', runStatusLabel()) +
-            buildSummaryPill('Task', publicTaskLabel(state.run.taskId || (selectedTask && selectedTask.task_id))) +
-            buildSummaryPill('Tools', String(state.run.tools.length)) +
-          '</div>' +
-        '</header>' +
-        (state.run.error ? '<section class="run-error">' + escapeHtml(state.run.error) + '</section>' : '') +
-        '<div class="run-grid">' +
-          '<aside class="panel run-control-panel">' +
-            '<h2>Info</h2>' +
-            '<label class="filter-field">' +
-              '<span class="filter-label">Task</span>' +
-              '<select id="run-task-select" class="filter-select"' + (isLocked ? ' disabled' : '') + '>' + taskOptions + '</select>' +
-            '</label>' +
-            '<label class="filter-field">' +
-              '<span class="filter-label">Persona Control</span>' +
-              '<select id="run-persona-select" class="filter-select"' + (isLocked ? ' disabled' : '') + '>' + personaOptions + '</select>' +
-            '</label>' +
-            '<div class="run-actions">' + actionButton + openResult + cancelButton +
-              '<button class="btn btn-secondary" id="run-reset-btn" type="button"' + (isBusy ? ' disabled' : '') + '>Reset UI</button>' +
-              '<button class="btn btn-secondary" id="run-mode-reset-btn" type="button"' + (isBusy ? ' disabled' : '') + '>Change Mode</button>' +
-            '</div>' +
-            '<section class="run-meta-block">' +
-              '<h3>Client-Visible State</h3>' +
-              sessionMeta +
-            '</section>' +
-            '<section class="run-meta-block">' +
-              '<h3>Client Context</h3>' +
-              (state.run.background
-                ? '<div class="run-background-text">' + safeRenderMarkdown(state.run.background) + '</div>'
-                : '<p class="detail-empty-note">The background returned by start_session appears here. Hidden task metadata is not shown.</p>') +
-            '</section>' +
-          '</aside>' +
-          '<section class="panel run-conversation-panel">' +
-            '<div class="run-panel-header">' +
-              '<div>' +
-                '<h2>Conversation</h2>' +
-                '<p>Student messages returned by <code>start_session</code> and <code>send_message</code>. This column intentionally takes most of the width.</p>' +
-              '</div>' +
-            '</div>' +
-            '<div id="run-conversation" class="run-conversation">' + messagesHtml + '</div>' +
-            '<form id="run-send-form" class="run-send-form">' +
-              '<label class="filter-field">' +
-                '<span class="filter-label">Tutor Message</span>' +
-                '<textarea id="run-message-input" class="run-textarea" rows="5" placeholder="Write a message that will be delivered through send_message..."' + (!runCanSend() ? ' disabled' : '') + '></textarea>' +
-              '</label>' +
-              '<label class="filter-field">' +
-                '<span class="filter-label">Attachments</span>' +
-                '<input id="run-attachments-input" class="filter-input" type="text" placeholder="Optional: strategy.py, plots/chart.png" ' + (!runCanSend() ? ' disabled' : '') + '>' +
-              '</label>' +
-              '<button class="btn btn-primary" type="submit"' + (!runCanSend() ? ' disabled' : '') + '>' + (state.run.action === 'sending' ? 'Sending...' : 'Send Message') + '</button>' +
-            '</form>' +
-          '</section>' +
-          '<aside class="panel run-tools-panel">' +
-            '<h2>Tools</h2>' +
-            '<section class="run-meta-block compact">' +
-              '<h3>Visible To Client</h3>' +
-              renderRunTools() +
-            '</section>' +
-            '<section class="run-meta-block compact">' +
-              '<h3>Live Activity</h3>' +
-              renderRunToolEvents() +
-            '</section>' +
-          '</aside>' +
-        '</div>' +
-      '</section>';
-
-    bindRunControls(tasks);
-  }
-
-  function bindRunModeControls() {
-    var agentBtn = document.getElementById('run-mode-agent');
-    var humanBtn = document.getElementById('run-mode-human');
-    var baselineBtn = document.getElementById('run-mode-baseline');
-
-    // Allow run-agent.js to reset back to mode picker
-    if (window.QTB) {
-      window.QTB._resetRunMode = function () {
-        state.run.mode = '';
-        state.run.error = '';
-        renderRunPage(state.tasksPayload || {tasks: [], personas: []});
-      };
-    }
-    if (agentBtn) {
-      agentBtn.addEventListener('click', function () {
-        state.run.mode = 'agent';
-        state.run.error = '';
-        renderRunPage(state.tasksPayload || {tasks: [], personas: []});
-      });
-    }
-    if (humanBtn) {
-      humanBtn.addEventListener('click', function () {
-        state.run.mode = 'human';
-        state.run.error = '';
-        renderRunPage(state.tasksPayload || {tasks: [], personas: []});
-      });
-    }
   }
 
   function bindRunControls(tasks) {
     var taskSelect = document.getElementById('run-task-select');
     var personaSelect = document.getElementById('run-persona-select');
     var agentStepsInput = document.getElementById('run-agent-steps-input');
-    var startBtn = document.getElementById('run-start-btn');
-    var refreshBtn = document.getElementById('run-refresh-btn');
-    var cancelBtn = document.getElementById('run-cancel-btn');
-    var resetBtn = document.getElementById('run-reset-btn');
-    var modeResetBtn = document.getElementById('run-mode-reset-btn');
-    var sendForm = document.getElementById('run-send-form');
 
     if (taskSelect) {
       taskSelect.addEventListener('change', function (event) {
@@ -1208,209 +806,6 @@
         state.run.agentMaxSteps = isFinite(value) && value >= 0 ? value : 200;
       });
     }
-    if (startBtn) startBtn.addEventListener('click', startRunSession);
-    if (refreshBtn) refreshBtn.addEventListener('click', refreshRunStatus);
-    if (cancelBtn) cancelBtn.addEventListener('click', cancelRunSession);
-    if (resetBtn) resetBtn.addEventListener('click', resetRunState);
-    if (modeResetBtn) modeResetBtn.addEventListener('click', resetRunMode);
-    if (sendForm) {
-      sendForm.addEventListener('submit', function (event) {
-        event.preventDefault();
-        sendRunMessage();
-      });
-    }
-
-    var conversationEl = document.getElementById('run-conversation');
-    if (conversationEl) conversationEl.scrollTop = conversationEl.scrollHeight;
-  }
-
-  function setRunBusy(busy) {
-    setRunAction(busy ? 'working' : 'idle');
-    renderRunPage(state.tasksPayload || {tasks: [], personas: []});
-  }
-
-  function startRunSession() {
-    var taskId = state.run.taskId;
-    if (!taskId || state.run.mode !== 'human' || runIsBusy()) return;
-    setRunAction('registering');
-    state.run.error = '';
-    renderRunPage(state.tasksPayload || {tasks: [], personas: []});
-
-    var registerBody = {task_id: taskId};
-    if (state.run.personaId && state.run.personaId !== 'auto') {
-      registerBody.persona_id = state.run.personaId;
-    }
-
-    restApi('/session/register', {
-      method: 'POST',
-      body: JSON.stringify(registerBody)
-    }).then(function (registered) {
-      if (!registered.accepted) {
-        throw new Error(registered.error || 'Session registration rejected.');
-      }
-      state.run.sessionId = registered.session_id;
-      state.run.phase = 'registered';
-      state.run.startedAt = new Date().toISOString();
-      addRunToolEvent('register_session', 'ok', 'REST session registered.');
-      setRunAction('starting');
-      renderRunPage(state.tasksPayload || {tasks: [], personas: []});
-      return restApi('/session/' + encodeURIComponent(registered.session_id) + '/start', {
-        method: 'POST',
-        body: JSON.stringify({})
-      });
-    }).then(function (started) {
-      state.run.phase = 'in_session';
-      state.run.background = started.background || '';
-      state.run.messages = [];
-      if (started.student_message) {
-        state.run.messages.push({role: 'student', content: started.student_message});
-      }
-      addRunToolEvent('start_session', 'ok', started.student_message ? 'Student opening received.' : 'Session started.');
-      return refreshRunStatus({silent: true, preserveAction: true});
-    }).catch(function (error) {
-      state.run.error = error && error.message ? error.message : String(error || 'Unknown error');
-      addRunToolEvent('run_start', 'error', state.run.error);
-    }).then(function () {
-      setRunAction('idle');
-      renderRunPage(state.tasksPayload || {tasks: [], personas: []});
-    });
-  }
-
-  function refreshRunStatus(options) {
-    options = options || {};
-    if (!state.run.sessionId) return Promise.resolve();
-    if (!options.silent) setRunAction('refreshing');
-    if (!options.silent) renderRunPage(state.tasksPayload || {tasks: [], personas: []});
-
-    return restApi('/session/' + encodeURIComponent(state.run.sessionId), {
-      method: 'GET',
-      headers: {}
-    }).then(function (status) {
-      state.run.phase = status.phase || state.run.phase;
-      state.run.personaId = status.persona_id || state.run.personaId;
-      return restApi('/session/' + encodeURIComponent(state.run.sessionId) + '/tools', {
-        method: 'GET',
-        headers: {}
-      }).catch(function () {
-        return {tools: []};
-      });
-    }).then(function (toolsPayload) {
-      state.run.tools = toolsPayload.tools || [];
-      state.run.error = '';
-      if (!options.silent) addRunToolEvent('list_tools', 'ok', state.run.tools.length + ' visible tools.');
-    }).catch(function (error) {
-      state.run.error = error && error.message ? error.message : String(error || 'Unknown error');
-      if (!options.silent) addRunToolEvent('refresh', 'error', state.run.error);
-    }).then(function () {
-      if (!options.preserveAction) setRunAction('idle');
-      if (!options.silent) renderRunPage(state.tasksPayload || {tasks: [], personas: []});
-    });
-  }
-
-  function parseRunAttachments(value) {
-    return String(value || '')
-      .split(/[,\n]/)
-      .map(function (item) { return item.trim(); })
-      .filter(Boolean)
-      .slice(0, 3);
-  }
-
-  function sendRunMessage() {
-    if (!runCanSend()) return;
-    var messageInput = document.getElementById('run-message-input');
-    var attachmentsInput = document.getElementById('run-attachments-input');
-    var text = messageInput ? String(messageInput.value || '').trim() : '';
-    var attachments = attachmentsInput ? parseRunAttachments(attachmentsInput.value) : [];
-    if (!text) {
-      state.run.error = 'Message text is required.';
-      renderRunPage(state.tasksPayload || {tasks: [], personas: []});
-      return;
-    }
-
-    setRunAction('sending');
-    state.run.error = '';
-    renderRunPage(state.tasksPayload || {tasks: [], personas: []});
-
-    restApi('/session/' + encodeURIComponent(state.run.sessionId) + '/send', {
-      method: 'POST',
-      body: JSON.stringify({text: text, attachments: attachments})
-    }).then(function (reply) {
-      if (reply.error) {
-        throw new Error(reply.error);
-      }
-      state.run.messages.push({role: 'tutor', content: text, attachments: attachments});
-      if (reply.student_message) {
-        state.run.messages.push({role: 'student', content: reply.student_message});
-      }
-      state.run.phase = reply.status === 'completed' ? 'completed' : 'in_session';
-      addRunToolEvent(
-        'send_message',
-        'ok',
-        (attachments.length ? attachments.length + ' attachment(s). ' : '') +
-          'Student status: ' + (reply.status || state.run.phase) + '.'
-      );
-      if (reply.status === 'completed') {
-        state.run.completedAt = new Date().toISOString();
-        state.results = null;
-        state.detailCache = {};
-      }
-      return refreshRunStatus({silent: true, preserveAction: true});
-    }).catch(function (error) {
-      state.run.error = error && error.message ? error.message : String(error || 'Unknown error');
-      addRunToolEvent('send_message', 'error', state.run.error);
-    }).then(function () {
-      setRunAction('idle');
-      renderRunPage(state.tasksPayload || {tasks: [], personas: []});
-    });
-  }
-
-  function cancelRunSession() {
-    if (!state.run.sessionId || runIsBusy()) return;
-    setRunAction('cancelling');
-    state.run.error = '';
-    renderRunPage(state.tasksPayload || {tasks: [], personas: []});
-    restApi('/session/' + encodeURIComponent(state.run.sessionId), {
-      method: 'DELETE',
-      headers: {}
-    }).then(function () {
-      state.run.phase = 'cancelled';
-      state.run.tools = [];
-      addRunToolEvent('cancel_session', 'ok', 'Session cancelled by UI.');
-    }).catch(function (error) {
-      state.run.error = error && error.message ? error.message : String(error || 'Unknown error');
-      addRunToolEvent('cancel_session', 'error', state.run.error);
-    }).then(function () {
-      setRunAction('idle');
-      renderRunPage(state.tasksPayload || {tasks: [], personas: []});
-    });
-  }
-
-  function resetRunState() {
-    state.run = {
-      mode: state.run.mode,
-      taskId: state.run.taskId,
-      personaId: 'auto',
-      sessionId: null,
-      phase: 'idle',
-      action: 'idle',
-      background: '',
-      messages: [],
-      tools: [],
-      toolEvents: [],
-      error: '',
-      busy: false,
-      agentMaxSteps: state.run.agentMaxSteps || 200,
-      startedAt: null,
-      completedAt: null
-    };
-    renderRunPage(state.tasksPayload || {tasks: [], personas: []});
-  }
-
-  function resetRunMode() {
-    if (runIsBusy()) return;
-    resetRunState();
-    state.run.mode = '';
-    renderRunPage(state.tasksPayload || {tasks: [], personas: []});
   }
 
   function metaItem(label, value) {
@@ -2087,7 +1482,7 @@
     app.innerHTML =
       '<section class="page-run">' +
         '<div class="detail-header">' +
-          '<a class="detail-back" href="#/results">\u2190 Back</a>' +
+          '<a class="detail-back" href="#/review">\u2190 Back</a>' +
           '<div class="detail-title-block">' +
             '<div class="detail-task-id">' + escapeHtml(detail.task_id) + '</div>' +
             '<div class="detail-tags">' +
@@ -3033,7 +2428,7 @@
   function showRun() {
     state.activeSessionId = null;
     setAppDetailMode(false);
-    renderLoading('Loading run harness', 'Fetching task and persona metadata before choosing Human or Agent test mode.');
+    renderLoading('Loading agent connection', 'Fetching task metadata before opening the agent run surface.');
     ensureTasks().then(renderRunPage).catch(function (error) {
       renderError('Run unavailable', error);
     });
@@ -3053,13 +2448,27 @@
     setActiveNav(route);
     closeModal();
 
-    if (route === '/' || route === '/results') {
-      showResultsList();
+    if (route === '/' || route === '/flow-demo') {
+      if (window.QTB && typeof window.QTB.renderFlowDemoPage === 'function') {
+        window.QTB.renderFlowDemoPage(app, state);
+      } else {
+        renderError('Flow demo unavailable', new Error('flow-demo.js not loaded'));
+      }
       return;
     }
 
     if (route === '/runs') {
-      showRuns();
+      location.hash = '#/flow-demo';
+      return;
+    }
+
+    if (route === '/results') {
+      location.hash = '#/review';
+      return;
+    }
+
+    if (route.indexOf('/results/') === 0) {
+      location.hash = '#/review/' + route.slice('/results/'.length);
       return;
     }
 
@@ -3078,26 +2487,12 @@
       return;
     }
 
-    if (route === '/flow-demo') {
-      if (window.QTB && typeof window.QTB.renderFlowDemoPage === 'function') {
-        window.QTB.renderFlowDemoPage(app, state);
-      } else {
-        renderError('Flow demo unavailable', new Error('flow-demo.js not loaded'));
-      }
-      return;
-    }
-
-    if (route.indexOf('/results/') === 0) {
-      showResultDetail(decodeURIComponent(route.slice('/results/'.length)));
-      return;
-    }
-
     if (route.indexOf('/review/') === 0) {
       showReviewBundle(decodeURIComponent(route.slice('/review/'.length)));
       return;
     }
 
-    location.hash = '#/results';
+    location.hash = '#/flow-demo';
   }
 
   window.addEventListener('hashchange', onRouteChange);

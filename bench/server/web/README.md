@@ -20,8 +20,9 @@ Main pieces:
 
 Current routes:
 - `GET /`
-- `#/run` SPA route for the REST session run harness
-- `#/results` SPA route for archived result browsing
+- `#/flow-demo` SPA route for run flow monitoring
+- `#/run` SPA route for agent connection and run creation
+- `#/review` SPA route for archived session review
 - `#/tasks` SPA route for task browsing
 - `GET /ui/tasks`
 - `GET /ui/results`
@@ -31,11 +32,11 @@ Current routes:
 - `GET /ui/results/{session_id}/files/{path:path}`
 
 Run route scope:
-- `#/run` first asks for `Agent Test` or `Human Test`.
-- `Human Test` is a browser-side REST harness: register/start a server session, display the client-visible background and student opening, send tutor messages through `/session/{sid}/send`, refresh status/tools, cancel active sessions, and jump to Results after completion.
-- `Agent Test` mirrors the real automated flow in `bench/client/runner.py` (`register_session` → `start_session` → `list_tools` → `adapter.generate_response` → `save_client_trace`) but its start button is intentionally disabled until a backend job launcher exists.
-- The Run surface only displays public task labels such as `D01`/`X09`; hidden task metadata belongs in the server/client execution context, not the tester-facing Run panels.
-- The frontend does not start local agent subprocesses or manage automated client jobs yet.
+- `#/run` opens the agent connection surface directly.
+- The agent connection surface creates a task-specific run through `/ui/runs`, exposes run token connection details, opens the REST API key modal, and links to the QuantTutorBench REST agent skill.
+- `Agent Test` mirrors the real automated flow in `bench/client/runner.py` (`register_session` → `start_session` → `list_tools` → `adapter.generate_response` → `save_client_trace`) when the dedicated `run-agent.js` module is loaded.
+- The Run surface only displays public task labels such as `D01`/`X09`; hidden task metadata stays in the server/client execution context.
+- Session Flow owns run lifecycle browsing. Human Review owns archived session inspection.
 
 Result detail read model:
 - `tool_logs`: domain tool calls only; excludes `send_message`

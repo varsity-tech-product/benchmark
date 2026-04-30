@@ -124,18 +124,21 @@
           '<div class="page-title-wrap">' +
             '<p class="eyebrow">Run · My Agent</p>' +
             '<h1>Connect your agent to the benchmark.</h1>' +
+            '<p class="subtitle">Create a task-specific run, manage the REST API key, or open the QuantTutorBench REST agent skill.</p>' +
           '</div>' +
         '</header>' +
         '<div class="run-agent-create-panel">' +
           '<aside class="panel">' +
-            '<h2>Select Task</h2>' +
+            '<h2>Agent Connection</h2>' +
+            '<p class="detail-empty-note">Use the REST agent skill for API-key based agents, or create a run here to receive a run token and connection details.</p>' +
             '<label class="filter-field">' +
               '<span class="filter-label">Task</span>' +
               '<select id="myagent-task-select" class="filter-select">' + taskOptions + '</select>' +
             '</label>' +
             '<div class="run-actions" style="margin-top:1rem;">' +
               '<button class="btn btn-primary" id="myagent-create-btn" type="button">Create Run</button>' +
-              '<button class="btn btn-secondary" id="myagent-back-btn" type="button">Back</button>' +
+              '<button class="btn btn-secondary" id="myagent-api-key-btn" type="button">API Key</button>' +
+              '<a class="btn btn-secondary" href="/skills/quanttutorbench-rest-agent" target="_blank" rel="noreferrer">REST Agent Skill</a>' +
             '</div>' +
             '<div id="myagent-error" class="run-error" style="display:none;"></div>' +
           '</aside>' +
@@ -144,15 +147,15 @@
 
     // Bind
     var createBtn = document.getElementById('myagent-create-btn');
-    var backBtn = document.getElementById('myagent-back-btn');
+    var apiKeyBtn = document.getElementById('myagent-api-key-btn');
     var taskSelect = document.getElementById('myagent-task-select');
     var errorDiv = document.getElementById('myagent-error');
 
-    if (backBtn) {
-      backBtn.addEventListener('click', function () {
-        _cleanup();
-        // Reset to mode picker — hack into app.js state
-        if (window.QTB._resetRunMode) window.QTB._resetRunMode();
+    if (apiKeyBtn) {
+      apiKeyBtn.addEventListener('click', function () {
+        if (window.QTB && typeof window.QTB.openApiKeyModal === 'function') {
+          window.QTB.openApiKeyModal();
+        }
       });
     }
 
@@ -254,7 +257,7 @@
         // Actions
         '<div class="run-actions" style="margin-top:1rem;">' +
           '<button class="btn btn-danger" id="myagent-cancel-btn" type="button">Cancel Run</button>' +
-          '<a class="btn btn-primary" id="myagent-results-link" href="#" style="display:none;">View Results</a>' +
+          '<a class="btn btn-primary" id="myagent-results-link" href="#" style="display:none;">Open Human Review</a>' +
         '</div>' +
       '</section>';
 
@@ -317,7 +320,7 @@
             if (data.status === 'completed' && data.session_id) {
               var link = document.getElementById('myagent-results-link');
               if (link) {
-                link.href = '#/results/' + data.session_id;
+                link.href = '#/review/' + data.session_id;
                 link.style.display = 'inline-block';
               }
             }
@@ -356,11 +359,11 @@
 
           if (data.run_status === 'completed' || data.run_status === 'failed' || data.run_status === 'cancelled') {
             _stopPolling();
-            // Show results link for completed runs
+            // Show review link for completed runs
             if (data.run_status === 'completed' && data.session_id) {
               var link = document.getElementById('myagent-results-link');
               if (link) {
-                link.href = '#/results/' + data.session_id;
+                link.href = '#/review/' + data.session_id;
                 link.style.display = 'inline-block';
               }
             }
@@ -388,7 +391,7 @@
       msg.className = 'run-token-lost';
       msg.textContent =
         'Run access expired or token lost. Cannot resume monitoring. ' +
-        'Results will still appear under Results once the run completes.';
+        'Archived sessions will still appear under Human Review once the run completes.';
       connectPanel.appendChild(msg);
     }
   }
@@ -530,8 +533,5 @@
     _lastToolLen = 0;
     _lastSendLen = 0;
   }
-
-  // Allow app.js to reset mode
-  window.QTB._resetRunMode = null; // set by app.js
 
 })();
