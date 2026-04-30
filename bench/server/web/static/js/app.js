@@ -123,6 +123,15 @@
     });
   }
 
+  function parseJsonResponse(response) {
+    return response.json().then(function (payload) {
+      if (!response.ok) {
+        throw new Error(payload.error || ('HTTP ' + response.status));
+      }
+      return payload;
+    });
+  }
+
   function loadMe() {
     return fetch('/ui/me')
       .then(function (response) { return response.json(); })
@@ -392,7 +401,7 @@
   function openApiKeyModal() {
     showModal('REST API Key', '<p class="detail-empty-note">Loading API key status...</p>');
     authFetch('/ui/api-key')
-      .then(function (response) { return response.json(); })
+      .then(parseJsonResponse)
       .then(renderApiKeyModalBody)
       .catch(function (error) {
         showModal('REST API Key', '<p class="detail-empty-note">' + escapeHtml(error && error.message ? error.message : String(error || 'Unable to load API key status.')) + '</p>');
@@ -403,7 +412,7 @@
 
   function renderApiKeyModalBody(status) {
     var created = status && status.created_at ? formatTimestamp(status.created_at * 1000) : '';
-    var skillUrl = '/skills/quanttutorbench-rest-agent';
+    var skillUrl = agentSkillUrl();
     var body =
       '<section class="info-section">' +
         '<h3>External REST Access</h3>' +
@@ -427,33 +436,83 @@
     if (revoke) revoke.addEventListener('click', revokeApiKey);
   }
 
+  function agentSkillUrl() {
+    return window.location.origin + '/skills/quanttutorbench-rest-agent';
+  }
+
+  function agentSkillRawUrl() {
+    return window.location.origin + '/skills/quanttutorbench-rest-agent/raw';
+  }
+
+  function buildAgentPrompt(apiKey) {
+    var skillUrl = agentSkillUrl();
+    var rawSkillUrl = agentSkillRawUrl();
+    var baseUrl = window.location.origin;
+    var taskLabel = '<public_task_label>';
+    return [
+      'You are connecting to QuantTutorBench as my external agent.',
+      '',
+      'Load the REST agent skill first:',
+      skillUrl,
+      '',
+      'Fetch the raw skill file with:',
+      'curl -L "' + rawSkillUrl + '"',
+      '',
+      'Benchmark base URL:',
+      baseUrl,
+      '',
+      'Public task label for /client/runs/start:',
+      taskLabel,
+      'When this value is <public_task_label>, ask the operator for the public task label before starting the run.',
+      '',
+      'Start-run payload:',
+      '{"task": "' + taskLabel + '", "mode": "agent"}',
+      '',
+      'REST API key:',
+      apiKey,
+      '',
+      'Use this auth header for REST calls:',
+      'Authorization: Bearer ' + apiKey,
+      '',
+      'Follow the skill workflow exactly. Create or claim a run through the REST API, tutor the student through the server endpoints, call allowed tools through the benchmark service, monitor terminal status, and return the Human Review link when the session is archived.'
+    ].join('\n');
+  }
+
   function rotateApiKey() {
     authFetch('/ui/api-key', {method: 'POST'})
-      .then(function (response) { return response.json(); })
+      .then(parseJsonResponse)
       .then(function (payload) {
         var target = document.getElementById('api-key-result');
+        var prompt = buildAgentPrompt(payload.api_key || '');
         if (target) {
           target.innerHTML =
-            '<h3>New Key</h3>' +
-            '<code class="run-connect-cmd">' + escapeHtml(payload.api_key || '') + '</code>' +
-            '<button class="btn btn-small run-copy-btn" id="api-key-copy-btn" type="button">Copy</button>' +
-            '<p class="detail-empty-note">Use this key with the <a href="/skills/quanttutorbench-rest-agent" target="_blank" rel="noreferrer">REST agent skill</a> to connect your agent to the benchmark service.</p>';
+            '<h3>Agent Prompt</h3>' +
+            '<textarea id="api-key-agent-prompt" class="run-agent-prompt-text api-key-agent-prompt" readonly spellcheck="false">' + escapeHtml(prompt) + '</textarea>' +
+            '<button class="btn btn-small run-copy-btn" id="api-key-copy-btn" type="button">Copy Prompt</button>' +
+            '<p class="detail-empty-note">The prompt includes the full REST API key, the skill URL, and a curl command for loading the skill file.</p>';
           var copy = document.getElementById('api-key-copy-btn');
           if (copy) {
             copy.addEventListener('click', function () {
-              if (navigator.clipboard && payload.api_key) {
-                navigator.clipboard.writeText(payload.api_key);
-                copy.textContent = 'Copied';
+              if (navigator.clipboard && prompt) {
+                navigator.clipboard.writeText(prompt).then(function () {
+                  copy.textContent = 'Copied';
+                });
               }
             });
           }
+        }
+      })
+      .catch(function (error) {
+        var target = document.getElementById('api-key-result');
+        if (target) {
+          target.innerHTML = '<p class="run-error">' + escapeHtml(error && error.message ? error.message : String(error || 'Unable to generate API key.')) + '</p>';
         }
       });
   }
 
   function revokeApiKey() {
     authFetch('/ui/api-key', {method: 'DELETE'})
-      .then(function (response) { return response.json(); })
+      .then(parseJsonResponse)
       .then(renderApiKeyModalBody);
   }
 
@@ -659,41 +718,11 @@
       '</article>';
   }
 
-  function getRunTask(tasks) {
-    if (!tasks || !tasks.length) return null;
-    var taskId = state.run.taskId || tasks[0].task_id;
-    for (var index = 0; index < tasks.length; index += 1) {
-      if (tasks[index].task_id === taskId) return tasks[index];
-    }
-    return tasks[0];
-  }
-
-  function personasForTask(task, personas) {
-    var allowed = task && task.persona_ids ? task.persona_ids : [];
-    if (!allowed.length) return personas || [];
-    return (personas || []).filter(function (persona) {
-      return allowed.indexOf(persona.persona_id) !== -1;
-    });
-  }
-
-  function publicTaskLabel(taskId) {
-    var value = String(taskId || '').trim();
-    var match = value.match(/^[A-Za-z]\d{2}/);
-    return match ? match[0].toUpperCase() : (value || 'Task');
-  }
-
-  function runIsBusy() {
-    return !!state.run.busy || !!(state.run.action && state.run.action !== 'idle');
-  }
-
   function runModeLabel() {
-    return 'Agent Connection';
+    return 'Agent Prompt';
   }
 
   function renderRunPage(payload) {
-    var tasks = payload.tasks || [];
-    var selectedTask = getRunTask(tasks);
-    if (selectedTask && !state.run.taskId) state.run.taskId = selectedTask.task_id;
     state.run.mode = 'agent';
 
     if (window.QTB && typeof window.QTB.renderMyAgentPage === 'function') {
@@ -704,108 +733,42 @@
   }
 
   function renderAgentRunPage(payload) {
-    var tasks = payload.tasks || [];
-    var personas = payload.personas || [];
-    var selectedTask = getRunTask(tasks);
-    var visiblePersonas = personasForTask(selectedTask, personas);
-    var selectedPersona = state.run.personaId || 'auto';
-    var isBusy = runIsBusy();
-    var taskOptions = tasks.map(function (task) {
-      return '<option value="' + escapeHtml(task.task_id) + '"' + (task.task_id === state.run.taskId ? ' selected' : '') + '>' +
-        escapeHtml(publicTaskLabel(task.task_id)) +
-      '</option>';
-    }).join('');
-    var personaOptions =
-      '<option value="auto"' + (selectedPersona === 'auto' ? ' selected' : '') + '>Auto select</option>' +
-      visiblePersonas.map(function (persona) {
-        return '<option value="' + escapeHtml(persona.persona_id) + '"' + (persona.persona_id === selectedPersona ? ' selected' : '') + '>' +
-          escapeHtml(persona.persona_id) +
-        '</option>';
-      }).join('');
-
     app.innerHTML =
       '<section class="page run-page">' +
         '<header class="page-header run-sticky-header">' +
           '<div class="page-title-wrap">' +
-            '<p class="eyebrow">Run · Agent Test</p>' +
-            '<h1>Automated client benchmark flow.</h1>' +
-            '<p class="subtitle">Agent run module (run-agent.js) failed to load. This is a fallback page — refresh to retry.</p>' +
+            '<p class="eyebrow">Run · Agent Prompt</p>' +
+            '<h1>Agent prompt access.</h1>' +
+            '<p class="subtitle">Generate a REST API key prompt from the API key dialog, then paste it into your external agent.</p>' +
           '</div>' +
           '<div class="summary-strip">' +
             buildSummaryPill('Mode', runModeLabel()) +
-            buildSummaryPill('Status', 'Module Missing') +
-            buildSummaryPill('Task', publicTaskLabel(state.run.taskId || (selectedTask && selectedTask.task_id))) +
+            buildSummaryPill('Status', 'Prompt Ready') +
           '</div>' +
         '</header>' +
-        '<div class="run-agent-grid">' +
-          '<aside class="panel run-control-panel">' +
-            '<h2>Agent Setup</h2>' +
-            '<label class="filter-field">' +
-              '<span class="filter-label">Task</span>' +
-              '<select id="run-task-select" class="filter-select"' + (isBusy ? ' disabled' : '') + '>' + taskOptions + '</select>' +
-            '</label>' +
-            '<label class="filter-field">' +
-              '<span class="filter-label">Persona Control</span>' +
-              '<select id="run-persona-select" class="filter-select"' + (isBusy ? ' disabled' : '') + '>' + personaOptions + '</select>' +
-            '</label>' +
-            '<label class="filter-field">' +
-              '<span class="filter-label">Max Agent Steps</span>' +
-              '<input id="run-agent-steps-input" class="filter-input" type="number" min="0" value="' + escapeHtml(state.run.agentMaxSteps || 200) + '"' + (isBusy ? ' disabled' : '') + '>' +
-            '</label>' +
-            '<div class="run-actions">' +
-              '<button class="btn btn-primary" type="button" disabled>Start Agent Run</button>' +
-            '</div>' +
-          '</aside>' +
-          '<section class="panel run-conversation-panel run-agent-main">' +
-            '<div class="run-panel-header">' +
+        '<div class="run-agent-prompt-panel">' +
+          '<section class="panel run-agent-prompt-card">' +
+            '<div class="run-agent-prompt-head">' +
               '<div>' +
-                '<h2>Execution Boundary</h2>' +
-                '<p>The automated flow launches the client runner, polls job state, captures stdout/stderr, and links to Human Review after archive creation.</p>' +
+                '<h2>Agent Prompt</h2>' +
+                '<p class="detail-empty-note">The API key dialog can generate the same copyable prompt with the raw skill URL and REST key.</p>' +
               '</div>' +
             '</div>' +
-            '<ol class="run-flow-list">' +
-              '<li><strong>register_session</strong> with the internal full task id and optional persona id.</li>' +
-              '<li><strong>start_session</strong> returns the client-visible background and student opening.</li>' +
-              '<li><strong>list_tools</strong> exposes <code>send_message</code>, <code>get_background</code>, and domain tools to the agent.</li>' +
-              '<li><strong>adapter.generate_response</strong> runs once; the tool runner handles domain tools and student communication.</li>' +
-              '<li><strong>save_client_trace</strong> writes <code>results/client/{session_id}/client_trace.json</code>, then Human Review renders the archived replay.</li>' +
-            '</ol>' +
-            '<div class="run-status-note">' +
-              '<strong>Required before enabling this button:</strong> add server endpoints for creating/cancelling agent jobs, safe subprocess lifecycle, result-dir wiring, live log/tool polling, and completion mapping back to Human Review.' +
+            '<div class="run-agent-skill-url">' +
+              '<span>Skill URL</span>' +
+              '<code>' + escapeHtml(agentSkillUrl()) + '</code>' +
+              '<span>Raw Skill URL</span>' +
+              '<code>' + escapeHtml(agentSkillRawUrl()) + '</code>' +
+            '</div>' +
+            '<div class="run-agent-api-actions">' +
+              '<button class="btn btn-primary" id="run-open-api-key-prompt" type="button">Open API Key Prompt</button>' +
+              '<a class="btn btn-secondary" href="' + escapeHtml(agentSkillUrl()) + '" target="_blank" rel="noreferrer">Open Skill</a>' +
             '</div>' +
           '</section>' +
-          '<aside class="panel run-tools-panel">' +
-            '<h2>Live Tools</h2>' +
-            '<p class="detail-empty-note">Agent tool events appear here when the backend job layer exposes them. Human Review renders archived tool logs after completion.</p>' +
-          '</aside>' +
         '</div>' +
       '</section>';
-    bindRunControls(tasks);
-  }
-
-  function bindRunControls(tasks) {
-    var taskSelect = document.getElementById('run-task-select');
-    var personaSelect = document.getElementById('run-persona-select');
-    var agentStepsInput = document.getElementById('run-agent-steps-input');
-
-    if (taskSelect) {
-      taskSelect.addEventListener('change', function (event) {
-        state.run.taskId = event.target.value;
-        state.run.personaId = 'auto';
-        renderRunPage(state.tasksPayload || {tasks: tasks, personas: []});
-      });
-    }
-    if (personaSelect) {
-      personaSelect.addEventListener('change', function (event) {
-        state.run.personaId = event.target.value || 'auto';
-      });
-    }
-    if (agentStepsInput) {
-      agentStepsInput.addEventListener('change', function (event) {
-        var value = parseInt(event.target.value, 10);
-        state.run.agentMaxSteps = isFinite(value) && value >= 0 ? value : 200;
-      });
-    }
+    var promptBtn = document.getElementById('run-open-api-key-prompt');
+    if (promptBtn) promptBtn.addEventListener('click', openApiKeyModal);
   }
 
   function metaItem(label, value) {
@@ -2428,7 +2391,11 @@
   function showRun() {
     state.activeSessionId = null;
     setAppDetailMode(false);
-    renderLoading('Loading agent connection', 'Fetching task metadata before opening the agent run surface.');
+    if (window.QTB && typeof window.QTB.renderMyAgentPage === 'function') {
+      window.QTB.renderMyAgentPage(app, state, {tasks: [], personas: []});
+      return;
+    }
+    renderLoading('Loading agent prompt', 'Fetching task metadata before opening the fallback agent run surface.');
     ensureTasks().then(renderRunPage).catch(function (error) {
       renderError('Run unavailable', error);
     });

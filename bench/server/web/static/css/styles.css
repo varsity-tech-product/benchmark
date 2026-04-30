@@ -631,38 +631,28 @@ h1 {
   align-items: start;
 }
 
-.run-agent-create-panel {
-  display: grid;
-  grid-template-columns: minmax(340px, 540px) minmax(320px, 1fr);
-  gap: 18px;
-  align-items: start;
+.run-agent-prompt-panel {
+  max-width: 1040px;
 }
 
-.run-agent-create-card,
-.run-agent-api-card {
+.run-agent-prompt-card {
   display: grid;
   gap: 18px;
-  padding: 24px;
+  padding: 26px;
 }
 
-.run-agent-create-card {
-  min-height: 300px;
-}
-
-.run-agent-card-head {
+.run-agent-prompt-head {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
 }
 
-.run-agent-card-head h2,
-.run-agent-api-card h2 {
+.run-agent-prompt-head h2 {
   margin: 0;
 }
 
-.run-agent-card-head .detail-empty-note,
-.run-agent-api-card .detail-empty-note {
+.run-agent-prompt-head .detail-empty-note {
   margin: 8px 0 0;
 }
 
@@ -681,49 +671,91 @@ h1 {
   white-space: nowrap;
 }
 
-.run-agent-create-card .filter-select {
-  min-height: 46px;
-  border-color: var(--border-strong);
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(255, 250, 243, 0.92));
-  cursor: pointer;
+.run-agent-prompt-head .run-selected-badge {
+  max-width: 240px;
 }
 
-.run-task-reflection {
+.run-agent-prompt-controls {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
+  flex-wrap: wrap;
   gap: 12px;
-  padding: 12px 14px;
-  border: 1px solid var(--border-light);
-  border-radius: var(--radius-sm);
-  background: rgba(255, 255, 255, 0.66);
-  color: var(--text-muted);
-  transition: border-color var(--duration-fast) var(--ease), box-shadow var(--duration-fast) var(--ease), background var(--duration-fast) var(--ease), transform var(--duration-fast) var(--ease);
 }
 
-.run-task-reflection span {
+.run-agent-prompt-field {
+  display: grid;
+  gap: 7px;
+  min-width: min(100%, 280px);
+}
+
+.run-agent-prompt-field span {
+  color: var(--text-muted);
   font-size: 12px;
   font-weight: 800;
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
 
-.run-task-reflection strong {
+.run-agent-prompt-input {
+  min-height: 42px;
+  padding: 0 13px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.9);
+  color: var(--text);
+  font: inherit;
+}
+
+.run-agent-prompt-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(179, 92, 30, 0.12);
+}
+
+.run-agent-prompt-text {
+  width: 100%;
+  min-height: 390px;
+  resize: vertical;
+  padding: 16px 18px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.82);
   color: var(--text);
   font-family: var(--font-mono);
-  font-size: 14px;
+  font-size: 13px;
+  line-height: 1.62;
 }
 
-.run-task-reflection.is-active,
-.run-task-reflection.is-updated {
-  border-color: rgba(179, 92, 30, 0.42);
-  background: rgba(246, 222, 196, 0.42);
-  box-shadow: 0 8px 18px rgba(179, 92, 30, 0.1);
+.run-agent-prompt-text:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(179, 92, 30, 0.12);
 }
 
-.run-task-reflection.is-updated {
-  transform: translateY(-1px);
+.api-key-agent-prompt {
+  min-height: 240px;
+  margin-bottom: 10px;
+}
+
+.run-agent-skill-url {
+  display: grid;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.66);
+}
+
+.run-agent-skill-url span {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.run-agent-skill-url code {
+  color: var(--code-text);
+  font-size: 12.5px;
 }
 
 .run-agent-api-actions {
@@ -2826,17 +2858,15 @@ h1 {
 
   .run-mode-grid,
   .run-grid,
-  .run-agent-grid,
-  .run-agent-create-panel {
+  .run-agent-grid {
     grid-template-columns: 1fr;
   }
 
-  .run-agent-create-card,
-  .run-agent-api-card {
+  .run-agent-prompt-card {
     padding: 18px;
   }
 
-  .run-agent-card-head {
+  .run-agent-prompt-head {
     flex-direction: column;
   }
 

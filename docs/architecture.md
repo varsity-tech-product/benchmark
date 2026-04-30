@@ -190,7 +190,9 @@ Any authenticated GitHub reviewer can inspect the task spec, transcript, tutor
 tool log, workspace tree, and judge evaluation for a completed bundle.
 
 The isolated frontend treats Human Review as the archive-facing session view:
-completed runs from Session Flow and New Run link to `/review/{session_id}`.
+completed runs from Session Flow link to `/review/{session_id}`. New Run hands
+external agents a copyable REST prompt with a public task label, API key, browser
+skill URL, and raw Markdown skill URL for `curl`.
 
 Reviewer output is stored separately from judge-validation labels:
 

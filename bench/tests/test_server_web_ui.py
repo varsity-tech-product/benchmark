@@ -554,6 +554,7 @@ class UiRoutesTests(unittest.TestCase):
                 f"/ui/results/{session_id}/workspace/preview/%2E%2E/secret.txt"
             )
             skill_response = client.get("/skills/quanttutorbench-rest-agent")
+            skill_raw_response = client.get("/skills/quanttutorbench-rest-agent/raw")
             review_list_response = client.get("/ui/review/bundles")
             review_bundle_response = client.get(f"/ui/review/bundles/{session_id}")
             review_post_response = client.post(
@@ -595,6 +596,7 @@ class UiRoutesTests(unittest.TestCase):
             self.assertEqual(image_preview_response.status_code, 200)
             self.assertEqual(file_response.status_code, 200)
             self.assertEqual(skill_response.status_code, 200)
+            self.assertEqual(skill_raw_response.status_code, 200)
             self.assertEqual(review_list_response.status_code, 200)
             self.assertEqual(review_bundle_response.status_code, 200)
             self.assertEqual(review_post_response.status_code, 200)
@@ -605,6 +607,13 @@ class UiRoutesTests(unittest.TestCase):
             self.assertEqual(file_response.text, "report")
             self.assertIn("QuantTutorBench REST Agent", skill_response.text)
             self.assertIn("POST /client/runs/start", skill_response.text)
+            self.assertIn("QuantTutorBench REST Agent", skill_raw_response.text)
+            self.assertIn("POST /client/runs/start", skill_raw_response.text)
+            self.assertTrue(
+                skill_raw_response.headers.get("content-type", "").startswith(
+                    "text/markdown"
+                )
+            )
             self.assertEqual(export_response.json()["session_id"], session_id)
             self.assertIn(
                 "session-003_run_state.json",

@@ -22,7 +22,12 @@ from server.audit import record_event
 from server.auth import AuthService
 from server.quota import QuotaExceeded
 from starlette.requests import Request
-from starlette.responses import FileResponse, HTMLResponse, JSONResponse
+from starlette.responses import (
+    FileResponse,
+    HTMLResponse,
+    JSONResponse,
+    PlainTextResponse,
+)
 from starlette.routing import Route
 
 from .review_store import ReviewStore
@@ -155,7 +160,7 @@ def ui_routes(manager) -> list[Route]:
     async def ui_me(request: Request) -> JSONResponse:
         return JSONResponse(auth.me_payload(request))
 
-    async def rest_agent_skill_page(request: Request) -> HTMLResponse:
+    def _load_rest_agent_skill_markdown() -> str | None:
         relative = Path("docs/skills/quanttutorbench-rest-agent/SKILL.md")
         candidates = [
             manager.bench_root / relative,
@@ -163,8 +168,19 @@ def ui_routes(manager) -> list[Route]:
         ]
         skill_path = next((path for path in candidates if path.exists()), candidates[0])
         try:
-            markdown = skill_path.read_text(encoding="utf-8")
+            return skill_path.read_text(encoding="utf-8")
         except OSError:
+            return None
+
+    async def rest_agent_skill_raw(request: Request) -> PlainTextResponse:
+        markdown = _load_rest_agent_skill_markdown()
+        if markdown is None:
+            return PlainTextResponse("Skill page not found.", status_code=404)
+        return PlainTextResponse(markdown, media_type="text/markdown; charset=utf-8")
+
+    async def rest_agent_skill_page(request: Request) -> HTMLResponse:
+        markdown = _load_rest_agent_skill_markdown()
+        if markdown is None:
             return HTMLResponse("Skill page not found.", status_code=404)
 
         body = html.escape(markdown)
@@ -1032,6 +1048,11 @@ def ui_routes(manager) -> list[Route]:
         Route(
             "/skills/quanttutorbench-rest-agent",
             rest_agent_skill_page,
+            methods=["GET"],
+        ),
+        Route(
+            "/skills/quanttutorbench-rest-agent/raw",
+            rest_agent_skill_raw,
             methods=["GET"],
         ),
         Route("/ui/me", ui_me, methods=["GET"]),

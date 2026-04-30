@@ -21,7 +21,7 @@ Main pieces:
 Current routes:
 - `GET /`
 - `#/flow-demo` SPA route for run flow monitoring
-- `#/run` SPA route for agent connection and run creation
+- `#/run` SPA route for REST agent prompt generation
 - `#/review` SPA route for archived session review
 - `#/tasks` SPA route for task browsing
 - `GET /ui/tasks`
@@ -30,12 +30,13 @@ Current routes:
 - `GET /ui/results/{session_id}/workspace`
 - `GET /ui/results/{session_id}/workspace/preview/{path:path}`
 - `GET /ui/results/{session_id}/files/{path:path}`
+- `GET /skills/quanttutorbench-rest-agent`
+- `GET /skills/quanttutorbench-rest-agent/raw`
 
 Run route scope:
-- `#/run` opens the agent connection surface directly.
-- The agent connection surface creates a task-specific run through `/ui/runs`, exposes run token connection details, opens the REST API key modal, and links to the QuantTutorBench REST agent skill.
-- `Agent Test` mirrors the real automated flow in `bench/client/runner.py` (`register_session` → `start_session` → `list_tools` → `adapter.generate_response` → `save_client_trace`) when the dedicated `run-agent.js` module is loaded.
-- The Run surface only displays public task labels such as `D01`/`X09`; hidden task metadata stays in the server/client execution context.
+- `#/run` opens a copyable REST agent prompt directly.
+- The prompt surface generates a fresh REST API key through `/ui/api-key`, embeds the key in a textarea, includes a public task label field, and includes both the browser skill URL and the raw Markdown skill URL for `curl`.
+- External agents create or claim runs through the REST skill workflow; hidden task metadata stays in the server/client execution context.
 - Session Flow owns run lifecycle browsing. Human Review owns archived session inspection.
 
 Result detail read model:

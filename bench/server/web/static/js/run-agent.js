@@ -1,11 +1,10 @@
 /**
  * run-agent.js — "My Agent" flow for the Run page.
  *
- * 1. User selects task → POST /ui/runs → show connection info (MCP URL + token)
- * 2. Poll /ui/runs/{id} for status changes (waiting → claimed → active)
- * 3. Poll /ui/runs/{id}/live for real-time conversation + tool logs
- * 4. Cancel button → POST /ui/runs/{id}/cancel
- * 5. On completed → show link to Human Review
+ * 1. Generate a REST API key for the current reviewer.
+ * 2. Render a copyable prompt with the REST skill URL, curl command, and key.
+ * 3. Poll active runs when this module receives one from a server response.
+ * 4. On completed → show link to Human Review.
  */
 (function () {
   'use strict';
@@ -75,63 +74,175 @@
       .replace(/'/g, '&#39;');
   }
 
-  function publicTaskLabel(taskId) {
-    if (!taskId) return '—';
-    var m = taskId.match(/^([A-Za-z]\d{2})/);
-    return m ? m[1] : taskId;
-  }
-
-  // ── Catalog loading ──
-
-  var _catalog = null;
-
-  function loadCatalog(callback) {
-    if (_catalog) { callback(_catalog); return; }
-    _authFetch('/ui/tasks/catalog/labels')
-      .then(function (r) { return r.json(); })
-      .then(function (data) {
-        _catalog = data.tasks || [];
-        callback(_catalog);
-      })
-      .catch(function () { callback([]); });
-  }
-
   // ── Main render ──
 
   window.QTB.renderMyAgentPage = function (app, state, payload) {
-    // If we have an active run, show the monitor page
     if (_runId) {
       _renderMonitorPage(app);
       return;
     }
 
-    // Otherwise show task selection + create run form
-    loadCatalog(function (tasks) {
-      _renderCreatePage(app, tasks, payload && payload.tasks);
-    });
+    _renderPromptPage(app, {loading: true});
+    _loadApiKeyStatus()
+      .then(function (status) {
+        _renderPromptPage(app, {status: status});
+      })
+      .catch(function (error) {
+        _renderPromptPage(app, {
+          error: error && error.message ? error.message : String(error || 'Unable to load API key status.')
+        });
+      });
   };
 
-  function _taskLabels(tasks, fallbackTasks) {
-    var labels = [];
-    var seen = {};
-    (tasks || []).concat(fallbackTasks || []).forEach(function (task) {
-      var label = task && (task.label || publicTaskLabel(task.task_id || task.id));
-      if (!label || seen[label]) return;
-      seen[label] = true;
-      labels.push(label);
-    });
-    return labels;
+  function _absoluteUrl(path) {
+    if (/^https?:\/\//i.test(path)) return path;
+    return window.location.origin + path;
   }
 
-  function _renderCreatePage(app, tasks, fallbackTasks) {
-    var labels = _taskLabels(tasks, fallbackTasks);
-    var hasTasks = labels.length > 0;
-    var selectedLabel = hasTasks ? labels[0] : '';
-    var taskOptions = hasTasks ? labels.map(function (label) {
-      return '<option value="' + escapeHtml(label) + '">' +
-        escapeHtml(label) +
-        '</option>';
-    }).join('') : '<option value="">No tasks available</option>';
+  function _skillPageUrl() {
+    return _absoluteUrl('/skills/quanttutorbench-rest-agent');
+  }
+
+  function _skillRawUrl() {
+    return _absoluteUrl('/skills/quanttutorbench-rest-agent/raw');
+  }
+
+  function _taskLabelForPrompt(value) {
+    var label = String(value || '').trim();
+    return label || '<public_task_label>';
+  }
+
+  function _jsonResponse(response) {
+    return response.json().then(function (payload) {
+      if (!response.ok) {
+        throw new Error(payload.error || ('HTTP ' + response.status));
+      }
+      return payload;
+    });
+  }
+
+  function _loadApiKeyStatus() {
+    return _authFetch('/ui/api-key').then(_jsonResponse);
+  }
+
+  function _generateApiKey() {
+    return _authFetch('/ui/api-key', {method: 'POST'}).then(_jsonResponse)
+      .then(function (payload) {
+        if (!payload.api_key) {
+          throw new Error('API key was not returned.');
+        }
+        return payload;
+      });
+  }
+
+  function _buildAgentPrompt(apiKey, taskLabel) {
+    var baseUrl = window.location.origin;
+    var skillUrl = _skillPageUrl();
+    var rawSkillUrl = _skillRawUrl();
+    var label = _taskLabelForPrompt(taskLabel);
+    return [
+      'You are connecting to QuantTutorBench as my external agent.',
+      '',
+      'Load the REST agent skill first:',
+      skillUrl,
+      '',
+      'Fetch the raw skill file with:',
+      'curl -L "' + rawSkillUrl + '"',
+      '',
+      'Benchmark base URL:',
+      baseUrl,
+      '',
+      'Public task label for /client/runs/start:',
+      label,
+      'When this value is <public_task_label>, ask the operator for the public task label before starting the run.',
+      '',
+      'Start-run payload:',
+      '{"task": "' + label + '", "mode": "agent"}',
+      '',
+      'REST API key:',
+      apiKey,
+      '',
+      'Use this auth header for REST calls:',
+      'Authorization: Bearer ' + apiKey,
+      '',
+      'Follow the skill workflow exactly. Create or claim a run through the REST API, tutor the student through the server endpoints, call allowed tools through the benchmark service, monitor terminal status, and return the Human Review link when the session is archived.'
+    ].join('\n');
+  }
+
+  function _buildPromptPlaceholder(status, loading, error, taskLabel) {
+    var skillUrl = _skillPageUrl();
+    var rawSkillUrl = _skillRawUrl();
+    var label = _taskLabelForPrompt(taskLabel);
+    if (loading) {
+      return [
+        'Loading API key status...',
+        '',
+        'Public task label for /client/runs/start:',
+        label,
+        'When this value is <public_task_label>, ask the operator for the public task label before starting the run.',
+        '',
+        'Skill URL:',
+        skillUrl,
+        '',
+        'curl -L "' + rawSkillUrl + '"'
+      ].join('\n');
+    }
+    if (error) {
+      return [
+        'Unable to load API key status.',
+        error,
+        '',
+        'Public task label for /client/runs/start:',
+        label,
+        'When this value is <public_task_label>, ask the operator for the public task label before starting the run.',
+        '',
+        'Skill URL:',
+        skillUrl,
+        '',
+        'curl -L "' + rawSkillUrl + '"'
+      ].join('\n');
+    }
+    return [
+      status && status.has_key
+        ? 'Generate a fresh agent prompt to reveal a full REST API key in this text box.'
+        : 'Generate an agent prompt to create a REST API key and place it in this text box.',
+      '',
+      'Public task label for /client/runs/start:',
+      label,
+      'When this value is <public_task_label>, ask the operator for the public task label before starting the run.',
+      '',
+      'Skill URL:',
+      skillUrl,
+      '',
+      'curl -L "' + rawSkillUrl + '"'
+    ].join('\n');
+  }
+
+  function _apiKeyStatusText(status, apiKey, loading, error) {
+    if (loading) return 'Loading key status';
+    if (apiKey) return 'Fresh API key embedded';
+    if (error) return 'Key status unavailable';
+    if (status && status.has_key) {
+      return 'Active key: ' + (status.key_hint ? status.key_hint + '...' : 'available');
+    }
+    return 'Ready to generate';
+  }
+
+  function _renderPromptPage(app, options) {
+    options = options || {};
+    var status = options.status || {};
+    var apiKey = options.apiKey || '';
+    var taskLabel = options.taskLabel || '';
+    var loading = !!options.loading;
+    var error = options.error || '';
+    var skillUrl = _skillPageUrl();
+    var rawSkillUrl = _skillRawUrl();
+    var prompt = apiKey
+      ? _buildAgentPrompt(apiKey, taskLabel)
+      : _buildPromptPlaceholder(status, loading, error, taskLabel);
+    var copyDisabled = apiKey ? '' : ' disabled';
+    var generateDisabled = loading ? ' disabled' : '';
+    var generateText = status && status.has_key ? 'Generate Fresh Prompt' : 'Generate Prompt';
 
     app.innerHTML =
       '<section class="page run-page">' +
@@ -139,120 +250,104 @@
           '<div class="page-title-wrap">' +
             '<p class="eyebrow">Run · My Agent</p>' +
             '<h1>Connect your agent to the benchmark.</h1>' +
-            '<p class="subtitle">Create a task-specific run, manage the REST API key, or open the QuantTutorBench REST agent skill.</p>' +
+            '<p class="subtitle">Generate a copyable prompt with the REST skill URL and your API key.</p>' +
           '</div>' +
         '</header>' +
-        '<div class="run-agent-create-panel">' +
-          '<aside class="panel run-agent-create-card">' +
-            '<div class="run-agent-card-head">' +
+        '<div class="run-agent-prompt-panel">' +
+          '<section class="panel run-agent-prompt-card">' +
+            '<div class="run-agent-prompt-head">' +
               '<div>' +
-                '<h2>Agent Connection</h2>' +
-                '<p class="detail-empty-note">Create a task-specific run to receive a run token and connection details.</p>' +
+                '<h2>Agent Prompt</h2>' +
+                '<p class="detail-empty-note">Copy this text into your agent. It includes the API key after prompt generation.</p>' +
               '</div>' +
-              '<span class="run-selected-badge" id="myagent-selected-badge">' + escapeHtml(selectedLabel || 'No task') + '</span>' +
+              '<span class="run-selected-badge">' + escapeHtml(_apiKeyStatusText(status, apiKey, loading, error)) + '</span>' +
             '</div>' +
-            '<label class="filter-field">' +
-              '<span class="filter-label">Task</span>' +
-              '<select id="myagent-task-select" class="filter-select"' + (hasTasks ? '' : ' disabled') + '>' + taskOptions + '</select>' +
-            '</label>' +
-            '<div class="run-task-reflection" id="myagent-task-reflection" aria-live="polite">' +
-              '<span>Selected task</span>' +
-              '<strong id="myagent-task-reflection-value">' + escapeHtml(selectedLabel || 'Unavailable') + '</strong>' +
+            '<div class="run-agent-prompt-controls">' +
+              '<label class="run-agent-prompt-field" for="myagent-task-label-input">' +
+                '<span>Public Task Label</span>' +
+                '<input id="myagent-task-label-input" class="run-agent-prompt-input" type="text" placeholder="D01" value="' + escapeHtml(taskLabel) + '">' +
+              '</label>' +
             '</div>' +
-            '<div class="run-actions">' +
-              '<button class="btn btn-primary" id="myagent-create-btn" type="button"' + (hasTasks ? '' : ' disabled') + '>Create Run</button>' +
+            '<textarea id="myagent-prompt-text" class="run-agent-prompt-text" readonly spellcheck="false">' + escapeHtml(prompt) + '</textarea>' +
+            '<div class="run-agent-skill-url">' +
+              '<span>Skill URL</span>' +
+              '<code>' + escapeHtml(skillUrl) + '</code>' +
+              '<span>Raw Skill URL</span>' +
+              '<code>' + escapeHtml(rawSkillUrl) + '</code>' +
             '</div>' +
-            '<div id="myagent-error" class="run-error" style="display:none;"></div>' +
-          '</aside>' +
-          '<section class="panel run-agent-api-card">' +
-            '<h2>Agent API</h2>' +
-            '<p class="detail-empty-note">Use the REST agent skill for API-key based agents, or open the API key manager before connecting an external agent.</p>' +
             '<div class="run-agent-api-actions">' +
-              '<button class="btn btn-secondary" id="myagent-api-key-btn" type="button">API Key</button>' +
-              '<a class="btn btn-secondary" href="/skills/quanttutorbench-rest-agent" target="_blank" rel="noreferrer">REST Agent Skill</a>' +
+              '<button class="btn btn-primary" id="myagent-generate-prompt-btn" type="button"' + generateDisabled + '>' + escapeHtml(generateText) + '</button>' +
+              '<button class="btn btn-secondary" id="myagent-copy-prompt-btn" type="button"' + copyDisabled + '>Copy Prompt</button>' +
+              '<a class="btn btn-secondary" href="' + escapeHtml(skillUrl) + '" target="_blank" rel="noreferrer">Open Skill</a>' +
             '</div>' +
+            '<div id="myagent-error" class="run-error"' + (error ? '' : ' style="display:none;"') + '>' + escapeHtml(error) + '</div>' +
           '</section>' +
         '</div>' +
       '</section>';
 
-    // Bind
-    var createBtn = document.getElementById('myagent-create-btn');
-    var apiKeyBtn = document.getElementById('myagent-api-key-btn');
-    var taskSelect = document.getElementById('myagent-task-select');
+    var generateBtn = document.getElementById('myagent-generate-prompt-btn');
+    var copyBtn = document.getElementById('myagent-copy-prompt-btn');
+    var promptText = document.getElementById('myagent-prompt-text');
+    var taskLabelInput = document.getElementById('myagent-task-label-input');
     var errorDiv = document.getElementById('myagent-error');
-    var selectedBadge = document.getElementById('myagent-selected-badge');
-    var taskReflection = document.getElementById('myagent-task-reflection');
-    var taskReflectionValue = document.getElementById('myagent-task-reflection-value');
-    var pulseTimer = null;
 
-    if (apiKeyBtn) {
-      apiKeyBtn.addEventListener('click', function () {
-        if (window.QTB && typeof window.QTB.openApiKeyModal === 'function') {
-          window.QTB.openApiKeyModal();
+    if (taskLabelInput && promptText) {
+      taskLabelInput.addEventListener('input', function () {
+        if (apiKey) {
+          promptText.value = _buildAgentPrompt(apiKey, taskLabelInput.value);
+        } else {
+          promptText.value = _buildPromptPlaceholder(status, loading, error, taskLabelInput.value);
         }
       });
     }
 
-    function updateTaskReflection(active, pulse) {
-      var value = taskSelect && taskSelect.value ? taskSelect.value : 'Unavailable';
-      if (selectedBadge) selectedBadge.textContent = value;
-      if (taskReflectionValue) taskReflectionValue.textContent = value;
-      if (taskSelect) taskSelect.classList.toggle('is-active', !!active);
-      if (taskReflection) {
-        taskReflection.classList.toggle('is-active', !!active);
-        if (pulse) {
-          taskReflection.classList.add('is-updated');
-          clearTimeout(pulseTimer);
-          pulseTimer = setTimeout(function () {
-            taskReflection.classList.remove('is-updated');
-          }, 520);
-        }
-      }
-    }
-
-    if (taskSelect) {
-      updateTaskReflection(false, false);
-      taskSelect.addEventListener('focus', function () { updateTaskReflection(true, false); });
-      taskSelect.addEventListener('pointerdown', function () { updateTaskReflection(true, false); });
-      taskSelect.addEventListener('blur', function () { updateTaskReflection(false, false); });
-      taskSelect.addEventListener('change', function () { updateTaskReflection(true, true); });
-    }
-
-    if (createBtn) {
-      createBtn.addEventListener('click', function () {
-        var task = taskSelect ? taskSelect.value : '';
-        if (!task) return;
-        createBtn.disabled = true;
-        createBtn.textContent = 'Creating...';
-        errorDiv.style.display = 'none';
-
-        _authFetch('/ui/runs', {
-          method: 'POST',
-          headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({task: task, mode: 'agent'})
-        })
-        .then(function (r) { return r.json(); })
-        .then(function (data) {
-          if (data.error) {
-            errorDiv.textContent = data.error;
-            errorDiv.style.display = 'block';
-            createBtn.disabled = false;
-            createBtn.textContent = 'Create Run';
-            return;
-          }
-          _runId = data.run_id;
-          if (data.control_token) {
-            _rememberControlToken(data.run_id, data.control_token);
-          }
-          _renderMonitorPage(app, data);
-        })
-        .catch(function (err) {
-          errorDiv.textContent = 'Network error: ' + err.message;
-          errorDiv.style.display = 'block';
-          createBtn.disabled = false;
-          createBtn.textContent = 'Create Run';
-        });
+    if (generateBtn) {
+      generateBtn.addEventListener('click', function () {
+        generateBtn.disabled = true;
+        generateBtn.textContent = 'Generating...';
+        if (errorDiv) errorDiv.style.display = 'none';
+        var currentTaskLabel = taskLabelInput ? taskLabelInput.value : taskLabel;
+        _generateApiKey()
+          .then(function (payload) {
+            _renderPromptPage(app, {status: payload, apiKey: payload.api_key, taskLabel: currentTaskLabel});
+          })
+          .catch(function (err) {
+            if (errorDiv) {
+              errorDiv.textContent = err && err.message ? err.message : String(err || 'Unable to generate prompt.');
+              errorDiv.style.display = 'block';
+            }
+            generateBtn.disabled = false;
+            generateBtn.textContent = generateText;
+          });
       });
+    }
+    if (copyBtn) {
+      copyBtn.addEventListener('click', function () {
+        var value = promptText ? promptText.value : '';
+        if (!value) return;
+        if (navigator.clipboard) {
+          navigator.clipboard.writeText(value).then(function () {
+            copyBtn.textContent = 'Copied';
+          }).catch(function () {
+            _fallbackCopy(promptText);
+            copyBtn.textContent = 'Copied';
+          });
+        } else {
+          _fallbackCopy(promptText);
+          copyBtn.textContent = 'Copied';
+        }
+      });
+    }
+  }
+
+  function _fallbackCopy(textarea) {
+    if (!textarea) return;
+    textarea.focus();
+    textarea.select();
+    try {
+      document.execCommand('copy');
+    } catch (e) {
+      // Browser copy fallback failed; selected text is still ready for manual copy.
     }
   }
 
