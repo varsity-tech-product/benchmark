@@ -127,7 +127,7 @@
       '<section class="page flow-demo">' +
         '<header class="page-header">' +
           '<div class="page-title-wrap">' +
-            '<p class="eyebrow">Flow</p>' +
+            '<p class="eyebrow">Session Flow</p>' +
             '<h1>Live benchmark monitor.</h1>' +
             '<p class="subtitle">Background REST/MCP runs appear here as the server updates their run state.</p>' +
           '</div>' +

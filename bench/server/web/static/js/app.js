@@ -485,7 +485,7 @@
       '<section class="page">' +
         '<header class="page-header">' +
           '<div class="page-title-wrap">' +
-            '<p class="eyebrow">Results</p>' +
+            '<p class="eyebrow">Results Archive</p>' +
             '<h1>Archived sessions, rebuilt around the new session model.</h1>' +
             '<p class="subtitle">This view reads from the isolated <code>bench/server/web/</code> stack, not the legacy <code>bench/web/</code> app.</p>' +
           '</div>' +
@@ -625,7 +625,7 @@
       '<section class="page">' +
         '<header class="page-header">' +
           '<div class="page-title-wrap">' +
-            '<p class="eyebrow">Tasks</p>' +
+            '<p class="eyebrow">Task Catalog</p>' +
             '<h1>Task inventory for the new session-centric UI.</h1>' +
             '<p class="subtitle">Grouped by benchmark category and served from the new isolated API layer.</p>' +
           '</div>' +
@@ -846,7 +846,7 @@
       '<section class="page">' +
         '<header class="page-header">' +
           '<div class="page-title-wrap">' +
-            '<p class="eyebrow">Runs</p>' +
+            '<p class="eyebrow">Run History</p>' +
             '<h1>Run history and active sessions.</h1>' +
             '<p class="subtitle">All runs created through the Run layer, with real-time status tracking.</p>' +
           '</div>' +
@@ -916,7 +916,7 @@
       '<section class="page run-page">' +
         '<header class="page-header">' +
           '<div class="page-title-wrap">' +
-            '<p class="eyebrow">Run</p>' +
+            '<p class="eyebrow">New Run</p>' +
             '<h1>Choose how to run the benchmark.</h1>' +
             '<p class="subtitle">Connect your own agent, try it yourself in the browser, or watch the baseline agent run.</p>' +
           '</div>' +
@@ -2201,7 +2201,7 @@
       '<section class="page review-page">' +
         '<header class="page-header">' +
           '<div class="page-title-wrap">' +
-            '<p class="eyebrow">Review</p>' +
+            '<p class="eyebrow">Human Review</p>' +
             '<h1>Human reviewer console.</h1>' +
             '<p class="subtitle">Inspect archived session bundles across task, conversation, tool, workspace, and judge layers. Opinion cards are stored as structured JSON per bundle and GitHub reviewer.</p>' +
           '</div>' +
