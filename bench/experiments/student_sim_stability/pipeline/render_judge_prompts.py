@@ -57,7 +57,6 @@ _D3_PROMPT = rubric_prompt_template("S2")
 _DISTINGUISH_PROMPT = rubric_prompt_template("S6")
 _P1_PROMPT = rubric_prompt_template("S5")
 _B1_PROMPT = rubric_prompt_template("S4")
-_SYSTEM_LABELS = ["System A", "System B", "System C", "System D", "System E"]
 
 
 def _load_persona(persona_id: str) -> StudentPersona:

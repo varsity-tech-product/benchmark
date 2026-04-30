@@ -55,12 +55,12 @@ _NUMERIC_SCORE_FIELDS: dict[str, tuple[str, ...]] = {
 }
 
 LEGACY_RUBRIC_ID_BY_ID: dict[str, str] = {
-    "S1_persona_adherence": "D" "1_persona_adherence",
-    "S2_persona_drift": "D" "3_drift_detection",
-    "S3_cross_run_reproducibility": "D" "2_cross_run_reproducibility",
-    "S4_blind_identifiability": "B" "1_blind_persona_identification",
-    "S5_targeted_probes": "P" "1_targeted_probe",
-    "S6_generic_falsifier": "C" "1_persona_distinguishability",
+    "S1_persona_adherence": "D1_persona_adherence",
+    "S2_persona_drift": "D3_drift_detection",
+    "S3_cross_run_reproducibility": "D2_cross_run_reproducibility",
+    "S4_blind_identifiability": "B1_blind_persona_identification",
+    "S5_targeted_probes": "P1_targeted_probe",
+    "S6_generic_falsifier": "C1_persona_distinguishability",
 }
 
 FAILURE_TAXONOMY_FIELDS = [

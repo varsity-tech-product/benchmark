@@ -23,8 +23,6 @@ from experiments.student_sim_stability.core.rubrics import (
     DIMENSION_TO_FILE,
 )
 
-_STABILITY_DIMENSIONS = ("S1", "S3", "S2")
-_VALIDITY_DIMENSIONS = ("S6", "S5", "S4")
 _ALL_JUDGE_DIMENSIONS = tuple(DIMENSION_TO_FILE)
 
 # The paper appendix carries exactly these 23 artifacts. Anything else
