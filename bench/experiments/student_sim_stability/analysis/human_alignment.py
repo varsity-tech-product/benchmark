@@ -29,9 +29,14 @@ from experiments.student_sim_stability.core.paths import (
 if str(BENCH_ROOT) not in sys.path:
     sys.path.insert(0, str(BENCH_ROOT))
 
+from experiments.student_sim_stability.core.config import (  # noqa: E402
+    JUDGE_LABELS,
+    PANEL_JUDGES,
+)
 from experiments.student_sim_stability.core.io_utils import (  # noqa: E402
     atomic_write_json,
     load_json,
+    safe_model_dir,
 )
 from experiments.student_sim_stability.core.rubrics import (  # noqa: E402
     DIMENSION_TO_FILE,
@@ -216,19 +221,20 @@ def _stratified_sample(
         if dim and persona:
             payloads[(dim, persona)].append((path, payload))
 
-    # For S4: rank candidates so that fp samples where Sonnet and GPT-5.4
-    # disagreed are chosen first. Falls back to random if no aggregate yet.
+    # For S4: rank candidates so that samples where the first two configured
+    # judges disagreed are chosen first. Falls back to random if no aggregate yet.
     b1_priority: dict[str, int] = {}
     eval_path = input_dir.parent / "evaluations" / "all_evaluations.json"
     if eval_path.exists():
         try:
             ag = load_json(eval_path)
+            first_label, second_label = JUDGE_LABELS[:2]
             for r in ag.get("S4", []):
                 by_judge = (r.get("scores") or {}).get(
                     "identified_persona_by_judge"
                 ) or {}
-                s = str(by_judge.get("sonnet", "")).strip()
-                g = str(by_judge.get("gpt54", "")).strip()
+                s = str(by_judge.get(first_label, "")).strip()
+                g = str(by_judge.get(second_label, "")).strip()
                 expected = str((r.get("metadata") or {}).get("persona_id", ""))
                 # Score 2 if disagree, 1 if agree-but-wrong, 0 otherwise
                 if s and g and s != g:
@@ -471,11 +477,8 @@ def write_llm_label_snapshot(out: Path, samples: list[dict]) -> dict:
             continue
         primary = load_json(primary_path)
         per_judge: dict[str, dict] = {}
-        for judge_dir_name, label in (
-            ("anthropic__claude-sonnet-4-6", "sonnet"),
-            ("openai__gpt-5_4", "gpt54"),
-            ("google__gemini-3_1-pro-preview", "gemini"),
-        ):
+        for model_id, label in PANEL_JUDGES:
+            judge_dir_name = safe_model_dir(model_id)
             jp = by_model_dir / judge_dir_name / f"{eval_id}.json"
             if jp.exists():
                 per_judge[label] = load_json(jp).get("scores") or {}
@@ -840,7 +843,7 @@ def _compute_per_judge_alignment(
                 hv = _as_float(row.get(csv_col))
                 if hv is None:
                     continue
-                for j_label in ("sonnet", "gpt54", "gemini"):
+                for j_label in JUDGE_LABELS:
                     j_scores = sbj.get(j_label) or {}
                     jv = _as_float(j_scores.get(judge_field))
                     if jv is None:
@@ -872,22 +875,19 @@ def _per_judge_b1_match(
     """Compare human's identified_persona to each judge's identified_persona
     on a S4 sample. Returns dict with per-judge match (bool) for the three
     panel members."""
-    out: dict[str, bool | None] = {"sonnet": None, "gpt54": None, "gemini": None}
+    out: dict[str, bool | None] = {label: None for label in JUDGE_LABELS}
     # Try aggregate first (panel-3 has identified_persona_by_judge)
     rec = aggregate_by_eval.get(eval_id) or {}
     by_judge = (rec.get("scores") or {}).get("identified_persona_by_judge") or {}
-    for label in ("sonnet", "gpt54", "gemini"):
+    for label in JUDGE_LABELS:
         v = str(by_judge.get(label, "")).strip()
         if v:
             out[label] = v == expected_human
     # Fall back to by_model dirs for fields not in aggregate
-    for label, dir_name in (
-        ("sonnet", "anthropic__claude-sonnet-4-6"),
-        ("gpt54", "openai__gpt-5_4"),
-        ("gemini", "google__gemini-3_1-pro-preview"),
-    ):
+    for model_id, label in PANEL_JUDGES:
         if out[label] is not None:
             continue
+        dir_name = safe_model_dir(model_id)
         jp = by_model_dir / dir_name / f"{eval_id}.json"
         if jp.exists():
             payload = load_json(jp)
@@ -1140,9 +1140,10 @@ def compute_human_agreement(
         "failure_type": _failure_type_agreement(failure_match),
         # Per-judge S4 vs human (the load-bearing question)
         "b1_identification": {
-            "sonnet_vs_human": _b1_judge_accuracy("sonnet"),
-            "gpt54_vs_human": _b1_judge_accuracy("gpt54"),
-            "gemini_vs_human": _b1_judge_accuracy("gemini"),
+            **{
+                f"{judge_label}_vs_human": _b1_judge_accuracy(judge_label)
+                for judge_label in JUDGE_LABELS
+            },
             "n": len(b1_per_judge),
         },
         "control_distinctiveness": _numeric_agreement(control_dist, "abs_diff"),
@@ -1222,26 +1223,24 @@ def _b1_breakdown_by_persona(rows: list[dict]) -> dict:
     by_persona: dict[str, dict] = defaultdict(
         lambda: {
             "n": 0,
-            "sonnet_correct": 0,
-            "gpt54_correct": 0,
-            "gemini_correct": 0,
+            **{f"{judge_label}_correct": 0 for judge_label in JUDGE_LABELS},
         }
     )
     for r in rows:
         p = r.get("expected_human") or r.get("true_persona_id") or "unknown"
         by_persona[p]["n"] += 1
-        if r.get("sonnet"):
-            by_persona[p]["sonnet_correct"] += 1
-        if r.get("gpt54"):
-            by_persona[p]["gpt54_correct"] += 1
-        if r.get("gemini"):
-            by_persona[p]["gemini_correct"] += 1
+        for judge_label in JUDGE_LABELS:
+            if r.get(judge_label):
+                by_persona[p][f"{judge_label}_correct"] += 1
     return {
         p: {
             "n": d["n"],
-            "sonnet_accuracy": d["sonnet_correct"] / d["n"] if d["n"] else None,
-            "gpt54_accuracy": d["gpt54_correct"] / d["n"] if d["n"] else None,
-            "gemini_accuracy": d["gemini_correct"] / d["n"] if d["n"] else None,
+            **{
+                f"{judge_label}_accuracy": (
+                    d[f"{judge_label}_correct"] / d["n"] if d["n"] else None
+                )
+                for judge_label in JUDGE_LABELS
+            },
         }
         for p, d in by_persona.items()
     }

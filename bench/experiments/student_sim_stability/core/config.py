@@ -49,6 +49,21 @@ NEUTRAL_CONTROL_OPENING: str = "Hi, I need help understanding this task."
 # Judge configuration
 # ---------------------------------------------------------------------------
 JUDGE_MODELS: list[str] = list(STUDENT_SIM_STABILITY_JUDGE_MODELS)
+JUDGE_LABELS: tuple[str, str, str] = ("sonnet", "gpt54", "gemini")
+if len(JUDGE_MODELS) != 3 or len(JUDGE_LABELS) != 3:
+    raise RuntimeError("panel-3 SSOT invariant violated")
+JUDGE_LABEL_BY_MODEL_ID: dict[str, str] = dict(zip(JUDGE_MODELS, JUDGE_LABELS))
+PANEL_JUDGES: tuple[tuple[str, str], ...] = tuple(zip(JUDGE_MODELS, JUDGE_LABELS))
+
+
+def judge_label(model_id: str) -> str:
+    """Map a fully-qualified model id to its short panel label."""
+    try:
+        return JUDGE_LABEL_BY_MODEL_ID[model_id]
+    except KeyError as exc:
+        raise ValueError(f"unknown panel judge: {model_id!r}") from exc
+
+
 JUDGE_MODEL: str = STUDENT_SIM_STABILITY_PRIMARY_JUDGE_MODEL
 JUDGE_TEMPERATURE: float = 0.0
 JUDGE_MAX_WORKERS: int = 6
