@@ -541,6 +541,7 @@ def _render_judges(args: argparse.Namespace) -> None:
     )
     from experiments.student_sim_stability.pipeline.render_judge_prompts import (
         clean_rendered_prompts,
+        load_conversations,
         render_b1,
         render_control,
         render_d1,
@@ -558,18 +559,27 @@ def _render_judges(args: argparse.Namespace) -> None:
         removed = clean_rendered_prompts(judge_input_dir, args.dimension)
         print(f"clean: removed {removed} old prompts")
 
+    conversations = None
+    if args.dimension in ("S1", "S2", "S3", "S4", "S6", "all"):
+        conversations = load_conversations(conv_dir)
+
     if args.dimension in ("S1", "all"):
-        render_d1(conv_dir, judge_input_dir, sample_policy=args.s1_sample_policy)
+        render_d1(
+            conv_dir,
+            judge_input_dir,
+            conversations,
+            sample_policy=args.s1_sample_policy,
+        )
     if args.dimension in ("S3", "all"):
-        render_d2(conv_dir, judge_input_dir)
+        render_d2(conv_dir, judge_input_dir, conversations)
     if args.dimension in ("S2", "all"):
-        render_d3(conv_dir, judge_input_dir)
+        render_d3(conv_dir, judge_input_dir, conversations)
     if args.dimension in ("S6", "all"):
-        render_control(conv_dir, judge_input_dir)
+        render_control(conv_dir, judge_input_dir, conversations)
     if args.dimension in ("S5", "all"):
         render_p1(results_dir, judge_input_dir)
     if args.dimension in ("S4", "all"):
-        render_b1(conv_dir, judge_input_dir)
+        render_b1(conv_dir, judge_input_dir, conversations)
 
 
 def _judge(args: argparse.Namespace) -> int:
@@ -672,6 +682,7 @@ def _run_all(args: argparse.Namespace) -> int:
     from experiments.student_sim_stability.pipeline.probes import run_probes
     from experiments.student_sim_stability.pipeline.render_judge_prompts import (
         clean_rendered_prompts,
+        load_conversations,
         render_b1,
         render_control,
         render_d1,
@@ -740,12 +751,18 @@ def _run_all(args: argparse.Namespace) -> int:
                 by_model_dir / safe_model_dir(judge_model),
                 dimension,
             )
-    render_d1(conv_dir, judge_input_dir, sample_policy=S1_SAMPLE_POLICY)
-    render_d2(conv_dir, judge_input_dir)
-    render_d3(conv_dir, judge_input_dir)
-    render_control(conv_dir, judge_input_dir)
+    conversations = load_conversations(conv_dir)
+    render_d1(
+        conv_dir,
+        judge_input_dir,
+        conversations,
+        sample_policy=S1_SAMPLE_POLICY,
+    )
+    render_d2(conv_dir, judge_input_dir, conversations)
+    render_d3(conv_dir, judge_input_dir, conversations)
+    render_control(conv_dir, judge_input_dir, conversations)
     render_p1(results_dir, judge_input_dir)
-    render_b1(conv_dir, judge_input_dir)
+    render_b1(conv_dir, judge_input_dir, conversations)
     # Pre-seed the human-alignment manifest so labelers can start before the
     # judge panel finishes.
     init_human_alignment(results_dir)

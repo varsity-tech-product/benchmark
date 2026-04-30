@@ -10,6 +10,7 @@ Usage:
 """
 
 import argparse
+import fnmatch
 import functools
 import json
 import random
@@ -35,6 +36,7 @@ from experiments.student_sim_stability.core.contracts import (
     load_student_persona,
     render_persona_contract_text,
 )
+from experiments.student_sim_stability.core.io_utils import load_json
 from experiments.student_sim_stability.core.rubrics import (
     DIMENSION_TO_FILE,
     rubric_metadata,
@@ -61,6 +63,19 @@ _B1_PROMPT = rubric_prompt_template("S4")
 
 def _load_persona(persona_id: str) -> StudentPersona:
     return load_student_persona(persona_id)
+
+
+def load_conversations(conv_dir: Path) -> dict[str, list[dict]]:
+    """Parse every conversation JSON once; key by filename."""
+    return {path.name: load_json(path) for path in sorted(conv_dir.glob("*.json"))}
+
+
+def _conversations_or_load(
+    conv_dir: Path, conversations: dict[str, list[dict]] | None
+) -> dict[str, list[dict]]:
+    if conversations is None:
+        return load_conversations(conv_dir)
+    return conversations
 
 
 @functools.lru_cache(maxsize=1)
@@ -181,13 +196,19 @@ def _rubric_prompt(dimension: str, prompt: str) -> tuple[dict, str]:
     return metadata, header + prompt
 
 
-def render_d1(conv_dir: Path, output_dir: Path, sample_policy: str = "all"):
+def render_d1(
+    conv_dir: Path,
+    output_dir: Path,
+    conversations: dict[str, list[dict]] | None = None,
+    sample_policy: str = "all",
+):
     """Render S1 prompts: one per student message."""
     output_dir.mkdir(parents=True, exist_ok=True)
     count = 0
+    conversations = _conversations_or_load(conv_dir, conversations)
 
-    for conv_file in sorted(conv_dir.glob("*.json")):
-        meta = _parse_conv_filename(conv_file.name)
+    for conv_name, conv in sorted(conversations.items()):
+        meta = _parse_conv_filename(conv_name)
         if sample_policy == "live-r0-tt0" and not (
             meta.get("phase") == "live" and meta.get("repeat_tag") == "r0_tt0"
         ):
@@ -202,10 +223,7 @@ def render_d1(conv_dir: Path, output_dir: Path, sample_policy: str = "all"):
         except FileNotFoundError:
             continue
 
-        with open(conv_file) as f:
-            conv = json.load(f)
-
-        student_turns = _generated_student_turns(conv, conv_file.name)
+        student_turns = _generated_student_turns(conv, conv_name)
         total = len(student_turns)
 
         for turn_idx, (conv_idx, turn) in enumerate(student_turns):
@@ -222,7 +240,7 @@ def render_d1(conv_dir: Path, output_dir: Path, sample_policy: str = "all"):
             )
             rubric_meta, prompt = _rubric_prompt("S1", prompt)
 
-            eval_id = f"S1__{conv_file.stem}__turn{turn_idx}"
+            eval_id = f"S1__{Path(conv_name).stem}__turn{turn_idx}"
             out = {
                 "eval_id": eval_id,
                 "dimension": "S1",
@@ -235,7 +253,7 @@ def render_d1(conv_dir: Path, output_dir: Path, sample_policy: str = "all"):
                     **_contract_metadata(pid),
                     "turn_index": turn_idx,
                     "conversation_index": conv_idx,
-                    "source_file": conv_file.name,
+                    "source_file": conv_name,
                     "student_turn_source": STUDENT_MODEL_SOURCE,
                     "excluded_opening_sources": [
                         FIXTURE_OPENING_SOURCE,
@@ -250,13 +268,18 @@ def render_d1(conv_dir: Path, output_dir: Path, sample_policy: str = "all"):
     print(f"S1: rendered {count} prompts")
 
 
-def render_d3(conv_dir: Path, output_dir: Path):
+def render_d3(
+    conv_dir: Path,
+    output_dir: Path,
+    conversations: dict[str, list[dict]] | None = None,
+):
     """Render S2 prompts: one per conversation."""
     output_dir.mkdir(parents=True, exist_ok=True)
     count = 0
+    conversations = _conversations_or_load(conv_dir, conversations)
 
-    for conv_file in sorted(conv_dir.glob("*.json")):
-        meta = _parse_conv_filename(conv_file.name)
+    for conv_name, conv in sorted(conversations.items()):
+        meta = _parse_conv_filename(conv_name)
         pid = meta.get("persona_id", "")
         if not pid:
             continue
@@ -266,10 +289,7 @@ def render_d3(conv_dir: Path, output_dir: Path):
         except FileNotFoundError:
             continue
 
-        with open(conv_file) as f:
-            conv = json.load(f)
-
-        context_text, scored_turn_count = _d3_conversation_context(conv, conv_file.name)
+        context_text, scored_turn_count = _d3_conversation_context(conv, conv_name)
         if not scored_turn_count:
             continue
 
@@ -280,7 +300,7 @@ def render_d3(conv_dir: Path, output_dir: Path):
         )
         rubric_meta, prompt = _rubric_prompt("S2", prompt)
 
-        eval_id = f"S2__{conv_file.stem}"
+        eval_id = f"S2__{Path(conv_name).stem}"
         out = {
             "eval_id": eval_id,
             "dimension": "S2",
@@ -291,7 +311,7 @@ def render_d3(conv_dir: Path, output_dir: Path):
                 **meta,
                 **rubric_meta,
                 **_contract_metadata(pid),
-                "source_file": conv_file.name,
+                "source_file": conv_name,
                 "student_turn_source": STUDENT_MODEL_SOURCE,
                 "student_turn_count": scored_turn_count,
                 "non_scored_context_sources": [
@@ -308,13 +328,20 @@ def render_d3(conv_dir: Path, output_dir: Path):
     print(f"S2: rendered {count} prompts")
 
 
-def render_d2(conv_dir: Path, output_dir: Path):
+def render_d2(
+    conv_dir: Path,
+    output_dir: Path,
+    conversations: dict[str, list[dict]] | None = None,
+):
     """Render S3 prompts: one per (task, persona, model, tutor_t) group of 3 repeats."""
     output_dir.mkdir(parents=True, exist_ok=True)
+    conversations = _conversations_or_load(conv_dir, conversations)
 
     groups: dict[str, list[tuple[str, list]]] = defaultdict(list)
-    for conv_file in sorted(conv_dir.glob("live__*.json")):
-        parts = conv_file.stem.split("__")
+    for conv_name, conv in sorted(conversations.items()):
+        if not conv_name.startswith("live__"):
+            continue
+        parts = Path(conv_name).stem.split("__")
         # live__TASK__PERSONA__MODEL__rN_ttX
         if len(parts) < 5:
             continue
@@ -326,9 +353,7 @@ def render_d2(conv_dir: Path, output_dir: Path):
         tutor_t = f"tt{tt_match.group(1)}" if tt_match else "tt0"
         group_key = f"{task_id}__{persona_id}__{model}__{tutor_t}"
 
-        with open(conv_file) as f:
-            conv = json.load(f)
-        groups[group_key].append((conv_file.name, conv))
+        groups[group_key].append((conv_name, conv))
 
     count = 0
     for group_key, convs in sorted(groups.items()):
@@ -396,7 +421,11 @@ def _student_messages_text(conv: list[dict]) -> str:
     )
 
 
-def render_control(conv_dir: Path, output_dir: Path):
+def render_control(
+    conv_dir: Path,
+    output_dir: Path,
+    conversations: dict[str, list[dict]] | None = None,
+):
     """Render persona-vs-generic distinguishability prompts.
 
     Each control conversation is paired with the matching live r0/tutor-t0
@@ -405,31 +434,30 @@ def render_control(conv_dir: Path, output_dir: Path):
     output_dir.mkdir(parents=True, exist_ok=True)
     count = 0
     missing_pairs: list[str] = []
+    conversations = _conversations_or_load(conv_dir, conversations)
 
-    for control_file in sorted(conv_dir.glob("control__*.json")):
-        meta = _parse_conv_filename(control_file.name)
+    for control_name, control_conv in sorted(conversations.items()):
+        if not control_name.startswith("control__"):
+            continue
+        meta = _parse_conv_filename(control_name)
         task_id = meta.get("task_id", "")
         persona_id = meta.get("persona_id", "")
         model = meta.get("model", "")
         if not (task_id and persona_id and model):
             continue
 
-        persona_file = conv_dir / (
-            f"live__{task_id}__{persona_id}__{model}__r0_tt0.json"
-        )
-        if not persona_file.exists():
+        persona_name = f"live__{task_id}__{persona_id}__{model}__r0_tt0.json"
+        if persona_name not in conversations:
+            pattern = f"live__{task_id}__{persona_id}__{model}__r*_tt0.json"
             matches = sorted(
-                conv_dir.glob(f"live__{task_id}__{persona_id}__{model}__r*_tt0.json")
+                name for name in conversations if fnmatch.fnmatchcase(name, pattern)
             )
             if not matches:
-                missing_pairs.append(control_file.name)
+                missing_pairs.append(control_name)
                 continue
-            persona_file = matches[0]
+            persona_name = matches[0]
 
-        with open(persona_file) as f:
-            persona_conv = json.load(f)
-        with open(control_file) as f:
-            control_conv = json.load(f)
+        persona_conv = conversations[persona_name]
 
         eval_id = f"S6__{task_id}__{persona_id}__{model}__r0_tt0"
         persona_is_set_a = random.Random(eval_id).choice([True, False])
@@ -465,8 +493,8 @@ def render_control(conv_dir: Path, output_dir: Path):
                 **_contract_metadata(persona_id),
                 "model": model,
                 "repeat_tag": "r0_tt0",
-                "persona_source_file": persona_file.name,
-                "control_source_file": control_file.name,
+                "persona_source_file": persona_name,
+                "control_source_file": control_name,
                 "persona_is_set_a": persona_is_set_a,
                 "student_turn_source": STUDENT_MODEL_SOURCE,
                 "excluded_opening_sources": [
@@ -554,7 +582,11 @@ def render_p1(results_dir: Path, output_dir: Path):
     print(f"S5: rendered {count} prompts")
 
 
-def render_b1(conv_dir: Path, output_dir: Path):
+def render_b1(
+    conv_dir: Path,
+    output_dir: Path,
+    conversations: dict[str, list[dict]] | None = None,
+):
     """Render S4 blind persona-identification prompts from live conversations.
 
     Source: ``conversations/live__*.json`` produced by ``ExperimentRunner``.
@@ -569,17 +601,18 @@ def render_b1(conv_dir: Path, output_dir: Path):
         for contract in list_persona_contracts()
     )
     count = 0
-    for live_file in sorted(conv_dir.glob("live__*.json")):
-        meta = _parse_conv_filename(live_file.name)
+    conversations = _conversations_or_load(conv_dir, conversations)
+    for live_name, conv in sorted(conversations.items()):
+        if not live_name.startswith("live__"):
+            continue
+        meta = _parse_conv_filename(live_name)
         task_id = meta.get("task_id", "")
         persona_id = meta.get("persona_id", "")
         model = meta.get("model", "")
         repeat_tag = meta.get("repeat_tag", "")
         if not (task_id and persona_id and model):
             continue
-        with open(live_file, encoding="utf-8") as fh:
-            conv = json.load(fh)
-        student_msgs = _generated_student_messages(conv, live_file.name)
+        student_msgs = _generated_student_messages(conv, live_name)
         if not student_msgs:
             continue
         transcript = "\n".join(
@@ -593,7 +626,7 @@ def render_b1(conv_dir: Path, output_dir: Path):
             transcript=transcript,
         )
         rubric_meta, prompt = _rubric_prompt("S4", prompt)
-        eval_id = f"S4__{live_file.stem}"
+        eval_id = f"S4__{Path(live_name).stem}"
         out = {
             "eval_id": eval_id,
             "dimension": "S4",
@@ -607,7 +640,7 @@ def render_b1(conv_dir: Path, output_dir: Path):
                 "task_id": task_id,
                 "model": model,
                 "repeat_tag": repeat_tag,
-                "source_file": str(live_file.relative_to(conv_dir.parent)),
+                "source_file": str((conv_dir / live_name).relative_to(conv_dir.parent)),
                 "student_turn_source": STUDENT_MODEL_SOURCE,
             },
         }
@@ -664,19 +697,28 @@ def main():
         removed = clean_rendered_prompts(output_dir, args.dimension)
         print(f"clean: removed {removed} old prompts")
 
+    conversations = None
+    if args.dimension in ("S1", "S2", "S3", "S4", "S6", "all"):
+        conversations = load_conversations(conv_dir)
+
     if args.dimension in ("S1", "all"):
-        render_d1(conv_dir, output_dir, sample_policy=args.s1_sample_policy)
+        render_d1(
+            conv_dir,
+            output_dir,
+            conversations,
+            sample_policy=args.s1_sample_policy,
+        )
     if args.dimension in ("S3", "all"):
-        render_d2(conv_dir, output_dir)
+        render_d2(conv_dir, output_dir, conversations)
     if args.dimension in ("S2", "all"):
-        render_d3(conv_dir, output_dir)
+        render_d3(conv_dir, output_dir, conversations)
     if args.dimension in ("S6", "all"):
-        render_control(conv_dir, output_dir)
+        render_control(conv_dir, output_dir, conversations)
     results_dir = conv_dir.parent
     if args.dimension in ("S5", "all"):
         render_p1(results_dir, output_dir)
     if args.dimension in ("S4", "all"):
-        render_b1(conv_dir, output_dir)
+        render_b1(conv_dir, output_dir, conversations)
 
 
 if __name__ == "__main__":
