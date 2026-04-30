@@ -58,17 +58,21 @@ def _score_fields_for(dimension: str) -> list[str]:
         return []
 
 
-def _by_eval_across_judges(
+def _load_judge_outputs_by_dimension(
     judge_output_root: Path,
-    dimension: str,
-) -> dict[str, dict[str, dict]]:
-    """Return ``{eval_id: {judge_dir: output_payload}}`` for a dimension."""
-    by_eval: dict[str, dict[str, dict]] = defaultdict(dict)
+) -> dict[str, dict[str, dict[str, dict]]]:
+    """Return ``{dimension: {eval_id: {judge_dir: output_payload}}}``."""
+    by_dimension: dict[str, dict[str, dict[str, dict]]] = defaultdict(
+        lambda: defaultdict(dict)
+    )
     for _, judge_dir in PANEL_JUDGE_DIRS:
         ddir = judge_output_root / judge_dir
         if not ddir.exists():
             continue
-        for path in ddir.glob(f"{dimension}__*.json"):
+        for path in ddir.glob("*.json"):
+            dimension = path.stem.split("__", 1)[0]
+            if dimension not in DIMENSION_TO_FILE:
+                continue
             try:
                 payload = load_json(path)
             except (OSError, json.JSONDecodeError) as exc:
@@ -77,8 +81,16 @@ def _by_eval_across_judges(
             if not payload:
                 continue
             eval_id = payload.get("eval_id") or path.stem
-            by_eval[eval_id][judge_dir] = payload
-    return by_eval
+            by_dimension[dimension][eval_id][judge_dir] = payload
+    return {dimension: dict(by_eval) for dimension, by_eval in by_dimension.items()}
+
+
+def _by_eval_across_judges(
+    outputs_by_dimension: dict[str, dict[str, dict[str, dict]]],
+    dimension: str,
+) -> dict[str, dict[str, dict]]:
+    """Return ``{eval_id: {judge_dir: output_payload}}`` for a dimension."""
+    return outputs_by_dimension.get(dimension, {})
 
 
 def _aggregate_eval(
@@ -202,11 +214,12 @@ def aggregate_multi_judge(
     dimensions_out: dict[str, Any] = {}
     total_rows = 0
     warnings: list[str] = []
+    outputs_by_dimension = _load_judge_outputs_by_dimension(judge_root)
     for dim in DIMENSION_TO_FILE:
         numeric_fields = _score_fields_for(dim)
         if not numeric_fields:
             continue
-        by_eval = _by_eval_across_judges(judge_root, dim)
+        by_eval = _by_eval_across_judges(outputs_by_dimension, dim)
         rows: list[dict] = []
         missing_judge_counts: dict[str, int] = defaultdict(int)
         for eval_id in sorted(by_eval):
