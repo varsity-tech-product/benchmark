@@ -452,6 +452,15 @@ def _write_human_label_csv(
     return appended
 
 
+def _flatten_evaluations_by_eval_id(aggregate: dict) -> dict:
+    return {
+        record.get("eval_id"): record
+        for records in aggregate.values()
+        if isinstance(records, list)
+        for record in records
+    }
+
+
 def write_llm_label_snapshot(out: Path, samples: list[dict]) -> dict:
     """Snapshot the LLM judges' labels for the chosen samples — three judges
     if available, plus the panel-3 mean already computed in the aggregate.
@@ -460,12 +469,7 @@ def write_llm_label_snapshot(out: Path, samples: list[dict]) -> dict:
     by_model_dir = out / "judge_outputs_by_model"
     aggregate_path = out / "evaluations" / "all_evaluations.json"
     aggregate = load_json(aggregate_path) if aggregate_path.exists() else {}
-    aggregate_by_eval = {
-        r.get("eval_id"): r
-        for records in aggregate.values()
-        if isinstance(records, list)
-        for r in records
-    }
+    aggregate_by_eval = _flatten_evaluations_by_eval_id(aggregate)
 
     rows = []
     missing = []
@@ -928,12 +932,7 @@ def compute_human_agreement(
         return report
 
     aggregate = load_json(eval_path)
-    by_eval_id = {
-        record.get("eval_id"): record
-        for records in aggregate.values()
-        if isinstance(records, list)
-        for record in records
-    }
+    by_eval_id = _flatten_evaluations_by_eval_id(aggregate)
 
     persona_fid: list[dict] = []
     knowledge: list[dict] = []
