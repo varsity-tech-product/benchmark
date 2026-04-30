@@ -486,7 +486,17 @@ def _validate_status_artifacts(
     return checks
 
 
-def _validate_judge_input_metadata(input_dir: Path) -> list[Check]:
+def _load_judge_input_payloads(input_dir: Path) -> dict[str, dict]:
+    if not input_dir.exists():
+        return {}
+    return {path.name: load_json(path) for path in sorted(input_dir.glob("*.json"))}
+
+
+def _validate_judge_input_metadata(
+    input_dir: Path,
+    *,
+    input_payloads_by_name: dict[str, dict] | None = None,
+) -> list[Check]:
     if not input_dir.exists():
         return [
             Check(
@@ -496,26 +506,30 @@ def _validate_judge_input_metadata(input_dir: Path) -> list[Check]:
             )
         ]
     missing: list[str] = []
-    for path in sorted(input_dir.glob("*.json")):
-        payload = load_json(path)
+    payloads_by_name = (
+        input_payloads_by_name
+        if input_payloads_by_name is not None
+        else _load_judge_input_payloads(input_dir)
+    )
+    for name, payload in sorted(payloads_by_name.items()):
         metadata = payload.get("metadata", {})
         for field in ["rubric_id", "rubric_version"]:
             if not metadata.get(field):
-                missing.append(f"{path.name}: missing {field}")
+                missing.append(f"{name}: missing {field}")
         dimension = payload.get("dimension")
         if dimension:
             try:
                 expected_rubric = rubric_metadata(dimension)
                 if metadata.get("rubric_id") != expected_rubric["rubric_id"]:
-                    missing.append(f"{path.name}: rubric_id mismatch")
+                    missing.append(f"{name}: rubric_id mismatch")
                 if metadata.get("rubric_version") != expected_rubric["rubric_version"]:
-                    missing.append(f"{path.name}: rubric_version mismatch")
+                    missing.append(f"{name}: rubric_version mismatch")
             except ValueError:
-                missing.append(f"{path.name}: unknown rubric dimension {dimension}")
+                missing.append(f"{name}: unknown rubric dimension {dimension}")
         if payload.get("dimension") != "S6":
             for field in ["persona_contract_id", "persona_contract_version"]:
                 if not metadata.get(field):
-                    missing.append(f"{path.name}: missing {field}")
+                    missing.append(f"{name}: missing {field}")
             persona_id = metadata.get("persona_id")
             if persona_id:
                 try:
@@ -524,16 +538,14 @@ def _validate_judge_input_metadata(input_dir: Path) -> list[Check]:
                         metadata.get("persona_contract_version")
                         != contract["contract_version"]
                     ):
-                        missing.append(
-                            f"{path.name}: persona_contract_version mismatch"
-                        )
+                        missing.append(f"{name}: persona_contract_version mismatch")
                 except (OSError, KeyError, ValueError, json.JSONDecodeError) as exc:
-                    missing.append(f"{path.name}: cannot load persona contract ({exc})")
+                    missing.append(f"{name}: cannot load persona contract ({exc})")
         rubric_id = metadata.get("rubric_id") or payload.get("rubric_id")
         prompt = payload.get("prompt", "")
         legacy_rubric_id = LEGACY_RUBRIC_ID_BY_ID.get(rubric_id or "")
         if rubric_id and rubric_id not in prompt and legacy_rubric_id not in prompt:
-            missing.append(f"{path.name}: prompt missing rubric_id text")
+            missing.append(f"{name}: prompt missing rubric_id text")
     return [
         Check(
             "judge_input_rubric_contract_metadata",
@@ -553,6 +565,7 @@ def _validate_judge_output_metadata(
     *,
     expected_judge_model: str | None = None,
     input_hash_index: dict[str, str] | None = None,
+    input_names: set[str] | None = None,
 ) -> list[Check]:
     if not output_dir.exists():
         return [
@@ -563,14 +576,18 @@ def _validate_judge_output_metadata(
             )
         ]
     missing: list[str] = []
-    input_names = (
-        {path.name for path in input_dir.glob("*.json")}
-        if input_dir.exists()
-        else set()
+    known_input_names = (
+        input_names
+        if input_names is not None
+        else (
+            {path.name for path in input_dir.glob("*.json")}
+            if input_dir.exists()
+            else set()
+        )
     )
     output_names = {path.name for path in output_dir.glob("*.json")}
-    missing_outputs = sorted(input_names - output_names)
-    extra_outputs = sorted(output_names - input_names)
+    missing_outputs = sorted(known_input_names - output_names)
+    extra_outputs = sorted(output_names - known_input_names)
     if missing_outputs:
         missing.append(f"missing judge outputs for inputs {missing_outputs[:5]}")
     if extra_outputs:
@@ -585,17 +602,19 @@ def _validate_judge_output_metadata(
                 f"{path.name}: judge_model={payload.get('judge_model')!r}, "
                 f"expected {expected_judge_model!r}"
             )
-        input_path = input_dir / path.name
-        if input_path.exists() and payload.get("input_sha256"):
+        has_matching_input = path.name in known_input_names
+        if has_matching_input and payload.get("input_sha256"):
             if input_hash_index is not None:
                 input_hash = input_hash_index.get(path.name)
                 if input_hash is None:
-                    input_hash = input_payload_hash(load_json(input_path))
+                    missing.append(f"{path.name}: missing matching judge input hash")
+                    continue
             else:
+                input_path = input_dir / path.name
                 input_hash = input_payload_hash(load_json(input_path))
             if payload["input_sha256"] != input_hash:
                 missing.append(f"{path.name}: input_sha256 mismatch")
-        elif not input_path.exists():
+        elif not has_matching_input:
             missing.append(f"{path.name}: missing matching judge input")
     return [
         Check(
@@ -629,6 +648,8 @@ def _validate_judge_panel_outputs(
     input_counts: dict[str, int],
     *,
     profile: str,
+    input_hash_index: dict[str, str] | None = None,
+    input_names: set[str] | None = None,
 ) -> list[Check]:
     checks: list[Check] = []
     by_model_dir = results_dir / "judge_outputs_by_model"
@@ -637,10 +658,16 @@ def _validate_judge_panel_outputs(
         return checks
 
     input_dir = results_dir / "judge_inputs"
-    input_hash_index: dict[str, str] = (
-        {p.name: input_payload_hash(load_json(p)) for p in input_dir.glob("*.json")}
-        if input_dir.exists()
-        else {}
+    panel_input_hash_index = (
+        input_hash_index
+        if input_hash_index is not None
+        else {
+            name: input_payload_hash(payload)
+            for name, payload in _load_judge_input_payloads(input_dir).items()
+        }
+    )
+    panel_input_names = (
+        input_names if input_names is not None else set(panel_input_hash_index)
     )
 
     for model in JUDGE_MODELS:
@@ -675,7 +702,8 @@ def _validate_judge_panel_outputs(
                         input_dir,
                         model_dir,
                         expected_judge_model=model,
-                        input_hash_index=input_hash_index,
+                        input_hash_index=panel_input_hash_index,
+                        input_names=panel_input_names,
                     ),
                     f"judge_panel_{safe_model_dir(model)}",
                     required=True,
@@ -749,6 +777,12 @@ def validate(
     output_dir = results_dir / "judge_outputs"
     eval_path = results_dir / "evaluations" / "all_evaluations.json"
     report_path = results_dir / "report" / "stability_report.html"
+    input_payloads_by_name = _load_judge_input_payloads(input_dir)
+    input_hash_index = {
+        name: input_payload_hash(payload)
+        for name, payload in input_payloads_by_name.items()
+    }
+    input_names = set(input_payloads_by_name)
 
     conversations = _count_files(conv_dir)
     live_conversations = _count_files(conv_dir, "live__*.json")
@@ -866,7 +900,12 @@ def validate(
                 ),
             )
         )
-    checks.extend(_validate_judge_input_metadata(input_dir))
+    checks.extend(
+        _validate_judge_input_metadata(
+            input_dir,
+            input_payloads_by_name=input_payloads_by_name,
+        )
+    )
 
     output_counts = _dimension_counts(output_dir)
     s1_output_ok = (
@@ -903,9 +942,22 @@ def validate(
             )
         )
     checks.extend(_validate_judge_output_quality(output_dir))
-    checks.extend(_validate_judge_output_metadata(input_dir, output_dir))
     checks.extend(
-        _validate_judge_panel_outputs(results_dir, input_counts, profile=profile)
+        _validate_judge_output_metadata(
+            input_dir,
+            output_dir,
+            input_hash_index=input_hash_index,
+            input_names=input_names,
+        )
+    )
+    checks.extend(
+        _validate_judge_panel_outputs(
+            results_dir,
+            input_counts,
+            profile=profile,
+            input_hash_index=input_hash_index,
+            input_names=input_names,
+        )
     )
 
     aggregate_counts: dict[str, int] = {}
