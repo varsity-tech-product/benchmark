@@ -42,6 +42,7 @@ Run route scope:
 
 Task route scope:
 - `#/tasks` renders a task-class selector first, then shows tasks only for the selected class.
+- The task-class selector can collapse so the selected class task list gets the full width.
 
 Result detail read model:
 - `tool_logs`: domain tool calls only; excludes `send_message`

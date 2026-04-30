@@ -14,7 +14,8 @@
     results: null,
     tasksPayload: null,
     taskCatalog: {
-      selectedClass: ''
+      selectedClass: '',
+      classPanelHidden: false
     },
     detailCache: {},
     workspaceIndexCache: {},
@@ -670,6 +671,11 @@
       ? '<div class="tasks-grid">' + selectedTasks.map(renderTaskCard).join('') + '</div>'
       : renderEmptyInline('Select a task class to view its tasks.');
     var selectedClassLabel = selectedClass ? titleCase(selectedClass) : 'Select a class';
+    var classPanelHidden = Boolean(state.taskCatalog.classPanelHidden);
+    var layoutClass = 'task-catalog-layout' + (classPanelHidden ? ' is-task-class-hidden' : '');
+    var taskClassToggle = classPanelHidden
+      ? '<button class="btn btn-secondary task-class-toggle" type="button" aria-expanded="false">Open Task Class</button>'
+      : '<button class="btn btn-secondary task-class-toggle" type="button" aria-expanded="true">Hide</button>';
 
     app.innerHTML =
       '<section class="page">' +
@@ -685,11 +691,14 @@
             buildSummaryPill('Categories', String(categories.length)) +
           '</div>' +
         '</header>' +
-        '<div class="task-catalog-layout">' +
+        '<div class="' + layoutClass + '">' +
           '<aside class="panel task-class-panel">' +
             '<div class="task-class-panel-head">' +
               '<h2>Task Class</h2>' +
-              '<span class="summary-pill"><strong>Total</strong> ' + escapeHtml(String(categories.length)) + '</span>' +
+              '<div class="task-class-panel-actions">' +
+                '<span class="summary-pill"><strong>Total</strong> ' + escapeHtml(String(categories.length)) + '</span>' +
+                taskClassToggle +
+              '</div>' +
             '</div>' +
             '<div class="task-class-list">' + classButtons + '</div>' +
           '</aside>' +
@@ -699,7 +708,10 @@
                 '<p class="eyebrow">Selected Class</p>' +
                 '<h2 class="tasks-group-title">' + escapeHtml(selectedClassLabel) + '</h2>' +
               '</div>' +
-              '<span class="summary-pill"><strong>Tasks</strong> ' + escapeHtml(String(selectedTasks.length)) + '</span>' +
+              '<div class="task-class-panel-actions">' +
+                '<span class="summary-pill"><strong>Tasks</strong> ' + escapeHtml(String(selectedTasks.length)) + '</span>' +
+                (classPanelHidden ? taskClassToggle : '') +
+              '</div>' +
             '</header>' +
             tasksHtml +
           '</section>' +
@@ -712,6 +724,12 @@
     document.querySelectorAll('.task-class-btn').forEach(function (button) {
       button.addEventListener('click', function () {
         state.taskCatalog.selectedClass = button.getAttribute('data-task-class') || '';
+        renderTasksPage(state.tasksPayload || {tasks: [], personas: []});
+      });
+    });
+    document.querySelectorAll('.task-class-toggle').forEach(function (button) {
+      button.addEventListener('click', function () {
+        state.taskCatalog.classPanelHidden = !state.taskCatalog.classPanelHidden;
         renderTasksPage(state.tasksPayload || {tasks: [], personas: []});
       });
     });
