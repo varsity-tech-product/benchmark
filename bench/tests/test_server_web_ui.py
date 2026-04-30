@@ -357,6 +357,102 @@ class ResultIndexerTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 indexer.resolve_agent_file(session_id, "../secret.txt")
 
+    def test_detail_lookup_rejects_malformed_full_session_ids(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            session_id = "abcdef12aaaaaaaaaaaaaaaaaaaaaaaa"
+            result_dir = _make_server_result_dir(
+                root, "D01_demo", "beginner_persona", session_id
+            )
+            _write_json(
+                result_dir / "run_state.json",
+                {
+                    "session_id": session_id,
+                    "task_id": "D01_demo",
+                    "persona_id": "beginner_persona",
+                    "conversation": [],
+                    "tool_logs": [],
+                },
+            )
+
+            indexer = ResultIndexer(root)
+
+            self.assertIsNone(indexer.get_detail(f"{session_id}x"))
+
+    def test_detail_lookup_rejects_short_prefix_collision_with_known_id(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            stored_session_id = "abcdef12aaaaaaaaaaaaaaaaaaaaaaaa"
+            requested_session_id = "abcdef12bbbbbbbbbbbbbbbbbbbbbbbb"
+            result_dir = (
+                root
+                / "results"
+                / "server"
+                / "D01_demo"
+                / "beginner_persona"
+                / f"20260422_120000_{stored_session_id[:8]}"
+            )
+            _write_json(
+                result_dir / "run_state.json",
+                {
+                    "session_id": stored_session_id,
+                    "task_id": "D01_demo",
+                    "persona_id": "beginner_persona",
+                    "conversation": [],
+                    "tool_logs": [],
+                },
+            )
+
+            indexer = ResultIndexer(root)
+
+            self.assertIsNone(indexer.get_detail(requested_session_id))
+
+    def test_detail_lookup_prefers_known_id_before_suffix_fallback(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            requested_session_id = "abcdef12bbbbbbbbbbbbbbbbbbbbbbbb"
+            legacy_dir = (
+                root
+                / "results"
+                / "server"
+                / "A01_legacy"
+                / "beginner_persona"
+                / f"20260422_120000_{requested_session_id[:8]}"
+            )
+            _write_json(
+                legacy_dir / "run_state.json",
+                {
+                    "task_id": "A01_legacy",
+                    "persona_id": "beginner_persona",
+                    "conversation": [{"role": "assistant", "content": "Legacy"}],
+                    "tool_logs": [],
+                },
+            )
+            exact_dir = (
+                root
+                / "results"
+                / "server"
+                / "B01_exact"
+                / "beginner_persona"
+                / f"20260422_120001_{requested_session_id[:8]}"
+            )
+            _write_json(
+                exact_dir / "run_state.json",
+                {
+                    "session_id": requested_session_id,
+                    "task_id": "B01_exact",
+                    "persona_id": "beginner_persona",
+                    "conversation": [{"role": "assistant", "content": "Exact"}],
+                    "tool_logs": [],
+                },
+            )
+
+            detail = ResultIndexer(root).get_detail(requested_session_id)
+
+            self.assertIsNotNone(detail)
+            self.assertEqual(detail["task_id"], "B01_exact")
+            self.assertEqual(detail["conversation"][0]["content"], "Exact")
+
 
 class UiRoutesTests(unittest.TestCase):
     def test_ui_routes_serve_results_detail_and_files(self):
@@ -613,6 +709,48 @@ class UiRoutesTests(unittest.TestCase):
                 / "local-dev.json"
             )
             self.assertFalse(alias_review_file.exists())
+
+    def test_review_route_resolves_archives_without_session_id_file(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            session_id = "42e74d3a9ec94aa5b142f84474844be1"
+            result_dir = (
+                root
+                / "results"
+                / "server"
+                / "I01_implement_sma"
+                / "fullstack_practitioner"
+                / f"20260422_072509_{session_id[:8]}"
+            )
+            _write_json(
+                result_dir / "run_state.json",
+                {
+                    "session_id": session_id,
+                    "task_id": "I01_implement_sma",
+                    "persona_id": "fullstack_practitioner",
+                    "conversation": [{"role": "assistant", "content": "Answer"}],
+                    "tool_logs": [],
+                    "workspace_files": [],
+                },
+            )
+            _write_json(
+                result_dir / "manifest.json",
+                {"session_id": session_id, "task_id": "I01_implement_sma"},
+            )
+
+            app = Starlette(routes=ui_routes(_Manager(root)))
+            client = TestClient(app)
+
+            list_response = client.get("/ui/review/bundles")
+            detail_response = client.get(f"/ui/review/bundles/{session_id}")
+            prefix_response = client.get(f"/ui/review/bundles/{session_id[:12]}")
+
+            self.assertEqual(list_response.status_code, 200)
+            self.assertEqual(detail_response.status_code, 200)
+            self.assertEqual(prefix_response.status_code, 200)
+            self.assertEqual(list_response.json()["bundles"][0]["bundle_id"], session_id)
+            self.assertEqual(detail_response.json()["bundle_id"], session_id)
+            self.assertEqual(prefix_response.json()["bundle_id"], session_id)
 
     def test_review_routes_preserve_private_result_visibility(self):
         with tempfile.TemporaryDirectory() as tmpdir:

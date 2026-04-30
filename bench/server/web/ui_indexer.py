@@ -455,16 +455,65 @@ class ResultIndexer:
                         yield run_dir
 
     def _find_result_dir(self, session_id: str) -> Path | None:
-        short_id = session_id[:12]
+        requested = str(session_id or "").strip()
+        if not requested:
+            return None
+        short_ids = {requested[:12], requested[:8]}
+        suffix_matches: list[Path] = []
         for result_dir in self._iter_result_dirs():
+            known_ids: list[str] = []
             sid_file = result_dir / ".session_id"
-            if sid_file.exists() and sid_file.read_text(
-                encoding="utf-8"
-            ).strip().startswith(session_id):
+            if sid_file.exists():
+                try:
+                    stored_id = sid_file.read_text(encoding="utf-8").strip()
+                except OSError:
+                    stored_id = ""
+                if stored_id:
+                    known_ids.append(stored_id)
+
+            run_state = self._load_json(result_dir / "run_state.json")
+            if isinstance(run_state, dict):
+                stored_id = str(run_state.get("session_id") or "").strip()
+                if stored_id:
+                    known_ids.append(stored_id)
+
+            manifest = self._load_json(result_dir / "manifest.json")
+            if isinstance(manifest, dict):
+                stored_id = str(manifest.get("session_id") or "").strip()
+                if stored_id:
+                    known_ids.append(stored_id)
+
+            if any(
+                self._session_id_matches(stored_id, requested)
+                for stored_id in known_ids
+            ):
                 return result_dir
-            if result_dir.name.endswith(f"_{short_id}"):
-                return result_dir
-        return None
+            if known_ids:
+                continue
+
+            if any(
+                short_id and result_dir.name.endswith(f"_{short_id}")
+                for short_id in short_ids
+            ):
+                suffix_matches.append(result_dir)
+        return suffix_matches[0] if suffix_matches else None
+
+    def _session_id_matches(self, stored_id: str, requested_id: str) -> bool:
+        stored = str(stored_id or "").strip()
+        requested = str(requested_id or "").strip()
+        return bool(
+            stored
+            and requested
+            and (
+                stored == requested
+                or stored.startswith(requested)
+                or (
+                    len(stored) in (8, 12)
+                    and re.fullmatch(r"[A-Fa-f0-9]+", stored) is not None
+                    and requested.startswith(stored)
+                )
+            )
+        )
 
     def _build_summary(self, result_dir: Path) -> dict[str, Any] | None:
         run_state = self._load_json(result_dir / "run_state.json")
