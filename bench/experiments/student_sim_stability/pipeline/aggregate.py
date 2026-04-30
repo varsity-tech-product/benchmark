@@ -237,6 +237,17 @@ def aggregate(
         _validate_strict_input_output_sets(judge_input_dir, judge_output_dir, profile)
 
     metadata_by_name = _build_input_metadata_index(judge_input_dir)
+    secondary_by_name: dict[str, dict] = {}
+    tertiary_by_name: dict[str, dict] = {}
+    if panel_3:
+        secondary_by_name = {
+            path.name: load_json(path)
+            for path in sorted(secondary_judge_output_dir.glob("*.json"))
+        }
+        tertiary_by_name = {
+            path.name: load_json(path)
+            for path in sorted(tertiary_judge_output_dir.glob("*.json"))
+        }
     d3_records_seen: list[dict] = []
 
     for output_file in sorted(judge_output_dir.glob("*.json")):
@@ -249,22 +260,14 @@ def aggregate(
         # aggregation. Falls back to whichever judges produced an output for
         # this eval_id when one is absent (e.g., partial run, credit exhaustion).
         if panel_3:
-            secondary_path = secondary_judge_output_dir / output_file.name
-            tertiary_path = tertiary_judge_output_dir / output_file.name
-            secondary_missing = not secondary_path.exists()
-            tertiary_missing = not tertiary_path.exists()
+            secondary = secondary_by_name.get(output_file.name)
+            tertiary = tertiary_by_name.get(output_file.name)
+            secondary_missing = secondary is None
+            tertiary_missing = tertiary is None
             scores_by_judge = {
                 JUDGE_LABELS[0]: scores,
-                secondary_label: (
-                    load_json(secondary_path).get("scores", {})
-                    if not secondary_missing
-                    else {}
-                ),
-                tertiary_label: (
-                    load_json(tertiary_path).get("scores", {})
-                    if not tertiary_missing
-                    else {}
-                ),
+                secondary_label: (secondary or {}).get("scores", {}),
+                tertiary_label: (tertiary or {}).get("scores", {}),
             }
             scores = _merge_panel_3_scores(scores_by_judge, dimension)
             if secondary_missing or tertiary_missing:
