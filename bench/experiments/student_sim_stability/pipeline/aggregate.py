@@ -89,18 +89,6 @@ def _build_input_metadata_index(input_dir: Path) -> dict[str, dict]:
     }
 
 
-def _per_turn_fidelity(scores: dict) -> list[float]:
-    existing = scores.get("per_turn_fidelity")
-    if isinstance(existing, list):
-        return existing
-    per_turn = scores.get("per_turn", [])
-    if not isinstance(per_turn, list):
-        return []
-    return [
-        turn.get("persona_fidelity", 0) for turn in per_turn if isinstance(turn, dict)
-    ]
-
-
 def _per_turn_field(scores: dict, field: str) -> list[float]:
     existing = scores.get(f"per_turn_{field}")
     if isinstance(existing, list):
@@ -113,7 +101,7 @@ def _per_turn_field(scores: dict, field: str) -> list[float]:
 
 def _normalize_d3_scores(scores: dict) -> dict:
     normalized = dict(scores)
-    normalized["per_turn_fidelity"] = _per_turn_fidelity(scores)
+    normalized["per_turn_fidelity"] = _per_turn_field(scores, "persona_fidelity")
     normalized["per_turn_knowledge_leak"] = _per_turn_field(scores, "knowledge_leak")
     normalized["per_turn_co_teacher_drift"] = _per_turn_field(
         scores, "co_teacher_drift"
@@ -243,20 +231,13 @@ def aggregate(
                     f"panel_3 view requires {label} outputs at {path}; "
                     "either run the full judge panel or pass judge_view='primary'"
                 )
-    records: dict[str, list[dict]] = {
-        "S1": [],
-        "S2": [],
-        "S3": [],
-        "S4": [],
-        "S5": [],
-        "S6": [],
-    }
+    records: dict[str, list[dict]] = {dim: [] for dim in DIMENSION_TO_FILE}
 
     if strict:
         _validate_strict_input_output_sets(judge_input_dir, judge_output_dir, profile)
 
     metadata_by_name = _build_input_metadata_index(judge_input_dir)
-    d3_control_outputs = 0
+    d3_records_seen: list[dict] = []
 
     for output_file in sorted(judge_output_dir.glob("*.json")):
         output = load_json(output_file)
@@ -309,9 +290,8 @@ def aggregate(
             normalized = _normalize_d3_scores(scores)
             metadata["drift_onset_turn"] = normalized.get("drift_onset_turn")
             record = {"eval_id": eval_id, "scores": normalized, "metadata": metadata}
-            if metadata.get("phase") == "control":
-                d3_control_outputs += 1
-            else:
+            d3_records_seen.append(record)
+            if metadata.get("phase") != "control":
                 records["S2"].append(record)
             continue
 
@@ -332,7 +312,12 @@ def aggregate(
             {"eval_id": eval_id, "scores": scores, "metadata": metadata}
         )
 
-    if strict and d3_control_outputs and not records["S6"]:
+    d3_control_records = [
+        record
+        for record in d3_records_seen
+        if record.get("metadata", {}).get("phase") == "control"
+    ]
+    if strict and d3_control_records and not records["S6"]:
         raise ValueError(
             "S2 control-conversation outputs were present but no real S6 judge "
             "outputs were found. S6-from-S2 fallback is disabled."

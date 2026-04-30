@@ -6,6 +6,7 @@ sections compose Component HTML rather than concatenating raw markup.
 """
 
 import functools
+import heapq
 import json
 import logging
 import os
@@ -581,7 +582,7 @@ class ReportGenerator:
         by_phase: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
         by_rubric: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
         severity_values: dict[str, list[float]] = defaultdict(list)
-        top_examples: list[dict] = []
+        candidate_examples: list[dict] = []
         d3_numeric = {
             "knowledge_leak_events": 0,
             "co_teacher_drift_events": 0,
@@ -619,29 +620,32 @@ class ReportGenerator:
                     by_rubric[rubric][failure_type] += 1
                     if severity is not None:
                         severity_values[failure_type].append(float(severity))
-                    if len(top_examples) < 50:
-                        top_examples.append(
-                            {
-                                "eval_id": record.get("eval_id"),
-                                "dimension": dimension,
-                                "rubric": rubric,
-                                "model": model,
-                                "persona_id": persona,
-                                "task_id": task,
-                                "phase": phase,
-                                "failure_type": failure_type,
-                                "dominant_failure_type": scores.get(
-                                    "dominant_failure_type"
-                                ),
-                                "failure_evidence": scores.get("failure_evidence", ""),
-                                "severity": severity,
-                            }
-                        )
+                    candidate_examples.append(
+                        {
+                            "eval_id": record.get("eval_id"),
+                            "dimension": dimension,
+                            "rubric": rubric,
+                            "model": model,
+                            "persona_id": persona,
+                            "task_id": task,
+                            "phase": phase,
+                            "failure_type": failure_type,
+                            "dominant_failure_type": scores.get(
+                                "dominant_failure_type"
+                            ),
+                            "failure_evidence": scores.get("failure_evidence", ""),
+                            "severity": severity,
+                        }
+                    )
                 if dimension == "S2":
                     leaks = scores.get("per_turn_knowledge_leak", [])
                     drifts = scores.get("per_turn_co_teacher_drift", [])
                     d3_numeric["knowledge_leak_events"] += sum(1 for x in leaks if x)
                     d3_numeric["co_teacher_drift_events"] += sum(1 for x in drifts if x)
+
+        def severity_key(item: dict) -> tuple[bool, float]:
+            severity = item.get("severity")
+            return (severity is not None, float(severity or 0.0))
 
         return {
             "by_type": dict(by_type),
@@ -659,14 +663,11 @@ class ReportGenerator:
                 }
                 for failure_type, values in severity_values.items()
             },
-            "top_examples": sorted(
-                top_examples,
-                key=lambda item: (
-                    item.get("severity") is not None,
-                    item.get("severity") or 0,
-                ),
-                reverse=True,
-            )[:20],
+            "top_examples": heapq.nlargest(
+                20,
+                candidate_examples,
+                key=severity_key,
+            ),
             "recommendations": {
                 key: _FAILURE_RECOMMENDATIONS.get(key, _FAILURE_RECOMMENDATION_DEFAULT)
                 for key in by_type
@@ -1102,16 +1103,9 @@ class ReportGenerator:
         return Path(os.path.relpath(artifact, start=self.output_dir)).as_posix()
 
     def _status_block(self) -> str:
-        def _load_or_empty(path: Path) -> dict:
-            return load_json(path) if path.exists() else {}
-
-        metadata = _load_or_empty(
-            self.results_dir / "report" / "stability_metadata.json"
-        )
-        judge = _load_or_empty(self.results_dir / "report" / "judge_agreement.json")
-        human = _load_or_empty(
-            self.results_dir / "human_alignment" / "agreement_report.json"
-        )
+        metadata = getattr(self, "_metadata", {}) or {}
+        judge = getattr(self, "_agreement", {}) or {}
+        human = getattr(self, "_human", {}) or {}
         comparison = metadata.get(
             "model_comparison_label", "cross-vendor candidate selection"
         )

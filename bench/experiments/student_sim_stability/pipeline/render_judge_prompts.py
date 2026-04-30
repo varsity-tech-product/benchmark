@@ -63,17 +63,23 @@ def _load_persona(persona_id: str) -> StudentPersona:
     return load_student_persona(persona_id)
 
 
+@functools.lru_cache(maxsize=1)
+def _task_path_by_id() -> dict[str, Path]:
+    tasks_dir = BENCH_ROOT / "tasks" / "layer2"
+    return {
+        task_path.stem: task_path
+        for cat_dir in sorted(tasks_dir.iterdir())
+        if cat_dir.is_dir()
+        for task_path in sorted(cat_dir.glob("*.json"))
+    }
+
+
 @functools.lru_cache(maxsize=None)
 def _load_task(task_id: str) -> QuantTutorTask:
     """Find and load a task JSON by task_id. Cached for the duration of a run."""
-    tasks_dir = BENCH_ROOT / "tasks" / "layer2"
-    for cat_dir in tasks_dir.iterdir():
-        if cat_dir.is_dir():
-            for f in cat_dir.glob("*.json"):
-                if task_id in f.stem:
-                    with open(f) as fh:
-                        return QuantTutorTask(**json.load(fh))
-    raise FileNotFoundError(f"Task {task_id} not found")
+    task_path = _task_path_by_id()[task_id]
+    with open(task_path) as fh:
+        return QuantTutorTask(**json.load(fh))
 
 
 def _parse_conv_filename(name: str) -> dict:
