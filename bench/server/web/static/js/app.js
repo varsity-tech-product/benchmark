@@ -21,7 +21,8 @@
       bundles: null,
       bundleCache: {},
       search: '',
-      opinionFilter: 'all'
+      opinionFilter: 'all',
+      contextHidden: false
     },
     run: {
       mode: '',
@@ -2465,20 +2466,176 @@
     return renderReviewLayerPanel('judge_eval', 'Judge Evaluation', body, '<span class="meta-chip">' + escapeHtml(String(rows.length)) + ' rows</span>');
   }
 
-  function reviewOpinionCounts(opinions) {
-    var counts = {};
-    REVIEW_SECTIONS.forEach(function (section) { counts[section] = 0; });
-    (opinions || []).forEach(function (opinion) {
-      var section = opinion.section || 'overall';
-      counts[section] = (counts[section] || 0) + 1;
-    });
-    return counts;
+  function renderReviewContextPanel(layers) {
+    layers = layers || {};
+    if (state.review.contextHidden) {
+      return '' +
+        '<aside class="panel review-context-rail">' +
+          '<button id="review-context-toggle" class="btn btn-secondary btn-small review-context-toggle" type="button">Open Task Spec</button>' +
+        '</aside>';
+    }
+
+    var taskLayer = layers.task_spec || {};
+    var task = taskLayer.task || {};
+    var persona = taskLayer.persona || {};
+    var rubric = taskLayer.judge_rubric || {};
+    var calls = layers.tool_log && layers.tool_log.tool_calls ? layers.tool_log.tool_calls : [];
+    var workspace = layers.workspace || {};
+    var files = workspace.tree || [];
+    var judge = layers.judge_eval || {};
+    var rows = judge.rows || [];
+    var tracks = rubric.tracks || [];
+
+    var trackHtml = tracks.length
+      ? '<div class="detail-chip-list">' + tracks.map(function (track) {
+        return '<span class="detail-chip">' + escapeHtml((track.track || '').toUpperCase()) + ' ' +
+          escapeHtml(track.score == null ? 'pending' : formatScore(track.score)) + '</span>';
+      }).join('') + '</div>'
+      : '<p class="detail-empty-note">Rubric metadata appears after scoring completes.</p>';
+
+    var toolHtml = calls.length
+      ? '<div class="review-context-list">' + calls.map(function (call, index) {
+        var name = call.name || call.tool_name || 'tool';
+        var duration = call.duration_ms == null ? '' : formatDuration(Number(call.duration_ms) / 1000);
+        return '' +
+          '<details class="review-context-evidence">' +
+            '<summary><span>' + escapeHtml(name) + '</span><span class="meta-chip">call ' + escapeHtml(String(index)) + '</span>' +
+              (duration ? '<span class="meta-chip">' + escapeHtml(duration) + '</span>' : '') +
+            '</summary>' +
+            '<div class="review-context-evidence-body">' +
+              '<h4>Arguments</h4>' +
+              '<pre class="detail-json-block">' + escapeHtml(JSON.stringify(call.args || call.input || {}, null, 2)) + '</pre>' +
+              '<h4>Result</h4>' +
+              '<pre class="detail-json-block">' + escapeHtml(stringifyReviewValue(call.result || call.output || call.error || '')) + '</pre>' +
+            '</div>' +
+          '</details>';
+      }).join('') + '</div>'
+      : '<p class="detail-empty-note">Tool calls appear when the tutor used tools.</p>';
+
+    var diffs = workspace.diffs || [];
+    var stdout = workspace.stdout || '';
+    var stderr = workspace.stderr || '';
+    var fileHtml = files.length
+      ? '<div class="review-context-list">' + files.map(function (file) {
+        var path = file.path || file.name || '';
+        return '<div class="review-context-row"><code>' + escapeHtml(path) + '</code><span class="meta-chip">' +
+          escapeHtml(titleCase(file.kind || 'file')) + '</span></div>';
+      }).join('') + '</div>'
+      : '<p class="detail-empty-note">Archived workspace files appear here.</p>';
+    var workspaceHtml =
+      '<details open class="review-context-evidence">' +
+        '<summary>Final Tree</summary>' +
+        fileHtml +
+      '</details>' +
+      '<details class="review-context-evidence">' +
+        '<summary>Diffs</summary>' +
+        (diffs.length ? '<pre class="detail-json-block">' + escapeHtml(JSON.stringify(diffs, null, 2)) + '</pre>' : '<p class="detail-empty-note">Diff data is empty for this bundle.</p>') +
+      '</details>' +
+      '<details class="review-context-evidence">' +
+        '<summary>Stdout</summary>' +
+        (stdout ? '<pre class="detail-json-block">' + escapeHtml(stdout) + '</pre>' : '<p class="detail-empty-note">Stdout is empty for this bundle.</p>') +
+      '</details>' +
+      '<details class="review-context-evidence">' +
+        '<summary>Stderr</summary>' +
+        (stderr ? '<pre class="detail-json-block">' + escapeHtml(stderr) + '</pre>' : '<p class="detail-empty-note">Stderr is empty for this bundle.</p>') +
+      '</details>';
+
+    var judgeHtml = rows.length
+      ? '<div class="review-context-list">' + rows.map(function (row) {
+        var score = row.score == null ? 'pending' : formatScore(Number(row.score));
+        return '' +
+          '<article class="review-context-judge-row">' +
+            '<div class="review-context-row"><span>' + escapeHtml(row.criterion || row.criterion_id || 'criterion') + '</span>' +
+              '<span class="meta-chip">' + escapeHtml(score) + '</span></div>' +
+            (row.reasoning ? '<p class="detail-empty-note">' + escapeHtml(row.reasoning) + '</p>' : '<p class="detail-empty-note">Reasoning field is empty.</p>') +
+          '</article>';
+      }).join('') + '</div>'
+      : '<p class="detail-empty-note">Judge criteria appear after scoring completes.</p>';
+
+    return '' +
+      '<aside class="panel review-context-panel">' +
+        '<header class="review-layer-head">' +
+          '<div>' +
+            '<p class="eyebrow">Task Spec</p>' +
+            '<h2>Bundle Context</h2>' +
+          '</div>' +
+          '<button id="review-context-toggle" class="btn btn-secondary btn-small review-context-toggle" type="button">Hide</button>' +
+        '</header>' +
+        '<div class="review-context-stack">' +
+          '<section class="review-context-section">' +
+            '<h3>Task</h3>' +
+            '<div class="detail-meta-grid">' +
+              metaItem('Task ID', task.task_id || '') +
+              metaItem('Category', titleCase(task.category || 'unknown')) +
+              metaItem('Difficulty', titleCase(task.difficulty || 'unknown')) +
+              metaItem('Requires Code', task.requires_code ? 'Yes' : 'No') +
+            '</div>' +
+            '<div class="review-markdown review-context-markdown">' + safeRenderMarkdown(task.description || 'Task description unavailable.') + '</div>' +
+          '</section>' +
+          '<section class="review-context-section">' +
+            '<h3>Student Persona</h3>' +
+            '<div class="detail-meta-grid">' +
+              metaItem('Persona ID', persona.persona_id || '') +
+              metaItem('Knowledge Level', persona.knowledge_level || 'Unspecified') +
+            '</div>' +
+            '<p class="detail-empty-note">' + escapeHtml(persona.description || 'Persona description unavailable.') + '</p>' +
+          '</section>' +
+          '<section class="review-context-section">' +
+            '<h3>Judge Rubric</h3>' +
+            '<div class="detail-meta-grid">' +
+              metaItem('Score ID', rubric.score_id || 'Pending') +
+              metaItem('Eval Model', rubric.eval_model || 'Pending') +
+              metaItem('Eval Mode', rubric.eval_mode || 'Pending') +
+              metaItem('Validation Run', rubric.judge_validation_run || 'Pending') +
+            '</div>' +
+            trackHtml +
+          '</section>' +
+          '<details class="review-context-details">' +
+            '<summary>Tool Log</summary>' +
+            toolHtml +
+          '</details>' +
+          '<details class="review-context-details">' +
+            '<summary>Workspace State</summary>' +
+            workspaceHtml +
+          '</details>' +
+          '<details class="review-context-details">' +
+            '<summary>Judge Evaluation</summary>' +
+            '<div class="detail-meta-grid">' +
+              metaItem('Status', titleCase(judge.status || 'pending')) +
+              metaItem('Overall Score', judge.overall_score == null ? 'Pending' : formatScore(judge.overall_score)) +
+            '</div>' +
+            judgeHtml +
+            '<details class="review-context-evidence">' +
+              '<summary>Raw Score JSON</summary>' +
+              renderJsonBlock(judge.score_json) +
+            '</details>' +
+          '</details>' +
+        '</div>' +
+      '</aside>';
+  }
+
+  function renderReviewChatPanel(layers, detail) {
+    layers = layers || {};
+    detail = detail || {};
+    var conversation = layers.conversation && layers.conversation.turns ? layers.conversation.turns : [];
+    return '' +
+      '<main class="panel review-chat-panel">' +
+        '<header class="review-layer-head">' +
+          '<div>' +
+            '<p class="eyebrow">Conversation</p>' +
+            '<h2>Assistant / Student Chat</h2>' +
+          '</div>' +
+          '<div class="review-layer-actions">' +
+            '<span class="meta-chip">' + escapeHtml(String(conversation.length || detail.turn_count || 0)) + ' turns</span>' +
+          '</div>' +
+        '</header>' +
+        '<div id="review-chat" class="chat-area review-chat-area"></div>' +
+      '</main>';
   }
 
   function renderReviewOpinionPanel(bundle) {
     var review = bundle.review || {};
     var opinions = review.opinions || [];
-    var counts = reviewOpinionCounts(opinions);
     var filter = state.review.opinionFilter || 'all';
     var visible = opinions.filter(function (opinion) {
       return filter === 'all' || opinion.section === filter;
@@ -2487,12 +2644,6 @@
       return '<option value="' + escapeHtml(section) + '"' + (filter === section ? ' selected' : '') + '>' +
         escapeHtml(reviewSectionLabel(section)) + '</option>';
     })).join('');
-    var slots = REVIEW_SECTIONS.map(function (section) {
-      return '<div class="review-slot">' +
-        '<span>' + escapeHtml(reviewSectionLabel(section)) + '</span>' +
-        '<strong>' + escapeHtml(String(counts[section] || 0)) + '</strong>' +
-      '</div>';
-    }).join('');
     return '' +
       '<aside class="panel review-opinion-panel">' +
         '<header class="review-layer-head">' +
@@ -2500,9 +2651,8 @@
             '<p class="eyebrow">Opinion Cards</p>' +
             '<h2>Structured Feedback</h2>' +
           '</div>' +
-          reviewAddButton('overall', 'Add Overall Card') +
         '</header>' +
-        '<div class="review-slot-grid">' + slots + '</div>' +
+        renderReviewOpinionForm() +
         '<label class="filter-field">' +
           '<span class="filter-label">Section Filter</span>' +
           '<select id="review-opinion-filter" class="filter-select">' + options + '</select>' +
@@ -2511,6 +2661,81 @@
           (visible.length ? visible.map(renderReviewOpinionCard).join('') : '<p class="detail-empty-note">Cards for the selected section will appear here.</p>') +
         '</div>' +
       '</aside>';
+  }
+
+  function renderReviewOpinionForm() {
+    var sectionOptions = REVIEW_SECTIONS.map(function (section) {
+      return '<option value="' + escapeHtml(section) + '"' + (section === 'overall' ? ' selected' : '') + '>' +
+        escapeHtml(reviewSectionLabel(section)) + '</option>';
+    }).join('');
+    var targetOptions = [
+      ['none', 'Section-level'],
+      ['turn_index', 'Turn'],
+      ['tool_call_index', 'Tool Call'],
+      ['file_path', 'File Path'],
+      ['criterion_id', 'Criterion']
+    ].map(function (item) {
+      return '<option value="' + item[0] + '">' + item[1] + '</option>';
+    }).join('');
+
+    return '' +
+      '<section class="review-opinion-editor">' +
+        '<div class="review-editor-title">' +
+          '<p class="eyebrow">Human Review Edit</p>' +
+          '<h3>New Opinion Card</h3>' +
+        '</div>' +
+        '<form id="review-opinion-form" class="review-opinion-form review-inline-form">' +
+          '<label class="filter-field">' +
+            '<span class="filter-label">Section</span>' +
+            '<select id="review-card-section" class="filter-select" required>' + sectionOptions + '</select>' +
+          '</label>' +
+          '<label class="filter-field">' +
+            '<span class="filter-label">Comment</span>' +
+            '<textarea id="review-card-comment" class="run-textarea" rows="5" required></textarea>' +
+          '</label>' +
+          '<details class="review-advanced-fields">' +
+            '<summary>Advanced Metadata</summary>' +
+            '<div class="review-form-grid">' +
+              '<label class="filter-field">' +
+                '<span class="filter-label">Target Type</span>' +
+                '<select id="review-card-target-type" class="filter-select">' + targetOptions + '</select>' +
+              '</label>' +
+              '<label class="filter-field">' +
+                '<span class="filter-label">Target</span>' +
+                '<select id="review-card-target-value" class="filter-select" disabled>' +
+                  '<option value="">Section-level</option>' +
+                '</select>' +
+              '</label>' +
+            '</div>' +
+            '<label class="filter-field">' +
+              '<span class="filter-label">Severity</span>' +
+              '<select id="review-card-severity" class="filter-select">' +
+                '<option value="info">Info</option>' +
+                '<option value="concern">Concern</option>' +
+                '<option value="blocker">Blocker</option>' +
+              '</select>' +
+            '</label>' +
+            '<label class="filter-field">' +
+              '<span class="filter-label">Tags</span>' +
+              '<input id="review-card-tags" class="filter-input" type="text" placeholder="rubric_mismatch, persona_break">' +
+            '</label>' +
+            '<div id="review-judge-disagreement" class="review-form-grid">' +
+              '<label class="filter-field">' +
+                '<span class="filter-label">Judge Score</span>' +
+                '<input id="review-card-judge-score" class="filter-input" type="number" step="0.01">' +
+              '</label>' +
+              '<label class="filter-field">' +
+                '<span class="filter-label">Human Score</span>' +
+                '<input id="review-card-human-score" class="filter-input" type="number" step="0.01">' +
+              '</label>' +
+            '</div>' +
+          '</details>' +
+          '<div id="review-card-error" class="run-error" hidden></div>' +
+          '<div class="run-actions">' +
+            '<button class="btn btn-primary" type="submit">Save Card</button>' +
+          '</div>' +
+        '</form>' +
+      '</section>';
   }
 
   function renderReviewOpinionCard(opinion) {
@@ -2540,6 +2765,34 @@
     return 'Target: section-level';
   }
 
+  function relabelReviewChat(container) {
+    Array.prototype.forEach.call(container.querySelectorAll('.msg.tutor .msg-label'), function (label) {
+      label.textContent = 'Assistant';
+    });
+    Array.prototype.forEach.call(container.querySelectorAll('.msg.student .msg-label'), function (label) {
+      label.textContent = 'Student';
+    });
+  }
+
+  function renderReviewChatReplay(bundle) {
+    var layers = bundle.layers || {};
+    var detail = bundle.detail || {};
+    var conversation = layers.conversation && layers.conversation.turns ? layers.conversation.turns : (detail.conversation || []);
+    var toolLogs = layers.tool_log && layers.tool_log.tool_calls ? layers.tool_log.tool_calls : (detail.tool_logs || []);
+    var sendMessageEvents = detail.send_message_events || [];
+    var chatEl = document.getElementById('review-chat');
+    if (!chatEl) return;
+
+    if (window.QTB && typeof window.QTB.buildConversationReplay === 'function') {
+      window.QTB.buildConversationReplay(chatEl, conversation, toolLogs, sendMessageEvents);
+      relabelReviewChat(chatEl);
+      rewriteImages(chatEl, bundle.bundle_id || detail.session_id);
+      return;
+    }
+
+    chatEl.innerHTML = '<p class="detail-empty-note">Conversation renderer unavailable.</p>';
+  }
+
   function renderReviewBundlePage(bundle) {
     var layers = bundle.layers || {};
     var detail = bundle.detail || {};
@@ -2558,33 +2811,24 @@
             buildSummaryPill('Score', detail.overall_score == null ? 'Pending' : formatScore(detail.overall_score)) +
           '</div>' +
         '</header>' +
-        '<div class="review-layout">' +
-          '<main class="review-layer-stack">' +
-            renderReviewTaskSpec(layers.task_spec) +
-            renderReviewConversation(layers.conversation) +
-            renderReviewToolLog(layers.tool_log) +
-            renderReviewWorkspace(layers.workspace) +
-            renderReviewJudgeEval(layers.judge_eval) +
-          '</main>' +
+        '<div class="review-layout' + (state.review.contextHidden ? ' is-context-hidden' : '') + '">' +
+          renderReviewContextPanel(layers) +
+          renderReviewChatPanel(layers, detail) +
           renderReviewOpinionPanel(bundle) +
         '</div>' +
       '</section>';
-    rewriteImages(app.querySelector('.review-layer-stack'), bundle.bundle_id || detail.session_id);
+    renderReviewChatReplay(bundle);
     bindReviewBundleControls(bundle);
   }
 
   function bindReviewBundleControls(bundle) {
-    Array.prototype.forEach.call(document.querySelectorAll('.review-add-btn'), function (button) {
-      button.addEventListener('click', function () {
-        var targetType = button.getAttribute('data-target-type') || '';
-        var targetValue = button.getAttribute('data-target-value') || '';
-        openReviewOpinionModal(bundle, {
-          section: button.getAttribute('data-section') || 'overall',
-          targetType: targetType,
-          targetValue: targetValue
-        });
+    var contextToggle = document.getElementById('review-context-toggle');
+    if (contextToggle) {
+      contextToggle.addEventListener('click', function () {
+        state.review.contextHidden = !state.review.contextHidden;
+        renderReviewBundlePage(bundle);
       });
-    });
+    }
     var filter = document.getElementById('review-opinion-filter');
     if (filter) {
       filter.addEventListener('change', function (event) {
@@ -2592,78 +2836,83 @@
         renderReviewBundlePage(bundle);
       });
     }
+    bindReviewOpinionForm(bundle);
   }
 
-  function openReviewOpinionModal(bundle, preset) {
-    preset = preset || {};
-    var sectionOptions = REVIEW_SECTIONS.map(function (section) {
-      return '<option value="' + escapeHtml(section) + '"' + (preset.section === section ? ' selected' : '') + '>' +
-        escapeHtml(reviewSectionLabel(section)) + '</option>';
-    }).join('');
-    var targetOptions = [
-      ['none', 'Section-level'],
-      ['turn_index', 'Turn'],
-      ['tool_call_index', 'Tool Call'],
-      ['file_path', 'File Path'],
-      ['criterion_id', 'Criterion']
-    ].map(function (item) {
-      return '<option value="' + item[0] + '"' + (preset.targetType === item[0] ? ' selected' : '') + '>' + item[1] + '</option>';
-    }).join('');
-    var html =
-      '<form id="review-opinion-form" class="review-opinion-form">' +
-        '<label class="filter-field">' +
-          '<span class="filter-label">Section</span>' +
-          '<select id="review-card-section" class="filter-select" required>' + sectionOptions + '</select>' +
-        '</label>' +
-        '<div class="review-form-grid">' +
-          '<label class="filter-field">' +
-            '<span class="filter-label">Target Type</span>' +
-            '<select id="review-card-target-type" class="filter-select">' + targetOptions + '</select>' +
-          '</label>' +
-          '<label class="filter-field">' +
-            '<span class="filter-label">Target</span>' +
-            '<input id="review-card-target-value" class="filter-input" type="text" value="' + escapeHtml(preset.targetValue || '') + '">' +
-          '</label>' +
-        '</div>' +
-        '<label class="filter-field">' +
-          '<span class="filter-label">Severity</span>' +
-          '<select id="review-card-severity" class="filter-select">' +
-            '<option value="info">Info</option>' +
-            '<option value="concern">Concern</option>' +
-            '<option value="blocker">Blocker</option>' +
-          '</select>' +
-        '</label>' +
-        '<label class="filter-field">' +
-          '<span class="filter-label">Tags</span>' +
-          '<input id="review-card-tags" class="filter-input" type="text" placeholder="rubric_mismatch, persona_break">' +
-        '</label>' +
-        '<div id="review-judge-disagreement" class="review-form-grid">' +
-          '<label class="filter-field">' +
-            '<span class="filter-label">Judge Score</span>' +
-            '<input id="review-card-judge-score" class="filter-input" type="number" step="0.01">' +
-          '</label>' +
-          '<label class="filter-field">' +
-            '<span class="filter-label">Human Score</span>' +
-            '<input id="review-card-human-score" class="filter-input" type="number" step="0.01">' +
-          '</label>' +
-        '</div>' +
-        '<label class="filter-field">' +
-          '<span class="filter-label">Comment</span>' +
-          '<textarea id="review-card-comment" class="run-textarea" rows="5" required></textarea>' +
-        '</label>' +
-        '<div id="review-card-error" class="run-error" hidden></div>' +
-        '<div class="run-actions">' +
-          '<button class="btn btn-primary" type="submit">Save Card</button>' +
-        '</div>' +
-      '</form>';
-    showModal('Opinion Card', html);
-    bindReviewOpinionForm(bundle);
+  function truncateReviewOption(value, limit) {
+    var text = String(value || '').replace(/\s+/g, ' ').trim();
+    if (text.length <= limit) return text;
+    return text.slice(0, limit - 3) + '...';
+  }
+
+  function reviewTargetOptionGroups(bundle) {
+    var layers = bundle.layers || {};
+    var detail = bundle.detail || {};
+    var conversation = layers.conversation && layers.conversation.turns ? layers.conversation.turns : (detail.conversation || []);
+    var calls = layers.tool_log && layers.tool_log.tool_calls ? layers.tool_log.tool_calls : (detail.tool_logs || []);
+    var files = layers.workspace && layers.workspace.tree ? layers.workspace.tree : [];
+    var rows = layers.judge_eval && layers.judge_eval.rows ? layers.judge_eval.rows : [];
+
+    return {
+      none: [{value: '', label: 'Section-level'}],
+      turn_index: conversation.map(function (turn, index) {
+        var role = turn.role === 'user' || turn.role === 'student' ? 'Student' : 'Assistant';
+        return {
+          value: String(index),
+          label: 'Turn ' + index + ' - ' + role + ' - ' + truncateReviewOption(turn.content || turn.message || '', 72)
+        };
+      }),
+      tool_call_index: calls.map(function (call, index) {
+        return {
+          value: String(index),
+          label: 'Call ' + index + ' - ' + (call.name || call.tool_name || 'tool')
+        };
+      }),
+      file_path: files.map(function (file) {
+        var path = file.path || file.name || '';
+        return {value: path, label: path};
+      }).filter(function (item) { return item.value; }),
+      criterion_id: rows.map(function (row) {
+        var id = row.criterion_id || '';
+        var label = row.criterion || id || 'criterion';
+        return {value: id, label: id ? id + ' - ' + label : label};
+      }).filter(function (item) { return item.value; })
+    };
+  }
+
+  function populateReviewTargetOptions(groups) {
+    var targetType = document.getElementById('review-card-target-type');
+    var targetValue = document.getElementById('review-card-target-value');
+    if (!targetType || !targetValue) return;
+
+    var type = targetType.value || 'none';
+    var options = groups[type] || [];
+    targetValue.innerHTML = '';
+
+    if (!options.length) {
+      var empty = document.createElement('option');
+      empty.value = '';
+      empty.textContent = type === 'none' ? 'Section-level' : 'No targets available';
+      targetValue.appendChild(empty);
+      targetValue.disabled = true;
+      return;
+    }
+
+    options.forEach(function (item) {
+      var option = document.createElement('option');
+      option.value = item.value;
+      option.textContent = item.label || item.value || 'Section-level';
+      targetValue.appendChild(option);
+    });
+    targetValue.disabled = type === 'none';
   }
 
   function bindReviewOpinionForm(bundle) {
     var form = document.getElementById('review-opinion-form');
     var section = document.getElementById('review-card-section');
+    var targetType = document.getElementById('review-card-target-type');
     var judgeBlock = document.getElementById('review-judge-disagreement');
+    var targetGroups = reviewTargetOptionGroups(bundle);
 
     function syncJudgeFields() {
       if (!judgeBlock || !section) return;
@@ -2671,7 +2920,13 @@
     }
 
     if (section) section.addEventListener('change', syncJudgeFields);
+    if (targetType) {
+      targetType.addEventListener('change', function () {
+        populateReviewTargetOptions(targetGroups);
+      });
+    }
     syncJudgeFields();
+    populateReviewTargetOptions(targetGroups);
     if (!form) return;
     form.addEventListener('submit', function (event) {
       event.preventDefault();
@@ -2697,7 +2952,7 @@
       tags: String(tags ? tags.value : '').split(',').map(function (item) { return item.trim(); }).filter(Boolean),
       comment: String(comment ? comment.value : '').trim()
     };
-    if (payload.section === 'judge_eval') {
+    if (payload.section === 'judge_eval' && ((judgeScore && judgeScore.value) || (humanScore && humanScore.value))) {
       payload.judge_disagreement = {
         judge_score: judgeScore ? judgeScore.value : '',
         human_score: humanScore ? humanScore.value : ''
@@ -2710,7 +2965,6 @@
     }).then(function (updated) {
       state.review.bundleCache[updated.bundle_id] = updated;
       state.review.bundles = null;
-      closeModal();
       renderReviewBundlePage(updated);
     }).catch(function (error) {
       if (errorEl) {
