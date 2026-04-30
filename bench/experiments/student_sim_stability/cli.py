@@ -285,6 +285,30 @@ def _make_parser() -> argparse.ArgumentParser:
     human.add_argument("--compute", action="store_true")
     human.add_argument("--labels", type=Path, default=None)
 
+    human_extend = sub.add_parser(
+        "human-alignment-extend",
+        help="Extend the human-alignment sample pool to per-cell targets",
+    )
+    human_extend.add_argument(
+        "--target",
+        required=True,
+        help="DIM=N[,DIM=N...] or, with --dimension, scalar N / DIM=N",
+    )
+    human_extend.add_argument(
+        "--key-fields",
+        default="dimension,persona_id,model",
+        help="Comma-separated cell key fields (default: dimension,persona_id,model)",
+    )
+    human_extend.add_argument(
+        "--dimension",
+        choices=tuple(DIMENSION_TO_FILE),
+        default=None,
+        help="Restrict candidates to one dimension",
+    )
+    human_extend.add_argument("--seed", type=int, default=2026)
+    _add_output_arg(human_extend)
+    human_extend.add_argument("--dry-run", action="store_true")
+
     agreement = sub.add_parser("judge-agreement", help="Compute multi-judge agreement")
     _add_output_arg(agreement)
 
@@ -969,6 +993,26 @@ def main() -> int:
                 sample_limit=args.sample_limit,
             )
             print(json.dumps(manifest, indent=2, ensure_ascii=False))
+        return 0
+
+    if args.command == "human-alignment-extend":
+        from experiments.student_sim_stability.analysis.human_alignment import (
+            extend_alignment_pool,
+        )
+
+        try:
+            report = extend_alignment_pool(
+                _results_dir(args.output_dir),
+                target=args.target,
+                key_fields=args.key_fields,
+                dimension=args.dimension,
+                seed=args.seed,
+                dry_run=args.dry_run,
+            )
+        except (FileNotFoundError, ValueError) as exc:
+            print(f"ERROR: {exc}", file=sys.stderr)
+            return 2
+        print(json.dumps(report, indent=2, ensure_ascii=False))
         return 0
 
     if args.command == "judge-agreement":

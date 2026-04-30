@@ -34,6 +34,7 @@ from experiments.student_sim_stability.core.io_utils import (  # noqa: E402
     load_json,
 )
 from experiments.student_sim_stability.core.rubrics import (  # noqa: E402
+    DIMENSION_TO_FILE,
     primary_score_field,
 )
 
@@ -117,6 +118,9 @@ DEFAULT_SAMPLE_PLAN: dict[str, dict[str, int]] = {
         "fullstack_practitioner": 4,
     },
 }
+
+DEFAULT_EXTENSION_KEY_FIELDS = ("dimension", "persona_id", "model")
+ALIGNMENT_SAMPLE_FIELDS = frozenset((*LABEL_FIELDS, "judge_input_file"))
 
 
 def _as_float(value: object) -> float | None:
@@ -280,7 +284,170 @@ def _stratified_sample(
     return samples
 
 
-def _write_llm_label_snapshot(out: Path, samples: list[dict]) -> dict:
+def _valid_dimensions_label() -> str:
+    return ", ".join(DIMENSION_TO_FILE)
+
+
+def parse_alignment_target_spec(
+    target_spec: str,
+    *,
+    dimension: str | None = None,
+) -> dict[str, int]:
+    """Parse the D2 ``--target`` grammar into ``{dimension: quota}``."""
+    valid_dims = set(DIMENSION_TO_FILE)
+    chosen_dimension = dimension.strip() if dimension else None
+    if chosen_dimension and chosen_dimension not in valid_dims:
+        raise ValueError(
+            f"unknown --dimension {chosen_dimension!r}; expected one of "
+            f"{_valid_dimensions_label()}"
+        )
+
+    spec = target_spec.strip()
+    if not spec:
+        raise ValueError("--target must not be empty")
+
+    def parse_quota(raw: str, context: str) -> int:
+        try:
+            value = int(raw)
+        except ValueError as exc:
+            raise ValueError(
+                f"invalid --target quota for {context}: {raw!r}; expected integer"
+            ) from exc
+        if value < 0:
+            raise ValueError(
+                f"invalid --target quota for {context}: {raw!r}; expected >= 0"
+            )
+        return value
+
+    if "=" not in spec:
+        if not chosen_dimension:
+            raise ValueError(
+                "--target must use DIM=N[,DIM=N...] when --dimension is omitted"
+            )
+        return {chosen_dimension: parse_quota(spec, chosen_dimension)}
+
+    targets: dict[str, int] = {}
+    for raw_part in spec.split(","):
+        part = raw_part.strip()
+        if not part:
+            raise ValueError("--target contains an empty DIM=N entry")
+        if "=" not in part:
+            raise ValueError(
+                f"invalid --target entry {part!r}; expected DIM=N comma form"
+            )
+        dim_raw, quota_raw = part.split("=", 1)
+        dim = dim_raw.strip()
+        if dim in targets:
+            raise ValueError(f"duplicate dimension in --target: {dim}")
+        if dim not in valid_dims:
+            raise ValueError(
+                f"unknown dimension in --target: {dim!r}; expected one of "
+                f"{_valid_dimensions_label()}"
+            )
+        targets[dim] = parse_quota(quota_raw.strip(), dim)
+
+    if chosen_dimension and set(targets) != {chosen_dimension}:
+        got = ", ".join(targets)
+        raise ValueError(
+            "--dimension/--target mismatch: "
+            f"--dimension {chosen_dimension} requires --target {chosen_dimension}=N; "
+            f"got {got}"
+        )
+    return targets
+
+
+def parse_alignment_key_fields(key_fields: str | Iterable[str]) -> tuple[str, ...]:
+    if isinstance(key_fields, str):
+        fields = tuple(
+            field.strip() for field in key_fields.split(",") if field.strip()
+        )
+    else:
+        fields = tuple(str(field).strip() for field in key_fields if str(field).strip())
+    if not fields:
+        raise ValueError("--key-fields must include at least one field")
+    if len(fields) > 3:
+        raise ValueError("--key-fields accepts at most three comma-separated fields")
+    duplicates = sorted({field for field in fields if fields.count(field) > 1})
+    if duplicates:
+        raise ValueError(f"duplicate field in --key-fields: {', '.join(duplicates)}")
+    unknown = [field for field in fields if field not in ALIGNMENT_SAMPLE_FIELDS]
+    if unknown:
+        allowed = ", ".join(sorted(ALIGNMENT_SAMPLE_FIELDS))
+        raise ValueError(
+            f"unknown field in --key-fields: {', '.join(unknown)}; "
+            f"expected one of {allowed}"
+        )
+    return fields
+
+
+def _alignment_sample_from_input(path: Path, payload: dict) -> dict | None:
+    metadata = payload.get("metadata") or {}
+    dimension = str(payload.get("dimension") or "").strip()
+    eval_id = str(payload.get("eval_id") or path.stem).strip()
+    if not (dimension and eval_id):
+        return None
+    return {
+        "eval_id": eval_id,
+        "dimension": dimension,
+        "source_file": metadata.get("source_file")
+        or metadata.get("persona_source_file")
+        or "",
+        "persona_id": metadata.get("persona_id") or "",
+        "task_id": metadata.get("task_id") or "",
+        "model": metadata.get("model") or "",
+        "judge_input_file": path.name,
+    }
+
+
+def _cell_key(sample: dict, key_fields: tuple[str, ...]) -> tuple[str, ...]:
+    return tuple(str(sample.get(field) or "") for field in key_fields)
+
+
+def _cell_payload(key_fields: tuple[str, ...], key: tuple[str, ...]) -> dict[str, str]:
+    return dict(zip(key_fields, key))
+
+
+def _read_human_label_csv(path: Path) -> tuple[list[str], list[dict[str, str]]]:
+    if not path.exists():
+        raise FileNotFoundError(f"human label CSV not found: {path}")
+    with open(path, encoding="utf-8", newline="") as fh:
+        reader = csv.DictReader(fh)
+        header = list(reader.fieldnames or LABEL_FIELDS)
+        rows = [dict(row) for row in reader]
+    return header, rows
+
+
+def _write_human_label_csv(
+    path: Path,
+    *,
+    header: list[str],
+    existing_rows: list[dict[str, str]],
+    new_samples: list[dict],
+) -> int:
+    existing_csv_eids = {str(row.get("eval_id") or "") for row in existing_rows}
+    appended = 0
+    rows = list(existing_rows)
+    for sample in new_samples:
+        if sample["eval_id"] in existing_csv_eids:
+            continue
+        row = {col: "" for col in header}
+        for col in header:
+            if col in sample:
+                row[col] = sample.get(col) or ""
+        rows.append(row)
+        existing_csv_eids.add(sample["eval_id"])
+        appended += 1
+
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    with open(tmp, "w", encoding="utf-8", newline="") as fh:
+        writer = csv.DictWriter(fh, fieldnames=header)
+        writer.writeheader()
+        writer.writerows(rows)
+    tmp.replace(path)
+    return appended
+
+
+def write_llm_label_snapshot(out: Path, samples: list[dict]) -> dict:
     """Snapshot the LLM judges' labels for the chosen samples — three judges
     if available, plus the panel-3 mean already computed in the aggregate.
     """
@@ -336,6 +503,188 @@ def _write_llm_label_snapshot(out: Path, samples: list[dict]) -> dict:
     return snapshot
 
 
+def extend_alignment_pool(
+    results_dir: Path | None = None,
+    *,
+    target: str,
+    key_fields: str | Iterable[str] = DEFAULT_EXTENSION_KEY_FIELDS,
+    dimension: str | None = None,
+    seed: int = 2026,
+    dry_run: bool = False,
+) -> dict:
+    """Extend human-alignment samples to per-dimension per-cell targets.
+
+    Target parsing follows the locked D2 CLI semantics: ``target`` becomes a
+    canonical ``{dimension: per_cell_quota}`` map, while ``key_fields`` only
+    controls cell composition inside each dimension.
+    """
+    out = results_dir or default_results_dir()
+    if not out.is_absolute():
+        out = BENCH_ROOT / out
+    align_dir = out / "human_alignment"
+    input_dir = out / "judge_inputs"
+    manifest_path = align_dir / "sample_manifest.json"
+    csv_path = align_dir / "human_label_template.csv"
+
+    target_per_cell = parse_alignment_target_spec(target, dimension=dimension)
+    parsed_key_fields = parse_alignment_key_fields(key_fields)
+
+    if not manifest_path.exists():
+        raise FileNotFoundError(f"human alignment manifest not found: {manifest_path}")
+    if not input_dir.exists():
+        raise FileNotFoundError(f"judge input directory not found: {input_dir}")
+
+    manifest = load_json(manifest_path)
+    existing_samples = list(manifest.get("samples") or [])
+    existing_ids = {str(sample.get("eval_id") or "") for sample in existing_samples}
+
+    existing_count: dict[tuple[str, tuple[str, ...]], int] = defaultdict(int)
+    known_cells: dict[str, set[tuple[str, ...]]] = defaultdict(set)
+    for sample in existing_samples:
+        dim = str(sample.get("dimension") or "").strip()
+        if dim not in target_per_cell:
+            continue
+        key = _cell_key(sample, parsed_key_fields)
+        known_cells[dim].add(key)
+        existing_count[(dim, key)] += 1
+
+    candidate_pool: dict[tuple[str, tuple[str, ...]], list[dict]] = defaultdict(list)
+    for path in sorted(input_dir.glob("*.json")):
+        try:
+            payload = load_json(path)
+        except (OSError, json.JSONDecodeError):
+            continue
+        sample = _alignment_sample_from_input(path, payload)
+        if not sample:
+            continue
+        dim = sample["dimension"]
+        if dim not in target_per_cell:
+            continue
+        key = _cell_key(sample, parsed_key_fields)
+        known_cells[dim].add(key)
+        if sample["eval_id"] not in existing_ids:
+            candidate_pool[(dim, key)].append(sample)
+
+    rng = random.Random(seed)
+    new_samples: list[dict] = []
+    cell_reports: list[dict] = []
+    warnings: list[str] = []
+    for dim, target_n in target_per_cell.items():
+        for key in sorted(known_cells.get(dim, set())):
+            existing_n = existing_count.get((dim, key), 0)
+            needed = max(0, target_n - existing_n)
+            pool = candidate_pool.get((dim, key), [])
+            selected: list[dict] = []
+            status = "ok"
+            if needed > 0:
+                if not pool:
+                    status = "no_candidates"
+                    warnings.append(
+                        "no candidates for "
+                        f"dimension={dim} cell={_cell_payload(parsed_key_fields, key)} "
+                        f"(existing={existing_n}, need={needed})"
+                    )
+                else:
+                    shuffled = list(pool)
+                    rng.shuffle(shuffled)
+                    selected = shuffled[: min(needed, len(shuffled))]
+                    new_samples.extend(selected)
+                    status = "would_add" if len(selected) == needed else "shortfall"
+                    if len(selected) < needed:
+                        warnings.append(
+                            "pool shortfall for "
+                            f"dimension={dim} cell={_cell_payload(parsed_key_fields, key)} "
+                            f"(existing={existing_n}, need={needed}, "
+                            f"available={len(pool)}, selected={len(selected)})"
+                        )
+            cell_reports.append(
+                {
+                    "dimension": dim,
+                    "cell": _cell_payload(parsed_key_fields, key),
+                    "existing": existing_n,
+                    "target": target_n,
+                    "needed": needed,
+                    "available_candidates": len(pool),
+                    "selected": len(selected),
+                    "status": status,
+                }
+            )
+
+    for warning in warnings:
+        print(f"WARNING: {warning}", file=sys.stderr)
+
+    combined_samples = existing_samples + new_samples
+    by_dimension: dict[str, dict[str, int]] = {}
+    for dim in target_per_cell:
+        existing_dim = sum(
+            1 for sample in existing_samples if sample.get("dimension") == dim
+        )
+        added_dim = sum(1 for sample in new_samples if sample.get("dimension") == dim)
+        by_dimension[dim] = {
+            "existing": existing_dim,
+            "added": added_dim,
+            "final": existing_dim + added_dim,
+        }
+
+    report = {
+        "human_alignment_status": "extension_dry_run" if dry_run else "extended",
+        "schema_version": "human_alignment_v2",
+        "results_dir": str(out),
+        "dry_run": dry_run,
+        "target_per_cell": target_per_cell,
+        "key_fields": list(parsed_key_fields),
+        "dimension": dimension,
+        "seed": seed,
+        "existing_sample_count": len(existing_samples),
+        "new_sample_count": len(new_samples),
+        "final_sample_count": len(combined_samples),
+        "by_dimension": by_dimension,
+        "warnings": warnings,
+        "cells": cell_reports,
+        "writes": {
+            "sample_manifest": False,
+            "human_label_template": False,
+            "llm_judge_labels": False,
+        },
+    }
+    if dry_run:
+        return report
+
+    header, existing_rows = _read_human_label_csv(csv_path)
+    new_manifest = dict(manifest)
+    new_manifest.update(
+        {
+            "human_alignment_status": "sampled",
+            "schema_version": "human_alignment_v2",
+            "sample_limit": len(combined_samples),
+            "sample_count": len(combined_samples),
+            "extension_target_per_cell": target_per_cell,
+            "extension_key_fields": list(parsed_key_fields),
+            "extension_dimension": dimension,
+            "extension_seed": seed,
+            "extension_added": len(new_samples),
+            "samples": combined_samples,
+        }
+    )
+    atomic_write_json(manifest_path, new_manifest)
+    appended = _write_human_label_csv(
+        csv_path,
+        header=header,
+        existing_rows=existing_rows,
+        new_samples=new_samples,
+    )
+    snapshot = write_llm_label_snapshot(out, combined_samples)
+    report["writes"] = {
+        "sample_manifest": str(manifest_path),
+        "human_label_template": str(csv_path),
+        "llm_judge_labels": str(align_dir / "llm_judge_labels.json"),
+    }
+    report["csv_rows_appended"] = appended
+    report["llm_label_count"] = snapshot["llm_label_count"]
+    report["missing_judge_outputs"] = snapshot["missing_judge_outputs"]
+    return report
+
+
 def init_human_alignment(
     results_dir: Path | None = None,
     sample_limit: int = 40,
@@ -351,7 +700,7 @@ def init_human_alignment(
     input_dir = out / "judge_inputs"
     plan = sample_plan or DEFAULT_SAMPLE_PLAN
     samples = _stratified_sample(input_dir, plan)
-    llm_snapshot = _write_llm_label_snapshot(out, samples)
+    llm_snapshot = write_llm_label_snapshot(out, samples)
 
     status = "sampled" if samples else "not_run"
     manifest = {
