@@ -512,9 +512,28 @@ h1 {
 }
 
 .task-class-toggle {
-  min-height: 34px;
-  padding: 7px 11px;
-  font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.72);
+  color: var(--accent-strong);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 850;
+  line-height: 1;
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease), border-color var(--duration-fast) var(--ease), box-shadow var(--duration-fast) var(--ease);
+}
+
+.task-class-toggle:hover {
+  border-color: rgba(179, 92, 30, 0.42);
+  background: rgba(246, 222, 196, 0.42);
+  box-shadow: 0 6px 14px rgba(179, 92, 30, 0.1);
 }
 
 .task-class-list {

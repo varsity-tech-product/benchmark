@@ -674,8 +674,8 @@
     var classPanelHidden = Boolean(state.taskCatalog.classPanelHidden);
     var layoutClass = 'task-catalog-layout' + (classPanelHidden ? ' is-task-class-hidden' : '');
     var taskClassToggle = classPanelHidden
-      ? '<button class="btn btn-secondary task-class-toggle" type="button" aria-expanded="false">Open Task Class</button>'
-      : '<button class="btn btn-secondary task-class-toggle" type="button" aria-expanded="true">Hide</button>';
+      ? '<button class="task-class-toggle" type="button" aria-expanded="false" aria-label="Open task class" title="Open task class"><span aria-hidden="true">&#9654;</span></button>'
+      : '<button class="task-class-toggle" type="button" aria-expanded="true" aria-label="Hide task class" title="Hide task class"><span aria-hidden="true">&#9664;</span></button>';
 
     app.innerHTML =
       '<section class="page">' +
