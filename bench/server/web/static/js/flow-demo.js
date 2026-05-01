@@ -218,9 +218,7 @@
     var status = displayStatus(run);
     var conversation = run.conversation || [];
     var logs = run.recent_tool_logs || [];
-    var href = run.status === 'completed' && run.session_id
-      ? '#/review/' + encodeURIComponent(run.session_id)
-      : '';
+    var href = runHref(run, status);
     var tag = href ? 'a' : 'article';
     var open = href ? ' href="' + href + '"' : '';
 
@@ -250,6 +248,16 @@
         '</div>' +
         previewHtml(run) +
       '</' + tag + '>';
+  }
+
+  function runHref(run, status) {
+    if (status === 'completed' && run.session_id) {
+      return '#/review/' + encodeURIComponent(run.session_id);
+    }
+    if (LIVE_STATUSES[status] && run.run_id) {
+      return '#/run/' + encodeURIComponent(run.run_id);
+    }
+    return '';
   }
 
   function previewHtml(run) {

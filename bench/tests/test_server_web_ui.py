@@ -872,10 +872,14 @@ class HttpAppSmokeTests(unittest.TestCase):
 
         index_response = client.get("/")
         script_response = client.get("/static/js/app.js")
+        flow_response = client.get("/static/js/flow-demo.js")
+        run_agent_response = client.get("/static/js/run-agent.js")
         render_response = client.get("/static/js/render.js")
 
         self.assertEqual(index_response.status_code, 200)
         self.assertEqual(script_response.status_code, 200)
+        self.assertEqual(flow_response.status_code, 200)
+        self.assertEqual(run_agent_response.status_code, 200)
         self.assertEqual(render_response.status_code, 200)
         review_response = client.get("/review")
         review_detail_response = client.get("/review/demo-bundle")
@@ -889,6 +893,10 @@ class HttpAppSmokeTests(unittest.TestCase):
         self.assertIn('href="#/review"', index_response.text)
         self.assertIn('data-route="review"', index_response.text)
         self.assertIn('data-route="run"', index_response.text)
+        self.assertIn("#/run/", flow_response.text)
+        self.assertIn("route.indexOf('/run/')", script_response.text)
+        self.assertIn("renderRunMonitorPage", run_agent_response.text)
+        self.assertIn("retrying", run_agent_response.text)
         self.assertIn("Isolated UI", index_response.text)
 
 

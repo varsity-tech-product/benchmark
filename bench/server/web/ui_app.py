@@ -702,7 +702,7 @@ def ui_routes(manager) -> list[Route]:
             return JSONResponse({"error": "Run service not initialized"}, 503)
 
         run_id = request.path_params["run_id"]
-        user = auth.get_current_user(request) if auth.enabled else None
+        user = auth.get_current_user(request)
         try:
             run = _run_access_from_cookie(run_service, run_id, user)
         except ValueError:
@@ -724,7 +724,7 @@ def ui_routes(manager) -> list[Route]:
             return JSONResponse({"error": "Run service not initialized"}, 503)
 
         run_id = request.path_params["run_id"]
-        user = auth.get_current_user(request) if auth.enabled else None
+        user = auth.get_current_user(request)
         try:
             run = _run_access_from_cookie(run_service, run_id, user)
         except ValueError:
@@ -875,7 +875,7 @@ def ui_routes(manager) -> list[Route]:
             return JSONResponse({"error": "Run service not initialized"}, 503)
 
         run_id = request.path_params["run_id"]
-        user = auth.get_current_user(request) if auth.enabled else None
+        user = auth.get_current_user(request)
         try:
             run = _run_access_from_cookie(run_service, run_id, user)
         except ValueError:
