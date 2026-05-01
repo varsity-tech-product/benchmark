@@ -21,7 +21,7 @@
   var _root = null;
   var _pollTimer = null;
   var _renderKey = '';
-  var _conversationKey = '';
+  var _conversationKeys = [];
   var _toolKey = '';
   var state = {
     runs: [],
@@ -38,7 +38,7 @@
   window.QTB.renderFlowDemoPage = function (app) {
     _root = app;
     _renderKey = '';
-    _conversationKey = '';
+    _conversationKeys = [];
     _toolKey = '';
     render();
     startPolling();
@@ -102,7 +102,7 @@
     }
 
     _renderKey = nextKey;
-    _conversationKey = '';
+    _conversationKeys = [];
     _toolKey = '';
     _root.innerHTML = pageHtml(liveRun);
     bind(liveRun);
@@ -249,20 +249,9 @@
     var toolsEl = document.getElementById('flow-tools');
     var conversation = run.conversation || [];
     var logs = domainToolLogs(run.recent_tool_logs || []);
-    var nextConversationKey = payloadKey(conversation);
     var nextToolKey = payloadKey(logs);
 
-    if (conversationEl && nextConversationKey !== _conversationKey) {
-      _conversationKey = nextConversationKey;
-      if (conversation.length && window.QTB && typeof window.QTB.buildConversationReplay === 'function') {
-        window.QTB.buildConversationReplay(conversationEl, conversation, [], []);
-      } else if (conversation.length) {
-        conversationEl.innerHTML = conversation.map(fullMessageHtml).join('');
-        conversationEl.scrollTop = conversationEl.scrollHeight;
-      } else {
-        conversationEl.innerHTML = '<div class="empty-state">' + escapeHtml(emptyConversationText(run)) + '</div>';
-      }
-    }
+    if (conversationEl) hydrateConversation(conversationEl, conversation, run);
 
     if (toolsEl && nextToolKey !== _toolKey) {
       _toolKey = nextToolKey;
@@ -274,6 +263,101 @@
         toolsEl.innerHTML = '<div class="empty-state">' + escapeHtml(emptyToolText(run)) + '</div>';
       }
     }
+  }
+
+  function hydrateConversation(container, conversation, run) {
+    var nextKeys = conversation.map(messageKey);
+    if (arraysEqual(nextKeys, _conversationKeys)) return;
+
+    var stickToBottom = isNearBottom(container) || _conversationKeys.length === 0;
+    var previousScrollTop = container.scrollTop;
+
+    if (!conversation.length) {
+      container.innerHTML = '<div class="empty-state">' + escapeHtml(emptyConversationText(run)) + '</div>';
+      _conversationKeys = [];
+      return;
+    }
+
+    var firstChanged = firstChangedIndex(_conversationKeys, nextKeys);
+    var nodes = conversationNodes(container);
+
+    if (nodes.length === _conversationKeys.length && firstChanged >= 0) {
+      removeConversationTail(nodes, firstChanged);
+      removeConversationEmptyState(container);
+      for (var i = firstChanged; i < conversation.length; i += 1) {
+        appendConversationMessage(container, conversation[i]);
+      }
+    } else {
+      container.innerHTML = '';
+      for (var j = 0; j < conversation.length; j += 1) {
+        appendConversationMessage(container, conversation[j]);
+      }
+    }
+
+    _conversationKeys = nextKeys;
+    if (stickToBottom) {
+      container.scrollTop = container.scrollHeight;
+    } else {
+      container.scrollTop = previousScrollTop;
+    }
+  }
+
+  function appendConversationMessage(container, msg) {
+    if (window.QTB && typeof window.QTB.addChatMessage === 'function') {
+      window.QTB.addChatMessage(
+        container,
+        msg.role,
+        msg.content || msg.message || '',
+        msg.content_blocks || null,
+        null,
+        null
+      );
+      return;
+    }
+    container.insertAdjacentHTML('beforeend', fullMessageHtml(msg));
+  }
+
+  function conversationNodes(container) {
+    return Array.prototype.slice.call(container.querySelectorAll('.msg, .flow-full-message'));
+  }
+
+  function removeConversationTail(nodes, startIndex) {
+    for (var i = nodes.length - 1; i >= startIndex; i -= 1) {
+      nodes[i].remove();
+    }
+  }
+
+  function removeConversationEmptyState(container) {
+    var empty = container.querySelector('.empty-state');
+    if (empty) empty.remove();
+  }
+
+  function messageKey(msg) {
+    return payloadKey({
+      role: msg.role || '',
+      content: msg.content || msg.message || '',
+      content_blocks: msg.content_blocks || null
+    });
+  }
+
+  function arraysEqual(a, b) {
+    if (a.length !== b.length) return false;
+    for (var i = 0; i < a.length; i += 1) {
+      if (a[i] !== b[i]) return false;
+    }
+    return true;
+  }
+
+  function firstChangedIndex(a, b) {
+    var length = Math.min(a.length, b.length);
+    for (var i = 0; i < length; i += 1) {
+      if (a[i] !== b[i]) return i;
+    }
+    return length;
+  }
+
+  function isNearBottom(container) {
+    return container.scrollHeight - container.scrollTop - container.clientHeight < 48;
   }
 
   function payloadKey(value) {

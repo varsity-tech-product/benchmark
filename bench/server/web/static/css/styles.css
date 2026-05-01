@@ -3069,6 +3069,9 @@ h1 {
 }
 
 .flow-live-monitor {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - var(--nav-height) - 194px);
   min-height: calc(100vh - var(--nav-height) - 194px);
   overflow: hidden;
   border: 1px solid var(--border);
@@ -3103,9 +3106,11 @@ h1 {
 }
 
 .flow-live-grid {
+  flex: 1;
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(310px, 380px);
   min-height: 0;
+  overflow: hidden;
   border-top: 1px solid var(--border-light);
 }
 
@@ -3148,8 +3153,9 @@ h1 {
 
 .flow-conversation-body {
   flex: 1;
-  min-height: 560px;
-  overflow-y: visible;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   display: flex;
   flex-direction: column;
   gap: 20px;
@@ -3161,12 +3167,13 @@ h1 {
 
 .flow-conversation-body .msg {
   max-width: min(880px, 92%);
+  animation: none;
 }
 
 .flow-tools-body {
   flex: 1;
-  min-height: 560px;
-  max-height: calc(100vh - var(--nav-height) - 318px);
+  min-height: 0;
+  max-height: none;
   overflow-y: auto;
   overscroll-behavior: contain;
   display: flex;
@@ -3302,7 +3309,7 @@ h1 {
 
   .flow-conversation-body,
   .flow-tools-body {
-    min-height: 360px;
+    min-height: 0;
   }
 }
 
