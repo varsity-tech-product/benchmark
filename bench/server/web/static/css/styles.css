@@ -3087,19 +3087,21 @@ h1 {
 
 .flow-live-top {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 10px 14px 6px;
+  padding: 8px 14px;
 }
 
 .flow-live-title {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
+  flex: 0 0 auto;
   gap: 8px;
   margin: 0;
   font-size: 18px;
+  line-height: 1.15;
 }
 
 .flow-demo h1 {
@@ -3108,7 +3110,10 @@ h1 {
 }
 
 .flow-live-meta {
-  padding: 0 14px 8px;
+  justify-content: flex-end;
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0;
 }
 
 .flow-live-grid {
@@ -3311,6 +3316,11 @@ h1 {
 
   .flow-live-top {
     display: grid;
+    justify-items: start;
+  }
+
+  .flow-live-meta {
+    justify-content: flex-start;
   }
 
   .flow-live-grid {

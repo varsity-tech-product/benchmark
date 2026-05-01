@@ -179,21 +179,18 @@
     return '' +
       '<article class="flow-live-monitor" data-run-id="' + escapeHtml(run.run_id || '') + '">' +
         '<div class="flow-live-top">' +
-          '<div>' +
-            '<h2 class="flow-live-title">' +
-              '<span>' + escapeHtml(run.public_task_label || 'Run') + '</span>' +
-              '<span class="badge">' + escapeHtml(statusLabel(status)) + '</span>' +
-              (run.mode ? '<span class="badge">' + escapeHtml(run.mode) + '</span>' : '') +
-            '</h2>' +
+          '<h2 class="flow-live-title">' +
+            '<span>' + escapeHtml(run.public_task_label || 'Run') + '</span>' +
+            '<span class="badge">' + escapeHtml(statusLabel(status)) + '</span>' +
+            (run.mode ? '<span class="badge">' + escapeHtml(run.mode) + '</span>' : '') +
+          '</h2>' +
+          '<div class="session-meta-row flow-live-meta">' +
+            '<span class="meta-chip" data-flow-meta="turn">' + escapeHtml(String(run.turn || 0) + ' turns') + '</span>' +
+            '<span class="meta-chip" data-flow-meta="messages">' + escapeHtml(String(conversation.length) + ' messages') + '</span>' +
+            '<span class="meta-chip" data-flow-meta="tools">' + escapeHtml(String(logs.length) + ' tool calls') + '</span>' +
+            '<span class="meta-chip" data-flow-meta="phase"' + (run.session_phase ? '' : ' hidden') + '>' + escapeHtml(run.session_phase || '') + '</span>' +
+            (run.error ? '<span class="meta-chip flow-error-chip">' + escapeHtml(run.error) + '</span>' : '') +
           '</div>' +
-          '<span class="status-pill ' + statusClass(status) + '">' + escapeHtml(statusLabel(status)) + '</span>' +
-        '</div>' +
-        '<div class="session-meta-row flow-live-meta">' +
-          '<span class="meta-chip" data-flow-meta="turn">' + escapeHtml(String(run.turn || 0) + ' turns') + '</span>' +
-          '<span class="meta-chip" data-flow-meta="messages">' + escapeHtml(String(conversation.length) + ' messages') + '</span>' +
-          '<span class="meta-chip" data-flow-meta="tools">' + escapeHtml(String(logs.length) + ' tool calls') + '</span>' +
-          '<span class="meta-chip" data-flow-meta="phase"' + (run.session_phase ? '' : ' hidden') + '>' + escapeHtml(run.session_phase || '') + '</span>' +
-          (run.error ? '<span class="meta-chip flow-error-chip">' + escapeHtml(run.error) + '</span>' : '') +
         '</div>' +
         '<div class="flow-live-grid">' +
           '<section class="flow-live-panel flow-conversation-panel">' +
@@ -420,15 +417,6 @@
     return run.observer_status || run.status || '';
   }
 
-  function statusClass(status) {
-    if (status === 'active' || status === 'claimed' || status === 'waiting') return 'running';
-    if (status === 'completed') return 'completed';
-    if (status === 'failed') return 'failed';
-    if (status === 'cancelled') return 'cancelled';
-    if (status === 'stale') return 'stale';
-    return 'pending';
-  }
-
   function statusLabel(status) {
     var labels = {
       waiting: 'Waiting',
@@ -448,17 +436,6 @@
       .filter(Boolean)
       .map(function (part) { return part.charAt(0).toUpperCase() + part.slice(1); })
       .join(' ');
-  }
-
-  function shortId(value) {
-    return String(value || '').slice(0, 8) || '-';
-  }
-
-  function formatTimestamp(value) {
-    if (!value) return 'Unknown time';
-    var date = new Date(value);
-    if (isNaN(date.getTime())) return String(value);
-    return date.toLocaleString();
   }
 
   function formatTime(value) {
