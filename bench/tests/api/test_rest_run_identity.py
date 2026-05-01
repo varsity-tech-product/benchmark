@@ -21,6 +21,13 @@ async def _post_json(app, path, payload, headers=None):
         return await client.post(path, json=payload, headers=headers or {})
 
 
+async def _get_json(app, path, headers=None):
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        return await client.get(path, headers=headers or {})
+
+
 @pytest.mark.asyncio
 async def test_client_start_requires_api_key_when_auth_enabled(bench_root, monkeypatch):
     monkeypatch.setenv("QTB_AUTH_MODE", "github")
@@ -31,6 +38,43 @@ async def test_client_start_requires_api_key_when_auth_enabled(bench_root, monke
 
     assert resp.status_code == 401
     assert "client_api_key" in resp.json()["error"]
+
+
+@pytest.mark.asyncio
+async def test_client_task_catalog_requires_api_key_when_auth_enabled(
+    bench_root, monkeypatch
+):
+    monkeypatch.setenv("QTB_AUTH_MODE", "github")
+    monkeypatch.delenv("QTB_CLIENT_API_KEYS", raising=False)
+    app = _make_app(bench_root)
+
+    resp = await _get_json(app, "/client/tasks/catalog/labels")
+
+    assert resp.status_code == 401
+    assert "client_api_key" in resp.json()["error"]
+
+
+@pytest.mark.asyncio
+async def test_client_task_catalog_returns_labels_with_api_key(
+    bench_root, monkeypatch
+):
+    monkeypatch.setenv("QTB_AUTH_MODE", "github")
+    monkeypatch.setenv(
+        "QTB_CLIENT_API_KEYS",
+        "secret-alice=external:alice|alice|alice@example.com",
+    )
+    app = _make_app(bench_root)
+
+    resp = await _get_json(
+        app,
+        "/client/tasks/catalog/labels",
+        headers={"Authorization": "Bearer secret-alice"},
+    )
+
+    assert resp.status_code == 200
+    tasks = resp.json()["tasks"]
+    assert {"label": "D01"} in tasks
+    assert all(set(item) == {"label"} for item in tasks)
 
 
 @pytest.mark.asyncio
