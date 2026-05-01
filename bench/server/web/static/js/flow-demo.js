@@ -86,18 +86,19 @@
 
   function render() {
     if (!_root) return;
-    _root.innerHTML = pageHtml();
-    bind();
+    var liveRun = currentLiveRun();
+    _root.innerHTML = pageHtml(liveRun);
+    bind(liveRun);
   }
 
-  function bind() {
+  function bind(liveRun) {
     var refreshBtn = document.getElementById('flow-refresh-btn');
     if (refreshBtn) refreshBtn.addEventListener('click', refresh);
+    if (liveRun) hydrateLiveRun(liveRun);
   }
 
-  function pageHtml() {
-    var activeRun = currentActiveRun();
-    if (!activeRun && !state.error) {
+  function pageHtml(liveRun) {
+    if (!liveRun && !state.error) {
       return '<section class="page flow-demo flow-demo-blank"></section>';
     }
     return '' +
@@ -113,8 +114,8 @@
           '</div>' +
         '</header>' +
         statusBannerHtml() +
-        (activeRun
-          ? '<div class="results-grid flow-results-grid">' + runCardHtml(activeRun) + '</div>'
+        (liveRun
+          ? liveRunHtml(liveRun)
           : '') +
       '</section>';
   }
@@ -126,34 +127,33 @@
     return '';
   }
 
-  function currentActiveRun() {
+  function currentLiveRun() {
+    var fallback = null;
     for (var i = 0; i < state.runs.length; i += 1) {
       var run = state.runs[i];
       if (run.status === 'active' && displayStatus(run) === 'active') {
         return run;
       }
+      if (!fallback && LIVE_STATUSES[displayStatus(run)]) fallback = run;
     }
-    return null;
+    return fallback;
   }
 
-  function runCardHtml(run) {
+  function liveRunHtml(run) {
     var status = displayStatus(run);
     var conversation = run.conversation || [];
-    var logs = run.recent_tool_logs || [];
-    var href = runHref(run, status);
-    var tag = href ? 'a' : 'article';
-    var open = href ? ' href="' + href + '"' : '';
+    var logs = domainToolLogs(run.recent_tool_logs || []);
 
     return '' +
-      '<' + tag + ' class="session-card flow-run-card"' + open + '>' +
-        '<div class="session-top">' +
+      '<article class="flow-live-monitor" data-run-id="' + escapeHtml(run.run_id || '') + '">' +
+        '<div class="flow-live-top">' +
           '<div>' +
-            '<h2 class="session-title">' +
+            '<h2 class="flow-live-title">' +
               '<span>' + escapeHtml(run.public_task_label || 'Run') + '</span>' +
               '<span class="badge">' + escapeHtml(statusLabel(status)) + '</span>' +
               (run.mode ? '<span class="badge">' + escapeHtml(run.mode) + '</span>' : '') +
             '</h2>' +
-            '<p class="session-subtitle">' +
+            '<p class="session-subtitle flow-live-subtitle">' +
               'Run <code>' + escapeHtml(shortId(run.run_id)) + '</code>' +
               (run.session_id ? ' · Session <code>' + escapeHtml(shortId(run.session_id)) + '</code>' : '') +
               ' · ' + escapeHtml(formatTimestamp(run.updated_at || run.created_at)) +
@@ -161,51 +161,58 @@
           '</div>' +
           '<span class="status-pill ' + statusClass(status) + '">' + escapeHtml(statusLabel(status)) + '</span>' +
         '</div>' +
-        '<div class="session-meta-row">' +
+        '<div class="session-meta-row flow-live-meta">' +
           '<span class="meta-chip">' + escapeHtml(String(run.turn || 0) + ' turns') + '</span>' +
           '<span class="meta-chip">' + escapeHtml(String(conversation.length) + ' messages') + '</span>' +
-          '<span class="meta-chip">' + escapeHtml(String(logs.length) + ' recent tools') + '</span>' +
+          '<span class="meta-chip">' + escapeHtml(String(logs.length) + ' tool calls') + '</span>' +
           (run.session_phase ? '<span class="meta-chip">' + escapeHtml(run.session_phase) + '</span>' : '') +
           (run.error ? '<span class="meta-chip flow-error-chip">' + escapeHtml(run.error) + '</span>' : '') +
         '</div>' +
-        previewHtml(run) +
-      '</' + tag + '>';
+        '<div class="flow-live-grid">' +
+          '<section class="flow-live-panel flow-conversation-panel">' +
+            '<div class="flow-panel-header">' +
+              '<h3>Conversation</h3>' +
+              '<span>' + escapeHtml(String(conversation.length) + ' messages') + '</span>' +
+            '</div>' +
+            '<div id="flow-conversation" class="flow-conversation-body" aria-live="polite">' +
+              '<div class="empty-state">' + escapeHtml(emptyConversationText(run)) + '</div>' +
+            '</div>' +
+          '</section>' +
+          '<aside class="flow-live-panel flow-tools-panel">' +
+            '<div class="flow-panel-header">' +
+              '<h3>Tool Activity</h3>' +
+              '<span>' + escapeHtml(String(logs.length)) + '</span>' +
+            '</div>' +
+            '<div id="flow-tools" class="flow-tools-body">' +
+              '<div class="empty-state">' + escapeHtml(emptyToolText(run)) + '</div>' +
+            '</div>' +
+          '</aside>' +
+        '</div>' +
+      '</article>';
   }
 
-  function runHref(run, status) {
-    if (status === 'completed' && run.session_id) {
-      return '#/review/' + encodeURIComponent(run.session_id);
-    }
-    if (LIVE_STATUSES[status] && run.run_id) {
-      return '#/run/' + encodeURIComponent(run.run_id);
-    }
-    return '';
-  }
-
-  function previewHtml(run) {
+  function hydrateLiveRun(run) {
+    var conversationEl = document.getElementById('flow-conversation');
+    var toolsEl = document.getElementById('flow-tools');
     var conversation = run.conversation || [];
-    var logs = run.recent_tool_logs || [];
-    var messages = conversation.slice(Math.max(conversation.length - 2, 0));
-    return '' +
-      '<div class="flow-card-preview">' +
-        '<div class="flow-preview-block">' +
-          '<h3>Conversation</h3>' +
-          (messages.length ? messages.map(messagePreviewHtml).join('') : '<p class="detail-empty-note">' + escapeHtml(emptyConversationText(run)) + '</p>') +
-        '</div>' +
-        '<div class="flow-preview-block">' +
-          '<h3>Tool Activity</h3>' +
-          (logs.length ? toolListHtml(logs.slice(-4).reverse()) : '<p class="detail-empty-note">' + escapeHtml(emptyToolText(run)) + '</p>') +
-        '</div>' +
-      '</div>';
-  }
+    var logs = domainToolLogs(run.recent_tool_logs || []);
 
-  function messagePreviewHtml(msg) {
-    var role = (msg.role === 'user' || msg.role === 'student') ? 'Student' : 'Tutor';
-    return '' +
-      '<div class="flow-message-preview">' +
-        '<strong>' + escapeHtml(role) + '</strong>' +
-        '<span>' + escapeHtml(truncate(msg.content || '', 260)) + '</span>' +
-      '</div>';
+    if (conversationEl) {
+      if (conversation.length && window.QTB && typeof window.QTB.buildConversationReplay === 'function') {
+        window.QTB.buildConversationReplay(conversationEl, conversation, [], []);
+      } else if (conversation.length) {
+        conversationEl.innerHTML = conversation.map(fullMessageHtml).join('');
+        conversationEl.scrollTop = conversationEl.scrollHeight;
+      }
+    }
+
+    if (toolsEl) {
+      if (logs.length && window.QTB && typeof window.QTB.buildToolReplay === 'function') {
+        window.QTB.buildToolReplay(toolsEl, logs);
+      } else if (logs.length) {
+        toolsEl.innerHTML = toolListHtml(logs.slice().reverse());
+      }
+    }
   }
 
   function toolListHtml(logs) {
@@ -221,6 +228,23 @@
           '<div class="flow-tool-meta">' + escapeHtml(formatTime(log.timestamp)) + '</div>' +
         '</div>';
     }).join('') + '</div>';
+  }
+
+  function fullMessageHtml(msg) {
+    var role = (msg.role === 'user' || msg.role === 'student') ? 'student' : 'tutor';
+    var label = role === 'student' ? 'Student' : 'Tutor';
+    return '' +
+      '<div class="flow-full-message ' + role + '">' +
+        '<div class="flow-full-message-label">' + escapeHtml(label) + '</div>' +
+        '<div class="flow-full-message-body">' + escapeHtml(msg.content || msg.message || '') + '</div>' +
+      '</div>';
+  }
+
+  function domainToolLogs(logs) {
+    return (logs || []).filter(function (log) {
+      var name = String((log && (log.name || log.tool_name)) || '');
+      return name !== 'send_message';
+    });
   }
 
   function emptyConversationText(run) {
@@ -278,12 +302,6 @@
 
   function shortId(value) {
     return String(value || '').slice(0, 8) || '-';
-  }
-
-  function truncate(value, maxLength) {
-    var text = String(value || '').replace(/\s+/g, ' ').trim();
-    if (text.length <= maxLength) return text;
-    return text.slice(0, maxLength - 1) + '…';
   }
 
   function formatTimestamp(value) {

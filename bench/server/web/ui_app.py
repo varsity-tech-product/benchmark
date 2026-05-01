@@ -112,6 +112,20 @@ def _sanitize_for_json(obj):
     return obj
 
 
+def _is_protocol_tool_log(log) -> bool:
+    if isinstance(log, dict):
+        name = log.get("name") or log.get("tool_name") or ""
+    else:
+        name = getattr(log, "name", "") or getattr(log, "tool_name", "")
+    return str(name) == "send_message"
+
+
+def _safe_tool_log_dict(log) -> dict:
+    if isinstance(log, dict):
+        return log
+    return asdict(log)
+
+
 # ---------------------------------------------------------------------------
 # Route factory
 # ---------------------------------------------------------------------------
@@ -787,12 +801,8 @@ def ui_routes(manager) -> list[Route]:
 
         recent_logs = []
         if session.proxy:
-            logs = session.proxy.get_logs()
-            for log in logs[-20:]:
-                if isinstance(log, dict):
-                    recent_logs.append(log)
-                else:
-                    recent_logs.append(asdict(log))
+            for log in session.proxy.get_logs()[-20:]:
+                recent_logs.append(_safe_tool_log_dict(log))
 
         return JSONResponse(
             _sanitize_for_json(
@@ -833,17 +843,19 @@ def ui_routes(manager) -> list[Route]:
 
         payload["is_live"] = run.status.value == "active"
         if session.session:
-            payload["conversation"] = getattr(session.session, "conversation", [])[-50:]
+            payload["conversation"] = getattr(session.session, "conversation", [])
             payload["turn"] = getattr(session.session, "turn", 0)
         payload["session_phase"] = session.phase.value
 
         if session.proxy:
             recent_logs = []
-            for log in session.proxy.get_logs()[-20:]:
-                if isinstance(log, dict):
-                    recent_logs.append(log)
-                else:
-                    recent_logs.append(asdict(log))
+            logs = [
+                log
+                for log in session.proxy.get_logs()
+                if not _is_protocol_tool_log(log)
+            ]
+            for log in logs[-20:]:
+                recent_logs.append(_safe_tool_log_dict(log))
             payload["recent_tool_logs"] = recent_logs
 
         return payload
