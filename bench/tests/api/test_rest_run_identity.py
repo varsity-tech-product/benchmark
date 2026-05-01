@@ -161,6 +161,104 @@ async def test_client_start_api_key_subject_to_user_quota(bench_root, monkeypatc
 
 
 @pytest.mark.asyncio
+async def test_client_active_runs_requires_api_key_when_auth_enabled(
+    bench_root, monkeypatch
+):
+    monkeypatch.setenv("QTB_AUTH_MODE", "github")
+    monkeypatch.delenv("QTB_CLIENT_API_KEYS", raising=False)
+    app = _make_app(bench_root)
+
+    resp = await _get_json(app, "/client/runs/active")
+
+    assert resp.status_code == 401
+    assert "client_api_key" in resp.json()["error"]
+
+
+@pytest.mark.asyncio
+async def test_client_active_runs_are_owner_scoped_and_token_safe(
+    bench_root, monkeypatch
+):
+    monkeypatch.setenv("QTB_AUTH_MODE", "github")
+    monkeypatch.setenv(
+        "QTB_CLIENT_API_KEYS",
+        "secret-alice=external:alice|alice,secret-bob=external:bob|bob",
+    )
+    app = _make_app(bench_root)
+    alice_headers = {"Authorization": "Bearer secret-alice"}
+    bob_headers = {"Authorization": "Bearer secret-bob"}
+
+    alice_run = await _post_json(
+        app, "/client/runs/start", {"task": "D01"}, alice_headers
+    )
+    bob_run = await _post_json(app, "/client/runs/start", {"task": "D02"}, bob_headers)
+    active = await _get_json(app, "/client/runs/active", alice_headers)
+
+    assert alice_run.status_code == 200
+    assert bob_run.status_code == 200
+    assert active.status_code == 200
+    payload = active.json()
+    assert payload["count"] == 1
+    assert [item["run_id"] for item in payload["runs"]] == [alice_run.json()["run_id"]]
+    assert {"token", "control_token", "task_id", "token_hash"}.isdisjoint(
+        payload["runs"][0]
+    )
+
+
+@pytest.mark.asyncio
+async def test_client_cancel_run_is_owner_scoped_and_unblocks_quota(
+    bench_root, monkeypatch
+):
+    monkeypatch.setenv("QTB_AUTH_MODE", "github")
+    monkeypatch.setenv("QTB_MAX_ACTIVE_RUNS_PER_USER", "1")
+    monkeypatch.setenv(
+        "QTB_CLIENT_API_KEYS",
+        "secret-alice=external:alice|alice,secret-bob=external:bob|bob",
+    )
+    app = _make_app(bench_root)
+    alice_headers = {"Authorization": "Bearer secret-alice"}
+    bob_headers = {"Authorization": "Bearer secret-bob"}
+
+    first = await _post_json(app, "/client/runs/start", {"task": "D01"}, alice_headers)
+    blocked = await _post_json(
+        app, "/client/runs/start", {"task": "D02"}, alice_headers
+    )
+    run_id = first.json()["run_id"]
+    denied = await _post_json(app, f"/client/runs/{run_id}/cancel", {}, bob_headers)
+    cancelled = await _post_json(
+        app, f"/client/runs/{run_id}/cancel", {}, alice_headers
+    )
+    active = await _get_json(app, "/client/runs/active", alice_headers)
+    recovered = await _post_json(
+        app, "/client/runs/start", {"task": "D02"}, alice_headers
+    )
+
+    assert first.status_code == 200
+    assert blocked.status_code == 429
+    assert denied.status_code == 403
+    assert cancelled.status_code == 200
+    assert cancelled.json()["status"] == "cancelled"
+    assert active.status_code == 200
+    assert active.json()["runs"] == []
+    assert recovered.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_client_cancel_missing_run_returns_404(bench_root, monkeypatch):
+    monkeypatch.setenv("QTB_AUTH_MODE", "github")
+    monkeypatch.setenv("QTB_CLIENT_API_KEYS", "secret-alice=external:alice|alice")
+    app = _make_app(bench_root)
+
+    resp = await _post_json(
+        app,
+        "/client/runs/run_missing/cancel",
+        {},
+        headers={"Authorization": "Bearer secret-alice"},
+    )
+
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
 async def test_rest_session_endpoints_require_matching_run_token(bench_root, monkeypatch):
     monkeypatch.setenv("QTB_AUTH_MODE", "github")
     monkeypatch.setenv("QTB_CLIENT_API_KEYS", "secret-alice=external:alice|alice")
