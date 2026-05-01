@@ -20,6 +20,9 @@
 
   var _root = null;
   var _pollTimer = null;
+  var _renderKey = '';
+  var _conversationKey = '';
+  var _toolKey = '';
   var state = {
     runs: [],
     error: ''
@@ -34,6 +37,9 @@
 
   window.QTB.renderFlowDemoPage = function (app) {
     _root = app;
+    _renderKey = '';
+    _conversationKey = '';
+    _toolKey = '';
     render();
     startPolling();
     refresh();
@@ -87,6 +93,17 @@
   function render() {
     if (!_root) return;
     var liveRun = currentLiveRun();
+    var nextKey = pageKey(liveRun);
+
+    if (_renderKey === nextKey && liveRun && !state.error) {
+      patchLiveRun(liveRun);
+      hydrateLiveRun(liveRun);
+      return;
+    }
+
+    _renderKey = nextKey;
+    _conversationKey = '';
+    _toolKey = '';
     _root.innerHTML = pageHtml(liveRun);
     bind(liveRun);
   }
@@ -139,6 +156,19 @@
     return fallback;
   }
 
+  function pageKey(run) {
+    if (state.error) return 'error:' + state.error;
+    if (!run) return 'blank';
+    return [
+      'run',
+      run.run_id || '',
+      displayStatus(run),
+      run.public_task_label || '',
+      run.mode || '',
+      run.session_id || ''
+    ].join('|');
+  }
+
   function liveRunHtml(run) {
     var status = displayStatus(run);
     var conversation = run.conversation || [];
@@ -162,17 +192,17 @@
           '<span class="status-pill ' + statusClass(status) + '">' + escapeHtml(statusLabel(status)) + '</span>' +
         '</div>' +
         '<div class="session-meta-row flow-live-meta">' +
-          '<span class="meta-chip">' + escapeHtml(String(run.turn || 0) + ' turns') + '</span>' +
-          '<span class="meta-chip">' + escapeHtml(String(conversation.length) + ' messages') + '</span>' +
-          '<span class="meta-chip">' + escapeHtml(String(logs.length) + ' tool calls') + '</span>' +
-          (run.session_phase ? '<span class="meta-chip">' + escapeHtml(run.session_phase) + '</span>' : '') +
+          '<span class="meta-chip" data-flow-meta="turn">' + escapeHtml(String(run.turn || 0) + ' turns') + '</span>' +
+          '<span class="meta-chip" data-flow-meta="messages">' + escapeHtml(String(conversation.length) + ' messages') + '</span>' +
+          '<span class="meta-chip" data-flow-meta="tools">' + escapeHtml(String(logs.length) + ' tool calls') + '</span>' +
+          '<span class="meta-chip" data-flow-meta="phase"' + (run.session_phase ? '' : ' hidden') + '>' + escapeHtml(run.session_phase || '') + '</span>' +
           (run.error ? '<span class="meta-chip flow-error-chip">' + escapeHtml(run.error) + '</span>' : '') +
         '</div>' +
         '<div class="flow-live-grid">' +
           '<section class="flow-live-panel flow-conversation-panel">' +
             '<div class="flow-panel-header">' +
               '<h3>Conversation</h3>' +
-              '<span>' + escapeHtml(String(conversation.length) + ' messages') + '</span>' +
+              '<span data-flow-count="conversation">' + escapeHtml(String(conversation.length) + ' messages') + '</span>' +
             '</div>' +
             '<div id="flow-conversation" class="flow-conversation-body" aria-live="polite">' +
               '<div class="empty-state">' + escapeHtml(emptyConversationText(run)) + '</div>' +
@@ -181,7 +211,7 @@
           '<aside class="flow-live-panel flow-tools-panel">' +
             '<div class="flow-panel-header">' +
               '<h3>Tool Activity</h3>' +
-              '<span>' + escapeHtml(String(logs.length)) + '</span>' +
+              '<span data-flow-count="tools">' + escapeHtml(String(logs.length)) + '</span>' +
             '</div>' +
             '<div id="flow-tools" class="flow-tools-body">' +
               '<div class="empty-state">' + escapeHtml(emptyToolText(run)) + '</div>' +
@@ -191,27 +221,66 @@
       '</article>';
   }
 
+  function patchLiveRun(run) {
+    var conversation = run.conversation || [];
+    var logs = domainToolLogs(run.recent_tool_logs || []);
+    setText('[data-flow-meta="turn"]', String(run.turn || 0) + ' turns');
+    setText('[data-flow-meta="messages"]', String(conversation.length) + ' messages');
+    setText('[data-flow-meta="tools"]', String(logs.length) + ' tool calls');
+    setOptionalText('[data-flow-meta="phase"]', run.session_phase || '');
+    setText('[data-flow-count="conversation"]', String(conversation.length) + ' messages');
+    setText('[data-flow-count="tools"]', String(logs.length));
+  }
+
+  function setText(selector, value) {
+    var el = _root ? _root.querySelector(selector) : document.querySelector(selector);
+    if (el) el.textContent = value;
+  }
+
+  function setOptionalText(selector, value) {
+    var el = _root ? _root.querySelector(selector) : document.querySelector(selector);
+    if (!el) return;
+    el.textContent = value;
+    el.hidden = !value;
+  }
+
   function hydrateLiveRun(run) {
     var conversationEl = document.getElementById('flow-conversation');
     var toolsEl = document.getElementById('flow-tools');
     var conversation = run.conversation || [];
     var logs = domainToolLogs(run.recent_tool_logs || []);
+    var nextConversationKey = payloadKey(conversation);
+    var nextToolKey = payloadKey(logs);
 
-    if (conversationEl) {
+    if (conversationEl && nextConversationKey !== _conversationKey) {
+      _conversationKey = nextConversationKey;
       if (conversation.length && window.QTB && typeof window.QTB.buildConversationReplay === 'function') {
         window.QTB.buildConversationReplay(conversationEl, conversation, [], []);
       } else if (conversation.length) {
         conversationEl.innerHTML = conversation.map(fullMessageHtml).join('');
         conversationEl.scrollTop = conversationEl.scrollHeight;
+      } else {
+        conversationEl.innerHTML = '<div class="empty-state">' + escapeHtml(emptyConversationText(run)) + '</div>';
       }
     }
 
-    if (toolsEl) {
+    if (toolsEl && nextToolKey !== _toolKey) {
+      _toolKey = nextToolKey;
       if (logs.length && window.QTB && typeof window.QTB.buildToolReplay === 'function') {
         window.QTB.buildToolReplay(toolsEl, logs);
       } else if (logs.length) {
         toolsEl.innerHTML = toolListHtml(logs.slice().reverse());
+      } else {
+        toolsEl.innerHTML = '<div class="empty-state">' + escapeHtml(emptyToolText(run)) + '</div>';
       }
+    }
+  }
+
+  function payloadKey(value) {
+    try {
+      return JSON.stringify(value || []);
+    } catch (err) {
+      return String((value || []).length);
     }
   }
 
