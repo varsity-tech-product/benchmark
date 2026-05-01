@@ -1,12 +1,12 @@
 """Human quant-expert alignment artifact helpers.
 
-Schema v2 (2026-04-27): expanded to cover B1 ``identified_persona`` (judges
+Schema v2 (2026-04-27): expanded to cover S4 ``identified_persona`` (judges
 the LLM panel can't be validated on without this), control ``distinctiveness``
-and ``persona_set_a`` (placebo-test correctness), P1 ``facet_fit`` +
-``expected_signals_hit``, and D2 ``persona_fidelity``.
+and ``persona_set_a`` (placebo-test correctness), S5 ``facet_fit`` +
+``expected_signals_hit``, and S3 ``persona_fidelity``.
 
 The agreement report exposes per-judge accuracy (Sonnet alone vs GPT-5.4
-alone vs panel_2 strict consensus) for the categorical fields so the
+alone vs panel-3 consensus) for the categorical fields so the
 question "which judge is more reliable" gets a data-backed answer.
 """
 
@@ -29,11 +29,17 @@ from experiments.student_sim_stability.core.paths import (
 if str(BENCH_ROOT) not in sys.path:
     sys.path.insert(0, str(BENCH_ROOT))
 
+from experiments.student_sim_stability.core.config import (  # noqa: E402
+    JUDGE_LABELS,
+    PANEL_JUDGES,
+)
 from experiments.student_sim_stability.core.io_utils import (  # noqa: E402
     atomic_write_json,
     load_json,
+    safe_model_dir,
 )
 from experiments.student_sim_stability.core.rubrics import (  # noqa: E402
+    DIMENSION_TO_FILE,
     primary_score_field,
 )
 
@@ -46,68 +52,68 @@ LABEL_FIELDS = [
     "task_id",
     "model",
     # Always-applicable scoring
-    "persona_fidelity",  # 1-5 numeric, applies to D1/D2/D3/P1/B1
-    "knowledge_boundary_pass",  # 1-5, D1
-    "emotional_match",  # 1-5, D1/D2
-    "drift_onset_turn",  # int, D3
+    "persona_fidelity",  # 1-5 numeric, applies to S1/S3/S2/S5/S4
+    "knowledge_boundary_pass",  # 1-5, S1
+    "emotional_match",  # 1-5, S1/S3
+    "drift_onset_turn",  # int, S2
     "failure_type",  # categorical, all dims
     "human_comment",  # free text (Chinese OK)
-    # B1-specific
+    # S4-specific
     "human_identified_persona",  # one of: developer_crossover/double_novice/finance_veteran/fullstack_practitioner/uncertain
     "human_b1_confidence",  # 1-5
     # control-specific
     "human_distinctiveness",  # 1-5
     "human_persona_set_a",  # 'true'/'false'/'unknown'
-    # P1-specific
+    # S5-specific
     "human_facet_fit",  # 1-5
     "human_facet_signals_hit",  # comma-separated string
 ]
 
-KNOWLEDGE_FIELD_BY_DIMENSION = {
-    "D1": "knowledge_boundary",
+PANEL_AGG_KNOWLEDGE_FIELD_BY_DIM = {
+    "S1": "knowledge_boundary",
 }
 
-EMOTIONAL_FIELD_BY_DIMENSION = {
-    "D1": "emotional_tone",
-    "D2": "emotional_consistency",
+PANEL_AGG_EMOTIONAL_FIELD_BY_DIM = {
+    "S1": "emotional_tone",
+    "S3": "emotional_consistency",
 }
 
 # Stratified sampling targets (40-sample budget). Persona quotas matter
 # because different personas surface different judge weaknesses (e.g.
-# fullstack_practitioner is the close-neighbor case for B1 ambiguity).
+# fullstack_practitioner is the close-neighbor case for S4 ambiguity).
 DEFAULT_SAMPLE_PLAN: dict[str, dict[str, int]] = {
-    # dim: { persona_id: count } — all 4 personas covered for D1/D3/P1/B1
-    "D1": {
+    # dim: { persona_id: count } — all 4 personas covered for S1/S2/S5/S4
+    "S1": {
         "developer_crossover": 2,
         "double_novice": 2,
         "finance_veteran": 2,
         "fullstack_practitioner": 2,
     },
-    "D2": {
+    "S3": {
         "developer_crossover": 1,
         "double_novice": 1,
         "finance_veteran": 1,
         "fullstack_practitioner": 1,
     },
-    "D3": {
+    "S2": {
         "developer_crossover": 2,
         "double_novice": 2,
         "finance_veteran": 2,
         "fullstack_practitioner": 2,
     },
-    "control": {
+    "S6": {
         "developer_crossover": 1,
         "double_novice": 1,
         "finance_veteran": 1,
         "fullstack_practitioner": 1,
     },
-    "P1": {
+    "S5": {
         "developer_crossover": 2,
         "double_novice": 2,
         "finance_veteran": 2,
         "fullstack_practitioner": 2,
     },
-    "B1": {
+    "S4": {
         # fp is overweighted because it is the close-neighbor judge-disagreement
         # case (Sonnet 41% vs GPT-5.4 76% accuracy). Extra fp samples give
         # higher statistical power for the Sonnet-vs-GPT-5.4 question.
@@ -117,6 +123,9 @@ DEFAULT_SAMPLE_PLAN: dict[str, dict[str, int]] = {
         "fullstack_practitioner": 4,
     },
 }
+
+DEFAULT_EXTENSION_KEY_FIELDS = ("dimension", "persona_id", "model")
+ALIGNMENT_SAMPLE_FIELDS = frozenset((*LABEL_FIELDS, "judge_input_file"))
 
 
 def _as_float(value: object) -> float | None:
@@ -198,7 +207,7 @@ def _stratified_sample(
     input_dir: Path, plan: dict[str, dict[str, int]], seed: int = 42
 ) -> list[dict]:
     """Pick samples per (dimension, persona) quota from the rendered judge
-    inputs. For B1 specifically, prioritise samples where the two-judge panel
+    inputs. For S4 specifically, prioritise samples where the two-judge panel
     disagrees most (read identified_persona_by_judge from the corresponding
     primary aggregate if available) — these are the most informative cases.
     """
@@ -212,19 +221,20 @@ def _stratified_sample(
         if dim and persona:
             payloads[(dim, persona)].append((path, payload))
 
-    # For B1: rank candidates so that fp samples where Sonnet and GPT-5.4
-    # disagreed are chosen first. Falls back to random if no aggregate yet.
+    # For S4: rank candidates so that samples where the first two configured
+    # judges disagreed are chosen first. Falls back to random if no aggregate yet.
     b1_priority: dict[str, int] = {}
     eval_path = input_dir.parent / "evaluations" / "all_evaluations.json"
     if eval_path.exists():
         try:
             ag = load_json(eval_path)
-            for r in ag.get("B1", []):
+            first_label, second_label = JUDGE_LABELS[:2]
+            for r in ag.get("S4", []):
                 by_judge = (r.get("scores") or {}).get(
                     "identified_persona_by_judge"
                 ) or {}
-                s = str(by_judge.get("sonnet", "")).strip()
-                g = str(by_judge.get("gpt54", "")).strip()
+                s = str(by_judge.get(first_label, "")).strip()
+                g = str(by_judge.get(second_label, "")).strip()
                 expected = str((r.get("metadata") or {}).get("persona_id", ""))
                 # Score 2 if disagree, 1 if agree-but-wrong, 0 otherwise
                 if s and g and s != g:
@@ -245,7 +255,7 @@ def _stratified_sample(
         bucket = payloads.get((dim, persona), [])
         if not bucket:
             continue
-        if dim == "B1":
+        if dim == "S4":
             # Sort by descending priority then deterministic eval_id for ties
             bucket = sorted(
                 bucket,
@@ -261,7 +271,6 @@ def _stratified_sample(
             chosen = shuffled[:wanted]
         selected.extend(chosen)
 
-    # Build out the per-sample dicts
     samples = []
     for path, payload in selected:
         metadata = payload.get("metadata", {})
@@ -280,20 +289,187 @@ def _stratified_sample(
     return samples
 
 
-def _write_llm_label_snapshot(out: Path, samples: list[dict]) -> dict:
+def _valid_dimensions_label() -> str:
+    return ", ".join(DIMENSION_TO_FILE)
+
+
+def parse_alignment_target_spec(
+    target_spec: str,
+    *,
+    dimension: str | None = None,
+) -> dict[str, int]:
+    """Parse the D2 ``--target`` grammar into ``{dimension: quota}``."""
+    valid_dims = set(DIMENSION_TO_FILE)
+    chosen_dimension = dimension.strip() if dimension else None
+    if chosen_dimension and chosen_dimension not in valid_dims:
+        raise ValueError(
+            f"unknown --dimension {chosen_dimension!r}; expected one of "
+            f"{_valid_dimensions_label()}"
+        )
+
+    spec = target_spec.strip()
+    if not spec:
+        raise ValueError("--target must not be empty")
+
+    def parse_quota(raw: str, context: str) -> int:
+        try:
+            value = int(raw)
+        except ValueError as exc:
+            raise ValueError(
+                f"invalid --target quota for {context}: {raw!r}; expected integer"
+            ) from exc
+        if value < 0:
+            raise ValueError(
+                f"invalid --target quota for {context}: {raw!r}; expected >= 0"
+            )
+        return value
+
+    if "=" not in spec:
+        if not chosen_dimension:
+            raise ValueError(
+                "--target must use DIM=N[,DIM=N...] when --dimension is omitted"
+            )
+        return {chosen_dimension: parse_quota(spec, chosen_dimension)}
+
+    targets: dict[str, int] = {}
+    for raw_part in spec.split(","):
+        part = raw_part.strip()
+        if not part:
+            raise ValueError("--target contains an empty DIM=N entry")
+        if "=" not in part:
+            raise ValueError(
+                f"invalid --target entry {part!r}; expected DIM=N comma form"
+            )
+        dim_raw, quota_raw = part.split("=", 1)
+        dim = dim_raw.strip()
+        if dim in targets:
+            raise ValueError(f"duplicate dimension in --target: {dim}")
+        if dim not in valid_dims:
+            raise ValueError(
+                f"unknown dimension in --target: {dim!r}; expected one of "
+                f"{_valid_dimensions_label()}"
+            )
+        targets[dim] = parse_quota(quota_raw.strip(), dim)
+
+    if chosen_dimension and set(targets) != {chosen_dimension}:
+        got = ", ".join(targets)
+        raise ValueError(
+            "--dimension/--target mismatch: "
+            f"--dimension {chosen_dimension} requires --target {chosen_dimension}=N; "
+            f"got {got}"
+        )
+    return targets
+
+
+def parse_alignment_key_fields(key_fields: str | Iterable[str]) -> tuple[str, ...]:
+    if isinstance(key_fields, str):
+        fields = tuple(
+            field.strip() for field in key_fields.split(",") if field.strip()
+        )
+    else:
+        fields = tuple(str(field).strip() for field in key_fields if str(field).strip())
+    if not fields:
+        raise ValueError("--key-fields must include at least one field")
+    if len(fields) > 3:
+        raise ValueError("--key-fields accepts at most three comma-separated fields")
+    duplicates = sorted({field for field in fields if fields.count(field) > 1})
+    if duplicates:
+        raise ValueError(f"duplicate field in --key-fields: {', '.join(duplicates)}")
+    unknown = [field for field in fields if field not in ALIGNMENT_SAMPLE_FIELDS]
+    if unknown:
+        allowed = ", ".join(sorted(ALIGNMENT_SAMPLE_FIELDS))
+        raise ValueError(
+            f"unknown field in --key-fields: {', '.join(unknown)}; "
+            f"expected one of {allowed}"
+        )
+    return fields
+
+
+def _alignment_sample_from_input(path: Path, payload: dict) -> dict | None:
+    metadata = payload.get("metadata") or {}
+    dimension = str(payload.get("dimension") or "").strip()
+    eval_id = str(payload.get("eval_id") or path.stem).strip()
+    if not (dimension and eval_id):
+        return None
+    return {
+        "eval_id": eval_id,
+        "dimension": dimension,
+        "source_file": metadata.get("source_file")
+        or metadata.get("persona_source_file")
+        or "",
+        "persona_id": metadata.get("persona_id") or "",
+        "task_id": metadata.get("task_id") or "",
+        "model": metadata.get("model") or "",
+        "judge_input_file": path.name,
+    }
+
+
+def _cell_key(sample: dict, key_fields: tuple[str, ...]) -> tuple[str, ...]:
+    return tuple(str(sample.get(field) or "") for field in key_fields)
+
+
+def _cell_payload(key_fields: tuple[str, ...], key: tuple[str, ...]) -> dict[str, str]:
+    return dict(zip(key_fields, key))
+
+
+def _read_human_label_csv(path: Path) -> tuple[list[str], list[dict[str, str]]]:
+    if not path.exists():
+        raise FileNotFoundError(f"human label CSV not found: {path}")
+    with open(path, encoding="utf-8", newline="") as fh:
+        reader = csv.DictReader(fh)
+        header = list(reader.fieldnames or LABEL_FIELDS)
+        rows = [dict(row) for row in reader]
+    return header, rows
+
+
+def _write_human_label_csv(
+    path: Path,
+    *,
+    header: list[str],
+    existing_rows: list[dict[str, str]],
+    new_samples: list[dict],
+) -> int:
+    existing_csv_eids = {str(row.get("eval_id") or "") for row in existing_rows}
+    appended = 0
+    rows = list(existing_rows)
+    for sample in new_samples:
+        if sample["eval_id"] in existing_csv_eids:
+            continue
+        row = {col: "" for col in header}
+        for col in header:
+            if col in sample:
+                row[col] = sample.get(col) or ""
+        rows.append(row)
+        existing_csv_eids.add(sample["eval_id"])
+        appended += 1
+
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    with open(tmp, "w", encoding="utf-8", newline="") as fh:
+        writer = csv.DictWriter(fh, fieldnames=header)
+        writer.writeheader()
+        writer.writerows(rows)
+    tmp.replace(path)
+    return appended
+
+
+def _flatten_evaluations_by_eval_id(aggregate: dict) -> dict:
+    return {
+        record.get("eval_id"): record
+        for records in aggregate.values()
+        if isinstance(records, list)
+        for record in records
+    }
+
+
+def write_llm_label_snapshot(out: Path, samples: list[dict]) -> dict:
     """Snapshot the LLM judges' labels for the chosen samples — three judges
-    if available, plus the panel_2 mean already computed in the aggregate.
+    if available, plus the panel-3 mean already computed in the aggregate.
     """
     primary_dir = out / "judge_outputs"
     by_model_dir = out / "judge_outputs_by_model"
     aggregate_path = out / "evaluations" / "all_evaluations.json"
     aggregate = load_json(aggregate_path) if aggregate_path.exists() else {}
-    aggregate_by_eval = {
-        r.get("eval_id"): r
-        for records in aggregate.values()
-        if isinstance(records, list)
-        for r in records
-    }
+    aggregate_by_eval = _flatten_evaluations_by_eval_id(aggregate)
 
     rows = []
     missing = []
@@ -305,11 +481,8 @@ def _write_llm_label_snapshot(out: Path, samples: list[dict]) -> dict:
             continue
         primary = load_json(primary_path)
         per_judge: dict[str, dict] = {}
-        for judge_dir_name, label in (
-            ("anthropic__claude-sonnet-4-6", "sonnet"),
-            ("openai__gpt-5_4", "gpt54"),
-            ("google__gemini-3_1-pro-preview", "gemini"),
-        ):
+        for model_id, label in PANEL_JUDGES:
+            judge_dir_name = safe_model_dir(model_id)
             jp = by_model_dir / judge_dir_name / f"{eval_id}.json"
             if jp.exists():
                 per_judge[label] = load_json(jp).get("scores") or {}
@@ -320,7 +493,7 @@ def _write_llm_label_snapshot(out: Path, samples: list[dict]) -> dict:
                 "dimension": sample["dimension"],
                 "judge_input_file": sample["judge_input_file"],
                 "rubric_id": primary.get("rubric_id"),
-                "panel_2_scores": agg_record.get("scores") or primary.get("scores"),
+                "panel_3_scores": agg_record.get("scores") or primary.get("scores"),
                 "scores_by_judge": per_judge,
             }
         )
@@ -334,6 +507,188 @@ def _write_llm_label_snapshot(out: Path, samples: list[dict]) -> dict:
     align_dir = out / "human_alignment"
     atomic_write_json(align_dir / "llm_judge_labels.json", snapshot)
     return snapshot
+
+
+def extend_alignment_pool(
+    results_dir: Path | None = None,
+    *,
+    target: str,
+    key_fields: str | Iterable[str] = DEFAULT_EXTENSION_KEY_FIELDS,
+    dimension: str | None = None,
+    seed: int = 2026,
+    dry_run: bool = False,
+) -> dict:
+    """Extend human-alignment samples to per-dimension per-cell targets.
+
+    Target parsing follows the locked D2 CLI semantics: ``target`` becomes a
+    canonical ``{dimension: per_cell_quota}`` map, while ``key_fields`` only
+    controls cell composition inside each dimension.
+    """
+    out = results_dir or default_results_dir()
+    if not out.is_absolute():
+        out = BENCH_ROOT / out
+    align_dir = out / "human_alignment"
+    input_dir = out / "judge_inputs"
+    manifest_path = align_dir / "sample_manifest.json"
+    csv_path = align_dir / "human_label_template.csv"
+
+    target_per_cell = parse_alignment_target_spec(target, dimension=dimension)
+    parsed_key_fields = parse_alignment_key_fields(key_fields)
+
+    if not manifest_path.exists():
+        raise FileNotFoundError(f"human alignment manifest not found: {manifest_path}")
+    if not input_dir.exists():
+        raise FileNotFoundError(f"judge input directory not found: {input_dir}")
+
+    manifest = load_json(manifest_path)
+    existing_samples = list(manifest.get("samples") or [])
+    existing_ids = {str(sample.get("eval_id") or "") for sample in existing_samples}
+
+    existing_count: dict[tuple[str, tuple[str, ...]], int] = defaultdict(int)
+    known_cells: dict[str, set[tuple[str, ...]]] = defaultdict(set)
+    for sample in existing_samples:
+        dim = str(sample.get("dimension") or "").strip()
+        if dim not in target_per_cell:
+            continue
+        key = _cell_key(sample, parsed_key_fields)
+        known_cells[dim].add(key)
+        existing_count[(dim, key)] += 1
+
+    candidate_pool: dict[tuple[str, tuple[str, ...]], list[dict]] = defaultdict(list)
+    for path in sorted(input_dir.glob("*.json")):
+        try:
+            payload = load_json(path)
+        except (OSError, json.JSONDecodeError):
+            continue
+        sample = _alignment_sample_from_input(path, payload)
+        if not sample:
+            continue
+        dim = sample["dimension"]
+        if dim not in target_per_cell:
+            continue
+        key = _cell_key(sample, parsed_key_fields)
+        known_cells[dim].add(key)
+        if sample["eval_id"] not in existing_ids:
+            candidate_pool[(dim, key)].append(sample)
+
+    rng = random.Random(seed)
+    new_samples: list[dict] = []
+    cell_reports: list[dict] = []
+    warnings: list[str] = []
+    for dim, target_n in target_per_cell.items():
+        for key in sorted(known_cells.get(dim, set())):
+            existing_n = existing_count.get((dim, key), 0)
+            needed = max(0, target_n - existing_n)
+            pool = candidate_pool.get((dim, key), [])
+            selected: list[dict] = []
+            status = "ok"
+            if needed > 0:
+                if not pool:
+                    status = "no_candidates"
+                    warnings.append(
+                        "no candidates for "
+                        f"dimension={dim} cell={_cell_payload(parsed_key_fields, key)} "
+                        f"(existing={existing_n}, need={needed})"
+                    )
+                else:
+                    shuffled = list(pool)
+                    rng.shuffle(shuffled)
+                    selected = shuffled[: min(needed, len(shuffled))]
+                    new_samples.extend(selected)
+                    status = "would_add" if len(selected) == needed else "shortfall"
+                    if len(selected) < needed:
+                        warnings.append(
+                            "pool shortfall for "
+                            f"dimension={dim} cell={_cell_payload(parsed_key_fields, key)} "
+                            f"(existing={existing_n}, need={needed}, "
+                            f"available={len(pool)}, selected={len(selected)})"
+                        )
+            cell_reports.append(
+                {
+                    "dimension": dim,
+                    "cell": _cell_payload(parsed_key_fields, key),
+                    "existing": existing_n,
+                    "target": target_n,
+                    "needed": needed,
+                    "available_candidates": len(pool),
+                    "selected": len(selected),
+                    "status": status,
+                }
+            )
+
+    for warning in warnings:
+        print(f"WARNING: {warning}", file=sys.stderr)
+
+    combined_samples = existing_samples + new_samples
+    by_dimension: dict[str, dict[str, int]] = {}
+    for dim in target_per_cell:
+        existing_dim = sum(
+            1 for sample in existing_samples if sample.get("dimension") == dim
+        )
+        added_dim = sum(1 for sample in new_samples if sample.get("dimension") == dim)
+        by_dimension[dim] = {
+            "existing": existing_dim,
+            "added": added_dim,
+            "final": existing_dim + added_dim,
+        }
+
+    report = {
+        "human_alignment_status": "extension_dry_run" if dry_run else "extended",
+        "schema_version": "human_alignment_v2",
+        "results_dir": str(out),
+        "dry_run": dry_run,
+        "target_per_cell": target_per_cell,
+        "key_fields": list(parsed_key_fields),
+        "dimension": dimension,
+        "seed": seed,
+        "existing_sample_count": len(existing_samples),
+        "new_sample_count": len(new_samples),
+        "final_sample_count": len(combined_samples),
+        "by_dimension": by_dimension,
+        "warnings": warnings,
+        "cells": cell_reports,
+        "writes": {
+            "sample_manifest": False,
+            "human_label_template": False,
+            "llm_judge_labels": False,
+        },
+    }
+    if dry_run:
+        return report
+
+    header, existing_rows = _read_human_label_csv(csv_path)
+    new_manifest = dict(manifest)
+    new_manifest.update(
+        {
+            "human_alignment_status": "sampled",
+            "schema_version": "human_alignment_v2",
+            "sample_limit": len(combined_samples),
+            "sample_count": len(combined_samples),
+            "extension_target_per_cell": target_per_cell,
+            "extension_key_fields": list(parsed_key_fields),
+            "extension_dimension": dimension,
+            "extension_seed": seed,
+            "extension_added": len(new_samples),
+            "samples": combined_samples,
+        }
+    )
+    atomic_write_json(manifest_path, new_manifest)
+    appended = _write_human_label_csv(
+        csv_path,
+        header=header,
+        existing_rows=existing_rows,
+        new_samples=new_samples,
+    )
+    snapshot = write_llm_label_snapshot(out, combined_samples)
+    report["writes"] = {
+        "sample_manifest": str(manifest_path),
+        "human_label_template": str(csv_path),
+        "llm_judge_labels": str(align_dir / "llm_judge_labels.json"),
+    }
+    report["csv_rows_appended"] = appended
+    report["llm_label_count"] = snapshot["llm_label_count"]
+    report["missing_judge_outputs"] = snapshot["missing_judge_outputs"]
+    return report
 
 
 def init_human_alignment(
@@ -351,7 +706,7 @@ def init_human_alignment(
     input_dir = out / "judge_inputs"
     plan = sample_plan or DEFAULT_SAMPLE_PLAN
     samples = _stratified_sample(input_dir, plan)
-    llm_snapshot = _write_llm_label_snapshot(out, samples)
+    llm_snapshot = write_llm_label_snapshot(out, samples)
 
     status = "sampled" if samples else "not_run"
     manifest = {
@@ -361,7 +716,7 @@ def init_human_alignment(
         "sample_count": len(samples),
         "sampling_policy": (
             "stratified per (dimension, persona) per DEFAULT_SAMPLE_PLAN; "
-            "B1 prioritises judge-disagreement cases when available"
+            "S4 prioritises judge-disagreement cases when available"
         ),
         "llm_judge_label_count": llm_snapshot["llm_label_count"],
         "samples": samples,
@@ -412,6 +767,109 @@ def init_human_alignment(
     return manifest
 
 
+# Mapping from human label CSV column → (judge score field by dimension).
+# Used for per-judge alignment on the numeric fields that can be paired
+# across (human label, judge raw score). The dimension key set is exactly
+# the dimensions where the rubric exposes a comparable scalar.
+_PER_JUDGE_ALIGNMENT_SPECS: list[tuple[str, str, dict[str, str]]] = [
+    (
+        "persona_fidelity",
+        "persona_fidelity",
+        {
+            "S1": "overall",
+            "S3": "overall_reproducibility",
+            "S2": "overall_drift_score",
+            "S5": "overall_probe_pass",
+            "S4": "contract_fit",
+        },
+    ),
+    (
+        "knowledge_boundary_pass",
+        "knowledge_boundary_pass",
+        {"S1": "knowledge_boundary"},
+    ),
+    (
+        "emotional_match",
+        "emotional_match",
+        {"S1": "emotional_tone", "S3": "emotional_consistency"},
+    ),
+    (
+        "p1_facet_fit",
+        "human_facet_fit",
+        {"S5": "facet_fit"},
+    ),
+    (
+        "control_distinctiveness",
+        "human_distinctiveness",
+        {"S6": "distinctiveness"},
+    ),
+]
+
+
+def _compute_per_judge_alignment(
+    labels_path: Path,
+    llm_snapshot_path: Path,
+) -> dict:
+    """Per-judge MAD / within-1pt / n for each (numeric field, dimension).
+
+    The aggregate-level metrics in ``compute_human_agreement`` collapse all
+    judges into a single Panel-3 / primary score, which is fine for a
+    "do judges roughly track humans" description but useless for the
+    "which judge tracks humans best" question. This helper reads each
+    judge's raw score from the ``llm_judge_labels.json`` snapshot
+    (``scores_by_judge``) and pairs it against the human-labelled CSV row
+    on a per-field, per-dimension, per-judge basis.
+
+    Returns ``{field: {dimension: {judge_label: {n, mean_absolute_difference,
+    within_one_point_rate}}}}`` — empty when the inputs are missing.
+    """
+    if not (labels_path.exists() and llm_snapshot_path.exists()):
+        return {}
+    snapshot = load_json(llm_snapshot_path) or {}
+    labels_by_eval = {
+        item.get("eval_id"): item for item in snapshot.get("labels", []) or []
+    }
+    bucket: dict[str, dict[str, dict[str, list[float]]]] = defaultdict(
+        lambda: defaultdict(lambda: defaultdict(list))
+    )
+    with open(labels_path, encoding="utf-8", newline="") as fh:
+        for row in csv.DictReader(fh):
+            eid = str(row.get("eval_id") or "").strip()
+            dim = str(row.get("dimension") or "").strip()
+            label_data = labels_by_eval.get(eid)
+            if not label_data:
+                continue
+            sbj = label_data.get("scores_by_judge") or {}
+            for field_name, csv_col, dim_to_judge_field in _PER_JUDGE_ALIGNMENT_SPECS:
+                judge_field = dim_to_judge_field.get(dim)
+                if not judge_field:
+                    continue
+                hv = _as_float(row.get(csv_col))
+                if hv is None:
+                    continue
+                for j_label in JUDGE_LABELS:
+                    j_scores = sbj.get(j_label) or {}
+                    jv = _as_float(j_scores.get(judge_field))
+                    if jv is None:
+                        continue
+                    bucket[field_name][dim][j_label].append(abs(hv - jv))
+    out: dict = {}
+    for field_name, by_dim in bucket.items():
+        out[field_name] = {}
+        for dim, by_judge in by_dim.items():
+            out[field_name][dim] = {}
+            for j_label, diffs in by_judge.items():
+                n = len(diffs)
+                if n == 0:
+                    continue
+                out[field_name][dim][j_label] = {
+                    "n": n,
+                    "mean_absolute_difference": sum(diffs) / n,
+                    "within_one_point_rate": sum(1 for d in diffs if d <= 1.0) / n,
+                }
+    return out
+
+
 def _per_judge_b1_match(
     eval_id: str,
     expected_human: str,
@@ -419,26 +877,21 @@ def _per_judge_b1_match(
     by_model_dir: Path,
 ) -> dict:
     """Compare human's identified_persona to each judge's identified_persona
-    on a B1 sample. Returns dict with per-judge match (bool) + panel_2
-    strict consensus."""
-    out = {"sonnet": None, "gpt54": None, "gemini": None, "panel_2_strict": None}
-    # Try aggregate first (panel_2 has identified_persona_by_judge)
+    on a S4 sample. Returns dict with per-judge match (bool) for the three
+    panel members."""
+    out: dict[str, bool | None] = {label: None for label in JUDGE_LABELS}
+    # Try aggregate first (panel-3 has identified_persona_by_judge)
     rec = aggregate_by_eval.get(eval_id) or {}
     by_judge = (rec.get("scores") or {}).get("identified_persona_by_judge") or {}
-    s = str(by_judge.get("sonnet", "")).strip()
-    g = str(by_judge.get("gpt54", "")).strip()
-    if s:
-        out["sonnet"] = s == expected_human
-    if g:
-        out["gpt54"] = g == expected_human
+    for label in JUDGE_LABELS:
+        v = str(by_judge.get(label, "")).strip()
+        if v:
+            out[label] = v == expected_human
     # Fall back to by_model dirs for fields not in aggregate
-    for label, dir_name in (
-        ("sonnet", "anthropic__claude-sonnet-4-6"),
-        ("gpt54", "openai__gpt-5_4"),
-        ("gemini", "google__gemini-3_1-pro-preview"),
-    ):
+    for model_id, label in PANEL_JUDGES:
         if out[label] is not None:
             continue
+        dir_name = safe_model_dir(model_id)
         jp = by_model_dir / dir_name / f"{eval_id}.json"
         if jp.exists():
             payload = load_json(jp)
@@ -447,8 +900,6 @@ def _per_judge_b1_match(
             ).strip()
             if judged:
                 out[label] = judged == expected_human
-    if out["sonnet"] is not None and out["gpt54"] is not None:
-        out["panel_2_strict"] = bool(out["sonnet"] and out["gpt54"])
     return out
 
 
@@ -481,23 +932,16 @@ def compute_human_agreement(
         return report
 
     aggregate = load_json(eval_path)
-    by_eval_id = {
-        record.get("eval_id"): record
-        for records in aggregate.values()
-        if isinstance(records, list)
-        for record in records
-    }
+    by_eval_id = _flatten_evaluations_by_eval_id(aggregate)
 
-    # Comparison buckets — each list collects per-eval comparisons
     persona_fid: list[dict] = []
     knowledge: list[dict] = []
     emotional: list[dict] = []
     drift: list[dict] = []
     failure_match: list[dict] = []
-    # New v2 buckets
     b1_per_judge: list[dict] = (
         []
-    )  # {eval_id, persona_id, sonnet_match, gpt54_match, panel_2_strict}
+    )  # {eval_id, persona_id, sonnet_match, gpt54_match, gemini_match}
     control_dist: list[dict] = []  # numeric agreement
     control_set_a: list[dict] = []  # per-judge accuracy
     p1_facet_fit: list[dict] = []  # numeric agreement
@@ -520,7 +964,6 @@ def compute_human_agreement(
 
             comment = row.get("human_comment", "")
 
-            # --- persona_fidelity (numeric, multiple dims) ---
             try:
                 primary_field = primary_score_field(dimension)
             except KeyError:
@@ -539,8 +982,7 @@ def compute_human_agreement(
                 disagreements=all_disagreements,
             )
 
-            # --- knowledge_boundary_pass (D1 only) ---
-            kf = KNOWLEDGE_FIELD_BY_DIMENSION.get(dimension)
+            kf = PANEL_AGG_KNOWLEDGE_FIELD_BY_DIM.get(dimension)
             _record_numeric(
                 category="knowledge_boundary_pass",
                 eval_id=eval_id,
@@ -553,8 +995,7 @@ def compute_human_agreement(
                 disagreements=all_disagreements,
             )
 
-            # --- emotional_match (D1/D2) ---
-            ef = EMOTIONAL_FIELD_BY_DIMENSION.get(dimension)
+            ef = PANEL_AGG_EMOTIONAL_FIELD_BY_DIM.get(dimension)
             _record_numeric(
                 category="emotional_match",
                 eval_id=eval_id,
@@ -567,7 +1008,6 @@ def compute_human_agreement(
                 disagreements=all_disagreements,
             )
 
-            # --- drift_onset_turn (D3) ---
             _record_numeric(
                 category="drift_onset_turn",
                 eval_id=eval_id,
@@ -580,7 +1020,6 @@ def compute_human_agreement(
                 disagreements=all_disagreements,
             )
 
-            # --- failure_type ---
             human_f = str(row.get("failure_type", "")).strip()
             if human_f:
                 judge_failures = scores.get("failure_types") or []
@@ -612,8 +1051,7 @@ def compute_human_agreement(
                         }
                     )
 
-            # --- B1 identified_persona (per-judge accuracy) ---
-            if dimension == "B1":
+            if dimension == "S4":
                 human_id = str(row.get("human_identified_persona", "")).strip()
                 if human_id and human_id != "uncertain":
                     matches = _per_judge_b1_match(
@@ -633,8 +1071,7 @@ def compute_human_agreement(
                         }
                     )
 
-            # --- control distinctiveness (numeric) + persona_set_a (categorical) ---
-            if dimension == "control":
+            if dimension == "S6":
                 _record_numeric(
                     category="control_distinctiveness",
                     eval_id=eval_id,
@@ -646,7 +1083,6 @@ def compute_human_agreement(
                     human_comment=comment,
                     disagreements=all_disagreements,
                 )
-                # persona_set_a check (was the human right about which set was conditioned?)
                 human_a = str(row.get("human_persona_set_a", "")).strip().lower()
                 if human_a in ("true", "false"):
                     human_bool = human_a == "true"
@@ -658,8 +1094,7 @@ def compute_human_agreement(
                         }
                     )
 
-            # --- P1 facet_fit + expected_signals recall ---
-            if dimension == "P1":
+            if dimension == "S5":
                 _record_numeric(
                     category="p1_facet_fit",
                     eval_id=eval_id,
@@ -687,9 +1122,6 @@ def compute_human_agreement(
                     )
                     p1_signals_recall.append({"eval_id": eval_id, "recall": recall})
 
-    # ------------------------------------------------------------------
-    # Aggregate metrics
-    # ------------------------------------------------------------------
     def _b1_judge_accuracy(view: str) -> dict | None:
         vals = [r[view] for r in b1_per_judge if r.get(view) is not None]
         if not vals:
@@ -705,12 +1137,12 @@ def compute_human_agreement(
         "emotional_match": _numeric_agreement(emotional, "abs_diff"),
         "drift_onset_turn": _numeric_agreement(drift, "abs_diff"),
         "failure_type": _failure_type_agreement(failure_match),
-        # Per-judge B1 vs human (the load-bearing question)
+        # Per-judge S4 vs human (the load-bearing question)
         "b1_identification": {
-            "sonnet_vs_human": _b1_judge_accuracy("sonnet"),
-            "gpt54_vs_human": _b1_judge_accuracy("gpt54"),
-            "gemini_vs_human": _b1_judge_accuracy("gemini"),
-            "panel_2_strict_vs_human": _b1_judge_accuracy("panel_2_strict"),
+            **{
+                f"{judge_label}_vs_human": _b1_judge_accuracy(judge_label)
+                for judge_label in JUDGE_LABELS
+            },
             "n": len(b1_per_judge),
         },
         "control_distinctiveness": _numeric_agreement(control_dist, "abs_diff"),
@@ -732,6 +1164,9 @@ def compute_human_agreement(
             }
             if p1_signals_recall
             else None
+        ),
+        "per_judge_alignment": _compute_per_judge_alignment(
+            labels, align_dir / "llm_judge_labels.json"
         ),
     }
 
@@ -760,8 +1195,8 @@ def compute_human_agreement(
     report = {
         "human_alignment_status": "agreement_reported" if has_data else "labeled",
         "schema_version": "human_alignment_v2",
-        "labels_file": str(labels),
-        "llm_judge_labels_file": str(align_dir / "llm_judge_labels.json"),
+        "labels_file": labels.name,
+        "llm_judge_labels_file": "llm_judge_labels.json",
         "agreement_metrics": metrics if has_data else None,
         "b1_breakdown_by_persona": _b1_breakdown_by_persona(b1_per_judge),
         "disagreement_examples": disagreements,
@@ -782,33 +1217,29 @@ def compute_human_agreement(
 
 
 def _b1_breakdown_by_persona(rows: list[dict]) -> dict:
-    """Per-persona B1 per-judge accuracy (the breakdown that exposes
-    fp-specific judge weakness)."""
+    """Per-persona S4 per-judge accuracy (the breakdown that exposes
+    persona-specific judge weakness)."""
     by_persona: dict[str, dict] = defaultdict(
         lambda: {
             "n": 0,
-            "sonnet_correct": 0,
-            "gpt54_correct": 0,
-            "panel_2_strict_correct": 0,
+            **{f"{judge_label}_correct": 0 for judge_label in JUDGE_LABELS},
         }
     )
     for r in rows:
         p = r.get("expected_human") or r.get("true_persona_id") or "unknown"
         by_persona[p]["n"] += 1
-        if r.get("sonnet"):
-            by_persona[p]["sonnet_correct"] += 1
-        if r.get("gpt54"):
-            by_persona[p]["gpt54_correct"] += 1
-        if r.get("panel_2_strict"):
-            by_persona[p]["panel_2_strict_correct"] += 1
+        for judge_label in JUDGE_LABELS:
+            if r.get(judge_label):
+                by_persona[p][f"{judge_label}_correct"] += 1
     return {
         p: {
             "n": d["n"],
-            "sonnet_accuracy": d["sonnet_correct"] / d["n"] if d["n"] else None,
-            "gpt54_accuracy": d["gpt54_correct"] / d["n"] if d["n"] else None,
-            "panel_2_strict_accuracy": (
-                d["panel_2_strict_correct"] / d["n"] if d["n"] else None
-            ),
+            **{
+                f"{judge_label}_accuracy": (
+                    d[f"{judge_label}_correct"] / d["n"] if d["n"] else None
+                )
+                for judge_label in JUDGE_LABELS
+            },
         }
         for p, d in by_persona.items()
     }

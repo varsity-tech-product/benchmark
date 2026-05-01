@@ -167,7 +167,7 @@ def _failure_tags(record: dict[str, Any]) -> set[str]:
 
 
 def _b1_identity_match(record: dict[str, Any]) -> bool | None:
-    if record.get("dimension") != "B1":
+    if record.get("dimension") != "S4":
         return None
     expected = record.get("expected_persona_id")
     if not expected:
@@ -177,7 +177,7 @@ def _b1_identity_match(record: dict[str, Any]) -> bool | None:
 
 
 def _should_check_b1_identity(record: dict[str, Any], *, threshold: float) -> bool:
-    if record.get("dimension") != "B1":
+    if record.get("dimension") != "S4":
         return False
     if str(record.get("expected_score_band") or "").lower() == "high":
         return True
@@ -570,7 +570,7 @@ def markdown_report(stats: dict[str, Any]) -> str:
         f"- Prompt-format within-one rate: {stats['prompt_format']['within_one_variant_rate']}",
         f"- Sensitivity pass rate: {stats['sensitivity']['pass_rate']}",
         f"- Failure-tag hit rate: {stats['failure_tags']['hit_rate']}",
-        f"- B1 identity match rate: {stats['b1_identity']['match_rate']}",
+        f"- S4 identity match rate: {stats['b1_identity']['match_rate']}",
         "",
         "## Gate Checks",
         "",
@@ -625,7 +625,7 @@ def markdown_report(stats: dict[str, Any]) -> str:
     lines.extend(
         [
             "",
-            "## B1 Identity",
+            "## S4 Identity",
             "",
             "| Sample | Expected | Observed | Match Rate | Status |",
             "| --- | --- | --- | ---: | --- |",
@@ -774,7 +774,7 @@ Corpus version: <code>{_html(stats.get('corpus_version'))}</code></p>
 <table><tr><th>Sample</th><th>Dimension</th><th>Variant means</th><th>Max delta</th><th>Flip</th></tr>{prompt_rows}</table>
 <h2>Failure Tags</h2>
 <table><tr><th>Sample</th><th>Expected</th><th>Observed</th><th>Hit rate</th><th>Status</th></tr>{failure_rows}</table>
-<h2>B1 Identity</h2>
+<h2>S4 Identity</h2>
 <table><tr><th>Sample</th><th>Expected</th><th>Observed</th><th>Match rate</th><th>Status</th></tr>{b1_rows}</table>
 <h2>Residual Numeric Deltas</h2>
 <div class="note">These rows do not necessarily fail the gate. They identify groups with score deltas above one point or pass/fail flips for follow-up numeric calibration.</div>

@@ -22,9 +22,8 @@ from experiments.student_sim_stability.analysis.validate import validate  # noqa
 
 def _markdown_from_audit(audit: dict) -> str:
     lines = [
-        "# Issue83 Student Simulator Data Quality Audit",
+        "# Student Simulator Data Quality Audit",
         "",
-        f"- Results directory: `{audit['results_dir']}`",
         f"- Overall status: `{'pass' if audit['ok'] else 'fail'}`",
         "",
         "## Checks",
@@ -44,7 +43,7 @@ def _markdown_from_audit(audit: dict) -> str:
             "- Control rows must come from real `control__*.json` judge outputs.",
             "- Fixture openings are excluded from generated-student metrics.",
             "- Exact duplicate judge score payloads across any dimension are failures.",
-            "- Template-like D3 duplicate score clusters are failures.",
+            "- Template-like S2 duplicate score clusters are failures.",
         ]
     )
     return "\n".join(lines) + "\n"
@@ -58,7 +57,7 @@ def run_audit(results_dir: Path | None = None, *, profile: str = "full") -> dict
     failures = [check for check in checks if not check.ok and check.required]
     audit = {
         "ok": not failures,
-        "results_dir": str(out),
+        "results_dir_name": out.name,
         "checks": [check.__dict__ for check in checks],
         "summary": summary,
         "profile": profile,

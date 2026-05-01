@@ -26,8 +26,8 @@
 > 你（量化专家人类）和 Claude（助手）。本文档明确定义逐条评分对话的流程：
 > Claude 发什么、你回什么、Claude 怎么记录、最终产出什么。
 
-> **Dimension naming note** · D3 = drift detection over a full conversation.
-> **维度命名提醒** · D3 = 整段对话上的 persona 漂移检测。
+> **Dimension naming note** · S2 = drift detection over a full conversation.
+> **维度命名提醒** · S2 = 整段对话上的 persona 漂移检测。
 
 ## 1.1 Three Reference Sections · 三节内容
 
@@ -37,7 +37,7 @@ Don't re-read per sample — they're static.
 
 | Section | Purpose · 用途 |
 |---|---|
-| §3 Rubric | All scoring criteria for D1/D2/D3/control/P1/B1 (1-5 scales, ceiling rules, failure taxonomy). · 所有维度的评分标准。 |
+| §3 Rubric | All scoring criteria for S1/S3/S2/control/S5/S4 (1-5 scales, ceiling rules, failure taxonomy). · 所有维度的评分标准。 |
 | §2 Personas | The 4 persona contracts (familiar/unfamiliar concepts, emotional profile, behavioral rules). · 4 个人格的完整契约。 |
 | §1 Workflow | **This section** — flow + field schema + output. · **本节** — 流程 + 字段 schema + 输出。 |
 
@@ -59,20 +59,20 @@ Schema 版本 **`human_alignment_v2`**。按 (dimension, persona) 分层抽样�
 
 | Dimension · 维度 | dc | dn | fv | fp | Total |
 |---|---|---|---|---|---|
-| D1 — Persona Adherence (per turn) | 2 | 2 | 2 | 2 | 8 |
-| D2 — Cross-run Reproducibility | 1 | 1 | 1 | 1 | 4 |
-| D3 — Drift Detection (full conversation) | 2 | 2 | 2 | 2 | 8 |
+| S1 — Persona Adherence (per turn) | 2 | 2 | 2 | 2 | 8 |
+| S3 — Cross-run Reproducibility | 1 | 1 | 1 | 1 | 4 |
+| S2 — Drift Detection (full conversation) | 2 | 2 | 2 | 2 | 8 |
 | control — Persona Distinguishability | 1 | 1 | 1 | 1 | 4 |
-| P1 — Targeted Probe | 2 | 2 | 2 | 2 | 8 |
-| **B1 — Blind Persona Identification** | 1 | 1 | 1 | **4** | **7** |
+| S5 — Targeted Probe | 2 | 2 | 2 | 2 | 8 |
+| **S4 — Blind Persona Identification** | 1 | 1 | 1 | **4** | **7** |
 | **Total** | | | | | **39** |
 
-**fp gets 4 B1 samples** because Sonnet (41%) and GPT-5.4 (76%) disagree
-most on fp B1 identification — those samples carry the most signal for the
-"which judge is more reliable" question. Within B1 fp, samples are sorted to
+**fp gets 4 S4 samples** because Sonnet (41%) and GPT-5.4 (76%) disagree
+most on fp S4 identification — those samples carry the most signal for the
+"which judge is more reliable" question. Within S4 fp, samples are sorted to
 prioritize ones where Sonnet and GPT-5.4 disagreed.
-**fp 在 B1 上拿 4 条**：Sonnet (41%) 和 GPT-5.4 (76%) 对 fp 识别分歧最大，
-这些样本对"哪个裁判更可靠"问题最具信息量。fp B1 内部按 Sonnet/GPT-5.4 分
+**fp 在 S4 上拿 4 条**：Sonnet (41%) 和 GPT-5.4 (76%) 对 fp 识别分歧最大，
+这些样本对"哪个裁判更可靠"问题最具信息量。fp S4 内部按 Sonnet/GPT-5.4 分
 歧度优先选。
 
 Files used by Claude during the loop:
@@ -92,10 +92,10 @@ stripped, conversation kept), then composes the case card. **The card never
 includes the LLM judges' answers** — those are quarantined in
 `human_alignment/llm_judge_labels.json` and only inspected after you submit.
 
-Card layout depends on dimension. **Two header variants** — one for B1
+Card layout depends on dimension. **Two header variants** — one for S4
 (must hide persona truth), one for everything else.
 
-#### Header variant A — non-B1 (D1 / D2 / D3 / control / P1)
+#### Header variant A — non-S4 (S1 / S3 / S2 / control / S5)
 
 ```
 === Eval N/39 · {dimension} · {persona_short} ({persona_id}) ===
@@ -119,10 +119,10 @@ what `human_persona_set_a` resolves). Showing persona_id is fine because the
 human's task is "grade distinctiveness against this persona", not "guess
 the persona".
 
-#### Header variant B — B1 (BLIND identification — answer must be hidden)
+#### Header variant B — S4 (BLIND identification — answer must be hidden)
 
 ```
-=== Eval N/39 · B1 · ?? (blind) ===
+=== Eval N/39 · S4 · ?? (blind) ===
 eval_id (redacted): <eval_id with persona_id segment AND model segment replaced by "***">
 task_id: <task_id>          ← visible: LLM judge sees this in `Context label: task=<task_id>; repeat_tag=<...>`
 repeat_tag: <r{i}_tt{j}>    ← visible: same reason
@@ -135,18 +135,18 @@ fp — fullstack_practitioner (advanced Python AND junior-quant finance; analyti
 (Full contracts: §2 Personas.)
 ```
 
-For B1, the case card MUST NOT show, anywhere (header / persona reference /
+For S4, the case card MUST NOT show, anywhere (header / persona reference /
 transcript / metadata):
 - `persona_id` (the truth)
 - `persona_short` (would also leak)
-- `student_model` (the LLM judge does not see model identity for B1; humans grade under same blindness)
+- `student_model` (the LLM judge does not see model identity for S4; humans grade under same blindness)
 - the persona segment of `eval_id`
 - the persona segment of `judge_input_file`
 - `source_file` (filename contains persona_id)
 
-Example correct redaction for `B1__live__E01_build_ma_system__developer_crossover__claude-sonnet-4-6__r0_tt0`:
+Example correct redaction for `S4__live__E01_build_ma_system__developer_crossover__claude-sonnet-4-6__r0_tt0`:
 ```
-eval_id (redacted): B1__live__E01_build_ma_system__***__***__r0_tt0
+eval_id (redacted): S4__live__E01_build_ma_system__***__***__r0_tt0
 ```
 
 #### After the header, all dimensions share this body:
@@ -198,12 +198,12 @@ dimensions need further work).
 
 | Dim | Required · 必填 | Optional · 选填 | Slice from `prompt` to show as transcript |
 |---|---|---|---|
-| **D1** | `persona_fidelity` (1-5), `knowledge_boundary_pass` (1-5), `emotional_match` (1-5) | `failure_type`, `human_comment` | The `## Conversation Context` block (turn label + previous tutor message) plus the `## Student Message to Evaluate` block — **only those two sections**. Strip everything before `## Conversation Context` and everything after `## Important`. |
-| **D2** | `persona_fidelity` (1-5), `emotional_match` (1-5) | `failure_type`, `human_comment` | The `## Task` block plus the three `### Run 1/2/3` blocks. Strip everything before `## Task` and everything after `## Important`. |
-| **D3** | `persona_fidelity` (1-5), `drift_onset_turn` (int 1-7 or `null` if no drift) | `failure_type`, `human_comment` | The `## Conversation Context` block (alternating Context-only tutor turns and Scored student turns 1..7). Strip everything before `## Conversation Context` and everything after `## Important`. |
+| **S1** | `persona_fidelity` (1-5), `knowledge_boundary_pass` (1-5), `emotional_match` (1-5) | `failure_type`, `human_comment` | The `## Conversation Context` block (turn label + previous tutor message) plus the `## Student Message to Evaluate` block — **only those two sections**. Strip everything before `## Conversation Context` and everything after `## Important`. |
+| **S3** | `persona_fidelity` (1-5), `emotional_match` (1-5) | `failure_type`, `human_comment` | The `## Task` block plus the three `### Run 1/2/3` blocks. Strip everything before `## Task` and everything after `## Important`. |
+| **S2** | `persona_fidelity` (1-5), `drift_onset_turn` (int 1-7 or `null` if no drift) | `failure_type`, `human_comment` | The `## Conversation Context` block (alternating Context-only tutor turns and Scored student turns 1..7). Strip everything before `## Conversation Context` and everything after `## Important`. |
 | **control** | `human_distinctiveness` (1-5), `human_persona_set_a` (`true`/`false`/`unknown`) | `failure_type`, `human_comment` | The `## Set A` block and the `## Set B` block, side by side. Strip everything before `## Set A` and everything after `## Important`. **Do not reveal which set is the persona-conditioned one** — the order is randomized; that's the placebo test. |
-| **P1** | `persona_fidelity` (1-5), `human_facet_fit` (1-5), `human_facet_signals_hit` (comma-separated) | `failure_type`, `human_comment` | The four lines `Probe facet:`, `Tutor probe message:`, `Generated student response:`, plus the `Expected persona-specific indirect signals` bullet list (the human needs to see what facet/signals to look for). Strip everything before `Probe facet:` and everything after `## Important`. |
-| **B1** | `persona_fidelity` (1-5, this maps to judge `contract_fit`), `human_identified_persona` (one of: `developer_crossover`/`double_novice`/`finance_veteran`/`fullstack_practitioner`/`uncertain`), `human_b1_confidence` (1-5) | `failure_type`, `human_comment` | The `Anonymized generated-student transcript:` block (Student turn 1..N). Strip everything before that line and everything after `## Important`. **Use Header Variant B (§1.3 Step A) — `persona_id`, `persona_short`, `student_model`, `source_file`, and the persona/model segments of `eval_id` and `judge_input_file` MUST be redacted everywhere in the card.** Showing any of these is a leak that invalidates the blind-identification signal. |
+| **S5** | `persona_fidelity` (1-5), `human_facet_fit` (1-5), `human_facet_signals_hit` (comma-separated) | `failure_type`, `human_comment` | The four lines `Probe facet:`, `Tutor probe message:`, `Generated student response:`, plus the `Expected persona-specific indirect signals` bullet list (the human needs to see what facet/signals to look for). Strip everything before `Probe facet:` and everything after `## Important`. |
+| **S4** | `persona_fidelity` (1-5, this maps to judge `contract_fit`), `human_identified_persona` (one of: `developer_crossover`/`double_novice`/`finance_veteran`/`fullstack_practitioner`/`uncertain`), `human_b1_confidence` (1-5) | `failure_type`, `human_comment` | The `Anonymized generated-student transcript:` block (Student turn 1..N). Strip everything before that line and everything after `## Important`. **Use Header Variant B (§1.3 Step A) — `persona_id`, `persona_short`, `student_model`, `source_file`, and the persona/model segments of `eval_id` and `judge_input_file` MUST be redacted everywhere in the card.** Showing any of these is a leak that invalidates the blind-identification signal. |
 
 `human_persona_set_a` semantics (control only): Set A is the first set shown
 in the prompt. Reply `true` if you believe Set A is the persona-conditioned
@@ -211,14 +211,14 @@ set, `false` if you believe Set B is, `unknown` if the two are too similar
 to call. The truth is in `metadata.persona_is_set_a` and is only used
 during `--compute`; do not reveal it during grading.
 
-`human_identified_persona = uncertain` is allowed for B1 when no candidate
+`human_identified_persona = uncertain` is allowed for S4 when no candidate
 is clearly justified. The agreement computation skips `uncertain` rows from
 per-judge accuracy (so an "uncertain" reply costs you sample size but is
 not a wrong answer). Use `human_b1_confidence` to record how sure you are.
 
 ### Example replies · 回复示例
 
-**D1 sample:**
+**S1 sample:**
 ```
 persona_fidelity: 4
 knowledge_boundary_pass: 5
@@ -227,7 +227,7 @@ failure_type:
 human_comment: 学生只是 echo tutor 在前一轮提到的 sharpe ratio,没有引入未铺垫的高级术语,知识边界没问题。情绪偏平淡,fv 应该更自信一点,所以扣 1 分。
 ```
 
-**D2 sample:**
+**S3 sample:**
 ```
 persona_fidelity: 4
 emotional_match: 4
@@ -235,7 +235,7 @@ failure_type:
 human_comment: 三段 run 都保持 dn 的焦虑+追问 pacing,没有 run 突然变 expert。run 2 略微更接近 dc 的口吻但仍在合同范围内。
 ```
 
-**D3 sample:**
+**S2 sample:**
 ```
 persona_fidelity: 3
 drift_onset_turn: 5
@@ -251,7 +251,7 @@ failure_type: generic_student_behavior
 human_comment: Set A 有更具体的"我是商科背景,formula 让我紧张"信号,Set B 像通用学生只问 next step。我猜 A 是 persona-conditioned。
 ```
 
-**P1 sample:**
+**S5 sample:**
 ```
 persona_fidelity: 4
 human_facet_fit: 5
@@ -260,7 +260,7 @@ failure_type:
 human_comment: 学生明确点出 rolling 在前 N-1 行返回 NaN 以及 min_periods 的语义,这是 dc 用 pandas 时的典型 confusion style。命中三个 expected signals。
 ```
 
-**B1 sample:**
+**S4 sample:**
 ```
 persona_fidelity: 3
 human_identified_persona: fullstack_practitioner
@@ -313,18 +313,18 @@ keys:
 ### What we read off this report · 报告回答的关键问题
 
 1. **"Is the LLM panel calibrated against humans?"** → Look at `persona_fidelity.within_one_point_rate`. If ≥ 0.80, LLM judges are within 1 point of humans on average.
-2. **"Which judge is more reliable on B1 (especially fp)?"** → Compare `b1_identification.{sonnet,gpt54}.accuracy_vs_human`. If Sonnet drops to 50% and GPT-5.4 stays at 80%, that's data evidence for the Sonnet-weakness hypothesis.
+2. **"Which judge is more reliable on S4 (especially fp)?"** → Compare `b1_identification.{sonnet,gpt54}.accuracy_vs_human`. If Sonnet drops to 50% and GPT-5.4 stays at 80%, that's data evidence for the Sonnet-weakness hypothesis.
 3. **"Per-persona judge weakness"** → `b1_breakdown_by_persona.{persona}.{sonnet,gpt54}_accuracy`. fp's gap is the fp-judge-weakness signal.
 4. **"Is control distinctiveness reliable?"** → `control_distinctiveness.within_one_point_rate` (judge vs human numeric agreement) + `control_persona_set_a_accuracy` (can humans even tell persona-conditioned from generic? if humans can't, persona conditioning is too weak — that's a persona-design problem, not a judge problem).
-5. **"P1 facet correctness"** → `p1_expected_signals_recall.mean_recall` tells us whether the probes' expected_signals are even visible to humans. Low recall ⇒ probes are mis-designed.
+5. **"S5 facet correctness"** → `p1_expected_signals_recall.mean_recall` tells us whether the probes' expected_signals are even visible to humans. Low recall ⇒ probes are mis-designed.
 
 ## 1.6 Operational Notes · 操作约定
 
 ### Anchoring avoidance · 避免锚定偏差
 - Claude **never** shows you the LLM judges' answers in the case card.
 - If you ask "what did the LLM judges say?", Claude declines until after you've submitted your row for that eval. Only then is it OK to discuss disagreements (Claude reads `human_alignment/llm_judge_labels.json` for that eval and shows you the per-judge scores side by side).
-- For B1 specifically, Claude **must use Header Variant B from §1.3 Step A**. Concretely, the following fields are FORBIDDEN to appear anywhere in the case card (header, persona reference, transcript, metadata block): `persona_id`, `persona_short` (`dc`/`dn`/`fv`/`fp`), `student_model`, `source_file`, and the persona+model segments of `eval_id` and `judge_input_file`. The B1 LLM-judge prompt itself does not see these fields; humans grading B1 are held to the same blindness so their accuracy is comparable.
-  - If a B1 case card accidentally leaks any of these, mark the resulting label with `failure_type: ` blank and add `"标识符泄露,本条非真正盲态"` (or English equivalent) to `human_comment`. The compute step will still include the row, but the disagreement triage will know to discount it.
+- For S4 specifically, Claude **must use Header Variant B from §1.3 Step A**. Concretely, the following fields are FORBIDDEN to appear anywhere in the case card (header, persona reference, transcript, metadata block): `persona_id`, `persona_short` (`dc`/`dn`/`fv`/`fp`), `student_model`, `source_file`, and the persona+model segments of `eval_id` and `judge_input_file`. The S4 LLM-judge prompt itself does not see these fields; humans grading S4 are held to the same blindness so their accuracy is comparable.
+  - If a S4 case card accidentally leaks any of these, mark the resulting label with `failure_type: ` blank and add `"标识符泄露,本条非真正盲态"` (or English equivalent) to `human_comment`. The compute step will still include the row, but the disagreement triage will know to discount it.
 - For control, Claude does not reveal `metadata.persona_is_set_a` (which set was persona-conditioned) before you submit.
 
 ### Chinese reasoning, English persistence · 中文推理，英文存档
@@ -335,13 +335,13 @@ keys:
 ### Mid-flow pause/resume · 中途暂停与续标
 - The CSV is the source of truth. Stop at any time.
 - To resume: ask Claude "继续从第 N 条开始", and Claude finds the next row whose **required field for that dimension** is still blank:
-  - D1/D2/D3/P1/B1 → first row of that dim where `persona_fidelity` is blank.
+  - S1/S3/S2/S5/S4 → first row of that dim where `persona_fidelity` is blank.
   - control → first row where `human_distinctiveness` is blank.
 - The aggregate (`compute_human_agreement`) only counts rows that have at least one filled human field; partial labels are ignored without erroring.
 
 ### Disagreement triage · 分歧处理
 - After all 39 are done, Claude prints the top 15 disagreements (where human and LLM differ most) plus your Chinese comments.
-- For any disagreement you marked with `human_b1_confidence: 5` (B1) or where you wrote a high-confidence Chinese comment (heuristic), Claude flags it as a candidate "LLM judge bug or rubric ambiguity" and lists it separately.
+- For any disagreement you marked with `human_b1_confidence: 5` (S4) or where you wrote a high-confidence Chinese comment (heuristic), Claude flags it as a candidate "LLM judge bug or rubric ambiguity" and lists it separately.
 
 ### Reproducibility · 可复现性
 - The sample list is deterministic for a given (results_dir, sample_plan, seed=42). Re-running `cli human-alignment` with the same plan picks the same 39 samples (init only writes the CSV if it doesn't already exist; existing labels are preserved).
@@ -395,20 +395,20 @@ Mapping from human field → judge score (used by `compute_human_agreement`):
 
 | human field | judge score field | dimension(s) |
 |---|---|---|
-| `persona_fidelity` | `overall` | D1 |
-| `persona_fidelity` | `overall_reproducibility` | D2 |
-| `persona_fidelity` | `overall_drift_score` | D3 |
-| `persona_fidelity` | `overall_probe_pass` | P1 |
-| `persona_fidelity` | `contract_fit` | B1 |
-| `knowledge_boundary_pass` | `knowledge_boundary` | D1 |
-| `emotional_match` | `emotional_tone` | D1 |
-| `emotional_match` | `emotional_consistency` | D2 |
-| `drift_onset_turn` | `drift_onset_turn` | D3 |
+| `persona_fidelity` | `overall` | S1 |
+| `persona_fidelity` | `overall_reproducibility` | S3 |
+| `persona_fidelity` | `overall_drift_score` | S2 |
+| `persona_fidelity` | `overall_probe_pass` | S5 |
+| `persona_fidelity` | `contract_fit` | S4 |
+| `knowledge_boundary_pass` | `knowledge_boundary` | S1 |
+| `emotional_match` | `emotional_tone` | S1 |
+| `emotional_match` | `emotional_consistency` | S3 |
+| `drift_onset_turn` | `drift_onset_turn` | S2 |
 | `human_distinctiveness` | `distinctiveness` | control |
 | `human_persona_set_a` | (compared to `metadata.persona_is_set_a`) | control |
-| `human_facet_fit` | `facet_fit` | P1 |
-| `human_facet_signals_hit` | (recall against `metadata.expected_signals`) | P1 |
-| `human_identified_persona` | (compared per judge to `identified_persona_by_judge`) | B1 |
+| `human_facet_fit` | `facet_fit` | S5 |
+| `human_facet_signals_hit` | (recall against `metadata.expected_signals`) | S5 |
+| `human_identified_persona` | (compared per judge to `identified_persona_by_judge`) | S4 |
 | `failure_type` | `failure_types` ∪ `dominant_failure_type` (set membership) | all |
 
 `compute_human_agreement` produces `agreement_report.json` with
@@ -630,7 +630,7 @@ Mapping from human field → judge score (used by `compute_human_agreement`):
 - The unfamiliar list means the student should **not begin with confident prior expertise**. It does not forbid normal learning during the session. If the tutor introduced a concept first, and the student echoes/paraphrases/asks about it, that is normal learning, NOT a `knowledge_leak`.
 - unfamiliar 列表的意思是学生**不应带着已有的自信专业知识上来**，并**不**禁止在对话中学习。如果 tutor 先讲了某个概念，学生再重复/改述/追问这个概念，这是正常学习，**不是** `knowledge_leak`。
 
-### Temporal order matters for D3 · D3 的时间顺序很重要
+### Temporal order matters for S2 · S2 的时间顺序很重要
 - For a given scored student turn, only **earlier** context can justify that turn. Later tutor turns must NOT retroactively excuse it.
 - 对于某个被评分的 student turn，只有它**之前**的 context 才能为其辩护，**之后**的 tutor turns **不能**事后合理化它。
 
@@ -652,7 +652,7 @@ Any of the 7 failure types below can be used (as a list, multiple allowed):
 Your scores are returned as a JSON object, **same shape as the LLM judge's JSON**. Per-dimension shape is specified below.
 你的评分以 JSON 对象形式返回，**格式与 LLM judge 的 JSON 相同**。每个维度的具体格式见下方章节。
 
-## 3.2 D1 — Persona Adherence (per message) · 人格符合度（逐条消息）
+## 3.2 S1 — Persona Adherence (per message) · 人格符合度（逐条消息）
 
 **Unit** · One student message (1-5 scale across 4 axes).
 **评估单元** · 一条学生消息（1-5 分 × 4 个维度）。
@@ -731,7 +731,7 @@ Meets all Score 4 criteria, plus **at least 2** of · 满足 Score 4 全部，�
 }
 ```
 
-## 3.3 D3 — Persona Drift Detection (over full conversation) · 人格漂移检测（整段对话）
+## 3.3 S2 — Persona Drift Detection (over full conversation) · 人格漂移检测（整段对话）
 
 **Unit** · One conversation with multiple scored student turns.
 **评估单元** · 一段对话，含多个被评分的 student turn。
@@ -820,7 +820,7 @@ For each scored student turn, provide · 对每个 scored student turn 提供：
 }
 ```
 
-## 3.4 P1 — Targeted Probe (single turn) · 定向探针（单轮）
+## 3.4 S5 — Targeted Probe (single turn) · 定向探针（单轮）
 
 **Unit** · One scripted tutor probe + one student response (1-5 scale across 3 axes).
 **评估单元** · 一条脚本化的 tutor 探针 + 一条学生响应（1-5 分 × 3 维度）。
@@ -894,7 +894,7 @@ Meets Score 4, **at least 2** of · 满足 Score 4，下列**至少 2 项**：
 }
 ```
 
-## 3.5 C1 / control — Persona-vs-generic Distinguishability · 人格 vs 通用 区分度
+## 3.5 S6 / control — Persona-vs-generic Distinguishability · 人格 vs 通用 区分度
 
 **Unit** · Two sets of student turns (one persona-conditioned, one generic). Judge does not know which is which.
 **评估单元** · 两组学生 turns（一组带人格，一组通用描述）。判卷者不知道哪组是哪种。
@@ -968,14 +968,14 @@ Meets Score 4, **at least 2** of · 满足 Score 4，下列**至少 2 项**：
 }
 ```
 
-## 3.6 (optional) D2/B1 — Details on Demand · 按需展开
+## 3.6 (optional) S3/S4 — Details on Demand · 按需展开
 
 These two dimensions are rarer in typical human-alignment sampling (fewer
 group-level cases). If a batch includes one, the dimension-specific criteria
 will be inlined at the top of that eval's chat block. For now, key points:
 
-- **D2 (cross-run reproducibility)** · Compares 3 runs of the same config. Axes: `topic_trajectory`, `knowledge_display`, `emotional_consistency`, `question_patterns`, `overall_reproducibility`. All 1-5, high-good.
-- **B1 (blind persona identification)** · Given 4 candidate persona contracts and an anonymized student transcript, pick the right one. Axes: `identified_persona` (persona_id), `confidence` (1-5), `contract_fit` (1-5).
+- **S3 (cross-run reproducibility)** · Compares 3 runs of the same config. Axes: `topic_trajectory`, `knowledge_display`, `emotional_consistency`, `question_patterns`, `overall_reproducibility`. All 1-5, high-good.
+- **S4 (blind persona identification)** · Given 4 candidate persona contracts and an anonymized student transcript, pick the right one. Axes: `identified_persona` (persona_id), `confidence` (1-5), `contract_fit` (1-5).
 
 ## 3.7 Reference · 参考
 

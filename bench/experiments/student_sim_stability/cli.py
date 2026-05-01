@@ -11,8 +11,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from experiments.student_sim_stability.core.paths import BENCH_ROOT
-
+BENCH_ROOT = Path(__file__).resolve().parents[2]
 if str(BENCH_ROOT) not in sys.path:
     sys.path.insert(0, str(BENCH_ROOT))
 
@@ -24,37 +23,79 @@ from experiments.student_sim_stability.core.rubrics import (
     DIMENSION_TO_FILE,
 )
 
-_STABILITY_DIMENSIONS = ("D1", "D2", "D3")
-_VALIDITY_DIMENSIONS = ("control", "P1", "B1")
 _ALL_JUDGE_DIMENSIONS = tuple(DIMENSION_TO_FILE)
 
-_PAPER_EXPORT_SUFFIXES = (".tex", ".pdf", ".csv", ".html")
+# The paper appendix carries exactly these 23 artifacts. Anything else
+# emitted by the report (HTML wrappers, unused matplotlib PDFs, drift
+# tables, intermediate manifests) stays in the components directory but is
+# not copied into ``paper/figs/student_sim/``.
+_PAPER_EXPORT_TEX = (
+    "judge_qualification.tex",
+    "d1_by_model.tex",
+    "d1_by_persona.tex",
+    "d1_by_task.tex",
+    "d2_by_model.tex",
+    "d2_by_model_temp.tex",
+    "d3_drift.tex",
+    "judge_configuration.tex",
+    "multi_judge_view.tex",
+    "ranking_table.tex",
+    "failure_taxonomy.tex",
+    "failure_by_dimension.tex",
+    "human_alignment_metrics.tex",
+    "human_alignment_b1_breakdown.tex",
+    "human_alignment_b1_per_judge.tex",
+)
+_PAPER_EXPORT_PGF = (
+    "d1_heatmap.pgf.tex",
+    "d3_curves.pgf.tex",
+    "b1_identification.pgf.tex",
+    "control_bars.pgf.tex",
+)
+_PAPER_EXPORT_CSV = (
+    "d1_heatmap.csv",
+    "d3_curves.csv",
+    "b1_identification.csv",
+    "control_bars.csv",
+)
 
 
 def _paper_export(target_dir: Path, components_dir: Path) -> dict:
-    """Copy every supported component artifact into ``target_dir`` and emit
-    a ``manifest.json`` listing each asset with ``sha256`` of its content.
-    Idempotent: re-running against unchanged components yields identical bytes.
+    """Copy the appendix-bound subset of component artifacts into
+    ``target_dir`` and emit a ``manifest.json`` with ``sha256`` per asset.
+
+    The paper allowlist is the 23 artifacts defined above (15 ``.tex``
+    tables, 4 ``.pgf.tex`` figures, 4 backing CSVs). Stale files that match
+    the legacy ``.tex/.pdf/.csv/.html`` glob but are no longer in the
+    allowlist (e.g. ``d2_bars.pdf``, ``data_quality_audit.tex``) are
+    deleted from ``target_dir`` so the directory ends each run with
+    exactly the allowlisted contents plus the manifest. Idempotent against
+    unchanged components.
     """
     target_dir = Path(target_dir)
     components_dir = Path(components_dir)
     if not components_dir.exists():
         raise FileNotFoundError(f"components directory not found: {components_dir}")
     target_dir.mkdir(parents=True, exist_ok=True)
+    allowlist = set(_PAPER_EXPORT_TEX) | set(_PAPER_EXPORT_PGF) | set(_PAPER_EXPORT_CSV)
+    keep = allowlist | {"manifest.json"}
+    for stale in target_dir.iterdir():
+        if stale.is_file() and stale.name not in keep:
+            stale.unlink()
     assets: list[dict] = []
-    for src in sorted(components_dir.iterdir()):
-        if not src.is_file() or src.suffix not in _PAPER_EXPORT_SUFFIXES:
+    for name in sorted(allowlist):
+        src = components_dir / name
+        if not src.exists():
             continue
         payload = src.read_bytes()
         digest = hashlib.sha256(payload).hexdigest()
-        target = target_dir / src.name
+        target = target_dir / name
         target.write_bytes(payload)
+        kind = "pgf" if name.endswith(".pgf.tex") else name.rsplit(".", 1)[-1]
         assets.append(
             {
-                "name": src.name,
-                "kind": src.suffix.lstrip("."),
-                "source_path": str(src),
-                "target_path": str(target),
+                "name": name,
+                "kind": kind,
                 "size_bytes": len(payload),
                 "sha256": digest,
             }
@@ -63,9 +104,7 @@ def _paper_export(target_dir: Path, components_dir: Path) -> dict:
     for asset in assets:
         by_kind[asset["kind"]] = by_kind.get(asset["kind"], 0) + 1
     manifest = {
-        "schema_version": "paper_export_v1",
-        "components_dir": str(components_dir),
-        "target_dir": str(target_dir),
+        "schema_version": "paper_export_v2",
         "n_assets": len(assets),
         "by_kind": by_kind,
         "assets": assets,
@@ -95,10 +134,10 @@ def _add_judge_qualification_dir_arg(parser: argparse.ArgumentParser) -> None:
 
 def _make_parser() -> argparse.ArgumentParser:
     from experiments.student_sim_stability.core.config import (
-        D1_SAMPLE_POLICY,
         JUDGE_MAX_WORKERS,
         JUDGE_MODEL,
         JUDGE_TEMPERATURE,
+        S1_SAMPLE_POLICY,
     )
 
     parser = argparse.ArgumentParser(
@@ -115,7 +154,7 @@ def _make_parser() -> argparse.ArgumentParser:
 
     run_all = sub.add_parser(
         "all",
-        help="Run the full student-sim-stability pipeline: probes → live generation → render (D1-3 + control + P1 + B1) → judge panel → aggregate → audit → report → validate",
+        help="Run the full student-sim-stability pipeline: probes → live generation → render (S1-S6) → judge panel → aggregate → audit → report → validate",
     )
     _add_output_arg(run_all)
     _add_judge_qualification_dir_arg(run_all)
@@ -142,10 +181,10 @@ def _make_parser() -> argparse.ArgumentParser:
         choices=(*DIMENSION_TO_FILE, "all"),
     )
     render.add_argument(
-        "--d1-sample-policy",
-        default=D1_SAMPLE_POLICY,
+        "--s1-sample-policy",
+        default=S1_SAMPLE_POLICY,
         choices=["all", "live-r0-tt0"],
-        help="D1 prompt sampling policy for rendered judge inputs",
+        help="S1 prompt sampling policy for rendered judge inputs",
     )
     render.add_argument(
         "--clean",
@@ -245,6 +284,30 @@ def _make_parser() -> argparse.ArgumentParser:
     human.add_argument("--sample-limit", type=int, default=50)
     human.add_argument("--compute", action="store_true")
     human.add_argument("--labels", type=Path, default=None)
+
+    human_extend = sub.add_parser(
+        "human-alignment-extend",
+        help="Extend the human-alignment sample pool to per-cell targets",
+    )
+    human_extend.add_argument(
+        "--target",
+        required=True,
+        help="DIM=N[,DIM=N...] or, with --dimension, scalar N / DIM=N",
+    )
+    human_extend.add_argument(
+        "--key-fields",
+        default="dimension,persona_id,model",
+        help="Comma-separated cell key fields (default: dimension,persona_id,model)",
+    )
+    human_extend.add_argument(
+        "--dimension",
+        choices=tuple(DIMENSION_TO_FILE),
+        default=None,
+        help="Restrict candidates to one dimension",
+    )
+    human_extend.add_argument("--seed", type=int, default=2026)
+    _add_output_arg(human_extend)
+    human_extend.add_argument("--dry-run", action="store_true")
 
     agreement = sub.add_parser("judge-agreement", help="Compute multi-judge agreement")
     _add_output_arg(agreement)
@@ -478,6 +541,7 @@ def _render_judges(args: argparse.Namespace) -> None:
     )
     from experiments.student_sim_stability.pipeline.render_judge_prompts import (
         clean_rendered_prompts,
+        load_conversations,
         render_b1,
         render_control,
         render_d1,
@@ -495,18 +559,27 @@ def _render_judges(args: argparse.Namespace) -> None:
         removed = clean_rendered_prompts(judge_input_dir, args.dimension)
         print(f"clean: removed {removed} old prompts")
 
-    if args.dimension in ("D1", "all"):
-        render_d1(conv_dir, judge_input_dir, sample_policy=args.d1_sample_policy)
-    if args.dimension in ("D2", "all"):
-        render_d2(conv_dir, judge_input_dir)
-    if args.dimension in ("D3", "all"):
-        render_d3(conv_dir, judge_input_dir)
-    if args.dimension in ("control", "all"):
-        render_control(conv_dir, judge_input_dir)
-    if args.dimension in ("P1", "all"):
+    conversations = None
+    if args.dimension in ("S1", "S2", "S3", "S4", "S6", "all"):
+        conversations = load_conversations(conv_dir)
+
+    if args.dimension in ("S1", "all"):
+        render_d1(
+            conv_dir,
+            judge_input_dir,
+            conversations,
+            sample_policy=args.s1_sample_policy,
+        )
+    if args.dimension in ("S3", "all"):
+        render_d2(conv_dir, judge_input_dir, conversations)
+    if args.dimension in ("S2", "all"):
+        render_d3(conv_dir, judge_input_dir, conversations)
+    if args.dimension in ("S6", "all"):
+        render_control(conv_dir, judge_input_dir, conversations)
+    if args.dimension in ("S5", "all"):
         render_p1(results_dir, judge_input_dir)
-    if args.dimension in ("B1", "all"):
-        render_b1(conv_dir, judge_input_dir)
+    if args.dimension in ("S4", "all"):
+        render_b1(conv_dir, judge_input_dir, conversations)
 
 
 def _judge(args: argparse.Namespace) -> int:
@@ -571,11 +644,11 @@ def _run_all(args: argparse.Namespace) -> int:
 
     Flow:
       Step 0: Judge qualification gate (pre-validated on the fixed golden corpus)
-      Step 1: Run targeted persona probes (P1 input generation)
+      Step 1: Run targeted persona probes (S5 input generation)
       Step 2: Generate live + control conversations
-      Step 3: Render judge prompts for D1/D2/D3/control/P1/B1
-              (B1 reads live conversations; tutor + fixture opening stripped,
-              only student-generated turns reach the B1 judge.)
+      Step 3: Render judge prompts for S1/S2/S3/S4/S5/S6
+              (S4 reads live conversations; tutor + fixture opening stripped,
+              only student-generated turns reach the S4 judge.)
       Step 4: Run judge panel across all dimensions in a single pass
       Step 5: Aggregate (primary + 5-view multi-judge)
       Step 6: Data-quality audit
@@ -593,9 +666,9 @@ def _run_all(args: argparse.Namespace) -> int:
         snapshot_static_artifacts,
     )
     from experiments.student_sim_stability.core.config import (
-        D1_SAMPLE_POLICY,
         JUDGE_MODELS,
         MAX_WORKERS,
+        S1_SAMPLE_POLICY,
     )
     from experiments.student_sim_stability.pipeline.aggregate import aggregate
     from experiments.student_sim_stability.pipeline.aggregate_multi_judge import (
@@ -609,6 +682,7 @@ def _run_all(args: argparse.Namespace) -> int:
     from experiments.student_sim_stability.pipeline.probes import run_probes
     from experiments.student_sim_stability.pipeline.render_judge_prompts import (
         clean_rendered_prompts,
+        load_conversations,
         render_b1,
         render_control,
         render_d1,
@@ -655,7 +729,7 @@ def _run_all(args: argparse.Namespace) -> int:
     by_model_dir = results_dir / "judge_outputs_by_model"
     eval_path = results_dir / "evaluations" / "all_evaluations.json"
 
-    print("\n=== Step 1/7: Targeted persona probes (P1 input) ===")
+    print("\n=== Step 1/7: Targeted persona probes (S5 input) ===")
     probe_workers = args.workers or MAX_WORKERS
     probe_manifest = run_probes(results_dir, workers=probe_workers)
     print(json.dumps(probe_manifest, indent=2, ensure_ascii=False))
@@ -668,7 +742,7 @@ def _run_all(args: argparse.Namespace) -> int:
         print(f"ERROR: {generate_stats['failed']} conversation trials failed")
         return 1
 
-    print("\n=== Step 3/7: Render judge prompts (D1/D2/D3/control/P1/B1) ===")
+    print("\n=== Step 3/7: Render judge prompts (S1/S2/S3/S4/S5/S6) ===")
     for dimension in _ALL_JUDGE_DIMENSIONS:
         clean_rendered_prompts(judge_input_dir, dimension)
         clean_judge_outputs(judge_output_dir, dimension)
@@ -677,12 +751,18 @@ def _run_all(args: argparse.Namespace) -> int:
                 by_model_dir / safe_model_dir(judge_model),
                 dimension,
             )
-    render_d1(conv_dir, judge_input_dir, sample_policy=D1_SAMPLE_POLICY)
-    render_d2(conv_dir, judge_input_dir)
-    render_d3(conv_dir, judge_input_dir)
-    render_control(conv_dir, judge_input_dir)
+    conversations = load_conversations(conv_dir)
+    render_d1(
+        conv_dir,
+        judge_input_dir,
+        conversations,
+        sample_policy=S1_SAMPLE_POLICY,
+    )
+    render_d2(conv_dir, judge_input_dir, conversations)
+    render_d3(conv_dir, judge_input_dir, conversations)
+    render_control(conv_dir, judge_input_dir, conversations)
     render_p1(results_dir, judge_input_dir)
-    render_b1(conv_dir, judge_input_dir)
+    render_b1(conv_dir, judge_input_dir, conversations)
     # Pre-seed the human-alignment manifest so labelers can start before the
     # judge panel finishes.
     init_human_alignment(results_dir)
@@ -930,6 +1010,26 @@ def main() -> int:
                 sample_limit=args.sample_limit,
             )
             print(json.dumps(manifest, indent=2, ensure_ascii=False))
+        return 0
+
+    if args.command == "human-alignment-extend":
+        from experiments.student_sim_stability.analysis.human_alignment import (
+            extend_alignment_pool,
+        )
+
+        try:
+            report = extend_alignment_pool(
+                _results_dir(args.output_dir),
+                target=args.target,
+                key_fields=args.key_fields,
+                dimension=args.dimension,
+                seed=args.seed,
+                dry_run=args.dry_run,
+            )
+        except (FileNotFoundError, ValueError) as exc:
+            print(f"ERROR: {exc}", file=sys.stderr)
+            return 2
+        print(json.dumps(report, indent=2, ensure_ascii=False))
         return 0
 
     if args.command == "judge-agreement":

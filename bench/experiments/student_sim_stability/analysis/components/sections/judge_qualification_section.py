@@ -102,7 +102,7 @@ class JudgeQualificationSection(Component):
   <div class="card"><div class="val">{_fmt_score(prompt_format.get('within_one_variant_rate'))}</div><div class="lbl">Prompt-Format Within-One</div></div>
   <div class="card"><div class="val">{_fmt_score(sensitivity.get('pass_rate'))}</div><div class="lbl">Sensitivity Pass Rate</div></div>
   <div class="card"><div class="val">{_fmt_score(failure_tags.get('hit_rate'))}</div><div class="lbl">Failure-Tag Hit Rate</div></div>
-  <div class="card"><div class="val">{_fmt_score(b1_identity.get('match_rate'))}</div><div class="lbl">B1 Identity Match</div></div>
+  <div class="card"><div class="val">{_fmt_score(b1_identity.get('match_rate'))}</div><div class="lbl">S4 Identity Match</div></div>
 </div>
 <div class="rubric">
 <strong>Cost:</strong> actual judge run = {_fmt_score(actual_cost)} USD; estimate = {_fmt_score(estimated_cost)} USD.

@@ -82,6 +82,9 @@ class JudgeQualification(Component):
         return csv_bytes(rows)
 
     def render_tex(self) -> str | None:
+        # Paper-side: ship only the 8-row gate-checks table. The residual
+        # numeric-deltas tabular stays in the HTML render path; bundling it
+        # here would overflow the appendix figure environment.
         gate = self.gate
         if not gate.get("available"):
             return None
@@ -89,33 +92,6 @@ class JudgeQualification(Component):
             [key, "pass" if value else "fail"]
             for key, value in (gate.get("gate_checks") or {}).items()
         ]
-        check_table = booktabs_table(
+        return booktabs_table(
             ["Check", "Status"], "ll", check_rows or [["(no checks)", ""]]
         )
-        residual_groups = [
-            row
-            for row in (gate.get("stability") or {}).get("groups", [])
-            if row.get("pass_fail_flip") or not row.get("within_one")
-        ][:8]
-        residual_rows = []
-        for row in residual_groups:
-            residual_rows.append(
-                [
-                    row.get("sample_id"),
-                    row.get("dimension"),
-                    row.get("prompt_variant_id"),
-                    _fmt_score(row.get("max_delta")),
-                    str(row.get("pass_fail_flip")),
-                    str(row.get("scores")),
-                ]
-            )
-        if not residual_rows:
-            residual_rows = [
-                ["No pass/fail flips or above-one score deltas.", "", "", "", "", ""]
-            ]
-        residual_table = booktabs_table(
-            ["Sample", "Dimension", "Variant", "Max Delta", "Flip", "Scores"],
-            "lllrll",
-            residual_rows,
-        )
-        return f"{check_table}\n\n{residual_table}"

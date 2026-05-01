@@ -6,11 +6,11 @@ into apparently valid metrics.
 
 Hard failures:
 
-- No control-from-D3 fallback.
+- No control-from-S2 fallback.
 - No missing control judge inputs or outputs.
 - No fixture opening counted as generated student behavior.
 - No untagged `role=user` turns.
-- No duplicated/template D3 score clusters accepted as judged data.
+- No duplicated/template S2 score clusters accepted as judged data.
 - No report generated from incomplete aggregate dimensions.
 
 The expected final result directory is `results/main/`.

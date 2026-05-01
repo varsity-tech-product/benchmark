@@ -30,7 +30,7 @@ def truncate(text: str, limit: int = TURN_EXCERPT_CHAR_LIMIT) -> str:
 
 
 def persona_block_kwargs(persona_id: str) -> dict[str, Any]:
-    """Persona Definition placeholders for the D1/D2/D3/C1/B1 rubric templates.
+    """Persona Definition placeholders for the S1/S3/S2/S6/S4 rubric templates.
 
     Returns the exact kwargs expected by the rubric template ``.format(...)`` calls.
     Both render paths consume this single source so the rendered persona blocks

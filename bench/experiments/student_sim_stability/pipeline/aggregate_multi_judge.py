@@ -1,13 +1,12 @@
-"""Multi-judge aggregator — produces per-eval five-view breakdown.
+"""Multi-judge aggregator — produces per-eval four-view breakdown.
 
 For every judge eval, reads all three judges' scores from
-``judge_outputs_by_model/{model}/{eval_id}.json`` and emits five views:
+``judge_outputs_by_model/{model}/{eval_id}.json`` and emits four views:
 
 1. ``sonnet``    — Claude Sonnet (primary)
 2. ``gpt54``     — GPT-5.4
 3. ``gemini``    — Gemini 3.1 Pro
 4. ``panel_3``   — mean of all three
-5. ``panel_2``   — mean of Sonnet + GPT-5.4 (drops Gemini)
 
 Produces ``evaluations/multi_judge_aggregates.json`` with per-eval rows keyed
 by dimension. The main ``all_evaluations.json`` (primary-only) stays untouched
@@ -34,6 +33,10 @@ from experiments.student_sim_stability.core.paths import BENCH_ROOT, default_res
 if str(BENCH_ROOT) not in sys.path:
     sys.path.insert(0, str(BENCH_ROOT))
 
+from experiments.student_sim_stability.core.config import (  # noqa: E402
+    JUDGE_LABELS,
+    PANEL_JUDGES,
+)
 from experiments.student_sim_stability.core.rubrics import (  # noqa: E402
     DIMENSION_TO_FILE,
     numeric_score_fields,
@@ -41,18 +44,11 @@ from experiments.student_sim_stability.core.rubrics import (  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
-# Judge model identifiers we expect under judge_outputs_by_model/
-SONNET_KEY = "anthropic/claude-sonnet-4-6"
-GPT54_KEY = "openai/gpt-5.4"
-GEMINI_KEY = "google/gemini-3.1-pro-preview"
+PANEL_JUDGE_DIRS: tuple[tuple[str, str], ...] = tuple(
+    (label, safe_model_dir(model_id)) for model_id, label in PANEL_JUDGES
+)
 
-
-# The on-disk directories use `safe_model_dir` encoding from core/io_utils.
-SONNET_DIR = safe_model_dir(SONNET_KEY)  # anthropic__claude-sonnet-4-6
-GPT54_DIR = safe_model_dir(GPT54_KEY)  # openai__gpt-5_4
-GEMINI_DIR = safe_model_dir(GEMINI_KEY)  # google__gemini-3_1-pro-preview
-
-VIEW_ORDER = ["sonnet", "gpt54", "gemini", "panel_3", "panel_2"]
+VIEW_ORDER = [*JUDGE_LABELS, "panel_3"]
 
 
 def _score_fields_for(dimension: str) -> list[str]:
@@ -62,17 +58,21 @@ def _score_fields_for(dimension: str) -> list[str]:
         return []
 
 
-def _by_eval_across_judges(
+def _load_judge_outputs_by_dimension(
     judge_output_root: Path,
-    dimension: str,
-) -> dict[str, dict[str, dict]]:
-    """Return ``{eval_id: {judge_dir: output_payload}}`` for a dimension."""
-    by_eval: dict[str, dict[str, dict]] = defaultdict(dict)
-    for judge_dir in [SONNET_DIR, GPT54_DIR, GEMINI_DIR]:
+) -> dict[str, dict[str, dict[str, dict]]]:
+    """Return ``{dimension: {eval_id: {judge_dir: output_payload}}}``."""
+    by_dimension: dict[str, dict[str, dict[str, dict]]] = defaultdict(
+        lambda: defaultdict(dict)
+    )
+    for _, judge_dir in PANEL_JUDGE_DIRS:
         ddir = judge_output_root / judge_dir
         if not ddir.exists():
             continue
-        for path in ddir.glob(f"{dimension}__*.json"):
+        for path in ddir.glob("*.json"):
+            dimension = path.stem.split("__", 1)[0]
+            if dimension not in DIMENSION_TO_FILE:
+                continue
             try:
                 payload = load_json(path)
             except (OSError, json.JSONDecodeError) as exc:
@@ -81,8 +81,16 @@ def _by_eval_across_judges(
             if not payload:
                 continue
             eval_id = payload.get("eval_id") or path.stem
-            by_eval[eval_id][judge_dir] = payload
-    return by_eval
+            by_dimension[dimension][eval_id][judge_dir] = payload
+    return {dimension: dict(by_eval) for dimension, by_eval in by_dimension.items()}
+
+
+def _by_eval_across_judges(
+    outputs_by_dimension: dict[str, dict[str, dict[str, dict]]],
+    dimension: str,
+) -> dict[str, dict[str, dict]]:
+    """Return ``{eval_id: {judge_dir: output_payload}}`` for a dimension."""
+    return outputs_by_dimension.get(dimension, {})
 
 
 def _aggregate_eval(
@@ -100,11 +108,7 @@ def _aggregate_eval(
     no downstream consumer needs to parse eval_id filenames.
     """
     scores_by_judge = {}
-    for view_key, judge_dir in (
-        ("sonnet", SONNET_DIR),
-        ("gpt54", GPT54_DIR),
-        ("gemini", GEMINI_DIR),
-    ):
+    for view_key, judge_dir in PANEL_JUDGE_DIRS:
         payload = judge_payloads.get(judge_dir) or {}
         scores = payload.get("scores") or {}
         row = {}
@@ -113,27 +117,26 @@ def _aggregate_eval(
             row[f] = float(v) if isinstance(v, (int, float)) else None
         scores_by_judge[view_key] = row
 
-    aggregates = {"panel_3": {}, "panel_2": {}}
+    aggregates = {"panel_3": {}}
     for f in numeric_fields:
-        v_sonnet = scores_by_judge["sonnet"].get(f)
-        v_gpt54 = scores_by_judge["gpt54"].get(f)
-        v_gemini = scores_by_judge["gemini"].get(f)
-
-        panel_3_vals = [v for v in (v_sonnet, v_gpt54, v_gemini) if v is not None]
-        panel_2_vals = [v for v in (v_sonnet, v_gpt54) if v is not None]
+        panel_3_vals = [
+            scores_by_judge[judge_label].get(f)
+            for judge_label in JUDGE_LABELS
+            if scores_by_judge[judge_label].get(f) is not None
+        ]
 
         aggregates["panel_3"][f] = safe_mean(panel_3_vals)
         aggregates["panel_3"][f"{f}__std"] = safe_std(panel_3_vals)
-        aggregates["panel_2"][f] = safe_mean(panel_2_vals)
-        aggregates["panel_2"][f"{f}__std"] = safe_std(panel_2_vals)
 
     # Use any judge's metadata (they should all have the same metadata since
-    # judge inputs were identical). Prefer Sonnet, fall back to others.
-    meta_source = (
-        judge_payloads.get(SONNET_DIR)
-        or judge_payloads.get(GPT54_DIR)
-        or judge_payloads.get(GEMINI_DIR)
-        or {}
+    # judge inputs were identical). Prefer the configured panel order.
+    meta_source = next(
+        (
+            judge_payloads[judge_dir]
+            for _, judge_dir in PANEL_JUDGE_DIRS
+            if judge_dir in judge_payloads
+        ),
+        {},
     )
     model_raw = input_metadata.get("model") or ""
     model_short = model_raw.split("/")[-1] if "/" in model_raw else model_raw
@@ -158,7 +161,7 @@ def _aggregate_eval(
         "aggregates": aggregates,
         "n_judges_scored": sum(
             1
-            for view in ("sonnet", "gpt54", "gemini")
+            for view in JUDGE_LABELS
             if any(scores_by_judge[view].get(f) is not None for f in numeric_fields)
         ),
     }
@@ -178,10 +181,10 @@ def aggregate_multi_judge(
     .. code-block:: json
 
         {
-          "version": "multi_judge_v1",
-          "views": ["sonnet", "gpt54", "gemini", "panel_3", "panel_2"],
-          "judge_model_map": {"sonnet": "anthropic/claude-sonnet-4-6", ...},
-          "dimensions": {"D1": {"per_eval": [...], "n": 252, ...}, ...}
+          "version": "multi_judge_v3",
+          "views": ["<judge-label>", "...", "panel_3"],
+          "judge_model_map": {"<judge-label>": "<model-id>", ...},
+          "dimensions": {"S1": {"per_eval": [...], "n": 252, ...}, ...}
         }
     """
     out = output_path or results_dir / "evaluations" / "multi_judge_aggregates.json"
@@ -211,16 +214,17 @@ def aggregate_multi_judge(
     dimensions_out: dict[str, Any] = {}
     total_rows = 0
     warnings: list[str] = []
+    outputs_by_dimension = _load_judge_outputs_by_dimension(judge_root)
     for dim in DIMENSION_TO_FILE:
         numeric_fields = _score_fields_for(dim)
         if not numeric_fields:
             continue
-        by_eval = _by_eval_across_judges(judge_root, dim)
+        by_eval = _by_eval_across_judges(outputs_by_dimension, dim)
         rows: list[dict] = []
         missing_judge_counts: dict[str, int] = defaultdict(int)
         for eval_id in sorted(by_eval):
             payloads = by_eval[eval_id]
-            for jd in (SONNET_DIR, GPT54_DIR, GEMINI_DIR):
+            for _, jd in PANEL_JUDGE_DIRS:
                 if jd not in payloads:
                     missing_judge_counts[jd] += 1
             if eval_id in metadata_by_eval:
@@ -251,12 +255,10 @@ def aggregate_multi_judge(
         )
 
     summary = {
-        "version": "multi_judge_v2",
+        "version": "multi_judge_v3",
         "views": VIEW_ORDER,
         "judge_model_map": {
-            "sonnet": SONNET_KEY,
-            "gpt54": GPT54_KEY,
-            "gemini": GEMINI_KEY,
+            judge_label: model_id for model_id, judge_label in PANEL_JUDGES
         },
         "dimensions": dimensions_out,
         "totals": {

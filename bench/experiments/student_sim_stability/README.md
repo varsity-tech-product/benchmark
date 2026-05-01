@@ -9,7 +9,7 @@ The companion paper (the student-simulator-stability project) supports three ind
 | Claim | Statement |
 |---|---|
 | **A — Stability** | The simulator preserves persona behavior under task / repeat / model / tutor-temperature perturbations. |
-| **B — Model selection** | Of the three candidate student backbones (GPT-5.4, Sonnet 4.6, Gemini 3.1 Pro), one is selected for the production benchmark on a D1+D2+D3 composite. |
+| **B — Model selection** | Of the three candidate student backbones (GPT-5.4, Sonnet 4.6, Gemini 3.1 Pro), one is selected for the production benchmark on a S1+S3+S2 composite. |
 | **C — Metric calibration** | The LLM-judge panel agrees with a human quant expert within ±1 point on a 39-sample alignment study. |
 
 Every reported number traces through the audit path
@@ -112,12 +112,12 @@ the network.
 
 | Dimension | What it measures | Granularity |
 |---|---|---|
-| **D1** | Persona adherence per generated student message | 252 sampled evals |
-| **D2** | Cross-run reproducibility (same config, 3 repeats) | 72 eval groups |
-| **D3** | Persona drift over conversation turns | 252 evals before aggregation, 216 live rows in the report |
-| **Control / C1** | Persona vs generic-student distinctiveness | 36 eval pairs |
-| **P1** | Targeted single-turn persona probes | 60 evals |
-| **B1** | Blind persona identification from anonymized live conversations | 24 evals |
+| **S1** | Persona adherence per generated student message | 252 sampled evals |
+| **S3** | Cross-run reproducibility (same config, 3 repeats) | 72 eval groups |
+| **S2** | Persona drift over conversation turns | 252 evals before aggregation, 216 live rows in the report |
+| **Control / S6** | Persona vs generic-student distinctiveness | 36 eval pairs |
+| **S5** | Targeted single-turn persona probes | 60 evals |
+| **S4** | Blind persona identification from anonymized live conversations | 24 evals |
 
 The 7 axes of the failure taxonomy (`knowledge_leak`, `under_competence`,
 `emotional_mismatch`, `generic_student_behavior`, `co_teacher_drift`,
@@ -132,7 +132,7 @@ applicable judge call and aggregated under `report/failure_taxonomy_stats.json`.
 
 ```bash
 cli dry-run                    # print experiment scale
-cli probes                     # P1 targeted persona probes (per student model)
+cli probes                     # S5 targeted persona probes (per student model)
 cli generate -w 6              # live + control conversations via OpenRouter
 cli render-judges --clean --dimension all
 cli judge --dimension all --workers 6 --all-models
@@ -158,7 +158,7 @@ results/main/                # full pipeline run, fetched from HF
 ├── rubrics_snapshot/        # frozen copy of resources/rubrics/ for this run
 ├── policies_snapshot/       # frozen copy of resources/policies/ for this run
 ├── conversations/           # 252 conversation JSON files
-├── probes/                  # P1 probe responses
+├── probes/                  # S5 probe responses
 ├── judge_inputs/            # rendered judge prompts + metadata
 ├── judge_outputs/           # primary judge results
 ├── judge_outputs_by_model/  # per-judge-model results
@@ -189,7 +189,7 @@ Every conversation turn carries an explicit `source`:
 | `fixture_opening` | No — task fixture for live conversations |
 | `control_neutral_opening` | No — neutral opener for control conversations |
 | `student_model` | **Yes** — generated student simulator turn |
-| `tutor_model` | No — generated tutor turn (`Context only` in the D3 prompt) |
+| `tutor_model` | No — generated tutor turn (`Context only` in the S2 prompt) |
 
 ---
 
@@ -197,7 +197,7 @@ Every conversation turn carries an explicit `source`:
 
 | Claim | What to read |
 |---|---|
-| **A — Stability** | `report/stability_report.html` §1 (D1 / D2 / D3 charts and tables); raw aggregates in `evaluations/all_evaluations.json` |
+| **A — Stability** | `report/stability_report.html` §1 (S1 / S3 / S2 charts and tables); raw aggregates in `evaluations/all_evaluations.json` |
 | **B — Model selection** | `report/stability_report.html` §2 (composite ranking); `report/components/d1_by_model*.{tex,csv}`, `d2_by_model*.{tex,csv}`, `d3_drift.{tex,csv}` |
 | **C — Metric calibration** | `human_alignment/agreement_report.json`; `report/stability_report.html` §3 (human-vs-LLM table); 39-sample labeling protocol in `docs/HUMAN_ALIGNMENT.md` |
 
@@ -251,7 +251,7 @@ breakdown.
 | `analysis/failure_case_picker.py` | Selects representative failure cases for the report appendix |
 | `judge_qualification/` | Pre-experiment gate: render → judge → report on the fixed golden corpus |
 | `resources/contracts/` | Persona, emotional-profile, tutor, and simulator contracts (immutable per run) |
-| `resources/rubrics/` | D1-D3 / control / P1 / B1 rubric JSON + prompt templates |
+| `resources/rubrics/` | S1-S2 / control / S5 / S4 rubric JSON + prompt templates |
 | `resources/policies/` | No-fallback, opener, control, judge, model-comparison policies |
 | `docs/HUMAN_ALIGNMENT.md` | Bilingual reference for the human evaluator |
 

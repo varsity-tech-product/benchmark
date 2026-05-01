@@ -1,4 +1,4 @@
-"""D2 cross-run reproducibility bar chart Component."""
+"""S3 cross-run reproducibility bar chart Component."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from experiments.student_sim_stability.analysis.components.base import (
 
 
 class D2Bars(Component):
-    """Grouped bar chart: D2 by model, colored by tutor temperature."""
+    """Grouped bar chart: S3 by model, colored by tutor temperature."""
 
     name = "d2_bars"
 
@@ -71,8 +71,8 @@ class D2Bars(Component):
         ax.set_xticks(x)
         ax.set_xticklabels(models, fontsize=10)
         ax.set_ylim(0, 5.5)
-        ax.set_ylabel("D2 Reproducibility Score", fontsize=11)
-        ax.set_title("D2 Cross-run Reproducibility × Tutor Temperature", size=13)
+        ax.set_ylabel("S3 Reproducibility Score", fontsize=11)
+        ax.set_title("S3 Cross-run Reproducibility × Tutor Temperature", size=13)
         ax.legend()
         ax.axhline(y=4, color="green", linestyle="--", alpha=0.3, label="_nolegend_")
         ax.axhline(y=3, color="orange", linestyle="--", alpha=0.3, label="_nolegend_")
@@ -84,4 +84,4 @@ class D2Bars(Component):
         fig = self.figure()
         if fig is None:
             return ""
-        return _embed_img(_fig_to_base64(fig), "D2 bar chart")
+        return _embed_img(_fig_to_base64(fig), "S3 bar chart")

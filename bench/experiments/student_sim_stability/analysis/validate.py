@@ -39,6 +39,7 @@ from experiments.student_sim_stability.core.contracts import (  # noqa: E402
 )
 from experiments.student_sim_stability.core.rubrics import (  # noqa: E402
     DIMENSION_TO_FILE,
+    LEGACY_RUBRIC_ID_BY_ID,
     required_score_keys,
     rubric_metadata,
 )
@@ -55,6 +56,17 @@ class Check:
 
 def _count_files(path: Path, pattern: str = "*.json") -> int:
     return len(list(path.glob(pattern))) if path.exists() else 0
+
+
+def _rel_path(path: Path, results_dir: Path) -> str:
+    """Render ``path`` relative to ``results_dir`` so audit messages don't
+    leak absolute filesystem paths into shipped artifacts. Falls back to the
+    file name if ``path`` is not anchored under ``results_dir`` (e.g. when
+    a user passes an external override)."""
+    try:
+        return str(path.resolve().relative_to(results_dir.resolve()))
+    except ValueError:
+        return path.name
 
 
 def _parse_conversation_name(path: Path) -> dict[str, str]:
@@ -187,7 +199,7 @@ def _validate_judge_output_quality(output_dir: Path) -> list[Check]:
             )
         ]
 
-    d3_outputs = []
+    s2_outputs = []
     outputs_by_dimension: dict[str, list[dict]] = defaultdict(list)
     malformed: list[str] = []
     missing_score_keys: list[str] = []
@@ -211,8 +223,8 @@ def _validate_judge_output_quality(output_dir: Path) -> list[Check]:
         if missing:
             missing_score_keys.append(f"{path.name}: missing score keys {missing}")
         outputs_by_dimension[dimension].append(output)
-        if dimension == "D3":
-            d3_outputs.append(output)
+        if dimension == "S2":
+            s2_outputs.append(output)
 
     duplicate_payloads: list[str] = []
     for dimension, outputs in sorted(outputs_by_dimension.items()):
@@ -235,16 +247,16 @@ def _validate_judge_output_quality(output_dir: Path) -> list[Check]:
         )
     )
 
-    duplicate_counts = Counter(_score_signature(output) for output in d3_outputs)
+    duplicate_counts = Counter(_score_signature(output) for output in s2_outputs)
     template_like = [count for count in duplicate_counts.values() if count > 1]
     checks.append(
         Check(
-            "d3_no_template_duplicate_score_clusters",
+            "s2_no_template_duplicate_score_clusters",
             not template_like,
             (
-                "no D3 score signature appears more than once"
+                "no S2 score signature appears more than once"
                 if not template_like
-                else f"D3 duplicate score clusters detected: {sorted(template_like)}"
+                else f"S2 duplicate score clusters detected: {sorted(template_like)}"
             ),
         )
     )
@@ -285,11 +297,12 @@ def _validate_static_snapshots(results_dir: Path) -> list[Check]:
     for manifest_key, snapshot_name in expected_snapshots.items():
         path = results_dir / snapshot_name
         exists = path.exists() and any(path.rglob("*"))
+        rel = _rel_path(path, results_dir)
         checks.append(
             Check(
                 f"snapshot_{snapshot_name}",
                 exists,
-                f"{path} {'exists' if path.exists() else 'missing'}",
+                f"{rel} {'exists' if path.exists() else 'missing'}",
             )
         )
         if not exists:
@@ -303,15 +316,17 @@ def _validate_static_snapshots(results_dir: Path) -> list[Check]:
                 (
                     "snapshot matches result-local static artifact manifest"
                     if expected_hashes == snapshot_hashes
-                    else f"snapshot differs from result-local manifest at {manifest_path}"
+                    else "snapshot differs from result-local manifest at "
+                    f"{_rel_path(manifest_path, results_dir)}"
                 ),
             )
         )
+    rel_manifest = _rel_path(manifest_path, results_dir)
     checks.append(
         Check(
             "static_artifact_manifest",
             manifest_path.exists(),
-            f"{manifest_path} {'exists' if manifest_path.exists() else 'missing'}",
+            f"{rel_manifest} {'exists' if manifest_path.exists() else 'missing'}",
         )
     )
     return checks
@@ -354,7 +369,8 @@ def _validate_status_artifacts(
         Check(
             name,
             path.exists(),
-            f"{path} {'exists' if path.exists() else 'missing'}",
+            f"{_rel_path(path, results_dir)} "
+            f"{'exists' if path.exists() else 'missing'}",
         )
         for name, path in required_paths.items()
     ]
@@ -470,7 +486,17 @@ def _validate_status_artifacts(
     return checks
 
 
-def _validate_judge_input_metadata(input_dir: Path) -> list[Check]:
+def _load_judge_input_payloads(input_dir: Path) -> dict[str, dict]:
+    if not input_dir.exists():
+        return {}
+    return {path.name: load_json(path) for path in sorted(input_dir.glob("*.json"))}
+
+
+def _validate_judge_input_metadata(
+    input_dir: Path,
+    *,
+    input_payloads_by_name: dict[str, dict] | None = None,
+) -> list[Check]:
     if not input_dir.exists():
         return [
             Check(
@@ -480,26 +506,30 @@ def _validate_judge_input_metadata(input_dir: Path) -> list[Check]:
             )
         ]
     missing: list[str] = []
-    for path in sorted(input_dir.glob("*.json")):
-        payload = load_json(path)
+    payloads_by_name = (
+        input_payloads_by_name
+        if input_payloads_by_name is not None
+        else _load_judge_input_payloads(input_dir)
+    )
+    for name, payload in sorted(payloads_by_name.items()):
         metadata = payload.get("metadata", {})
         for field in ["rubric_id", "rubric_version"]:
             if not metadata.get(field):
-                missing.append(f"{path.name}: missing {field}")
+                missing.append(f"{name}: missing {field}")
         dimension = payload.get("dimension")
         if dimension:
             try:
                 expected_rubric = rubric_metadata(dimension)
                 if metadata.get("rubric_id") != expected_rubric["rubric_id"]:
-                    missing.append(f"{path.name}: rubric_id mismatch")
+                    missing.append(f"{name}: rubric_id mismatch")
                 if metadata.get("rubric_version") != expected_rubric["rubric_version"]:
-                    missing.append(f"{path.name}: rubric_version mismatch")
+                    missing.append(f"{name}: rubric_version mismatch")
             except ValueError:
-                missing.append(f"{path.name}: unknown rubric dimension {dimension}")
-        if payload.get("dimension") != "control":
+                missing.append(f"{name}: unknown rubric dimension {dimension}")
+        if payload.get("dimension") != "S6":
             for field in ["persona_contract_id", "persona_contract_version"]:
                 if not metadata.get(field):
-                    missing.append(f"{path.name}: missing {field}")
+                    missing.append(f"{name}: missing {field}")
             persona_id = metadata.get("persona_id")
             if persona_id:
                 try:
@@ -508,14 +538,14 @@ def _validate_judge_input_metadata(input_dir: Path) -> list[Check]:
                         metadata.get("persona_contract_version")
                         != contract["contract_version"]
                     ):
-                        missing.append(
-                            f"{path.name}: persona_contract_version mismatch"
-                        )
+                        missing.append(f"{name}: persona_contract_version mismatch")
                 except (OSError, KeyError, ValueError, json.JSONDecodeError) as exc:
-                    missing.append(f"{path.name}: cannot load persona contract ({exc})")
+                    missing.append(f"{name}: cannot load persona contract ({exc})")
         rubric_id = metadata.get("rubric_id") or payload.get("rubric_id")
-        if rubric_id and rubric_id not in payload.get("prompt", ""):
-            missing.append(f"{path.name}: prompt missing rubric_id text")
+        prompt = payload.get("prompt", "")
+        legacy_rubric_id = LEGACY_RUBRIC_ID_BY_ID.get(rubric_id or "")
+        if rubric_id and rubric_id not in prompt and legacy_rubric_id not in prompt:
+            missing.append(f"{name}: prompt missing rubric_id text")
     return [
         Check(
             "judge_input_rubric_contract_metadata",
@@ -535,6 +565,7 @@ def _validate_judge_output_metadata(
     *,
     expected_judge_model: str | None = None,
     input_hash_index: dict[str, str] | None = None,
+    input_names: set[str] | None = None,
 ) -> list[Check]:
     if not output_dir.exists():
         return [
@@ -545,14 +576,18 @@ def _validate_judge_output_metadata(
             )
         ]
     missing: list[str] = []
-    input_names = (
-        {path.name for path in input_dir.glob("*.json")}
-        if input_dir.exists()
-        else set()
+    known_input_names = (
+        input_names
+        if input_names is not None
+        else (
+            {path.name for path in input_dir.glob("*.json")}
+            if input_dir.exists()
+            else set()
+        )
     )
     output_names = {path.name for path in output_dir.glob("*.json")}
-    missing_outputs = sorted(input_names - output_names)
-    extra_outputs = sorted(output_names - input_names)
+    missing_outputs = sorted(known_input_names - output_names)
+    extra_outputs = sorted(output_names - known_input_names)
     if missing_outputs:
         missing.append(f"missing judge outputs for inputs {missing_outputs[:5]}")
     if extra_outputs:
@@ -567,17 +602,19 @@ def _validate_judge_output_metadata(
                 f"{path.name}: judge_model={payload.get('judge_model')!r}, "
                 f"expected {expected_judge_model!r}"
             )
-        input_path = input_dir / path.name
-        if input_path.exists() and payload.get("input_sha256"):
+        has_matching_input = path.name in known_input_names
+        if has_matching_input and payload.get("input_sha256"):
             if input_hash_index is not None:
                 input_hash = input_hash_index.get(path.name)
                 if input_hash is None:
-                    input_hash = input_payload_hash(load_json(input_path))
+                    missing.append(f"{path.name}: missing matching judge input hash")
+                    continue
             else:
+                input_path = input_dir / path.name
                 input_hash = input_payload_hash(load_json(input_path))
             if payload["input_sha256"] != input_hash:
                 missing.append(f"{path.name}: input_sha256 mismatch")
-        elif not input_path.exists():
+        elif not has_matching_input:
             missing.append(f"{path.name}: missing matching judge input")
     return [
         Check(
@@ -611,6 +648,8 @@ def _validate_judge_panel_outputs(
     input_counts: dict[str, int],
     *,
     profile: str,
+    input_hash_index: dict[str, str] | None = None,
+    input_names: set[str] | None = None,
 ) -> list[Check]:
     checks: list[Check] = []
     by_model_dir = results_dir / "judge_outputs_by_model"
@@ -619,10 +658,16 @@ def _validate_judge_panel_outputs(
         return checks
 
     input_dir = results_dir / "judge_inputs"
-    input_hash_index: dict[str, str] = (
-        {p.name: input_payload_hash(load_json(p)) for p in input_dir.glob("*.json")}
-        if input_dir.exists()
-        else {}
+    panel_input_hash_index = (
+        input_hash_index
+        if input_hash_index is not None
+        else {
+            name: input_payload_hash(payload)
+            for name, payload in _load_judge_input_payloads(input_dir).items()
+        }
+    )
+    panel_input_names = (
+        input_names if input_names is not None else set(panel_input_hash_index)
     )
 
     for model in JUDGE_MODELS:
@@ -657,7 +702,8 @@ def _validate_judge_panel_outputs(
                         input_dir,
                         model_dir,
                         expected_judge_model=model,
-                        input_hash_index=input_hash_index,
+                        input_hash_index=panel_input_hash_index,
+                        input_names=panel_input_names,
                     ),
                     f"judge_panel_{safe_model_dir(model)}",
                     required=True,
@@ -707,7 +753,7 @@ def _validate_judge_panel_outputs(
             Check(
                 "multi_judge_agreement_status",
                 False,
-                f"missing {agreement_path}",
+                f"missing {_rel_path(agreement_path, results_dir)}",
                 required=profile == "full",
             )
         )
@@ -731,6 +777,12 @@ def validate(
     output_dir = results_dir / "judge_outputs"
     eval_path = results_dir / "evaluations" / "all_evaluations.json"
     report_path = results_dir / "report" / "stability_report.html"
+    input_payloads_by_name = _load_judge_input_payloads(input_dir)
+    input_hash_index = {
+        name: input_payload_hash(payload)
+        for name, payload in input_payloads_by_name.items()
+    }
+    input_names = set(input_payloads_by_name)
 
     conversations = _count_files(conv_dir)
     live_conversations = _count_files(conv_dir, "live__*.json")
@@ -809,29 +861,29 @@ def validate(
     checks.extend(_validate_conversation_provenance(conv_dir))
 
     input_counts = _dimension_counts(input_dir)
-    d1_input_ok = (
-        input_counts["D1"] in {expected["D1_sample"], expected["D1_full"]}
+    s1_input_ok = (
+        input_counts["S1"] in {expected["S1_sample"], expected["S1_full"]}
         if profile == "full"
-        else input_counts["D1"] > 0
+        else input_counts["S1"] > 0
     )
     checks.append(
         Check(
-            "judge_input_d1_policy",
-            d1_input_ok,
+            "judge_input_s1_policy",
+            s1_input_ok,
             (
-                f"D1 inputs={input_counts['D1']} "
-                f"(expected sample {expected['D1_sample']} or full {expected['D1_full']})"
+                f"S1 inputs={input_counts['S1']} "
+                f"(expected sample {expected['S1_sample']} or full {expected['S1_full']})"
             ),
         )
     )
-    for dim in ("D2", "D3", "P1", "B1"):
-        if profile == "pilot" and dim == "P1":
+    for dim in ("S2", "S3", "S4", "S5", "S6"):
+        if profile == "pilot" and dim == "S5":
             input_ok = input_counts[dim] >= 4 * len(PROBES)
-        elif profile == "pilot" and dim == "B1":
-            # B1 now renders from live conversations; pilot generates a handful
+        elif profile == "pilot" and dim == "S4":
+            # S4 now renders from live conversations; pilot generates a handful
             # of live__*.json files so just require the dimension was produced.
             input_ok = input_counts[dim] > 0
-        elif profile == "pilot" and dim == "D3":
+        elif profile == "pilot" and dim == "S2":
             input_ok = input_counts[dim] > 0
         elif profile == "pilot":
             input_ok = True
@@ -848,49 +900,39 @@ def validate(
                 ),
             )
         )
-    checks.append(
-        Check(
-            "judge_input_control",
-            (
-                input_counts["control"] == expected["control"]
-                if profile == "full"
-                else input_counts["control"] > 0
-            ),
-            (
-                f"control inputs={input_counts['control']}/{expected['control']}"
-                if profile == "full"
-                else f"control pilot inputs={input_counts['control']}"
-            ),
+    checks.extend(
+        _validate_judge_input_metadata(
+            input_dir,
+            input_payloads_by_name=input_payloads_by_name,
         )
     )
-    checks.extend(_validate_judge_input_metadata(input_dir))
 
     output_counts = _dimension_counts(output_dir)
-    d1_output_ok = (
-        output_counts["D1"] == input_counts["D1"]
-        and input_counts["D1"] in {expected["D1_sample"], expected["D1_full"]}
+    s1_output_ok = (
+        output_counts["S1"] == input_counts["S1"]
+        and input_counts["S1"] in {expected["S1_sample"], expected["S1_full"]}
         if profile == "full"
-        else output_counts["D1"] == input_counts["D1"] and input_counts["D1"] > 0
+        else output_counts["S1"] == input_counts["S1"] and input_counts["S1"] > 0
     )
     checks.append(
         Check(
-            "judge_output_d1_sample",
-            d1_output_ok,
+            "judge_output_s1_sample",
+            s1_output_ok,
             (
-                f"D1 outputs={output_counts['D1']}/{input_counts['D1']}"
+                f"S1 outputs={output_counts['S1']}/{input_counts['S1']}"
                 if profile == "full"
-                else f"D1 outputs={output_counts['D1']}/{input_counts['D1']} pilot inputs"
+                else f"S1 outputs={output_counts['S1']}/{input_counts['S1']} pilot inputs"
             ),
         )
     )
-    for dim in ("D2", "D3", "P1", "B1"):
+    for dim in ("S2", "S3", "S4", "S5", "S6"):
         expected_output = expected[dim] if profile == "full" else input_counts[dim]
         output_ok = output_counts[dim] == expected_output
-        if profile == "pilot" and dim == "P1":
+        if profile == "pilot" and dim == "S5":
             output_ok = output_ok and input_counts[dim] >= 4 * len(PROBES)
-        elif profile == "pilot" and dim == "B1":
+        elif profile == "pilot" and dim == "S4":
             output_ok = output_ok and input_counts[dim] > 0
-        elif profile == "pilot" and dim == "D3":
+        elif profile == "pilot" and dim == "S2":
             output_ok = output_ok and input_counts[dim] > 0
         checks.append(
             Check(
@@ -899,23 +941,23 @@ def validate(
                 f"{dim} outputs={output_counts[dim]}/{expected_output}",
             )
         )
-    checks.append(
-        Check(
-            "judge_output_control",
-            (
-                output_counts["control"] == expected["control"]
-                if profile == "full"
-                else output_counts["control"] == input_counts["control"]
-                and input_counts["control"] > 0
-            ),
-            f"control outputs={output_counts['control']}/"
-            f"{expected['control'] if profile == 'full' else input_counts['control']}",
+    checks.extend(_validate_judge_output_quality(output_dir))
+    checks.extend(
+        _validate_judge_output_metadata(
+            input_dir,
+            output_dir,
+            input_hash_index=input_hash_index,
+            input_names=input_names,
         )
     )
-    checks.extend(_validate_judge_output_quality(output_dir))
-    checks.extend(_validate_judge_output_metadata(input_dir, output_dir))
     checks.extend(
-        _validate_judge_panel_outputs(results_dir, input_counts, profile=profile)
+        _validate_judge_panel_outputs(
+            results_dir,
+            input_counts,
+            profile=profile,
+            input_hash_index=input_hash_index,
+            input_names=input_names,
+        )
     )
 
     aggregate_counts: dict[str, int] = {}
@@ -925,19 +967,19 @@ def validate(
             key: len(aggregate.get(key, [])) for key in DIMENSION_TO_FILE
         }
         expected_aggregate = {
-            "D1": expected["D1_sample"],
-            "D2": expected["D2"],
-            # D3 aggregate excludes control: ``live`` is the per-conversation
-            # live-arm count, which equals the number of D3 records that pass
+            "S1": expected["S1_sample"],
+            "S2": expected["live"],
+            "S3": expected["S3"],
+            # S2 aggregate excludes control: ``live`` is the per-conversation
+            # live-arm count, which equals the number of S2 records that pass
             # downstream filtering.
-            "D3": expected["live"],
-            "control": expected["control"],
-            "P1": expected["P1"],
-            "B1": expected["B1"],
+            "S4": expected["S4"],
+            "S5": expected["S5"],
+            "S6": expected["S6"],
         }
         for key, expected_count in expected_aggregate.items():
             if profile == "full":
-                actual_expected = output_counts["D1"] if key == "D1" else expected_count
+                actual_expected = output_counts["S1"] if key == "S1" else expected_count
             else:
                 actual_expected = output_counts[key]
             checks.append(
@@ -949,14 +991,20 @@ def validate(
             )
     else:
         checks.append(
-            Check("aggregate_file", False, f"missing {eval_path}", required=False)
+            Check(
+                "aggregate_file",
+                False,
+                f"missing {_rel_path(eval_path, results_dir)}",
+                required=False,
+            )
         )
 
     checks.append(
         Check(
             "report_html",
             report_path.exists(),
-            f"{report_path} {'exists' if report_path.exists() else 'missing'}",
+            f"{_rel_path(report_path, results_dir)} "
+            f"{'exists' if report_path.exists() else 'missing'}",
             required=False,
         )
     )

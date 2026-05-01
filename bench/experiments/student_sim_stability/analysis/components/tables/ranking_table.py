@@ -1,4 +1,4 @@
-"""Cross-vendor candidate-selection ranking table (D1+D2+D3+Composite)."""
+"""Cross-vendor candidate-selection ranking table (S1+S3+S2+Composite)."""
 
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ def _ci_cell(ci: dict | None) -> str:
 
 
 class RankingTable(Component):
-    """D1+D2+D3+Composite ranking with bootstrap 95% CI next to each mean."""
+    """S1+S3+S2+Composite ranking with bootstrap 95% CI next to each mean."""
 
     name = "ranking_table"
 
@@ -48,20 +48,20 @@ class RankingTable(Component):
             }
             rows += (
                 f"<tr><td>{badge}</td><td><strong>{r['model']}</strong></td>\n"
-                f'  <td class="{_score_class(r["scores"]["D1"])}">{_fmt_score(r["scores"]["D1"])}</td>'
-                f"{_ci_cell(scores_ci.get('D1'))}\n"
-                f'  <td class="{_score_class(r["scores"]["D2"])}">{_fmt_score(r["scores"]["D2"])}</td>'
-                f"{_ci_cell(scores_ci.get('D2'))}\n"
-                f'  <td class="{_score_class(r["scores"]["D3"])}">{_fmt_score(r["scores"]["D3"])}</td>'
-                f"{_ci_cell(scores_ci.get('D3'))}\n"
+                f'  <td class="{_score_class(r["scores"]["S1"])}">{_fmt_score(r["scores"]["S1"])}</td>'
+                f"{_ci_cell(scores_ci.get('S1'))}\n"
+                f'  <td class="{_score_class(r["scores"]["S3"])}">{_fmt_score(r["scores"]["S3"])}</td>'
+                f"{_ci_cell(scores_ci.get('S3'))}\n"
+                f'  <td class="{_score_class(r["scores"]["S2"])}">{_fmt_score(r["scores"]["S2"])}</td>'
+                f"{_ci_cell(scores_ci.get('S2'))}\n"
                 f'  <td class="{_score_class(r["composite"])}">{r["composite"]:.2f}</td>'
                 f"{_ci_cell(composite_ci)}</tr>"
             )
         return (
             "<table><tr><th>Rank</th><th>Model</th>"
-            "<th>D1</th><th>D1 95% CI</th>"
-            "<th>D2</th><th>D2 95% CI</th>"
-            "<th>D3</th><th>D3 95% CI</th>"
+            "<th>S1</th><th>S1 95% CI</th>"
+            "<th>S3</th><th>S3 95% CI</th>"
+            "<th>S2</th><th>S2 95% CI</th>"
             "<th>Composite</th><th>Composite 95% CI</th></tr>\n"
             f"{rows}</table>"
         )
@@ -71,13 +71,13 @@ class RankingTable(Component):
             [
                 "rank",
                 "model",
-                "D1",
+                "S1",
                 "D1_ci_low",
                 "D1_ci_high",
-                "D2",
+                "S3",
                 "D2_ci_low",
                 "D2_ci_high",
-                "D3",
+                "S2",
                 "D3_ci_low",
                 "D3_ci_high",
                 "composite",
@@ -87,20 +87,20 @@ class RankingTable(Component):
         ]
         for i, r in enumerate(self.ranking):
             scores_ci = r.get("scores_ci") or {}
-            d1_ci = scores_ci.get("D1") or {}
-            d2_ci = scores_ci.get("D2") or {}
-            d3_ci = scores_ci.get("D3") or {}
+            d1_ci = scores_ci.get("S1") or {}
+            d2_ci = scores_ci.get("S3") or {}
+            d3_ci = scores_ci.get("S2") or {}
             rows.append(
                 [
                     i + 1,
                     r["model"],
-                    r["scores"].get("D1"),
+                    r["scores"].get("S1"),
                     d1_ci.get("low"),
                     d1_ci.get("high"),
-                    r["scores"].get("D2"),
+                    r["scores"].get("S3"),
                     d2_ci.get("low"),
                     d2_ci.get("high"),
-                    r["scores"].get("D3"),
+                    r["scores"].get("S2"),
                     d3_ci.get("low"),
                     d3_ci.get("high"),
                     r["composite"],
@@ -111,48 +111,19 @@ class RankingTable(Component):
         return csv_bytes(rows)
 
     def render_tex(self) -> str:
-        def _fmt_ci(ci: dict | None) -> str:
-            if not ci:
-                return "n/a"
-            lo, hi = ci.get("low"), ci.get("high")
-            if isinstance(lo, (int, float)) and isinstance(hi, (int, float)):
-                return f"[{lo:.2f}, {hi:.2f}]"
-            return "n/a"
-
         rows: list[list[object]] = []
         for i, r in enumerate(self.ranking):
-            scores_ci = r.get("scores_ci") or {}
-            comp_ci = {
-                "low": r.get("composite_ci_low"),
-                "high": r.get("composite_ci_high"),
-            }
             rows.append(
                 [
                     i + 1,
                     r["model"],
-                    _fmt_score(r["scores"].get("D1")),
-                    _fmt_ci(scores_ci.get("D1")),
-                    _fmt_score(r["scores"].get("D2")),
-                    _fmt_ci(scores_ci.get("D2")),
-                    _fmt_score(r["scores"].get("D3")),
-                    _fmt_ci(scores_ci.get("D3")),
-                    f"{r['composite']:.2f}",
-                    _fmt_ci(comp_ci),
+                    _fmt_score(r["scores"].get("S1")),
+                    _fmt_score(r["scores"].get("S3")),
+                    _fmt_score(r["scores"].get("S2")),
                 ]
             )
         return booktabs_table(
-            [
-                "Rank",
-                "Model",
-                "D1",
-                "D1 95% CI",
-                "D2",
-                "D2 95% CI",
-                "D3",
-                "D3 95% CI",
-                "Composite",
-                "Composite 95% CI",
-            ],
-            "rlrlrlrlrl",
+            ["Rank", "Model", "S1", "S3", "S2"],
+            "rlrrr",
             rows,
         )

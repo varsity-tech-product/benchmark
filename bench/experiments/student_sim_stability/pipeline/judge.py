@@ -90,7 +90,7 @@ def extract_json_object(text: str) -> dict:
 
     Why this isn't ``server.eval.judges.runtime.scoring_utils.extract_json_from_response``:
     that helper falls back to a flat-object regex (``\\{[^{}]*\\}``) and returns
-    ``{}`` on failure. Judge outputs for D1/D3/B1/control contain nested
+    ``{}`` on failure. Judge outputs for S1/S2/S4/control contain nested
     structures (``per_turn`` is a list of dicts, ``scores_by_judge`` is a dict);
     the regex would silently truncate them and the empty-dict fallback would
     swallow malformed responses that we explicitly want to surface as retries.

@@ -1,4 +1,4 @@
-"""D1 persona-adherence by model table Component (independent export)."""
+"""S1 persona-adherence by model table Component (independent export)."""
 
 from __future__ import annotations
 
@@ -26,7 +26,7 @@ class D1ByModel(Component):
             for m, d in sorted(self.by_model.items())
         )
         return (
-            "<table><tr><th>Model</th><th>D1 Mean</th><th>95% CI</th>"
+            "<table><tr><th>Model</th><th>S1 Mean</th><th>95% CI</th>"
             f"<th>Std</th><th>N</th></tr>{rows}</table>"
         )
 
@@ -48,10 +48,10 @@ class D1ByModel(Component):
     def render_tex(self) -> str:
         rows: list[list[object]] = []
         for m, d in sorted(self.by_model.items()):
-            ci = f"[{d.get('ci_low', 0):.2f}, {d.get('ci_high', 0):.2f}]"
+            ci = f"({d.get('ci_low', 0):.2f}, {d.get('ci_high', 0):.2f})"
             rows.append([m, f"{d['mean']:.2f}", ci, f"{d['std']:.2f}", d["n"]])
         return booktabs_table(
-            ["Model", "D1 Mean", "95% CI", "Std", "N"],
+            ["Model", "S1 Mean", "95% CI", "Std", "N"],
             "lrlrr",
             rows,
         )
