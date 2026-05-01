@@ -22,11 +22,7 @@
   var _pollTimer = null;
   var state = {
     runs: [],
-    loading: true,
-    error: '',
-    lastUpdated: '',
-    statusFilter: 'all',
-    search: ''
+    error: ''
   };
 
   function authFetch(url, options) {
@@ -73,13 +69,10 @@
       })
       .then(function (payload) {
         state.runs = sortRuns(payload.runs || []);
-        state.loading = false;
         state.error = '';
-        state.lastUpdated = new Date().toISOString();
         render();
       })
       .catch(function (err) {
-        state.loading = false;
         state.error = err && err.message ? err.message : String(err);
         render();
       });
@@ -100,29 +93,13 @@
   function bind() {
     var refreshBtn = document.getElementById('flow-refresh-btn');
     if (refreshBtn) refreshBtn.addEventListener('click', refresh);
-
-    var status = document.getElementById('flow-status-filter');
-    if (status) {
-      status.value = state.statusFilter;
-      status.addEventListener('change', function (event) {
-        state.statusFilter = event.target.value || 'all';
-        render();
-      });
-    }
-
-    var search = document.getElementById('flow-search');
-    if (search) {
-      search.value = state.search;
-      search.addEventListener('input', function (event) {
-        state.search = String(event.target.value || '').trim().toLowerCase();
-        render();
-      });
-    }
   }
 
   function pageHtml() {
-    var statuses = sortedUnique(state.runs.map(function (run) { return displayStatus(run); }));
-    var visible = filteredRuns();
+    var activeRun = currentActiveRun();
+    if (!activeRun && !state.error) {
+      return '<section class="page flow-demo flow-demo-blank"></section>';
+    }
     return '' +
       '<section class="page flow-demo">' +
         '<header class="page-header">' +
@@ -135,92 +112,35 @@
             '<button class="btn btn-secondary" id="flow-refresh-btn" type="button">Refresh</button>' +
           '</div>' +
         '</header>' +
-        summaryHtml() +
         statusBannerHtml() +
-        filterHtml(statuses) +
-        '<div class="results-meta">' +
-          '<div class="results-count">' + escapeHtml(String(visible.length)) + ' run(s) shown</div>' +
-        '</div>' +
-        (visible.length
-          ? '<div class="results-grid flow-results-grid">' + visible.map(runCardHtml).join('') + '</div>'
-          : emptyHtml()) +
+        (activeRun
+          ? '<div class="results-grid flow-results-grid">' + runCardHtml(activeRun) + '</div>'
+          : '') +
       '</section>';
-  }
-
-  function summaryHtml() {
-    var live = state.runs.filter(isLiveRun).length;
-    var completed = state.runs.filter(function (run) { return run.status === 'completed'; }).length;
-    var failed = state.runs.filter(function (run) { return run.status === 'failed'; }).length;
-    var updated = state.lastUpdated ? formatTime(state.lastUpdated) : 'pending';
-    return '' +
-      '<div class="summary-strip flow-summary-strip">' +
-        summaryPill('Live', String(live)) +
-        summaryPill('Completed', String(completed)) +
-        summaryPill('Failed', String(failed)) +
-        summaryPill('Updated', updated) +
-      '</div>';
-  }
-
-  function summaryPill(label, value) {
-    return '<span class="summary-pill"><strong>' + escapeHtml(label) + '</strong> ' + escapeHtml(value) + '</span>';
   }
 
   function statusBannerHtml() {
     if (state.error) {
       return '<div class="flow-fail-banner"><strong>Error.</strong> ' + escapeHtml(state.error) + '</div>';
     }
-    if (state.loading) {
-      return '<div class="flow-now-banner">Loading live run state.</div>';
-    }
-    if (!state.runs.length) {
-      return '<div class="flow-now-banner">Waiting for benchmark runs.</div>';
-    }
     return '';
   }
 
-  function filterHtml(statuses) {
-    var options = ['<option value="all">All</option>'].concat(statuses.map(function (status) {
-      var selected = status === state.statusFilter ? ' selected' : '';
-      return '<option value="' + escapeHtml(status) + '"' + selected + '>' + escapeHtml(statusLabel(status)) + '</option>';
-    }));
-    return '' +
-      '<section class="panel filter-bar">' +
-        '<label class="filter-field">' +
-          '<span class="filter-label">Status</span>' +
-          '<select id="flow-status-filter" class="filter-select">' + options.join('') + '</select>' +
-        '</label>' +
-        '<label class="filter-field">' +
-          '<span class="filter-label">Search</span>' +
-          '<input id="flow-search" class="filter-input" type="search" placeholder="task, run_id, session_id..." value="' + escapeHtml(state.search) + '">' +
-        '</label>' +
-      '</section>';
-  }
-
-  function filteredRuns() {
-    return state.runs.filter(function (run) {
-      var status = displayStatus(run);
-      if (state.statusFilter !== 'all' && status !== state.statusFilter) return false;
-      if (state.search) {
-        var haystack = [
-          run.run_id,
-          run.session_id,
-          run.public_task_label,
-          run.status,
-          run.observer_status
-        ].join(' ').toLowerCase();
-        if (haystack.indexOf(state.search) === -1) return false;
+  function currentActiveRun() {
+    for (var i = 0; i < state.runs.length; i += 1) {
+      var run = state.runs[i];
+      if (run.status === 'active' && displayStatus(run) === 'active') {
+        return run;
       }
-      return true;
-    });
+    }
+    return null;
   }
 
   function runCardHtml(run) {
     var status = displayStatus(run);
     var conversation = run.conversation || [];
     var logs = run.recent_tool_logs || [];
-    var href = run.status === 'completed' && run.session_id
-      ? '#/review/' + encodeURIComponent(run.session_id)
-      : '';
+    var href = runHref(run, status);
     var tag = href ? 'a' : 'article';
     var open = href ? ' href="' + href + '"' : '';
 
@@ -250,6 +170,16 @@
         '</div>' +
         previewHtml(run) +
       '</' + tag + '>';
+  }
+
+  function runHref(run, status) {
+    if (status === 'completed' && run.session_id) {
+      return '#/review/' + encodeURIComponent(run.session_id);
+    }
+    if (LIVE_STATUSES[status] && run.run_id) {
+      return '#/run/' + encodeURIComponent(run.run_id);
+    }
+    return '';
   }
 
   function previewHtml(run) {
@@ -293,11 +223,6 @@
     }).join('') + '</div>';
   }
 
-  function emptyHtml() {
-    if (state.runs.length) return '<div class="empty-state"><p>No runs match the current filters.</p></div>';
-    return '<div class="empty-state"><p>Waiting for benchmark runs.</p></div>';
-  }
-
   function emptyConversationText(run) {
     var status = displayStatus(run);
     if (status === 'waiting') return 'Run created.';
@@ -315,11 +240,6 @@
     if (status === 'active') return 'Tool calls will appear as the agent works.';
     if (status === 'completed') return 'Archived tool calls are available in Human Review.';
     return statusLabel(status || 'pending');
-  }
-
-  function isLiveRun(run) {
-    if (run.is_live === true) return true;
-    return LIVE_STATUSES[run.status] && displayStatus(run) !== 'stale';
   }
 
   function displayStatus(run) {
@@ -346,15 +266,6 @@
       cancelled: 'Cancelled'
     };
     return labels[status] || titleCase(status || '');
-  }
-
-  function sortedUnique(values) {
-    var map = {};
-    values.forEach(function (value) {
-      if (value == null || value === '') return;
-      map[String(value)] = true;
-    });
-    return Object.keys(map).sort();
   }
 
   function titleCase(value) {

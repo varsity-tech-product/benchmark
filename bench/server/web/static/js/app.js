@@ -2438,6 +2438,16 @@
     });
   }
 
+  function showRunDetail(runId) {
+    state.activeSessionId = null;
+    setAppDetailMode(false);
+    if (window.QTB && typeof window.QTB.renderRunMonitorPage === 'function') {
+      window.QTB.renderRunMonitorPage(app, runId);
+      return;
+    }
+    renderError('Run monitor unavailable', new Error('run-agent.js not loaded'));
+  }
+
   function showResultDetail(sessionId) {
     state.activeSessionId = sessionId;
     setAppDetailMode(true);
@@ -2478,6 +2488,11 @@
 
     if (route === '/run') {
       showRun();
+      return;
+    }
+
+    if (route.indexOf('/run/') === 0) {
+      showRunDetail(decodeURIComponent(route.slice('/run/'.length)));
       return;
     }
 
