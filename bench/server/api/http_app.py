@@ -407,6 +407,34 @@ class BenchSessionManager:
     # MCP request routing
     # ------------------------------------------------------------------
 
+    async def _handle_transport_request(
+        self,
+        session_id: str,
+        transport: StreamableHTTPServerTransport,
+        scope,
+        receive,
+        send,
+    ) -> None:
+        """Forward an MCP request and persist partial state on client drop."""
+        disconnected = False
+
+        async def receive_with_disconnect():
+            nonlocal disconnected
+            message = await receive()
+            if message.get("type") == "http.disconnect":
+                disconnected = True
+            return message
+
+        try:
+            await transport.handle_request(scope, receive_with_disconnect, send)
+        finally:
+            if disconnected and session_id in self._sessions:
+                logger.info(
+                    "Session %s MCP client disconnected during request",
+                    session_id[:8],
+                )
+                await self._cleanup_session(session_id, persist_partial=True)
+
     async def handle_mcp_request(self, scope, receive, send):
         """ASGI handler for ``/mcp``."""
         request = Request(scope, receive)
@@ -430,7 +458,13 @@ class BenchSessionManager:
 
         # Existing session
         if session_id and session_id in self._transports:
-            await self._transports[session_id].handle_request(scope, receive, send)
+            await self._handle_transport_request(
+                session_id,
+                self._transports[session_id],
+                scope,
+                receive,
+                send,
+            )
             return
 
         # Unknown session ID — try to restore from server storage
@@ -488,7 +522,13 @@ class BenchSessionManager:
                 await resp(scope, receive, send)
                 return
 
-            await transport.handle_request(scope, receive, send)
+            await self._handle_transport_request(
+                session_id,
+                transport,
+                scope,
+                receive,
+                send,
+            )
             return
 
         # New session — POST only
@@ -574,7 +614,7 @@ class BenchSessionManager:
                     )
                 finally:
                     if new_id in self._sessions:
-                        await self._cleanup_session(new_id)
+                        await self._cleanup_session(new_id, persist_partial=True)
 
         try:
             await self._task_group.start(run_server)
@@ -585,7 +625,13 @@ class BenchSessionManager:
             await resp(scope, receive, send)
             return
 
-        await transport.handle_request(scope, receive, send)
+        await self._handle_transport_request(
+            new_id,
+            transport,
+            scope,
+            receive,
+            send,
+        )
 
     # ------------------------------------------------------------------
     # Per-session MCP server factory
