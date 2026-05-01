@@ -16,7 +16,6 @@
   };
 
   var POLL_MS = 2000;
-  var LIVE_STATUSES = {waiting: true, claimed: true, active: true};
 
   var _root = null;
   var _pollTimer = null;
@@ -139,7 +138,7 @@
   function runCardHtml(run) {
     var status = displayStatus(run);
     var conversation = run.conversation || [];
-    var logs = run.recent_tool_logs || [];
+    var logs = domainToolLogs(run.recent_tool_logs || []);
     var href = runHref(run, status);
     var tag = href ? 'a' : 'article';
     var open = href ? ' href="' + href + '"' : '';
@@ -176,36 +175,84 @@
     if (status === 'completed' && run.session_id) {
       return '#/review/' + encodeURIComponent(run.session_id);
     }
-    if (LIVE_STATUSES[status] && run.run_id) {
-      return '#/run/' + encodeURIComponent(run.run_id);
-    }
     return '';
   }
 
   function previewHtml(run) {
     var conversation = run.conversation || [];
-    var logs = run.recent_tool_logs || [];
-    var messages = conversation.slice(Math.max(conversation.length - 2, 0));
+    var logs = domainToolLogs(run.recent_tool_logs || []);
     return '' +
       '<div class="flow-card-preview">' +
-        '<div class="flow-preview-block">' +
+        '<div class="flow-preview-block flow-conversation-block">' +
           '<h3>Conversation</h3>' +
-          (messages.length ? messages.map(messagePreviewHtml).join('') : '<p class="detail-empty-note">' + escapeHtml(emptyConversationText(run)) + '</p>') +
+          (conversation.length ? '<div class="flow-conversation-list">' + conversation.map(messageHtml).join('') + '</div>' : '<p class="detail-empty-note">' + escapeHtml(emptyConversationText(run)) + '</p>') +
         '</div>' +
-        '<div class="flow-preview-block">' +
+        '<aside class="flow-preview-block flow-tools-block">' +
           '<h3>Tool Activity</h3>' +
-          (logs.length ? toolListHtml(logs.slice(-4).reverse()) : '<p class="detail-empty-note">' + escapeHtml(emptyToolText(run)) + '</p>') +
-        '</div>' +
+          (logs.length ? toolListHtml(logs.slice(-8).reverse()) : '<p class="detail-empty-note">' + escapeHtml(emptyToolText(run)) + '</p>') +
+        '</aside>' +
       '</div>';
   }
 
-  function messagePreviewHtml(msg) {
-    var role = (msg.role === 'user' || msg.role === 'student') ? 'Student' : 'Tutor';
+  function messageHtml(msg) {
+    var roleClass = normalizedRole(msg && msg.role);
+    var role = roleLabel(msg && msg.role, roleClass);
     return '' +
-      '<div class="flow-message-preview">' +
+      '<div class="flow-message flow-message-' + escapeHtml(roleClass) + '">' +
         '<strong>' + escapeHtml(role) + '</strong>' +
-        '<span>' + escapeHtml(truncate(msg.content || '', 260)) + '</span>' +
+        '<div class="flow-message-body">' + renderMessageContent(msg) + '</div>' +
       '</div>';
+  }
+
+  function renderMessageContent(msg) {
+    var text = messageText(msg);
+    return escapeHtml(text).replace(/\n/g, '<br>');
+  }
+
+  function messageText(msg) {
+    if (!msg) return '';
+
+    if (Array.isArray(msg.content_blocks)) {
+      var blockText = msg.content_blocks.map(contentBlockText).filter(Boolean);
+      if (blockText.length) return blockText.join('\n\n');
+    }
+
+    var content = msg.content != null ? msg.content : msg.message;
+    if (Array.isArray(content)) {
+      return content.map(contentBlockText).filter(Boolean).join('\n\n');
+    }
+    if (content && typeof content === 'object') {
+      return JSON.stringify(content, null, 2);
+    }
+    return String(content == null ? '' : content);
+  }
+
+  function contentBlockText(block) {
+    if (!block) return '';
+    if (typeof block === 'string') return block;
+    if (typeof block !== 'object') return '';
+    if (block.type === 'text') return block.text || '';
+    if (block.text) return block.text;
+    if (block.type === 'tool_use' && block.name === 'send_message' && block.input) {
+      return block.input.text || '';
+    }
+    return '';
+  }
+
+  function normalizedRole(role) {
+    return (role === 'user' || role === 'student') ? 'student' : 'tutor';
+  }
+
+  function roleLabel(role, roleClass) {
+    if (roleClass === 'student') return 'Student';
+    if (role === 'assistant' || role === 'tutor' || !role) return 'Tutor';
+    return titleCase(role);
+  }
+
+  function domainToolLogs(logs) {
+    return (logs || []).filter(function (log) {
+      return log && log.name !== 'send_message';
+    });
   }
 
   function toolListHtml(logs) {
@@ -278,12 +325,6 @@
 
   function shortId(value) {
     return String(value || '').slice(0, 8) || '-';
-  }
-
-  function truncate(value, maxLength) {
-    var text = String(value || '').replace(/\s+/g, ' ').trim();
-    if (text.length <= maxLength) return text;
-    return text.slice(0, maxLength - 1) + '…';
   }
 
   function formatTimestamp(value) {

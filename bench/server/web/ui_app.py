@@ -826,7 +826,7 @@ def ui_routes(manager) -> list[Route]:
 
         payload["is_live"] = run.status.value == "active"
         if session.session:
-            payload["conversation"] = getattr(session.session, "conversation", [])[-50:]
+            payload["conversation"] = getattr(session.session, "conversation", [])
             payload["turn"] = getattr(session.session, "turn", 0)
         payload["session_phase"] = session.phase.value
 

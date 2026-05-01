@@ -121,10 +121,14 @@ class ControlTokenTests(unittest.TestCase):
             client, manager = _build_client(Path(tmp))
             assignment, _, _ = manager._run_service.create_and_claim("D01")
             manager._run_service.bind_session(assignment.run_id, "session-1")
+            conversation = [
+                {"role": "user", "content": f"message {idx}"}
+                for idx in range(55)
+            ]
             manager._sessions["session-1"] = SimpleNamespace(
                 phase=SimpleNamespace(value="in_session"),
                 session=SimpleNamespace(
-                    conversation=[{"role": "user", "content": "opening"}],
+                    conversation=conversation,
                     turn=1,
                 ),
                 proxy=SimpleNamespace(
@@ -148,7 +152,9 @@ class ControlTokenTests(unittest.TestCase):
             self.assertEqual(body["runs"][0]["observer_status"], "active")
             self.assertEqual(body["runs"][0]["session_phase"], "in_session")
             self.assertEqual(body["runs"][0]["turn"], 1)
-            self.assertEqual(body["runs"][0]["conversation"][0]["content"], "opening")
+            self.assertEqual(len(body["runs"][0]["conversation"]), 55)
+            self.assertEqual(body["runs"][0]["conversation"][0]["content"], "message 0")
+            self.assertEqual(body["runs"][0]["conversation"][-1]["content"], "message 54")
             self.assertEqual(
                 body["runs"][0]["recent_tool_logs"][0]["name"],
                 "run_lean_backtest",
