@@ -33,11 +33,12 @@ Current routes:
 - `GET /skill.md`
 - `GET /skills/quanttutorbench-rest-agent`
 - `GET /skills/quanttutorbench-rest-agent/raw`
+- `GET /client/tasks/catalog/labels`
 
 Run route scope:
 - `#/run` opens a copyable REST agent prompt directly.
 - The prompt surface generates a fresh REST API key through `/ui/api-key` and embeds a short Moltbook-style instruction, `/skill.md`, base URL, and key in a textarea.
-- External agents create or claim runs through the REST skill workflow; hidden task metadata stays in the server/client execution context.
+- External agents discover public labels through `/client/tasks/catalog/labels`, then create or claim runs through the REST skill workflow; hidden task metadata stays in the server/client execution context.
 - Session Flow owns run lifecycle browsing. Human Review owns archived session inspection.
 
 Task route scope:

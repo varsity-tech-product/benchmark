@@ -1,10 +1,11 @@
 """Starlette route factory for the web UI.
 
 Provides:
-- ``/ui/results/*``  — read-only result browsing (existing)
-- ``/ui/tasks/*``    — task listing + public catalog (existing + new)
-- ``/ui/runs/*``     — Run management (new)
-- ``/client/runs/*`` — Client-facing Run endpoints (new)
+- ``/ui/results/*``   — read-only result browsing (existing)
+- ``/ui/tasks/*``     — task listing + public catalog (existing + new)
+- ``/ui/runs/*``      — Run management (new)
+- ``/client/tasks/*`` — Client-facing task catalog endpoints
+- ``/client/runs/*``  — Client-facing Run endpoints (new)
 """
 
 from __future__ import annotations
@@ -433,6 +434,18 @@ def ui_routes(manager) -> list[Route]:
         run_service = getattr(manager, "_run_service", None)
         if run_service is None:
             return JSONResponse({"error": "Run service not initialized"}, 503)
+        return JSONResponse({"tasks": run_service.catalog.list_labels_only()})
+
+    async def client_task_catalog_labels(request: Request) -> JSONResponse:
+        """API-key catalog for external clients before creating runs."""
+        run_service = getattr(manager, "_run_service", None)
+        if run_service is None:
+            return JSONResponse({"error": "Run service not initialized"}, 503)
+
+        _, auth_err = auth.resolve_client_user(request)
+        if auth_err is not None:
+            return auth_err
+
         return JSONResponse({"tasks": run_service.catalog.list_labels_only()})
 
     # -----------------------------------------------------------------------
@@ -1095,7 +1108,12 @@ def ui_routes(manager) -> list[Route]:
         Route("/ui/runs/{run_id}", get_run, methods=["GET"]),
         Route("/ui/runs/{run_id}/live", get_run_live, methods=["GET"]),
         Route("/ui/runs/{run_id}/cancel", cancel_run, methods=["POST"]),
-        # New: Run management (Client)
+        # New: Client-facing task catalog + Run management
+        Route(
+            "/client/tasks/catalog/labels",
+            client_task_catalog_labels,
+            methods=["GET"],
+        ),
         Route("/client/runs/claim", client_claim_run, methods=["POST"]),
         Route("/client/runs/start", client_start_run, methods=["POST"]),
         Route("/client/runs/{run_id}/trace", client_upload_trace, methods=["POST"]),

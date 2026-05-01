@@ -47,8 +47,9 @@ quota checks, background tool jobs, cleanup, and restore-from-storage.
 
 ## Permission Boundary
 
-Clients can create or claim runs, register/start sessions, send tutor messages,
-call allowed workspace tools, and read exported result or score state.
+Clients can read public task labels, create or claim runs, register/start
+sessions, send tutor messages, call allowed workspace tools, and read exported
+result or score state.
 
 Clients cannot trigger scoring:
 
@@ -65,6 +66,11 @@ Scoring is server/operator-owned:
 The `/ops/*` surface is gated by the admin-token mechanism in
 `server.web.ui_app`. Client read endpoints stay export-scoped and, when run
 auth is enabled, require the owning run token.
+
+`GET /client/tasks/catalog/labels` is the API-key catalog endpoint for external
+agents before run creation. It returns only public labels such as `D01`; task
+category, difficulty, internal task IDs, rubrics, and solution paths stay out of
+the client catalog.
 
 ## Session Lifecycle
 

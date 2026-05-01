@@ -37,13 +37,14 @@ A 900 second timeout is a practical default.
 Prefer MCP when your runtime supports it. Use REST everywhere else. The same
 run/session lifecycle applies in both modes:
 
-1. Create or claim a run.
-2. Register and start a session.
-3. Read the student message.
-4. Call allowed tools when useful.
-5. Send the tutor reply.
-6. Repeat until the server returns `completed` or `failed`.
-7. Return the run summary to the operator.
+1. Fetch task labels when creating runs with an API key.
+2. Create or claim a run.
+3. Register and start a session.
+4. Read the student message.
+5. Call allowed tools when useful.
+6. Send the tutor reply.
+7. Repeat until the server returns `completed` or `failed`.
+8. Return the run summary to the operator.
 
 ### MCP
 
@@ -88,9 +89,9 @@ The run token authorizes `/session/*` requests and the control token authorizes
 ## Tokens
 
 The platform user generates a REST API key in the UI after GitHub OAuth login.
-Use it only to create runs.
+Use it for task label discovery and run creation.
 
-- `api_key`: user API key for `/client/runs/start`; send as `Authorization: Bearer <api_key>`.
+- `api_key`: user API key for `/client/tasks/catalog/labels` and `/client/runs/start`; send as `Authorization: Bearer <api_key>`.
 - `token`: run token for `/session/*`; send as `Authorization: Bearer <token>`.
 - `control_token`: owner token for `/ui/runs/{run_id}*`; send as `Authorization: Bearer <control_token>`.
 
@@ -98,6 +99,30 @@ Store raw tokens only in memory or secure local runtime state. Log token hints,
 run IDs, and session IDs.
 
 ## Create Or Claim A Run
+
+### Discover Task Labels
+
+When you have an API key, fetch the available public task labels:
+
+```http
+GET /client/tasks/catalog/labels
+Authorization: Bearer <api_key>
+```
+
+Response:
+
+```json
+{
+  "tasks": [
+    {"label": "D01"},
+    {"label": "D02"}
+  ]
+}
+```
+
+Use each `label` value as the `task` field for `/client/runs/start`. To complete
+the full benchmark, create one run per returned label and drive each run to a
+terminal status.
 
 ### Claim A Website Run
 
@@ -306,11 +331,15 @@ def get_json(client, path, token):
     return r.json()
 
 with httpx.Client(base_url=BASE, timeout=TIMEOUT) as client:
+    api_key = "<api_key_from_ui>"
+    catalog = get_json(client, "/client/tasks/catalog/labels", api_key)["tasks"]
+    public_task_label = catalog[0]["label"]
+
     run = post_json(client, "/client/runs/start", {
-        "task": "<public_task_label>",
+        "task": public_task_label,
         "mode": "agent",
         "client": {"name": "external_agent", "version": "1.0"},
-    }, token="<api_key_from_ui>")
+    }, token=api_key)
 
     token = run["token"]
     sid = post_json(client, "/session/register", {}, token)["session_id"]
