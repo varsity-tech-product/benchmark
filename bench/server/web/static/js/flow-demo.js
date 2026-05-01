@@ -37,6 +37,7 @@
 
   window.QTB.renderFlowDemoPage = function (app) {
     _root = app;
+    _root.classList.add('flow-app');
     _renderKey = '';
     _conversationKeys = [];
     _toolKey = '';
@@ -46,7 +47,10 @@
   };
 
   window.addEventListener('hashchange', function () {
-    if (location.hash.indexOf('#/flow-demo') !== 0) stopPolling();
+    if (location.hash.indexOf('#/flow-demo') !== 0) {
+      stopPolling();
+      if (_root) _root.classList.remove('flow-app');
+    }
   });
 
   function startPolling() {
@@ -122,9 +126,7 @@
       '<section class="page flow-demo">' +
         '<header class="page-header">' +
           '<div class="page-title-wrap">' +
-            '<p class="eyebrow">Session Flow</p>' +
-            '<h1>Live benchmark monitor.</h1>' +
-            '<p class="subtitle">Background REST/MCP runs appear here as the server updates their run state.</p>' +
+            '<h1>Session Flow</h1>' +
           '</div>' +
           '<div class="flow-actions">' +
             '<button class="btn btn-secondary" id="flow-refresh-btn" type="button">Refresh</button>' +
@@ -183,11 +185,6 @@
               '<span class="badge">' + escapeHtml(statusLabel(status)) + '</span>' +
               (run.mode ? '<span class="badge">' + escapeHtml(run.mode) + '</span>' : '') +
             '</h2>' +
-            '<p class="session-subtitle flow-live-subtitle">' +
-              'Run <code>' + escapeHtml(shortId(run.run_id)) + '</code>' +
-              (run.session_id ? ' · Session <code>' + escapeHtml(shortId(run.session_id)) + '</code>' : '') +
-              ' · ' + escapeHtml(formatTimestamp(run.updated_at || run.created_at)) +
-            '</p>' +
           '</div>' +
           '<span class="status-pill ' + statusClass(status) + '">' + escapeHtml(statusLabel(status)) + '</span>' +
         '</div>' +

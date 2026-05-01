@@ -202,6 +202,10 @@ code {
   padding: 36px 24px 64px;
 }
 
+#app.flow-app {
+  padding: 10px 18px 18px;
+}
+
 #app.app-detail {
   padding: 0;
 }
@@ -3054,6 +3058,7 @@ h1 {
 
 .flow-demo .page-header {
   align-items: center;
+  margin-bottom: 8px;
 }
 
 .flow-demo {
@@ -3071,8 +3076,8 @@ h1 {
 .flow-live-monitor {
   display: flex;
   flex-direction: column;
-  height: calc(100vh - var(--nav-height) - 194px);
-  min-height: calc(100vh - var(--nav-height) - 194px);
+  height: calc(100vh - var(--nav-height) - 84px);
+  min-height: 620px;
   overflow: hidden;
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -3084,25 +3089,26 @@ h1 {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 18px;
-  padding: 18px 20px 12px;
+  gap: 12px;
+  padding: 10px 14px 6px;
 }
 
 .flow-live-title {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   margin: 0;
-  font-size: 22px;
+  font-size: 18px;
 }
 
-.flow-live-subtitle {
-  margin-top: 10px;
+.flow-demo h1 {
+  font-size: 22px;
+  line-height: 1.1;
 }
 
 .flow-live-meta {
-  padding: 0 20px 16px;
+  padding: 0 14px 8px;
 }
 
 .flow-live-grid {
@@ -3130,8 +3136,8 @@ h1 {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  min-height: 46px;
-  padding: 12px 16px;
+  min-height: 36px;
+  padding: 8px 14px;
   border-bottom: 1px solid var(--border-light);
   background: rgba(255, 250, 243, 0.86);
 }
@@ -3159,7 +3165,7 @@ h1 {
   display: flex;
   flex-direction: column;
   gap: 20px;
-  padding: 20px;
+  padding: 14px;
   background:
     radial-gradient(circle, rgba(206, 187, 167, 0.62) 1px, transparent 1px) 0 0 / 20px 20px,
     linear-gradient(180deg, rgba(255, 250, 243, 0.78) 0%, rgba(245, 241, 235, 0.92) 100%);
@@ -3179,7 +3185,7 @@ h1 {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  padding: 14px;
+  padding: 10px;
   background: linear-gradient(180deg, rgba(255, 250, 243, 0.7) 0%, rgba(245, 241, 235, 0.92) 100%);
 }
 
@@ -3292,6 +3298,15 @@ h1 {
 @media (max-width: 860px) {
   .flow-demo {
     max-width: none;
+  }
+
+  #app.flow-app {
+    padding: 8px 10px 12px;
+  }
+
+  .flow-live-monitor {
+    height: calc(100vh - var(--nav-height) - 58px);
+    min-height: 540px;
   }
 
   .flow-live-top {

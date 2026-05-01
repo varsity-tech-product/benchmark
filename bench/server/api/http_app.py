@@ -421,7 +421,9 @@ class BenchSessionManager:
         if request.method == "DELETE":
             if session_id and session_id in self._transports:
                 transport = self._transports[session_id]
-                await transport.handle_request(scope, receive, send)
+                await self._handle_mcp_transport_request(
+                    transport, session_id, scope, receive, send
+                )
                 await self._cleanup_session(session_id, persist_partial=True)
                 return
             resp = Response(status_code=404, content="Session not found")
@@ -430,7 +432,9 @@ class BenchSessionManager:
 
         # Existing session
         if session_id and session_id in self._transports:
-            await self._transports[session_id].handle_request(scope, receive, send)
+            await self._handle_mcp_transport_request(
+                self._transports[session_id], session_id, scope, receive, send
+            )
             return
 
         # Unknown session ID — try to restore from server storage
@@ -475,7 +479,9 @@ class BenchSessionManager:
                         )
                     finally:
                         if session_id in self._sessions:
-                            await self._cleanup_session(session_id)
+                            await self._cleanup_session(
+                                session_id, persist_partial=True
+                            )
 
             try:
                 await self._task_group.start(run_restored)
@@ -488,7 +494,9 @@ class BenchSessionManager:
                 await resp(scope, receive, send)
                 return
 
-            await transport.handle_request(scope, receive, send)
+            await self._handle_mcp_transport_request(
+                transport, session_id, scope, receive, send
+            )
             return
 
         # New session — POST only
@@ -574,7 +582,7 @@ class BenchSessionManager:
                     )
                 finally:
                     if new_id in self._sessions:
-                        await self._cleanup_session(new_id)
+                        await self._cleanup_session(new_id, persist_partial=True)
 
         try:
             await self._task_group.start(run_server)
@@ -585,7 +593,42 @@ class BenchSessionManager:
             await resp(scope, receive, send)
             return
 
-        await transport.handle_request(scope, receive, send)
+        await self._handle_mcp_transport_request(
+            transport, new_id, scope, receive, send
+        )
+
+    async def _handle_mcp_transport_request(
+        self,
+        transport: StreamableHTTPServerTransport,
+        session_id: str,
+        scope,
+        receive,
+        send,
+    ) -> None:
+        """Handle one MCP HTTP request and persist partial state on disconnect."""
+        disconnected = False
+
+        async def watched_receive():
+            nonlocal disconnected
+            message = await receive()
+            if message.get("type") == "http.disconnect":
+                disconnected = True
+            return message
+
+        try:
+            await transport.handle_request(scope, watched_receive, send)
+        finally:
+            method = str(scope.get("method") or "").upper()
+            if (
+                disconnected
+                and method in {"POST", "DELETE"}
+                and session_id in self._sessions
+            ):
+                logger.info(
+                    "Session %s MCP client disconnected — cleaning up partial state",
+                    session_id[:8],
+                )
+                await self._cleanup_session(session_id, persist_partial=True)
 
     # ------------------------------------------------------------------
     # Per-session MCP server factory
@@ -697,28 +740,41 @@ class BenchSessionManager:
         terminal state), mark the run as failed — the client disconnected
         without completing the session.
         """
-        state = self._sessions.get(session_id)
+        state = self._sessions.pop(session_id, None)
+        transport = self._transports.pop(session_id, None)
         if not state:
-            self._transports.pop(session_id, None)
+            if transport:
+                with contextlib.suppress(Exception):
+                    await transport.terminate()
             logger.info("Session %s removed", session_id)
             return
 
-        # Mark associated run as failed if session didn't complete normally
-        if state.run_id and state.phase != SessionPhase.COMPLETED:
-            try:
-                run = self._run_service.get_run(state.run_id)
-                if run and run.status.value not in ("completed", "failed", "cancelled"):
-                    self._run_service.mark_failed(state.run_id, "Client disconnected")
-                    logger.info(
-                        "Run %s marked failed (client disconnected)",
-                        state.run_id,
-                    )
-            except Exception as exc:
-                logger.warning("Failed to mark run %s as failed: %s", state.run_id, exc)
-
         async with state._request_lock:
-            self._sessions.pop(session_id, None)
-            self._transports.pop(session_id, None)
+            if transport:
+                with contextlib.suppress(Exception):
+                    await transport.terminate()
+
+            # Mark associated run as failed if session didn't complete normally.
+            if state.run_id and state.phase != SessionPhase.COMPLETED:
+                try:
+                    run = self._run_service.get_run(state.run_id)
+                    if (
+                        run
+                        and run.status.value
+                        not in ("completed", "failed", "cancelled")
+                    ):
+                        self._run_service.mark_failed(
+                            state.run_id, "Client disconnected"
+                        )
+                        logger.info(
+                            "Run %s marked failed (client disconnected)",
+                            state.run_id,
+                        )
+                except Exception as exc:
+                    logger.warning(
+                        "Failed to mark run %s as failed: %s", state.run_id, exc
+                    )
+
             try:
                 state.cleanup(persist_partial=persist_partial)
             except Exception as e:
