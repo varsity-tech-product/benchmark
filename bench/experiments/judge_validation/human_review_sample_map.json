@@ -1,0 +1,210 @@
+{
+  "version": "judge_validation_human_review_sample_map_v1",
+  "generated_at": "2026-04-24T07:38:05.325519+00:00",
+  "mappings": [
+    {
+      "review_sample_id": "jv_review_001",
+      "original_sample_id": "jv_quant_correct_good",
+      "rubric_id": "quant_correctness.v1",
+      "dimension": "D4_instructional_accuracy"
+    },
+    {
+      "review_sample_id": "jv_review_002",
+      "original_sample_id": "jv_quant_correct_bad",
+      "rubric_id": "quant_correctness.v1",
+      "dimension": "D4_instructional_accuracy"
+    },
+    {
+      "review_sample_id": "jv_review_003",
+      "original_sample_id": "jv_code_correct_good",
+      "rubric_id": "code_correctness.v1",
+      "dimension": "result_judge"
+    },
+    {
+      "review_sample_id": "jv_review_004",
+      "original_sample_id": "jv_code_correct_bad",
+      "rubric_id": "code_correctness.v1",
+      "dimension": "result_judge"
+    },
+    {
+      "review_sample_id": "jv_review_005",
+      "original_sample_id": "jv_adaptation_good",
+      "rubric_id": "student_adaptation.v1",
+      "dimension": "D1_finance_adaptation"
+    },
+    {
+      "review_sample_id": "jv_review_006",
+      "original_sample_id": "jv_adaptation_bad",
+      "rubric_id": "student_adaptation.v1",
+      "dimension": "D1_finance_adaptation"
+    },
+    {
+      "review_sample_id": "jv_review_007",
+      "original_sample_id": "jv_tool_grounding_good",
+      "rubric_id": "tool_workspace_use.v1",
+      "dimension": "result_judge"
+    },
+    {
+      "review_sample_id": "jv_review_008",
+      "original_sample_id": "jv_tool_grounding_bad",
+      "rubric_id": "tool_workspace_use.v1",
+      "dimension": "result_judge"
+    },
+    {
+      "review_sample_id": "jv_review_009",
+      "original_sample_id": "jv_teaching_good",
+      "rubric_id": "teaching_quality.v1",
+      "dimension": "D3_pedagogical_method"
+    },
+    {
+      "review_sample_id": "jv_review_010",
+      "original_sample_id": "jv_teaching_bad",
+      "rubric_id": "teaching_quality.v1",
+      "dimension": "D3_pedagogical_method"
+    },
+    {
+      "review_sample_id": "jv_review_011",
+      "original_sample_id": "jv_safety_good",
+      "rubric_id": "failure_handling.v1",
+      "dimension": "D6_safety_boundaries"
+    },
+    {
+      "review_sample_id": "jv_review_012",
+      "original_sample_id": "jv_safety_bad",
+      "rubric_id": "failure_handling.v1",
+      "dimension": "D6_safety_boundaries"
+    },
+    {
+      "review_sample_id": "jv_review_013",
+      "original_sample_id": "jv_real_x02_lookahead_excerpt",
+      "rubric_id": "quant_correctness.v1",
+      "dimension": "D4_instructional_accuracy"
+    },
+    {
+      "review_sample_id": "jv_review_014",
+      "original_sample_id": "jv_real_i01_sma_lean_excerpt",
+      "rubric_id": "student_adaptation.v1",
+      "dimension": "D2_code_adaptation"
+    },
+    {
+      "review_sample_id": "jv_review_015",
+      "original_sample_id": "jv_real_x01_ma_window_excerpt",
+      "rubric_id": "quant_correctness.v1",
+      "dimension": "D4_instructional_accuracy"
+    },
+    {
+      "review_sample_id": "jv_review_016",
+      "original_sample_id": "jv_real_x03_position_bug_excerpt",
+      "rubric_id": "quant_correctness.v1",
+      "dimension": "D4_instructional_accuracy"
+    },
+    {
+      "review_sample_id": "jv_review_017",
+      "original_sample_id": "jv_real_x05_timezone_excerpt",
+      "rubric_id": "student_adaptation.v1",
+      "dimension": "D2_code_adaptation"
+    },
+    {
+      "review_sample_id": "jv_review_018",
+      "original_sample_id": "jv_real_x06_overfit_excerpt",
+      "rubric_id": "teaching_quality.v1",
+      "dimension": "D3_pedagogical_method"
+    },
+    {
+      "review_sample_id": "jv_review_019",
+      "original_sample_id": "jv_real_x07_warmup_excerpt",
+      "rubric_id": "quant_correctness.v1",
+      "dimension": "D4_instructional_accuracy"
+    },
+    {
+      "review_sample_id": "jv_review_020",
+      "original_sample_id": "jv_real_x09_alpha_conflict_excerpt",
+      "rubric_id": "teaching_quality.v1",
+      "dimension": "D3_pedagogical_method"
+    },
+    {
+      "review_sample_id": "jv_review_021",
+      "original_sample_id": "jv_real_x10_universe_stale_excerpt",
+      "rubric_id": "quant_correctness.v1",
+      "dimension": "D4_instructional_accuracy"
+    },
+    {
+      "review_sample_id": "jv_review_022",
+      "original_sample_id": "jv_real_i02_trend_gpt52_excerpt",
+      "rubric_id": "student_adaptation.v1",
+      "dimension": "D2_code_adaptation"
+    },
+    {
+      "review_sample_id": "jv_review_023",
+      "original_sample_id": "jv_real_i01_sma_haiku_excerpt",
+      "rubric_id": "student_adaptation.v1",
+      "dimension": "D2_code_adaptation"
+    },
+    {
+      "review_sample_id": "jv_review_024",
+      "original_sample_id": "jv_real_i03_meanrev_gpt52_excerpt",
+      "rubric_id": "quant_correctness.v1",
+      "dimension": "D4_instructional_accuracy"
+    },
+    {
+      "review_sample_id": "jv_review_025",
+      "original_sample_id": "jv_real_i05_crossasset_mini_excerpt",
+      "rubric_id": "student_adaptation.v1",
+      "dimension": "D1_finance_adaptation"
+    },
+    {
+      "review_sample_id": "jv_review_026",
+      "original_sample_id": "jv_real_i07_alpha_gpt52_excerpt",
+      "rubric_id": "teaching_quality.v1",
+      "dimension": "D3_pedagogical_method"
+    },
+    {
+      "review_sample_id": "jv_review_027",
+      "original_sample_id": "jv_real_i08_multialpha_gpt52_excerpt",
+      "rubric_id": "student_adaptation.v1",
+      "dimension": "D1_finance_adaptation"
+    },
+    {
+      "review_sample_id": "jv_review_028",
+      "original_sample_id": "jv_real_i09_risk_mini_excerpt",
+      "rubric_id": "quant_correctness.v1",
+      "dimension": "D4_instructional_accuracy"
+    },
+    {
+      "review_sample_id": "jv_review_029",
+      "original_sample_id": "jv_real_s01_ma_haiku_excerpt",
+      "rubric_id": "teaching_quality.v1",
+      "dimension": "D3_pedagogical_method"
+    },
+    {
+      "review_sample_id": "jv_review_030",
+      "original_sample_id": "jv_real_e01_build_ma_mini_excerpt",
+      "rubric_id": "student_adaptation.v1",
+      "dimension": "D2_code_adaptation"
+    },
+    {
+      "review_sample_id": "jv_review_031",
+      "original_sample_id": "jv_real_e03_strategy_validation_excerpt",
+      "rubric_id": "quant_correctness.v1",
+      "dimension": "D4_instructional_accuracy"
+    },
+    {
+      "review_sample_id": "jv_review_032",
+      "original_sample_id": "jv_real_e04_prod_debug_excerpt",
+      "rubric_id": "teaching_quality.v1",
+      "dimension": "D3_pedagogical_method"
+    },
+    {
+      "review_sample_id": "jv_review_033",
+      "original_sample_id": "jv_safety_spoofing_good",
+      "rubric_id": "failure_handling.v1",
+      "dimension": "D6_safety_boundaries"
+    },
+    {
+      "review_sample_id": "jv_review_034",
+      "original_sample_id": "jv_safety_spoofing_bad",
+      "rubric_id": "failure_handling.v1",
+      "dimension": "D6_safety_boundaries"
+    }
+  ]
+}
