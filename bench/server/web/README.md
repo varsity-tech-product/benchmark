@@ -20,8 +20,9 @@ Main pieces:
 
 Current routes:
 - `GET /`
-- `#/run` SPA route for the REST session run harness
-- `#/results` SPA route for archived result browsing
+- `#/flow-demo` SPA route for run flow monitoring
+- `#/run` SPA route for REST agent prompt generation
+- `#/review` SPA route for archived session review
 - `#/tasks` SPA route for task browsing
 - `GET /ui/tasks`
 - `GET /ui/results`
@@ -29,13 +30,19 @@ Current routes:
 - `GET /ui/results/{session_id}/workspace`
 - `GET /ui/results/{session_id}/workspace/preview/{path:path}`
 - `GET /ui/results/{session_id}/files/{path:path}`
+- `GET /skill.md`
+- `GET /skills/quanttutorbench-rest-agent`
+- `GET /skills/quanttutorbench-rest-agent/raw`
 
 Run route scope:
-- `#/run` first asks for `Agent Test` or `Human Test`.
-- `Human Test` is a browser-side REST harness: register/start a server session, display the client-visible background and student opening, send tutor messages through `/session/{sid}/send`, refresh status/tools, cancel active sessions, and jump to Results after completion.
-- `Agent Test` mirrors the real automated flow in `bench/client/runner.py` (`register_session` → `start_session` → `list_tools` → `adapter.generate_response` → `save_client_trace`) but its start button is intentionally disabled until a backend job launcher exists.
-- The Run surface only displays public task labels such as `D01`/`X09`; hidden task metadata belongs in the server/client execution context, not the tester-facing Run panels.
-- The frontend does not start local agent subprocesses or manage automated client jobs yet.
+- `#/run` opens a copyable REST agent prompt directly.
+- The prompt surface generates a fresh REST API key through `/ui/api-key` and embeds a short Moltbook-style instruction, `/skill.md`, base URL, and key in a textarea.
+- External agents create or claim runs through the REST skill workflow; hidden task metadata stays in the server/client execution context.
+- Session Flow owns run lifecycle browsing. Human Review owns archived session inspection.
+
+Task route scope:
+- `#/tasks` renders a task-class selector first, then shows tasks only for the selected class.
+- The task-class selector can collapse so the selected class task list gets the full width.
 
 Result detail read model:
 - `tool_logs`: domain tool calls only; excludes `send_message`

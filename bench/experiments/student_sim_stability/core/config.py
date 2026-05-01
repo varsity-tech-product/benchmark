@@ -37,7 +37,7 @@ TEMPERATURE: float = 0.0  # Matches production (EVAL_JUDGE_TEMPERATURE)
 TUTOR_TEMPERATURES: list[float] = [0.0, 1.0]  # Ablation: consistent vs diverse tutor
 MAX_WORKERS: int = 100  # Parallel trial execution (OpenRouter paid = no rate limit)
 
-# Conversation turn provenance. Judge prompts for D1-D3 and control use only
+# Conversation turn provenance. Judge prompts for S1-S3 and S6 use only
 # generated student turns, never fixture/control opening turns.
 FIXTURE_OPENING_SOURCE: str = "fixture_opening"
 CONTROL_OPENING_SOURCE: str = "control_neutral_opening"
@@ -49,14 +49,29 @@ NEUTRAL_CONTROL_OPENING: str = "Hi, I need help understanding this task."
 # Judge configuration
 # ---------------------------------------------------------------------------
 JUDGE_MODELS: list[str] = list(STUDENT_SIM_STABILITY_JUDGE_MODELS)
+JUDGE_LABELS: tuple[str, str, str] = ("sonnet", "gpt54", "gemini")
+if len(JUDGE_MODELS) != 3 or len(JUDGE_LABELS) != 3:
+    raise RuntimeError("panel-3 SSOT invariant violated")
+JUDGE_LABEL_BY_MODEL_ID: dict[str, str] = dict(zip(JUDGE_MODELS, JUDGE_LABELS))
+PANEL_JUDGES: tuple[tuple[str, str], ...] = tuple(zip(JUDGE_MODELS, JUDGE_LABELS))
+
+
+def judge_label(model_id: str) -> str:
+    """Map a fully-qualified model id to its short panel label."""
+    try:
+        return JUDGE_LABEL_BY_MODEL_ID[model_id]
+    except KeyError as exc:
+        raise ValueError(f"unknown panel judge: {model_id!r}") from exc
+
+
 JUDGE_MODEL: str = STUDENT_SIM_STABILITY_PRIMARY_JUDGE_MODEL
 JUDGE_TEMPERATURE: float = 0.0
 JUDGE_MAX_WORKERS: int = 6
 
-# D1 is sampled for the final report because D1 is a per-message persona
-# adherence check. The full rendered D1 prompt set can still be generated for
+# S1 is sampled for the final report because S1 is a per-message persona
+# adherence check. The full rendered S1 prompt set can still be generated for
 # audit, but the judged/reporting sample is live tutor t=0, repeat 0.
-D1_SAMPLE_POLICY: str = "live-r0-tt0"
+S1_SAMPLE_POLICY: str = "live-r0-tt0"
 
 # ---------------------------------------------------------------------------
 # Task selection
@@ -157,12 +172,13 @@ def expected_artifact_counts(profile: str = "full") -> dict[str, int]:
         "live": live,
         "control": control,
         "conversations": live + control,
-        "D1_sample": combos * n_models * GENERATED_STUDENT_TURNS,
-        "D1_full": (live + control) * GENERATED_STUDENT_TURNS,
-        "D2": combos * n_models * n_temps,
-        "D3": live + control,
-        "P1": n_personas * len(PROBES) * n_models,
-        "B1": live,
+        "S1_sample": combos * n_models * GENERATED_STUDENT_TURNS,
+        "S1_full": (live + control) * GENERATED_STUDENT_TURNS,
+        "S2": live + control,
+        "S3": combos * n_models * n_temps,
+        "S4": live,
+        "S5": n_personas * len(PROBES) * n_models,
+        "S6": control,
     }
 
 

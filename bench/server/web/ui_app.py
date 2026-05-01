@@ -22,9 +22,15 @@ from server.audit import record_event
 from server.auth import AuthService
 from server.quota import QuotaExceeded
 from starlette.requests import Request
-from starlette.responses import FileResponse, HTMLResponse, JSONResponse
+from starlette.responses import (
+    FileResponse,
+    HTMLResponse,
+    JSONResponse,
+    PlainTextResponse,
+)
 from starlette.routing import Route
 
+from .review_store import ReviewStore
 from .ui_indexer import ResultIndexer
 
 logger = logging.getLogger(__name__)
@@ -117,6 +123,7 @@ def ui_routes(manager) -> list[Route]:
     """
 
     indexer = ResultIndexer(manager.bench_root)
+    review_store = ReviewStore(manager.bench_root, indexer)
     auth = AuthService(manager.bench_root)
 
     def _scope_flags(request: Request, user) -> tuple[bool, bool]:
@@ -153,7 +160,7 @@ def ui_routes(manager) -> list[Route]:
     async def ui_me(request: Request) -> JSONResponse:
         return JSONResponse(auth.me_payload(request))
 
-    async def rest_agent_skill_page(request: Request) -> HTMLResponse:
+    def _load_rest_agent_skill_markdown() -> str | None:
         relative = Path("docs/skills/quanttutorbench-rest-agent/SKILL.md")
         candidates = [
             manager.bench_root / relative,
@@ -161,8 +168,19 @@ def ui_routes(manager) -> list[Route]:
         ]
         skill_path = next((path for path in candidates if path.exists()), candidates[0])
         try:
-            markdown = skill_path.read_text(encoding="utf-8")
+            return skill_path.read_text(encoding="utf-8")
         except OSError:
+            return None
+
+    async def rest_agent_skill_raw(request: Request) -> PlainTextResponse:
+        markdown = _load_rest_agent_skill_markdown()
+        if markdown is None:
+            return PlainTextResponse("Skill page not found.", status_code=404)
+        return PlainTextResponse(markdown, media_type="text/markdown; charset=utf-8")
+
+    async def rest_agent_skill_page(request: Request) -> HTMLResponse:
+        markdown = _load_rest_agent_skill_markdown()
+        if markdown is None:
             return HTMLResponse("Skill page not found.", status_code=404)
 
         body = html.escape(markdown)
@@ -416,6 +434,151 @@ def ui_routes(manager) -> list[Route]:
         if run_service is None:
             return JSONResponse({"error": "Run service not initialized"}, 503)
         return JSONResponse({"tasks": run_service.catalog.list_labels_only()})
+
+    # -----------------------------------------------------------------------
+    # New: /ui/review/*
+    # -----------------------------------------------------------------------
+
+    async def list_review_bundles(request: Request) -> JSONResponse:
+        user, err = auth.require_user(request)
+        if err is not None:
+            return err
+        include_all, include_org = _scope_flags(request, user)
+        return JSONResponse(
+            _sanitize_for_json(
+                {
+                    "bundles": review_store.list_bundles(
+                        user,
+                        include_all=include_all,
+                        include_org=include_org,
+                    )
+                }
+            )
+        )
+
+    async def get_review_bundle(request: Request) -> JSONResponse:
+        user, err = auth.require_user(request)
+        if err is not None:
+            return err
+        bundle_id = request.path_params["bundle_id"]
+        include_all, include_org = _scope_flags(request, user)
+        try:
+            payload = review_store.get_bundle(
+                bundle_id,
+                user,
+                include_all=include_all,
+                include_org=include_org,
+            )
+        except PermissionError:
+            return JSONResponse({"error": "Bundle access denied"}, status_code=403)
+        if payload is None:
+            return JSONResponse({"error": "Bundle not found"}, status_code=404)
+        record_event(
+            manager.bench_root,
+            user,
+            "review.bundle_view",
+            request=request,
+            session_id=bundle_id,
+        )
+        return JSONResponse(_sanitize_for_json(payload))
+
+    async def append_review_opinion(request: Request) -> JSONResponse:
+        user, err = auth.require_user(request)
+        if err is not None:
+            return err
+        bundle_id = request.path_params["bundle_id"]
+        include_all, include_org = _scope_flags(request, user)
+        try:
+            existing = review_store.get_bundle(
+                bundle_id,
+                user,
+                include_all=include_all,
+                include_org=include_org,
+            )
+        except PermissionError:
+            return JSONResponse({"error": "Bundle access denied"}, status_code=403)
+        if existing is None:
+            return JSONResponse({"error": "Bundle not found"}, status_code=404)
+        try:
+            body = await request.json()
+        except Exception:
+            return JSONResponse({"error": "Invalid JSON body"}, status_code=400)
+        raw_card = body.get("opinion") if isinstance(body, dict) else body
+        if not isinstance(raw_card, dict):
+            return JSONResponse({"error": "Opinion card is required"}, status_code=400)
+        try:
+            review = review_store.append_opinion(
+                bundle_id,
+                user,
+                raw_card,
+                include_all=include_all,
+                include_org=include_org,
+            )
+        except PermissionError:
+            return JSONResponse({"error": "Bundle access denied"}, status_code=403)
+        except ValueError as exc:
+            return JSONResponse({"error": str(exc)}, status_code=400)
+        payload = review_store.get_bundle(
+            bundle_id,
+            user,
+            include_all=include_all,
+            include_org=include_org,
+        )
+        record_event(
+            manager.bench_root,
+            user,
+            "review.opinion_create",
+            request=request,
+            session_id=bundle_id,
+            payload={"section": raw_card.get("section")},
+        )
+        if payload is None:
+            return JSONResponse(_sanitize_for_json({"review": review}))
+        return JSONResponse(_sanitize_for_json(payload))
+
+    async def replace_review_opinions(request: Request) -> JSONResponse:
+        user, err = auth.require_user(request)
+        if err is not None:
+            return err
+        bundle_id = request.path_params["bundle_id"]
+        include_all, include_org = _scope_flags(request, user)
+        try:
+            existing = review_store.get_bundle(
+                bundle_id,
+                user,
+                include_all=include_all,
+                include_org=include_org,
+            )
+        except PermissionError:
+            return JSONResponse({"error": "Bundle access denied"}, status_code=403)
+        if existing is None:
+            return JSONResponse({"error": "Bundle not found"}, status_code=404)
+        try:
+            body = await request.json()
+        except Exception:
+            return JSONResponse({"error": "Invalid JSON body"}, status_code=400)
+        opinions = body.get("opinions") if isinstance(body, dict) else body
+        if not isinstance(opinions, list):
+            return JSONResponse({"error": "opinions must be a list"}, status_code=400)
+        try:
+            review_store.replace_opinions(
+                bundle_id,
+                user,
+                opinions,
+                include_all=include_all,
+                include_org=include_org,
+            )
+        except PermissionError:
+            return JSONResponse({"error": "Bundle access denied"}, status_code=403)
+        except ValueError as exc:
+            return JSONResponse({"error": str(exc)}, status_code=400)
+        payload = review_store.get_bundle(
+            bundle_id,
+            user,
+            include_all=include_all,
+            include_org=include_org,
+        )
+        return JSONResponse(_sanitize_for_json(payload or {"bundle_id": bundle_id}))
 
     # -----------------------------------------------------------------------
     # New: /ui/runs/*
@@ -887,6 +1050,12 @@ def ui_routes(manager) -> list[Route]:
             rest_agent_skill_page,
             methods=["GET"],
         ),
+        Route(
+            "/skills/quanttutorbench-rest-agent/raw",
+            rest_agent_skill_raw,
+            methods=["GET"],
+        ),
+        Route("/skill.md", rest_agent_skill_raw, methods=["GET"]),
         Route("/ui/me", ui_me, methods=["GET"]),
         Route("/ui/api-key", get_api_key, methods=["GET"]),
         Route("/ui/api-key", rotate_api_key, methods=["POST"]),
@@ -906,6 +1075,19 @@ def ui_routes(manager) -> list[Route]:
         # New: public task catalog
         Route("/ui/tasks/catalog", task_catalog, methods=["GET"]),
         Route("/ui/tasks/catalog/labels", task_catalog_labels, methods=["GET"]),
+        # New: human review console
+        Route("/ui/review/bundles", list_review_bundles, methods=["GET"]),
+        Route("/ui/review/bundles/{bundle_id}", get_review_bundle, methods=["GET"]),
+        Route(
+            "/ui/review/bundles/{bundle_id}/opinions",
+            append_review_opinion,
+            methods=["POST"],
+        ),
+        Route(
+            "/ui/review/bundles/{bundle_id}/opinions",
+            replace_review_opinions,
+            methods=["PUT"],
+        ),
         # New: Run management (UI)
         Route("/ui/runs", create_run, methods=["POST"]),
         Route("/ui/runs", list_runs, methods=["GET"]),

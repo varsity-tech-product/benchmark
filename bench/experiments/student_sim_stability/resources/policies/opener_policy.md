@@ -10,6 +10,6 @@ Control conversations must start with a neutral generic opening:
 Hi, I need help understanding this quantitative finance task.
 ```
 
-Both fixture and control openings are excluded from D1-D3 and control
+Both fixture and control openings are excluded from S1-S2 and control
 student-message scoring. Only turns marked with `source: "student_model"` are
 rendered into judge prompts.

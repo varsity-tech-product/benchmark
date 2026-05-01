@@ -1,4 +1,4 @@
-"""Human-vs-judge B1 breakdown by persona table Component."""
+"""Human-vs-judge S4 breakdown by persona table Component."""
 
 from __future__ import annotations
 
@@ -31,14 +31,14 @@ class HumanAlignmentB1Breakdown(Component):
                 f"<td>{n}</td>"
                 f"<td>{_pct_or_dash(entry.get('sonnet_accuracy'))}</td>"
                 f"<td>{_pct_or_dash(entry.get('gpt54_accuracy'))}</td>"
-                f"<td>{_pct_or_dash(entry.get('panel_2_strict_accuracy'))}</td></tr>"
+                f"<td>{_pct_or_dash(entry.get('gemini_accuracy'))}</td></tr>"
             )
         if not breakdown_rows:
             return ""
         return (
-            "<h3>B1 Breakdown by Persona</h3>"
+            "<h3>S4 Breakdown by Persona</h3>"
             "<table><tr><th>Persona</th><th>N</th><th>Sonnet</th>"
-            "<th>GPT-5.4</th><th>Panel-2 strict</th></tr>"
+            "<th>GPT-5.4</th><th>Gemini</th></tr>"
             f"{breakdown_rows}</table>"
         )
 
@@ -49,7 +49,7 @@ class HumanAlignmentB1Breakdown(Component):
                 "n",
                 "sonnet_accuracy",
                 "gpt54_accuracy",
-                "panel_2_strict_accuracy",
+                "gemini_accuracy",
             ]
         ]
         for persona in sorted(self.breakdown.keys()):
@@ -60,7 +60,7 @@ class HumanAlignmentB1Breakdown(Component):
                     entry.get("n"),
                     entry.get("sonnet_accuracy"),
                     entry.get("gpt54_accuracy"),
-                    entry.get("panel_2_strict_accuracy"),
+                    entry.get("gemini_accuracy"),
                 ]
             )
         return csv_bytes(rows)
@@ -78,13 +78,13 @@ class HumanAlignmentB1Breakdown(Component):
                     n,
                     _pct_or_dash(entry.get("sonnet_accuracy")),
                     _pct_or_dash(entry.get("gpt54_accuracy")),
-                    _pct_or_dash(entry.get("panel_2_strict_accuracy")),
+                    _pct_or_dash(entry.get("gemini_accuracy")),
                 ]
             )
         if not rows:
             return None
         return booktabs_table(
-            ["Persona", "N", "Sonnet", "GPT-5.4", "Panel-2 strict"],
+            ["Persona", "N", "Sonnet", "GPT-5.4", "Gemini"],
             "lrrrr",
             rows,
         )

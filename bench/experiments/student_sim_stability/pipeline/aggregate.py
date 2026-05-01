@@ -19,6 +19,8 @@ if str(BENCH_ROOT) not in sys.path:
     sys.path.insert(0, str(BENCH_ROOT))
 
 from experiments.student_sim_stability.core.config import (  # noqa: E402
+    JUDGE_LABELS,
+    PANEL_JUDGES,
     expected_artifact_counts,
 )
 from experiments.student_sim_stability.core.rubrics import (
@@ -58,13 +60,13 @@ def _validate_strict_input_output_sets(
         counts = _dimension_counts(judge_input_dir)
         base = expected_artifact_counts("full")
         errors = []
-        # D1 is allowed to be either the sampled subset or the full set.
-        if counts["D1"] not in {base["D1_sample"], base["D1_full"]}:
+        # S1 is allowed to be either the sampled subset or the full set.
+        if counts["S1"] not in {base["S1_sample"], base["S1_full"]}:
             errors.append(
-                f"D1 inputs={counts['D1']}/"
-                f"{base['D1_sample']} sample or {base['D1_full']} full"
+                f"S1 inputs={counts['S1']}/"
+                f"{base['S1_sample']} sample or {base['S1_full']} full"
             )
-        for dim in ("D2", "D3", "control", "P1", "B1"):
+        for dim in ("S3", "S2", "S6", "S5", "S4"):
             if counts[dim] != base[dim]:
                 errors.append(f"{dim} inputs={counts[dim]}/{base[dim]}")
         if errors:
@@ -87,18 +89,6 @@ def _build_input_metadata_index(input_dir: Path) -> dict[str, dict]:
     }
 
 
-def _per_turn_fidelity(scores: dict) -> list[float]:
-    existing = scores.get("per_turn_fidelity")
-    if isinstance(existing, list):
-        return existing
-    per_turn = scores.get("per_turn", [])
-    if not isinstance(per_turn, list):
-        return []
-    return [
-        turn.get("persona_fidelity", 0) for turn in per_turn if isinstance(turn, dict)
-    ]
-
-
 def _per_turn_field(scores: dict, field: str) -> list[float]:
     existing = scores.get(f"per_turn_{field}")
     if isinstance(existing, list):
@@ -111,7 +101,7 @@ def _per_turn_field(scores: dict, field: str) -> list[float]:
 
 def _normalize_d3_scores(scores: dict) -> dict:
     normalized = dict(scores)
-    normalized["per_turn_fidelity"] = _per_turn_fidelity(scores)
+    normalized["per_turn_fidelity"] = _per_turn_field(scores, "persona_fidelity")
     normalized["per_turn_knowledge_leak"] = _per_turn_field(scores, "knowledge_leak")
     normalized["per_turn_co_teacher_drift"] = _per_turn_field(
         scores, "co_teacher_drift"
@@ -130,61 +120,63 @@ def _validate_score_schema(dimension: str, scores: object, eval_id: str) -> None
         )
 
 
-# Models that compose panel_2. Sonnet output lives in primary judge_outputs/;
-# GPT-5.4 output lives in judge_outputs_by_model/openai__gpt-5_4/.
-_PANEL_2_SECONDARY = "openai/gpt-5.4"
-
-
-def _merge_panel_2_scores(
-    primary_scores: dict, secondary_scores: dict, dimension: str
+def _merge_panel_3_scores(
+    scores_by_judge: dict[str, dict],
+    dimension: str,
 ) -> dict:
-    """Synthesize panel_2 score record from two judges.
+    """Synthesize panel_3 score record from three judges.
 
     Numeric fields (per :func:`numeric_score_fields`) become element-wise
-    means. Categorical / list / text fields are preserved from the primary
-    judge for backward compatibility, and a per-judge breakdown for B1's
-    ``identified_persona`` is added so the report can compute panel-2
-    accuracy semantics (both must be correct).
+    means across whichever judges supplied a numeric value. Categorical /
+    list / text fields are preserved from the primary panel judge for backward
+    compatibility, and a per-judge breakdown for S4's ``identified_persona``
+    is added so the report can compute per-judge accuracy.
     """
+    panel_scores = {
+        judge_label: scores_by_judge.get(judge_label) or {}
+        for judge_label in JUDGE_LABELS
+    }
+    primary_scores = panel_scores[JUDGE_LABELS[0]]
     out = dict(primary_scores)  # start from primary, overwrite numerics
     try:
         numeric_fields = numeric_score_fields(dimension)
     except KeyError:
         numeric_fields = ()
     for field in numeric_fields:
-        p_val = primary_scores.get(field)
-        s_val = secondary_scores.get(field)
-        if isinstance(p_val, (int, float)) and isinstance(s_val, (int, float)):
-            out[field] = round((float(p_val) + float(s_val)) / 2, 4)
-        elif isinstance(p_val, (int, float)):
-            out[field] = float(p_val)
-        elif isinstance(s_val, (int, float)):
-            out[field] = float(s_val)
-    if dimension == "B1":
+        vals = [
+            float(v)
+            for scores in panel_scores.values()
+            for v in (scores.get(field),)
+            if isinstance(v, (int, float))
+        ]
+        if vals:
+            out[field] = round(sum(vals) / len(vals), 4)
+    if dimension == "S4":
         out["identified_persona_by_judge"] = {
-            "sonnet": str(primary_scores.get("identified_persona", "")),
-            "gpt54": str(secondary_scores.get("identified_persona", "")),
+            judge_label: str(scores.get("identified_persona", ""))
+            for judge_label, scores in panel_scores.items()
         }
-    # Failure types: union (preserves any signal either judge raised)
-    if isinstance(primary_scores.get("failure_types"), list) or isinstance(
-        secondary_scores.get("failure_types"), list
-    ):
-        a = primary_scores.get("failure_types") or []
-        b = secondary_scores.get("failure_types") or []
-        if isinstance(a, str):
-            a = [a]
-        if isinstance(b, str):
-            b = [b]
-        out["failure_types"] = sorted({str(x) for x in (list(a) + list(b)) if x})
-    # Reasoning / failure_evidence: keep both attributed for transparency
+    # Failure types: union (preserves any signal any judge raised)
+    has_failure_types = any(
+        isinstance(s.get("failure_types"), list) for s in panel_scores.values()
+    )
+    if has_failure_types:
+        union: set[str] = set()
+        for s in panel_scores.values():
+            ft = s.get("failure_types") or []
+            if isinstance(ft, str):
+                ft = [ft]
+            union.update(str(x) for x in ft if x)
+        out["failure_types"] = sorted(union)
+    # Reasoning / failure_evidence: keep all attributed for transparency
     out["reasoning_by_judge"] = {
-        "sonnet": primary_scores.get("reasoning", ""),
-        "gpt54": secondary_scores.get("reasoning", ""),
+        judge_label: scores.get("reasoning", "")
+        for judge_label, scores in panel_scores.items()
     }
-    if "failure_evidence" in primary_scores or "failure_evidence" in secondary_scores:
+    if any("failure_evidence" in s for s in panel_scores.values()):
         out["failure_evidence_by_judge"] = {
-            "sonnet": primary_scores.get("failure_evidence", ""),
-            "gpt54": secondary_scores.get("failure_evidence", ""),
+            judge_label: scores.get("failure_evidence", "")
+            for judge_label, scores in panel_scores.items()
         }
     return out
 
@@ -195,48 +187,68 @@ def aggregate(
     output_path: Path,
     strict: bool = False,
     profile: str = "full",
-    judge_view: str = "panel_2",
+    judge_view: str = "panel_3",
     secondary_judge_output_dir: Path | None = None,
+    tertiary_judge_output_dir: Path | None = None,
 ) -> dict:
     """Aggregate judge outputs into ``all_evaluations.json``.
 
     Args:
-        judge_view: ``"panel_2"`` (default, mean of Sonnet + GPT-5.4) or
-            ``"primary"`` (Sonnet only — legacy single-judge behavior).
-        secondary_judge_output_dir: explicit GPT-5.4 dir for panel_2 mode;
-            defaults to ``<results>/judge_outputs_by_model/openai__gpt-5_4``.
+        judge_view: ``"panel_3"`` (default, mean of Sonnet + GPT-5.4 + Gemini)
+            or ``"primary"`` (Sonnet only — legacy single-judge behavior).
+        secondary_judge_output_dir: explicit GPT-5.4 dir for panel_3 mode;
+            defaults to the configured secondary panel judge output dir.
+        tertiary_judge_output_dir: explicit Gemini dir for panel_3 mode;
+            defaults to the configured tertiary panel judge output dir.
     """
-    if judge_view not in ("panel_2", "primary"):
+    if judge_view not in ("panel_3", "primary"):
         raise ValueError(
-            f"Unknown judge_view {judge_view!r}; use 'panel_2' or 'primary'"
+            f"Unknown judge_view {judge_view!r}; use 'panel_3' or 'primary'"
         )
-    panel_2 = judge_view == "panel_2"
-    if panel_2 and secondary_judge_output_dir is None:
-        # Infer from results layout: judge_output_dir is the primary mirror,
-        # secondary lives under judge_outputs_by_model/<gpt-5.4_safe>/
+    panel_3 = judge_view == "panel_3"
+    if panel_3:
+        secondary_model_id, secondary_label = PANEL_JUDGES[1]
+        tertiary_model_id, tertiary_label = PANEL_JUDGES[2]
         results_root = judge_output_dir.parent
-        secondary_judge_output_dir = (
-            results_root / "judge_outputs_by_model" / safe_model_dir(_PANEL_2_SECONDARY)
-        )
-    if panel_2 and not secondary_judge_output_dir.exists():
-        raise FileNotFoundError(
-            f"panel_2 view requires GPT-5.4 outputs at {secondary_judge_output_dir}; "
-            "either run the full judge panel or pass judge_view='primary'"
-        )
-    records: dict[str, list[dict]] = {
-        "D1": [],
-        "D2": [],
-        "control": [],
-        "D3": [],
-        "P1": [],
-        "B1": [],
-    }
+        if secondary_judge_output_dir is None:
+            secondary_judge_output_dir = (
+                results_root
+                / "judge_outputs_by_model"
+                / safe_model_dir(secondary_model_id)
+            )
+        if tertiary_judge_output_dir is None:
+            tertiary_judge_output_dir = (
+                results_root
+                / "judge_outputs_by_model"
+                / safe_model_dir(tertiary_model_id)
+            )
+        for label, path in (
+            (secondary_label, secondary_judge_output_dir),
+            (tertiary_label, tertiary_judge_output_dir),
+        ):
+            if not path.exists():
+                raise FileNotFoundError(
+                    f"panel_3 view requires {label} outputs at {path}; "
+                    "either run the full judge panel or pass judge_view='primary'"
+                )
+    records: dict[str, list[dict]] = {dim: [] for dim in DIMENSION_TO_FILE}
 
     if strict:
         _validate_strict_input_output_sets(judge_input_dir, judge_output_dir, profile)
 
     metadata_by_name = _build_input_metadata_index(judge_input_dir)
-    d3_control_outputs = 0
+    secondary_by_name: dict[str, dict] = {}
+    tertiary_by_name: dict[str, dict] = {}
+    if panel_3:
+        secondary_by_name = {
+            path.name: load_json(path)
+            for path in sorted(secondary_judge_output_dir.glob("*.json"))
+        }
+        tertiary_by_name = {
+            path.name: load_json(path)
+            for path in sorted(tertiary_judge_output_dir.glob("*.json"))
+        }
+    d3_records_seen: list[dict] = []
 
     for output_file in sorted(judge_output_dir.glob("*.json")):
         output = load_json(output_file)
@@ -244,21 +256,26 @@ def aggregate(
         dimension = output.get("dimension") or eval_id.split("__", 1)[0]
         scores = output.get("scores", {})
 
-        # Panel_2 averaging: blend Sonnet (primary) with GPT-5.4 (secondary)
-        # before downstream aggregation. Falls back to primary alone if the
-        # secondary judge does not have a matching output for this eval_id
-        # (e.g., partial run, OpenRouter credit exhaustion).
-        if panel_2:
-            secondary_path = secondary_judge_output_dir / output_file.name
-            if secondary_path.exists():
-                secondary = load_json(secondary_path)
-                scores = _merge_panel_2_scores(
-                    scores, secondary.get("scores", {}), dimension
-                )
-            else:
-                # Secondary missing — preserve primary scores; tag for transparency
+        # Panel-3 averaging: blend all configured judges before downstream
+        # aggregation. Falls back to whichever judges produced an output for
+        # this eval_id when one is absent (e.g., partial run, credit exhaustion).
+        if panel_3:
+            secondary = secondary_by_name.get(output_file.name)
+            tertiary = tertiary_by_name.get(output_file.name)
+            secondary_missing = secondary is None
+            tertiary_missing = tertiary is None
+            scores_by_judge = {
+                JUDGE_LABELS[0]: scores,
+                secondary_label: (secondary or {}).get("scores", {}),
+                tertiary_label: (tertiary or {}).get("scores", {}),
+            }
+            scores = _merge_panel_3_scores(scores_by_judge, dimension)
+            if secondary_missing or tertiary_missing:
                 scores = dict(scores)
-                scores["panel_2_secondary_missing"] = True
+                scores["panel_3_partial"] = {
+                    "secondary_missing": secondary_missing,
+                    "tertiary_missing": tertiary_missing,
+                }
 
         if strict:
             _validate_score_schema(dimension, scores, eval_id)
@@ -271,21 +288,20 @@ def aggregate(
         else:
             metadata = {}
 
-        if dimension == "D3":
+        if dimension == "S2":
             metadata = dict(metadata)
             normalized = _normalize_d3_scores(scores)
             metadata["drift_onset_turn"] = normalized.get("drift_onset_turn")
             record = {"eval_id": eval_id, "scores": normalized, "metadata": metadata}
-            if metadata.get("phase") == "control":
-                d3_control_outputs += 1
-            else:
-                records["D3"].append(record)
+            d3_records_seen.append(record)
+            if metadata.get("phase") != "control":
+                records["S2"].append(record)
             continue
 
-        if dimension == "control":
+        if dimension == "S6":
             if strict and "distinctiveness" not in scores:
-                raise ValueError(f"Control output missing distinctiveness: {eval_id}")
-            records["control"].append(
+                raise ValueError(f"S6 output missing distinctiveness: {eval_id}")
+            records["S6"].append(
                 {"eval_id": eval_id, "scores": scores, "metadata": metadata}
             )
             continue
@@ -299,10 +315,15 @@ def aggregate(
             {"eval_id": eval_id, "scores": scores, "metadata": metadata}
         )
 
-    if strict and d3_control_outputs and not records["control"]:
+    d3_control_records = [
+        record
+        for record in d3_records_seen
+        if record.get("metadata", {}).get("phase") == "control"
+    ]
+    if strict and d3_control_records and not records["S6"]:
         raise ValueError(
-            "D3 control outputs were present but no real control__ judge outputs "
-            "were found. Control-from-D3 fallback is disabled."
+            "S2 control-conversation outputs were present but no real S6 judge "
+            "outputs were found. S6-from-S2 fallback is disabled."
         )
 
     atomic_write_json(output_path, records)

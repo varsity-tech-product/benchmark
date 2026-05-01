@@ -1,4 +1,4 @@
-"""D3 drift-by-model table Component."""
+"""S2 drift-by-model table Component."""
 
 from __future__ import annotations
 
@@ -48,7 +48,7 @@ class D3Drift(Component):
     def render_tex(self) -> str:
         rows: list[list[object]] = []
         for m, d in sorted(self.by_model.items()):
-            ci = f"[{d.get('ci_low', 0):.2f}, {d.get('ci_high', 0):.2f}]"
+            ci = f"({d.get('ci_low', 0):.2f}, {d.get('ci_high', 0):.2f})"
             rows.append([m, f"{d['mean']:.2f}", ci, f"{d['std']:.2f}", d["n"]])
         return booktabs_table(
             ["Model", "Mean Drift Score", "95% CI", "Std", "N"],

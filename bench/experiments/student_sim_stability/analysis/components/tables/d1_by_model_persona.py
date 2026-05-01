@@ -1,4 +1,4 @@
-"""D1 persona-adherence by (model, persona) table Component (independent export)."""
+"""S1 persona-adherence by (model, persona) table Component (independent export)."""
 
 from __future__ import annotations
 
@@ -27,7 +27,7 @@ class D1ByModelPersona(Component):
             for key, d in sorted(self.by_mp.items())
         )
         return (
-            "<table><tr><th>Model</th><th>Persona</th><th>D1 Mean</th>"
+            "<table><tr><th>Model</th><th>Persona</th><th>S1 Mean</th>"
             f"<th>95% CI</th><th>Std</th><th>N</th></tr>{rows}</table>"
         )
 
@@ -59,7 +59,7 @@ class D1ByModelPersona(Component):
                 [model, persona, f"{d['mean']:.2f}", ci, f"{d['std']:.2f}", d["n"]]
             )
         return booktabs_table(
-            ["Model", "Persona", "D1 Mean", "95% CI", "Std", "N"],
+            ["Model", "Persona", "S1 Mean", "95% CI", "Std", "N"],
             "llrlrr",
             rows,
         )

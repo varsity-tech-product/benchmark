@@ -132,16 +132,18 @@ Generate the Stage 3 human-alignment report:
 ```bash
 python -m experiments.judge_validation.run human-alignment \
   --runs experiments/judge_validation/results/judge_runs.json \
-  --labels experiments/judge_validation/human_labels.json \
-  --sample-map experiments/judge_validation/results/human_review_packet/human_review_sample_map.json
+  --labels experiments/judge_validation/human_labels.json
 ```
 
 Outputs are written under `bench/experiments/judge_validation/results/` by default.
 External-agent `score.json` exports carry the selected validated run through a
 `judge_reliability` metadata block.
 
-The human-alignment report is a diagnostic appendix for absolute-score fit. It
-adds two multi-reviewer sections once the label set
+The human-alignment report is a diagnostic appendix for absolute-score fit. The
+default `--sample-map auto` mode uses `human_review_sample_map.json` when the
+bundled corpus, bundled labels, and bundled `judge_runs.json` are selected, so
+blind `jv_review_###` labels map back to the original corpus sample IDs. The
+report adds two multi-reviewer sections once the label set
 has ≥ 2 distinct reviewers on the same sample/rubric/dimension:
 
 - **Inter-rater agreement** — reviewer-vs-reviewer exact / within-one / mean
@@ -152,6 +154,54 @@ has ≥ 2 distinct reviewers on the same sample/rubric/dimension:
   then averages across distinct reviewers to get the group human mean, and
   reports judge delta against that group mean. Answers "does the judge match
   the expert consensus on groups where consensus is measurable?"
+
+### Current Human-Alignment Pilot
+
+Tracked pilot artifacts:
+
+- `human_labels.json`: anonymized expert labels, 68 labels over 34
+  sample/rubric/dimension cells, with 2 reviewers per covered cell.
+- `human_review_sample_map.json`: private blind-review ID mapping from
+  `jv_review_###` to the original corpus sample IDs.
+
+Metric logic:
+
+- Exact agreement: nearest rounded judge mean equals the human score.
+- Within-one agreement: `abs(judge_mean_score - human_score) <= 1`.
+- Pass/fail agreement: judge mean and human score fall on the same side of the
+  pass threshold, currently score `3`.
+- Mean absolute delta: average absolute score distance between the judge mean
+  and the human score.
+- Mean signed delta: average `judge_mean_score - human_score`; negative values
+  mean the judge scores below reviewers.
+- Inter-rater agreement: reviewer-vs-reviewer score distance on shared
+  sample/rubric/dimension groups, independent of the judge.
+- Judge vs. reviewer MEAN: each shared group collapses duplicate labels per
+  reviewer, averages reviewer means, then compares the judge mean to that
+  expert consensus score.
+
+Current default run `jv_20260429_stage3_combined` produces:
+
+- Label-level exact agreement: `0.4265`.
+- Label-level within-one agreement: `0.6912`.
+- Label-level pass/fail agreement: `0.7794`.
+- Label-level mean absolute delta: `0.8995`.
+- Inter-rater within-one agreement: `0.8529` across 34 reviewer-pair
+  comparisons.
+- Judge-vs-reviewer-MEAN within-one agreement: `0.7059` across 34 multi-reviewer
+  groups.
+- Human-alignment status: `diagnostic_only` / `needs_review`.
+
+Current insight: the human panel is coherent enough to expose judge calibration
+gaps. D6 safety and D3 pedagogy are the strongest current slices. D1 finance
+adaptation, D2 code adaptation, D4 instructional accuracy, and `result_judge`
+are the recalibration and adjudication slices before human alignment can become
+an acceptance gate.
+
+Next human test round: label all 36 corpus item/dimension cells with at least 2
+independent quant reviewers, prioritize D1/D2/D4/`result_judge`, require
+evidence spans plus failure tags for all `abs(delta) >= 2` cases, and use a
+third reviewer for reviewer-vs-reviewer deltas of 2 or more.
 
 ## Scope
 

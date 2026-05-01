@@ -1,7 +1,7 @@
 {
-  "rubric_id": "B1_blind_persona_identification",
+  "rubric_id": "S4_blind_identifiability",
   "version": "v1.3.0",
-  "dimension": "B1",
+  "dimension": "S4",
   "name": "Blind persona identification",
   "definition": "Evaluates whether a judge can identify or score the intended persona from anonymized generated-student behavior.",
   "unit": "anonymized transcript or probe response set",
@@ -34,6 +34,6 @@
     "persona_contract_contradiction"
   ],
   "aggregation_formula": "identification accuracy and confidence by persona/model/probe group",
-  "prompt_template": "rubrics/prompts/B1_blind_persona_identification.txt",
-  "prompt_template_path": "prompts/B1_blind_persona_identification.txt"
+  "prompt_template": "rubrics/prompts/S4_blind_identifiability.txt",
+  "prompt_template_path": "prompts/S4_blind_identifiability.txt"
 }

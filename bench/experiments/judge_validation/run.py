@@ -59,11 +59,16 @@ from experiments.judge_validation.pairwise_stats import (  # noqa: E402
 
 DEFAULT_CORPUS = Path(__file__).resolve().parent / "pilot_corpus.json"
 DEFAULT_HUMAN_LABELS = Path(__file__).resolve().parent / "human_labels.json"
+DEFAULT_HUMAN_SAMPLE_MAP = (
+    Path(__file__).resolve().parent / "human_review_sample_map.json"
+)
 DEFAULT_RUBRIC_REGISTRY = BENCH_ROOT / "server/eval/rubrics/rubric_registry.json"
 DEFAULT_OUTPUT_DIR = Path("experiments/judge_validation/results")
+DEFAULT_JUDGE_RUNS = DEFAULT_OUTPUT_DIR / "judge_runs.json"
 DEFAULT_REVIEW_PACKET_DIR = DEFAULT_OUTPUT_DIR / "human_review_packet"
 DEFAULT_REPEAT_COUNT = 3
 DEFAULT_PROMPT_VARIANT = "baseline"
+AUTO_HUMAN_SAMPLE_MAP = "auto"
 SUPPORTED_PROMPT_VARIANTS = {
     "baseline",
     "role_blocks",
@@ -74,6 +79,10 @@ SUPPORTED_PROMPT_VARIANTS = {
 def _resolve(path: str | Path) -> Path:
     p = Path(path)
     return p if p.is_absolute() else BENCH_ROOT / p
+
+
+def _same_path(left: Path, right: Path) -> bool:
+    return left.resolve() == right.resolve()
 
 
 def _load_json(path: Path) -> Any:
@@ -567,12 +576,23 @@ def _export_review_packet(args: argparse.Namespace) -> int:
 
 
 def _human_alignment(args: argparse.Namespace) -> int:
-    corpus = _load_json(_resolve(args.corpus))
-    runs = _load_json(_resolve(args.runs))
-    labels = load_human_labels(_resolve(args.labels))
-    sample_id_map = (
-        load_sample_id_map(_resolve(args.sample_map)) if args.sample_map else None
-    )
+    corpus_path = _resolve(args.corpus)
+    runs_path = _resolve(args.runs)
+    labels_path = _resolve(args.labels)
+    corpus = _load_json(corpus_path)
+    runs = _load_json(runs_path)
+    labels = load_human_labels(labels_path)
+    sample_map_arg = str(args.sample_map or "").strip()
+    sample_id_map = None
+    if sample_map_arg == AUTO_HUMAN_SAMPLE_MAP:
+        if (
+            _same_path(corpus_path, DEFAULT_CORPUS)
+            and _same_path(runs_path, _resolve(DEFAULT_JUDGE_RUNS))
+            and _same_path(labels_path, DEFAULT_HUMAN_LABELS)
+        ):
+            sample_id_map = load_sample_id_map(DEFAULT_HUMAN_SAMPLE_MAP)
+    elif sample_map_arg.lower() != "none" and sample_map_arg:
+        sample_id_map = load_sample_id_map(_resolve(sample_map_arg))
     records = runs.get("records", [])
     stats = compute_human_alignment_stats(
         corpus=corpus,
@@ -1046,7 +1066,7 @@ def _make_parser() -> argparse.ArgumentParser:
     add_common(report_p)
     report_p.add_argument(
         "--runs",
-        default=str(DEFAULT_OUTPUT_DIR / "judge_runs.json"),
+        default=str(DEFAULT_JUDGE_RUNS),
         help="Path to judge_runs.json",
     )
 
@@ -1096,7 +1116,7 @@ def _make_parser() -> argparse.ArgumentParser:
     add_common(human_alignment_p)
     human_alignment_p.add_argument(
         "--runs",
-        default=str(DEFAULT_OUTPUT_DIR / "judge_runs.json"),
+        default=str(DEFAULT_JUDGE_RUNS),
         help="Path to judge_runs.json",
     )
     human_alignment_p.add_argument(
@@ -1106,8 +1126,12 @@ def _make_parser() -> argparse.ArgumentParser:
     )
     human_alignment_p.add_argument(
         "--sample-map",
-        default="",
-        help="Optional blind review_sample_id to original_sample_id mapping",
+        default=AUTO_HUMAN_SAMPLE_MAP,
+        help=(
+            "Optional blind review_sample_id to original_sample_id mapping; "
+            "'auto' applies the bundled pilot map only with bundled artifacts, "
+            "and 'none' disables mapping"
+        ),
     )
 
     pairwise_p = sub.add_parser("pairwise")

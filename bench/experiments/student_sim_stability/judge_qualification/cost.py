@@ -21,11 +21,11 @@ from server.config.pricing import resolve_pricing
 
 CHARS_PER_TOKEN = 3.5
 DEFAULT_OUTPUT_TOKENS_BY_DIMENSION = {
-    "D1": 350,
-    "D3": 730,
-    "P1": 235,
-    "B1": 290,
-    "control": 480,
+    "S1": 350,
+    "S2": 730,
+    "S5": 235,
+    "S4": 290,
+    "S6": 480,
 }
 
 

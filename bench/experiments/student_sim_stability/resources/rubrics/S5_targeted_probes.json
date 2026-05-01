@@ -1,7 +1,7 @@
 {
-  "rubric_id": "P1_targeted_probe",
+  "rubric_id": "S5_targeted_probes",
   "version": "v1.3.0",
-  "dimension": "P1",
+  "dimension": "S5",
   "name": "Targeted persona probe",
   "definition": "Evaluates one targeted probe response against a specific persona contract facet. Each probe ships with a per-persona expected_signals list of indirect surface markers the judge uses to anchor facet_fit.",
   "unit": "single generated probe response",
@@ -39,6 +39,6 @@
     "persona_contract_contradiction"
   ],
   "aggregation_formula": "probe pass rate by persona, facet, task pressure, and model",
-  "prompt_template": "rubrics/prompts/P1_targeted_probe.txt",
-  "prompt_template_path": "prompts/P1_targeted_probe.txt"
+  "prompt_template": "rubrics/prompts/S5_targeted_probes.txt",
+  "prompt_template_path": "prompts/S5_targeted_probes.txt"
 }

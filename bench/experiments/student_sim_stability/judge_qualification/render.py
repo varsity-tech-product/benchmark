@@ -60,7 +60,7 @@ SUPPORTED_PROMPT_VARIANTS = {
     "role_blocks",
     "markdown_transcript",
 }
-VARIANT_DIMENSIONS = {"D3", "B1", "control"}
+VARIANT_DIMENSIONS = {"S2", "S4", "S6"}
 
 
 def load_corpus(path: Path | None = None) -> dict[str, Any]:
@@ -186,43 +186,43 @@ def _render_p1(item: dict[str, Any], *, variant: str) -> str:
         if expected_signals
         else "- (no persona-specific indirect signals authored)"
     )
-    prompt = rubric_prompt_template("P1").format(
+    prompt = rubric_prompt_template("S5").format(
         persona_contract=_render_persona_contract_text(item["persona_id"]),
         probe_facet=item.get("facet", ""),
         probe_message=_truncate(str(item.get("probe_message", ""))),
         student_response=_truncate(str(item.get("student_response", ""))),
         expected_signals=expected_signals_text,
     )
-    _, prompt = _rubric_prompt("P1", prompt)
+    _, prompt = _rubric_prompt("S5", prompt)
     return prompt
 
 
 def _render_d3(item: dict[str, Any], *, variant: str) -> str:
     context, total_turns = _format_d3_context(item, variant=variant)
-    prompt = rubric_prompt_template("D3").format(
+    prompt = rubric_prompt_template("S2").format(
         **_persona_block_kwargs(item["persona_id"]),
         student_messages_text=context,
         total_turns=total_turns,
     )
-    _, prompt = _rubric_prompt("D3", prompt)
+    _, prompt = _rubric_prompt("S2", prompt)
     return prompt
 
 
 def _render_b1(item: dict[str, Any], *, variant: str) -> str:
     transcript = _format_turns(item.get("student_turns") or [], variant=variant)
-    prompt = rubric_prompt_template("B1").format(
+    prompt = rubric_prompt_template("S4").format(
         candidate_contracts=_b1_candidate_contracts_block(),
         context_label=item.get("context_label", ""),
         transcript=transcript,
     )
-    _, prompt = _rubric_prompt("B1", prompt)
+    _, prompt = _rubric_prompt("S4", prompt)
     return prompt
 
 
 def _render_control(item: dict[str, Any], *, variant: str) -> str:
     set_a = _format_turns(item.get("set_a_turns") or [], variant=variant)
     set_b = _format_turns(item.get("set_b_turns") or [], variant=variant)
-    prompt = rubric_prompt_template("control").format(
+    prompt = rubric_prompt_template("S6").format(
         **_persona_block_kwargs(item["persona_id"]),
         set_description=(
             "One set was produced with a detailed persona definition. "
@@ -232,19 +232,19 @@ def _render_control(item: dict[str, Any], *, variant: str) -> str:
         set_a_conversation=set_a,
         set_b_conversation=set_b,
     )
-    _, prompt = _rubric_prompt("control", prompt)
+    _, prompt = _rubric_prompt("S6", prompt)
     return prompt
 
 
 def _render_prompt(item: dict[str, Any], *, variant: str) -> str:
     dimension = item["dimension"]
-    if dimension == "P1":
+    if dimension == "S5":
         return _render_p1(item, variant=variant)
-    if dimension == "D3":
+    if dimension == "S2":
         return _render_d3(item, variant=variant)
-    if dimension == "B1":
+    if dimension == "S4":
         return _render_b1(item, variant=variant)
-    if dimension == "control":
+    if dimension == "S6":
         return _render_control(item, variant=variant)
     raise ValueError(f"Unsupported judge-qualification dimension: {dimension}")
 
@@ -316,9 +316,9 @@ def render_judge_qualification_inputs(
                         "judge_temperature": JUDGE_TEMPERATURE,
                     },
                 }
-                if dimension == "B1":
+                if dimension == "S4":
                     payload["metadata"]["expected_persona_id"] = item["persona_id"]
-                if dimension == "control":
+                if dimension == "S6":
                     payload["metadata"]["set_a_is_persona"] = item.get(
                         "set_a_is_persona"
                     )

@@ -187,7 +187,7 @@ def _load_transcript_excerpt(
     """Best-effort load of the conversation file referenced by this record.
 
     Tries, in order:
-      1. ``metadata.source_file`` (the canonical pointer for D1/D2/D3/B1/P1)
+      1. ``metadata.source_file`` (the canonical pointer for S1/S3/S2/S4/S5)
       2. ``metadata.persona_source_file`` (canonical for control records)
       3. eval_id with leading ``<DIM>__`` prefix stripped, ``.json`` suffix
       4. eval_id verbatim

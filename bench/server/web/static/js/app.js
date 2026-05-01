@@ -13,10 +13,21 @@
     },
     results: null,
     tasksPayload: null,
+    taskCatalog: {
+      selectedClass: '',
+      classPanelHidden: false
+    },
     detailCache: {},
     workspaceIndexCache: {},
     workspacePreviewCache: {},
     activeSessionId: null,
+    review: {
+      bundles: null,
+      bundleCache: {},
+      search: '',
+      opinionFilter: 'all',
+      contextHidden: false
+    },
     run: {
       mode: '',
       taskId: '',
@@ -113,6 +124,15 @@
         }
         return payload;
       });
+    });
+  }
+
+  function parseJsonResponse(response) {
+    return response.json().then(function (payload) {
+      if (!response.ok) {
+        throw new Error(payload.error || ('HTTP ' + response.status));
+      }
+      return payload;
     });
   }
 
@@ -238,7 +258,12 @@
 
   function routeFromHash() {
     var hash = location.hash.slice(1);
-    return hash || '/results';
+    if (hash) return hash;
+    var path = window.location.pathname || '/';
+    if (path.indexOf('/review') === 0) {
+      return path.replace(/\/$/, '') || '/review';
+    }
+    return '/flow-demo';
   }
 
   function setAppDetailMode(enabled) {
@@ -249,10 +274,10 @@
   function setActiveNav(route) {
     var current;
     if (route.indexOf('/flow-demo') === 0) current = 'flow';
+    else if (route.indexOf('/review') === 0) current = 'review';
     else if (route.indexOf('/tasks') === 0) current = 'tasks';
-    else if (route === '/runs') current = 'runs';
     else if (route.indexOf('/run') === 0) current = 'run';
-    else current = 'results';
+    else current = 'flow';
     var links = document.querySelectorAll('.nav-link');
     Array.prototype.forEach.call(links, function (link) {
       if (link.getAttribute('data-route') === current) link.classList.add('active');
@@ -323,6 +348,24 @@
     });
   }
 
+  function ensureReviewBundles(force) {
+    if (state.review.bundles && !force) return Promise.resolve(state.review.bundles);
+    return api('/review/bundles').then(function (payload) {
+      state.review.bundles = payload.bundles || [];
+      return state.review.bundles;
+    });
+  }
+
+  function ensureReviewBundle(bundleId, force) {
+    if (state.review.bundleCache[bundleId] && !force) {
+      return Promise.resolve(state.review.bundleCache[bundleId]);
+    }
+    return api('/review/bundles/' + encodeURIComponent(bundleId)).then(function (payload) {
+      state.review.bundleCache[bundleId] = payload;
+      return payload;
+    });
+  }
+
   function closeModal() {
     var el = document.getElementById('qtb-modal');
     if (el) el.remove();
@@ -362,16 +405,18 @@
   function openApiKeyModal() {
     showModal('REST API Key', '<p class="detail-empty-note">Loading API key status...</p>');
     authFetch('/ui/api-key')
-      .then(function (response) { return response.json(); })
+      .then(parseJsonResponse)
       .then(renderApiKeyModalBody)
       .catch(function (error) {
         showModal('REST API Key', '<p class="detail-empty-note">' + escapeHtml(error && error.message ? error.message : String(error || 'Unable to load API key status.')) + '</p>');
       });
   }
 
+  window.QTB.openApiKeyModal = openApiKeyModal;
+
   function renderApiKeyModalBody(status) {
     var created = status && status.created_at ? formatTimestamp(status.created_at * 1000) : '';
-    var skillUrl = '/skills/quanttutorbench-rest-agent';
+    var skillUrl = agentSkillUrl();
     var body =
       '<section class="info-section">' +
         '<h3>External REST Access</h3>' +
@@ -395,33 +440,63 @@
     if (revoke) revoke.addEventListener('click', revokeApiKey);
   }
 
+  function agentSkillUrl() {
+    return window.location.origin + '/skills/quanttutorbench-rest-agent';
+  }
+
+  function agentSkillRawUrl() {
+    return window.location.origin + '/skill.md';
+  }
+
+  function buildAgentPrompt(apiKey) {
+    var rawSkillUrl = agentSkillRawUrl();
+    var baseUrl = window.location.origin;
+    return [
+      'Read ' + rawSkillUrl + ' and follow the instructions to join QuantTutorBench.',
+      '',
+      'Benchmark base URL:',
+      baseUrl,
+      '',
+      'REST API key:',
+      apiKey
+    ].join('\n');
+  }
+
   function rotateApiKey() {
     authFetch('/ui/api-key', {method: 'POST'})
-      .then(function (response) { return response.json(); })
+      .then(parseJsonResponse)
       .then(function (payload) {
         var target = document.getElementById('api-key-result');
+        var prompt = buildAgentPrompt(payload.api_key || '');
         if (target) {
           target.innerHTML =
-            '<h3>New Key</h3>' +
-            '<code class="run-connect-cmd">' + escapeHtml(payload.api_key || '') + '</code>' +
-            '<button class="btn btn-small run-copy-btn" id="api-key-copy-btn" type="button">Copy</button>' +
-            '<p class="detail-empty-note">Use this key with the <a href="/skills/quanttutorbench-rest-agent" target="_blank" rel="noreferrer">REST agent skill</a> to connect your agent to the benchmark service.</p>';
+            '<h3>Agent Prompt</h3>' +
+            '<textarea id="api-key-agent-prompt" class="run-agent-prompt-text api-key-agent-prompt" readonly spellcheck="false">' + escapeHtml(prompt) + '</textarea>' +
+            '<button class="btn btn-small run-copy-btn" id="api-key-copy-btn" type="button">Copy Prompt</button>' +
+            '<p class="detail-empty-note">The prompt includes the full REST API key, the skill URL, and a curl command for loading the skill file.</p>';
           var copy = document.getElementById('api-key-copy-btn');
           if (copy) {
             copy.addEventListener('click', function () {
-              if (navigator.clipboard && payload.api_key) {
-                navigator.clipboard.writeText(payload.api_key);
-                copy.textContent = 'Copied';
+              if (navigator.clipboard && prompt) {
+                navigator.clipboard.writeText(prompt).then(function () {
+                  copy.textContent = 'Copied';
+                });
               }
             });
           }
+        }
+      })
+      .catch(function (error) {
+        var target = document.getElementById('api-key-result');
+        if (target) {
+          target.innerHTML = '<p class="run-error">' + escapeHtml(error && error.message ? error.message : String(error || 'Unable to generate API key.')) + '</p>';
         }
       });
   }
 
   function revokeApiKey() {
     authFetch('/ui/api-key', {method: 'DELETE'})
-      .then(function (response) { return response.json(); })
+      .then(parseJsonResponse)
       .then(renderApiKeyModalBody);
   }
 
@@ -454,7 +529,7 @@
       '<section class="page">' +
         '<header class="page-header">' +
           '<div class="page-title-wrap">' +
-            '<p class="eyebrow">Results</p>' +
+            '<p class="eyebrow">Archived Sessions</p>' +
             '<h1>Archived sessions, rebuilt around the new session model.</h1>' +
             '<p class="subtitle">This view reads from the isolated <code>bench/server/web/</code> stack, not the legacy <code>bench/web/</code> app.</p>' +
           '</div>' +
@@ -508,7 +583,7 @@
     var model = item.model || 'Unknown';
 
     return '' +
-      '<a class="session-card" href="#/results/' + encodeURIComponent(item.session_id) + '">' +
+      '<a class="session-card" href="#/review/' + encodeURIComponent(item.session_id) + '">' +
         '<div class="session-top">' +
           '<div>' +
             '<h2 class="session-title">' +
@@ -578,25 +653,37 @@
     });
 
     var categories = Object.keys(grouped).sort();
-    var groupsHtml = categories.map(function (category) {
-      var items = grouped[category];
+    var selectedClass = state.taskCatalog.selectedClass;
+    if (selectedClass && !grouped[selectedClass]) {
+      selectedClass = '';
+      state.taskCatalog.selectedClass = '';
+    }
+    var selectedTasks = grouped[selectedClass] || [];
+    var classButtons = categories.map(function (category) {
+      var active = category === selectedClass ? ' is-active' : '';
       return '' +
-        '<section class="tasks-group">' +
-          '<header class="tasks-group-header">' +
-            '<h2 class="tasks-group-title">' + escapeHtml(titleCase(category)) + '</h2>' +
-            '<span class="summary-pill"><strong>Tasks</strong> ' + escapeHtml(String(items.length)) + '</span>' +
-          '</header>' +
-          '<div class="tasks-grid">' + items.map(renderTaskCard).join('') + '</div>' +
-        '</section>';
+        '<button class="task-class-btn' + active + '" type="button" data-task-class="' + escapeHtml(category) + '">' +
+          '<span>' + escapeHtml(titleCase(category)) + '</span>' +
+          '<strong>' + escapeHtml(String((grouped[category] || []).length)) + '</strong>' +
+        '</button>';
     }).join('');
+    var tasksHtml = selectedTasks.length
+      ? '<div class="tasks-grid">' + selectedTasks.map(renderTaskCard).join('') + '</div>'
+      : renderEmptyInline('Select a task class to view its tasks.');
+    var selectedClassLabel = selectedClass ? titleCase(selectedClass) : 'Select a class';
+    var classPanelHidden = Boolean(state.taskCatalog.classPanelHidden);
+    var layoutClass = 'task-catalog-layout' + (classPanelHidden ? ' is-task-class-hidden' : '');
+    var taskClassToggle = classPanelHidden
+      ? '<button class="task-class-toggle" type="button" aria-expanded="false" aria-label="Open task class" title="Open task class"><span aria-hidden="true">&#9654;</span></button>'
+      : '<button class="task-class-toggle" type="button" aria-expanded="true" aria-label="Hide task class" title="Hide task class"><span aria-hidden="true">&#9664;</span></button>';
 
     app.innerHTML =
       '<section class="page">' +
         '<header class="page-header">' +
           '<div class="page-title-wrap">' +
-            '<p class="eyebrow">Tasks</p>' +
-            '<h1>Task inventory for the new session-centric UI.</h1>' +
-            '<p class="subtitle">Grouped by benchmark category and served from the new isolated API layer.</p>' +
+            '<p class="eyebrow">Task Catalog</p>' +
+            '<h1>Task inventory by class.</h1>' +
+            '<p class="subtitle">Select a task class first, then inspect the tasks in that class.</p>' +
           '</div>' +
           '<div class="summary-strip">' +
             buildSummaryPill('Tasks', String(tasks.length)) +
@@ -604,8 +691,48 @@
             buildSummaryPill('Categories', String(categories.length)) +
           '</div>' +
         '</header>' +
-        groupsHtml +
+        '<div class="' + layoutClass + '">' +
+          '<aside class="panel task-class-panel">' +
+            '<div class="task-class-panel-head">' +
+              '<h2>Task Class</h2>' +
+              '<div class="task-class-panel-actions">' +
+                '<span class="summary-pill"><strong>Total</strong> ' + escapeHtml(String(categories.length)) + '</span>' +
+                taskClassToggle +
+              '</div>' +
+            '</div>' +
+            '<div class="task-class-list">' + classButtons + '</div>' +
+          '</aside>' +
+          '<section class="tasks-group">' +
+            '<header class="tasks-group-header">' +
+              '<div>' +
+                '<p class="eyebrow">Selected Class</p>' +
+                '<h2 class="tasks-group-title">' + escapeHtml(selectedClassLabel) + '</h2>' +
+              '</div>' +
+              '<div class="task-class-panel-actions">' +
+                '<span class="summary-pill"><strong>Tasks</strong> ' + escapeHtml(String(selectedTasks.length)) + '</span>' +
+                (classPanelHidden ? taskClassToggle : '') +
+              '</div>' +
+            '</header>' +
+            tasksHtml +
+          '</section>' +
+        '</div>' +
       '</section>';
+    bindTaskCatalog();
+  }
+
+  function bindTaskCatalog() {
+    document.querySelectorAll('.task-class-btn').forEach(function (button) {
+      button.addEventListener('click', function () {
+        state.taskCatalog.selectedClass = button.getAttribute('data-task-class') || '';
+        renderTasksPage(state.tasksPayload || {tasks: [], personas: []});
+      });
+    });
+    document.querySelectorAll('.task-class-toggle').forEach(function (button) {
+      button.addEventListener('click', function () {
+        state.taskCatalog.classPanelHidden = !state.taskCatalog.classPanelHidden;
+        renderTasksPage(state.tasksPayload || {tasks: [], personas: []});
+      });
+    });
   }
 
   function renderTaskCard(task) {
@@ -627,759 +754,57 @@
       '</article>';
   }
 
-  function getRunTask(tasks) {
-    if (!tasks || !tasks.length) return null;
-    var taskId = state.run.taskId || tasks[0].task_id;
-    for (var index = 0; index < tasks.length; index += 1) {
-      if (tasks[index].task_id === taskId) return tasks[index];
-    }
-    return tasks[0];
-  }
-
-  function personasForTask(task, personas) {
-    var allowed = task && task.persona_ids ? task.persona_ids : [];
-    if (!allowed.length) return personas || [];
-    return (personas || []).filter(function (persona) {
-      return allowed.indexOf(persona.persona_id) !== -1;
-    });
-  }
-
-  function publicTaskLabel(taskId) {
-    var value = String(taskId || '').trim();
-    var match = value.match(/^[A-Za-z]\d{2}/);
-    return match ? match[0].toUpperCase() : (value || 'Task');
-  }
-
-  function runIsBusy() {
-    return !!state.run.busy || !!(state.run.action && state.run.action !== 'idle');
-  }
-
-  function runCanSend() {
-    return state.run.mode === 'human' &&
-      state.run.sessionId &&
-      state.run.phase === 'in_session' &&
-      !runIsBusy();
-  }
-
-  function runStatusLabel() {
-    if (state.run.action && state.run.action !== 'idle') return titleCase(state.run.action);
-    if (!state.run.mode) return 'Choose Mode';
-    if (!state.run.sessionId) return 'Not Started';
-    return titleCase(state.run.phase || 'unknown');
-  }
-
   function runModeLabel() {
-    if (state.run.mode === 'agent') return 'Agent Test';
-    if (state.run.mode === 'human') return 'Human Test';
-    return 'Unselected';
-  }
-
-  function setRunAction(action) {
-    state.run.action = action || 'idle';
-    state.run.busy = state.run.action !== 'idle';
-  }
-
-  function addRunToolEvent(name, status, detail) {
-    state.run.toolEvents = state.run.toolEvents || [];
-    state.run.toolEvents.push({
-      name: name,
-      status: status || 'ok',
-      detail: detail || '',
-      timestamp: new Date().toISOString()
-    });
-    if (state.run.toolEvents.length > 20) {
-      state.run.toolEvents = state.run.toolEvents.slice(state.run.toolEvents.length - 20);
-    }
-  }
-
-  function renderRunMessage(message) {
-    var role = message.role === 'tutor' ? 'tutor' : 'student';
-    var label = role === 'tutor' ? 'Tutor' : 'Student';
-    var body = window.QTB && typeof window.QTB.renderMarkdown === 'function'
-      ? window.QTB.renderMarkdown(message.content || '')
-      : '<pre>' + escapeHtml(message.content || '') + '</pre>';
-    var attachments = message.attachments && message.attachments.length
-      ? '<div class="run-message-attachments">' + message.attachments.map(function (item) {
-        return '<span class="meta-chip">' + escapeHtml(item) + '</span>';
-      }).join('') + '</div>'
-      : '';
-
-    return '' +
-      '<article class="run-message ' + role + '">' +
-        '<div class="run-message-label">' + escapeHtml(label) + '</div>' +
-        '<div class="run-message-bubble">' + body + attachments + '</div>' +
-      '</article>';
-  }
-
-  function renderRunTools() {
-    if (!state.run.tools || !state.run.tools.length) {
-      return '<p class="detail-empty-note">Visible tools will appear after the session starts.</p>';
-    }
-    return '<div class="run-tool-list">' + state.run.tools.map(function (tool) {
-      var isProtocol = tool.name === 'send_message' || tool.name === 'get_background';
-      return '' +
-        '<div class="run-tool-chip ' + (isProtocol ? 'protocol' : 'domain') + '">' +
-          '<span>' + escapeHtml(tool.name || 'unknown') + '</span>' +
-          '<small>' + escapeHtml(isProtocol ? 'protocol' : 'domain') + '</small>' +
-        '</div>';
-    }).join('') + '</div>';
-  }
-
-  function renderRunToolEvents() {
-    var events = state.run.toolEvents || [];
-    if (!events.length) {
-      return '<p class="detail-empty-note">Live tool activity will appear here while this browser-driven session runs.</p>';
-    }
-    return '<div class="run-event-list">' + events.slice().reverse().map(function (event) {
-      return '' +
-        '<article class="run-event ' + escapeHtml(event.status || 'ok') + '">' +
-          '<div class="run-event-head">' +
-            '<strong>' + escapeHtml(event.name || 'event') + '</strong>' +
-            '<span>' + escapeHtml(formatTimestamp(event.timestamp)) + '</span>' +
-          '</div>' +
-          (event.detail ? '<p>' + escapeHtml(event.detail) + '</p>' : '') +
-        '</article>';
-    }).join('') + '</div>';
-  }
-
-  // ── Run list / history page ──
-
-  var runsState = {
-    runs: null,
-    statusFilter: 'all'
-  };
-
-  function ensureRuns(force) {
-    if (runsState.runs && !force) return Promise.resolve(runsState.runs);
-    return authFetch('/ui/runs').then(function (r) { return r.json(); })
-      .then(function (data) {
-        runsState.runs = data.runs || [];
-        return runsState.runs;
-      });
-  }
-
-  function filteredRuns(runs) {
-    if (runsState.statusFilter === 'all') return runs;
-    return runs.filter(function (r) { return r.status === runsState.statusFilter; });
-  }
-
-  function renderRunCard(run) {
-    var statusLabels = {
-      waiting: '● Waiting',
-      claimed: '● Claimed',
-      active: '● Active',
-      completed: '✓ Completed',
-      failed: '✗ Failed',
-      cancelled: '— Cancelled'
-    };
-    var label = run.public_task_label || '—';
-    var statusText = statusLabels[run.status] || run.status;
-    var isTerminal = run.status === 'completed' || run.status === 'failed' || run.status === 'cancelled';
-    var href;
-    if (run.status === 'completed' && run.session_id) {
-      href = '#/results/' + encodeURIComponent(run.session_id);
-    } else if (!isTerminal) {
-      href = '#/run';
-    } else {
-      href = 'javascript:void(0)';
-    }
-
-    return '' +
-      '<a class="run-card" href="' + href + '">' +
-        '<div class="run-card-top">' +
-          '<span class="run-card-label">' + escapeHtml(label) + '</span>' +
-          '<span class="summary-pill run-status-' + escapeHtml(run.status) + '">' + escapeHtml(statusText) + '</span>' +
-        '</div>' +
-        '<div class="run-card-mode">' + escapeHtml(run.mode || 'agent') + '</div>' +
-        '<div class="run-card-meta">' +
-          (run.persona_id ? '<span class="meta-chip">' + escapeHtml(run.persona_id) + '</span>' : '') +
-          (run.eval_status && run.eval_status !== 'pending' ? '<span class="meta-chip">Eval: ' + escapeHtml(run.eval_status) + '</span>' : '') +
-        '</div>' +
-        '<div class="run-card-time">' +
-          escapeHtml(formatTimestamp(run.created_at)) +
-          (run.completed_at ? ' → ' + escapeHtml(formatTimestamp(run.completed_at)) : '') +
-        '</div>' +
-      '</a>';
-  }
-
-  function renderRunsListPage(runs) {
-    var statuses = sortedUnique(runs.map(function (r) { return r.status; }));
-    var visible = filteredRuns(runs);
-
-    var statusOptions = ['<option value="all">All</option>'].concat(statuses.map(function (s) {
-      var sel = s === runsState.statusFilter ? ' selected' : '';
-      return '<option value="' + escapeHtml(s) + '"' + sel + '>' + escapeHtml(titleCase(s)) + '</option>';
-    }));
-
-    app.innerHTML =
-      '<section class="page">' +
-        '<header class="page-header">' +
-          '<div class="page-title-wrap">' +
-            '<p class="eyebrow">Runs</p>' +
-            '<h1>Run history and active sessions.</h1>' +
-            '<p class="subtitle">All runs created through the Run layer, with real-time status tracking.</p>' +
-          '</div>' +
-          '<div class="summary-strip">' +
-            buildSummaryPill('Total', String(runs.length)) +
-            buildSummaryPill('Active', String(runs.filter(function (r) { return r.status === 'active'; }).length)) +
-            buildSummaryPill('Completed', String(runs.filter(function (r) { return r.status === 'completed'; }).length)) +
-          '</div>' +
-        '</header>' +
-        '<section class="panel filter-bar">' +
-          '<label class="filter-field">' +
-            '<span class="filter-label">Status</span>' +
-            '<select id="runs-status-filter" class="filter-select">' + statusOptions.join('') + '</select>' +
-          '</label>' +
-        '</section>' +
-        '<div class="results-meta">' +
-          '<div class="results-count">' + escapeHtml(String(visible.length)) + ' run(s) shown</div>' +
-        '</div>' +
-        (visible.length
-          ? '<div class="runs-grid">' + visible.map(renderRunCard).join('') + '</div>'
-          : renderEmptyInline('No runs match the current filter.')) +
-      '</section>';
-
-    var filterEl = document.getElementById('runs-status-filter');
-    if (filterEl) {
-      filterEl.addEventListener('change', function (e) {
-        runsState.statusFilter = e.target.value || 'all';
-        renderRunsListPage(runs);
-      });
-    }
-  }
-
-  function showRuns() {
-    state.activeSessionId = null;
-    setAppDetailMode(false);
-    renderLoading('Loading runs', 'Fetching run history from the /ui/runs endpoint.');
-    ensureRuns(true).then(renderRunsListPage).catch(function (error) {
-      renderError('Runs unavailable', error);
-    });
+    return 'Agent Prompt';
   }
 
   function renderRunPage(payload) {
-    var tasks = payload.tasks || [];
-    var selectedTask = getRunTask(tasks);
-    if (selectedTask && !state.run.taskId) state.run.taskId = selectedTask.task_id;
+    state.run.mode = 'agent';
 
-    if (!state.run.mode) {
-      renderRunModePicker(payload);
+    if (window.QTB && typeof window.QTB.renderMyAgentPage === 'function') {
+      window.QTB.renderMyAgentPage(app, state, payload);
       return;
     }
-
-    if (state.run.mode === 'agent') {
-      if (window.QTB && typeof window.QTB.renderMyAgentPage === 'function') {
-        window.QTB.renderMyAgentPage(app, state, payload);
-      } else {
-        renderAgentRunPage(payload);
-      }
-      return;
-    }
-
-    renderHumanRunPage(payload);
-  }
-
-  function renderRunModePicker(payload) {
-    var tasks = payload.tasks || [];
-    app.innerHTML =
-      '<section class="page run-page">' +
-        '<header class="page-header">' +
-          '<div class="page-title-wrap">' +
-            '<p class="eyebrow">Run</p>' +
-            '<h1>Choose how to run the benchmark.</h1>' +
-            '<p class="subtitle">Connect your own agent, try it yourself in the browser, or watch the baseline agent run.</p>' +
-          '</div>' +
-          '<div class="summary-strip">' +
-            buildSummaryPill('Mode', runModeLabel()) +
-            buildSummaryPill('Tasks', String(tasks.length)) +
-          '</div>' +
-        '</header>' +
-        '<div class="run-mode-grid">' +
-          '<article class="panel run-mode-card">' +
-            '<p class="eyebrow">Your Agent</p>' +
-            '<h2>My Agent</h2>' +
-            '<p>Create a run and get connection details (MCP URL + token or REST endpoints). Connect your own agent to execute the benchmark.</p>' +
-            '<button class="btn btn-primary" id="run-mode-agent" type="button">My Agent</button>' +
-          '</article>' +
-          '<article class="panel run-mode-card">' +
-            '<p class="eyebrow">Manual</p>' +
-            '<h2>Try it myself</h2>' +
-            '<p>Use the browser-driven REST harness to manually tutor the student. Useful for understanding the benchmark tasks.</p>' +
-            '<button class="btn btn-secondary" id="run-mode-human" type="button">Try it myself</button>' +
-          '</article>' +
-          '<article class="panel run-mode-card">' +
-            '<p class="eyebrow">Demo</p>' +
-            '<h2>Watch Baseline</h2>' +
-            '<p>Watch the baseline agent (Claude) complete the task automatically. Server starts the agent — just observe.</p>' +
-            '<button class="btn btn-secondary" id="run-mode-baseline" type="button" disabled title="Coming soon">Watch Baseline</button>' +
-          '</article>' +
-        '</div>' +
-      '</section>';
-    bindRunModeControls();
+    renderAgentRunPage(payload);
   }
 
   function renderAgentRunPage(payload) {
-    var tasks = payload.tasks || [];
-    var personas = payload.personas || [];
-    var selectedTask = getRunTask(tasks);
-    var visiblePersonas = personasForTask(selectedTask, personas);
-    var selectedPersona = state.run.personaId || 'auto';
-    var isBusy = runIsBusy();
-    var taskOptions = tasks.map(function (task) {
-      return '<option value="' + escapeHtml(task.task_id) + '"' + (task.task_id === state.run.taskId ? ' selected' : '') + '>' +
-        escapeHtml(publicTaskLabel(task.task_id)) +
-      '</option>';
-    }).join('');
-    var personaOptions =
-      '<option value="auto"' + (selectedPersona === 'auto' ? ' selected' : '') + '>Auto select</option>' +
-      visiblePersonas.map(function (persona) {
-        return '<option value="' + escapeHtml(persona.persona_id) + '"' + (persona.persona_id === selectedPersona ? ' selected' : '') + '>' +
-          escapeHtml(persona.persona_id) +
-        '</option>';
-      }).join('');
-
     app.innerHTML =
       '<section class="page run-page">' +
         '<header class="page-header run-sticky-header">' +
           '<div class="page-title-wrap">' +
-            '<p class="eyebrow">Run · Agent Test</p>' +
-            '<h1>Automated client benchmark flow.</h1>' +
-            '<p class="subtitle">Agent run module (run-agent.js) failed to load. This is a fallback page — refresh to retry.</p>' +
+            '<p class="eyebrow">Run · Agent Prompt</p>' +
+            '<h1>Agent prompt access.</h1>' +
+            '<p class="subtitle">Generate a REST API key prompt from the API key dialog, then paste it into your external agent.</p>' +
           '</div>' +
           '<div class="summary-strip">' +
             buildSummaryPill('Mode', runModeLabel()) +
-            buildSummaryPill('Status', 'Module Missing') +
-            buildSummaryPill('Task', publicTaskLabel(state.run.taskId || (selectedTask && selectedTask.task_id))) +
+            buildSummaryPill('Status', 'Prompt Ready') +
           '</div>' +
         '</header>' +
-        '<div class="run-agent-grid">' +
-          '<aside class="panel run-control-panel">' +
-            '<h2>Agent Setup</h2>' +
-            '<label class="filter-field">' +
-              '<span class="filter-label">Task</span>' +
-              '<select id="run-task-select" class="filter-select"' + (isBusy ? ' disabled' : '') + '>' + taskOptions + '</select>' +
-            '</label>' +
-            '<label class="filter-field">' +
-              '<span class="filter-label">Persona Control</span>' +
-              '<select id="run-persona-select" class="filter-select"' + (isBusy ? ' disabled' : '') + '>' + personaOptions + '</select>' +
-            '</label>' +
-            '<label class="filter-field">' +
-              '<span class="filter-label">Max Agent Steps</span>' +
-              '<input id="run-agent-steps-input" class="filter-input" type="number" min="0" value="' + escapeHtml(state.run.agentMaxSteps || 200) + '"' + (isBusy ? ' disabled' : '') + '>' +
-            '</label>' +
-            '<div class="run-actions">' +
-              '<button class="btn btn-primary" type="button" disabled>Start Agent Run</button>' +
-              '<button class="btn btn-secondary" id="run-mode-reset-btn" type="button">Change Mode</button>' +
-            '</div>' +
-          '</aside>' +
-          '<section class="panel run-conversation-panel run-agent-main">' +
-            '<div class="run-panel-header">' +
+        '<div class="run-agent-prompt-panel">' +
+          '<section class="panel run-agent-prompt-card">' +
+            '<div class="run-agent-prompt-head">' +
               '<div>' +
-                '<h2>Execution Boundary</h2>' +
-                '<p>The automated flow is not a chat form. It should be a backend job that launches the client runner, polls job state, captures stdout/stderr, and links to the archived result when the client trace is written.</p>' +
+                '<h2>Agent Prompt</h2>' +
+                '<p class="detail-empty-note">The API key dialog can generate the same copyable prompt with the raw skill URL and REST key.</p>' +
               '</div>' +
             '</div>' +
-            '<ol class="run-flow-list">' +
-              '<li><strong>register_session</strong> with the internal full task id and optional persona id.</li>' +
-              '<li><strong>start_session</strong> returns the client-visible background and student opening.</li>' +
-              '<li><strong>list_tools</strong> exposes <code>send_message</code>, <code>get_background</code>, and domain tools to the agent.</li>' +
-              '<li><strong>adapter.generate_response</strong> runs once; the tool runner handles domain tools and student communication.</li>' +
-              '<li><strong>save_client_trace</strong> writes <code>results/client/{session_id}/client_trace.json</code>, then Results can render the merged replay.</li>' +
-            '</ol>' +
-            '<div class="run-status-note">' +
-              '<strong>Required before enabling this button:</strong> add server endpoints for creating/cancelling agent jobs, safe subprocess lifecycle, result-dir wiring, live log/tool polling, and completion mapping back to Results.' +
+            '<div class="run-agent-skill-url">' +
+              '<span>Skill URL</span>' +
+              '<code>' + escapeHtml(agentSkillUrl()) + '</code>' +
+              '<span>Raw Skill URL</span>' +
+              '<code>' + escapeHtml(agentSkillRawUrl()) + '</code>' +
+            '</div>' +
+            '<div class="run-agent-api-actions">' +
+              '<button class="btn btn-primary" id="run-open-api-key-prompt" type="button">Open API Key Prompt</button>' +
+              '<a class="btn btn-secondary" href="' + escapeHtml(agentSkillUrl()) + '" target="_blank" rel="noreferrer">Open Skill</a>' +
             '</div>' +
           '</section>' +
-          '<aside class="panel run-tools-panel">' +
-            '<h2>Live Tools</h2>' +
-            '<p class="detail-empty-note">Agent tool events cannot be streamed here until the backend job layer exposes them. Result detail already renders them after archive creation.</p>' +
-          '</aside>' +
         '</div>' +
       '</section>';
-    bindRunControls(tasks);
-  }
-
-  function renderHumanRunPage(payload) {
-    var tasks = payload.tasks || [];
-    var personas = payload.personas || [];
-    var selectedTask = getRunTask(tasks);
-    var visiblePersonas = personasForTask(selectedTask, personas);
-    var selectedPersona = state.run.personaId || 'auto';
-    var isBusy = runIsBusy();
-    var isLocked = !!state.run.sessionId || isBusy;
-    var taskOptions = tasks.map(function (task) {
-      return '<option value="' + escapeHtml(task.task_id) + '"' + (task.task_id === state.run.taskId ? ' selected' : '') + '>' +
-        escapeHtml(publicTaskLabel(task.task_id)) +
-      '</option>';
-    }).join('');
-    var personaOptions =
-      '<option value="auto"' + (selectedPersona === 'auto' ? ' selected' : '') + '>Auto select</option>' +
-      visiblePersonas.map(function (persona) {
-        return '<option value="' + escapeHtml(persona.persona_id) + '"' + (persona.persona_id === selectedPersona ? ' selected' : '') + '>' +
-          escapeHtml(persona.persona_id) +
-        '</option>';
-      }).join('');
-    var messagesHtml = state.run.messages.length
-      ? state.run.messages.map(renderRunMessage).join('')
-      : '<div class="run-empty-conversation">Start a human test session to see the student opening message here.</div>';
-    var sessionMeta = state.run.sessionId
-      ? [
-        metaItem('Session ID', state.run.sessionId),
-        metaItem('Phase', runStatusLabel()),
-        metaItem('Task', publicTaskLabel(state.run.taskId)),
-        metaItem('Client Context', state.run.background ? 'Loaded' : 'Waiting')
-      ].join('')
-      : '<p class="detail-empty-note">No active run yet. This panel will only show client-visible runtime context after start_session.</p>';
-    var actionButton = state.run.sessionId
-      ? '<button class="btn btn-secondary" id="run-refresh-btn" type="button"' + (isBusy ? ' disabled' : '') + '>Refresh</button>'
-      : '<button class="btn btn-primary" id="run-start-btn" type="button"' + (isBusy || !selectedTask ? ' disabled' : '') + '>Create & Start Session</button>';
-    var openResult = state.run.sessionId && state.run.phase === 'completed'
-      ? '<a class="btn btn-secondary" href="#/results/' + encodeURIComponent(state.run.sessionId) + '">Open Result</a>'
-      : '';
-    var cancelButton = state.run.sessionId && state.run.phase !== 'completed'
-      ? '<button class="btn btn-secondary" id="run-cancel-btn" type="button"' + (isBusy ? ' disabled' : '') + '>Cancel</button>'
-      : '';
-
-    app.innerHTML =
-      '<section class="page run-page">' +
-        '<header class="page-header run-sticky-header">' +
-          '<div class="page-title-wrap">' +
-            '<p class="eyebrow">Run · Human Test</p>' +
-            '<h1>Browser-driven REST session harness.</h1>' +
-            '<p class="subtitle">Manual mode is kept for human testing. The visible task label and info panel avoid exposing hidden task metadata during execution.</p>' +
-          '</div>' +
-          '<div class="summary-strip">' +
-            buildSummaryPill('Mode', runModeLabel()) +
-            buildSummaryPill('Status', runStatusLabel()) +
-            buildSummaryPill('Task', publicTaskLabel(state.run.taskId || (selectedTask && selectedTask.task_id))) +
-            buildSummaryPill('Tools', String(state.run.tools.length)) +
-          '</div>' +
-        '</header>' +
-        (state.run.error ? '<section class="run-error">' + escapeHtml(state.run.error) + '</section>' : '') +
-        '<div class="run-grid">' +
-          '<aside class="panel run-control-panel">' +
-            '<h2>Info</h2>' +
-            '<label class="filter-field">' +
-              '<span class="filter-label">Task</span>' +
-              '<select id="run-task-select" class="filter-select"' + (isLocked ? ' disabled' : '') + '>' + taskOptions + '</select>' +
-            '</label>' +
-            '<label class="filter-field">' +
-              '<span class="filter-label">Persona Control</span>' +
-              '<select id="run-persona-select" class="filter-select"' + (isLocked ? ' disabled' : '') + '>' + personaOptions + '</select>' +
-            '</label>' +
-            '<div class="run-actions">' + actionButton + openResult + cancelButton +
-              '<button class="btn btn-secondary" id="run-reset-btn" type="button"' + (isBusy ? ' disabled' : '') + '>Reset UI</button>' +
-              '<button class="btn btn-secondary" id="run-mode-reset-btn" type="button"' + (isBusy ? ' disabled' : '') + '>Change Mode</button>' +
-            '</div>' +
-            '<section class="run-meta-block">' +
-              '<h3>Client-Visible State</h3>' +
-              sessionMeta +
-            '</section>' +
-            '<section class="run-meta-block">' +
-              '<h3>Client Context</h3>' +
-              (state.run.background
-                ? '<div class="run-background-text">' + safeRenderMarkdown(state.run.background) + '</div>'
-                : '<p class="detail-empty-note">The background returned by start_session appears here. Hidden task metadata is not shown.</p>') +
-            '</section>' +
-          '</aside>' +
-          '<section class="panel run-conversation-panel">' +
-            '<div class="run-panel-header">' +
-              '<div>' +
-                '<h2>Conversation</h2>' +
-                '<p>Student messages returned by <code>start_session</code> and <code>send_message</code>. This column intentionally takes most of the width.</p>' +
-              '</div>' +
-            '</div>' +
-            '<div id="run-conversation" class="run-conversation">' + messagesHtml + '</div>' +
-            '<form id="run-send-form" class="run-send-form">' +
-              '<label class="filter-field">' +
-                '<span class="filter-label">Tutor Message</span>' +
-                '<textarea id="run-message-input" class="run-textarea" rows="5" placeholder="Write a message that will be delivered through send_message..."' + (!runCanSend() ? ' disabled' : '') + '></textarea>' +
-              '</label>' +
-              '<label class="filter-field">' +
-                '<span class="filter-label">Attachments</span>' +
-                '<input id="run-attachments-input" class="filter-input" type="text" placeholder="Optional: strategy.py, plots/chart.png" ' + (!runCanSend() ? ' disabled' : '') + '>' +
-              '</label>' +
-              '<button class="btn btn-primary" type="submit"' + (!runCanSend() ? ' disabled' : '') + '>' + (state.run.action === 'sending' ? 'Sending...' : 'Send Message') + '</button>' +
-            '</form>' +
-          '</section>' +
-          '<aside class="panel run-tools-panel">' +
-            '<h2>Tools</h2>' +
-            '<section class="run-meta-block compact">' +
-              '<h3>Visible To Client</h3>' +
-              renderRunTools() +
-            '</section>' +
-            '<section class="run-meta-block compact">' +
-              '<h3>Live Activity</h3>' +
-              renderRunToolEvents() +
-            '</section>' +
-          '</aside>' +
-        '</div>' +
-      '</section>';
-
-    bindRunControls(tasks);
-  }
-
-  function bindRunModeControls() {
-    var agentBtn = document.getElementById('run-mode-agent');
-    var humanBtn = document.getElementById('run-mode-human');
-    var baselineBtn = document.getElementById('run-mode-baseline');
-
-    // Allow run-agent.js to reset back to mode picker
-    if (window.QTB) {
-      window.QTB._resetRunMode = function () {
-        state.run.mode = '';
-        state.run.error = '';
-        renderRunPage(state.tasksPayload || {tasks: [], personas: []});
-      };
-    }
-    if (agentBtn) {
-      agentBtn.addEventListener('click', function () {
-        state.run.mode = 'agent';
-        state.run.error = '';
-        renderRunPage(state.tasksPayload || {tasks: [], personas: []});
-      });
-    }
-    if (humanBtn) {
-      humanBtn.addEventListener('click', function () {
-        state.run.mode = 'human';
-        state.run.error = '';
-        renderRunPage(state.tasksPayload || {tasks: [], personas: []});
-      });
-    }
-  }
-
-  function bindRunControls(tasks) {
-    var taskSelect = document.getElementById('run-task-select');
-    var personaSelect = document.getElementById('run-persona-select');
-    var agentStepsInput = document.getElementById('run-agent-steps-input');
-    var startBtn = document.getElementById('run-start-btn');
-    var refreshBtn = document.getElementById('run-refresh-btn');
-    var cancelBtn = document.getElementById('run-cancel-btn');
-    var resetBtn = document.getElementById('run-reset-btn');
-    var modeResetBtn = document.getElementById('run-mode-reset-btn');
-    var sendForm = document.getElementById('run-send-form');
-
-    if (taskSelect) {
-      taskSelect.addEventListener('change', function (event) {
-        state.run.taskId = event.target.value;
-        state.run.personaId = 'auto';
-        renderRunPage(state.tasksPayload || {tasks: tasks, personas: []});
-      });
-    }
-    if (personaSelect) {
-      personaSelect.addEventListener('change', function (event) {
-        state.run.personaId = event.target.value || 'auto';
-      });
-    }
-    if (agentStepsInput) {
-      agentStepsInput.addEventListener('change', function (event) {
-        var value = parseInt(event.target.value, 10);
-        state.run.agentMaxSteps = isFinite(value) && value >= 0 ? value : 200;
-      });
-    }
-    if (startBtn) startBtn.addEventListener('click', startRunSession);
-    if (refreshBtn) refreshBtn.addEventListener('click', refreshRunStatus);
-    if (cancelBtn) cancelBtn.addEventListener('click', cancelRunSession);
-    if (resetBtn) resetBtn.addEventListener('click', resetRunState);
-    if (modeResetBtn) modeResetBtn.addEventListener('click', resetRunMode);
-    if (sendForm) {
-      sendForm.addEventListener('submit', function (event) {
-        event.preventDefault();
-        sendRunMessage();
-      });
-    }
-
-    var conversationEl = document.getElementById('run-conversation');
-    if (conversationEl) conversationEl.scrollTop = conversationEl.scrollHeight;
-  }
-
-  function setRunBusy(busy) {
-    setRunAction(busy ? 'working' : 'idle');
-    renderRunPage(state.tasksPayload || {tasks: [], personas: []});
-  }
-
-  function startRunSession() {
-    var taskId = state.run.taskId;
-    if (!taskId || state.run.mode !== 'human' || runIsBusy()) return;
-    setRunAction('registering');
-    state.run.error = '';
-    renderRunPage(state.tasksPayload || {tasks: [], personas: []});
-
-    var registerBody = {task_id: taskId};
-    if (state.run.personaId && state.run.personaId !== 'auto') {
-      registerBody.persona_id = state.run.personaId;
-    }
-
-    restApi('/session/register', {
-      method: 'POST',
-      body: JSON.stringify(registerBody)
-    }).then(function (registered) {
-      if (!registered.accepted) {
-        throw new Error(registered.error || 'Session registration rejected.');
-      }
-      state.run.sessionId = registered.session_id;
-      state.run.phase = 'registered';
-      state.run.startedAt = new Date().toISOString();
-      addRunToolEvent('register_session', 'ok', 'REST session registered.');
-      setRunAction('starting');
-      renderRunPage(state.tasksPayload || {tasks: [], personas: []});
-      return restApi('/session/' + encodeURIComponent(registered.session_id) + '/start', {
-        method: 'POST',
-        body: JSON.stringify({})
-      });
-    }).then(function (started) {
-      state.run.phase = 'in_session';
-      state.run.background = started.background || '';
-      state.run.messages = [];
-      if (started.student_message) {
-        state.run.messages.push({role: 'student', content: started.student_message});
-      }
-      addRunToolEvent('start_session', 'ok', started.student_message ? 'Student opening received.' : 'Session started.');
-      return refreshRunStatus({silent: true, preserveAction: true});
-    }).catch(function (error) {
-      state.run.error = error && error.message ? error.message : String(error || 'Unknown error');
-      addRunToolEvent('run_start', 'error', state.run.error);
-    }).then(function () {
-      setRunAction('idle');
-      renderRunPage(state.tasksPayload || {tasks: [], personas: []});
-    });
-  }
-
-  function refreshRunStatus(options) {
-    options = options || {};
-    if (!state.run.sessionId) return Promise.resolve();
-    if (!options.silent) setRunAction('refreshing');
-    if (!options.silent) renderRunPage(state.tasksPayload || {tasks: [], personas: []});
-
-    return restApi('/session/' + encodeURIComponent(state.run.sessionId), {
-      method: 'GET',
-      headers: {}
-    }).then(function (status) {
-      state.run.phase = status.phase || state.run.phase;
-      state.run.personaId = status.persona_id || state.run.personaId;
-      return restApi('/session/' + encodeURIComponent(state.run.sessionId) + '/tools', {
-        method: 'GET',
-        headers: {}
-      }).catch(function () {
-        return {tools: []};
-      });
-    }).then(function (toolsPayload) {
-      state.run.tools = toolsPayload.tools || [];
-      state.run.error = '';
-      if (!options.silent) addRunToolEvent('list_tools', 'ok', state.run.tools.length + ' visible tools.');
-    }).catch(function (error) {
-      state.run.error = error && error.message ? error.message : String(error || 'Unknown error');
-      if (!options.silent) addRunToolEvent('refresh', 'error', state.run.error);
-    }).then(function () {
-      if (!options.preserveAction) setRunAction('idle');
-      if (!options.silent) renderRunPage(state.tasksPayload || {tasks: [], personas: []});
-    });
-  }
-
-  function parseRunAttachments(value) {
-    return String(value || '')
-      .split(/[,\n]/)
-      .map(function (item) { return item.trim(); })
-      .filter(Boolean)
-      .slice(0, 3);
-  }
-
-  function sendRunMessage() {
-    if (!runCanSend()) return;
-    var messageInput = document.getElementById('run-message-input');
-    var attachmentsInput = document.getElementById('run-attachments-input');
-    var text = messageInput ? String(messageInput.value || '').trim() : '';
-    var attachments = attachmentsInput ? parseRunAttachments(attachmentsInput.value) : [];
-    if (!text) {
-      state.run.error = 'Message text is required.';
-      renderRunPage(state.tasksPayload || {tasks: [], personas: []});
-      return;
-    }
-
-    setRunAction('sending');
-    state.run.error = '';
-    renderRunPage(state.tasksPayload || {tasks: [], personas: []});
-
-    restApi('/session/' + encodeURIComponent(state.run.sessionId) + '/send', {
-      method: 'POST',
-      body: JSON.stringify({text: text, attachments: attachments})
-    }).then(function (reply) {
-      if (reply.error) {
-        throw new Error(reply.error);
-      }
-      state.run.messages.push({role: 'tutor', content: text, attachments: attachments});
-      if (reply.student_message) {
-        state.run.messages.push({role: 'student', content: reply.student_message});
-      }
-      state.run.phase = reply.status === 'completed' ? 'completed' : 'in_session';
-      addRunToolEvent(
-        'send_message',
-        'ok',
-        (attachments.length ? attachments.length + ' attachment(s). ' : '') +
-          'Student status: ' + (reply.status || state.run.phase) + '.'
-      );
-      if (reply.status === 'completed') {
-        state.run.completedAt = new Date().toISOString();
-        state.results = null;
-        state.detailCache = {};
-      }
-      return refreshRunStatus({silent: true, preserveAction: true});
-    }).catch(function (error) {
-      state.run.error = error && error.message ? error.message : String(error || 'Unknown error');
-      addRunToolEvent('send_message', 'error', state.run.error);
-    }).then(function () {
-      setRunAction('idle');
-      renderRunPage(state.tasksPayload || {tasks: [], personas: []});
-    });
-  }
-
-  function cancelRunSession() {
-    if (!state.run.sessionId || runIsBusy()) return;
-    setRunAction('cancelling');
-    state.run.error = '';
-    renderRunPage(state.tasksPayload || {tasks: [], personas: []});
-    restApi('/session/' + encodeURIComponent(state.run.sessionId), {
-      method: 'DELETE',
-      headers: {}
-    }).then(function () {
-      state.run.phase = 'cancelled';
-      state.run.tools = [];
-      addRunToolEvent('cancel_session', 'ok', 'Session cancelled by UI.');
-    }).catch(function (error) {
-      state.run.error = error && error.message ? error.message : String(error || 'Unknown error');
-      addRunToolEvent('cancel_session', 'error', state.run.error);
-    }).then(function () {
-      setRunAction('idle');
-      renderRunPage(state.tasksPayload || {tasks: [], personas: []});
-    });
-  }
-
-  function resetRunState() {
-    state.run = {
-      mode: state.run.mode,
-      taskId: state.run.taskId,
-      personaId: 'auto',
-      sessionId: null,
-      phase: 'idle',
-      action: 'idle',
-      background: '',
-      messages: [],
-      tools: [],
-      toolEvents: [],
-      error: '',
-      busy: false,
-      agentMaxSteps: state.run.agentMaxSteps || 200,
-      startedAt: null,
-      completedAt: null
-    };
-    renderRunPage(state.tasksPayload || {tasks: [], personas: []});
-  }
-
-  function resetRunMode() {
-    if (runIsBusy()) return;
-    resetRunState();
-    state.run.mode = '';
-    renderRunPage(state.tasksPayload || {tasks: [], personas: []});
+    var promptBtn = document.getElementById('run-open-api-key-prompt');
+    if (promptBtn) promptBtn.addEventListener('click', openApiKeyModal);
   }
 
   function metaItem(label, value) {
@@ -2056,7 +1481,7 @@
     app.innerHTML =
       '<section class="page-run">' +
         '<div class="detail-header">' +
-          '<a class="detail-back" href="#/results">\u2190 Back</a>' +
+          '<a class="detail-back" href="#/review">\u2190 Back</a>' +
           '<div class="detail-title-block">' +
             '<div class="detail-task-id">' + escapeHtml(detail.task_id) + '</div>' +
             '<div class="detail-tags">' +
@@ -2132,6 +1557,851 @@
     }
   }
 
+  var REVIEW_SECTIONS = ['task_spec', 'conversation', 'tool_log', 'workspace', 'judge_eval', 'overall'];
+  var REVIEW_SECTION_LABELS = {
+    task_spec: 'Task Spec',
+    conversation: 'Conversation',
+    tool_log: 'Tutor Tool Log',
+    workspace: 'Workspace State',
+    judge_eval: 'Judge Evaluation',
+    overall: 'Overall'
+  };
+
+  function reviewSectionLabel(section) {
+    return REVIEW_SECTION_LABELS[section] || titleCase(section);
+  }
+
+  function filteredReviewBundles(bundles) {
+    var query = String(state.review.search || '').trim().toLowerCase();
+    if (!query) return bundles;
+    return bundles.filter(function (item) {
+      var haystack = [
+        item.bundle_id,
+        item.session_id,
+        item.task_id,
+        item.persona_id,
+        item.category,
+        item.model
+      ].join(' ').toLowerCase();
+      return haystack.indexOf(query) !== -1;
+    });
+  }
+
+  function renderReviewListPage(bundles) {
+    var visible = filteredReviewBundles(bundles);
+    var reviewed = bundles.filter(function (item) { return item.reviewed_by_current_user; }).length;
+
+    app.innerHTML =
+      '<section class="page review-page">' +
+        '<header class="page-header">' +
+          '<div class="page-title-wrap">' +
+            '<p class="eyebrow">Human Review</p>' +
+            '<h1>Human reviewer console.</h1>' +
+            '<p class="subtitle">Inspect archived session bundles across task, conversation, tool, workspace, and judge layers. Opinion cards are stored as structured JSON per bundle and GitHub reviewer.</p>' +
+          '</div>' +
+          '<div class="summary-strip">' +
+            buildSummaryPill('Bundles', String(bundles.length)) +
+            buildSummaryPill('Reviewed By You', String(reviewed)) +
+          '</div>' +
+        '</header>' +
+        '<section class="panel filter-bar">' +
+          '<label class="filter-field">' +
+            '<span class="filter-label">Search</span>' +
+            '<input id="review-search" class="filter-input" type="search" placeholder="bundle, task, persona, model" value="' + escapeHtml(state.review.search) + '">' +
+          '</label>' +
+          '<div class="review-refresh-wrap">' +
+            '<button class="btn btn-secondary" id="review-refresh-btn" type="button">Refresh</button>' +
+          '</div>' +
+        '</section>' +
+        '<div class="results-meta">' +
+          '<div class="results-count">' + escapeHtml(String(visible.length)) + ' bundle(s) shown</div>' +
+        '</div>' +
+        (visible.length ? '<div class="results-grid">' + visible.map(renderReviewBundleCard).join('') + '</div>' : renderEmptyInline('Matching review bundles will appear here.')) +
+      '</section>';
+
+    var searchInput = document.getElementById('review-search');
+    if (searchInput) {
+      searchInput.addEventListener('input', function (event) {
+        state.review.search = String(event.target.value || '').trim().toLowerCase();
+        renderReviewListPage(bundles);
+      });
+    }
+    var refresh = document.getElementById('review-refresh-btn');
+    if (refresh) {
+      refresh.addEventListener('click', function () {
+        ensureReviewBundles(true).then(renderReviewListPage).catch(function (error) {
+          renderError('Review unavailable', error);
+        });
+      });
+    }
+  }
+
+  function renderReviewBundleCard(item) {
+    var reviewed = item.reviewed_by_current_user
+      ? '<span class="meta-chip score-chip">Reviewed by you</span>'
+      : '<span class="meta-chip unknown-chip">Awaiting your card</span>';
+    return '' +
+      '<a class="session-card" href="#/review/' + encodeURIComponent(item.bundle_id || item.session_id) + '">' +
+        '<div class="session-top">' +
+          '<div>' +
+            '<h2 class="session-title">' +
+              '<span>' + escapeHtml(item.task_id || item.bundle_id || 'Bundle') + '</span>' +
+              '<span class="badge">' + escapeHtml(titleCase(item.category || 'unknown')) + '</span>' +
+              '<span class="badge">' + escapeHtml(titleCase(item.difficulty || 'unknown')) + '</span>' +
+            '</h2>' +
+            '<p class="session-subtitle">' +
+              'Bundle <code>' + escapeHtml(item.bundle_id || item.session_id || '') + '</code> · Persona <code>' + escapeHtml(item.persona_id || '') + '</code> · ' + escapeHtml(formatTimestamp(item.timestamp)) +
+            '</p>' +
+          '</div>' +
+          '<span class="status-pill ' + escapeHtml(item.evaluation_status || 'pending') + '">' + escapeHtml(titleCase(item.evaluation_status || 'pending')) + '</span>' +
+        '</div>' +
+        '<div class="session-meta-row">' +
+          '<span class="meta-chip">' + escapeHtml((item.turn_count || 0) + ' turns') + '</span>' +
+          '<span class="meta-chip">' + escapeHtml((item.tool_count || 0) + ' tools') + '</span>' +
+          '<span class="meta-chip">' + escapeHtml((item.review_count || 0) + ' review file(s)') + '</span>' +
+          reviewed +
+        '</div>' +
+      '</a>';
+  }
+
+  function reviewAddButton(section, label, targetType, targetValue) {
+    return '<button class="btn btn-secondary btn-small review-add-btn" type="button" data-section="' +
+      escapeHtml(section) + '" data-target-type="' + escapeHtml(targetType || '') +
+      '" data-target-value="' + escapeHtml(targetValue == null ? '' : targetValue) + '">' +
+      escapeHtml(label || 'Add Card') + '</button>';
+  }
+
+  function renderReviewLayerPanel(section, title, bodyHtml, metaHtml) {
+    return '' +
+      '<section class="panel review-layer" id="review-section-' + escapeHtml(section) + '">' +
+        '<header class="review-layer-head">' +
+          '<div>' +
+            '<p class="eyebrow">' + escapeHtml(section.replace(/_/g, ' ')) + '</p>' +
+            '<h2>' + escapeHtml(title) + '</h2>' +
+          '</div>' +
+          '<div class="review-layer-actions">' +
+            (metaHtml || '') +
+            reviewAddButton(section, 'Add Section Card') +
+          '</div>' +
+        '</header>' +
+        bodyHtml +
+      '</section>';
+  }
+
+  function renderReviewTaskSpec(layer) {
+    layer = layer || {};
+    var task = layer.task || {};
+    var persona = layer.persona || {};
+    var rubric = layer.judge_rubric || {};
+    var tracks = rubric.tracks || [];
+    var tracksHtml = tracks.length
+      ? '<div class="review-rubric-track-list">' + tracks.map(function (track) {
+        return '<span class="meta-chip">' + escapeHtml((track.track || '').toUpperCase()) + ' ' +
+          escapeHtml(track.score == null ? 'pending' : formatScore(track.score)) + '</span>';
+      }).join('') + '</div>'
+      : '<p class="detail-empty-note">Judge rubric metadata appears after scoring completes.</p>';
+    var body =
+      '<div class="review-spec-grid">' +
+        '<article class="review-spec-block">' +
+          '<h3>Task</h3>' +
+          '<div class="detail-meta-grid">' +
+            metaItem('Task ID', task.task_id || '') +
+            metaItem('Category', titleCase(task.category || 'unknown')) +
+            metaItem('Difficulty', titleCase(task.difficulty || 'unknown')) +
+            metaItem('Requires Code', task.requires_code ? 'Yes' : 'No') +
+          '</div>' +
+          '<div class="review-markdown">' + safeRenderMarkdown(task.description || 'Task description unavailable.') + '</div>' +
+        '</article>' +
+        '<article class="review-spec-block">' +
+          '<h3>Student Persona</h3>' +
+          '<div class="detail-meta-grid">' +
+            metaItem('Persona ID', persona.persona_id || '') +
+            metaItem('Knowledge Level', persona.knowledge_level || 'Unspecified') +
+          '</div>' +
+          '<p class="detail-empty-note">' + escapeHtml(persona.description || 'Persona description unavailable.') + '</p>' +
+        '</article>' +
+        '<article class="review-spec-block">' +
+          '<h3>Judge Rubric</h3>' +
+          '<div class="detail-meta-grid">' +
+            metaItem('Score ID', rubric.score_id || 'Pending') +
+            metaItem('Eval Model', rubric.eval_model || 'Pending') +
+            metaItem('Eval Mode', rubric.eval_mode || 'Pending') +
+            metaItem('Validation Run', rubric.judge_validation_run || 'Pending') +
+          '</div>' +
+          tracksHtml +
+        '</article>' +
+      '</div>';
+    return renderReviewLayerPanel('task_spec', 'Task Spec', body);
+  }
+
+  function renderReviewConversation(layer) {
+    var turns = layer && layer.turns ? layer.turns : [];
+    var body = turns.length
+      ? '<div class="review-turn-list">' + turns.map(function (turn, index) {
+        var role = turn.role || 'message';
+        var label = titleCase(role);
+        var content = turn.content || '';
+        return '' +
+          '<article class="review-turn" id="turn-' + escapeHtml(index) + '">' +
+            '<header class="review-row-head">' +
+              '<div><strong>' + escapeHtml(label) + '</strong><span class="meta-chip">turn ' + escapeHtml(String(index)) + '</span></div>' +
+              reviewAddButton('conversation', 'Review Turn', 'turn_index', index) +
+            '</header>' +
+            '<div class="review-markdown">' + safeRenderMarkdown(content) + '</div>' +
+          '</article>';
+      }).join('') + '</div>'
+      : '<p class="detail-empty-note">Conversation turns will appear here when the bundle contains a transcript.</p>';
+    return renderReviewLayerPanel('conversation', 'Conversation', body, '<span class="meta-chip">' + escapeHtml(String(turns.length)) + ' turns</span>');
+  }
+
+  function renderReviewToolLog(layer) {
+    var calls = layer && layer.tool_calls ? layer.tool_calls : [];
+    var body = calls.length
+      ? '<div class="review-tool-list">' + calls.map(function (call, index) {
+        var name = call.name || call.tool_name || 'tool';
+        var duration = call.duration_ms == null ? '' : formatDuration(Number(call.duration_ms) / 1000);
+        return '' +
+          '<article class="review-tool-call" id="tool-call-' + escapeHtml(index) + '">' +
+            '<header class="review-row-head">' +
+              '<div><strong>' + escapeHtml(name) + '</strong><span class="meta-chip">call ' + escapeHtml(String(index)) + '</span>' +
+                (duration ? '<span class="meta-chip">' + escapeHtml(duration) + '</span>' : '') +
+              '</div>' +
+              reviewAddButton('tool_log', 'Review Call', 'tool_call_index', index) +
+            '</header>' +
+            '<details>' +
+              '<summary>Arguments</summary>' +
+              '<pre class="detail-json-block">' + escapeHtml(JSON.stringify(call.args || call.input || {}, null, 2)) + '</pre>' +
+            '</details>' +
+            '<details>' +
+              '<summary>Result</summary>' +
+              '<pre class="detail-json-block">' + escapeHtml(stringifyReviewValue(call.result || call.output || call.error || '')) + '</pre>' +
+            '</details>' +
+          '</article>';
+      }).join('') + '</div>'
+      : '<p class="detail-empty-note">Tool calls will appear here when the tutor used tools.</p>';
+    return renderReviewLayerPanel('tool_log', 'Tutor Tool Log', body, '<span class="meta-chip">' + escapeHtml(String(calls.length)) + ' calls</span>');
+  }
+
+  function stringifyReviewValue(value) {
+    if (typeof value === 'string') return value;
+    try {
+      return JSON.stringify(value, null, 2);
+    } catch (error) {
+      return String(value == null ? '' : value);
+    }
+  }
+
+  function renderReviewWorkspace(layer) {
+    layer = layer || {};
+    var files = layer.tree || [];
+    var diffs = layer.diffs || [];
+    var stdout = layer.stdout || '';
+    var stderr = layer.stderr || '';
+    var filesHtml = files.length
+      ? '<div class="review-file-list">' + files.map(function (file) {
+        var path = file.path || file.name || '';
+        return '' +
+          '<div class="review-file-row">' +
+            '<div><strong>' + escapeHtml(path) + '</strong><span class="meta-chip">' + escapeHtml(titleCase(file.kind || 'file')) + '</span></div>' +
+            reviewAddButton('workspace', 'Review File', 'file_path', path) +
+          '</div>';
+      }).join('') + '</div>'
+      : '<p class="detail-empty-note">Archived workspace files will appear here.</p>';
+    var body =
+      '<details open>' +
+        '<summary>Final Tree</summary>' +
+        filesHtml +
+      '</details>' +
+      '<details>' +
+        '<summary>Diffs</summary>' +
+        (diffs.length ? '<pre class="detail-json-block">' + escapeHtml(JSON.stringify(diffs, null, 2)) + '</pre>' : '<p class="detail-empty-note">Diff data is empty for this bundle.</p>') +
+      '</details>' +
+      '<details>' +
+        '<summary>Stdout</summary>' +
+        (stdout ? '<pre class="detail-json-block">' + escapeHtml(stdout) + '</pre>' : '<p class="detail-empty-note">Stdout is empty for this bundle.</p>') +
+      '</details>' +
+      '<details>' +
+        '<summary>Stderr</summary>' +
+        (stderr ? '<pre class="detail-json-block">' + escapeHtml(stderr) + '</pre>' : '<p class="detail-empty-note">Stderr is empty for this bundle.</p>') +
+      '</details>';
+    return renderReviewLayerPanel('workspace', 'Workspace State', body, '<span class="meta-chip">' + escapeHtml(String(files.length)) + ' files</span>');
+  }
+
+  function renderReviewJudgeEval(layer) {
+    layer = layer || {};
+    var rows = layer.rows || [];
+    var rowsHtml = rows.length
+      ? '<div class="review-judge-table">' + rows.map(function (row) {
+        var score = row.score == null ? 'pending' : formatScore(Number(row.score));
+        return '' +
+          '<article class="review-judge-row" id="criterion-' + escapeHtml(row.criterion_id || '') + '">' +
+            '<header class="review-row-head">' +
+              '<div><strong>' + escapeHtml(row.criterion || row.criterion_id || 'criterion') + '</strong>' +
+                '<span class="meta-chip">' + escapeHtml((row.track || '').toUpperCase()) + '</span>' +
+                '<span class="meta-chip">score ' + escapeHtml(score) + '</span>' +
+                (row.verdict ? '<span class="meta-chip">' + escapeHtml(titleCase(row.verdict)) + '</span>' : '') +
+              '</div>' +
+              reviewAddButton('judge_eval', 'Review Criterion', 'criterion_id', row.criterion_id || '') +
+            '</header>' +
+            (row.reasoning ? '<p class="detail-empty-note">' + escapeHtml(row.reasoning) + '</p>' : '<p class="detail-empty-note">Reasoning field is empty.</p>') +
+          '</article>';
+      }).join('') + '</div>'
+      : '<p class="detail-empty-note">Judge criteria will appear here after scoring completes.</p>';
+    var body =
+      '<div class="detail-meta-grid">' +
+        metaItem('Status', titleCase(layer.status || 'pending')) +
+        metaItem('Overall Score', layer.overall_score == null ? 'Pending' : formatScore(layer.overall_score)) +
+      '</div>' +
+      rowsHtml +
+      '<details>' +
+        '<summary>Raw Score JSON</summary>' +
+        renderJsonBlock(layer.score_json) +
+      '</details>';
+    return renderReviewLayerPanel('judge_eval', 'Judge Evaluation', body, '<span class="meta-chip">' + escapeHtml(String(rows.length)) + ' rows</span>');
+  }
+
+  function renderReviewContextPanel(layers) {
+    layers = layers || {};
+    if (state.review.contextHidden) {
+      return '' +
+        '<aside class="panel review-context-rail">' +
+          '<button id="review-context-toggle" class="btn btn-secondary btn-small review-context-toggle" type="button">Open Task Spec</button>' +
+        '</aside>';
+    }
+
+    var taskLayer = layers.task_spec || {};
+    var task = taskLayer.task || {};
+    var persona = taskLayer.persona || {};
+    var rubric = taskLayer.judge_rubric || {};
+    var calls = layers.tool_log && layers.tool_log.tool_calls ? layers.tool_log.tool_calls : [];
+    var workspace = layers.workspace || {};
+    var files = workspace.tree || [];
+    var judge = layers.judge_eval || {};
+    var rows = judge.rows || [];
+    var tracks = rubric.tracks || [];
+
+    var trackHtml = tracks.length
+      ? '<div class="detail-chip-list">' + tracks.map(function (track) {
+        return '<span class="detail-chip">' + escapeHtml((track.track || '').toUpperCase()) + ' ' +
+          escapeHtml(track.score == null ? 'pending' : formatScore(track.score)) + '</span>';
+      }).join('') + '</div>'
+      : '<p class="detail-empty-note">Rubric metadata appears after scoring completes.</p>';
+
+    var toolHtml = calls.length
+      ? '<div class="review-context-list">' + calls.map(function (call, index) {
+        var name = call.name || call.tool_name || 'tool';
+        var duration = call.duration_ms == null ? '' : formatDuration(Number(call.duration_ms) / 1000);
+        return '' +
+          '<details class="review-context-evidence">' +
+            '<summary><span>' + escapeHtml(name) + '</span><span class="meta-chip">call ' + escapeHtml(String(index)) + '</span>' +
+              (duration ? '<span class="meta-chip">' + escapeHtml(duration) + '</span>' : '') +
+            '</summary>' +
+            '<div class="review-context-evidence-body">' +
+              '<h4>Arguments</h4>' +
+              '<pre class="detail-json-block">' + escapeHtml(JSON.stringify(call.args || call.input || {}, null, 2)) + '</pre>' +
+              '<h4>Result</h4>' +
+              '<pre class="detail-json-block">' + escapeHtml(stringifyReviewValue(call.result || call.output || call.error || '')) + '</pre>' +
+            '</div>' +
+          '</details>';
+      }).join('') + '</div>'
+      : '<p class="detail-empty-note">Tool calls appear when the tutor used tools.</p>';
+
+    var diffs = workspace.diffs || [];
+    var stdout = workspace.stdout || '';
+    var stderr = workspace.stderr || '';
+    var fileHtml = files.length
+      ? '<div class="review-context-list">' + files.map(function (file) {
+        var path = file.path || file.name || '';
+        return '<div class="review-context-row"><code>' + escapeHtml(path) + '</code><span class="meta-chip">' +
+          escapeHtml(titleCase(file.kind || 'file')) + '</span></div>';
+      }).join('') + '</div>'
+      : '<p class="detail-empty-note">Archived workspace files appear here.</p>';
+    var workspaceHtml =
+      '<details open class="review-context-evidence">' +
+        '<summary>Final Tree</summary>' +
+        fileHtml +
+      '</details>' +
+      '<details class="review-context-evidence">' +
+        '<summary>Diffs</summary>' +
+        (diffs.length ? '<pre class="detail-json-block">' + escapeHtml(JSON.stringify(diffs, null, 2)) + '</pre>' : '<p class="detail-empty-note">Diff data is empty for this bundle.</p>') +
+      '</details>' +
+      '<details class="review-context-evidence">' +
+        '<summary>Stdout</summary>' +
+        (stdout ? '<pre class="detail-json-block">' + escapeHtml(stdout) + '</pre>' : '<p class="detail-empty-note">Stdout is empty for this bundle.</p>') +
+      '</details>' +
+      '<details class="review-context-evidence">' +
+        '<summary>Stderr</summary>' +
+        (stderr ? '<pre class="detail-json-block">' + escapeHtml(stderr) + '</pre>' : '<p class="detail-empty-note">Stderr is empty for this bundle.</p>') +
+      '</details>';
+
+    var judgeHtml = rows.length
+      ? '<div class="review-context-list">' + rows.map(function (row) {
+        var score = row.score == null ? 'pending' : formatScore(Number(row.score));
+        return '' +
+          '<article class="review-context-judge-row">' +
+            '<div class="review-context-row"><span>' + escapeHtml(row.criterion || row.criterion_id || 'criterion') + '</span>' +
+              '<span class="meta-chip">' + escapeHtml(score) + '</span></div>' +
+            (row.reasoning ? '<p class="detail-empty-note">' + escapeHtml(row.reasoning) + '</p>' : '<p class="detail-empty-note">Reasoning field is empty.</p>') +
+          '</article>';
+      }).join('') + '</div>'
+      : '<p class="detail-empty-note">Judge criteria appear after scoring completes.</p>';
+
+    return '' +
+      '<aside class="panel review-context-panel">' +
+        '<header class="review-layer-head">' +
+          '<div>' +
+            '<p class="eyebrow">Task Spec</p>' +
+            '<h2>Bundle Context</h2>' +
+          '</div>' +
+          '<button id="review-context-toggle" class="btn btn-secondary btn-small review-context-toggle" type="button">Hide</button>' +
+        '</header>' +
+        '<div class="review-context-stack">' +
+          '<section class="review-context-section">' +
+            '<h3>Task</h3>' +
+            '<div class="detail-meta-grid">' +
+              metaItem('Task ID', task.task_id || '') +
+              metaItem('Category', titleCase(task.category || 'unknown')) +
+              metaItem('Difficulty', titleCase(task.difficulty || 'unknown')) +
+              metaItem('Requires Code', task.requires_code ? 'Yes' : 'No') +
+            '</div>' +
+            '<div class="review-markdown review-context-markdown">' + safeRenderMarkdown(task.description || 'Task description unavailable.') + '</div>' +
+          '</section>' +
+          '<section class="review-context-section">' +
+            '<h3>Student Persona</h3>' +
+            '<div class="detail-meta-grid">' +
+              metaItem('Persona ID', persona.persona_id || '') +
+              metaItem('Knowledge Level', persona.knowledge_level || 'Unspecified') +
+            '</div>' +
+            '<p class="detail-empty-note">' + escapeHtml(persona.description || 'Persona description unavailable.') + '</p>' +
+          '</section>' +
+          '<section class="review-context-section">' +
+            '<h3>Judge Rubric</h3>' +
+            '<div class="detail-meta-grid">' +
+              metaItem('Score ID', rubric.score_id || 'Pending') +
+              metaItem('Eval Model', rubric.eval_model || 'Pending') +
+              metaItem('Eval Mode', rubric.eval_mode || 'Pending') +
+              metaItem('Validation Run', rubric.judge_validation_run || 'Pending') +
+            '</div>' +
+            trackHtml +
+          '</section>' +
+          '<details class="review-context-details">' +
+            '<summary>Tool Log</summary>' +
+            toolHtml +
+          '</details>' +
+          '<details class="review-context-details">' +
+            '<summary>Workspace State</summary>' +
+            workspaceHtml +
+          '</details>' +
+          '<details class="review-context-details">' +
+            '<summary>Judge Evaluation</summary>' +
+            '<div class="detail-meta-grid">' +
+              metaItem('Status', titleCase(judge.status || 'pending')) +
+              metaItem('Overall Score', judge.overall_score == null ? 'Pending' : formatScore(judge.overall_score)) +
+            '</div>' +
+            judgeHtml +
+            '<details class="review-context-evidence">' +
+              '<summary>Raw Score JSON</summary>' +
+              renderJsonBlock(judge.score_json) +
+            '</details>' +
+          '</details>' +
+        '</div>' +
+      '</aside>';
+  }
+
+  function renderReviewChatPanel(layers, detail) {
+    layers = layers || {};
+    detail = detail || {};
+    var conversation = layers.conversation && layers.conversation.turns ? layers.conversation.turns : [];
+    return '' +
+      '<main class="panel review-chat-panel">' +
+        '<header class="review-layer-head">' +
+          '<div>' +
+            '<p class="eyebrow">Conversation</p>' +
+            '<h2>Assistant / Student Chat</h2>' +
+          '</div>' +
+          '<div class="review-layer-actions">' +
+            '<span class="meta-chip">' + escapeHtml(String(conversation.length || detail.turn_count || 0)) + ' turns</span>' +
+          '</div>' +
+        '</header>' +
+        '<div id="review-chat" class="chat-area review-chat-area"></div>' +
+      '</main>';
+  }
+
+  function renderReviewOpinionPanel(bundle) {
+    var review = bundle.review || {};
+    var opinions = review.opinions || [];
+    var filter = state.review.opinionFilter || 'all';
+    var visible = opinions.filter(function (opinion) {
+      return filter === 'all' || opinion.section === filter;
+    });
+    var options = ['<option value="all">All sections</option>'].concat(REVIEW_SECTIONS.map(function (section) {
+      return '<option value="' + escapeHtml(section) + '"' + (filter === section ? ' selected' : '') + '>' +
+        escapeHtml(reviewSectionLabel(section)) + '</option>';
+    })).join('');
+    return '' +
+      '<aside class="panel review-opinion-panel">' +
+        '<header class="review-layer-head">' +
+          '<div>' +
+            '<p class="eyebrow">Opinion Cards</p>' +
+            '<h2>Structured Feedback</h2>' +
+          '</div>' +
+        '</header>' +
+        renderReviewOpinionForm() +
+        '<label class="filter-field">' +
+          '<span class="filter-label">Section Filter</span>' +
+          '<select id="review-opinion-filter" class="filter-select">' + options + '</select>' +
+        '</label>' +
+        '<div class="review-opinion-list">' +
+          (visible.length ? visible.map(renderReviewOpinionCard).join('') : '<p class="detail-empty-note">Cards for the selected section will appear here.</p>') +
+        '</div>' +
+      '</aside>';
+  }
+
+  function renderReviewOpinionForm() {
+    var sectionOptions = REVIEW_SECTIONS.map(function (section) {
+      return '<option value="' + escapeHtml(section) + '"' + (section === 'overall' ? ' selected' : '') + '>' +
+        escapeHtml(reviewSectionLabel(section)) + '</option>';
+    }).join('');
+    var targetOptions = [
+      ['none', 'Section-level'],
+      ['turn_index', 'Turn'],
+      ['tool_call_index', 'Tool Call'],
+      ['file_path', 'File Path'],
+      ['criterion_id', 'Criterion']
+    ].map(function (item) {
+      return '<option value="' + item[0] + '">' + item[1] + '</option>';
+    }).join('');
+
+    return '' +
+      '<section class="review-opinion-editor">' +
+        '<div class="review-editor-title">' +
+          '<p class="eyebrow">Human Review Edit</p>' +
+          '<h3>New Opinion Card</h3>' +
+        '</div>' +
+        '<form id="review-opinion-form" class="review-opinion-form review-inline-form">' +
+          '<label class="filter-field">' +
+            '<span class="filter-label">Section</span>' +
+            '<select id="review-card-section" class="filter-select" required>' + sectionOptions + '</select>' +
+          '</label>' +
+          '<label class="filter-field">' +
+            '<span class="filter-label">Comment</span>' +
+            '<textarea id="review-card-comment" class="run-textarea" rows="5" required></textarea>' +
+          '</label>' +
+          '<details class="review-advanced-fields">' +
+            '<summary>Advanced Metadata</summary>' +
+            '<div class="review-form-grid">' +
+              '<label class="filter-field">' +
+                '<span class="filter-label">Target Type</span>' +
+                '<select id="review-card-target-type" class="filter-select">' + targetOptions + '</select>' +
+              '</label>' +
+              '<label class="filter-field">' +
+                '<span class="filter-label">Target</span>' +
+                '<select id="review-card-target-value" class="filter-select" disabled>' +
+                  '<option value="">Section-level</option>' +
+                '</select>' +
+              '</label>' +
+            '</div>' +
+            '<label class="filter-field">' +
+              '<span class="filter-label">Severity</span>' +
+              '<select id="review-card-severity" class="filter-select">' +
+                '<option value="info">Info</option>' +
+                '<option value="concern">Concern</option>' +
+                '<option value="blocker">Blocker</option>' +
+              '</select>' +
+            '</label>' +
+            '<label class="filter-field">' +
+              '<span class="filter-label">Tags</span>' +
+              '<input id="review-card-tags" class="filter-input" type="text" placeholder="rubric_mismatch, persona_break">' +
+            '</label>' +
+            '<div id="review-judge-disagreement" class="review-form-grid">' +
+              '<label class="filter-field">' +
+                '<span class="filter-label">Judge Score</span>' +
+                '<input id="review-card-judge-score" class="filter-input" type="number" step="0.01">' +
+              '</label>' +
+              '<label class="filter-field">' +
+                '<span class="filter-label">Human Score</span>' +
+                '<input id="review-card-human-score" class="filter-input" type="number" step="0.01">' +
+              '</label>' +
+            '</div>' +
+          '</details>' +
+          '<div id="review-card-error" class="run-error" hidden></div>' +
+          '<div class="run-actions">' +
+            '<button class="btn btn-primary" type="submit">Save Card</button>' +
+          '</div>' +
+        '</form>' +
+      '</section>';
+  }
+
+  function renderReviewOpinionCard(opinion) {
+    var tags = opinion.tags && opinion.tags.length
+      ? '<div class="detail-chip-list">' + opinion.tags.map(function (tag) {
+        return '<span class="detail-chip">' + escapeHtml(tag) + '</span>';
+      }).join('') + '</div>'
+      : '';
+    return '' +
+      '<article class="review-opinion-card severity-' + escapeHtml(opinion.severity || 'info') + '">' +
+        '<header class="review-row-head">' +
+          '<div><strong>' + escapeHtml(reviewSectionLabel(opinion.section)) + '</strong>' +
+            '<span class="meta-chip">' + escapeHtml(titleCase(opinion.severity || 'info')) + '</span></div>' +
+          '<span class="review-card-time">' + escapeHtml(formatTimestamp(opinion.created_at || opinion.timestamp)) + '</span>' +
+        '</header>' +
+        '<p>' + escapeHtml(opinion.comment || '') + '</p>' +
+        '<p class="detail-empty-note">' + escapeHtml(describeOpinionTarget(opinion.target || {})) + '</p>' +
+        tags +
+      '</article>';
+  }
+
+  function describeOpinionTarget(target) {
+    if (target.turn_index != null) return 'Target: turn ' + target.turn_index;
+    if (target.tool_call_index != null) return 'Target: tool call ' + target.tool_call_index;
+    if (target.file_path) return 'Target: ' + target.file_path;
+    if (target.criterion_id) return 'Target: ' + target.criterion_id;
+    return 'Target: section-level';
+  }
+
+  function relabelReviewChat(container) {
+    Array.prototype.forEach.call(container.querySelectorAll('.msg.tutor .msg-label'), function (label) {
+      label.textContent = 'Assistant';
+    });
+    Array.prototype.forEach.call(container.querySelectorAll('.msg.student .msg-label'), function (label) {
+      label.textContent = 'Student';
+    });
+  }
+
+  function renderReviewChatReplay(bundle) {
+    var layers = bundle.layers || {};
+    var detail = bundle.detail || {};
+    var conversation = layers.conversation && layers.conversation.turns ? layers.conversation.turns : (detail.conversation || []);
+    var toolLogs = layers.tool_log && layers.tool_log.tool_calls ? layers.tool_log.tool_calls : (detail.tool_logs || []);
+    var sendMessageEvents = detail.send_message_events || [];
+    var chatEl = document.getElementById('review-chat');
+    if (!chatEl) return;
+
+    if (window.QTB && typeof window.QTB.buildConversationReplay === 'function') {
+      window.QTB.buildConversationReplay(chatEl, conversation, toolLogs, sendMessageEvents);
+      relabelReviewChat(chatEl);
+      rewriteImages(chatEl, bundle.bundle_id || detail.session_id);
+      return;
+    }
+
+    chatEl.innerHTML = '<p class="detail-empty-note">Conversation renderer unavailable.</p>';
+  }
+
+  function renderReviewBundlePage(bundle) {
+    var layers = bundle.layers || {};
+    var detail = bundle.detail || {};
+    app.innerHTML =
+      '<section class="page review-page review-bundle-page">' +
+        '<header class="page-header">' +
+          '<div class="page-title-wrap">' +
+            '<a class="detail-back" href="#/review">Back</a>' +
+            '<p class="eyebrow">Review Bundle</p>' +
+            '<h1>' + escapeHtml(detail.task_id || bundle.bundle_id || 'Session Bundle') + '</h1>' +
+            '<p class="subtitle">Bundle <code>' + escapeHtml(bundle.bundle_id || '') + '</code> · Persona <code>' + escapeHtml(detail.persona_id || '') + '</code> · ' + escapeHtml(formatTimestamp(detail.timestamp)) + '</p>' +
+          '</div>' +
+          '<div class="summary-strip">' +
+            buildSummaryPill('Turns', String(detail.turn_count || 0)) +
+            buildSummaryPill('Tools', String(detail.tool_count || 0)) +
+            buildSummaryPill('Score', detail.overall_score == null ? 'Pending' : formatScore(detail.overall_score)) +
+          '</div>' +
+        '</header>' +
+        '<div class="review-layout' + (state.review.contextHidden ? ' is-context-hidden' : '') + '">' +
+          renderReviewContextPanel(layers) +
+          renderReviewChatPanel(layers, detail) +
+          renderReviewOpinionPanel(bundle) +
+        '</div>' +
+      '</section>';
+    renderReviewChatReplay(bundle);
+    bindReviewBundleControls(bundle);
+  }
+
+  function bindReviewBundleControls(bundle) {
+    var contextToggle = document.getElementById('review-context-toggle');
+    if (contextToggle) {
+      contextToggle.addEventListener('click', function () {
+        state.review.contextHidden = !state.review.contextHidden;
+        renderReviewBundlePage(bundle);
+      });
+    }
+    var filter = document.getElementById('review-opinion-filter');
+    if (filter) {
+      filter.addEventListener('change', function (event) {
+        state.review.opinionFilter = event.target.value || 'all';
+        renderReviewBundlePage(bundle);
+      });
+    }
+    bindReviewOpinionForm(bundle);
+  }
+
+  function truncateReviewOption(value, limit) {
+    var text = String(value || '').replace(/\s+/g, ' ').trim();
+    if (text.length <= limit) return text;
+    return text.slice(0, limit - 3) + '...';
+  }
+
+  function reviewTargetOptionGroups(bundle) {
+    var layers = bundle.layers || {};
+    var detail = bundle.detail || {};
+    var conversation = layers.conversation && layers.conversation.turns ? layers.conversation.turns : (detail.conversation || []);
+    var calls = layers.tool_log && layers.tool_log.tool_calls ? layers.tool_log.tool_calls : (detail.tool_logs || []);
+    var files = layers.workspace && layers.workspace.tree ? layers.workspace.tree : [];
+    var rows = layers.judge_eval && layers.judge_eval.rows ? layers.judge_eval.rows : [];
+
+    return {
+      none: [{value: '', label: 'Section-level'}],
+      turn_index: conversation.map(function (turn, index) {
+        var role = turn.role === 'user' || turn.role === 'student' ? 'Student' : 'Assistant';
+        return {
+          value: String(index),
+          label: 'Turn ' + index + ' - ' + role + ' - ' + truncateReviewOption(turn.content || turn.message || '', 72)
+        };
+      }),
+      tool_call_index: calls.map(function (call, index) {
+        return {
+          value: String(index),
+          label: 'Call ' + index + ' - ' + (call.name || call.tool_name || 'tool')
+        };
+      }),
+      file_path: files.map(function (file) {
+        var path = file.path || file.name || '';
+        return {value: path, label: path};
+      }).filter(function (item) { return item.value; }),
+      criterion_id: rows.map(function (row) {
+        var id = row.criterion_id || '';
+        var label = row.criterion || id || 'criterion';
+        return {value: id, label: id ? id + ' - ' + label : label};
+      }).filter(function (item) { return item.value; })
+    };
+  }
+
+  function populateReviewTargetOptions(groups) {
+    var targetType = document.getElementById('review-card-target-type');
+    var targetValue = document.getElementById('review-card-target-value');
+    if (!targetType || !targetValue) return;
+
+    var type = targetType.value || 'none';
+    var options = groups[type] || [];
+    targetValue.innerHTML = '';
+
+    if (!options.length) {
+      var empty = document.createElement('option');
+      empty.value = '';
+      empty.textContent = type === 'none' ? 'Section-level' : 'No targets available';
+      targetValue.appendChild(empty);
+      targetValue.disabled = true;
+      return;
+    }
+
+    options.forEach(function (item) {
+      var option = document.createElement('option');
+      option.value = item.value;
+      option.textContent = item.label || item.value || 'Section-level';
+      targetValue.appendChild(option);
+    });
+    targetValue.disabled = type === 'none';
+  }
+
+  function bindReviewOpinionForm(bundle) {
+    var form = document.getElementById('review-opinion-form');
+    var section = document.getElementById('review-card-section');
+    var targetType = document.getElementById('review-card-target-type');
+    var judgeBlock = document.getElementById('review-judge-disagreement');
+    var targetGroups = reviewTargetOptionGroups(bundle);
+
+    function syncJudgeFields() {
+      if (!judgeBlock || !section) return;
+      judgeBlock.style.display = section.value === 'judge_eval' ? 'grid' : 'none';
+    }
+
+    if (section) section.addEventListener('change', syncJudgeFields);
+    if (targetType) {
+      targetType.addEventListener('change', function () {
+        populateReviewTargetOptions(targetGroups);
+      });
+    }
+    syncJudgeFields();
+    populateReviewTargetOptions(targetGroups);
+    if (!form) return;
+    form.addEventListener('submit', function (event) {
+      event.preventDefault();
+      submitReviewOpinion(bundle);
+    });
+  }
+
+  function submitReviewOpinion(bundle) {
+    var section = document.getElementById('review-card-section');
+    var targetType = document.getElementById('review-card-target-type');
+    var targetValue = document.getElementById('review-card-target-value');
+    var severity = document.getElementById('review-card-severity');
+    var tags = document.getElementById('review-card-tags');
+    var comment = document.getElementById('review-card-comment');
+    var judgeScore = document.getElementById('review-card-judge-score');
+    var humanScore = document.getElementById('review-card-human-score');
+    var errorEl = document.getElementById('review-card-error');
+
+    var payload = {
+      section: section ? section.value : 'overall',
+      target: parseReviewTarget(targetType ? targetType.value : '', targetValue ? targetValue.value : ''),
+      severity: severity ? severity.value : 'info',
+      tags: String(tags ? tags.value : '').split(',').map(function (item) { return item.trim(); }).filter(Boolean),
+      comment: String(comment ? comment.value : '').trim()
+    };
+    if (payload.section === 'judge_eval' && ((judgeScore && judgeScore.value) || (humanScore && humanScore.value))) {
+      payload.judge_disagreement = {
+        judge_score: judgeScore ? judgeScore.value : '',
+        human_score: humanScore ? humanScore.value : ''
+      };
+    }
+
+    restApi('/ui/review/bundles/' + encodeURIComponent(bundle.bundle_id) + '/opinions', {
+      method: 'POST',
+      body: JSON.stringify({opinion: payload})
+    }).then(function (updated) {
+      state.review.bundleCache[updated.bundle_id] = updated;
+      state.review.bundles = null;
+      renderReviewBundlePage(updated);
+    }).catch(function (error) {
+      if (errorEl) {
+        errorEl.hidden = false;
+        errorEl.textContent = error && error.message ? error.message : String(error || 'Unable to save card');
+      }
+    });
+  }
+
+  function parseReviewTarget(type, value) {
+    var cleanType = String(type || '');
+    var cleanValue = String(value || '').trim();
+    var target = {};
+    if (!cleanValue || cleanType === 'none') return target;
+    if (cleanType === 'turn_index' || cleanType === 'tool_call_index') {
+      var index = parseInt(cleanValue, 10);
+      if (isFinite(index) && index >= 0) target[cleanType] = index;
+      return target;
+    }
+    if (cleanType === 'file_path' || cleanType === 'criterion_id') {
+      target[cleanType] = cleanValue;
+    }
+    return target;
+  }
+
+  function showReviewList() {
+    state.activeSessionId = null;
+    setAppDetailMode(false);
+    renderLoading('Loading review bundles', 'Fetching archived session bundles and review-card counts.');
+    ensureReviewBundles(false).then(renderReviewListPage).catch(function (error) {
+      renderError('Review unavailable', error);
+    });
+  }
+
+  function showReviewBundle(bundleId) {
+    state.activeSessionId = bundleId;
+    setAppDetailMode(false);
+    renderLoading('Loading review bundle', 'Fetching the bundle layers and current reviewer cards.');
+    ensureReviewBundle(bundleId, true).then(renderReviewBundlePage).catch(function (error) {
+      renderError('Review bundle unavailable', error);
+    });
+  }
+
   function renderEmptyInline(message) {
     return '<section class="empty-state"><p class="eyebrow">Empty</p><h1>No results to show.</h1><p>' + escapeHtml(message) + '</p></section>';
   }
@@ -2157,7 +2427,11 @@
   function showRun() {
     state.activeSessionId = null;
     setAppDetailMode(false);
-    renderLoading('Loading run harness', 'Fetching task and persona metadata before choosing Human or Agent test mode.');
+    if (window.QTB && typeof window.QTB.renderMyAgentPage === 'function') {
+      window.QTB.renderMyAgentPage(app, state, {tasks: [], personas: []});
+      return;
+    }
+    renderLoading('Loading agent prompt', 'Fetching task metadata before opening the fallback agent run surface.');
     ensureTasks().then(renderRunPage).catch(function (error) {
       renderError('Run unavailable', error);
     });
@@ -2177,13 +2451,27 @@
     setActiveNav(route);
     closeModal();
 
-    if (route === '/' || route === '/results') {
-      showResultsList();
+    if (route === '/' || route === '/flow-demo') {
+      if (window.QTB && typeof window.QTB.renderFlowDemoPage === 'function') {
+        window.QTB.renderFlowDemoPage(app, state);
+      } else {
+        renderError('Flow demo unavailable', new Error('flow-demo.js not loaded'));
+      }
       return;
     }
 
     if (route === '/runs') {
-      showRuns();
+      location.hash = '#/flow-demo';
+      return;
+    }
+
+    if (route === '/results') {
+      location.hash = '#/review';
+      return;
+    }
+
+    if (route.indexOf('/results/') === 0) {
+      location.hash = '#/review/' + route.slice('/results/'.length);
       return;
     }
 
@@ -2197,21 +2485,17 @@
       return;
     }
 
-    if (route === '/flow-demo') {
-      if (window.QTB && typeof window.QTB.renderFlowDemoPage === 'function') {
-        window.QTB.renderFlowDemoPage(app, state);
-      } else {
-        renderError('Flow demo unavailable', new Error('flow-demo.js not loaded'));
-      }
+    if (route === '/review') {
+      showReviewList();
       return;
     }
 
-    if (route.indexOf('/results/') === 0) {
-      showResultDetail(decodeURIComponent(route.slice('/results/'.length)));
+    if (route.indexOf('/review/') === 0) {
+      showReviewBundle(decodeURIComponent(route.slice('/review/'.length)));
       return;
     }
 
-    location.hash = '#/results';
+    location.hash = '#/flow-demo';
   }
 
   window.addEventListener('hashchange', onRouteChange);

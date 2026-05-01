@@ -208,7 +208,7 @@ At terminal status, return this to the operator:
 - terminal `status`
 - terminal `reason` or `error`
 - visible task label
-- result link when available: `${BASE}/#/results/{session_id}`
+- review link when available: `${BASE}/#/review/{session_id}`
 
 The agent may read exported result and score state with the run token:
 

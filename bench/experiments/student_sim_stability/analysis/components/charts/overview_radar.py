@@ -1,4 +1,4 @@
-"""Radar chart Component: D1/D2/D3 per student model."""
+"""Radar chart Component: S1/S3/S2 per student model."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from experiments.student_sim_stability.analysis.components.base import (
 
 
 class OverviewRadar(Component):
-    """Radar chart of D1/D2/D3 per model, zoomed to the [4, 5] band."""
+    """Radar chart of S1/S3/S2 per model, zoomed to the [4, 5] band."""
 
     name = "overview_radar"
 
@@ -23,7 +23,7 @@ class OverviewRadar(Component):
             for r in ranking
             if all(
                 isinstance(r["scores"].get(dim), (int, float))
-                for dim in ("D1", "D2", "D3")
+                for dim in ("S1", "S3", "S2")
             )
         ]
 
@@ -33,7 +33,7 @@ class OverviewRadar(Component):
         series = [
             {
                 "model": r["model"],
-                "values": [r["scores"]["D1"], r["scores"]["D2"], r["scores"]["D3"]],
+                "values": [r["scores"]["S1"], r["scores"]["S3"], r["scores"]["S2"]],
             }
             for r in self.ranking
         ]
@@ -42,7 +42,7 @@ class OverviewRadar(Component):
     def _draw(self, data: dict):
         if data.get("empty"):
             return None
-        categories = ["D1\nAdherence", "D2\nReproducibility", "D3\nAnti-drift"]
+        categories = ["S1\nAdherence", "S3\nReproducibility", "S2\nAnti-drift"]
         n = len(categories)
         angles = np.linspace(0, 2 * np.pi, n, endpoint=False).tolist()
         angles += angles[:1]

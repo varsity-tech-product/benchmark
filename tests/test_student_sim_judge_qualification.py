@@ -32,10 +32,10 @@ def test_judge_qualification_corpus_references_existing_samples():
     assert corpus["version"] == "v1.4.0"
     assert len(sample_ids) == len(corpus["items"])
     assert {item["dimension"] for item in corpus["items"]} >= {
-        "P1",
-        "D3",
-        "B1",
-        "control",
+        "S5",
+        "S2",
+        "S4",
+        "S6",
     }
     for case in corpus["sensitivity_cases"]:
         assert case["baseline_sample_id"] in sample_ids
@@ -72,8 +72,8 @@ def test_student_sim_prompts_include_ascending_human_readable_boundaries():
         assert "Return ONLY valid JSON" in text
 
 
-def test_d3_prompt_warns_about_mixed_score_directions():
-    prompt = (RUBRICS_DIR / "prompts" / "D3_drift_detection.txt").read_text(
+def test_s2_prompt_warns_about_mixed_score_directions():
+    prompt = (RUBRICS_DIR / "prompts" / "S2_persona_drift.txt").read_text(
         encoding="utf-8"
     )
 
@@ -98,7 +98,7 @@ def test_judge_qualification_render_writes_standalone_gate_directory(tmp_path):
     assert not (tmp_path / "judge_qualification").exists()
 
     sample = json.loads(
-        next((tmp_path / "judge_inputs").glob("D3__PG__*.json")).read_text(
+        next((tmp_path / "judge_inputs").glob("S2__PG__*.json")).read_text(
             encoding="utf-8"
         )
     )
@@ -137,7 +137,7 @@ def test_judge_qualification_render_clean_removes_stale_report_artifacts(tmp_pat
         assert not stale_path.exists()
 
 
-def _scores_for_input(input_payload: dict, *, wrong_b1_identity: bool = False) -> dict:
+def _scores_for_input(input_payload: dict, *, wrong_s4_identity: bool = False) -> dict:
     sample_id = input_payload["metadata"]["sample_id"]
     dimension = input_payload["dimension"]
     is_bad = any(
@@ -163,14 +163,14 @@ def _scores_for_input(input_payload: dict, *, wrong_b1_identity: bool = False) -
         "dominant_failure_type": failure_types[0] if failure_types else None,
         "failure_evidence": "synthetic failure evidence" if failure_types else "",
     }
-    if dimension == "P1":
+    if dimension == "S5":
         return {
             **common,
             "contract_fit": value,
             "facet_fit": value,
             "overall_probe_pass": value,
         }
-    if dimension == "D3":
+    if dimension == "S2":
         return {
             **common,
             "per_turn": [
@@ -184,9 +184,9 @@ def _scores_for_input(input_payload: dict, *, wrong_b1_identity: bool = False) -
             "overall_drift_score": value,
             "drift_onset_turn": 1 if is_bad else None,
         }
-    if dimension == "B1":
+    if dimension == "S4":
         identified_persona = input_payload["metadata"]["persona_id"]
-        if wrong_b1_identity:
+        if wrong_s4_identity:
             identified_persona = "developer_crossover"
         return {
             **common,
@@ -194,7 +194,7 @@ def _scores_for_input(input_payload: dict, *, wrong_b1_identity: bool = False) -
             "confidence": value,
             "contract_fit": value,
         }
-    if dimension == "control":
+    if dimension == "S6":
         return {
             **common,
             "distinctiveness": value,
@@ -208,7 +208,7 @@ def _write_synthetic_outputs(
     *,
     output_dir: Path | None = None,
     model: str = "synthetic-judge",
-    wrong_b1_identity: bool = False,
+    wrong_s4_identity: bool = False,
     stale_hash: bool = False,
 ) -> None:
     input_dir = gate_dir / "judge_inputs"
@@ -222,7 +222,7 @@ def _write_synthetic_outputs(
             "judge_model": model,
             "scores": _scores_for_input(
                 payload,
-                wrong_b1_identity=wrong_b1_identity,
+                wrong_s4_identity=wrong_s4_identity,
             ),
             "input_sha256": "stale" if stale_hash else _input_payload_hash(payload),
             "source_file": input_path.name,
@@ -288,8 +288,7 @@ def test_final_html_report_surfaces_judge_qualification_status(tmp_path):
     eval_path = results_dir / "evaluations" / "all_evaluations.json"
     eval_path.parent.mkdir(parents=True, exist_ok=True)
     eval_path.write_text(
-        json.dumps({key: [] for key in ["D1", "D2", "D3", "control", "P1", "B1"]})
-        + "\n",
+        json.dumps({key: [] for key in ["S1", "S3", "S2", "S6", "S5", "S4"]}) + "\n",
         encoding="utf-8",
     )
 
@@ -347,14 +346,14 @@ def test_judge_qualification_report_includes_by_model_outputs(tmp_path):
     assert stats["counts"]["valid_records"] == 64
 
 
-def test_judge_qualification_report_fails_wrong_b1_identity(tmp_path):
+def test_judge_qualification_report_fails_wrong_s4_identity(tmp_path):
     render_judge_qualification_inputs(
         gate_dir=tmp_path,
         repeats=2,
         prompt_variants=["baseline", "role_blocks"],
         clean=True,
     )
-    _write_synthetic_outputs(tmp_path, wrong_b1_identity=True)
+    _write_synthetic_outputs(tmp_path, wrong_s4_identity=True)
 
     stats = write_judge_qualification_report(gate_dir=tmp_path)
 
@@ -363,7 +362,7 @@ def test_judge_qualification_report_fails_wrong_b1_identity(tmp_path):
     assert stats["gate_checks"]["b1_identity_match_rate"] is False
 
 
-def test_judge_qualification_report_allows_low_fit_b1_non_identity(tmp_path):
+def test_judge_qualification_report_allows_low_fit_s4_non_identity(tmp_path):
     render_judge_qualification_inputs(
         gate_dir=tmp_path,
         repeats=2,
@@ -372,7 +371,7 @@ def test_judge_qualification_report_allows_low_fit_b1_non_identity(tmp_path):
     )
     _write_synthetic_outputs(tmp_path)
     output_dir = tmp_path / "judge_outputs"
-    for output_path in output_dir.glob("B1__PG__pg_b1_generic_student_bad__*.json"):
+    for output_path in output_dir.glob("S4__PG__pg_b1_generic_student_bad__*.json"):
         output = json.loads(output_path.read_text(encoding="utf-8"))
         output["scores"]["identified_persona"] = "developer_crossover"
         output["scores"]["contract_fit"] = 1
@@ -439,11 +438,11 @@ def _mk_records(
     expected_failure_types=None,
 ):
     field = {
-        "P1": "overall_probe_pass",
-        "D3": "overall_drift_score",
-        "B1": "contract_fit",
-        "control": "distinctiveness",
-        "D1": "overall",
+        "S5": "overall_probe_pass",
+        "S2": "overall_drift_score",
+        "S4": "contract_fit",
+        "S6": "distinctiveness",
+        "S1": "overall",
     }[dimension]
     return [
         {
@@ -453,7 +452,7 @@ def _mk_records(
             "repeat_index": i,
             "expected_score_band": expected_band,
             "expected_failure_types": expected_failure_types or [],
-            "expected_persona_id": identified if dimension == "B1" else None,
+            "expected_persona_id": identified if dimension == "S4" else None,
             "input_metadata": {"persona_id": persona_id},
             "scores": {
                 field: score,
@@ -474,14 +473,14 @@ def test_judge_qualification_flags_low_band_sample_scored_above_threshold():
         samples=[
             {
                 "sample_id": "good",
-                "dimension": "P1",
+                "dimension": "S5",
                 "persona_id": "x",
                 "expected_score_band": "high",
                 "expected_failure_types": [],
             },
             {
                 "sample_id": "bad",
-                "dimension": "P1",
+                "dimension": "S5",
                 "persona_id": "x",
                 "expected_score_band": "low",
                 "expected_failure_types": ["knowledge_leak"],
@@ -491,7 +490,7 @@ def test_judge_qualification_flags_low_band_sample_scored_above_threshold():
             {
                 "case_id": "s1",
                 "factor": "x",
-                "dimension": "P1",
+                "dimension": "S5",
                 "baseline_sample_id": "good",
                 "perturbed_sample_id": "bad",
                 "expected_direction": "baseline_higher",
@@ -499,9 +498,9 @@ def test_judge_qualification_flags_low_band_sample_scored_above_threshold():
             },
         ],
     )
-    records = _mk_records("good", "P1", 5, expected_band="high") + _mk_records(
+    records = _mk_records("good", "S5", 5, expected_band="high") + _mk_records(
         "bad",
-        "P1",
+        "S5",
         4,
         expected_band="low",
         failure_types=["knowledge_leak"],
@@ -525,23 +524,23 @@ def test_judge_qualification_band_check_accepts_correct_bands():
         samples=[
             {
                 "sample_id": "good",
-                "dimension": "P1",
+                "dimension": "S5",
                 "persona_id": "x",
                 "expected_score_band": "high",
                 "expected_failure_types": [],
             },
             {
                 "sample_id": "bad",
-                "dimension": "P1",
+                "dimension": "S5",
                 "persona_id": "x",
                 "expected_score_band": "low",
                 "expected_failure_types": ["knowledge_leak"],
             },
         ],
     )
-    records = _mk_records("good", "P1", 5, expected_band="high") + _mk_records(
+    records = _mk_records("good", "S5", 5, expected_band="high") + _mk_records(
         "bad",
-        "P1",
+        "S5",
         2,
         expected_band="low",
         failure_types=["knowledge_leak"],
@@ -561,14 +560,14 @@ def test_judge_qualification_stats_records_version_fingerprints():
         samples=[
             {
                 "sample_id": "good",
-                "dimension": "P1",
+                "dimension": "S5",
                 "persona_id": "x",
                 "expected_score_band": "high",
                 "expected_failure_types": [],
             },
         ]
     )
-    records = _mk_records("good", "P1", 5, expected_band="high")
+    records = _mk_records("good", "S5", 5, expected_band="high")
     stats = compute_judge_qualification_stats(corpus=corpus, records=records)
     assert stats["rubric_version"] == RUBRIC_VERSION
     assert stats["contract_version"] == CONTRACT_VERSION
