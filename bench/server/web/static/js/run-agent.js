@@ -2,7 +2,7 @@
  * run-agent.js — "My Agent" flow for the Run page.
  *
  * 1. Generate a REST API key for the current reviewer.
- * 2. Render a copyable prompt with the REST skill URL, curl command, and key.
+ * 2. Render a copyable prompt with the raw skill URL and key.
  * 3. Poll active runs when this module receives one from a server response.
  * 4. On completed → show link to Human Review.
  */
@@ -99,10 +99,6 @@
     return window.location.origin + path;
   }
 
-  function _skillPageUrl() {
-    return _absoluteUrl('/skills/quanttutorbench-rest-agent');
-  }
-
   function _skillRawUrl() {
     return _absoluteUrl('/skill.md');
   }
@@ -186,7 +182,6 @@
     var apiKey = options.apiKey || '';
     var loading = !!options.loading;
     var error = options.error || '';
-    var skillUrl = _skillPageUrl();
     var rawSkillUrl = _skillRawUrl();
     var prompt = apiKey
       ? _buildAgentPrompt(apiKey)
@@ -201,7 +196,7 @@
           '<div class="page-title-wrap">' +
             '<p class="eyebrow">Run · My Agent</p>' +
             '<h1>Connect your agent to the benchmark.</h1>' +
-            '<p class="subtitle">Generate a copyable prompt with the REST skill URL and your API key.</p>' +
+            '<p class="subtitle">Generate a copyable prompt with the raw skill URL and your API key.</p>' +
           '</div>' +
         '</header>' +
         '<div class="run-agent-prompt-panel">' +
@@ -215,15 +210,12 @@
             '</div>' +
             '<textarea id="myagent-prompt-text" class="run-agent-prompt-text" readonly spellcheck="false">' + escapeHtml(prompt) + '</textarea>' +
             '<div class="run-agent-skill-url">' +
-              '<span>Skill URL</span>' +
-              '<code>' + escapeHtml(skillUrl) + '</code>' +
               '<span>Raw Skill URL</span>' +
               '<code>' + escapeHtml(rawSkillUrl) + '</code>' +
             '</div>' +
             '<div class="run-agent-api-actions">' +
               '<button class="btn btn-primary" id="myagent-generate-prompt-btn" type="button"' + generateDisabled + '>' + escapeHtml(generateText) + '</button>' +
               '<button class="btn btn-secondary" id="myagent-copy-prompt-btn" type="button"' + copyDisabled + '>Copy Prompt</button>' +
-              '<a class="btn btn-secondary" href="' + escapeHtml(skillUrl) + '" target="_blank" rel="noreferrer">Open Skill</a>' +
             '</div>' +
             '<div id="myagent-error" class="run-error"' + (error ? '' : ' style="display:none;"') + '>' + escapeHtml(error) + '</div>' +
           '</section>' +
