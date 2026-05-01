@@ -1,11 +1,10 @@
 /**
  * run-agent.js — "My Agent" flow for the Run page.
  *
- * 1. User selects task → POST /ui/runs → show connection info (MCP URL + token)
- * 2. Poll /ui/runs/{id} for status changes (waiting → claimed → active)
- * 3. Poll /ui/runs/{id}/live for real-time conversation + tool logs
- * 4. Cancel button → POST /ui/runs/{id}/cancel
- * 5. On completed → show link to Results
+ * 1. Generate a REST API key for the current reviewer.
+ * 2. Render a copyable prompt with the REST skill URL, curl command, and key.
+ * 3. Poll active runs when this module receives one from a server response.
+ * 4. On completed → show link to Human Review.
  */
 (function () {
   'use strict';
@@ -75,48 +74,126 @@
       .replace(/'/g, '&#39;');
   }
 
-  function publicTaskLabel(taskId) {
-    if (!taskId) return '—';
-    var m = taskId.match(/^([A-Za-z]\d{2})/);
-    return m ? m[1] : taskId;
-  }
-
-  // ── Catalog loading ──
-
-  var _catalog = null;
-
-  function loadCatalog(callback) {
-    if (_catalog) { callback(_catalog); return; }
-    _authFetch('/ui/tasks/catalog/labels')
-      .then(function (r) { return r.json(); })
-      .then(function (data) {
-        _catalog = data.tasks || [];
-        callback(_catalog);
-      })
-      .catch(function () { callback([]); });
-  }
-
   // ── Main render ──
 
   window.QTB.renderMyAgentPage = function (app, state, payload) {
-    // If we have an active run, show the monitor page
     if (_runId) {
       _renderMonitorPage(app);
       return;
     }
 
-    // Otherwise show task selection + create run form
-    loadCatalog(function (tasks) {
-      _renderCreatePage(app, tasks);
-    });
+    _renderPromptPage(app, {loading: true});
+    _loadApiKeyStatus()
+      .then(function (status) {
+        _renderPromptPage(app, {status: status});
+      })
+      .catch(function (error) {
+        _renderPromptPage(app, {
+          error: error && error.message ? error.message : String(error || 'Unable to load API key status.')
+        });
+      });
   };
 
-  function _renderCreatePage(app, tasks) {
-    var taskOptions = tasks.map(function (t) {
-      return '<option value="' + escapeHtml(t.label) + '">' +
-        escapeHtml(t.label) +
-        '</option>';
-    }).join('');
+  function _absoluteUrl(path) {
+    if (/^https?:\/\//i.test(path)) return path;
+    return window.location.origin + path;
+  }
+
+  function _skillPageUrl() {
+    return _absoluteUrl('/skills/quanttutorbench-rest-agent');
+  }
+
+  function _skillRawUrl() {
+    return _absoluteUrl('/skill.md');
+  }
+
+  function _jsonResponse(response) {
+    return response.json().then(function (payload) {
+      if (!response.ok) {
+        throw new Error(payload.error || ('HTTP ' + response.status));
+      }
+      return payload;
+    });
+  }
+
+  function _loadApiKeyStatus() {
+    return _authFetch('/ui/api-key').then(_jsonResponse);
+  }
+
+  function _generateApiKey() {
+    return _authFetch('/ui/api-key', {method: 'POST'}).then(_jsonResponse)
+      .then(function (payload) {
+        if (!payload.api_key) {
+          throw new Error('API key was not returned.');
+        }
+        return payload;
+      });
+  }
+
+  function _buildAgentPrompt(apiKey) {
+    var baseUrl = window.location.origin;
+    var rawSkillUrl = _skillRawUrl();
+    return [
+      'Read ' + rawSkillUrl + ' and follow the instructions to join QuantTutorBench.',
+      '',
+      'Benchmark base URL:',
+      baseUrl,
+      '',
+      'REST API key:',
+      apiKey
+    ].join('\n');
+  }
+
+  function _buildPromptPlaceholder(status, loading, error) {
+    var rawSkillUrl = _skillRawUrl();
+    if (loading) {
+      return [
+        'Loading API key status...',
+        '',
+        'Read ' + rawSkillUrl + ' and follow the instructions to join QuantTutorBench.'
+      ].join('\n');
+    }
+    if (error) {
+      return [
+        'Unable to load API key status.',
+        error,
+        '',
+        'Read ' + rawSkillUrl + ' and follow the instructions to join QuantTutorBench.'
+      ].join('\n');
+    }
+    return [
+      status && status.has_key
+        ? 'Generate a fresh agent prompt to reveal a full REST API key in this text box.'
+        : 'Generate an agent prompt to create a REST API key and place it in this text box.',
+      '',
+      'Read ' + rawSkillUrl + ' and follow the instructions to join QuantTutorBench.'
+    ].join('\n');
+  }
+
+  function _apiKeyStatusText(status, apiKey, loading, error) {
+    if (loading) return 'Loading key status';
+    if (apiKey) return 'Fresh API key embedded';
+    if (error) return 'Key status unavailable';
+    if (status && status.has_key) {
+      return 'Active key: ' + (status.key_hint ? status.key_hint + '...' : 'available');
+    }
+    return 'Ready to generate';
+  }
+
+  function _renderPromptPage(app, options) {
+    options = options || {};
+    var status = options.status || {};
+    var apiKey = options.apiKey || '';
+    var loading = !!options.loading;
+    var error = options.error || '';
+    var skillUrl = _skillPageUrl();
+    var rawSkillUrl = _skillRawUrl();
+    var prompt = apiKey
+      ? _buildAgentPrompt(apiKey)
+      : _buildPromptPlaceholder(status, loading, error);
+    var copyDisabled = apiKey ? '' : ' disabled';
+    var generateDisabled = loading ? ' disabled' : '';
+    var generateText = status && status.has_key ? 'Generate Fresh Prompt' : 'Generate Prompt';
 
     app.innerHTML =
       '<section class="page run-page">' +
@@ -124,73 +201,86 @@
           '<div class="page-title-wrap">' +
             '<p class="eyebrow">Run · My Agent</p>' +
             '<h1>Connect your agent to the benchmark.</h1>' +
+            '<p class="subtitle">Generate a copyable prompt with the REST skill URL and your API key.</p>' +
           '</div>' +
         '</header>' +
-        '<div class="run-agent-create-panel">' +
-          '<aside class="panel">' +
-            '<h2>Select Task</h2>' +
-            '<label class="filter-field">' +
-              '<span class="filter-label">Task</span>' +
-              '<select id="myagent-task-select" class="filter-select">' + taskOptions + '</select>' +
-            '</label>' +
-            '<div class="run-actions" style="margin-top:1rem;">' +
-              '<button class="btn btn-primary" id="myagent-create-btn" type="button">Create Run</button>' +
-              '<button class="btn btn-secondary" id="myagent-back-btn" type="button">Back</button>' +
+        '<div class="run-agent-prompt-panel">' +
+          '<section class="panel run-agent-prompt-card">' +
+            '<div class="run-agent-prompt-head">' +
+              '<div>' +
+                '<h2>Agent Prompt</h2>' +
+                '<p class="detail-empty-note">Copy this text into your agent after generation. It includes the REST API key.</p>' +
+              '</div>' +
+              '<span class="run-selected-badge">' + escapeHtml(_apiKeyStatusText(status, apiKey, loading, error)) + '</span>' +
             '</div>' +
-            '<div id="myagent-error" class="run-error" style="display:none;"></div>' +
-          '</aside>' +
+            '<textarea id="myagent-prompt-text" class="run-agent-prompt-text" readonly spellcheck="false">' + escapeHtml(prompt) + '</textarea>' +
+            '<div class="run-agent-skill-url">' +
+              '<span>Skill URL</span>' +
+              '<code>' + escapeHtml(skillUrl) + '</code>' +
+              '<span>Raw Skill URL</span>' +
+              '<code>' + escapeHtml(rawSkillUrl) + '</code>' +
+            '</div>' +
+            '<div class="run-agent-api-actions">' +
+              '<button class="btn btn-primary" id="myagent-generate-prompt-btn" type="button"' + generateDisabled + '>' + escapeHtml(generateText) + '</button>' +
+              '<button class="btn btn-secondary" id="myagent-copy-prompt-btn" type="button"' + copyDisabled + '>Copy Prompt</button>' +
+              '<a class="btn btn-secondary" href="' + escapeHtml(skillUrl) + '" target="_blank" rel="noreferrer">Open Skill</a>' +
+            '</div>' +
+            '<div id="myagent-error" class="run-error"' + (error ? '' : ' style="display:none;"') + '>' + escapeHtml(error) + '</div>' +
+          '</section>' +
         '</div>' +
       '</section>';
 
-    // Bind
-    var createBtn = document.getElementById('myagent-create-btn');
-    var backBtn = document.getElementById('myagent-back-btn');
-    var taskSelect = document.getElementById('myagent-task-select');
+    var generateBtn = document.getElementById('myagent-generate-prompt-btn');
+    var copyBtn = document.getElementById('myagent-copy-prompt-btn');
+    var promptText = document.getElementById('myagent-prompt-text');
     var errorDiv = document.getElementById('myagent-error');
 
-    if (backBtn) {
-      backBtn.addEventListener('click', function () {
-        _cleanup();
-        // Reset to mode picker — hack into app.js state
-        if (window.QTB._resetRunMode) window.QTB._resetRunMode();
+    if (generateBtn) {
+      generateBtn.addEventListener('click', function () {
+        generateBtn.disabled = true;
+        generateBtn.textContent = 'Generating...';
+        if (errorDiv) errorDiv.style.display = 'none';
+        _generateApiKey()
+          .then(function (payload) {
+            _renderPromptPage(app, {status: payload, apiKey: payload.api_key});
+          })
+          .catch(function (err) {
+            if (errorDiv) {
+              errorDiv.textContent = err && err.message ? err.message : String(err || 'Unable to generate prompt.');
+              errorDiv.style.display = 'block';
+            }
+            generateBtn.disabled = false;
+            generateBtn.textContent = generateText;
+          });
       });
     }
-
-    if (createBtn) {
-      createBtn.addEventListener('click', function () {
-        var task = taskSelect ? taskSelect.value : '';
-        if (!task) return;
-        createBtn.disabled = true;
-        createBtn.textContent = 'Creating...';
-        errorDiv.style.display = 'none';
-
-        _authFetch('/ui/runs', {
-          method: 'POST',
-          headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({task: task, mode: 'agent'})
-        })
-        .then(function (r) { return r.json(); })
-        .then(function (data) {
-          if (data.error) {
-            errorDiv.textContent = data.error;
-            errorDiv.style.display = 'block';
-            createBtn.disabled = false;
-            createBtn.textContent = 'Create Run';
-            return;
-          }
-          _runId = data.run_id;
-          if (data.control_token) {
-            _rememberControlToken(data.run_id, data.control_token);
-          }
-          _renderMonitorPage(app, data);
-        })
-        .catch(function (err) {
-          errorDiv.textContent = 'Network error: ' + err.message;
-          errorDiv.style.display = 'block';
-          createBtn.disabled = false;
-          createBtn.textContent = 'Create Run';
-        });
+    if (copyBtn) {
+      copyBtn.addEventListener('click', function () {
+        var value = promptText ? promptText.value : '';
+        if (!value) return;
+        if (navigator.clipboard) {
+          navigator.clipboard.writeText(value).then(function () {
+            copyBtn.textContent = 'Copied';
+          }).catch(function () {
+            _fallbackCopy(promptText);
+            copyBtn.textContent = 'Copied';
+          });
+        } else {
+          _fallbackCopy(promptText);
+          copyBtn.textContent = 'Copied';
+        }
       });
+    }
+  }
+
+  function _fallbackCopy(textarea) {
+    if (!textarea) return;
+    textarea.focus();
+    textarea.select();
+    try {
+      document.execCommand('copy');
+    } catch (e) {
+      // Browser copy fallback failed; selected text is still ready for manual copy.
     }
   }
 
@@ -254,7 +344,7 @@
         // Actions
         '<div class="run-actions" style="margin-top:1rem;">' +
           '<button class="btn btn-danger" id="myagent-cancel-btn" type="button">Cancel Run</button>' +
-          '<a class="btn btn-primary" id="myagent-results-link" href="#" style="display:none;">View Results</a>' +
+          '<a class="btn btn-primary" id="myagent-results-link" href="#" style="display:none;">Open Human Review</a>' +
         '</div>' +
       '</section>';
 
@@ -317,7 +407,7 @@
             if (data.status === 'completed' && data.session_id) {
               var link = document.getElementById('myagent-results-link');
               if (link) {
-                link.href = '#/results/' + data.session_id;
+                link.href = '#/review/' + data.session_id;
                 link.style.display = 'inline-block';
               }
             }
@@ -356,11 +446,11 @@
 
           if (data.run_status === 'completed' || data.run_status === 'failed' || data.run_status === 'cancelled') {
             _stopPolling();
-            // Show results link for completed runs
+            // Show review link for completed runs
             if (data.run_status === 'completed' && data.session_id) {
               var link = document.getElementById('myagent-results-link');
               if (link) {
-                link.href = '#/results/' + data.session_id;
+                link.href = '#/review/' + data.session_id;
                 link.style.display = 'inline-block';
               }
             }
@@ -388,7 +478,7 @@
       msg.className = 'run-token-lost';
       msg.textContent =
         'Run access expired or token lost. Cannot resume monitoring. ' +
-        'Results will still appear under Results once the run completes.';
+        'Archived sessions will still appear under Human Review once the run completes.';
       connectPanel.appendChild(msg);
     }
   }
@@ -530,8 +620,5 @@
     _lastToolLen = 0;
     _lastSendLen = 0;
   }
-
-  // Allow app.js to reset mode
-  window.QTB._resetRunMode = null; // set by app.js
 
 })();

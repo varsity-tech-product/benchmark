@@ -42,6 +42,7 @@ class GithubOAuthAuthTests(unittest.TestCase):
                     auth,
                     "_fetch_profile",
                     return_value={
+                        "id": 12345,
                         "login": "alice",
                         "email": "alice@example.com",
                         "name": "Alice",
@@ -60,6 +61,7 @@ class GithubOAuthAuthTests(unittest.TestCase):
                 user = auth.store.get_session(cookie_value)
                 self.assertIsNotNone(user)
                 self.assertEqual(user.github_login, "alice")
+                self.assertEqual(user.github_user_id, "12345")
                 self.assertEqual(user.role, "admin")
 
     def test_public_login_does_not_request_org_scope(self):
@@ -180,12 +182,14 @@ class GithubOAuthAuthTests(unittest.TestCase):
                 auth = AuthService(Path(tmp))
                 user = auth._build_user(
                     {
+                        "id": 12345,
                         "login": "alice",
                         "email": "alice@example.com",
                         "name": "Alice",
                     }
                 )
                 self.assertEqual(user.role, "admin")
+                self.assertEqual(user.github_user_id, "12345")
 
 
 if __name__ == "__main__":

@@ -153,9 +153,11 @@ class ResultIndexer:
             raise PermissionError("Result access denied")
 
         task_id = str(run_state.get("task_id") or result_dir.parent.name)
+        persona_id = str(run_state.get("persona_id") or "unknown")
         task_meta = self._task_meta_cache.get(
             task_id, self._make_fallback_task_meta(task_id)
         )
+        persona_meta = self._persona_cache.get(persona_id, {})
         client_trace = self._load_client_trace(session_id)
         latest_score_id = self._resolve_latest_score_id(result_dir)
         latest_score = self._load_score_json(result_dir, latest_score_id)
@@ -187,7 +189,11 @@ class ResultIndexer:
             "category": task_meta.get("category", "unknown"),
             "difficulty": task_meta.get("difficulty", "unknown"),
             "description": task_meta.get("description", ""),
-            "persona_id": str(run_state.get("persona_id") or "unknown"),
+            "persona_id": persona_id,
+            "persona_description": str(persona_meta.get("description") or ""),
+            "persona_knowledge_level": str(
+                persona_meta.get("knowledge_level") or ""
+            ),
             "duration_seconds": self._coerce_float(
                 run_state.get("duration_seconds"), default=0.0
             ),
@@ -210,6 +216,15 @@ class ResultIndexer:
             "all_tool_logs": raw_tool_logs,
             "send_message_events": send_message_events,
             "workspace_files": workspace_files,
+            "workspace_diffs": self._ensure_list(
+                run_state.get("workspace_diffs") or run_state.get("diffs")
+            ),
+            "stdout": str(
+                run_state.get("stdout") or run_state.get("stdout_text") or ""
+            ),
+            "stderr": str(
+                run_state.get("stderr") or run_state.get("stderr_text") or ""
+            ),
             "distractor_names": distractor_names,
             "score_json": latest_score,
             "cost_json": latest_cost,
@@ -440,16 +455,65 @@ class ResultIndexer:
                         yield run_dir
 
     def _find_result_dir(self, session_id: str) -> Path | None:
-        short_id = session_id[:12]
+        requested = str(session_id or "").strip()
+        if not requested:
+            return None
+        short_ids = {requested[:12], requested[:8]}
+        suffix_matches: list[Path] = []
         for result_dir in self._iter_result_dirs():
+            known_ids: list[str] = []
             sid_file = result_dir / ".session_id"
-            if sid_file.exists() and sid_file.read_text(
-                encoding="utf-8"
-            ).strip().startswith(session_id):
+            if sid_file.exists():
+                try:
+                    stored_id = sid_file.read_text(encoding="utf-8").strip()
+                except OSError:
+                    stored_id = ""
+                if stored_id:
+                    known_ids.append(stored_id)
+
+            run_state = self._load_json(result_dir / "run_state.json")
+            if isinstance(run_state, dict):
+                stored_id = str(run_state.get("session_id") or "").strip()
+                if stored_id:
+                    known_ids.append(stored_id)
+
+            manifest = self._load_json(result_dir / "manifest.json")
+            if isinstance(manifest, dict):
+                stored_id = str(manifest.get("session_id") or "").strip()
+                if stored_id:
+                    known_ids.append(stored_id)
+
+            if any(
+                self._session_id_matches(stored_id, requested)
+                for stored_id in known_ids
+            ):
                 return result_dir
-            if result_dir.name.endswith(f"_{short_id}"):
-                return result_dir
-        return None
+            if known_ids:
+                continue
+
+            if any(
+                short_id and result_dir.name.endswith(f"_{short_id}")
+                for short_id in short_ids
+            ):
+                suffix_matches.append(result_dir)
+        return suffix_matches[0] if suffix_matches else None
+
+    def _session_id_matches(self, stored_id: str, requested_id: str) -> bool:
+        stored = str(stored_id or "").strip()
+        requested = str(requested_id or "").strip()
+        return bool(
+            stored
+            and requested
+            and (
+                stored == requested
+                or stored.startswith(requested)
+                or (
+                    len(stored) in (8, 12)
+                    and re.fullmatch(r"[A-Fa-f0-9]+", stored) is not None
+                    and requested.startswith(stored)
+                )
+            )
+        )
 
     def _build_summary(self, result_dir: Path) -> dict[str, Any] | None:
         run_state = self._load_json(result_dir / "run_state.json")
