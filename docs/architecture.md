@@ -26,6 +26,12 @@ vercel-frontend/       Vercel-hosted frontend shell
 `bench/server/` is the active path. `bench/orchestrator/` is legacy and should
 not be used as a new dependency for evaluation orchestration.
 
+`vercel-frontend/` is a thin static preview package. Its build step copies the
+current UI shell from `bench/server/web/templates/index.html` and static assets
+from `bench/server/web/static/` into `vercel-frontend/public/`, so Vercel branch
+deployments serve branch-local HTML/CSS/JS while backend API routes still proxy
+to the production service.
+
 ## Server Entrypoint
 
 `bench/server/__main__.py` parses server flags and calls

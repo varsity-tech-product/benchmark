@@ -76,13 +76,17 @@
     );
   }
 
+  function isStaticPreview() {
+    return !!(window.QTB && window.QTB.staticPreview);
+  }
+
   function redirectToLogin() {
     window.location.href = loginUrl();
   }
 
   function authFetch(path, options) {
     return fetch(path, options).then(function (response) {
-      if (response.status === 401) {
+      if (response.status === 401 && !isStaticPreview()) {
         redirectToLogin();
       }
       return response;
@@ -144,7 +148,11 @@
         state.auth.authMode = payload.auth_mode || 'disabled';
         state.auth.user = payload.user || null;
         renderNavUser();
-        if (state.auth.authMode === 'github' && !payload.authenticated) {
+        if (
+          state.auth.authMode === 'github' &&
+          !payload.authenticated &&
+          !isStaticPreview()
+        ) {
           redirectToLogin();
         }
         return payload;
