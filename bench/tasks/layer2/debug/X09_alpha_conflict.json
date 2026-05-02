@@ -54,7 +54,7 @@
       "analyze_lean_results"
     ],
     "quant_validation": {
-      "eval_script": "evaluation/test_scripts/debug/X09_alpha_conflict.py"
+      "eval_script": "tasks/test_scripts/debug/X09_alpha_conflict.py"
     },
     "termination_criteria": "The tutor has completed the following steps with computational evidence (not just verbal discussion): (1) Reviewed the student's LEAN C# code and identified that TrendAlpha and ReversionAlpha emit opposing active insights on the same symbols under AccumulativeInsightPortfolioConstructionModel, causing the net target to stay near zero. (2) Explained why this produces near-zero trades, such as describing how the accumulative PCM aggregates all active Up and Down insights for each symbol. (3) Showed corrected C# code and presented backtest results demonstrating that trades now occur after the fix, with specific numerical evidence such as trade count or portfolio performance. (4) Responded to the student's follow-up about the conflict resolution or the fix with additional explanation or analysis beyond the initial demonstration. Once all four steps have been computationally demonstrated, the session is complete."
   },

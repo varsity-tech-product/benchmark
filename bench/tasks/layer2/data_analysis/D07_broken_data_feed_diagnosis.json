@@ -42,7 +42,7 @@
       "plot_chart"
     ],
     "quant_validation": {
-      "eval_script": "evaluation/test_scripts/data_analysis/D07_broken_data_feed_diagnosis.py"
+      "eval_script": "tasks/test_scripts/data_analysis/D07_broken_data_feed_diagnosis.py"
     },
     "termination_criteria": "(1) Showed actual diagnostic output identifying at least two distinct data-feed issues in the OHLCV dataset, such as missing rows, duplicate timestamps, price outliers, or volume spikes. (2) Mapped at least one concrete anomaly to a plausible root cause using evidence from the data, such as distinguishing a corporate action from a feed error or a timezone shift from a gap. (3) Responded to a student follow-up by producing a concrete remediation step or validation check on the diagnosed issue, such as a corrected output, a filter rule, or a before-and-after comparison. Once all 3 steps have been computationally demonstrated, the session is complete."
   },

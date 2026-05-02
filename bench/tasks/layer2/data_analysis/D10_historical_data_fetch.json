@@ -41,7 +41,7 @@
       "plot_chart"
     ],
     "quant_validation": {
-      "eval_script": "evaluation/test_scripts/data_analysis/D10_historical_data_fetch.py"
+      "eval_script": "tasks/test_scripts/data_analysis/D10_historical_data_fetch.py"
     },
     "termination_criteria": "(1) Showed actual code that fetches historical market price data from a public API or data source and saves it as a CSV file in the workspace, with concrete output confirming the saved file. (2) Performed concrete data validation on the fetched data, such as shape, dtypes, date range, or missing-value checks, and explained at least one quant caveat such as adjusted vs unadjusted prices or corporate-action effects. (3) Responded to a student follow-up with one additional concrete fetch, validation, or explanation, such as fetching macroeconomic data, demonstrating a point-in-time leakage check, or showing the impact of adjustments on a specific price series. Once all 3 steps have been computationally demonstrated, the session is complete."
   },

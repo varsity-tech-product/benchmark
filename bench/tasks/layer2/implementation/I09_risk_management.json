@@ -52,7 +52,7 @@
       "analyze_lean_results"
     ],
     "quant_validation": {
-      "eval_script": "evaluation/test_scripts/I09_risk_management.py"
+      "eval_script": "tasks/test_scripts/I09_risk_management.py"
     },
     "termination_criteria": "The tutor has completed the following steps with computational evidence (not just verbal discussion): (1) Showed C# code for a framework algorithm with risk management models, including either a built-in or custom RiskManagementModel. (2) Presented backtest results for at least one risk configuration with specific numerical values such as Sharpe ratio, drawdown, or total return. (3) Showed a comparison of results across different risk configurations with specific numbers demonstrating the impact of risk management. (4) Responded to the student's follow-up about the implementation or results with additional explanation, code refinement, or analysis beyond the initial demonstration. Once all four steps have been computationally demonstrated, the session is complete."
   },

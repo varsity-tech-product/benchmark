@@ -49,7 +49,7 @@
       "construct_signal"
     ],
     "quant_validation": {
-      "eval_script": "evaluation/test_scripts/strategy/S05_cross_asset_alpha.py"
+      "eval_script": "tasks/test_scripts/strategy/S05_cross_asset_alpha.py"
     },
     "termination_criteria": "The tutor has completed the following research steps with computational evidence (not just verbal discussion): (1) Analyzed the statistical relationship between BTC and ETH using at least one method such as rolling correlation, cointegration, or lead-lag analysis, and constructed a specific cross-asset trading signal such as a spread z-score, relative-value measure, or lead-lag predictor, with a clear mathematical definition. (2) Evaluated the signal on a dollar-neutral or hedged basis, presenting specific performance metrics such as IC, Sharpe ratio, or cumulative return for the long-short portfolio. (3) Examined signal robustness by testing across at least two lookback windows, frequencies, or subperiods, and reporting how performance varies. (4) Identified at least one risk specific to cross-asset strategies, supported by evidence: relationship breakdown during a specific period, structural regime change, divergence under stress, or statistical fragility such as out-of-sample degradation. Once all four steps have been computationally demonstrated, the research session is complete."
   },

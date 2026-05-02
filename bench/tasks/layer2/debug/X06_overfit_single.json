@@ -46,7 +46,7 @@
       "search_docs"
     ],
     "quant_validation": {
-      "eval_script": "evaluation/test_scripts/debug/X06_overfit_single.py"
+      "eval_script": "tasks/test_scripts/debug/X06_overfit_single.py"
     },
     "termination_criteria": "The tutor has completed the following steps with computational evidence (not just verbal discussion): (1) Ran the student's strategy code and presented the train-period vs test-period performance metrics, showing specific numerical values such as Sharpe ratio or returns for both periods. (2) Identified overfitting as the root cause of the performance decay, explaining why 12 hand-tuned parameters cause the strategy to fit noise rather than signal. (3) Proposed at least one concrete remedy such as reducing parameters, cross-validation, walk-forward testing, or regularization. (4) Responded to the student's follow-up about the diagnosis or remedies with additional explanation or analysis beyond the initial demonstration. Once all four steps have been computationally demonstrated, the session is complete."
   },

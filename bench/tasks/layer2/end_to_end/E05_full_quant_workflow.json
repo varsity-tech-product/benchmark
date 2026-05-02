@@ -55,7 +55,7 @@
       "plot_chart"
     ],
     "quant_validation": {
-      "eval_script": "evaluation/test_scripts/end_to_end/E05_full_quant_workflow.py"
+      "eval_script": "tasks/test_scripts/end_to_end/E05_full_quant_workflow.py"
     },
     "termination_criteria": "The tutor has completed the following steps with computational evidence (not just verbal discussion): (1) Showed code and output for data exploration and a formalized momentum or ROCP signal definition. (2) Showed code and output for a Python prototype backtest with train/test validation reporting IS and OOS metrics. (3) Showed LEAN C# implementation code for the strategy or discussed the cross-platform implementation approach. (4) Responded to the student's follow-up with discussion of risks, limitations, or result comparison. Once all four steps have been computationally demonstrated, the session is complete."
   },

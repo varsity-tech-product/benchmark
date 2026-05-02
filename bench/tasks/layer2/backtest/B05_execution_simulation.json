@@ -50,7 +50,7 @@
       "breakdown_pnl"
     ],
     "quant_validation": {
-      "eval_script": "evaluation/test_scripts/backtest/B05_execution_simulation.py"
+      "eval_script": "tasks/test_scripts/backtest/B05_execution_simulation.py"
     },
     "termination_criteria": "The tutor has completed the following steps with computational evidence (not just verbal discussion): (1) Built an execution simulator with slippage modeling and separate maker and taker fee handling, and explained why execution simulation matters for strategy viability. (2) Accounted for funding-rate payments on open futures positions in the cost model. (3) Presented a performance breakdown showing gross versus net results with specific numerical values, showing the impact of each cost component separately. Once all three steps have been computationally demonstrated, the session is complete."
   },

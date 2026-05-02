@@ -47,7 +47,7 @@
       "analyze_backtest_results"
     ],
     "quant_validation": {
-      "eval_script": "evaluation/test_scripts/backtest/B04_multi_asset_sync.py"
+      "eval_script": "tasks/test_scripts/backtest/B04_multi_asset_sync.py"
     },
     "termination_criteria": "The tutor has completed the following steps with computational evidence (not just verbal discussion): (1) Loaded and time-aligned BTCUSDT and ETHUSDT data, and built a synchronized replay mechanism that processes both assets together. (2) Implemented a ratio-based signal from both assets and tracked positions with separate per-asset PnL accounting. (3) Presented per-asset and combined portfolio performance metrics with specific numerical values such as total return, Sharpe ratio, or maximum drawdown. Once all three steps have been computationally demonstrated, the session is complete."
   },

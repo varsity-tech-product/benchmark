@@ -51,7 +51,7 @@
       "analyze_lean_results"
     ],
     "quant_validation": {
-      "eval_script": "evaluation/test_scripts/I01_implement_sma.py"
+      "eval_script": "tasks/test_scripts/I01_implement_sma.py"
     },
     "termination_criteria": "The tutor has completed the following steps with computational evidence (not just verbal discussion): (1) Showed C# code for the SMA(20) strategy on BTCUSDT and explained key components such as data subscription, indicator setup, or entry/exit logic. (2) Presented backtest results with specific numerical values such as total return, Sharpe ratio, or number of trades. (3) Showed trade log entries with actual entry and exit records including dates and prices. (4) Responded to the student's follow-up about the implementation or results with additional explanation, code refinement, or analysis beyond the initial demonstration. Once all four steps have been computationally demonstrated, the session is complete."
   },

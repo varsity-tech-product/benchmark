@@ -51,7 +51,7 @@
       "analyze_lean_results"
     ],
     "quant_validation": {
-      "eval_script": "evaluation/test_scripts/debug/X08_order_type_bug.py"
+      "eval_script": "tasks/test_scripts/debug/X08_order_type_bug.py"
     },
     "termination_criteria": "The tutor has completed the following steps with computational evidence (not just verbal discussion): (1) Reviewed the student's LEAN C# code and identified the LimitOrder bug where orders are placed at the current close price, causing unfilled orders when the market gaps away in trending conditions. (2) Explained why MarketOrder ensures immediate fills while LimitOrder at a stale price expires unfilled, such as describing the mechanics of order matching in trending markets. (3) Showed corrected C# code with MarketOrder and presented backtest results demonstrating significantly more filled trades, with specific numerical evidence such as trade count before vs after the fix. (4) Responded to the student's follow-up about order types or the fix with additional explanation or analysis beyond the initial demonstration. Once all four steps have been computationally demonstrated, the session is complete."
   },

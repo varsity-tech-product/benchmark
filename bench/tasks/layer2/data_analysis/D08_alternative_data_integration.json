@@ -43,7 +43,7 @@
       "plot_chart"
     ],
     "quant_validation": {
-      "eval_script": "evaluation/test_scripts/data_analysis/D08_alternative_data_integration.py"
+      "eval_script": "tasks/test_scripts/data_analysis/D08_alternative_data_integration.py"
     },
     "termination_criteria": "(1) Showed actual code output merging alternative data with price data, demonstrating frequency alignment and proper join logic with concrete before-and-after shape or sample rows. (2) Applied lag safeguards or point-in-time discipline to the merge and showed concrete evidence that the merged features do not leak future information, such as shift validation or date alignment checks. (3) Responded to a student follow-up with one additional concrete test of information content or data quality on the merged dataset, such as a correlation check, missing-value profile, or normalization comparison. Once all 3 steps have been computationally demonstrated, the session is complete."
   },

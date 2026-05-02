@@ -45,7 +45,7 @@
       "plot_chart"
     ],
     "quant_validation": {
-      "eval_script": "evaluation/test_scripts/backtest/B01_interpret_metrics.py"
+      "eval_script": "tasks/test_scripts/backtest/B01_interpret_metrics.py"
     },
     "termination_criteria": "The tutor has completed the following steps with computational evidence (not just verbal discussion): (1) Created a Python code artifact that loads price data, computes at least Sharpe ratio, total return or cumulative return, and maximum drawdown, and saved the results to a reusable artifact. (2) Executed the code and presented the computed metrics with specific numerical values. (3) Explained what at least two of these metrics mean and how to judge their values using benchmarks or rules of thumb, and discussed at least one common pitfall such as overfitting, survivorship bias, benchmark mismatch, or in-sample versus out-of-sample issues. Once all three steps have been computationally demonstrated, the session is complete."
   },

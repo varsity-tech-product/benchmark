@@ -49,7 +49,7 @@
       "engineer_features"
     ],
     "quant_validation": {
-      "eval_script": "evaluation/test_scripts/strategy/S04_volume_microstructure_alpha.py"
+      "eval_script": "tasks/test_scripts/strategy/S04_volume_microstructure_alpha.py"
     },
     "termination_criteria": "The tutor has completed the following research steps with computational evidence (not just verbal discussion): (1) Explained the economic meaning of at least one non-price data field such as taker buy volume or trade count, and engineered at least one derived feature from raw microstructure data (e.g., a volume ratio, flow imbalance, or taker intensity measure) with a clear mathematical definition. (2) Evaluated the signal quantitatively using at least two metrics such as IC, quantile return spread, or hit rate. (3) Analyzed signal robustness by examining either decay across multiple time horizons or stability across different subperiods or regimes. (4) Identified at least one factor limiting practical deployment of the signal, supported by evidence: execution costs, signal decay speed, statistical fragility (e.g., out-of-sample failure), or capacity constraints. Once all four steps have been computationally demonstrated, the research session is complete."
   },

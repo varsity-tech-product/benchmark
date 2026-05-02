@@ -51,7 +51,7 @@
       "plot_chart"
     ],
     "quant_validation": {
-      "eval_script": "evaluation/test_scripts/end_to_end/E01_build_ma_system.py"
+      "eval_script": "tasks/test_scripts/end_to_end/E01_build_ma_system.py"
     },
     "termination_criteria": "The tutor has completed the following steps with computational evidence (not just verbal discussion): (1) Showed code and output for computing moving average indicators and generating crossover trading signals from OHLCV data. (2) Showed code and output for a backtest that computes at least one performance metric such as Sharpe ratio, total return, or max drawdown. (3) Showed a visualization of the equity curve, trading signals, or strategy performance. (4) Responded to the student's follow-up with additional analysis such as parameter iteration, result interpretation, or strategy improvement discussion. Once all four steps have been computationally demonstrated, the session is complete."
   },

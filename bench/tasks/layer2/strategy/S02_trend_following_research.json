@@ -48,7 +48,7 @@
       "construct_signal"
     ],
     "quant_validation": {
-      "eval_script": "evaluation/test_scripts/strategy/S02_trend_following_research.py"
+      "eval_script": "tasks/test_scripts/strategy/S02_trend_following_research.py"
     },
     "termination_criteria": "The tutor has completed the following research steps with computational evidence (not just verbal discussion): (1) Explored trend-following characteristics in the data and constructed at least one explicit trend signal with a clear mathematical definition, supported by statistical or visual observations about why trends might be exploitable. (2) Evaluated the signal quantitatively using at least one metric such as IC, IC decay, quantile return spread, or turnover, and presented specific numerical values. (3) Performed or presented a rough PnL or cumulative return estimate for the signal-based strategy, including at least one risk-adjusted metric such as Sharpe ratio. (4) Discussed signal robustness across time periods or conditions under which trend-following fails, referencing specific data periods or market regimes. Once all four steps have been computationally demonstrated, the research session is complete."
   },

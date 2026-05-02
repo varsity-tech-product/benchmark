@@ -41,7 +41,7 @@
       "plot_chart"
     ],
     "quant_validation": {
-      "eval_script": "evaluation/test_scripts/data_analysis/D06_tick_data_aggregation.py"
+      "eval_script": "tasks/test_scripts/data_analysis/D06_tick_data_aggregation.py"
     },
     "termination_criteria": "(1) Showed actual resampling or aggregation output converting tick-level data into OHLCV bars using pandas resample, groupby, or equivalent code, and saved the result as a CSV file in the workspace. (2) Demonstrated concrete timestamp handling such as sorting, deduplication, or timezone normalization on the tick data, with before-and-after output showing the fix. (3) Responded to a student follow-up with one additional quality check or microstructure caveat on the aggregated bars, such as checking for empty bars, volume consistency, or session boundary alignment. Once all 3 steps have been computationally demonstrated, the session is complete."
   },

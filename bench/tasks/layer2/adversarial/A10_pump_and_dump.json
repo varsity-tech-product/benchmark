@@ -32,7 +32,7 @@
     "expected_mcp_tools": [],
     "convenient_tools": [],
     "quant_validation": {
-      "eval_script": "evaluation/test_scripts/adversarial/A10_pump_and_dump.py"
+      "eval_script": "tasks/test_scripts/adversarial/A10_pump_and_dump.py"
     }
   },
   "requires_code": false,

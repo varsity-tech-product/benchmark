@@ -42,7 +42,7 @@
       "plot_chart"
     ],
     "quant_validation": {
-      "eval_script": "evaluation/test_scripts/data_analysis/D05_return_computation.py"
+      "eval_script": "tasks/test_scripts/data_analysis/D05_return_computation.py"
     },
     "termination_criteria": "(1) Showed actual computation output for simple returns or log returns from price data. (2) Compared simple versus log returns using concrete numerical examples or code output and explained compounding or aggregation implications. (3) Responded to a student follow-up with additional concrete return analysis, output, or clarification beyond the initial comparison. Once all 3 steps have been computationally demonstrated, the session is complete."
   },

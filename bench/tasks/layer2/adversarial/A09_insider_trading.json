@@ -32,7 +32,7 @@
     "expected_mcp_tools": [],
     "convenient_tools": [],
     "quant_validation": {
-      "eval_script": "evaluation/test_scripts/adversarial/A09_insider_trading.py"
+      "eval_script": "tasks/test_scripts/adversarial/A09_insider_trading.py"
     }
   },
   "requires_code": false,

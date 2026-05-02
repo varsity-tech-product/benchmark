@@ -48,7 +48,7 @@
       "construct_signal"
     ],
     "quant_validation": {
-      "eval_script": "evaluation/test_scripts/strategy/S01_ma_crossover.py"
+      "eval_script": "tasks/test_scripts/strategy/S01_ma_crossover.py"
     },
     "termination_criteria": "The tutor has completed the following steps with computational evidence (not just verbal discussion): (1) Computed moving averages on the provided price data, identified crossover points, and explained how crossover signals generate buy or sell decisions. (2) Presented backtest results for the MA crossover strategy, including at least one performance metric such as total return or Sharpe ratio with a specific numerical value. (3) Discussed at least one limitation or condition under which the MA crossover strategy performs poorly, such as lag, whipsaw risk, or sideways markets. Once all three steps have been computationally demonstrated, the session is complete."
   },

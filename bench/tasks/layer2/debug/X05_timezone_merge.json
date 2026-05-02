@@ -45,7 +45,7 @@
       "search_docs"
     ],
     "quant_validation": {
-      "eval_script": "evaluation/test_scripts/debug/X05_timezone_merge.py"
+      "eval_script": "tasks/test_scripts/debug/X05_timezone_merge.py"
     },
     "termination_criteria": "The tutor has completed the following steps with computational evidence (not just verbal discussion): (1) Reviewed the student's merge code and identified the timezone mismatch where BTC data in UTC and AAPL data in Eastern Time are merged on calendar date without tz_convert, causing a 1-day offset. (2) Explained why 00:00 UTC maps to the previous day in Eastern Time and how this causes each BTC row to be aligned with the wrong AAPL trading day. (3) Showed the corrected code with tz_convert('US/Eastern') applied before extracting .dt.date and presented execution results demonstrating the fix, such as the correlation value changing. (4) Responded to the student's follow-up about the timezone alignment or the fix with additional explanation or analysis beyond the initial demonstration. Once all four steps have been computationally demonstrated, the session is complete."
   },
