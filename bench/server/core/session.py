@@ -509,10 +509,14 @@ class TutoringSession:
 
         # ── TC check ──  (aligned: _EfficientSimulator.stop_conversation)
         try:
+            full_tool_logs = (
+                self._proxy.get_logs() if self._proxy is not None else []
+            )
             tc_met = self._tc_checker is not None and self._tc_checker.check(
                 self._conversation,
                 turn_evidence=turn_evidence,
                 turn_index=tc_turn_index,
+                tool_logs=full_tool_logs,
             )
         except Exception as exc:
             logger.warning("TC check failed: %s", exc)

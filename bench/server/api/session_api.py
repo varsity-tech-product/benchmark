@@ -547,7 +547,16 @@ class SessionState:
                 model=resolved_sim_model,
             )
 
-            tc_checker = TCChecker(tc_items) if tc_items else None
+            required_tools = (
+                list(task.ground_truth.expected_mcp_tools)
+                if task.ground_truth and task.ground_truth.expected_mcp_tools
+                else []
+            )
+            tc_checker = (
+                TCChecker(tc_items or [], required_tools=required_tools)
+                if (tc_items or required_tools)
+                else None
+            )
 
             effective_timeout = task.timeout_minutes
             deadline = None
