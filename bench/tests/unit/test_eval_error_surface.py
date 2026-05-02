@@ -4,9 +4,8 @@
 failed result judge, failed code eval) and returns an empty/zero score
 with the error text stashed under `{component}_eval_error` in eval_results.
 Before this fix those error strings were dropped before reaching
-`eval_meta.json` or `/ops/session/{sid}/scores`, leaving callers with empty
-`tutor_scores: {}` and no way to tell if it was a genuine zero or a
-silent upstream failure.
+`eval_meta.json` or `/ops/session/{sid}/scores`, leaving callers with no
+way to tell if a zero score was genuine or a silent upstream failure.
 """
 
 from __future__ import annotations
@@ -24,25 +23,23 @@ class TestCollectEvalErrors:
         assert _collect_eval_errors({}) == {}
 
     def test_results_without_error_keys_returns_empty_dict(self):
-        assert _collect_eval_errors({"quant_result": 0.7, "tutor_scores": {}}) == {}
+        assert _collect_eval_errors({"quant_result": 0.7}) == {}
 
-    def test_tutor_error_is_surfaced_without_suffix(self):
+    def test_quant_result_error_is_surfaced(self):
         out = _collect_eval_errors(
-            {"tutor_eval_error": "Rubric file not found: /path/rubric.json"}
+            {"quant_result_error": "eval_script crashed"}
         )
-        assert out == {"tutor": "Rubric file not found: /path/rubric.json"}
+        assert out == {"quant_result": "eval_script crashed"}
 
     def test_multiple_errors_coexist(self):
         out = _collect_eval_errors(
             {
-                "tutor_eval_error": "Rubric missing",
                 "quant_result_error": "eval_script crashed",
                 "code_eval_error": "reference store timeout",
                 "tool_usage_error": "registry lookup failed",
             }
         )
         assert out == {
-            "tutor": "Rubric missing",
             "quant_result": "eval_script crashed",
             "code_eval": "reference store timeout",
             "tool_usage": "registry lookup failed",
@@ -58,18 +55,18 @@ class TestCollectEvalErrors:
 
     def test_non_string_error_is_stringified(self):
         err = ValueError("bad")
-        out = _collect_eval_errors({"tutor_eval_error": err})
-        assert out == {"tutor": "bad"}
+        out = _collect_eval_errors({"quant_result_error": err})
+        assert out == {"quant_result": "bad"}
 
     def test_empty_string_error_is_ignored(self):
         # Guard against a no-op error stash producing a misleading key.
-        assert _collect_eval_errors({"tutor_eval_error": ""}) == {}
+        assert _collect_eval_errors({"quant_result_error": ""}) == {}
 
     def test_none_error_is_ignored(self):
-        assert _collect_eval_errors({"tutor_eval_error": None}) == {}
+        assert _collect_eval_errors({"quant_result_error": None}) == {}
 
     def test_unknown_error_keys_are_not_surfaced(self):
-        # Only the three known component keys propagate; anything else is
+        # Only the registered component keys propagate; anything else is
         # left in eval_results for internal use but does not leak to the
         # API surface.
         assert _collect_eval_errors({"some_other_error": "nope"}) == {}

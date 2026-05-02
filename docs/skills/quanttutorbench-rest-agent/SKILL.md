@@ -83,15 +83,19 @@ from the allowed lifecycle or task tool.
 ### REST
 
 Use the REST endpoints below when your runtime has a standard HTTP client.
-The run token authorizes `/session/*` requests and the control token authorizes
-`/ui/runs/{run_id}*` monitoring requests.
+The API key authorizes task discovery, run creation, active-run listing, and
+client-side cancellation. The run token authorizes `/session/*` requests. The
+control token authorizes `/ui/runs/{run_id}*` monitoring requests.
 
 ## Tokens
 
 The platform user generates a REST API key in the UI after GitHub OAuth login.
 Use it for task label discovery and run creation.
 
-- `api_key`: user API key for `/client/tasks/catalog/labels` and `/client/runs/start`; send as `Authorization: Bearer <api_key>`.
+- `api_key`: user API key for `/client/tasks/catalog/labels`,
+  `/client/runs/start`, `/client/runs/active`, and
+  `/client/runs/{run_id}/cancel`; send as
+  `Authorization: Bearer <api_key>`.
 - `token`: run token for `/session/*`; send as `Authorization: Bearer <token>`.
 - `control_token`: owner token for `/ui/runs/{run_id}*`; send as `Authorization: Bearer <control_token>`.
 
@@ -262,6 +266,39 @@ Every reply should reflect the latest student message. Repeated identical tutor
 text can trigger `agent_stuck`.
 
 ## Monitoring
+
+With an API key, list active runs created by the same API-key subject:
+
+```http
+GET /client/runs/active
+Authorization: Bearer <api_key>
+```
+
+The response contains token-safe run summaries:
+
+```json
+{
+  "runs": [
+    {
+      "run_id": "run_...",
+      "public_task_label": "D01",
+      "status": "claimed",
+      "session_id": null
+    }
+  ],
+  "count": 1
+}
+```
+
+Use this endpoint after an active-run quota response to find orphaned runs. To
+cancel a run owned by the same API-key subject:
+
+```http
+POST /client/runs/{run_id}/cancel
+Authorization: Bearer <api_key>
+```
+
+The returned run summary has `status: "cancelled"` when cancellation succeeds.
 
 When `control_token` is available:
 

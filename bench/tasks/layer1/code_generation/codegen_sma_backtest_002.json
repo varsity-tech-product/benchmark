@@ -16,16 +16,6 @@
     "moving-averages",
     "strategy"
   ],
-  "persona_ids": [
-    "finance_veteran",
-    "developer_crossover",
-    "double_novice",
-    "fullstack_practitioner"
-  ],
-  "student_openings": {
-    "fullstack_practitioner": "I need to implement Can you help me write a Python backtest for a simple moving. I know the basics of both — let's discuss the right approach before I code it.",
-    "finance_veteran": "I need to code Can you help me write a Python backtest for a simple moving. I know what the result should look like financially — just need help writing it in Python.",
-    "developer_crossover": "I need to write code for Can you help me write a Python backtest for a simple moving. The coding is easy — but I need to understand what this financial concept actually means first.",
-    "double_novice": "I need to write code for Can you help me write a Python backtest for a simple moving. I'm still learning both Python and finance — can you walk me through it?"
-  }
+  "persona_id": "finance_veteran",
+  "student_opening": "I need to code Can you help me write a Python backtest for a simple moving. I know what the result should look like financially — just need help writing it in Python."
 }

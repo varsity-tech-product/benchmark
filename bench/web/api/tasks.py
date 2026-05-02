@@ -27,7 +27,7 @@ async def list_tasks():
                     "category": t.get("category", category_dir.name),
                     "difficulty": t.get("difficulty", ""),
                     "description": t.get("description", ""),
-                    "persona_ids": t.get("persona_ids", []),
+                    "persona_id": t.get("persona_id", ""),
                     "max_turns": t.get("max_turns", 10),
                     "timeout_minutes": t.get("timeout_minutes"),
                     "requires_code": t.get("requires_code", False),

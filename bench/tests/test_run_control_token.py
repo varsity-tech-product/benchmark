@@ -29,7 +29,7 @@ def _write_task(root: Path) -> None:
                 "category": "data",
                 "difficulty": "easy",
                 "description": "d",
-                "persona_ids": ["p"],
+                "persona_id": "p",
                 "max_turns": 4,
             }
         ),
@@ -122,8 +122,8 @@ class ControlTokenTests(unittest.TestCase):
             assignment, _, _ = manager._run_service.create_and_claim("D01")
             manager._run_service.bind_session(assignment.run_id, "session-1")
             conversation = [
-                {"role": "user", "content": f"message {idx}"}
-                for idx in range(55)
+                {"role": "user", "content": f"message {index}"}
+                for index in range(60)
             ]
             manager._sessions["session-1"] = SimpleNamespace(
                 phase=SimpleNamespace(value="in_session"),
@@ -133,6 +133,13 @@ class ControlTokenTests(unittest.TestCase):
                 ),
                 proxy=SimpleNamespace(
                     get_logs=lambda: [
+                        {
+                            "name": "send_message",
+                            "args": {},
+                            "result": "{}",
+                            "success": True,
+                            "duration_ms": 5.0,
+                        },
                         {
                             "name": "run_lean_backtest",
                             "args": {},
@@ -152,13 +159,14 @@ class ControlTokenTests(unittest.TestCase):
             self.assertEqual(body["runs"][0]["observer_status"], "active")
             self.assertEqual(body["runs"][0]["session_phase"], "in_session")
             self.assertEqual(body["runs"][0]["turn"], 1)
-            self.assertEqual(len(body["runs"][0]["conversation"]), 55)
+            self.assertEqual(len(body["runs"][0]["conversation"]), 60)
             self.assertEqual(body["runs"][0]["conversation"][0]["content"], "message 0")
-            self.assertEqual(body["runs"][0]["conversation"][-1]["content"], "message 54")
+            self.assertEqual(body["runs"][0]["conversation"][-1]["content"], "message 59")
             self.assertEqual(
                 body["runs"][0]["recent_tool_logs"][0]["name"],
                 "run_lean_backtest",
             )
+            self.assertEqual(len(body["runs"][0]["recent_tool_logs"]), 1)
 
     def test_local_dev_can_open_live_run_detail_without_control_token(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -172,7 +180,17 @@ class ControlTokenTests(unittest.TestCase):
                     conversation=[{"role": "user", "content": "opening"}],
                     turn=1,
                 ),
-                proxy=SimpleNamespace(get_logs=lambda: []),
+                proxy=SimpleNamespace(
+                    get_logs=lambda: [
+                        {
+                            "name": "send_message",
+                            "args": {"text": "answer"},
+                            "result": "{}",
+                            "success": True,
+                            "duration_ms": 5.0,
+                        }
+                    ]
+                ),
             )
 
             status = client.get(f"/ui/runs/{assignment.run_id}")
@@ -182,6 +200,7 @@ class ControlTokenTests(unittest.TestCase):
             self.assertEqual(live.status_code, 200)
             self.assertEqual(status.json()["run_id"], assignment.run_id)
             self.assertEqual(live.json()["conversation"][0]["content"], "opening")
+            self.assertEqual(live.json()["recent_tool_logs"][0]["name"], "send_message")
 
     def test_live_observer_marks_missing_active_session_stale(self):
         with tempfile.TemporaryDirectory() as tmp:

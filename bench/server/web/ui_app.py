@@ -22,6 +22,7 @@ from pathlib import Path
 from server.audit import record_event
 from server.auth import AuthService
 from server.quota import QuotaExceeded
+from server.run.models import TERMINAL_STATUSES
 from starlette.requests import Request
 from starlette.responses import (
     FileResponse,
@@ -111,6 +112,20 @@ def _sanitize_for_json(obj):
     return obj
 
 
+def _is_protocol_tool_log(log) -> bool:
+    if isinstance(log, dict):
+        name = log.get("name") or log.get("tool_name") or ""
+    else:
+        name = getattr(log, "name", "") or getattr(log, "tool_name", "")
+    return str(name) == "send_message"
+
+
+def _safe_tool_log_dict(log) -> dict:
+    if isinstance(log, dict):
+        return log
+    return asdict(log)
+
+
 # ---------------------------------------------------------------------------
 # Route factory
 # ---------------------------------------------------------------------------
@@ -142,6 +157,12 @@ def ui_routes(manager) -> list[Route]:
             return None
         except ValueError:
             raise
+
+    def _client_owner_id(user) -> str:
+        return str(user.user_id if user else "")
+
+    def _client_owns_run(run, user) -> bool:
+        return str(run.owner_user_id or "") == _client_owner_id(user)
 
     async def auth_login(request: Request):
         return await auth.login(request)
@@ -780,12 +801,8 @@ def ui_routes(manager) -> list[Route]:
 
         recent_logs = []
         if session.proxy:
-            logs = session.proxy.get_logs()
-            for log in logs[-20:]:
-                if isinstance(log, dict):
-                    recent_logs.append(log)
-                else:
-                    recent_logs.append(asdict(log))
+            for log in session.proxy.get_logs()[-20:]:
+                recent_logs.append(_safe_tool_log_dict(log))
 
         return JSONResponse(
             _sanitize_for_json(
@@ -832,11 +849,13 @@ def ui_routes(manager) -> list[Route]:
 
         if session.proxy:
             recent_logs = []
-            for log in session.proxy.get_logs()[-20:]:
-                if isinstance(log, dict):
-                    recent_logs.append(log)
-                else:
-                    recent_logs.append(asdict(log))
+            logs = [
+                log
+                for log in session.proxy.get_logs()
+                if not _is_protocol_tool_log(log)
+            ]
+            for log in logs[-20:]:
+                recent_logs.append(_safe_tool_log_dict(log))
             payload["recent_tool_logs"] = recent_logs
 
         return payload
@@ -1018,6 +1037,66 @@ def ui_routes(manager) -> list[Route]:
             }
         )
 
+    async def client_list_active_runs(request: Request) -> JSONResponse:
+        """``GET /client/runs/active`` — list API-key-owned active runs."""
+        run_service = getattr(manager, "_run_service", None)
+        if run_service is None:
+            return JSONResponse({"error": "Run service not initialized"}, 503)
+
+        user, auth_err = auth.resolve_client_user(request)
+        if auth_err is not None:
+            return auth_err
+
+        runs = [
+            run
+            for run in run_service.list_runs(owner_user_id=_client_owner_id(user))
+            if run.status not in TERMINAL_STATUSES
+        ]
+        return JSONResponse(
+            {
+                "runs": [run.public_dict() for run in runs],
+                "count": len(runs),
+            }
+        )
+
+    async def client_cancel_run(request: Request) -> JSONResponse:
+        """``POST /client/runs/{run_id}/cancel`` — cancel an API-key-owned run."""
+        run_service = getattr(manager, "_run_service", None)
+        if run_service is None:
+            return JSONResponse({"error": "Run service not initialized"}, 503)
+
+        user, auth_err = auth.resolve_client_user(request)
+        if auth_err is not None:
+            return auth_err
+
+        run_id = request.path_params["run_id"]
+        run = run_service.get_run(run_id)
+        if run is None:
+            return JSONResponse({"error": "Run not found"}, 404)
+        if not _client_owns_run(run, user):
+            return JSONResponse({"error": "Run access denied"}, status_code=403)
+
+        try:
+            await manager.cancel_run(run_id)
+        except ValueError as exc:
+            return JSONResponse({"error": str(exc)}, 400)
+        except Exception as exc:
+            logger.error("client_cancel_run %s failed: %s", run_id, exc, exc_info=True)
+            return JSONResponse({"error": f"Cancel failed: {exc}"}, 500)
+
+        run = run_service.get_run(run_id)
+        record_event(
+            manager.bench_root,
+            user,
+            "run.cancel",
+            request=request,
+            run_id=run_id,
+            session_id=run.session_id if run else "",
+            success=True,
+            payload={"source": "client"},
+        )
+        return JSONResponse(run.public_dict() if run else {"status": "cancelled"})
+
     async def client_upload_trace(request: Request) -> JSONResponse:
         """``POST /client/runs/{run_id}/trace`` — optional trace upload."""
         run_service = getattr(manager, "_run_service", None)
@@ -1116,5 +1195,7 @@ def ui_routes(manager) -> list[Route]:
         ),
         Route("/client/runs/claim", client_claim_run, methods=["POST"]),
         Route("/client/runs/start", client_start_run, methods=["POST"]),
+        Route("/client/runs/active", client_list_active_runs, methods=["GET"]),
+        Route("/client/runs/{run_id}/cancel", client_cancel_run, methods=["POST"]),
         Route("/client/runs/{run_id}/trace", client_upload_trace, methods=["POST"]),
     ]

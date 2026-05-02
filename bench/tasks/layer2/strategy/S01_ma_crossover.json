@@ -5,18 +5,8 @@
   "category": "strategy",
   "task_type": "multi_turn",
   "description": "Guide a student to build and test a moving average crossover strategy on equity data.",
-  "persona_ids": [
-    "fullstack_practitioner",
-    "finance_veteran",
-    "developer_crossover",
-    "double_novice"
-  ],
-  "student_openings": {
-    "fullstack_practitioner": "I want to benchmark a basic SMA crossover before building something more complex. Let's set up the backtest properly — walk-forward friendly, with transaction cost assumptions. What parameters do you recommend as a starting point?",
-    "finance_veteran": "I've traded MA crossover signals for years on my Bloomberg terminal. Now I want to code it up in Python so I can automate and backtest it properly. I know exactly what the strategy should do — I just need help writing it.",
-    "developer_crossover": "I want to build a trading strategy using moving averages. I can write the code — but I don't understand the financial logic. What is a moving average crossover? When does it signal buy vs sell? Why do people use it?",
-    "double_novice": "I heard you can make money with algo trading using something called moving averages. I know a tiny bit of Python from a class I took. Can you help me understand what a moving average strategy is and how to build one?"
-  },
+  "persona_id": "fullstack_practitioner",
+  "student_opening": "I want to benchmark a basic SMA crossover before building something more complex. Let's set up the backtest properly — walk-forward friendly, with transaction cost assumptions. What parameters do you recommend as a starting point?",
   "environment": {
     "data_files": [
       "AAPL_2018_2024.csv",
@@ -58,7 +48,7 @@
       "construct_signal"
     ],
     "quant_validation": {
-      "eval_script": "evaluation/test_scripts/strategy/S01_ma_crossover.py"
+      "eval_script": "tasks/test_scripts/strategy/S01_ma_crossover.py"
     },
     "termination_criteria": "The tutor has completed the following steps with computational evidence (not just verbal discussion): (1) Computed moving averages on the provided price data, identified crossover points, and explained how crossover signals generate buy or sell decisions. (2) Presented backtest results for the MA crossover strategy, including at least one performance metric such as total return or Sharpe ratio with a specific numerical value. (3) Discussed at least one limitation or condition under which the MA crossover strategy performs poorly, such as lag, whipsaw risk, or sideways markets. Once all three steps have been computationally demonstrated, the session is complete."
   },

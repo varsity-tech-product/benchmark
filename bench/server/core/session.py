@@ -509,10 +509,14 @@ class TutoringSession:
 
         # ── TC check ──  (aligned: _EfficientSimulator.stop_conversation)
         try:
+            full_tool_logs = (
+                self._proxy.get_logs() if self._proxy is not None else []
+            )
             tc_met = self._tc_checker is not None and self._tc_checker.check(
                 self._conversation,
                 turn_evidence=turn_evidence,
                 turn_index=tc_turn_index,
+                tool_logs=full_tool_logs,
             )
         except Exception as exc:
             logger.warning("TC check failed: %s", exc)
@@ -885,11 +889,6 @@ class TutoringSession:
             self._session_info_called = True
 
     def _get_student_opening(self) -> str:
-        """Get persona-specific opening message for this task.
-
-        Openings are stored on the *task* as ``student_openings: dict[persona_id, str]``.
-        """
-        openings = getattr(self._task, "student_openings", {}) or {}
-        persona_id = getattr(self._persona, "persona_id", "")
-        opening = openings.get(persona_id, "")
+        """Get the opening message for this task."""
+        opening = getattr(self._task, "student_opening", "")
         return opening or "Hi, I need help with this topic."

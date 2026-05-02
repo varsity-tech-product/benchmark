@@ -5,18 +5,8 @@
   "category": "data_analysis",
   "task_type": "multi_turn",
   "description": "Guide the student to load and inspect OHLCV stock data, explain what each column represents, and perform basic data exploration including date range and pattern identification.",
-  "persona_ids": [
-    "fullstack_practitioner",
-    "finance_veteran",
-    "developer_crossover",
-    "double_novice"
-  ],
-  "student_openings": {
-    "fullstack_practitioner": "I'm starting a new alpha research project and need to validate the data quality first. Can you walk me through a systematic OHLCV inspection — gaps, outliers, corporate action artifacts?",
-    "finance_veteran": "I've been working with Bloomberg terminals for years but now I need to load stock data in Python for the first time. I know what OHLCV means — I just need help with the pandas side. Where do I start?",
-    "developer_crossover": "I have CSV files with stock data — columns like Open, High, Low, Close, Volume. I can load them with pandas no problem, but what do these columns actually mean in a trading context? Why would I care about High vs Close?",
-    "double_novice": "My professor mentioned we'd be working with stock market data this semester. I have some data files but I don't know what any of the columns mean or how to open them in Python. Can you help me get started?"
-  },
+  "persona_id": "fullstack_practitioner",
+  "student_opening": "I'm starting a new alpha research project and need to validate the data quality first. Can you walk me through a systematic OHLCV inspection — gaps, outliers, corporate action artifacts?",
   "environment": {
     "data_files": [
       "AAPL_2018_2024.csv",
@@ -53,7 +43,7 @@
       "plot_chart"
     ],
     "quant_validation": {
-      "eval_script": "evaluation/test_scripts/data_analysis/D01_load_inspect_ohlcv.py"
+      "eval_script": "tasks/test_scripts/data_analysis/D01_load_inspect_ohlcv.py"
     },
     "termination_criteria": "(1) Showed actual pandas-based inspection output from loading at least one OHLCV file and explained what the core OHLCV columns or date field mean in plain language. (2) Presented concrete inspection results such as a real date range, sample rows, summary statistics, or a specific data pattern or anomaly discovered from the dataset. (3) Responded to a student follow-up with additional concrete analysis, output, or visualization beyond the initial inspection. Once all 3 steps have been computationally demonstrated, the session is complete."
   },

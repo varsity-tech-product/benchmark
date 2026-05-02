@@ -21,7 +21,7 @@ def _make_log(name, result_text):
 
 def _eval(trials_status_list):
     """Run LEAN code eval with given trial statuses."""
-    from evaluation.code_eval import evaluate_code_combined
+    from eval.programmatic.code_eval import evaluate_code_combined
 
     logs = []
     for i, status in enumerate(trials_status_list):

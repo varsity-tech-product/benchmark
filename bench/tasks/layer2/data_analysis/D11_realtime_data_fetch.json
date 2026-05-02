@@ -5,18 +5,8 @@
   "category": "data_analysis",
   "task_type": "multi_turn",
   "description": "Guide the student to collect realtime market updates from a streaming or polling endpoint, store timestamped updates as a CSV file, and teach quant microstructure and data-quality concepts.",
-  "persona_ids": [
-    "double_novice",
-    "finance_veteran",
-    "developer_crossover",
-    "fullstack_practitioner"
-  ],
-  "student_openings": {
-    "fullstack_practitioner": "I want to collect realtime market updates from a streaming or polling endpoint and store them properly. I know the basics — let's focus on methodology and potential pitfalls.",
-    "finance_veteran": "I need to collect realtime market updates from a streaming or polling endpoint and save them as a CSV. I understand what the data means financially — I just need help with the pandas side.",
-    "developer_crossover": "I need to collect realtime market updates from a streaming or polling endpoint. I can use pandas fine — but what do these financial metrics actually mean? Why would a trader care?",
-    "double_novice": "My professor asked us to collect realtime market updates from a streaming or polling endpoint. I'm new to both Python and finance — can you start from the basics?"
-  },
+  "persona_id": "double_novice",
+  "student_opening": "My professor asked us to collect realtime market updates from a streaming or polling endpoint. I'm new to both Python and finance — can you start from the basics?",
   "environment": {
     "data_files": [],
     "core_mcp_tools": [
@@ -50,7 +40,7 @@
       "plot_chart"
     ],
     "quant_validation": {
-      "eval_script": "evaluation/test_scripts/data_analysis/D11_realtime_data_fetch.py"
+      "eval_script": "tasks/test_scripts/data_analysis/D11_realtime_data_fetch.py"
     },
     "termination_criteria": "(1) Showed actual code that captures realtime or simulated market updates from a streaming or polling endpoint and saves timestamped records as a CSV file in the workspace. (2) Explained concrete microstructure concepts using evidence from the captured data, such as trade-vs-quote semantics, bid-ask spread interpretation, or timestamp ordering issues. (3) Responded to a student follow-up with one additional concrete quality check or latency diagnostic on the captured stream, such as out-of-order detection, gap analysis, or session boundary handling. Once all 3 steps have been computationally demonstrated, the session is complete."
   },
