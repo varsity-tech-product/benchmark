@@ -1,18 +1,19 @@
-"""Lightweight LLM client for evaluation judges.
+"""Lightweight LLM client wrapper for evaluation judges.
 
-All calls go through OpenRouter (OpenAI-compatible API).
+Thin shim that preserves the existing
+``async a_generate(prompt) -> (text, cost)`` interface while delegating
+the actual call (and audit logging) to :mod:`eval.llm.runner`. The HTTP
+call lives in exactly one place — ``LLMRunner._invoke`` — so the
+``chat.completions.create`` grep returns a single hit.
 
-Interface contract — every model object exposes:
-    async a_generate(prompt: str) -> tuple[str, float]
-    get_model_name() -> str
+Slice 6 deliberately does not propagate ``call_id`` / ``prompt_id`` /
+``prompt_version`` from the caller; slice 7 lifts those into the three
+call sites (NPC, QR judge, QP judge) for richer audit metadata.
 """
 
-from typing import Any
+import uuid
 
-from eval.llm_config import (
-    create_openrouter_async_client,
-    get_openrouter_base_url,
-)
+from eval.llm.runner import LLMRunner, default_runner
 
 # Re-export for convenience
 from eval.judges.runtime.scoring_utils import (  # noqa: F401
@@ -23,7 +24,10 @@ from eval.judges.runtime.scoring_utils import (  # noqa: F401
 class EwanLLMClient:
     """OpenRouter-backed LLM client for evaluation judges.
 
-    Exposes ``a_generate`` returning ``(text, cost)`` tuple.
+    Exposes ``a_generate`` returning ``(text, cost)`` tuple, backed by
+    :class:`eval.llm.runner.LLMRunner`. Pass ``runner=`` to override the
+    module-level default (e.g. in tests, or to attach a job-scoped audit
+    sink).
     """
 
     def __init__(
@@ -34,58 +38,47 @@ class EwanLLMClient:
         temperature: float = 0.0,
         cost_per_input_token: float = 0.0,
         cost_per_output_token: float = 0.0,
+        runner: LLMRunner | None = None,
     ):
         self.model = model
         self.temperature = temperature
         self._cpi = cost_per_input_token
         self._cpo = cost_per_output_token
-        self._api_key = api_key
-        self._base_url = (base_url or get_openrouter_base_url()).rstrip("/")
-        self._client: Any | None = None
-
-    def _get_client(self) -> Any:
-        if self._client is None:
-            self._client = create_openrouter_async_client(
-                api_key=self._api_key,
-                base_url=self._base_url,
-                timeout=120.0,
+        # Per-client connection overrides build a dedicated runner so the
+        # caller's api_key/base_url are honored. The dedicated runner shares
+        # the default's audit sink so experiment-scoped clients still emit
+        # audit records to the same log.
+        if runner is None and (api_key is not None or base_url is not None):
+            runner = LLMRunner(
+                audit_sink=default_runner().audit_sink,
+                api_key=api_key,
+                base_url=base_url,
             )
-        return self._client
+        self._runner = runner
+
+    @property
+    def runner(self) -> LLMRunner:
+        """Lazily resolved so tests that swap default_runner see it."""
+        return self._runner or default_runner()
 
     async def a_generate(
         self, prompt: str, schema=None, images: list[dict] | None = None
     ) -> tuple[str, float]:
-        """Generate text completion. Returns (text, cost).
+        """Generate text completion. Returns ``(text, cost)``.
 
         When *images* is provided, constructs multimodal content blocks
         using the OpenAI ``image_url`` format (base64 data URI).
         """
-        if images:
-            content: list[dict] = [{"type": "text", "text": prompt}]
-            for img in images:
-                content.append(
-                    {
-                        "type": "image_url",
-                        "image_url": {
-                            "url": f"data:{img['media_type']};base64,{img['data']}"
-                        },
-                    }
-                )
-            messages = [{"role": "user", "content": content}]
-        else:
-            messages = [{"role": "user", "content": prompt}]
-        client = self._get_client()
-        completion = await client.chat.completions.create(
-            model=self.model,
+        messages = _build_messages(prompt, images)
+        response = await self.runner.call(
+            call_id=f"ewan-{uuid.uuid4().hex[:12]}",
+            model_id=self.model,
             messages=messages,
             temperature=self.temperature,
+            cost_per_input_token=self._cpi,
+            cost_per_output_token=self._cpo,
         )
-        text = completion.choices[0].message.content or ""
-        usage = completion.usage
-        cost = 0.0
-        if usage:
-            cost = usage.prompt_tokens * self._cpi + usage.completion_tokens * self._cpo
-        return text, cost
+        return response.text, response.record.cost_usd
 
     def generate(
         self, prompt: str, schema=None, images: list[dict] | None = None
@@ -104,3 +97,19 @@ class EwanLLMClient:
 
     def __repr__(self) -> str:
         return f"EwanLLMClient({self.model!r})"
+
+
+def _build_messages(prompt: str, images: list[dict] | None) -> list[dict]:
+    if not images:
+        return [{"role": "user", "content": prompt}]
+    content: list[dict] = [{"type": "text", "text": prompt}]
+    for img in images:
+        content.append(
+            {
+                "type": "image_url",
+                "image_url": {
+                    "url": f"data:{img['media_type']};base64,{img['data']}"
+                },
+            }
+        )
+    return [{"role": "user", "content": content}]
