@@ -374,27 +374,26 @@ def _execute_group_run(
         jobs = []
         job_list = []  # for the SSE event
         for task in tasks:
-            pids = [req.persona] if req.persona else task.persona_ids
-            for pid in pids:
-                persona_path = _BENCH_ROOT / "personas" / f"{pid}.json"
-                with open(persona_path) as f:
-                    persona = StudentPersona(**json.load(f))
-                jobs.append(
-                    JobSpec(
-                        task=task,
-                        persona=persona,
-                        agent_type=req.agent,
-                        condition_name="agent",
-                        max_turns=req.max_turns,
-                        use_docker=req.docker,
-                        save_result=True,
-                        result_base_dir=result_base_dir,
-                        model_override=req.model,
-                        skip_eval=req.skip_eval,
-                        timeout_minutes=req.timeout_minutes,
-                    )
+            pid = req.persona or task.persona_id
+            persona_path = _BENCH_ROOT / "personas" / f"{pid}.json"
+            with open(persona_path) as f:
+                persona = StudentPersona(**json.load(f))
+            jobs.append(
+                JobSpec(
+                    task=task,
+                    persona=persona,
+                    agent_type=req.agent,
+                    condition_name="agent",
+                    max_turns=req.max_turns,
+                    use_docker=req.docker,
+                    save_result=True,
+                    result_base_dir=result_base_dir,
+                    model_override=req.model,
+                    skip_eval=req.skip_eval,
+                    timeout_minutes=req.timeout_minutes,
                 )
-                job_list.append({"task_id": task.task_id, "persona_id": pid})
+            )
+            job_list.append({"task_id": task.task_id, "persona_id": pid})
 
         emit(
             "group_start",

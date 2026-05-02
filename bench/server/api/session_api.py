@@ -76,7 +76,7 @@ def _session_random_seed(
     return _stable_int_seed(task_id, session_id)
 
 
-def _resolve_persona_pin(task_id: str, persona_ids: list[str]) -> Optional[str]:
+def _resolve_persona_pin(task_id: str) -> Optional[str]:
     """Return an internal-only pinned persona override, if configured."""
     raw_json = os.environ.get("QTB_TEST_PERSONA_PIN_JSON", "").strip()
     if raw_json:
@@ -88,28 +88,10 @@ def _resolve_persona_pin(task_id: str, persona_ids: list[str]) -> Optional[str]:
             if isinstance(mapping, dict):
                 desired = mapping.get(task_id) or mapping.get("*")
                 if desired:
-                    desired = str(desired)
-                    if desired in persona_ids:
-                        return desired
-                    logger.warning(
-                        "Ignoring persona pin '%s' for task %s; valid options: %s",
-                        desired,
-                        task_id,
-                        persona_ids,
-                    )
+                    return str(desired)
 
     desired = os.environ.get("QTB_TEST_PERSONA_PIN", "").strip()
-    if not desired:
-        return None
-    if desired in persona_ids:
-        return desired
-    logger.warning(
-        "Ignoring persona pin '%s' for task %s; valid options: %s",
-        desired,
-        task_id,
-        persona_ids,
-    )
-    return None
+    return desired or None
 
 
 def _task_is_lean(task) -> bool:
@@ -420,23 +402,15 @@ class SessionState:
                 task.ground_truth.convenient_tools if task.ground_truth else ()
             )
 
-            if not task.persona_ids:
+            if not task.persona_id:
                 return {
                     "accepted": False,
-                    "error": f"Task {task_id} has no persona_ids",
+                    "error": f"Task {task_id} has no persona_id",
                 }
 
             session_seed = _session_random_seed(task_id, self.session_id, task.seed)
             selected_persona_id = persona_id.strip() if persona_id else None
             if selected_persona_id:
-                if selected_persona_id not in task.persona_ids:
-                    return {
-                        "accepted": False,
-                        "error": (
-                            f"Unsupported persona_id '{selected_persona_id}' for task {task_id}. "
-                            f"Valid persona_ids: {task.persona_ids}"
-                        ),
-                    }
                 logger.info(
                     "Session %s using explicitly requested persona=%s for task=%s",
                     self.session_id,
@@ -444,11 +418,9 @@ class SessionState:
                     task_id,
                 )
             else:
-                selected_persona_id = _resolve_persona_pin(task_id, task.persona_ids)
+                selected_persona_id = _resolve_persona_pin(task_id)
             if selected_persona_id is None:
-                selected_persona_id = random.Random(session_seed).choice(
-                    task.persona_ids
-                )
+                selected_persona_id = task.persona_id
             elif not persona_id:
                 logger.info(
                     "Session %s using internally pinned persona=%s for task=%s",

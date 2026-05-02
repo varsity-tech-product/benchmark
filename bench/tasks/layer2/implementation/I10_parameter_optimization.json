@@ -5,14 +5,8 @@
   "category": "implementation",
   "task_type": "multi_turn",
   "description": "Guide a student to implement a systematic parameter optimization workflow using LEAN's Algorithm Framework. The student must build a parameterized EMA crossover alpha that reads fast_period, slow_period, and signal_threshold from GetParameter(), then run a grid search over ~250 parameter combinations (6 fast × 9 slow × 5 threshold, filtered for fast < slow → 50 valid pairs × 5 thresholds). Results must be collected in a structured table with Sharpe/return/drawdown per combination, and the top-5 configurations identified. Optionally, the student can implement Bayesian optimization (e.g., Optuna) for faster convergence.",
-  "persona_ids": [
-    "developer_crossover",
-    "fullstack_practitioner"
-  ],
-  "student_openings": {
-    "fullstack_practitioner": "I need to implement a systematic parameter optimization workflow. I've done similar work in Python before — let's focus on getting the architecture and edge cases right.",
-    "developer_crossover": "I need to implement a systematic parameter optimization workflow. I can handle the code, but I don't understand the financial logic behind it. What should this do and why?"
-  },
+  "persona_id": "developer_crossover",
+  "student_opening": "I need to implement a systematic parameter optimization workflow. I can handle the code, but I don't understand the financial logic behind it. What should this do and why?",
   "environment": {
     "data_files": [
       "universe.json"

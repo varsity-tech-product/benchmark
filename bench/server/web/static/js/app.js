@@ -740,7 +740,7 @@
   }
 
   function renderTaskCard(task) {
-    var personaCount = (task.persona_ids || []).length;
+    var personaId = task.persona_id || '';
     var requiresCode = task.requires_code ? 'Requires code' : 'No code required';
 
     return '' +
@@ -749,7 +749,7 @@
         '<div class="task-meta-row">' +
           '<span class="badge">' + escapeHtml(titleCase(task.difficulty || 'unknown')) + '</span>' +
           '<span class="meta-chip">' + escapeHtml((task.max_turns || 0) + ' max turns') + '</span>' +
-          '<span class="meta-chip">' + escapeHtml(personaCount + ' persona' + (personaCount === 1 ? '' : 's')) + '</span>' +
+          '<span class="meta-chip">' + escapeHtml('Persona: ' + (personaId || 'unset')) + '</span>' +
         '</div>' +
         '<p class="task-description">' + escapeHtml(task.description || 'No description available.') + '</p>' +
         '<div class="task-meta-row">' +

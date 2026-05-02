@@ -5,14 +5,8 @@
   "category": "debug",
   "task_type": "multi_turn",
   "description": "Guide a student to diagnose and fix survivorship bias and stale universe issues in a LEAN multi-symbol momentum strategy that subscribes all symbols statically without listing-date checks and uses end-of-period volume averages.",
-  "persona_ids": [
-    "developer_crossover",
-    "fullstack_practitioner"
-  ],
-  "student_openings": {
-    "fullstack_practitioner": "I'm debugging an issue: diagnose and fix survivorship bias and stale universe issues in a LEAN momentum strategy. I've narrowed it down but want a second pair of eyes on the root cause.",
-    "developer_crossover": "I'm looking at code for a LEAN multi-symbol momentum strategy, but the backtest results seem too good to be true. The code reads fine to me, but I'm not sure the financial logic is correct. What should it be doing?"
-  },
+  "persona_id": "developer_crossover",
+  "student_opening": "I'm looking at code for a LEAN multi-symbol momentum strategy, but the backtest results seem too good to be true. The code reads fine to me, but I'm not sure the financial logic is correct. What should it be doing?",
   "environment": {
     "data_files": [
       "universe.json"

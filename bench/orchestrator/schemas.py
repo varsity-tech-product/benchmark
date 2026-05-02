@@ -66,7 +66,7 @@ class QuantTutorTask(BaseModel):
 
     Layer 1 tasks use: description (as question), context, reference_answer,
     synthetic_response, and minimal ground_truth.
-    Layer 2 tasks use: persona_ids, student_openings, environment, and full
+    Layer 2 tasks use: persona_id, student_opening, environment, and full
     ground_truth with required_capabilities.
     """
 
@@ -82,9 +82,9 @@ class QuantTutorTask(BaseModel):
     synthetic_response: Optional[str] = None
     source_dataset: Optional[str] = None
     tags: list[str] = Field(default_factory=list)
-    # Layer 2 fields (multi-turn tutoring) — optional for Layer 1
-    persona_ids: list[str] = Field(default_factory=list)
-    student_openings: dict[str, str] = Field(default_factory=dict)
+    # Persona / opening — single value per #122 (collapsed from persona_ids[] + student_openings{})
+    persona_id: str = ""
+    student_opening: str = ""
     environment: Optional[EnvironmentConfig] = None
     ground_truth: Optional[GroundTruth] = None
     requires_code: bool = False

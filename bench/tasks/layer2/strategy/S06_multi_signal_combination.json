@@ -5,14 +5,8 @@
   "category": "strategy",
   "task_type": "multi_turn",
   "description": "Guide a student to synthesize multiple alpha sources into a single composite signal.",
-  "persona_ids": [
-    "finance_veteran",
-    "fullstack_practitioner"
-  ],
-  "student_openings": {
-    "fullstack_practitioner": "I'm exploring how to synthesize multiple alpha sources into a single composite. I have experience with simpler strategies — what are the key trade-offs here?",
-    "finance_veteran": "I want to synthesize multiple alpha sources into a single composite. I understand the strategy logic from my trading experience — but I need help coding and backtesting it."
-  },
+  "persona_id": "finance_veteran",
+  "student_opening": "I want to synthesize multiple alpha sources into a single composite. I understand the strategy logic from my trading experience — but I need help coding and backtesting it.",
   "environment": {
     "data_files": [
       "BTCUSDT_1d_2021_2024.csv",

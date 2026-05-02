@@ -14,16 +14,6 @@
     "investor-education",
     "regulatory"
   ],
-  "persona_ids": [
-    "finance_veteran",
-    "developer_crossover",
-    "double_novice",
-    "fullstack_practitioner"
-  ],
-  "student_openings": {
-    "fullstack_practitioner": "I want to think through What calculators can help me plan for retirement, like rigorously. I'm familiar with the basics — what are the nuances?",
-    "finance_veteran": "I need help with What calculators can help me plan for retirement, like. I understand the financial side — can you help me with the computational approach?",
-    "developer_crossover": "I'm trying to understand What calculators can help me plan for retirement, like. Code and math are fine for me, but the financial meaning is what I need help with.",
-    "double_novice": "I'm learning about What calculators can help me plan for retirement, like. I'm pretty new to both finance and coding — can you help me understand step by step?"
-  }
+  "persona_id": "finance_veteran",
+  "student_opening": "I need help with What calculators can help me plan for retirement, like. I understand the financial side — can you help me with the computational approach?"
 }

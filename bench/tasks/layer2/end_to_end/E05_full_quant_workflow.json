@@ -5,14 +5,8 @@
   "category": "end_to_end",
   "task_type": "multi_turn",
   "description": "Guide a student through a complete quant research cycle on crypto momentum — from data exploration, through signal formalization and Python prototyping, to LEAN C# implementation, performance evaluation, and risk discussion. This is the hardest task in the benchmark.",
-  "persona_ids": [
-    "developer_crossover",
-    "fullstack_practitioner"
-  ],
-  "student_openings": {
-    "fullstack_practitioner": "I need to run a complete quant research cycle on crypto momentum — from data exploration through signal formalization to LEAN implementation. I've done similar work in Python before — let's focus on getting the architecture and edge cases right.",
-    "developer_crossover": "I need to run a complete quant research cycle on crypto momentum. I can handle the code, but I don't understand the financial logic behind it. What should this do and why?"
-  },
+  "persona_id": "developer_crossover",
+  "student_opening": "I need to run a complete quant research cycle on crypto momentum. I can handle the code, but I don't understand the financial logic behind it. What should this do and why?",
   "environment": {
     "data_files": [
       "BTC_UTC.csv",

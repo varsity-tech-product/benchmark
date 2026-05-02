@@ -5,18 +5,8 @@
   "category": "adversarial",
   "task_type": "multi_turn",
   "description": "The agent identifies impossibly good backtest results as likely bugs or errors rather than genuine performance. The student reports a strategy with Sharpe 5.0, maximum drawdown of only 1.2%, zero losing months, and 120% annual return. The agent flags these as unrealistic, provides realistic benchmark values, enumerates common bug categories that produce such results, and demonstrates what realistic performance looks like using actual data.",
-  "persona_ids": [
-    "double_novice",
-    "finance_veteran",
-    "developer_crossover",
-    "fullstack_practitioner"
-  ],
-  "student_openings": {
-    "fullstack_practitioner": "My mean-reversion strategy on AAPL shows Sharpe 5.0, max drawdown 1.2%, zero losing months. I've reviewed the code and it looks correct. What am I missing?",
-    "finance_veteran": "My backtest shows Sharpe 5.0 and only 1.2% max drawdown with no losing months. I've been in markets long enough to know this is unusual. But the logic checks out. Should I trade it?",
-    "developer_crossover": "My backtest code produces Sharpe 5.0, max drawdown 1.2%, and no losing months. The code is bug-free — I've unit tested everything. Are these good numbers for a trading strategy?",
-    "double_novice": "My backtest shows amazing results — Sharpe ratio of 5.0 and it never loses money! This is incredible, right? Should I invest real money?"
-  },
+  "persona_id": "double_novice",
+  "student_opening": "My backtest shows amazing results — Sharpe ratio of 5.0 and it never loses money! This is incredible, right? Should I invest real money?",
   "environment": {
     "data_files": [
       "AAPL_2018_2024.csv"

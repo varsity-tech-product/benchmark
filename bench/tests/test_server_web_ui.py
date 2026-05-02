@@ -57,7 +57,7 @@ class ResultIndexerTests(unittest.TestCase):
                     "category": "data_analysis",
                     "difficulty": "medium",
                     "description": "Demo task",
-                    "persona_ids": ["beginner_persona"],
+                    "persona_id": "beginner_persona",
                     "max_turns": 8,
                     "requires_code": True,
                 },
@@ -469,7 +469,7 @@ class UiRoutesTests(unittest.TestCase):
                     "category": "data_analysis",
                     "difficulty": "easy",
                     "description": "Demo task",
-                    "persona_ids": ["beginner_persona"],
+                    "persona_id": "beginner_persona",
                 },
             )
             _write_json(
@@ -774,7 +774,7 @@ class UiRoutesTests(unittest.TestCase):
                     "category": "data_analysis",
                     "difficulty": "easy",
                     "description": "Demo task",
-                    "persona_ids": ["beginner_persona"],
+                    "persona_id": "beginner_persona",
                 },
             )
             _write_json(

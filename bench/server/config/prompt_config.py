@@ -107,7 +107,7 @@ def build_scenario(
     incremental TC checking.  Termination is handled externally by the
     TC checker and hardcoded closing pool.
     """
-    opening = task.student_openings.get(persona_id, "")
+    opening = task.student_opening
     parts = [
         f"Scenario: {task.description}",
         f'Your opening message was: "{opening}"',

@@ -5,18 +5,8 @@
   "category": "backtest",
   "task_type": "multi_turn",
   "description": "Guide a student to build a backtest engine that architecturally prevents look-ahead bias and includes a verification test that proves future data cannot leak to an RSI mean-reversion strategy running on BTCUSDT hourly data.",
-  "persona_ids": [
-    "double_novice",
-    "finance_veteran",
-    "developer_crossover",
-    "fullstack_practitioner"
-  ],
-  "student_openings": {
-    "fullstack_practitioner": "I want to build a backtest engine that architecturally prevents look-ahead bias. I've run basic backtests before — what methodology issues should I watch for?",
-    "finance_veteran": "I need to build a backtest engine that prevents look-ahead bias with a verification test. I know what good backtesting looks like from experience — can you help me implement it in code?",
-    "developer_crossover": "I want to build a backtest engine that prevents look-ahead bias. I can write the code myself, but I need to understand the financial concepts. What does this mean in trading?",
-    "double_novice": "I want to learn about how to build a backtest engine that prevents look-ahead bias. I'm new to both Python and finance — can you walk me through it from the beginning?"
-  },
+  "persona_id": "double_novice",
+  "student_opening": "I want to learn about how to build a backtest engine that prevents look-ahead bias. I'm new to both Python and finance — can you walk me through it from the beginning?",
   "environment": {
     "data_files": [
       "BTCUSDT_1h_2023_2024.csv"

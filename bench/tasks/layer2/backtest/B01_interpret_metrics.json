@@ -5,18 +5,8 @@
   "category": "backtest",
   "task_type": "multi_turn",
   "description": "Guide a student to compute basic backtest performance metrics such as Sharpe ratio, total return, and maximum drawdown from OHLCV price data, interpret what each metric means, and assess whether a strategy is promising or problematic.",
-  "persona_ids": [
-    "double_novice",
-    "finance_veteran",
-    "developer_crossover",
-    "fullstack_practitioner"
-  ],
-  "student_openings": {
-    "double_novice": "I want to learn how to compute and interpret basic backtest metrics in Python. I'm new to both coding and finance — can you walk me through it from the very beginning?",
-    "developer_crossover": "I can write Python code but I don't really understand trading metrics like Sharpe ratio or drawdown. Can you help me write a script that computes them and explain what the numbers actually mean?",
-    "finance_veteran": "I know what backtest metrics mean conceptually, but I want to turn this analysis into a reusable Python script so I can run it on any strategy. Can you help me build that?",
-    "fullstack_practitioner": "I want a clean, inspectable Python script that computes key backtest metrics from local price data and saves the results. What's the right structure for something like this?"
-  },
+  "persona_id": "double_novice",
+  "student_opening": "I want to learn how to compute and interpret basic backtest metrics in Python. I'm new to both coding and finance — can you walk me through it from the very beginning?",
   "environment": {
     "data_files": [
       "AAPL_2018_2024.csv",

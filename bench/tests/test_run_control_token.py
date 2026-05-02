@@ -29,7 +29,7 @@ def _write_task(root: Path) -> None:
                 "category": "data",
                 "difficulty": "easy",
                 "description": "d",
-                "persona_ids": ["p"],
+                "persona_id": "p",
                 "max_turns": 4,
             }
         ),

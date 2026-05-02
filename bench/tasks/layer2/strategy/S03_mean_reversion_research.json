@@ -5,18 +5,8 @@
   "category": "strategy",
   "task_type": "multi_turn",
   "description": "Guide a student to research mean-reversion alpha in BTCUSDT daily data.",
-  "persona_ids": [
-    "double_novice",
-    "finance_veteran",
-    "developer_crossover",
-    "fullstack_practitioner"
-  ],
-  "student_openings": {
-    "fullstack_practitioner": "I'm exploring how to research mean-reversion alpha in BTCUSDT daily data. I have experience with simpler strategies — what are the key trade-offs here?",
-    "finance_veteran": "I want to research mean-reversion alpha in BTCUSDT daily data. I understand the strategy logic from my trading experience — but I need help coding and backtesting it.",
-    "developer_crossover": "I want to research mean-reversion alpha in BTCUSDT daily data. I can write the code — but I need to understand the trading logic first. Why does this work?",
-    "double_novice": "I heard about how to research mean-reversion alpha in BTCUSDT daily data in class and want to try it. I'm new to both coding and trading — can you walk me through it step by step?"
-  },
+  "persona_id": "double_novice",
+  "student_opening": "I heard about how to research mean-reversion alpha in BTCUSDT daily data in class and want to try it. I'm new to both coding and trading — can you walk me through it step by step?",
   "environment": {
     "data_files": [
       "BTCUSDT_1d_2021_2024.csv"

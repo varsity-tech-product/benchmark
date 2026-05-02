@@ -5,14 +5,8 @@
   "category": "debug",
   "task_type": "multi_turn",
   "description": "Guide a student to find and fix an order type bug in a LEAN momentum strategy where LimitOrder at current price is used instead of MarketOrder, causing most orders to go unfilled in trending markets.",
-  "persona_ids": [
-    "developer_crossover",
-    "fullstack_practitioner"
-  ],
-  "student_openings": {
-    "fullstack_practitioner": "I'm debugging an issue: find and fix an order type bug in a LEAN momentum strategy. I've narrowed it down but want a second pair of eyes on the root cause.",
-    "developer_crossover": "I'm looking at code that should find and fix an order type bug in a LEAN momentum strategy. The code reads fine to me, but I'm not sure the financial logic is correct. What should it be doing?"
-  },
+  "persona_id": "developer_crossover",
+  "student_opening": "I'm looking at code that should find and fix an order type bug in a LEAN momentum strategy. The code reads fine to me, but I'm not sure the financial logic is correct. What should it be doing?",
   "environment": {
     "data_files": [
       "universe.json"

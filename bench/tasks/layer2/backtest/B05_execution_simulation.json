@@ -5,14 +5,8 @@
   "category": "backtest",
   "task_type": "multi_turn",
   "description": "Guide a student to build a futures backtest engine with realistic execution simulation for a BTCUSDT breakout strategy, report gross versus net performance showing each cost component separately, and explain why execution simulation matters for strategy viability.",
-  "persona_ids": [
-    "finance_veteran",
-    "fullstack_practitioner"
-  ],
-  "student_openings": {
-    "fullstack_practitioner": "I want to build a futures backtest engine with realistic execution simulation. I've run basic backtests before — what methodology issues should I watch for?",
-    "finance_veteran": "I need to build a futures backtest engine with realistic execution. I know what good backtesting looks like from experience — can you help me implement it in code?"
-  },
+  "persona_id": "finance_veteran",
+  "student_opening": "I need to build a futures backtest engine with realistic execution. I know what good backtesting looks like from experience — can you help me implement it in code?",
   "environment": {
     "data_files": [
       "BTCUSDT_1d_2021_2024.csv",

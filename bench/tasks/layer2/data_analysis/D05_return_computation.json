@@ -5,18 +5,8 @@
   "category": "data_analysis",
   "task_type": "multi_turn",
   "description": "Guide the student to compute and compare simple returns vs log returns correctly, including compounding and interpretation trade-offs.",
-  "persona_ids": [
-    "double_novice",
-    "finance_veteran",
-    "developer_crossover",
-    "fullstack_practitioner"
-  ],
-  "student_openings": {
-    "fullstack_practitioner": "I want to compute and compare simple returns vs log returns rigorously. I know the basics — let's focus on methodology and potential pitfalls.",
-    "finance_veteran": "I need to compute and compare simple returns vs log returns in Python. I understand what the data means financially — I just need help with the pandas side.",
-    "developer_crossover": "I need to compute and compare simple returns vs log returns. I can use pandas fine — but what do these financial metrics actually mean? Why would a trader care?",
-    "double_novice": "My professor asked us to compute and compare simple returns vs log returns. I'm new to both Python and finance — can you start from the basics?"
-  },
+  "persona_id": "double_novice",
+  "student_opening": "My professor asked us to compute and compare simple returns vs log returns. I'm new to both Python and finance — can you start from the basics?",
   "environment": {
     "data_files": [
       "AAPL_2018_2024.csv",

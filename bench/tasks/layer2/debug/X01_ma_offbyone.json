@@ -5,14 +5,8 @@
   "category": "debug",
   "task_type": "multi_turn",
   "description": "Guide a student to find and fix an off-by-one error in a moving average calculation where rolling(19) is used instead of rolling(20) for a 20-day SMA.",
-  "persona_ids": [
-    "fullstack_practitioner",
-    "developer_crossover"
-  ],
-  "student_openings": {
-    "fullstack_practitioner": "My SMA crossover backtest is producing slightly different trade entries than a reference run. I've diffed the data and it's identical, so the issue is in the signal logic. I suspect the rolling window parameter but want a second pair of eyes on the code.",
-    "developer_crossover": "I'm trying my first trading strategy — a moving average crossover. The code runs fine but the 20-day average values look wrong compared to what I found online. I know pandas well but I'm new to financial indicators. Can you help me debug this?"
-  },
+  "persona_id": "fullstack_practitioner",
+  "student_opening": "My SMA crossover backtest is producing slightly different trade entries than a reference run. I've diffed the data and it's identical, so the issue is in the signal logic. I suspect the rolling window parameter but want a second pair of eyes on the code.",
   "environment": {
     "data_files": [
       "AAPL_2018_2024.csv"

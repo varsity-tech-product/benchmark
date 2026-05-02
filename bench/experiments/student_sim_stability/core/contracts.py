@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from experiments.student_sim_stability.core.config import STABILITY_TASK_OPENINGS
 from experiments.student_sim_stability.core.io_utils import load_json
 from experiments.student_sim_stability.core.paths import RESOURCE_ROOT
 from server.config.prompt_config import (
@@ -101,7 +102,10 @@ def build_contract_user_description(persona_id: str) -> str:
 
 def build_contract_scenario(task: "QuantTutorTask", persona_id: str) -> str:
     """Build simulator scenario without reading shared prompt_config."""
-    opening = (task.student_openings or {}).get(persona_id, "")
+    opening = (
+        STABILITY_TASK_OPENINGS.get(task.task_id, {}).get(persona_id)
+        or task.student_opening
+    )
     parts = [
         f"Scenario: {task.description}",
         f'Your opening message was: "{opening}"',

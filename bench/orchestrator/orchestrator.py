@@ -683,30 +683,30 @@ class BenchmarkOrchestrator:
             if task_filter and task.task_id not in task_filter:
                 continue
 
-            for persona_id in task.persona_ids:
-                if persona_filter and persona_id not in persona_filter:
-                    continue
+            persona_id = task.persona_id
+            if persona_filter and persona_id not in persona_filter:
+                continue
 
-                try:
-                    persona = self.load_persona(persona_id)
-                except FileNotFoundError:
-                    continue
+            try:
+                persona = self.load_persona(persona_id)
+            except FileNotFoundError:
+                continue
 
-                for trial in range(num_trials):
-                    result_key = f"{task.task_id}_{persona_id}_t{trial}"
-                    print(f"  Running: {result_key}...")
+            for trial in range(num_trials):
+                result_key = f"{task.task_id}_{persona_id}_t{trial}"
+                print(f"  Running: {result_key}...")
 
-                    result = self.run_single_task(
-                        task=task,
-                        persona=persona,
-                        agent=agent,
-                        run_index=trial,
-                        max_turns=max_turns_override or task.max_turns,
-                        tools_enabled=tools_enabled,
-                    )
+                result = self.run_single_task(
+                    task=task,
+                    persona=persona,
+                    agent=agent,
+                    run_index=trial,
+                    max_turns=max_turns_override or task.max_turns,
+                    tools_enabled=tools_enabled,
+                )
 
-                    report.results_by_task[result_key] = result
-                    report.total_tasks += 1
+                report.results_by_task[result_key] = result
+                report.total_tasks += 1
 
         # Compute KPIs
         all_result_objects = list(report.results_by_task.values())

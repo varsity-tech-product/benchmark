@@ -35,6 +35,7 @@ from experiments.student_sim_stability.core.config import (
     NEUTRAL_CONTROL_OPENING,
     OUTPUT_DIR,
     REPEATS,
+    STABILITY_TASK_OPENINGS,
     STUDENT_MODEL_SOURCE,
     STUDENT_MODELS,
     TASK_PERSONA_MAP,
@@ -185,9 +186,9 @@ def run_single_trial(
     )
 
     if use_persona:
-        opening = (task.student_openings or {}).get(
-            persona_id, "Hi, I need help with this topic."
-        )
+        opening = STABILITY_TASK_OPENINGS.get(task.task_id, {}).get(
+            persona_id
+        ) or task.student_opening or "Hi, I need help with this topic."
         opening_source = FIXTURE_OPENING_SOURCE
     else:
         opening = NEUTRAL_CONTROL_OPENING

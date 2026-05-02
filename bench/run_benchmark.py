@@ -167,15 +167,15 @@ def _build_job_spec(task, persona, args, result_base_dir: Path):
     )
 
 
-def _build_jobs_for_tasks(tasks, persona_ids, args, result_base_dir: Path) -> list:
-    """Build JobSpec list for multiple tasks × personas."""
+def _build_jobs_for_tasks(tasks, persona_override, args, result_base_dir: Path) -> list:
+    """Build JobSpec list for multiple tasks. Each task has a single persona;
+    ``persona_override`` (str | None) replaces it when set."""
 
     jobs = []
     for task in tasks:
-        pids = persona_ids or task.persona_ids
-        for pid in pids:
-            persona = _load_persona(pid)
-            jobs.append(_build_job_spec(task, persona, args, result_base_dir))
+        pid = persona_override or task.persona_id
+        persona = _load_persona(pid)
+        jobs.append(_build_job_spec(task, persona, args, result_base_dir))
     return jobs
 
 
@@ -850,27 +850,27 @@ def cmd_run(args):
             for task in tasks:
                 if task_filter and task.task_id not in task_filter:
                     continue
-                for persona_id in task.persona_ids:
-                    if persona_filter and persona_id not in persona_filter:
-                        continue
-                    persona = _load_persona(persona_id)
-                    for trial in range(args.trials):
-                        jobs.append(
-                            JobSpec(
-                                task=task,
-                                persona=persona,
-                                agent_type=getattr(args, "agent", "generic"),
-                                condition_name=getattr(args, "condition", "agent"),
-                                max_turns=args.max_turns,
-                                use_docker=args.docker,
-                                save_result=save_result,
-                                result_base_dir=result_base_dir,
-                                eval_model=getattr(args, "eval_model", None),
-                                simulator_model=getattr(args, "simulator_model", None),
-                                model_override=getattr(args, "model", None),
-                                trial_index=trial,
-                            )
+                persona_id = task.persona_id
+                if persona_filter and persona_id not in persona_filter:
+                    continue
+                persona = _load_persona(persona_id)
+                for trial in range(args.trials):
+                    jobs.append(
+                        JobSpec(
+                            task=task,
+                            persona=persona,
+                            agent_type=getattr(args, "agent", "generic"),
+                            condition_name=getattr(args, "condition", "agent"),
+                            max_turns=args.max_turns,
+                            use_docker=args.docker,
+                            save_result=save_result,
+                            result_base_dir=result_base_dir,
+                            eval_model=getattr(args, "eval_model", None),
+                            simulator_model=getattr(args, "simulator_model", None),
+                            model_override=getattr(args, "model", None),
+                            trial_index=trial,
                         )
+                    )
 
             print(f"  Running {len(jobs)} jobs with {workers} workers...")
             job_results = run_jobs_parallel(
@@ -1024,13 +1024,10 @@ def cmd_run_single(args):
     runonly = getattr(args, "runonly", False)
     evalonly = getattr(args, "evalonly", False)
 
-    # Determine personas
-    if args.persona:
-        persona_ids = [args.persona]
-        if not evalonly:
-            workers = 1
-    else:
-        persona_ids = task.persona_ids
+    # Determine persona (single per task; CLI override allowed)
+    persona_ids = [args.persona] if args.persona else [task.persona_id]
+    if args.persona and not evalonly:
+        workers = 1
 
     result_base_dir = _build_result_base_dir(args, "run-single")
 
@@ -1143,15 +1140,15 @@ def cmd_run_group(args):
         print(f"Group not found: {args.group}")
         sys.exit(1)
 
-    persona_ids = [args.persona] if args.persona else None
+    persona_override = args.persona
 
     result_base_dir = _build_result_base_dir(args, "run-group")
-    jobs = _build_jobs_for_tasks(tasks, persona_ids, args, result_base_dir)
+    jobs = _build_jobs_for_tasks(tasks, persona_override, args, result_base_dir)
 
     print(f"=== QuantTutorBench - Group: {args.group} ===")
     print(
         f"Tasks: {len(tasks)} | "
-        f"Personas: {len(persona_ids) if persona_ids else 'all'} each | "
+        f"Persona: {persona_override or 'task default'} | "
         f"Jobs: {len(jobs)} | Workers: {workers}"
     )
     if evalonly:
@@ -1186,17 +1183,17 @@ def cmd_run_layer2(args):
 
     workers = _validate_workers(args)
     tasks = _load_all_layer2_tasks()
-    persona_ids = [args.persona] if args.persona else None
+    persona_override = args.persona
 
     result_base_dir = _build_result_base_dir(args, "run-layer2")
-    jobs = _build_jobs_for_tasks(tasks, persona_ids, args, result_base_dir)
+    jobs = _build_jobs_for_tasks(tasks, persona_override, args, result_base_dir)
 
     runonly = getattr(args, "runonly", False)
     evalonly = getattr(args, "evalonly", False)
     print("=== QuantTutorBench - Layer 2 (All Tasks) ===")
     print(
         f"Tasks: {len(tasks)} | "
-        f"Personas: {len(persona_ids) if persona_ids else 'all'} each | "
+        f"Persona: {persona_override or 'task default'} | "
         f"Jobs: {len(jobs)} | Workers: {workers}"
     )
     if evalonly:
@@ -1228,7 +1225,7 @@ def cmd_run_layer2(args):
 def cmd_list_tasks(args):
     """List all available tasks."""
     tasks_dir = BENCH_ROOT / "tasks"
-    print(f"{'ID':<30} {'Layer':<8} {'Category':<20} {'Difficulty':<10} {'Personas'}")
+    print(f"{'ID':<30} {'Layer':<8} {'Category':<20} {'Difficulty':<10} {'Persona'}")
     print("-" * 95)
     for layer_dir in sorted(tasks_dir.iterdir()):
         if layer_dir.is_dir():
@@ -1238,7 +1235,7 @@ def cmd_list_tasks(args):
                     for task_file in sorted(category_dir.glob("*.json")):
                         with open(task_file) as f:
                             task = json.load(f)
-                        personas = ", ".join(task.get("persona_ids", []))
+                        personas = task.get("persona_id", "")
                         print(
                             f"{task['task_id']:<30} {layer_name:<8} {task['category']:<20} {task['difficulty']:<10} {personas}"
                         )
@@ -1695,7 +1692,7 @@ def main():
     single_parser.add_argument(
         "--persona",
         default=None,
-        help="Persona ID (omit to run all personas in parallel)",
+        help="Persona ID (override the task's default persona)",
     )
     _add_common_args(single_parser)
 
@@ -1714,7 +1711,7 @@ def main():
     group_parser.add_argument(
         "--persona",
         default=None,
-        help="Single persona (omit for all)",
+        help="Persona ID (override the task's default persona)",
     )
     _add_common_args(group_parser)
 
@@ -1723,7 +1720,7 @@ def main():
     layer2_parser.add_argument(
         "--persona",
         default=None,
-        help="Single persona (omit for all)",
+        help="Persona ID (override the task's default persona)",
     )
     _add_common_args(layer2_parser)
 
