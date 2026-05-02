@@ -1,5 +1,5 @@
 {
-  "version": "judge_rubric_registry_v1",
+  "version": "judge_rubric_registry_v2",
   "score_scale": {
     "min": 1,
     "max": 5,
@@ -75,15 +75,11 @@
         "backtest result treated as live-trading proof"
       ],
       "examples": {
-        "high": "The tutor explains annualized Sharpe, cites computed return volatility, and flags limitations.",
-        "medium": "The tutor gives correct definitions with limited caveat coverage.",
-        "low": "The tutor reverses a formula relationship or invents a computed value."
+        "high": "The agent explains annualized Sharpe, cites computed return volatility, and flags limitations.",
+        "medium": "The agent gives correct definitions with limited caveat coverage.",
+        "low": "The agent reverses a formula relationship or invents a computed value."
       },
       "mapped_judge_dimensions": [
-        {
-          "track": "tutor",
-          "dimension": "D4_instructional_accuracy"
-        },
         {
           "track": "qr",
           "dimension": "result_judge"
@@ -128,88 +124,6 @@
         {
           "track": "qp",
           "dimension": "code_lifecycle"
-        }
-      ]
-    },
-    {
-      "rubric_id": "teaching_quality.v1",
-      "version": "v1",
-      "dimension": "teaching_quality",
-      "score_scale": {
-        "min": 1,
-        "max": 5
-      },
-      "score_anchors": {
-        "1": "The tutor ignores questions or gives answer dumps.",
-        "2": "The tutor provides uneven structure or sparse interaction.",
-        "3": "The tutor answers questions and creates basic learning checkpoints.",
-        "4": "The tutor structures the explanation and adapts when confusion appears.",
-        "5": "The tutor creates a coherent learning arc with strong interaction and pacing."
-      },
-      "required_evidence": [
-        "student questions",
-        "tutor explanations",
-        "checks for understanding or scaffolding moves"
-      ],
-      "common_failure_cases": [
-        "answer dump with no teaching step",
-        "student confusion left unresolved",
-        "several concepts introduced at once"
-      ],
-      "examples": {
-        "high": "The tutor breaks the topic into steps, asks targeted checks, and adjusts the explanation.",
-        "medium": "The tutor explains correctly and asks at least one relevant check.",
-        "low": "The tutor gives the final answer with no scaffold."
-      },
-      "mapped_judge_dimensions": [
-        {
-          "track": "tutor",
-          "dimension": "D3_pedagogical_method"
-        },
-        {
-          "track": "tutor",
-          "dimension": "D5_empathetic_response"
-        }
-      ]
-    },
-    {
-      "rubric_id": "student_adaptation.v1",
-      "version": "v1",
-      "dimension": "student_adaptation",
-      "score_scale": {
-        "min": 1,
-        "max": 5
-      },
-      "score_anchors": {
-        "1": "The tutor assumes knowledge the persona lacks or lectures on known material.",
-        "2": "The tutor adapts inconsistently across finance or code concepts.",
-        "3": "The tutor generally matches the persona knowledge profile.",
-        "4": "The tutor targets unknown concepts and uses known concepts as anchors.",
-        "5": "The tutor calibrates every major concept to the persona boundary."
-      },
-      "required_evidence": [
-        "persona known concepts",
-        "persona unknown concepts",
-        "finance and code explanations in the transcript"
-      ],
-      "common_failure_cases": [
-        "dense jargon to a beginner persona",
-        "basic lecture to an expert persona",
-        "finance adaptation and code adaptation conflated"
-      ],
-      "examples": {
-        "high": "The tutor explains only the unknown concept and anchors it to the student's known base.",
-        "medium": "The tutor explains unfamiliar concepts with minor pacing gaps.",
-        "low": "The tutor uses advanced jargon throughout for a novice."
-      },
-      "mapped_judge_dimensions": [
-        {
-          "track": "tutor",
-          "dimension": "D1_finance_adaptation"
-        },
-        {
-          "track": "tutor",
-          "dimension": "D2_code_adaptation"
         }
       ]
     },
@@ -292,10 +206,6 @@
         {
           "track": "qp",
           "dimension": "problem_solving"
-        },
-        {
-          "track": "tutor",
-          "dimension": "D6_safety_boundaries"
         }
       ]
     },

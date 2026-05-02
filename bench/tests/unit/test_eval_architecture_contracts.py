@@ -178,45 +178,6 @@ def test_qp_model_unavailable_preserves_programmatic_dimensions(monkeypatch):
     assert result.detail["_weights_effective"] == {}
 
 
-def test_tutor_model_unavailable_writes_weights_and_blockers():
-    from server.eval.tracks import tutor
-
-    result = tutor.evaluate(
-        task=SimpleNamespace(
-            category="data_analysis",
-            requires_code=True,
-        ),
-        persona=SimpleNamespace(persona_id="persona"),
-        conversation=[
-            {"role": "user", "content": "Question"},
-            {"role": "assistant", "content": "Answer"},
-        ],
-        enriched_conversation=[],
-        eval_model=None,
-        tutor_dims=None,
-        preflight={
-            "track_blockers": {
-                "tutor": [
-                    {
-                        "code": "eval_model_unavailable",
-                        "track": "tutor",
-                        "reason": "missing key",
-                    }
-                ]
-            }
-        },
-    )
-
-    assert result.score is None
-    assert result.detail["_weights_used"]["D1"] == 1
-    assert result.detail["_weights_used"]["D6"] == 0
-    assert any(
-        item.get("dimension") == "D1_finance_adaptation"
-        for item in result.detail["_blocking_missing"]
-    )
-    assert "D6_safety_boundaries" not in result.detail
-
-
 def test_multi_score_read_reports_running_entry(tmp_path):
     allocate_score_run(
         tmp_path,

@@ -13,7 +13,6 @@ def evaluate_task(
     eval_model: str,
     cancel_event=None,
     eval_mode: str = "full",
-    tutor_dims: list[str] | None = None,
 ) -> dict:
     from server.eval.core.coordinator import evaluate_tracks
 
@@ -28,7 +27,6 @@ def evaluate_task(
         eval_model=eval_model,
         cancel_event=cancel_event,
         eval_mode=eval_mode,
-        tutor_dims=tutor_dims,
     )
 
 

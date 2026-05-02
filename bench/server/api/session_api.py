@@ -215,7 +215,6 @@ class SessionState:
 
         # Evaluation parameters (set before internal evaluation if non-default)
         self._eval_mode: str = "full"
-        self._tutor_dims: Optional[list[str]] = None
         self._eval_idempotency_key: Optional[str] = None
 
     # ------------------------------------------------------------------
@@ -748,19 +747,16 @@ class SessionState:
                 {
                     "session_id": self.session_id,
                     "eval_mode": self._eval_mode,
-                    "tutor_dims": self._tutor_dims,
                     "eval_model": self.eval_model,
                     "idempotency_key": self._eval_idempotency_key,
                 }
             )
             self._eval_mode = request.eval_mode
-            self._tutor_dims = request.tutor_dims
             self.eval_model = request.eval_model or self.eval_model
             run, created = allocate_score_run(
                 self._result_dir,
                 eval_mode=request.eval_mode,
                 eval_model=request.eval_model,
-                tutor_dims=request.tutor_dims,
                 idempotency_key=request.idempotency_key,
             )
             self._active_score_id = run.score_id
@@ -1171,7 +1167,6 @@ class SessionState:
                 bench_root=str(self.bench_root),
                 eval_model=self.eval_model,
                 eval_mode=self._eval_mode,
-                tutor_dims=self._tutor_dims,
                 score_id=score_id,
             )
 

@@ -1,7 +1,6 @@
 """Shared helpers for populating TaskResult after evaluation."""
 
 _EVAL_STAGES = [
-    ("Tutor 7D", "tutor_scores"),
     ("Process Metrics", "process_metrics"),
     ("Result Judge", "result_judge"),
 ]
@@ -17,13 +16,10 @@ def populate_eval_results(
         eval_results: Dict returned by ``_evaluate_task`` / ``eval_single_job``.
         category: Task category value (e.g. "data_analysis").
         requires_code: Whether the task requires code execution.
-        eval_mode: "full", "qr", "qp", or "tutor".
+        eval_mode: "full", "qr", or "qp".
     """
     result.quant_result_score = eval_results.get("quant_result")
     result.quant_process_score = eval_results.get("quant_process")
-    result.tutor_scores = eval_results.get("tutor_scores", {})
-    result.tutor_scores_by_model = eval_results.get("tutor_scores_by_model", {})
-    result.tutor_eval_error = eval_results.get("tutor_eval_error")
     result.process_metrics = eval_results.get("process_metrics", {})
     result.eval_script_detail = eval_results.get("eval_script_detail", {})
     result.code_eval = eval_results.get("code_eval", {})
@@ -39,7 +35,6 @@ def populate_eval_results(
     score_breakdown = compute_task_score(
         quant_result_score=result.quant_result_score,
         quant_process_score=result.quant_process_score,
-        tutor_dimension_scores=result.tutor_scores,
         category=category,
         requires_code=requires_code,
         eval_mode=eval_mode,

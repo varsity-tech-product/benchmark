@@ -160,7 +160,6 @@ class ResultIndexerTests(unittest.TestCase):
                             "status": "completed_scored",
                             "eval_mode": "full",
                             "eval_model": "judge-a",
-                            "tutor_dims": None,
                             "created_at": "2026-01-01T01:01:01Z",
                             "completed_at": "2026-01-01T01:01:02Z",
                             "overall_score": 0.11,
@@ -172,7 +171,6 @@ class ResultIndexerTests(unittest.TestCase):
                             "status": "completed_scored",
                             "eval_mode": "full",
                             "eval_model": "judge-a",
-                            "tutor_dims": None,
                             "created_at": "2026-01-02T01:01:01Z",
                             "completed_at": "2026-01-02T01:01:02Z",
                             "overall_score": 0.82,
@@ -202,7 +200,6 @@ class ResultIndexerTests(unittest.TestCase):
                     "completed_at": "2026-01-02T01:01:02Z",
                     "qr": {"track": "qr", "score": 0.8, "status": "success"},
                     "qp": {"track": "qp", "score": 0.84, "status": "success"},
-                    "tutor": {"track": "tutor", "score": 0.82, "status": "success"},
                 },
             )
             _write_json(
@@ -210,9 +207,9 @@ class ResultIndexerTests(unittest.TestCase):
                 {
                     "version": "2.0",
                     "score_id": "score_2",
-                    "eval_cost_usd": 0.03,
-                    "eval_cost_by_track": {"qr": 0.01, "qp": 0.01, "tutor": 0.01},
-                    "eval_cost_by_model": {"judge-a": 0.03},
+                    "eval_cost_usd": 0.02,
+                    "eval_cost_by_track": {"qr": 0.01, "qp": 0.01},
+                    "eval_cost_by_model": {"judge-a": 0.02},
                 },
             )
             (result_dir / "agent_files" / "reports").mkdir(parents=True, exist_ok=True)

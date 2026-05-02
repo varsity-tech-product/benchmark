@@ -714,7 +714,6 @@ class BenchmarkOrchestrator:
             compute_task_score(
                 r.quant_result_score,
                 r.quant_process_score,
-                r.tutor_scores,
                 category=r.category,
                 requires_code=r.requires_code,
             )
@@ -727,10 +726,6 @@ class BenchmarkOrchestrator:
             )
             report.overall_agent_score = kpis.get("overall_agent_score", 0.0)
             report.quant_agent_index = kpis.get("quant_agent_index", 0.0)
-            report.tutoring_effectiveness_index = kpis.get(
-                "tutoring_effectiveness_index", 0.0
-            )
-            report.adaptiveness_score = kpis.get("adaptiveness_score", 0.0)
             report.process_mastery_score = kpis.get("process_mastery_score", 0.0)
 
             # Populate results_by_difficulty and results_by_category (§6.4)
@@ -766,13 +761,12 @@ class BenchmarkOrchestrator:
         """Run post-hoc evaluation through the v6 coordinator.
 
         This legacy method is intentionally only a thin adapter now. The
-        coordinator owns QR/QP/Tutor isolation, missing-score semantics, and
-        result-judge/tutor/process execution.
+        coordinator owns QR/QP isolation, missing-score semantics, and
+        result-judge/process execution.
         """
         mode = {
             "qr_only": "qr",
             "qp_only": "qp",
-            "tutor_only": "tutor",
         }.get(eval_mode, eval_mode)
 
         print(f"  Eval mode: {mode}")

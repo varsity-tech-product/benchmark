@@ -17,7 +17,6 @@ _ALIASES = {
     "code_process": "server.eval.programmatic.code_process",
     "process_metrics": "server.eval.judges.process_metrics",
     "tool_usage": "server.eval.programmatic.tool_usage",
-    "tutor_conv_geval": "server.eval.judges.tutor_6d",
 }
 
 for _name, _target in _ALIASES.items():

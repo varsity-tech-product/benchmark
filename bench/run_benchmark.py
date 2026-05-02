@@ -219,29 +219,6 @@ def _print_single_result(result):
     print(f"Quant Process: {_fmt_score(result.quant_process_score)}")
     print(f"Overall:       {_fmt_score(result.overall_score)}")
 
-    if result.tutor_scores:
-        print("\n--- Tutor Dimension Scores (7D, averaged) ---")
-        for dim, score in sorted(result.tutor_scores.items()):
-            if dim.startswith("_"):
-                continue
-            if isinstance(score, (int, float)):
-                print(f"  {dim}: {score:.4f}")
-            else:
-                print(f"  {dim}: {score}")
-
-    if result.tutor_scores_by_model:
-        print("\n--- Per-Model Tutor Scores ---")
-        for model_name, dim_scores in sorted(result.tutor_scores_by_model.items()):
-            clean = {
-                k: v
-                for k, v in dim_scores.items()
-                if not k.startswith("_") and isinstance(v, (int, float))
-            }
-            avg = sum(clean.values()) / len(clean) if clean else 0.0
-            print(f"  [{model_name}] avg={avg:.4f}")
-            for dim, score in sorted(clean.items()):
-                print(f"    {dim}: {score:.4f}")
-
     if result.process_metrics:
         print("\n--- Process Metrics (QP 5 Dimensions) ---")
         _QP_METRICS = [
@@ -900,7 +877,6 @@ def cmd_run(args):
             )
             report.results_by_task = l2_report.results_by_task
             report.total_tasks = l2_report.total_tasks
-            report.adaptiveness_score = l2_report.adaptiveness_score
             report.process_mastery_score = l2_report.process_mastery_score
             report.results_by_difficulty = l2_report.results_by_difficulty
             report.results_by_category = l2_report.results_by_category
@@ -916,7 +892,6 @@ def cmd_run(args):
         compute_task_score(
             r.quant_result_score,
             r.quant_process_score,
-            r.tutor_scores,
             category=r.category,
             requires_code=r.requires_code,
         )
@@ -933,9 +908,6 @@ def cmd_run(args):
 
     report.overall_agent_score = combined_kpis.get("overall_agent_score")
     report.quant_agent_index = combined_kpis.get("quant_agent_index")
-    report.tutoring_effectiveness_index = combined_kpis.get(
-        "tutoring_effectiveness_index"
-    )
     report.combined_result_subscore = combined_kpis.get("combined_result_subscore")
 
     # Compute KPIs that may not have been set in parallel path
@@ -945,7 +917,6 @@ def cmd_run(args):
         kpis = compute_benchmark_kpis(
             all_l2_scores, task_result_objects=all_result_objects
         )
-        report.adaptiveness_score = kpis.get("adaptiveness_score")
         report.process_mastery_score = kpis.get("process_mastery_score")
 
         import statistics as _stats
@@ -985,11 +956,6 @@ def cmd_run(args):
                 f"    Layer 1 contribution:        "
                 f"{_fmt_score(report.layer1_mean_score)} (weight=0.40)"
             )
-    print(
-        f"Tutoring Effectiveness (TEI):    "
-        f"{_fmt_score(report.tutoring_effectiveness_index)}"
-    )
-    print(f"Adaptiveness Score (AS):         {_fmt_score(report.adaptiveness_score)}")
     print(
         f"Process Mastery Score (PMS):      {_fmt_score(report.process_mastery_score)}"
     )
@@ -1377,15 +1343,6 @@ def cmd_test_e2e(args):
         score = compute_task_score(
             quant_result_score=0.8,
             quant_process_score=0.6,
-            tutor_dimension_scores={
-                "D1": 0.7,
-                "D2": 0.8,
-                "D3": 0.6,
-                "D4": 0.9,
-                "D5": 0.7,
-                "D6": 0.5,
-                "D7": 0.8,
-            },
         )
         if 0 < score["overall_score"] <= 1:
             passed.append(f"Scoring: overall={score['overall_score']:.4f}")
@@ -1582,9 +1539,9 @@ def _add_common_args(parser):
     )
     parser.add_argument(
         "--eval-mode",
-        choices=["full", "qr", "qp", "tutor"],
+        choices=["full", "qr", "qp"],
         default="full",
-        help="Evaluation scope: full (default), qr, qp, or tutor.",
+        help="Evaluation scope: full (default), qr, or qp.",
     )
     parser.add_argument(
         "--live",

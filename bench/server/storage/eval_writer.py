@@ -21,7 +21,6 @@ logger = logging.getLogger(__name__)
 
 
 _EVAL_ERROR_KEYS: dict[str, str] = {
-    "tutor_eval_error": "tutor",
     "quant_result_error": "quant_result",
     "code_eval_error": "code_eval",
     "tool_usage_error": "tool_usage",
@@ -234,124 +233,17 @@ def _make_qp_track(eval_results: dict, duration: float) -> TrackResult:
     )
 
 
-def _tutor_score(
-    tutor_scores: dict, *, category: str, requires_code: bool
-) -> float | None:
-    clean = {
-        k: v
-        for k, v in tutor_scores.items()
-        if not str(k).startswith("_") and isinstance(v, (int, float))
-    }
-    if not clean:
-        return None
-    from server.eval.judges.tutor_6d import compute_tutor_score
-
-    return compute_tutor_score(clean, category=category, requires_code=requires_code)
-
-
-def _make_tutor_track(
-    eval_results: dict,
-    *,
-    category: str,
-    requires_code: bool,
-    tutor_dims: list[str] | None,
-    duration: float,
-) -> TrackResult:
-    tutor_scores = eval_results.get("tutor_scores") or {}
-    blockers: list[dict[str, Any]] = list(_preflight_blockers(eval_results, "tutor"))
-    if eval_results.get("tutor_eval_error"):
-        blockers.append(
-            {
-                "track": "tutor",
-                "dimension": "tutor",
-                "reason": str(eval_results["tutor_eval_error"]),
-            }
-        )
-    from server.eval.judges.tutor_6d import DIMENSIONS, get_dimension_weight
-
-    expected_dims = tutor_dims or [
-        dim
-        for dim in DIMENSIONS
-        if get_dimension_weight(category, dim, requires_code=requires_code) > 0.0
-    ]
-    for dim in expected_dims:
-        if dim not in tutor_scores or not isinstance(
-            tutor_scores.get(dim), (int, float)
-        ):
-            blockers.append(
-                {
-                    "track": "tutor",
-                    "dimension": dim,
-                    "reason": "Required Tutor dimension is missing",
-                }
-            )
-    score = _tutor_score(tutor_scores, category=category, requires_code=requires_code)
-    if blockers:
-        score = None
-    per_model = (
-        eval_results.get("tutor_scores_by_model")
-        or tutor_scores.get("_per_model")
-        or {}
-    )
-    reasons = tutor_scores.get("_dim_reasons") if isinstance(tutor_scores, dict) else {}
-    dim_errors = (
-        tutor_scores.get("_dim_errors") if isinstance(tutor_scores, dict) else {}
-    )
-    detail: dict[str, Any] = {}
-    for dim in expected_dims:
-        value = tutor_scores.get(dim)
-        missing = not isinstance(value, (int, float))
-        error_list = dim_errors.get(dim, []) if isinstance(dim_errors, dict) else []
-        detail[dim] = {
-            "score": value if not missing else None,
-            "status": "failed" if error_list else ("missing" if missing else "success"),
-            "required_for_track_score": True,
-            "reason": (
-                "; ".join(str(e) for e in error_list)
-                if error_list
-                else ((reasons or {}).get(dim, "") if isinstance(reasons, dict) else "")
-            ),
-            "evidence": [],
-            "per_model": (
-                {
-                    model: dims.get(dim)
-                    for model, dims in per_model.items()
-                    if isinstance(dims, dict) and dim in dims
-                }
-                if isinstance(per_model, dict)
-                else {}
-            ),
-        }
-        if error_list:
-            detail[dim]["error"] = "; ".join(str(e) for e in error_list)
-    for key, value in tutor_scores.items():
-        if str(key).startswith("_"):
-            detail[key] = value
-
-    return TrackResult(
-        track="tutor",
-        score=score,
-        status=_track_status(score, blockers),
-        detail=detail,
-        blocking_missing=blockers,
-        eval_cost=_eval_cost_from(tutor_scores),
-        eval_cost_by_model=_cost_by_model_from(tutor_scores),
-        duration_seconds=duration,
-    )
-
-
 def _compute_overall(
     *,
     eval_mode: str,
     qr: TrackResult | None,
     qp: TrackResult | None,
-    tutor: TrackResult | None,
 ) -> tuple[float | None, list[dict[str, Any]]]:
-    tracks = [t for t in (qr, qp, tutor) if t is not None]
+    tracks = [t for t in (qr, qp) if t is not None]
     blockers = [b for t in tracks for b in t.blocking_missing]
     from server.eval.core.scoring import compute_overall
 
-    return compute_overall(qr=qr, qp=qp, tutor=tutor, eval_mode=eval_mode), blockers
+    return compute_overall(qr=qr, qp=qp, eval_mode=eval_mode), blockers
 
 
 def _build_eval_output(
@@ -364,10 +256,7 @@ def _build_eval_output(
     created_at: str,
     completed_at: str,
     duration: float,
-    tutor_dims: list[str] | None = None,
 ) -> EvalOutput:
-    category = task.category.value
-    requires_code = task.requires_code
     qr = (
         _make_qr_track(eval_results, duration)
         if _mode_includes(eval_mode, "qr")
@@ -378,25 +267,13 @@ def _build_eval_output(
         if _mode_includes(eval_mode, "qp")
         else None
     )
-    tutor = (
-        _make_tutor_track(
-            eval_results,
-            category=category,
-            requires_code=requires_code,
-            tutor_dims=tutor_dims,
-            duration=duration,
-        )
-        if _mode_includes(eval_mode, "tutor")
-        else None
-    )
-    overall, blockers = _compute_overall(eval_mode=eval_mode, qr=qr, qp=qp, tutor=tutor)
+    overall, blockers = _compute_overall(eval_mode=eval_mode, qr=qr, qp=qp)
     status = "completed_scored" if overall is not None else "completed_not_computable"
     return EvalOutput(
         score_id=score_id,
         score_status=status,
         qr=qr,
         qp=qp,
-        tutor=tutor,
         overall_score=overall,
         eval_mode=eval_mode,
         eval_model=eval_model,
@@ -411,7 +288,7 @@ def _build_eval_output(
 def _build_cost(
     output: EvalOutput, stage_costs: dict[str, dict[str, float]] | None = None
 ) -> dict[str, Any]:
-    tracks = [t for t in (output.qr, output.qp, output.tutor) if t is not None]
+    tracks = [t for t in (output.qr, output.qp) if t is not None]
     by_track = {t.track: round(t.eval_cost, 6) for t in tracks}
     by_model: dict[str, float] = {}
     by_stage_model: dict[str, dict[str, float]] = dict(stage_costs or {})
@@ -437,7 +314,6 @@ def save_eval_results(
     eval_results: dict,
     eval_mode: str = "full",
     eval_model: str | None = None,
-    tutor_dims: list[str] | None = None,
     score_id: str | None = None,
     created_at: str | None = None,
     duration: float = 0.0,
@@ -452,7 +328,6 @@ def save_eval_results(
             result_dir,
             eval_mode=eval_mode,
             eval_model=eval_model,
-            tutor_dims=tutor_dims,
         )
         score_id = run.score_id
         created_at = run.created_at
@@ -473,7 +348,6 @@ def save_eval_results(
         task=task,
         eval_mode=eval_mode,
         eval_model=eval_model,
-        tutor_dims=tutor_dims,
         created_at=created_at or completed_at,
         completed_at=completed_at,
         duration=duration,
@@ -521,7 +395,6 @@ def save_terminal_eval_result(
         "overall_score": None,
         "qr": None,
         "qp": None,
-        "tutor": None,
         "error": error,
         "preflight": preflight or {},
     }
@@ -556,7 +429,6 @@ def run_evaluation(
     eval_model: str,
     cancel_event=None,
     eval_mode: str = "full",
-    tutor_dims: list[str] | None = None,
     score_id: str | None = None,
 ) -> dict:
     """Run evaluation and save score.json + cost.json under a score_n directory."""
@@ -568,7 +440,6 @@ def run_evaluation(
             result_dir,
             eval_mode=eval_mode,
             eval_model=eval_model,
-            tutor_dims=tutor_dims,
         )
         score_id = run.score_id
         created_at = run.created_at
@@ -597,7 +468,6 @@ def run_evaluation(
     request = EvalRequest(
         session_id=(run_state.get("session_id") or ""),
         eval_mode=eval_mode,
-        tutor_dims=tutor_dims,
         eval_model=eval_model,
     )
     logger.info("Running evaluation score_id=%s mode=%s...", score_id, eval_mode)

@@ -11,7 +11,6 @@ _ALIASES = {
     "conv_geval": "server.eval.judges.runtime.conv_geval",
     "llm_client": "server.eval.judges.runtime.llm_client",
     "model_resolver": "server.eval.judges.runtime.model_resolver",
-    "tutor_conv_geval": "server.eval.judges.tutor_6d",
 }
 
 for _name, _target in _ALIASES.items():

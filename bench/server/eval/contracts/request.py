@@ -11,22 +11,13 @@ class EvalError(RuntimeError):
     """Raised when an evaluation request cannot be resolved."""
 
 
-_VALID_MODES = {"full", "qr", "qp", "tutor"}
-_TUTOR_DIM_ALIASES = {
-    "D1": "D1_finance_adaptation",
-    "D2": "D2_code_adaptation",
-    "D3": "D3_pedagogical_method",
-    "D4": "D4_instructional_accuracy",
-    "D5": "D5_empathetic_response",
-    "D6": "D6_safety_boundaries",
-}
+_VALID_MODES = {"full", "qr", "qp"}
 
 
 @dataclass(frozen=True)
 class EvalRequest:
     session_id: str
     eval_mode: str = "full"
-    tutor_dims: list[str] | None = None
     eval_model: str | None = None
     idempotency_key: str | None = None
 
@@ -46,23 +37,6 @@ def normalize_eval_mode(mode: str | None) -> str:
         allowed = ", ".join(sorted(_VALID_MODES))
         raise EvalError(f"Invalid eval_mode {mode!r}. Expected one of: {allowed}")
     return key
-
-
-def parse_tutor_dims(raw: str | list[str] | None) -> list[str] | None:
-    if raw is None or raw == "":
-        return None
-    if isinstance(raw, list):
-        dims = raw
-    else:
-        dims = raw.split(",")
-    out = [str(d).strip() for d in dims if str(d).strip()]
-    return out or None
-
-
-def normalize_tutor_dims(dims: list[str] | None) -> list[str] | None:
-    if dims is None:
-        return None
-    return [_TUTOR_DIM_ALIASES.get(str(dim).strip(), str(dim).strip()) for dim in dims]
 
 
 def parse_status_filter(raw: str | list[str] | None) -> list[str] | None:
@@ -91,7 +65,6 @@ def parse_eval_request(
     *,
     session_id: str | None = None,
     eval_mode: str | None = None,
-    tutor_dims: str | list[str] | None = None,
     eval_model: str | None = None,
     idempotency_key: str | None = None,
 ) -> EvalRequest:
@@ -105,10 +78,6 @@ def parse_eval_request(
     if mode is None:
         mode = _read_source(source, "eval_mode", _read_source(source, "mode", "full"))
 
-    dims = tutor_dims
-    if dims is None:
-        dims = _read_source(source, "tutor_dims")
-
     model = eval_model
     if model is None:
         model = _read_source(source, "eval_model")
@@ -120,7 +89,6 @@ def parse_eval_request(
     return EvalRequest(
         session_id=str(sid).strip(),
         eval_mode=normalize_eval_mode(mode),
-        tutor_dims=parse_tutor_dims(dims),
         eval_model=str(model).strip() if model else None,
         idempotency_key=str(idem).strip() if idem else None,
     )

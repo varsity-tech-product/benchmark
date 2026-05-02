@@ -44,7 +44,6 @@ class EvalOutput:
     score_status: str
     qr: TrackResult | None
     qp: TrackResult | None
-    tutor: TrackResult | None
     overall_score: float | None
     eval_mode: str
     eval_model: str | None
@@ -73,7 +72,6 @@ class EvalOutput:
             "overall_score": self.overall_score,
             "qr": self.qr.to_dict() if self.qr else None,
             "qp": self.qp.to_dict() if self.qp else None,
-            "tutor": self.tutor.to_dict() if self.tutor else None,
             "error": self.error,
             "preflight": self.preflight or {},
         }
@@ -84,7 +82,6 @@ class EvalOutput:
             "score_status": self.score_status,
             "quant_result": self.qr.score if self.qr else None,
             "quant_process": self.qp.score if self.qp else None,
-            "tutor_score": self.tutor.score if self.tutor else None,
             "overall_score": self.overall_score,
             "judge_reliability": self.judge_reliability or {},
             "eval_mode": self.eval_mode,

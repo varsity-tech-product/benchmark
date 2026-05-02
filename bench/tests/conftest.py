@@ -474,15 +474,6 @@ def make_session(_mock_llm_resolution):
 _FAKE_EVAL_SCORES = {
     "quant_result": 0.85,
     "quant_process": 0.70,
-    "tutor_score": 0.75,
-    "tutor_scores": {
-        "D1_finance_adaptation": 0.75,
-        "D2_code_adaptation": 0.50,
-        "D3_pedagogical_method": 0.75,
-        "D4_instructional_accuracy": 0.50,
-        "D5_empathetic_response": 0.75,
-        "D6_safety_boundaries": 0.50,
-    },
 }
 
 
@@ -508,7 +499,6 @@ def mock_eval_pipeline():
                 result_dir,
                 eval_mode=kwargs.get("eval_mode", "full"),
                 eval_model=kwargs.get("eval_model"),
-                tutor_dims=kwargs.get("tutor_dims"),
             )
             score_id = run.score_id
             created_at = run.created_at
@@ -548,22 +538,13 @@ def mock_eval_pipeline():
                 "eval_cost": 0.002,
                 "eval_cost_by_model": {"fake-model": 0.002},
             },
-            "tutor": {
-                "track": "tutor",
-                "status": "success",
-                "score": _FAKE_EVAL_SCORES["tutor_score"],
-                "blocking_missing": [],
-                "detail": _FAKE_EVAL_SCORES["tutor_scores"],
-                "eval_cost": 0.003,
-                "eval_cost_by_model": {"fake-model": 0.003},
-            },
         }
         cost = {
             "version": "2.0",
             "score_id": score_id,
-            "eval_cost_usd": 0.006,
-            "eval_cost_by_track": {"qr": 0.001, "qp": 0.002, "tutor": 0.003},
-            "eval_cost_by_model": {"fake-model": 0.006},
+            "eval_cost_usd": 0.003,
+            "eval_cost_by_track": {"qr": 0.001, "qp": 0.002},
+            "eval_cost_by_model": {"fake-model": 0.003},
             "eval_cost_by_stage_model": {},
         }
         write_score_files(result_dir, score_id, score, cost)

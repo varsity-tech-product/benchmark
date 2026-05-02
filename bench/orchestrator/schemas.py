@@ -146,11 +146,6 @@ class TaskResult(BaseModel):
     workspace_files: list[str] = Field(default_factory=list)
     quant_result_score: Optional[float] = None
     quant_process_score: Optional[float] = None
-    tutor_scores: dict[str, float] = Field(default_factory=dict)
-    tutor_scores_by_model: dict[str, dict[str, float]] = Field(
-        default_factory=dict
-    )  # {model_name: {dim: score}} per-judge-model breakdown
-    tutor_eval_error: Optional[str] = None  # Exception message when tutor eval failed
     overall_score: Optional[float] = None
     # Extended metrics (design doc §6.1, §6.4)
     process_metrics: dict = Field(
@@ -182,7 +177,7 @@ class TaskResult(BaseModel):
     eval_aborted: bool = (
         False  # True when evaluation was aborted due to LLM call failures
     )
-    eval_mode: str = "full"  # "full" | "qr" | "qp" | "tutor"
+    eval_mode: str = "full"  # "full" | "qr" | "qp"
 
 
 class BenchmarkReport(BaseModel):
@@ -192,8 +187,6 @@ class BenchmarkReport(BaseModel):
     total_tasks: int = 0
     overall_agent_score: Optional[float] = None
     quant_agent_index: Optional[float] = None
-    tutoring_effectiveness_index: Optional[float] = None
-    adaptiveness_score: Optional[float] = None
     process_mastery_score: Optional[float] = None
     results_by_task: dict[str, TaskResult] = Field(default_factory=dict)
     results_by_difficulty: dict[str, float] = Field(default_factory=dict)

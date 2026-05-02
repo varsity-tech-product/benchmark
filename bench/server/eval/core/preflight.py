@@ -7,14 +7,14 @@ from pathlib import Path
 from typing import Any
 
 from server.config.llm_config import has_openrouter_api_key
-from server.eval.contracts.request import EvalRequest, normalize_tutor_dims
+from server.eval.contracts.request import EvalRequest
 
 
 @dataclass
 class PreflightReport:
     hard_errors: list[dict[str, Any]] = field(default_factory=list)
     track_blockers: dict[str, list[dict[str, Any]]] = field(
-        default_factory=lambda: {"qr": [], "qp": [], "tutor": []}
+        default_factory=lambda: {"qr": [], "qp": []}
     )
     skipped_dependencies: list[dict[str, Any]] = field(default_factory=list)
 
@@ -117,64 +117,6 @@ def run_preflight(
     if tool_log_errors and _mode_includes(request.eval_mode, "qp"):
         report.track_blockers["qp"].extend(tool_log_errors)
 
-    if request.tutor_dims:
-        from server.eval.judges.tutor_6d import DIMENSIONS
-
-        normalized_dims = normalize_tutor_dims(request.tutor_dims) or []
-        invalid = [dim for dim in normalized_dims if dim not in DIMENSIONS]
-        if invalid:
-            report.hard_errors.append(
-                _err(
-                    "invalid_tutor_dims",
-                    f"Unknown tutor dimension(s): {', '.join(invalid)}",
-                    invalid=invalid,
-                    allowed=list(DIMENSIONS),
-                )
-            )
-
-    if (
-        _mode_includes(request.eval_mode, "tutor")
-        and task is not None
-        and persona is not None
-    ):
-        try:
-            from server.eval.inputs.rubric_builder import (
-                build_rubric_text,
-                load_6d_rubric,
-            )
-            from server.eval.judges.tutor_6d import DIMENSIONS, get_dimension_weight
-
-            category = getattr(
-                getattr(task, "category", None),
-                "value",
-                getattr(task, "category", None),
-            )
-            requires_code = bool(getattr(task, "requires_code", False))
-            dims = normalize_tutor_dims(request.tutor_dims) or [
-                dim
-                for dim in DIMENSIONS
-                if get_dimension_weight(category, dim, requires_code=requires_code)
-                > 0.0
-            ]
-            rubric = load_6d_rubric()
-            persona_id = getattr(persona, "persona_id", "")
-            for dim in dims:
-                try:
-                    build_rubric_text(rubric, dim, persona_id, category)
-                except Exception as exc:
-                    report.track_blockers["tutor"].append(
-                        _err(
-                            "rubric_variant_missing",
-                            str(exc),
-                            track="tutor",
-                            dimension=dim,
-                        )
-                    )
-        except Exception as exc:
-            report.track_blockers["tutor"].append(
-                _err("rubric_validation_failed", str(exc), track="tutor")
-            )
-
     gt = getattr(task, "ground_truth", None)
     if _mode_includes(request.eval_mode, "qr"):
         quant_validation = getattr(gt, "quant_validation", None) if gt else None
@@ -200,13 +142,13 @@ def run_preflight(
                     )
                 )
 
-    if request.eval_mode in ("full", "qr", "qp", "tutor"):
+    if request.eval_mode in ("full", "qr", "qp"):
         try:
             from server.eval.judges.runtime.model_resolver import require_ewan_model
 
             require_ewan_model(request.eval_model, purpose="evaluation")
         except Exception as exc:
-            for track in ("qr", "qp", "tutor"):
+            for track in ("qr", "qp"):
                 if _mode_includes(request.eval_mode, track):
                     report.track_blockers[track].append(
                         _err(

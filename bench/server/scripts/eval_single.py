@@ -75,7 +75,6 @@ def _run(args: argparse.Namespace) -> int:
             result_dir,
             eval_mode=request.eval_mode,
             eval_model=request.eval_model,
-            tutor_dims=request.tutor_dims,
             idempotency_key=request.idempotency_key,
         )
         score_id = run.score_id
@@ -105,7 +104,7 @@ def _run(args: argparse.Namespace) -> int:
                             "message": message,
                         }
                     ],
-                    "track_blockers": {"qr": [], "qp": [], "tutor": []},
+                    "track_blockers": {"qr": [], "qp": []},
                     "skipped_dependencies": [],
                 },
             )
@@ -200,7 +199,6 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--results-root", default=str(DEFAULT_RESULTS_ROOT))
     parser.add_argument("--mode", "--eval-mode", dest="mode", default="full")
     parser.add_argument("--eval-model", default=EVAL_DEFAULT_MODEL)
-    parser.add_argument("--tutor-dims", default=None)
     parser.add_argument("--idempotency-key", default=None)
     parser.add_argument("--list", action="store_true", help="list evaluable sessions")
 
@@ -208,7 +206,6 @@ def build_parser() -> argparse.ArgumentParser:
     add_common(run_p)
     run_p.add_argument("--mode", "--eval-mode", dest="mode", default="full")
     run_p.add_argument("--eval-model", default=EVAL_DEFAULT_MODEL)
-    run_p.add_argument("--tutor-dims", default=None)
     run_p.add_argument("--idempotency-key", default=None)
 
     get_p = sub.add_parser("get", help="read score_n output")

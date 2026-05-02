@@ -24,7 +24,6 @@ class ScoreRun:
     status: str
     eval_mode: str
     eval_model: str | None
-    tutor_dims: list[str] | None
     created_at: str
     completed_at: str | None = None
     overall_score: float | None = None
@@ -113,7 +112,6 @@ def allocate_score_run(
     *,
     eval_mode: str,
     eval_model: str | None,
-    tutor_dims: list[str] | None = None,
     idempotency_key: str | None = None,
 ) -> tuple[ScoreRun, bool]:
     """Allocate a new score_n directory, or return the active running run.
@@ -142,7 +140,6 @@ def allocate_score_run(
             status="running",
             eval_mode=eval_mode,
             eval_model=eval_model,
-            tutor_dims=tutor_dims,
             created_at=_utc_now(),
             score_path=f"{score_id}/score.json",
             cost_path=f"{score_id}/cost.json",
@@ -234,13 +231,11 @@ def summarize_score(
 ) -> dict[str, Any]:
     qr = score_data.get("qr") or {}
     qp = score_data.get("qp") or {}
-    tutor = score_data.get("tutor") or {}
     summary = {
         "score_id": score_data.get("score_id"),
         "score_status": score_data.get("score_status"),
         "quant_result": qr.get("score") if isinstance(qr, dict) else None,
         "quant_process": qp.get("score") if isinstance(qp, dict) else None,
-        "tutor_score": tutor.get("score") if isinstance(tutor, dict) else None,
         "overall": score_data.get("overall_score"),
         "overall_score": score_data.get("overall_score"),
         "judge_reliability": score_data.get("judge_reliability") or {},

@@ -107,7 +107,7 @@ def _stage_costs_from_tracks(
         if clean:
             stage_costs[stage] = clean
 
-    qr, qp, tutor = tracks
+    qr, qp = tracks
     if qr and isinstance(qr.detail, dict):
         add("QR Result Judge", qr.detail.get("result_judge"))
     if qp and isinstance(qp.detail, dict):
@@ -115,13 +115,11 @@ def _stage_costs_from_tracks(
         add("QP Problem Solving", qp.detail.get("problem_solving"))
         if not any(stage.startswith("QP ") for stage in stage_costs):
             add("QP Process", qp.detail)
-    if tutor:
-        add("Tutor 6D", tutor.detail if isinstance(tutor.detail, dict) else None)
     return stage_costs
 
 
 def build_cost_payload(output: EvalOutput) -> dict[str, Any]:
-    tracks = [t for t in (output.qr, output.qp, output.tutor) if t is not None]
+    tracks = [t for t in (output.qr, output.qp) if t is not None]
     by_track = {t.track: round(t.eval_cost, 6) for t in tracks}
     by_model: dict[str, float] = {}
     for track in tracks:
@@ -136,7 +134,6 @@ def build_cost_payload(output: EvalOutput) -> dict[str, Any]:
         "eval_cost_by_stage_model": _stage_costs_from_tracks(
             output.qr,
             output.qp,
-            output.tutor,
         ),
     }
 
@@ -231,7 +228,6 @@ class EvalCoordinator:
         track_cancel_events = {
             "qr": threading.Event(),
             "qp": threading.Event(),
-            "tutor": threading.Event(),
         }
 
         def cancel_all() -> None:
@@ -266,20 +262,6 @@ class EvalCoordinator:
                 preflight=preflight,
                 cancel_event=track_cancel_events["qp"],
             )
-        if _mode_includes(request.eval_mode, "tutor"):
-            from server.eval.tracks import tutor
-
-            track_fns["tutor"] = lambda: tutor.evaluate(
-                task=task,
-                persona=persona,
-                conversation=conversation,
-                enriched_conversation=enriched,
-                eval_model=request.eval_model,
-                tutor_dims=request.tutor_dims,
-                preflight=preflight,
-                cancel_event=track_cancel_events["tutor"],
-            )
-
         def run_one(track: str, fn) -> TrackResult:
             track_started = time.time()
             result = fn()
@@ -366,7 +348,6 @@ class EvalCoordinator:
                 preflight=preflight,
                 qr=track_results.get("qr"),
                 qp=track_results.get("qp"),
-                tutor=track_results.get("tutor"),
                 interrupted=True,
                 error="Evaluation interrupted",
             )
@@ -384,7 +365,6 @@ class EvalCoordinator:
             preflight=preflight,
             qr=track_results.get("qr"),
             qp=track_results.get("qp"),
-            tutor=track_results.get("tutor"),
         )
         if persist:
             persist_eval_output(result_dir, output)
@@ -408,7 +388,6 @@ class EvalCoordinator:
             score_status=status,
             qr=None,
             qp=None,
-            tutor=None,
             overall_score=None,
             eval_mode=request.eval_mode,
             eval_model=request.eval_model,
@@ -432,7 +411,6 @@ class EvalCoordinator:
         preflight: PreflightReport,
         qr: TrackResult | None = None,
         qp: TrackResult | None = None,
-        tutor: TrackResult | None = None,
         interrupted: bool = False,
         error: str | None = None,
     ) -> EvalOutput:
@@ -445,13 +423,12 @@ class EvalCoordinator:
             else compute_overall(
                 qr=qr,
                 qp=qp,
-                tutor=tutor,
                 eval_mode=request.eval_mode,
             )
         )
         blockers = [
             item
-            for track in (qr, qp, tutor)
+            for track in (qr, qp)
             if track is not None
             for item in track.blocking_missing
         ]
@@ -468,7 +445,6 @@ class EvalCoordinator:
             score_status=status,
             qr=qr,
             qp=qp,
-            tutor=tutor,
             overall_score=overall,
             eval_mode=request.eval_mode,
             eval_model=request.eval_model,
@@ -515,7 +491,6 @@ def evaluate_tracks(
     eval_model: str,
     cancel_event=None,
     eval_mode: str = "full",
-    tutor_dims: list[str] | None = None,
 ) -> dict[str, Any]:
     """Compatibility hook for old callers that only need raw eval_results."""
 
@@ -523,7 +498,6 @@ def evaluate_tracks(
     request = EvalRequest(
         session_id="legacy",
         eval_mode=eval_mode,
-        tutor_dims=tutor_dims,
         eval_model=eval_model,
     )
     run_state = {
@@ -591,16 +565,6 @@ def raw_results_from_output(output: EvalOutput) -> dict[str, Any]:
         out["process_metrics"] = output.qp.detail or {}
         if output.qp.error:
             out["qp_track_error"] = output.qp.error
-    if output.tutor:
-        tutor_scores: dict[str, Any] = {}
-        for key, value in (output.tutor.detail or {}).items():
-            if str(key).startswith("_"):
-                tutor_scores[key] = value
-            elif isinstance(value, dict):
-                tutor_scores[key] = value.get("score")
-        out["tutor_scores"] = tutor_scores
-        if output.tutor.error:
-            out["tutor_eval_error"] = output.tutor.error
     return out
 
 

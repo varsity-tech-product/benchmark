@@ -1471,7 +1471,7 @@ async def rest_send(request: Request) -> JSONResponse:
 
 
 async def ops_evaluate(request: Request) -> JSONResponse:
-    """``POST /ops/session/{sid}/evaluate[?eval_mode=tutor&tutor_dims=D3,D4]``
+    """``POST /ops/session/{sid}/evaluate[?eval_mode=qr|qp|full]``
 
     Operator-only. Agents can finish runs and read scoped results, but scoring
     is triggered by the server side only.
@@ -1514,8 +1514,7 @@ async def ops_evaluate(request: Request) -> JSONResponse:
         eval_request = parse_eval_request(
             {
                 "session_id": sid,
-                "eval_mode": request.query_params.get("eval_mode", "tutor"),
-                "tutor_dims": request.query_params.get("tutor_dims", ""),
+                "eval_mode": request.query_params.get("eval_mode", "full"),
                 "eval_model": request.query_params.get("eval_model")
                 or state.eval_model,
                 "idempotency_key": (
@@ -1528,7 +1527,6 @@ async def ops_evaluate(request: Request) -> JSONResponse:
         return JSONResponse({"error": str(exc)}, 400)
 
     state._eval_mode = eval_request.eval_mode
-    state._tutor_dims = eval_request.tutor_dims
     state.eval_model = eval_request.eval_model or state.eval_model
     state._eval_idempotency_key = eval_request.idempotency_key
 
@@ -1556,8 +1554,7 @@ def _save_archived_eval_restore_failure(
         eval_request = parse_eval_request(
             {
                 "session_id": sid,
-                "eval_mode": request.query_params.get("eval_mode", "tutor"),
-                "tutor_dims": request.query_params.get("tutor_dims", ""),
+                "eval_mode": request.query_params.get("eval_mode", "full"),
                 "eval_model": request.query_params.get("eval_model")
                 or manager.eval_model,
                 "idempotency_key": (
@@ -1573,7 +1570,6 @@ def _save_archived_eval_restore_failure(
         result_dir,
         eval_mode=eval_request.eval_mode,
         eval_model=eval_request.eval_model,
-        tutor_dims=eval_request.tutor_dims,
         idempotency_key=eval_request.idempotency_key,
     )
     if not created:
@@ -1603,7 +1599,7 @@ def _save_archived_eval_restore_failure(
                     "message": message,
                 }
             ],
-            "track_blockers": {"qr": [], "qp": [], "tutor": []},
+            "track_blockers": {"qr": [], "qp": []},
             "skipped_dependencies": [],
         },
     )
@@ -1647,7 +1643,6 @@ def _public_score_entry(entry: dict) -> dict:
         "status",
         "score_status",
         "eval_mode",
-        "tutor_dims",
         "created_at",
         "completed_at",
         "overall_score",
