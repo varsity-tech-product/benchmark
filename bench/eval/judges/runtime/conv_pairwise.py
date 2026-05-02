@@ -195,9 +195,19 @@ class EwanPairwiseGEval:
         Returns ``"A"``, ``"B"``, or ``"tie"``. Sets ``.preferred``,
         ``.margin``, ``.reason``, ``.evaluation_cost``.
         """
-        prompt = self.render_prompt(test_case)
+        import uuid
 
-        response_text, cost = await self.model.a_generate(prompt)
+        prompt = self.render_prompt(test_case)
+        metadata = self.judge_metadata()
+        rubric_id = str(metadata.get("rubric_id") or f"adhoc.{self.name}")
+        # prompt_version tracks the pairwise prompt template (see twin
+        # rationale in conv_geval.a_measure).
+        response_text, cost = await self.model.a_generate(
+            prompt,
+            call_id=f"{rubric_id}.pairwise.{self.name}-{uuid.uuid4().hex[:8]}",
+            prompt_id=f"{rubric_id}.pairwise",
+            prompt_version=str(self.prompt_template_version),
+        )
         self.evaluation_cost += cost
 
         parsed = extract_json_from_response(response_text)

@@ -15,6 +15,7 @@ import os
 import re
 import textwrap
 import time
+import uuid
 
 from pydantic import BaseModel
 
@@ -25,6 +26,10 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 _MAX_GENERATE_ATTEMPTS = 3
+
+# Stamped on every NPC LLM call's audit row. Bump when the student-sim
+# prompt-construction path changes (template, system role, retry shape).
+_STUDENT_PROMPT_VERSION = "1.0"
 
 
 class StudentSimError(Exception):
@@ -409,7 +414,13 @@ class StudentSimulator:
 
             # --- Network layer ---
             try:
-                result = self.model.generate(current_prompt, images=images or None)
+                result = self.model.generate(
+                    current_prompt,
+                    images=images or None,
+                    call_id=f"npc.student-{uuid.uuid4().hex[:8]}-attempt{attempt_idx}",
+                    prompt_id="npc.student",
+                    prompt_version=_STUDENT_PROMPT_VERSION,
+                )
             except Exception as exc:
                 attempt_record.update(
                     error_type="network",

@@ -245,9 +245,21 @@ class EwanConvGEval:
         Returns normalized score in [0, 1].
         Sets ``.score``, ``.reason``, ``.evaluation_cost``.
         """
-        prompt = self.render_prompt(test_case)
+        import uuid
 
-        response_text, cost = await self.model.a_generate(prompt)
+        prompt = self.render_prompt(test_case)
+        metadata = self.judge_metadata()
+        rubric_id = str(metadata.get("rubric_id") or f"adhoc.{self.name}")
+        # prompt_version tracks the renderable prompt template, not the rubric
+        # content (which is already attributable via prompt_id + prompt_hash).
+        # Tweaking the score prompt while leaving the rubric alone must show
+        # up as a different version in the audit log.
+        response_text, cost = await self.model.a_generate(
+            prompt,
+            call_id=f"{rubric_id}.{self.name}-{uuid.uuid4().hex[:8]}",
+            prompt_id=rubric_id,
+            prompt_version=str(self.prompt_template_version),
+        )
         self.evaluation_cost += cost
 
         parsed = extract_json_from_response(response_text)

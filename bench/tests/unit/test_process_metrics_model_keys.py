@@ -8,7 +8,7 @@ class FakeJudgeClient:
     def get_model_name(self):
         return "fake/judge"
 
-    async def a_generate(self, prompt: str):
+    async def a_generate(self, prompt: str, **_kwargs):
         self.prompts.append(prompt)
         return (
             '{"score": 5, "reason": "good planning", "evidence": ["planned"]}',

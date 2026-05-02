@@ -29,7 +29,7 @@ class _StubModel:
     def get_model_name(self) -> str:
         return self._model_name
 
-    async def a_generate(self, prompt: str):
+    async def a_generate(self, prompt: str, **_kwargs):
         return json.dumps(self._payload), 0.0
 
 
