@@ -320,19 +320,54 @@ def evaluate_code_execution(tool_logs: list, workspace_path: str) -> dict:
 # ===================================================================
 # Layer C: Output Verification (40% of Code QR)
 # ===================================================================
+# Per #122 §6.2: reference values are a tolerance band, not ground truth.
+# A reverse-sign or pathological agent value gets 0 even if the magnitude
+# is close. Inside the band → full score; outside but same-regime →
+# partial; reversed → 0.
+#
+# Task-type-specific scoring (single-config / sweep / comparison) per
+# #122 §6.2 is gated on reference distribution files
+# (bench/data/reference/<task_id>/distribution.json) which do not yet
+# exist. This single-band scorer is the v1 floor; a follow-up will
+# read distribution.json and branch per task type.
 
 _RELATIVE_ERROR_THRESHOLDS = [
-    (0.05, 1.0),  # <5% error → 1.0
-    (0.15, 0.75),  # 5-15% → 0.75
-    (0.30, 0.50),  # 15-30% → 0.5
-    (float("inf"), 0.25),  # >30% → 0.25
+    (0.05, 1.0),  # <5% error → full credit (inside band)
+    (0.15, 0.75),  # 5-15% → just outside band
+    (0.30, 0.50),  # 15-30% → further out, same regime
+    (float("inf"), 0.25),  # >30% but same sign → far but not pathological
 ]
+
+# Magnitude floor below which actual==expected==0 collapses to "exact"
+_NEAR_ZERO_TOLERANCE = 1e-6
+# Sharpe / IR / similar dimensionless ratios where a sign flip clearly
+# means the strategy is structurally wrong rather than just imprecise.
+_PATHOLOGICAL_SHARPE_LIMIT = 50.0
 
 
 def _relative_error_score(actual: float, expected: float) -> float:
-    """Score a single metric by relative error vs reference."""
-    if expected == 0:
-        return 1.0 if abs(actual) < 1e-6 else 0.25
+    """Score a single metric against the reference treated as a tolerance band.
+
+    Returns 0 when the agent value is on the wrong side of zero (sign
+    mismatch) or pathological (|sharpe|>50). Otherwise returns the
+    relative-error tier (1.0 / 0.75 / 0.5 / 0.25).
+    """
+    # Pathological agent value — never reward regardless of reference.
+    if abs(actual) > _PATHOLOGICAL_SHARPE_LIMIT:
+        return 0.0
+
+    # Reference at or near zero — agent must also be at or near zero.
+    if abs(expected) < _NEAR_ZERO_TOLERANCE:
+        return 1.0 if abs(actual) < _NEAR_ZERO_TOLERANCE else 0.25
+
+    # Reverse-sign penalty: agent and reference disagree on direction.
+    # Treat near-zero actuals as ambiguous rather than reversed.
+    if (
+        abs(actual) >= _NEAR_ZERO_TOLERANCE
+        and (actual > 0) != (expected > 0)
+    ):
+        return 0.0
+
     rel_error = abs(actual - expected) / abs(expected)
     for threshold, score in _RELATIVE_ERROR_THRESHOLDS:
         if rel_error < threshold:
