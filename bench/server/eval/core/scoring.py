@@ -311,41 +311,6 @@ def compute_combined_benchmark_kpis(
     return combined
 
 
-def _compute_adaptiveness_score(task_result_objects: list) -> Optional[float]:
-    """Compute Adaptiveness Score: tutor score variance across persona variants.
-
-    For each task, we compute the variance of tutor scores across different personas.
-    High variance means the agent adapts its tutoring to different students (good).
-    Low variance means it treats everyone the same (bad).
-
-    Returns:
-        Average per-task tutor score standard deviation, or None.
-    """
-    # Group by task_id
-    by_task = defaultdict(list)
-    for r in task_result_objects:
-        if hasattr(r, "tutor_scores") and r.tutor_scores:
-            clean_vals = [
-                v
-                for k, v in r.tutor_scores.items()
-                if not k.startswith("_") and isinstance(v, (int, float))
-            ]
-            if not clean_vals:
-                continue
-            tutor_score = statistics.mean(clean_vals)
-            by_task[r.task_id].append(tutor_score)
-
-    # Compute per-task variance
-    variances = []
-    for task_id, scores in by_task.items():
-        if len(scores) >= 2:
-            variances.append(statistics.stdev(scores))
-
-    if variances:
-        return round(statistics.mean(variances), 4)
-    return None
-
-
 def _compute_process_mastery_score(task_result_objects: list) -> Optional[float]:
     """Compute Process Mastery Score: average process quality across tasks.
 
