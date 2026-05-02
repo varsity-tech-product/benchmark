@@ -15,11 +15,15 @@ import statistics
 from collections import defaultdict
 from typing import Any, Optional
 
-# Slice 3 keeps the historical 0.50/0.50 split inside the Quant Agent score.
-# Slice 7 changes RESULT_WEIGHT/PROCESS_WEIGHT to 0.60/0.40 per #122 §6.1.
-RESULT_WEIGHT = 0.50
-PROCESS_WEIGHT = 0.50
+RESULT_WEIGHT = 0.60
+PROCESS_WEIGHT = 0.40
 LAYER1_RESULT_WEIGHT = 0.40  # λ: Layer 1 contribution to Result Sub-score
+
+# Pass threshold per #122 TBD-1: placeholder until baseline calibration.
+# The plan is to run weak (GPT-4o + naive prompt) and strong (Claude Opus +
+# best engineering) baselines, then pick a value where weak ≈ 25-30% pass
+# and strong ≈ 60-70% pass. Lock in v2.0 spec, freeze.
+PASS_THRESHOLD = 0.5
 
 
 def _score_value(value: Any) -> float | None:
@@ -111,11 +115,17 @@ def compute_task_score(
     else:
         overall = RESULT_WEIGHT * qr_score + PROCESS_WEIGHT * qp_score
 
+    overall_rounded = _round_score(overall)
+    task_pass = (
+        overall_rounded is not None and overall_rounded >= PASS_THRESHOLD
+    )
     return {
         "quant_result_score": _round_score(qr_score),
         "quant_process_score": _round_score(qp_score),
-        "quant_agent_score": _round_score(overall),
-        "overall_score": _round_score(overall),
+        "quant_agent_score": overall_rounded,
+        "overall_score": overall_rounded,
+        "task_score": overall_rounded,
+        "task_pass": task_pass,
     }
 
 
@@ -161,21 +171,38 @@ def compute_benchmark_kpis(
         if _score_value(r.get("quant_agent_score")) is not None
     ]
 
+    pass_count = sum(1 for r in computable if r.get("task_pass"))
+    pass_rate = round(pass_count / len(computable), 4)
+
     kpis = {
+        "pass_rate": pass_rate,
+        "tasks_passed": pass_count,
         "overall_agent_score": _mean_score(overall_scores),
         "quant_agent_index": _mean_score(quant_scores),
+        "task_score_mean": _mean_score(overall_scores),
         "total_tasks_evaluated": len(computable),
         "total_tasks_not_computable": len(task_results) - len(computable),
     }
 
     # Confidence intervals (95%)
     if len(overall_scores) > 1:
-        kpis["oas_std"] = round(statistics.stdev(overall_scores), 4)
+        kpis["task_score_std"] = round(statistics.stdev(overall_scores), 4)
+        kpis["oas_std"] = kpis["task_score_std"]
         kpis["oas_ci_95"] = round(
             1.96 * statistics.stdev(overall_scores) / math.sqrt(len(overall_scores)), 4
         )
         if len(quant_scores) > 1:
             kpis["qai_std"] = round(statistics.stdev(quant_scores), 4)
+        # Wilson 95% CI on the pass-rate Bernoulli proportion (#122 §6.6)
+        wilson = _wilson_ci_95(pass_count, len(computable))
+        if wilson is not None:
+            kpis["pass_rate_ci_95_low"], kpis["pass_rate_ci_95_high"] = wilson
+
+    # Per-category pass rate (#122 §6.5 sub-headline)
+    if computable_objects:
+        per_category = _compute_pass_rate_by_category(computable_objects, computable)
+        if per_category:
+            kpis["pass_rate_by_category"] = per_category
 
     # §6.4: Process Mastery Score (PMS) — average process quality score
     if computable_objects:
@@ -377,15 +404,19 @@ def _compute_pass_metrics(task_result_objects: list, task_results: list[dict]) -
     if not by_key:
         return {}
 
-    threshold = 0.5
+    threshold = PASS_THRESHOLD
     pass_at_1_list = []
     pass_at_3_list = []
     pass_power_3_list = []
+    majority_pass_list = []
 
     for key, scores in by_key.items():
         pass_at_1_list.append(compute_pass_at_k(scores, threshold, k=1))
         pass_at_3_list.append(compute_pass_at_k(scores, threshold, k=3))
         pass_power_3_list.append(compute_pass_power_k(scores, threshold))
+        if scores:
+            passes = sum(1 for s in scores if s >= threshold)
+            majority_pass_list.append(1.0 if passes * 2 > len(scores) else 0.0)
 
     return {
         "pass_at_1": (
@@ -397,10 +428,50 @@ def _compute_pass_metrics(task_result_objects: list, task_results: list[dict]) -
         "pass_power_3": (
             round(statistics.mean(pass_power_3_list), 4) if pass_power_3_list else 0.0
         ),
+        "majority_pass_rate": (
+            round(statistics.mean(majority_pass_list), 4) if majority_pass_list else 0.0
+        ),
     }
 
 
-def compute_pass_at_k(scores: list[float], threshold: float = 0.5, k: int = 1) -> float:
+def _wilson_ci_95(passes: int, total: int) -> Optional[tuple[float, float]]:
+    """Wilson score interval at 95% confidence for a Bernoulli proportion.
+
+    Returns (low, high) bounds in [0, 1], or None when the interval is
+    not defined.
+    """
+    if total <= 0:
+        return None
+    z = 1.96
+    p = passes / total
+    z2 = z * z
+    denom = 1 + z2 / total
+    centre = (p + z2 / (2 * total)) / denom
+    half = (z * math.sqrt(p * (1 - p) / total + z2 / (4 * total * total))) / denom
+    return (round(max(0.0, centre - half), 4), round(min(1.0, centre + half), 4))
+
+
+def _compute_pass_rate_by_category(
+    task_result_objects: list, task_results: list[dict]
+) -> dict:
+    """Pass rate grouped by task category (for the per-category sub-headline)."""
+    by_category: dict[str, list[bool]] = defaultdict(list)
+    for r_obj, r_score in zip(task_result_objects, task_results):
+        category = getattr(r_obj, "category", "")
+        if not category:
+            continue
+        by_category[category].append(bool(r_score.get("task_pass")))
+    if not by_category:
+        return {}
+    return {
+        category: round(sum(values) / len(values), 4) if values else 0.0
+        for category, values in sorted(by_category.items())
+    }
+
+
+def compute_pass_at_k(
+    scores: list[float], threshold: float = PASS_THRESHOLD, k: int = 1
+) -> float:
     """Compute pass@k: did the agent pass at least once in k trials?
 
     Design doc §6.5: pass@k metric.
@@ -421,7 +492,9 @@ def compute_pass_at_k(scores: list[float], threshold: float = 0.5, k: int = 1) -
     return passed / k
 
 
-def compute_pass_power_k(scores: list[float], threshold: float = 0.5) -> float:
+def compute_pass_power_k(
+    scores: list[float], threshold: float = PASS_THRESHOLD
+) -> float:
     """Compute pass^k: did the agent pass every single time?
 
     Design doc §6.5: pass^k metric (all trials must pass).
