@@ -1,7 +1,7 @@
 """Student simulator for QuantTutorBench.
 
 Generates student messages via a model object (resolved by
-``server.eval.judges.runtime.model_resolver.resolve_ewan_model``).
+``eval.judges.runtime.model_resolver.resolve_ewan_model``).
 
 Used by TutoringSession behind the ``send_message`` MCP tool.
 """
@@ -382,7 +382,7 @@ class StudentSimulator:
     def model(self):
         """Lazy-resolve plain string model names on first use."""
         if isinstance(self._model, str) or self._model is None:
-            from server.eval.judges.runtime.model_resolver import resolve_ewan_model
+            from eval.judges.runtime.model_resolver import resolve_ewan_model
 
             self._model = resolve_ewan_model(self._model)
         return self._model

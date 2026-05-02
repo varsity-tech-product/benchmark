@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from server.config.llm_config import has_openrouter_api_key
-from server.eval.contracts.request import EvalRequest
+from eval.contracts.request import EvalRequest
 
 
 @dataclass
@@ -144,7 +144,7 @@ def run_preflight(
 
     if request.eval_mode in ("full", "qr", "qp"):
         try:
-            from server.eval.judges.runtime.model_resolver import require_ewan_model
+            from eval.judges.runtime.model_resolver import require_ewan_model
 
             require_ewan_model(request.eval_model, purpose="evaluation")
         except Exception as exc:

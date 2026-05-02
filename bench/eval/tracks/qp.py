@@ -5,8 +5,8 @@ from __future__ import annotations
 import threading
 from typing import Any
 
-from server.eval.contracts.output import TrackResult
-from server.eval.tracks.common import (
+from eval.contracts.output import TrackResult
+from eval.tracks.common import (
     check_cancel,
     cost_by_model_from,
     dimension_optional,
@@ -48,7 +48,7 @@ def evaluate(
     tool_usage_error = None
 
     try:
-        from server.eval.programmatic.tool_usage import evaluate_tool_usage
+        from eval.programmatic.tool_usage import evaluate_tool_usage
 
         tool_usage_result = evaluate_tool_usage(
             proxy_logs=tool_logs,
@@ -68,8 +68,8 @@ def evaluate(
     check_cancel(cancel_event)
 
     if model_unavailable:
-        from server.eval.inputs.context_builder import has_explicit_errors
-        from server.eval.judges.process_metrics import (
+        from eval.inputs.context_builder import has_explicit_errors
+        from eval.judges.process_metrics import (
             evaluate_programmatic_process_metrics,
             finalize_process_metrics,
         )
@@ -107,7 +107,7 @@ def evaluate(
         finalize_process_metrics(process)
     else:
         try:
-            from server.eval.judges.process_metrics import evaluate_all_process_metrics
+            from eval.judges.process_metrics import evaluate_all_process_metrics
 
             assistant_outputs = [
                 turn.get("content", "")
@@ -150,7 +150,7 @@ def evaluate(
             "error": tool_usage_error,
         }
         if model_unavailable:
-            from server.eval.judges.process_metrics import finalize_process_metrics
+            from eval.judges.process_metrics import finalize_process_metrics
 
             finalize_process_metrics(process)
 

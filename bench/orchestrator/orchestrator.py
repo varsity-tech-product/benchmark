@@ -30,7 +30,7 @@ from config.prompt_config import (
     build_user_description,
 )
 from mcp_servers.registry import create_proxy_for_task, register_session_tools
-from server.eval.core.scoring import compute_benchmark_kpis, compute_task_score
+from eval.core.scoring import compute_benchmark_kpis, compute_task_score
 
 from orchestrator.agent_adapters.base_adapter import BaseAgentAdapter
 from orchestrator.container_manager import ContainerManager
@@ -770,7 +770,7 @@ class BenchmarkOrchestrator:
         }.get(eval_mode, eval_mode)
 
         print(f"  Eval mode: {mode}")
-        from server.eval.core.coordinator import evaluate_tracks
+        from eval.core.coordinator import evaluate_tracks
 
         return evaluate_tracks(
             task=task,

@@ -383,7 +383,7 @@ class SessionState:
         from server.core.student_sim import StudentSimulator
         from server.core.tc_checker import TCChecker, parse_tc_items
         from server.data_manager import ensure_data
-        from server.eval.judges.runtime.model_resolver import (
+        from eval.judges.runtime.model_resolver import (
             require_student_model,
         )
 
@@ -749,7 +749,7 @@ class SessionState:
                     }
                 )
 
-            from server.eval.contracts.request import parse_eval_request
+            from eval.contracts.request import parse_eval_request
             from server.storage.score_store import allocate_score_run
 
             request = parse_eval_request(

@@ -8,8 +8,8 @@ import threading
 from pathlib import Path
 from typing import Any
 
-from server.eval.contracts.output import TrackResult
-from server.eval.tracks.common import (
+from eval.contracts.output import TrackResult
+from eval.tracks.common import (
     check_cancel,
     cost_by_model_from,
     eval_cost_from,
@@ -107,7 +107,7 @@ def _code_eval(
             None,
         )
     try:
-        from server.eval.programmatic.code_eval import evaluate_code_combined
+        from eval.programmatic.code_eval import evaluate_code_combined
 
         sandbox_img = task.environment.sandbox_image if task.environment else ""
         result = evaluate_code_combined(
@@ -143,7 +143,7 @@ def _result_judge(
     reference: dict[str, Any] | None,
     cancel_event: threading.Event | None,
 ) -> dict[str, Any]:
-    from server.eval.judges.result_judge import evaluate_result_quality
+    from eval.judges.result_judge import evaluate_result_quality
 
     try:
         result = evaluate_result_quality(

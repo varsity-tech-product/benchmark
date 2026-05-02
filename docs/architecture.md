@@ -125,7 +125,7 @@ report paths, and the current-model match flag.
 
 ## Evaluation Pipeline
 
-The active evaluation pipeline is under `bench/server/eval/`:
+The active evaluation pipeline is under `bench/eval/`:
 
 - `contracts/` validates scoring requests and output shape.
 - `core/coordinator.py` is the scoring coordinator used by REST and CLI.
@@ -225,7 +225,7 @@ multi-reviewer blocks:
 
 External-agent `score.json` exports carry the selected validation run through
 the `judge_reliability` metadata block, populated from
-`bench/server/eval/judge_reliability_reference.json`.
+`bench/eval/judge_reliability_reference.json`.
 
 ## Human Review Console
 

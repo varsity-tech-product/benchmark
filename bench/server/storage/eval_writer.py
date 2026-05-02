@@ -7,9 +7,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from server.eval.contracts.output import EvalOutput, TrackResult
-from server.eval.contracts.request import EvalRequest, normalize_eval_mode
-from server.eval.judge_reliability import build_judge_reliability_metadata
+from eval.contracts.output import EvalOutput, TrackResult
+from eval.contracts.request import EvalRequest, normalize_eval_mode
+from eval.judge_reliability import build_judge_reliability_metadata
 from server.storage.score_store import (
     allocate_score_run,
     summarize_score,
@@ -241,7 +241,7 @@ def _compute_overall(
 ) -> tuple[float | None, list[dict[str, Any]]]:
     tracks = [t for t in (qr, qp) if t is not None]
     blockers = [b for t in tracks for b in t.blocking_missing]
-    from server.eval.core.scoring import compute_overall
+    from eval.core.scoring import compute_overall
 
     return compute_overall(qr=qr, qp=qp, eval_mode=eval_mode), blockers
 
@@ -454,7 +454,7 @@ def run_evaluation(
         )
         created_at = entry.get("created_at") or _now()
 
-    from server.eval.core.coordinator import EvalCoordinator
+    from eval.core.coordinator import EvalCoordinator
 
     run_state = {
         "conversation": conversation,

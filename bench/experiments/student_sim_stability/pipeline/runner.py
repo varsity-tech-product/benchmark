@@ -56,7 +56,7 @@ from server.config.llm_config import (
 )
 from server.config.pricing import get_llm_cost_kwargs
 from server.core.student_sim import StudentSimulator
-from server.eval.judges.runtime.llm_client import EwanLLMClient
+from eval.judges.runtime.llm_client import EwanLLMClient
 from server.schemas import QuantTutorTask, StudentPersona
 
 logger = logging.getLogger(__name__)

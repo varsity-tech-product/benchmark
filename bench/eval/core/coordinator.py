@@ -14,11 +14,11 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
-from server.eval.contracts.output import EvalOutput, TrackResult
-from server.eval.contracts.request import EvalRequest, resolve_result_dir
-from server.eval.core.preflight import PreflightReport, run_preflight
-from server.eval.judge_reliability import build_judge_reliability_metadata
-from server.eval.inputs.enrichment import enrich_conversation_with_tools
+from eval.contracts.output import EvalOutput, TrackResult
+from eval.contracts.request import EvalRequest, resolve_result_dir
+from eval.core.preflight import PreflightReport, run_preflight
+from eval.judge_reliability import build_judge_reliability_metadata
+from eval.inputs.enrichment import enrich_conversation_with_tools
 from server.schemas import QuantTutorTask, StudentPersona
 from server.storage.score_store import (
     summarize_score,
@@ -236,7 +236,7 @@ class EvalCoordinator:
 
         track_fns: dict[str, Any] = {}
         if _mode_includes(request.eval_mode, "qr"):
-            from server.eval.tracks import qr
+            from eval.tracks import qr
 
             track_fns["qr"] = lambda: qr.evaluate(
                 task=task,
@@ -250,7 +250,7 @@ class EvalCoordinator:
                 cancel_event=track_cancel_events["qr"],
             )
         if _mode_includes(request.eval_mode, "qp"):
-            from server.eval.tracks import qp
+            from eval.tracks import qp
 
             track_fns["qp"] = lambda: qp.evaluate(
                 task=task,
@@ -414,7 +414,7 @@ class EvalCoordinator:
         interrupted: bool = False,
         error: str | None = None,
     ) -> EvalOutput:
-        from server.eval.core.scoring import compute_overall
+        from eval.core.scoring import compute_overall
 
         completed_at = _utc_now()
         overall = (
@@ -472,7 +472,7 @@ class EvalCoordinator:
     @staticmethod
     def _load_reference(task: Any, persona: Any) -> dict[str, Any] | None:
         try:
-            from server.eval.inputs.reference_store import ReferenceStore
+            from eval.inputs.reference_store import ReferenceStore
 
             return ReferenceStore().load(task.task_id, persona.persona_id)
         except Exception:

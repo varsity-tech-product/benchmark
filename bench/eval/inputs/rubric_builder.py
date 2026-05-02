@@ -7,7 +7,7 @@ Supports all rubric types:
 
 Usage::
 
-    from server.eval.inputs.rubric_builder import load_rubric, build_eval_params
+    from eval.inputs.rubric_builder import load_rubric, build_eval_params
 
     # Generic (QP/QR)
     rubric = load_rubric("qp")
@@ -15,7 +15,7 @@ Usage::
     # → {"role": ..., "rules": ..., "criteria": ..., "max_score": 5}
 
     # 6D (Tutor) — preserved interface
-    from server.eval.inputs.rubric_builder import load_6d_rubric, build_rubric_text
+    from eval.inputs.rubric_builder import load_6d_rubric, build_rubric_text
     rubric = load_6d_rubric()
     text = build_rubric_text(rubric, "D1_finance_adaptation",
                              persona_id="developer_crossover", category="strategy")
@@ -29,7 +29,7 @@ from typing import Any, Optional
 _log = logging.getLogger(__name__)
 
 _EVAL_DIR = Path(__file__).resolve().parents[1]
-_BENCH_ROOT = Path(__file__).resolve().parents[3]
+_BENCH_ROOT = Path(__file__).resolve().parents[2]
 _RUBRIC_DIR = _EVAL_DIR / "rubrics"
 _PERSONA_DIR = _BENCH_ROOT / "personas"
 

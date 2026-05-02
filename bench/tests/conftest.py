@@ -190,11 +190,11 @@ def _mock_llm_resolution():
 
     with (
         patch(
-            "server.eval.judges.runtime.model_resolver.require_ewan_model",
+            "eval.judges.runtime.model_resolver.require_ewan_model",
             return_value=fake,
         ),
         patch(
-            "server.eval.judges.runtime.model_resolver.resolve_ewan_model",
+            "eval.judges.runtime.model_resolver.resolve_ewan_model",
             return_value=fake,
         ),
     ):
@@ -484,7 +484,7 @@ def mock_eval_pipeline():
     def _fake_run(*args, **kwargs):
         from datetime import datetime, timezone
 
-        from server.eval.judge_reliability import build_judge_reliability_metadata
+        from eval.judge_reliability import build_judge_reliability_metadata
         from server.storage.score_store import (
             allocate_score_run,
             summarize_score,

@@ -16,22 +16,22 @@ import threading
 import time as _time
 from typing import Optional
 
-from server.eval.inputs.context_builder import (
+from eval.inputs.context_builder import (
     build_problem_solving_context,
     build_task_planning_context,
     has_explicit_errors,
 )
-from server.eval.inputs.rubric_builder import build_eval_params, load_rubric
-from server.eval.judges.runtime.async_utils import (
+from eval.inputs.rubric_builder import build_eval_params, load_rubric
+from eval.judges.runtime.async_utils import (
     ABORT_SENTINEL,
     get_eval_concurrency,
     guarded_gather,
     run_async,
     set_eval_concurrency,  # noqa: F401 — re-export for callers
 )
-from server.eval.judges.runtime.call_policy import llm_call_with_retry
-from server.eval.judges.runtime.conv_geval import EvalTestCase, EwanConvGEval
-from server.eval.judges.runtime.model_resolver import (
+from eval.judges.runtime.call_policy import llm_call_with_retry
+from eval.judges.runtime.conv_geval import EvalTestCase, EwanConvGEval
+from eval.judges.runtime.model_resolver import (
     model_display_name,
     resolve_eval_model_list,
     resolve_ewan_model,
@@ -258,7 +258,7 @@ def evaluate_programmatic_process_metrics(
         is_adversarial and not task_requires_code
     ):
         try:
-            from server.eval.programmatic.code_process import (
+            from eval.programmatic.code_process import (
                 evaluate_code_lifecycle,
             )
 

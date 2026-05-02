@@ -7,10 +7,10 @@ import importlib
 import sys
 
 _ALIASES = {
-    "async_utils": "server.eval.judges.runtime.async_utils",
-    "conv_geval": "server.eval.judges.runtime.conv_geval",
-    "llm_client": "server.eval.judges.runtime.llm_client",
-    "model_resolver": "server.eval.judges.runtime.model_resolver",
+    "async_utils": "eval.judges.runtime.async_utils",
+    "conv_geval": "eval.judges.runtime.conv_geval",
+    "llm_client": "eval.judges.runtime.llm_client",
+    "model_resolver": "eval.judges.runtime.model_resolver",
 }
 
 for _name, _target in _ALIASES.items():

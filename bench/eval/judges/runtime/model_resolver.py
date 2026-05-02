@@ -19,7 +19,7 @@ from server.config.llm_config import (
     has_openrouter_api_key,
 )
 from server.config.pricing import _resolve_pricing
-from server.eval.judges.runtime.llm_client import EwanLLMClient
+from eval.judges.runtime.llm_client import EwanLLMClient
 
 log = logging.getLogger(__name__)
 

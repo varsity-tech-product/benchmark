@@ -14,7 +14,7 @@ def evaluate_task(
     cancel_event=None,
     eval_mode: str = "full",
 ) -> dict:
-    from server.eval.core.coordinator import evaluate_tracks
+    from eval.core.coordinator import evaluate_tracks
 
     return evaluate_tracks(
         task=task,

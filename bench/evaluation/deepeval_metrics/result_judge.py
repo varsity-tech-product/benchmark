@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from server.eval.judges.result_judge import (  # noqa: F401
+from eval.judges.result_judge import (  # noqa: F401
     async_evaluate_result_quality,
     evaluate_result_quality,
 )
@@ -20,7 +20,7 @@ def _build_result_judge_prompt(
     """Build a lightweight prompt for legacy prompt-rendering tests.
 
     Runtime evaluation no longer uses this function; v6 builds structured QR
-    context through ``server.eval.inputs.context_builder``.
+    context through ``eval.inputs.context_builder``.
     """
 
     files = ", ".join(agent_workspace_files) if agent_workspace_files else "(none)"

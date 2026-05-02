@@ -16,13 +16,13 @@ from pathlib import Path
 from typing import Any
 
 from server.config.llm_config import EVAL_DEFAULT_MODEL
-from server.eval.contracts.request import (
+from eval.contracts.request import (
     EvalError,
     parse_eval_request,
     parse_score_query,
     resolve_result_dir,
 )
-from server.eval.core.coordinator import (
+from eval.core.coordinator import (
     EvalCoordinator,
     load_persona_by_id,
     load_run_state,

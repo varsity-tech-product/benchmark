@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from typing import Optional
 
-_DEFAULT_REFS_DIR = Path(__file__).resolve().parents[3] / "reference" / "refs"
+_DEFAULT_REFS_DIR = Path(__file__).resolve().parents[2] / "reference" / "refs"
 
 
 class ReferenceStore:

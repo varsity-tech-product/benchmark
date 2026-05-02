@@ -11,16 +11,16 @@ Normalization: (score - 1) / 4 → {0, 0.25, 0.5, 0.75, 1.0}
 
 import threading
 
-from server.eval.inputs.context_builder import build_result_judge_context
-from server.eval.inputs.rubric_builder import build_eval_params, load_rubric
-from server.eval.judges.runtime.async_utils import (
+from eval.inputs.context_builder import build_result_judge_context
+from eval.inputs.rubric_builder import build_eval_params, load_rubric
+from eval.judges.runtime.async_utils import (
     ABORT_SENTINEL,
     guarded_gather,
     run_async,
 )
-from server.eval.judges.runtime.call_policy import llm_call_with_retry
-from server.eval.judges.runtime.conv_geval import EvalTestCase, EwanConvGEval
-from server.eval.judges.runtime.model_resolver import (
+from eval.judges.runtime.call_policy import llm_call_with_retry
+from eval.judges.runtime.conv_geval import EvalTestCase, EwanConvGEval
+from eval.judges.runtime.model_resolver import (
     resolve_eval_model_list,
     resolve_ewan_model,
     short_model_name,

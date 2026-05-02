@@ -30,7 +30,7 @@ def populate_eval_results(
     result.tool_usage = eval_results.get("tool_usage", {})
     result.eval_mode = eval_mode
 
-    from server.eval.core.scoring import compute_task_score
+    from eval.core.scoring import compute_task_score
 
     score_breakdown = compute_task_score(
         quant_result_score=result.quant_result_score,

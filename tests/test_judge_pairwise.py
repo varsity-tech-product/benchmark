@@ -10,7 +10,7 @@ from experiments.judge_validation.pairwise_stats import (
     PASS_THRESHOLD,
     compute_pairwise_stats,
 )
-from server.eval.judges.runtime.conv_pairwise import (
+from eval.judges.runtime.conv_pairwise import (
     EwanPairwiseGEval,
     PairwiseTestCase,
     VALID_MARGIN,

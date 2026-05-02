@@ -15,7 +15,7 @@ from server.config.llm_config import (
 )
 
 # Re-export for convenience
-from server.eval.judges.runtime.scoring_utils import (  # noqa: F401
+from eval.judges.runtime.scoring_utils import (  # noqa: F401
     extract_json_from_response,
 )
 

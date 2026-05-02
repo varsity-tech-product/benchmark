@@ -735,7 +735,7 @@ def cmd_run(args):
     """Run the full benchmark (Layer 1 + Layer 2, or individually via --layer)."""
     from orchestrator.orchestrator import BenchmarkOrchestrator
     from orchestrator.schemas import BenchmarkReport
-    from server.eval.core.scoring import (
+    from eval.core.scoring import (
         compute_combined_benchmark_kpis,
         compute_task_score,
     )
@@ -912,7 +912,7 @@ def cmd_run(args):
 
     # Compute KPIs that may not have been set in parallel path
     if workers > 1 and all_l2_scores:
-        from server.eval.core.scoring import compute_benchmark_kpis
+        from eval.core.scoring import compute_benchmark_kpis
 
         kpis = compute_benchmark_kpis(
             all_l2_scores, task_result_objects=all_result_objects
@@ -1338,7 +1338,7 @@ def cmd_test_e2e(args):
     # Test 5: Scoring pipeline
     print("[5/8] Testing scoring pipeline...")
     try:
-        from server.eval.core.scoring import compute_task_score
+        from eval.core.scoring import compute_task_score
 
         score = compute_task_score(
             quant_result_score=0.8,
@@ -1354,7 +1354,7 @@ def cmd_test_e2e(args):
     # Test 5b: Combined scoring pipeline (Layer 1 + Layer 2)
     print("[5b/8] Testing combined scoring pipeline...")
     try:
-        from server.eval.core.scoring import compute_combined_benchmark_kpis
+        from eval.core.scoring import compute_combined_benchmark_kpis
 
         combined = compute_combined_benchmark_kpis(
             layer2_task_results=[score],  # reuse 'score' from test 5

@@ -1,4 +1,4 @@
-from server.eval.core.scoring import (
+from eval.core.scoring import (
     compute_benchmark_kpis,
     compute_overall,
     compute_task_score,

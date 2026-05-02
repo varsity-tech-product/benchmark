@@ -27,7 +27,7 @@ import logging
 from dataclasses import dataclass
 from typing import Any
 
-from server.eval.judges.runtime.llm_client import (
+from eval.judges.runtime.llm_client import (
     EwanLLMClient,
     extract_json_from_response,
 )

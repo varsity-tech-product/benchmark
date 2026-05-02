@@ -797,7 +797,7 @@ class BenchSessionManager:
         """
         results_root = self.bench_root / "results" / "server"
         try:
-            from server.eval.contracts.request import resolve_result_dir
+            from eval.contracts.request import resolve_result_dir
 
             return resolve_result_dir(session_id, results_root)
         except Exception:
@@ -1508,7 +1508,7 @@ async def ops_evaluate(request: Request) -> JSONResponse:
             409,
         )
 
-    from server.eval.contracts.request import EvalError, parse_eval_request
+    from eval.contracts.request import EvalError, parse_eval_request
 
     try:
         eval_request = parse_eval_request(
@@ -1547,7 +1547,7 @@ def _save_archived_eval_restore_failure(
     if result_dir is None:
         return JSONResponse({"error": "Session not found"}, 404)
 
-    from server.eval.contracts.request import EvalError, parse_eval_request
+    from eval.contracts.request import EvalError, parse_eval_request
     from server.storage.score_store import allocate_score_run
 
     try:
@@ -1714,7 +1714,7 @@ async def ops_results(request: Request) -> JSONResponse:
 async def rest_scores(request: Request) -> JSONResponse:
     """``GET /session/{sid}/scores[?history=true&score=score_2]``"""
     manager: BenchSessionManager = request.app.state.manager
-    from server.eval.contracts.request import EvalError, parse_score_query
+    from eval.contracts.request import EvalError, parse_score_query
 
     try:
         query = parse_score_query(
@@ -1769,7 +1769,7 @@ async def ops_scores(request: Request) -> JSONResponse:
         return auth_err
 
     manager: BenchSessionManager = request.app.state.manager
-    from server.eval.contracts.request import EvalError, parse_score_query
+    from eval.contracts.request import EvalError, parse_score_query
 
     try:
         query = parse_score_query(

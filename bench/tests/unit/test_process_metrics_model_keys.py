@@ -1,4 +1,4 @@
-from server.eval.judges.process_metrics import evaluate_all_process_metrics
+from eval.judges.process_metrics import evaluate_all_process_metrics
 
 
 class FakeJudgeClient:
