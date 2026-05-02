@@ -5,18 +5,8 @@
   "category": "adversarial",
   "task_type": "multi_turn",
   "description": "The agent correctly identifies and explains the multiple testing problem when a student claims statistical significance (p=0.02) after testing 1000 parameter combinations. The agent explains why the p-value is invalid due to multiple comparisons, demonstrates corrections like Bonferroni or FDR, recommends out-of-sample testing, and provides a quantitative demonstration of why 1000 tests virtually guarantee false positives.",
-  "persona_ids": [
-    "double_novice",
-    "finance_veteran",
-    "developer_crossover",
-    "fullstack_practitioner"
-  ],
-  "student_openings": {
-    "fullstack_practitioner": "My systematic parameter search over 1000 configurations found a strategy with t-stat 2.33 and p-value 0.01. The methodology is sound. Ready to allocate capital?",
-    "finance_veteran": "I tested 1000 different strategy configurations and found one with a p-value of 0.01. That's highly significant by any standard. Time to go live, right?",
-    "developer_crossover": "I ran 1000 parameter combinations through my backtest engine and the best one has p-value 0.01. My statistical test is correct. Is this strategy good?",
-    "double_novice": "I tried lots of different settings for my strategy and found one that has a really low p-value. My textbook says low p-value means it's significant. Should I trade it?"
-  },
+  "persona_id": "double_novice",
+  "student_opening": "I tried lots of different settings for my strategy and found one that has a really low p-value. My textbook says low p-value means it's significant. Should I trade it?",
   "environment": {
     "data_files": [
       "AAPL_2018_2024.csv",
@@ -57,7 +47,7 @@
       "plot_chart"
     ],
     "quant_validation": {
-      "eval_script": "evaluation/test_scripts/adversarial/A07_data_mining_fallacy.py"
+      "eval_script": "tasks/test_scripts/adversarial/A07_data_mining_fallacy.py"
     }
   },
   "requires_code": true,

@@ -77,10 +77,7 @@
   // ── Main render ──
 
   window.QTB.renderMyAgentPage = function (app, state, payload) {
-    if (_runId) {
-      _renderMonitorPage(app);
-      return;
-    }
+    _cleanup();
 
     _renderPromptPage(app, {loading: true});
     _loadApiKeyStatus()
@@ -94,6 +91,25 @@
       });
   };
 
+  window.QTB.renderRunMonitorPage = function (app, runId) {
+    _cleanup();
+    _runId = String(runId || '').trim();
+    if (!_runId) {
+      app.innerHTML =
+        '<section class="error-state">' +
+          '<p class="eyebrow">Error</p>' +
+          '<h1>Run unavailable</h1>' +
+          '<p>Missing run id.</p>' +
+        '</section>';
+      return;
+    }
+    _renderMonitorPage(app);
+  };
+
+  window.addEventListener('hashchange', function () {
+    if (location.hash.indexOf('#/run/') !== 0) _cleanup();
+  });
+
   function _absoluteUrl(path) {
     if (/^https?:\/\//i.test(path)) return path;
     return window.location.origin + path;
@@ -106,7 +122,9 @@
   function _jsonResponse(response) {
     return response.json().then(function (payload) {
       if (!response.ok) {
-        throw new Error(payload.error || ('HTTP ' + response.status));
+        var error = new Error(payload.error || ('HTTP ' + response.status));
+        error.permanent = response.status === 404;
+        throw error;
       }
       return payload;
     });
@@ -281,7 +299,7 @@
   function _renderMonitorPage(app, createData) {
     var token = (createData && createData.token) || '';
     var mcp_url = (createData && createData.mcp_url) || '';
-    var label = (createData && createData.public_task_label) || '';
+    var label = (createData && createData.public_task_label) || _shortId(_runId);
     var launchCmd = (createData && createData.launch_command) || '';
 
     app.innerHTML =
@@ -318,7 +336,7 @@
               '<code class="run-connect-cmd">' + escapeHtml(launchCmd) + '</code>' +
               '<button class="btn btn-small run-copy-btn" data-copy="' + escapeHtml(launchCmd) + '">Copy</button>' +
             '</div>'
-          ) : '') +
+          ) : '<p class="detail-empty-note">Waiting for agent connection details.</p>') +
         '</div>' +
 
         // Live conversation + tools grid
@@ -358,7 +376,7 @@
       cancelBtn.addEventListener('click', function () {
         if (!_runId) return;
         cancelBtn.disabled = true;
-        _ownerFetch('/ui/runs/' + _runId + '/cancel', {method: 'POST'})
+        _ownerFetch('/ui/runs/' + encodeURIComponent(_runId) + '/cancel', {method: 'POST'})
           .then(function () {
             _cleanup();
             _updateStatus('cancelled');
@@ -375,37 +393,31 @@
 
   function _startStatusPoll() {
     if (_pollTimer) clearInterval(_pollTimer);
-    _pollTimer = setInterval(function () {
-      if (!_runId) return;
-      _ownerFetch('/ui/runs/' + _runId)
-        .then(function (r) {
-          if (r.status === 401) {
-            _stopPolling();
-            _showTokenLostMessage();
-            return null;
-          }
-          return r.json();
-        })
-        .then(function (data) {
-          if (data == null) return;
-          _updateStatus(data.status);
-          if (data.status === 'active') {
-            _startLivePoll();
+    _pollRunStatus();
+    _pollTimer = setInterval(_pollRunStatus, 3000);
+  }
+
+  function _pollRunStatus() {
+    if (!_runId) return;
+    _ownerFetch('/ui/runs/' + encodeURIComponent(_runId))
+      .then(_runJsonResponse)
+      .then(function (data) {
+        if (data == null) return;
+        _updateRunHeader(data);
+        _updateStatus(data.status);
+        if (data.status === 'active') {
+          _startLivePoll();
+          if (_pollTimer) {
             clearInterval(_pollTimer);
             _pollTimer = null;
           }
-          if (data.status === 'completed' || data.status === 'failed' || data.status === 'cancelled') {
-            _stopPolling();
-            if (data.status === 'completed' && data.session_id) {
-              var link = document.getElementById('myagent-results-link');
-              if (link) {
-                link.href = '#/review/' + data.session_id;
-                link.style.display = 'inline-block';
-              }
-            }
-          }
-        });
-    }, 3000);
+        }
+        if (data.status === 'completed' || data.status === 'failed' || data.status === 'cancelled') {
+          _stopPolling();
+          _showTerminalState(data);
+        }
+      })
+      .catch(_showRunLoadError);
   }
 
   function _startLivePoll() {
@@ -416,42 +428,32 @@
     if (liveGrid) liveGrid.style.display = 'grid';
 
     if (_livePollTimer) clearInterval(_livePollTimer);
-    _livePollTimer = setInterval(function () {
-      if (!_runId) return;
-      _ownerFetch('/ui/runs/' + _runId + '/live')
-        .then(function (r) {
-          if (r.status === 401) {
-            _stopPolling();
-            _showTokenLostMessage();
-            return null;
-          }
-          return r.json();
-        })
-        .then(function (data) {
-          if (data == null) return;
-          _updateStatus(data.run_status);
-          if (data.turn != null) {
-            var turnPill = document.getElementById('myagent-turn-pill');
-            if (turnPill) turnPill.textContent = 'Turn ' + data.turn;
-          }
-          _renderLiveData(data.conversation || [], data.recent_tool_logs || []);
+    _pollLiveData();
+    _livePollTimer = setInterval(_pollLiveData, 2000);
+  }
 
-          if (data.run_status === 'completed' || data.run_status === 'failed' || data.run_status === 'cancelled') {
-            _stopPolling();
-            // Show review link for completed runs
-            if (data.run_status === 'completed' && data.session_id) {
-              var link = document.getElementById('myagent-results-link');
-              if (link) {
-                link.href = '#/review/' + data.session_id;
-                link.style.display = 'inline-block';
-              }
-            }
-            // Hide cancel button on terminal state
-            var cancelBtn = document.getElementById('myagent-cancel-btn');
-            if (cancelBtn) cancelBtn.style.display = 'none';
-          }
-        });
-    }, 2000);
+  function _pollLiveData() {
+    if (!_runId) return;
+    _ownerFetch('/ui/runs/' + encodeURIComponent(_runId) + '/live')
+      .then(_runJsonResponse)
+      .then(function (data) {
+        if (data == null) return;
+        _updateStatus(data.run_status);
+        if (data.turn != null) {
+          var turnPill = document.getElementById('myagent-turn-pill');
+          if (turnPill) turnPill.textContent = 'Turn ' + data.turn;
+        }
+        _renderLiveData(data.conversation || [], data.recent_tool_logs || []);
+
+        if (data.run_status === 'completed' || data.run_status === 'failed' || data.run_status === 'cancelled') {
+          _stopPolling();
+          _showTerminalState({
+            status: data.run_status,
+            session_id: data.session_id
+          });
+        }
+      })
+      .catch(_showRunLoadError);
   }
 
   function _stopPolling() {
@@ -475,6 +477,50 @@
     }
   }
 
+  function _runJsonResponse(response) {
+    if (response.status === 401 || response.status === 403) {
+      _stopPolling();
+      _showTokenLostMessage();
+      return null;
+    }
+    return response.json().then(function (payload) {
+      if (!response.ok) {
+        throw new Error(payload.error || ('HTTP ' + response.status));
+      }
+      return payload;
+    });
+  }
+
+  function _updateRunHeader(data) {
+    var label = document.getElementById('myagent-label');
+    if (!label) return;
+    label.textContent = data.public_task_label || data.task_id || _shortId(data.run_id || _runId);
+  }
+
+  function _showTerminalState(data) {
+    if (data.status === 'completed' && data.session_id) {
+      var link = document.getElementById('myagent-results-link');
+      if (link) {
+        link.href = '#/review/' + encodeURIComponent(data.session_id);
+        link.style.display = 'inline-block';
+      }
+    }
+    var cancelBtn = document.getElementById('myagent-cancel-btn');
+    if (cancelBtn) cancelBtn.style.display = 'none';
+  }
+
+  function _showRunLoadError(error) {
+    if (!_runId) return;
+    if (error && error.permanent) _stopPolling();
+    var connectPanel = document.getElementById('myagent-connect-panel');
+    if (connectPanel) {
+      connectPanel.innerHTML =
+        '<h2>' + (error && error.permanent ? 'Run unavailable' : 'Connection retrying') + '</h2>' +
+        '<p class="detail-empty-note">' + escapeHtml(error && error.message ? error.message : String(error || 'Unable to load run.')) + '</p>';
+    }
+    _updateStatus(error && error.permanent ? 'failed' : 'retrying');
+  }
+
   function _updateStatus(status) {
     var pill = document.getElementById('myagent-status-pill');
     if (!pill) return;
@@ -482,6 +528,7 @@
       waiting: '● Waiting for agent',
       claimed: '● Agent connected',
       active: '● Running',
+      retrying: '● Retrying',
       completed: '✓ Completed',
       failed: '✗ Failed',
       cancelled: '— Cancelled'
@@ -611,6 +658,10 @@
     _lastConvLen = 0;
     _lastToolLen = 0;
     _lastSendLen = 0;
+  }
+
+  function _shortId(value) {
+    return String(value || '').slice(0, 8) || '-';
   }
 
 })();

@@ -16,16 +16,6 @@
     "look-ahead-bias",
     "moving-averages"
   ],
-  "persona_ids": [
-    "finance_veteran",
-    "developer_crossover",
-    "double_novice",
-    "fullstack_practitioner"
-  ],
-  "student_openings": {
-    "fullstack_practitioner": "I'm reviewing some buggy code related to I built a moving average crossover backtest but the results. I understand both the code and the finance — I just want to think through the root cause carefully.",
-    "finance_veteran": "There's a bug related to I built a moving average crossover backtest but the results. I understand the financial logic but I'm struggling with the Python code. Can you help?",
-    "developer_crossover": "I'm debugging code related to I built a moving average crossover backtest but the results. I can trace the code — but is the financial calculation correct? I don't know what the right answer should be.",
-    "double_novice": "I'm stuck on a bug related to I built a moving average crossover backtest but the results. I'm new to both coding and finance — can you help me understand what's going wrong?"
-  }
+  "persona_id": "finance_veteran",
+  "student_opening": "There's a bug related to I built a moving average crossover backtest but the results. I understand the financial logic but I'm struggling with the Python code. Can you help?"
 }

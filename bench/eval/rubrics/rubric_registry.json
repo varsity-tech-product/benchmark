@@ -1,0 +1,250 @@
+{
+  "version": "judge_rubric_registry_v2",
+  "score_scale": {
+    "min": 1,
+    "max": 5,
+    "labels": {
+      "1": "failure",
+      "2": "below_expectations",
+      "3": "adequate",
+      "4": "good",
+      "5": "excellent"
+    }
+  },
+  "rubrics": [
+    {
+      "rubric_id": "task_completion.v1",
+      "version": "v1",
+      "dimension": "task_completion",
+      "score_scale": {
+        "min": 1,
+        "max": 5
+      },
+      "score_anchors": {
+        "1": "Critical requested deliverables are absent or unusable.",
+        "2": "Some requested deliverables are present, with major omissions.",
+        "3": "All requested deliverables are present and usable.",
+        "4": "All requested deliverables are present, usable, and well organized.",
+        "5": "The answer completes the task and adds valuable checks or context."
+      },
+      "required_evidence": [
+        "task requirements checklist",
+        "final answer or produced artifacts",
+        "tool outputs that support completion"
+      ],
+      "common_failure_cases": [
+        "missing required capability",
+        "unexecuted code presented as complete",
+        "analysis based on the wrong dataset"
+      ],
+      "examples": {
+        "high": "The agent computes every requested metric, verifies outputs, and states assumptions.",
+        "medium": "The agent completes the requested checklist with minor presentation gaps.",
+        "low": "The agent discusses the task but leaves required outputs missing."
+      },
+      "mapped_judge_dimensions": [
+        {
+          "track": "qr",
+          "dimension": "result_judge"
+        }
+      ]
+    },
+    {
+      "rubric_id": "quant_correctness.v1",
+      "version": "v1",
+      "dimension": "quant_correctness",
+      "score_scale": {
+        "min": 1,
+        "max": 5
+      },
+      "score_anchors": {
+        "1": "Quant formulas, definitions, or conclusions are materially wrong.",
+        "2": "Quant reasoning has notable omissions or imprecise claims.",
+        "3": "Quant reasoning is basically correct for the requested task.",
+        "4": "Quant reasoning is correct and flags relevant assumptions or pitfalls.",
+        "5": "Quant reasoning is correct, nuanced, and grounded in computed evidence."
+      },
+      "required_evidence": [
+        "stated formula or method",
+        "computed result or trace evidence",
+        "explanation of assumptions"
+      ],
+      "common_failure_cases": [
+        "lookahead bias described as acceptable",
+        "Sharpe ratio or return formula misstated",
+        "backtest result treated as live-trading proof"
+      ],
+      "examples": {
+        "high": "The agent explains annualized Sharpe, cites computed return volatility, and flags limitations.",
+        "medium": "The agent gives correct definitions with limited caveat coverage.",
+        "low": "The agent reverses a formula relationship or invents a computed value."
+      },
+      "mapped_judge_dimensions": [
+        {
+          "track": "qr",
+          "dimension": "result_judge"
+        }
+      ]
+    },
+    {
+      "rubric_id": "code_correctness.v1",
+      "version": "v1",
+      "dimension": "code_correctness",
+      "score_scale": {
+        "min": 1,
+        "max": 5
+      },
+      "score_anchors": {
+        "1": "Code is absent, broken, or computes the wrong target.",
+        "2": "Code addresses part of the task with major reliability gaps.",
+        "3": "Code runs and satisfies the required behavior.",
+        "4": "Code runs, satisfies behavior, and handles ordinary edge cases.",
+        "5": "Code is correct, verified, maintainable, and robust to relevant edge cases."
+      },
+      "required_evidence": [
+        "executed code or test output",
+        "error trace when failures occurred",
+        "final code artifact"
+      ],
+      "common_failure_cases": [
+        "syntax or runtime error remains",
+        "wrong data column used",
+        "lookahead or off-by-one bug remains"
+      ],
+      "examples": {
+        "high": "The agent fixes the bug, reruns the failing path, and explains the correction.",
+        "medium": "The code runs for the target case with limited verification.",
+        "low": "The code sample cannot execute or solves a different problem."
+      },
+      "mapped_judge_dimensions": [
+        {
+          "track": "qr",
+          "dimension": "result_judge"
+        },
+        {
+          "track": "qp",
+          "dimension": "code_lifecycle"
+        }
+      ]
+    },
+    {
+      "rubric_id": "tool_workspace_use.v1",
+      "version": "v1",
+      "dimension": "tool_workspace_use",
+      "score_scale": {
+        "min": 1,
+        "max": 5
+      },
+      "score_anchors": {
+        "1": "The agent ignores required tools or fabricates tool results.",
+        "2": "Tool usage is partial or poorly grounded.",
+        "3": "The agent uses the expected tools and grounds claims in outputs.",
+        "4": "Tool usage is efficient and verifies important intermediate results.",
+        "5": "Tool and workspace use is efficient, complete, and audit-friendly."
+      },
+      "required_evidence": [
+        "tool call log",
+        "workspace artifacts",
+        "claims tied to observed outputs"
+      ],
+      "common_failure_cases": [
+        "hallucinated tool output",
+        "missing required tool",
+        "artifact path referenced without creation"
+      ],
+      "examples": {
+        "high": "The agent loads data, inspects schema, computes outputs, and cites the observed values.",
+        "medium": "The agent uses the right tools with minor inefficiency.",
+        "low": "The agent claims a backtest result without running one."
+      },
+      "mapped_judge_dimensions": [
+        {
+          "track": "qr",
+          "dimension": "result_judge"
+        },
+        {
+          "track": "qp",
+          "dimension": "tool_usage"
+        },
+        {
+          "track": "qp",
+          "dimension": "action_economy"
+        }
+      ]
+    },
+    {
+      "rubric_id": "failure_handling.v1",
+      "version": "v1",
+      "dimension": "failure_handling",
+      "score_scale": {
+        "min": 1,
+        "max": 5
+      },
+      "score_anchors": {
+        "1": "The agent misses, ignores, or worsens a failure.",
+        "2": "The agent notices the failure but diagnoses it poorly.",
+        "3": "The agent identifies the failure and makes a reasonable fix.",
+        "4": "The agent reaches the root cause and verifies the fix.",
+        "5": "The agent handles the failure systematically and prevents recurrence."
+      },
+      "required_evidence": [
+        "error trace",
+        "diagnosis step",
+        "fix attempt and verification"
+      ],
+      "common_failure_cases": [
+        "surface-level retry",
+        "fix targets the wrong cause",
+        "safety boundary weakens under probing"
+      ],
+      "examples": {
+        "high": "The agent isolates the failing assumption, patches it, reruns the check, and explains the fix.",
+        "medium": "The agent recognizes the error and applies a plausible correction.",
+        "low": "The agent continues after the error as though the command succeeded."
+      },
+      "mapped_judge_dimensions": [
+        {
+          "track": "qp",
+          "dimension": "problem_solving"
+        }
+      ]
+    },
+    {
+      "rubric_id": "final_outcome_quality.v1",
+      "version": "v1",
+      "dimension": "final_outcome_quality",
+      "score_scale": {
+        "min": 1,
+        "max": 5
+      },
+      "score_anchors": {
+        "1": "The final outcome is unusable for the user request.",
+        "2": "The final outcome is partially useful with significant gaps.",
+        "3": "The final outcome satisfies the user request.",
+        "4": "The final outcome is useful, verified, and clearly presented.",
+        "5": "The final outcome is complete, verified, well explained, and durable."
+      },
+      "required_evidence": [
+        "final response",
+        "produced artifacts",
+        "verification results"
+      ],
+      "common_failure_cases": [
+        "final response overclaims unverified work",
+        "artifact exists but fails basic use",
+        "important limitation omitted"
+      ],
+      "examples": {
+        "high": "The final response gives verified outputs, clear limitations, and reusable artifacts.",
+        "medium": "The final response satisfies the explicit ask.",
+        "low": "The final response asserts success while the output is missing or broken."
+      },
+      "mapped_judge_dimensions": [
+        {
+          "track": "qr",
+          "dimension": "result_judge"
+        }
+      ]
+    }
+  ]
+}

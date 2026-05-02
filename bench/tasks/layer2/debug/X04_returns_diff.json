@@ -5,14 +5,8 @@
   "category": "debug",
   "task_type": "multi_turn",
   "description": "Guide a student to find and fix a returns calculation bug where .diff() is used instead of .pct_change(), producing dollar-scale absolute differences instead of percentage returns.",
-  "persona_ids": [
-    "developer_crossover",
-    "fullstack_practitioner"
-  ],
-  "student_openings": {
-    "fullstack_practitioner": "I'm debugging an issue: the returns calculation produces values that look too large. I've narrowed it down but want a second pair of eyes on the root cause.",
-    "developer_crossover": "I'm looking at code that computes returns for a trading strategy, but the numbers look unrealistically large. The code reads fine to me, but I'm not sure the financial logic is correct. What should it be doing?"
-  },
+  "persona_id": "developer_crossover",
+  "student_opening": "I'm looking at code that computes returns for a trading strategy, but the numbers look unrealistically large. The code reads fine to me, but I'm not sure the financial logic is correct. What should it be doing?",
   "environment": {
     "data_files": [
       "AAPL_2018_2024.csv"
@@ -50,7 +44,7 @@
       "search_docs"
     ],
     "quant_validation": {
-      "eval_script": "evaluation/test_scripts/debug/X04_returns_diff.py"
+      "eval_script": "tasks/test_scripts/debug/X04_returns_diff.py"
     },
     "termination_criteria": "The tutor has completed the following steps with computational evidence (not just verbal discussion): (1) Reviewed the student's returns computation code and identified that .diff() is used instead of .pct_change(), producing absolute dollar changes instead of percentage returns. (2) Explained why dollar-scale values corrupt all downstream metrics, such as Sharpe ratio, cumulative returns, or volatility becoming scale-dependent on price level rather than proportional. (3) Showed the corrected code using .pct_change() and presented execution results demonstrating the fix, such as return magnitudes becoming realistic (mean absolute value < 0.01). (4) Responded to the student's follow-up about the returns calculation or the fix with additional explanation or analysis beyond the initial demonstration. Once all four steps have been computationally demonstrated, the session is complete."
   },

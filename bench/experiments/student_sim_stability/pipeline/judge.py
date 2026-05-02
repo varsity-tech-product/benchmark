@@ -51,7 +51,7 @@ from server.config.llm_config import (  # noqa: E402
     require_openrouter_api_key,
 )
 from server.config.pricing import get_llm_cost_kwargs  # noqa: E402
-from server.eval.judges.runtime.llm_client import EwanLLMClient  # noqa: E402
+from eval.judges.runtime.llm_client import EwanLLMClient  # noqa: E402
 
 log = logging.getLogger(__name__)
 
@@ -88,7 +88,7 @@ def _client_for_thread(config: JudgeConfig) -> EwanLLMClient:
 def extract_json_object(text: str) -> dict:
     """Extract the first JSON object from a model response.
 
-    Why this isn't ``server.eval.judges.runtime.scoring_utils.extract_json_from_response``:
+    Why this isn't ``eval.judges.runtime.scoring_utils.extract_json_from_response``:
     that helper falls back to a flat-object regex (``\\{[^{}]*\\}``) and returns
     ``{}`` on failure. Judge outputs for S1/S2/S4/control contain nested
     structures (``per_turn`` is a list of dicts, ``scores_by_judge`` is a dict);

@@ -5,18 +5,8 @@
   "category": "backtest",
   "task_type": "multi_turn",
   "description": "Guide a student to build a basic backtest system with proper architecture: a data replay module that feeds BTCUSDT daily bars sequentially, a backtest engine that handles position tracking and PnL accounting, and a strategy module that implements a dual moving average crossover as cleanly separated components.",
-  "persona_ids": [
-    "double_novice",
-    "finance_veteran",
-    "developer_crossover",
-    "fullstack_practitioner"
-  ],
-  "student_openings": {
-    "fullstack_practitioner": "I want to build a basic backtest system with separate data replay, engine, and strategy components. I've run basic backtests before — what methodology issues should I watch for?",
-    "finance_veteran": "I need to build a basic backtest system with cleanly separated data replay, engine, and strategy modules. I know what good backtesting looks like from experience — can you help me implement it in code?",
-    "developer_crossover": "I want to build a basic backtest system with a data replay module, a backtest engine, and a strategy component. I can write the code myself, but I need to understand the financial concepts. What does this mean in trading?",
-    "double_novice": "I want to learn about how to build a basic backtest system with separate data replay, engine, and strategy parts. I'm new to both Python and finance — can you walk me through it from the beginning?"
-  },
+  "persona_id": "double_novice",
+  "student_opening": "I want to learn about how to build a basic backtest system with separate data replay, engine, and strategy parts. I'm new to both Python and finance — can you walk me through it from the beginning?",
   "environment": {
     "data_files": [
       "BTCUSDT_1d_2021_2024.csv"
@@ -54,7 +44,7 @@
       "compute_indicator"
     ],
     "quant_validation": {
-      "eval_script": "evaluation/test_scripts/backtest/B02_basic_sequential_engine.py"
+      "eval_script": "tasks/test_scripts/backtest/B02_basic_sequential_engine.py"
     },
     "termination_criteria": "The tutor has completed the following steps with computational evidence (not just verbal discussion): (1) Built a data handler that loads price data and replays bars sequentially, and explained why separating data replay from strategy logic matters for preventing look-ahead bias. (2) Implemented a backtest engine with position tracking and PnL computation, and a decoupled strategy component that only accesses current and past bars. (3) Ran the complete system end-to-end and presented a performance summary with specific numerical values such as total return, Sharpe ratio, or maximum drawdown. Once all three steps have been computationally demonstrated, the session is complete."
   },

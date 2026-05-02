@@ -1,30 +1,44 @@
-# QuantTutorBench Architecture
+# QuantAgentBench Architecture
 
-This is the current shared architecture after the dev-to-ewan merge plan.
-When code and docs disagree, trust the code and update this file in the same
-change.
+This is the current shared architecture after #122 (Pure Quant Agent
+redefinition) and #123 (eval package extraction + LLMRunner). When code
+and docs disagree, trust the code and update this file in the same change.
 
-The merge contract for the evaluation boundary lives at
-`bench/*MD/v6.0/eval/dev_merge_server_side_eval_contract.md`.
+The benchmark protocol lives in `BENCHMARK_SPEC.md` (v2.0). This document
+covers the implementation/repo layout. The merge contract for the evaluation
+boundary lives at `bench/*MD/v6.0/eval/dev_merge_server_side_eval_contract.md`.
+
+**Marketing name** "QuantAgentBench" is the working name pending #122 TBD-4.
+HuggingFace dataset `Varsity-Tech/quant-tutor-bench-data` and Docker images
+`quant-tutor-env:v2.2` / `quant-tutor-lean:v1.0` retain the v1.0 names for
+backward compatibility.
 
 ## Repo Map
 
 ```text
 bench/
-  server/              HTTP/MCP service, run control, storage, scoring, UI
+  eval/                Standalone scoring package (no server runtime deps)
+  server/              HTTP/MCP service, run control, session storage, UI
   client/              External client adapters for MCP and REST
   orchestrator/        Legacy pre-server batch scaffolding
-  tasks/               Task definitions
+  tasks/               Task definitions + per-task eval scripts (test_scripts/)
   personas/            Student persona profiles
   data/                Market/reference data
   experiments/         Validation experiments and generated report pipelines
+  layer1/              Layer 1 (single-turn knowledge) runner + GEval config
   tests/               Unit, API, and integration tests
 docs/                  Architecture and agent guidance
 vercel-frontend/       Vercel-hosted frontend shell
 ```
 
-`bench/server/` is the active path. `bench/orchestrator/` is legacy and should
-not be used as a new dependency for evaluation orchestration.
+`bench/eval/` is the scoring engine, decoupled from `bench/server/` per #123:
+no `from server.*` imports, can be invoked from CI / notebooks / batch
+without starting the server. `bench/server/` is the live runtime that drives
+sessions and consumes `eval` as a library. `bench/orchestrator/` is legacy
+and should not be used as a new dependency for evaluation orchestration; it
+still backs `bench/run_benchmark.py` (the reference harness CLI) and houses
+the older DeepEval-based simulator. Issue B (filed after #123 lands)
+decommissions this path.
 
 `vercel-frontend/` is a thin static preview package. Its build step copies the
 current UI shell from `bench/server/web/templates/index.html` and static assets
@@ -111,40 +125,147 @@ the evaluation report to the selected validated judge-validation run, its
 report paths, and the current-model match flag.
 
 `server.storage.result_writer.save_run_state()` writes `run_state.json`,
-`.session_id`, and the workspace snapshot. `server.storage.score_store` owns
-`evaluations/index.json` and append-only `score_n` directories.
+`.session_id`, and the workspace snapshot. `eval.storage.score_store` owns
+`evaluations/index.json` and append-only `score_n` directories (moved out
+of server in #123 since score persistence is a scoring concern).
+
+### Bundle v1
+
+`bench/eval/contracts/bundle.py` defines the immutable per-session artifact
+that the scoring path reads from. A `bundle.json` carries `task_id`,
+`task_version`, `task_spec_hash` (sha256 of the canonical task JSON),
+`persona_id`, session metadata, runtime metadata (sandbox image, NPC
+model, `bench_eval_version`, seed), agent self-report metadata,
+turn-keyed `conversation` with nested `tool_calls`, and a
+`workspace_manifest` (path + sha256 + size for every file under
+`agent_files/`). `contracts/bundle_io.py` is the JSON serializer; the
+reader is forward-compatible within the v1 major (unknown fields drop
+silently, missing optional fields fall back to dataclass defaults). See
+`bench/eval/contracts/schema_evolution.md` for the rules.
+
+`bench/eval/backfill/run_state_to_bundle.py` converts legacy
+`run_state.json` artifacts to v1 bundles in place; pass `--recursive` to
+walk a results root and `--force` to overwrite. New sessions are still
+written by `result_writer.save_run_state()`; the writer-side migration
+to bundles directly is future work.
 
 ## Evaluation Pipeline
 
-The active evaluation pipeline is under `bench/server/eval/`:
+The scoring engine lives at `bench/eval/`:
 
-- `contracts/` validates scoring requests and output shape.
-- `core/coordinator.py` is the scoring coordinator used by REST and CLI.
-- `core/preflight.py` blocks non-computable tracks before LLM judging.
-- `tracks/qr.py`, `tracks/qp.py`, and `tracks/tutor.py` run track scoring.
-- `judges/` contains LLM-backed result/process/tutor judges.
-- `programmatic/` contains code, process, and tool-usage evaluators.
-- `inputs/` builds task/persona/conversation/reference context.
-- `rubrics/` stores judge rubrics plus `rubric_registry.json`, the first-class
-  registry of judged dimensions and stable rubric IDs.
+- `contracts/` — validates scoring requests and output shape.
+  `bundle.py` + `bundle_io.py` define the v1 session artifact;
+  `schemas.py` holds task/persona pydantic models (moved from
+  `bench/server/schemas.py` in #123); `request.py` / `output.py`
+  hold `EvalRequest` / `EvalOutput`.
+- `core/coordinator.py` — `EvalCoordinator` runs preflight + tracks +
+  overall scoring + persistence. The persistence step is gated by a
+  `persist=True` flag the standalone path turns off.
+- `core/preflight.py` — blocks non-computable tracks before LLM judging.
+- `tracks/qr.py` and `tracks/qp.py` — per-track scoring. Per #122 the
+  Tutor track has been deleted (no `tracks/tutor.py`).
+- `judges/` — LLM-backed result/process judges. Per #122 the Tutor 7D
+  judge has been deleted; only QR + QP remain.
+- `programmatic/` — code, process, and tool-usage evaluators (no LLM).
+  `code_eval.py` Layer C compares agent outputs to the reference as a
+  tolerance band (sign-mismatch / pathological → 0; same-regime →
+  tiered relative-error). Task-type-specific branches (single / sweep
+  / comparison) are gated on
+  `bench/data/reference/<task_id>/distribution.json`.
+- `inputs/` — task/persona/conversation/reference context builders.
+- `rubrics/` — judge rubrics + `rubric_registry.json`. Per #122
+  teaching_quality and student_adaptation rubrics have been deleted;
+  tutor-track mappings on quant_correctness and failure_handling are
+  removed.
+- `storage/score_store.py` — append-only `evaluations/index.json` plus
+  `score_n/score.json` and `cost.json` (moved from `bench/server/` in
+  #123).
+- `llm/runner.py` — `LLMRunner` (see "LLM Runner + Audit Log").
+- `tool_filters.py` — `NON_SUBSTANTIVE_TOOLS` / `PROTOCOL_ONLY_TOOLS`
+  shared by storage, evals, and process metrics.
+- `llm_config.py` — judge model defaults + OpenRouter helpers used by
+  the eval path (separate from the agent-facing `bench/config/llm_config.py`).
+- `score.py` — top-level `score(bundle, *, bench_root, ...) → EvalOutput`
+  entry for standalone use (see "Standalone Scoring").
+- `backfill/run_state_to_bundle.py` — legacy `run_state.json` →
+  `bundle.json` v1 conversion CLI.
 
-LLM judge prompts are built through `judges/runtime/conv_geval.py`. Prompt and
-output records include rubric ID/version, prompt template version, judge model,
-judge temperature, transcript source, dimension, output schema, context fields,
-and run timestamp metadata.
+LLM judge prompts are built through `judges/runtime/conv_geval.py`. Prompt
+and output records include rubric ID/version, prompt template version,
+judge model, judge temperature, transcript source, dimension, output
+schema, context fields, and run timestamp metadata.
 
-The operator REST endpoint calls `SessionState.request_evaluation()`, which
-allocates a `score_n` run and delegates to `EvalCoordinator`. The CLI entrypoint
-is:
+Per #122 the scoring path has **two LLM dependencies** (QR judge, QP
+judge). The TC checker (`server/core/tc_checker.py`) is purely
+programmatic — TC is met when the agent invokes every tool listed in
+`expected_mcp_tools`. The NPC student simulator remains the only LLM in
+the conversation runtime; its replies do not enter scoring.
+
+The headline KPI is `pass_rate`: per-task `task_score = 0.60 * QR +
+0.40 * QP`, then `task_pass = task_score >= PASS_THRESHOLD`
+(placeholder 0.5; freezes after baseline calibration per #122 TBD-1).
+Wilson 95% CI on `pass_rate` is exposed alongside per-category pass
+rates (sub-headline) and `task_score_mean / std` (diagnostic).
+
+The operator REST endpoint calls `SessionState.request_evaluation()`,
+which allocates a `score_n` run and delegates to `EvalCoordinator`. The
+server-side CLI entrypoint is:
 
 ```bash
-python -m server.scripts.eval_single run --session <session_id> --mode tutor
+python -m server.scripts.eval_single run --session <session_id> --mode full
 python -m server.scripts.eval_single get --session <session_id> --history
 python -m server.scripts.eval_single list
 ```
 
-If a batch driver is needed, it should be a thin wrapper around
-`EvalCoordinator` and `score_store`, not a second evaluator architecture.
+`--mode` accepts `full` (default), `qr`, or `qp`. `tutor` is no longer a
+valid mode. Batch drivers should be a thin wrapper around
+`EvalCoordinator` (or `eval.score()` for the no-persistence path), not
+a second evaluator architecture.
+
+### Standalone Scoring
+
+`eval.score(bundle, *, bench_root, ...) → EvalOutput` runs the same
+pipeline without the server runtime. It accepts a loaded `Bundle` or a
+path to `bundle.json`, reconstructs the flat `conversation` /
+`tool_logs` shape the coordinator expects, materializes a synthetic
+`run_state.json` in a scratch directory (preflight requires the file on
+disk; the caller's `workspace_path` is never written into), and runs
+`EvalCoordinator.run(persist=False)`. No score files are written;
+callers receive `EvalOutput` and decide where to store it.
+
+Decoupling guarantee: `bench/eval/` has zero `from server.*` imports.
+The CI smoke `bench/tests/unit/test_eval_score_standalone.py` enforces
+this with a `grep` assertion plus an end-to-end `score()` invocation.
+
+### LLM Runner + Audit Log
+
+`bench/eval/llm/runner.py` is the single point of contact between eval
+and the LLM provider. Within `bench/eval/`,
+`chat.completions.create()` appears only at `runner.py:140`; everything
+else goes through `LLMRunner.call(call_id, model_id, messages,
+prompt_id, prompt_version, ...)`. After #123 there are three call
+sites — NPC student simulator, QR judge, QP judge — and all three
+emit attributable audit rows.
+
+Each call writes one `LLMCallRecord` to a pluggable `AuditSink`.
+Defaults:
+
+- `JsonlAuditSink(path)` — append-only JSONL, thread-safe, queryable
+  with `jq` / `grep` / pandas. No schema migrations.
+- `NullAuditSink()` — drops everything; used when no log path is set.
+
+The module-level `default_runner()` reads the `QTB_AUDIT_LOG`
+environment variable: set it to a file path to capture every call,
+unset to silence. One JSONL line carries
+`call_id, model_id, prompt_id, prompt_version, prompt_hash, tokens_in,
+tokens_out, cost_usd, latency_ms, ts, success, error`. `prompt_id` is
+the rubric ID for judges and `"npc.student"` for the NPC; `prompt_version`
+tracks the rendered prompt template version (rubric content version
+lives in `prompt_id` + `prompt_hash`).
+
+Provider abstraction (issue #123 TBD-A1): v1 is single-provider
+OpenRouter (Chat Completions). The seam for a multi-provider rewrite is
+`LLMRunner._invoke`; nothing else cares about transport details.
 
 ## Judge Validation
 
@@ -191,7 +312,7 @@ multi-reviewer blocks:
 
 External-agent `score.json` exports carry the selected validation run through
 the `judge_reliability` metadata block, populated from
-`bench/server/eval/judge_reliability_reference.json`.
+`bench/eval/judge_reliability_reference.json`.
 
 ## Human Review Console
 
@@ -227,7 +348,7 @@ return raw tool logs, owner internals, debug histories, judge prompts, raw judge
 responses, evaluator traces, or cost internals.
 
 `GET /session/{sid}/scores` is read-only. It returns pending/running/completed
-score state from `score_store` and strips private score/cost internals.
+score state from `eval.storage.score_store` and strips private score/cost internals.
 
 Operator reads under `/ops/session/{sid}/results` and
 `/ops/session/{sid}/scores` return full server-side payloads for audit and
@@ -251,9 +372,19 @@ Important contract tests:
 python -m pytest bench/tests/api/test_permissions.py
 python -m pytest bench/tests/api/test_eval_flow.py
 python -m pytest bench/tests/unit/test_eval_architecture_contracts.py
+python -m pytest bench/tests/unit/test_eval_score_standalone.py
+python -m pytest bench/tests/unit/test_bundle.py bench/tests/unit/test_backfill.py
+python -m pytest bench/tests/unit/test_llm_runner.py
 python -m pytest bench/tests/test_server_web_ui.py
 python -m pytest bench/tests/test_run_control_token.py bench/tests/test_run_owner_filtering.py
 ```
+
+`test_eval_score_standalone.py` enforces the `bench/eval/` ↔
+`bench/server/` decoupling boundary with a static `grep` assertion;
+fail it whenever you accidentally add a `from server.*` to the eval
+package. `test_bundle.py` + `test_backfill.py` enforce Bundle v1
+forward-compatibility and the legacy backfill round-trip.
+`test_llm_runner.py` covers the audit log + provider seam.
 
 Run broader REST/run-owner/auth tests when changing client run control,
 Vercel-facing routes, or quota behavior.

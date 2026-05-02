@@ -47,10 +47,8 @@ def _make_task(*, requires_code: bool) -> QuantTutorTask:
         difficulty=Difficulty.HARD,
         category=TaskCategory.IMPLEMENTATION,
         description="Implement and verify a parameter optimization workflow.",
-        persona_ids=["developer_crossover"],
-        student_openings={
-            "developer_crossover": "How should I implement the optimization workflow?"
-        },
+        persona_id="developer_crossover",
+        student_opening="How should I implement the optimization workflow?",
         environment=EnvironmentConfig(
             data_files=["universe.json"],
             core_mcp_tools=[

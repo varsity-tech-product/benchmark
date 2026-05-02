@@ -7,9 +7,9 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "bench"))
 
 from experiments.judge_validation import run as judge_run
 from experiments.judge_validation.report import compute_reliability_stats
-from server.eval.inputs.rubric_builder import build_eval_params, load_rubric
-from server.eval.judges.runtime.conv_geval import EvalTestCase, EwanConvGEval
-from server.eval.rubrics.registry import (
+from eval.inputs.rubric_builder import build_eval_params, load_rubric
+from eval.judges.runtime.conv_geval import EvalTestCase, EwanConvGEval
+from eval.rubrics.registry import (
     get_registry_rubric,
     load_rubric_registry,
     mapped_registry_ids,

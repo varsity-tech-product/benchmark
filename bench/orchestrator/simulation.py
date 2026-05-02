@@ -928,9 +928,7 @@ def run_agent_session(
             agent_adapter.set_cancel_event(cancel_event)
 
     # Get student opening and inject into session
-    opening = task.student_openings.get(persona.persona_id, "")
-    if not opening:
-        opening = "Hi, I need help with this topic."
+    opening = task.student_opening or "Hi, I need help with this topic."
     session.inject_student_opening(opening)
 
     # Build bootstrap prompt with the student's opening

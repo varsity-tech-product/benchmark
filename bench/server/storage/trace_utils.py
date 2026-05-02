@@ -10,7 +10,7 @@ Extracted from ``reference/generate_reference.py`` — logic unchanged.
 import json
 import os
 
-from server.tool_filters import NON_SUBSTANTIVE_TOOLS
+from eval.tool_filters import NON_SUBSTANTIVE_TOOLS
 
 # ── Human-readable trace summary ────────────────────────────────
 

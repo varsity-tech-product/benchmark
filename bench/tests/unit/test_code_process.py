@@ -1,6 +1,6 @@
 from types import SimpleNamespace
 
-from server.eval.programmatic.code_process import (
+from eval.programmatic.code_process import (
     _is_code_exec,
     evaluate_code_lifecycle,
 )

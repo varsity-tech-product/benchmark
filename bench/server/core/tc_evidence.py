@@ -12,7 +12,7 @@ import re
 from dataclasses import asdict, is_dataclass
 from typing import Any
 
-from server.tool_filters import NON_SUBSTANTIVE_TOOLS
+from eval.tool_filters import NON_SUBSTANTIVE_TOOLS
 
 _MAX_CALLS = 8
 _MAX_ARGS_CHARS = 160

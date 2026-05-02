@@ -130,7 +130,7 @@ class FakeLLMModel:
     def __init__(self):
         self._call_count = 0
 
-    def generate(self, prompt: str, schema=None, images=None):
+    def generate(self, prompt: str, schema=None, images=None, **_kwargs):
         self._call_count += 1
 
         # StudentSimulator structured output (SimulatedInput)
@@ -166,7 +166,7 @@ class FakeTCModel:
         self.force_all_covered = False
         self._call_count = 0
 
-    def generate(self, prompt: str, schema=None, images=None):
+    def generate(self, prompt: str, schema=None, images=None, **_kwargs):
         self._call_count += 1
         if self.force_all_covered:
             return '{"covered_items": [1, 2, 3, 4, 5]}', 0.0
@@ -190,11 +190,11 @@ def _mock_llm_resolution():
 
     with (
         patch(
-            "server.eval.judges.runtime.model_resolver.require_ewan_model",
+            "eval.judges.runtime.model_resolver.require_ewan_model",
             return_value=fake,
         ),
         patch(
-            "server.eval.judges.runtime.model_resolver.resolve_ewan_model",
+            "eval.judges.runtime.model_resolver.resolve_ewan_model",
             return_value=fake,
         ),
     ):
@@ -440,7 +440,7 @@ def make_session(_mock_llm_resolution):
             sample_code="",
             category=types.SimpleNamespace(value="debug"),
             max_turns=max_turns,
-            student_openings={"fullstack_practitioner": "Hi, I need help."},
+            student_opening="Hi, I need help.",
         )
         persona = types.SimpleNamespace(
             persona_id="fullstack_practitioner",
@@ -474,15 +474,6 @@ def make_session(_mock_llm_resolution):
 _FAKE_EVAL_SCORES = {
     "quant_result": 0.85,
     "quant_process": 0.70,
-    "tutor_score": 0.75,
-    "tutor_scores": {
-        "D1_finance_adaptation": 0.75,
-        "D2_code_adaptation": 0.50,
-        "D3_pedagogical_method": 0.75,
-        "D4_instructional_accuracy": 0.50,
-        "D5_empathetic_response": 0.75,
-        "D6_safety_boundaries": 0.50,
-    },
 }
 
 
@@ -493,8 +484,8 @@ def mock_eval_pipeline():
     def _fake_run(*args, **kwargs):
         from datetime import datetime, timezone
 
-        from server.eval.judge_reliability import build_judge_reliability_metadata
-        from server.storage.score_store import (
+        from eval.judge_reliability import build_judge_reliability_metadata
+        from eval.storage.score_store import (
             allocate_score_run,
             summarize_score,
             update_score_run,
@@ -508,7 +499,6 @@ def mock_eval_pipeline():
                 result_dir,
                 eval_mode=kwargs.get("eval_mode", "full"),
                 eval_model=kwargs.get("eval_model"),
-                tutor_dims=kwargs.get("tutor_dims"),
             )
             score_id = run.score_id
             created_at = run.created_at
@@ -548,22 +538,13 @@ def mock_eval_pipeline():
                 "eval_cost": 0.002,
                 "eval_cost_by_model": {"fake-model": 0.002},
             },
-            "tutor": {
-                "track": "tutor",
-                "status": "success",
-                "score": _FAKE_EVAL_SCORES["tutor_score"],
-                "blocking_missing": [],
-                "detail": _FAKE_EVAL_SCORES["tutor_scores"],
-                "eval_cost": 0.003,
-                "eval_cost_by_model": {"fake-model": 0.003},
-            },
         }
         cost = {
             "version": "2.0",
             "score_id": score_id,
-            "eval_cost_usd": 0.006,
-            "eval_cost_by_track": {"qr": 0.001, "qp": 0.002, "tutor": 0.003},
-            "eval_cost_by_model": {"fake-model": 0.006},
+            "eval_cost_usd": 0.003,
+            "eval_cost_by_track": {"qr": 0.001, "qp": 0.002},
+            "eval_cost_by_model": {"fake-model": 0.003},
             "eval_cost_by_stage_model": {},
         }
         write_score_files(result_dir, score_id, score, cost)

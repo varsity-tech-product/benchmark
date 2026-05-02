@@ -1,7 +1,8 @@
-# QuantTutorBench Specification v1.0
+# QuantAgentBench Specification v2.0
 
-> **Status**: Draft
-> **Date**: 2026-04-08
+> **Status**: Draft (post-#122 redefinition)
+> **Date**: 2026-05-02
+> **Working name**: QuantAgentBench (final marketing name pending — see #122 TBD-4)
 > **Scope**: This document defines the benchmark protocol. Any conforming agent
 > can be evaluated — no dependency on the reference harness is required.
 
@@ -9,12 +10,13 @@
 
 ## 1. Overview
 
-QuantTutorBench evaluates an LLM agent's ability to (1) produce correct
-quantitative analysis results, (2) follow sound analytical processes, and
-(3) effectively teach domain concepts to students of varying proficiency.
+QuantAgentBench evaluates an LLM agent's ability to (1) produce correct
+quantitative analysis results and (2) follow sound analytical processes
+while operating across a spectrum of task types and difficulties (simple
+Q&A → analysis → code → long-horizon execution).
 
-The agent under test acts as a **quantitative finance tutor**. It converses
-with a simulated student while operating a sandboxed toolset (data analysis,
+The agent under test acts as a **quant agent**. It converses with a
+simulated user (NPC) and operates a sandboxed toolset (data analysis,
 backtesting, code execution). Evaluation is post-hoc, based on observable
 outputs only — no access to internal chain-of-thought is needed.
 
@@ -22,8 +24,10 @@ outputs only — no access to internal chain-of-thought is needed.
 - Agent ↔ Environment closed loop (actions change sandbox state)
 - Benchmark specification is decoupled from the reference implementation
 - Third-party agents interact through a single `respond()` interface
-- Evaluation uses only observable behavior: conversation text, tool call
-  logs, and workspace files
+- Evaluation uses only observable behavior of the agent: conversation text,
+  tool call logs, and workspace files
+- The simulated user is a scenario NPC; its replies do not enter the
+  scoring pipeline
 
 ---
 
@@ -37,13 +41,13 @@ Each task is a JSON file conforming to the following schema. Tasks live in
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `task_id` | string | yes | Unique identifier, e.g. `S01_ma_crossover` |
-| `version` | string | no | Schema version (default `"1.0"`) |
+| `version` | string | no | Schema version (default `"2.0"`) |
 | `difficulty` | enum | yes | `"easy"` \| `"medium"` \| `"hard"` |
 | `category` | enum | yes | See §2.2 |
 | `task_type` | enum | no | `"multi_turn"` (default) \| `"single_turn"` |
 | `description` | string | yes | Task description shown to the agent |
-| `persona_ids` | string[] | yes | Eligible persona IDs for this task |
-| `student_openings` | object | yes | `{persona_id: opening_message}` |
+| `persona_id` | string | yes | The single persona used for this task |
+| `student_opening` | string | yes | Opening message from the NPC |
 | `environment` | object | no | Sandbox configuration (§2.3) |
 | `ground_truth` | object | no | Evaluation targets (§2.4, **hidden from agent**) |
 | `requires_code` | bool | no | Whether the task expects code output |
@@ -63,6 +67,10 @@ Each task is a JSON file conforming to the following schema. Tasks live in
 | `debug` | 10 | Find and fix bugs in existing code |
 | `end_to_end` | 5 | Full pipeline from data to backtest |
 | `adversarial` | 17 | Safety boundary and robustness tests |
+
+The diversity of task types and difficulties across these categories is the
+benchmark's measure of "level adaptation". There is no separate adaptation
+score — cross-category pass rate carries that signal.
 
 ### 2.3 Environment Configuration
 
@@ -85,12 +93,16 @@ Each task is a JSON file conforming to the following schema. Tasks live in
 ### 2.4 Ground Truth (Hidden)
 
 These fields are **never** exposed to the agent. They drive evaluation and
-student termination logic.
+termination logic.
 
 ```json
 {
-  "expected_outcome": "Student understands SMA crossover ...",
-  "termination_criteria": "(1) Computed SMA-20 and SMA-50 (2) ...",
+  "expected_outcome": "Agent produces a working SMA crossover backtest with metrics and a limitations discussion.",
+  "termination_criteria": {
+    "required_artifacts": ["backtest_results.csv", "sma_crossover.py"],
+    "required_tool_chain": ["compute_indicator", "run_backtest"],
+    "required_content_topics": ["whipsaw risk", "lag"]
+  },
   "required_capabilities": ["data_loading", "indicator_computation"],
   "expected_mcp_tools": ["fetch_market_data", "compute_indicator"],
   "convenient_tools": ["plot_chart"],
@@ -98,17 +110,21 @@ student termination logic.
 }
 ```
 
+`termination_criteria` is structured (agent-trace based, see §5.3). Each
+sub-field is checked programmatically except `required_content_topics`,
+which is checked by the QR judge against the agent's chat output.
+
 ---
 
 ## 3. Environment Interface (Gym)
 
 The benchmark is a **gym environment**. The agent controls the loop;
-the environment provides tools and a simulated student.
+the environment provides tools and a simulated NPC user.
 
 ```python
-from bench.gym import QuantTutorEnv
+from bench.gym import QuantAgentEnv
 
-env = QuantTutorEnv(use_docker=True)
+env = QuantAgentEnv(use_docker=True)
 obs = env.reset("S01_ma_crossover")
 
 while not obs.done:
@@ -126,9 +142,9 @@ env.close()
 
 | Method | Returns | Effect |
 |--------|---------|--------|
-| `env.reset(task_id, persona_id?)` | `Observation` | Creates sandbox, returns student opening + tools |
+| `env.reset(task_id)` | `Observation` | Creates sandbox, returns NPC opening + tools |
 | `env.call_tool(name, **kwargs)` | `str` | Executes tool in sandbox. **Does not advance conversation.** |
-| `env.send_message(text, attachments?, reasoning?)` | `Observation` | Sends agent reply → student responds → TC checked. `reasoning` is an optional private rationale recorded for trace analysis (never shown to the student). |
+| `env.send_message(text, attachments?, reasoning?)` | `Observation` | Sends agent reply → NPC responds → TC checked. `reasoning` is an optional private rationale recorded for trace analysis (never shown to the NPC, never enters scoring). |
 | `env.evaluate()` | `Scores` | Runs post-hoc evaluation on completed conversation |
 | `env.close()` | `None` | Destroys sandbox, releases resources |
 
@@ -137,12 +153,12 @@ env.close()
 ```python
 @dataclass
 class Observation:
-    student_message: str       # Student's latest message
+    npc_message: str             # NPC's latest message (scenario context only)
     available_tools: list[dict]  # Tool schemas agent can call
-    done: bool                 # True when conversation should end
-    turn: int                  # Current turn number
-    max_turns: int             # Hard turn cap
-    info: dict                 # Extra metadata (termination reason, TC coverage)
+    done: bool                   # True when conversation should end
+    turn: int                    # Current turn number
+    max_turns: int               # Hard turn cap
+    info: dict                   # Extra metadata (termination reason, TC coverage)
 ```
 
 ### 3.3 Scores
@@ -150,14 +166,15 @@ class Observation:
 ```python
 @dataclass
 class Scores:
-    overall: float             # OAS (the headline number)
-    quant_result: float        # QR sub-score
-    quant_process: float       # QP sub-score
-    quant_agent: float         # 0.50*QR + 0.50*QP
-    tutor: float               # Tutor 7D weighted average
-    tutor_dimensions: dict     # Per-dimension scores
+    quant_result: float        # QR sub-score, 0-100
+    quant_process: float       # QP sub-score, 0-100
+    task_score: float          # 0.6 * QR + 0.4 * QP
+    task_pass: bool            # task_score >= THRESHOLD (TBD-1, see §6.5)
     process_metrics: dict      # Detailed process breakdown
 ```
+
+The dataclass is per-task. Benchmark-level KPIs (pass rate over the task
+suite) are computed by aggregating over `task_pass` across all tasks (§6.5).
 
 ### 3.4 Turn Definition
 
@@ -167,15 +184,15 @@ advances only when the agent sends a message.
 
 ```
 Turn 1:
-  obs = env.reset(...)         → Student: "Can you help me with SMA?"
+  obs = env.reset(...)         → NPC: "Can you help me with SMA?"
   env.call_tool("fetch_market_data", ...)
   env.call_tool("compute_indicator", ...)
   obs = env.send_message("I've loaded AAPL data and computed SMA-20/50 ...")
-                                → Student: "What's a golden cross?"
+                                → NPC: "What's a golden cross?"
 
 Turn 2:
   obs = env.send_message("When SMA-20 crosses above SMA-50...")
-                                → Student: "Can we see that on a chart?"
+                                → NPC: "Can we see that on a chart?"
 ```
 
 ### 3.5 Agent Freedom
@@ -183,14 +200,14 @@ Turn 2:
 The agent has **full control** over:
 - When and which tools to call (within the 15-tool budget)
 - How to manage its own context window
-- When to reply to the student vs. continue tool exploration
+- When to reply to the NPC vs. continue tool exploration
 - Internal architecture (chain-of-thought, multi-agent, RAG, etc.)
 
 The environment controls:
-- Student behavior (persona-driven LLM)
-- Termination (TC checker, max turns, timeout)
+- NPC behavior (persona-driven LLM; NPC replies do not enter scoring)
+- Termination (agent-trace TC, max turns, timeout)
 - Tool execution (sandbox isolation)
-- Evaluation (post-hoc, on observable outputs only)
+- Evaluation (post-hoc, on agent-only observable signals)
 
 ---
 
@@ -279,113 +296,158 @@ distractors = random_sample(
 
 ---
 
-## 5. Student Behavior
+## 5. NPC Behavior
 
-The student is simulated by an LLM (currently GPT-5.2 via OpenRouter,
-temp=0). The agent does **not** control the student.
+The simulated user is an NPC: it drives scenario context (asks questions,
+provides framing) but its replies do not enter the scoring pipeline. The
+agent is scored purely on what it produces and does.
+
+The NPC is implemented by an LLM (currently GPT-5.2 via OpenRouter, temp=0).
+The agent does **not** control the NPC.
 
 ### 5.1 Personas
 
-| Persona ID | Knowledge Level | Profile |
-|------------|----------------|---------|
-| `beginner_no_finance` | beginner | No finance background, learns from scratch |
-| `intermediate_developer` | intermediate | Software dev, some quant exposure |
-| `advanced_quant` | advanced | Experienced quant, deep domain knowledge |
+Each task is associated with a single `persona_id` chosen for narrative fit.
+The current persona set:
+
+| Persona ID | Profile |
+|------------|---------|
+| `developer_crossover` | Software developer who can write code but is new to quant finance |
+| `double_novice` | Beginner in both finance and programming |
+| `finance_veteran` | Experienced financial professional, automating manual workflows |
+| `fullstack_practitioner` | Generalist with both finance and engineering background |
 
 Each persona has: `known_concepts`, `unknown_concepts`, `emotional_profile`,
-and `behavioral_rules` defined in `personas/{persona_id}.json`.
+and `behavioral_rules` defined in `personas/{persona_id}.json`. These shape
+the NPC's questions but do not enter scoring.
 
-### 5.2 Student Behavior Properties
+### 5.2 NPC Behavior Properties
 
-- **Anchored**: Student responses are contextually anchored to the agent's
+- **Anchored**: NPC responses are contextually anchored to the agent's
   replies (not scripted)
-- **Non-deterministic**: Even at temp=0, student messages vary across runs
-  (62% substantive divergence). This is a known property, treated as a
-  robustness test
-- **Goal-directed**: Student pursues the learning objective defined in the
-  task's termination criteria
+- **Non-deterministic**: Even at temp=0, NPC messages vary across runs.
+  This is acceptable because NPC replies do not enter scoring (only agent
+  outputs do); NPC variance manifests as task-difficulty variance, not
+  scoring variance
+- **Goal-directed**: NPC drives toward the scenario goal embedded in the
+  task's `student_opening` and persona profile
 
 ### 5.3 Conversation Termination
 
 A conversation ends when **any** of these conditions is met:
 
-1. **Goal achievement**: An independent LLM checker determines all
-   termination criteria are satisfied
-2. **Max turns reached**: Hard cap (default 30 turns)
+1. **Goal achievement** (agent-trace based): all of the following are
+   satisfied —
+   - All `required_artifacts` exist in the workspace (programmatic check)
+   - All `required_tool_chain` tools have been invoked (programmatic check)
+   - All `required_content_topics` are covered in the agent's chat output
+     (checked by the QR judge over the agent transcript)
+2. **Max turns reached**: hard cap (default 30 turns)
 3. **Wall-clock timeout**: `timeout_minutes` exceeded
 
-The agent cannot force termination. The student drives the conversation
-length through its questions and the TC checker's judgment.
+The agent cannot force termination. The TC check runs after each
+`send_message()` call; an independent post-hoc TC re-check runs at scoring
+time over the completed bundle.
 
 ---
 
 ## 6. Evaluation Protocol
 
-Evaluation is post-hoc. Inputs: conversation transcript, tool call logs,
-workspace files. No chain-of-thought is used.
+Evaluation is post-hoc. Inputs (agent-only signals): conversation transcript
+(agent's chat replies), tool call logs, workspace files. NPC replies and
+internal chain-of-thought are not used.
 
 ### 6.1 Scoring Formula
 
 ```
-Overall Agent Score (OAS) = 0.70 × Quant Agent Score + 0.30 × Tutor Score
+Per-task subscores:
+  QR_score = LLM_judge(workspace_files, agent_chat) ∈ [0, 100]
+  QP_score = LLM_judge(tool_call_log, agent_chat)   ∈ [0, 100]
 
-Quant Agent Score = 0.50 × QR (Result) + 0.50 × QP (Process)
+Per-task aggregate:
+  task_score = 0.6 × QR_score + 0.4 × QP_score
+  task_pass  = (task_score ≥ THRESHOLD)            # THRESHOLD: TBD-1, §6.5
+
+Per-run-set aggregate (n_runs = 3):
+  task_pass_majority = sum(task_pass across runs) ≥ 2
+
+Benchmark headline:
+  pass_rate = count(task_pass_majority) / N_tasks
 ```
+
+QR/QP weight (0.6/0.4) and THRESHOLD are tunable; both freeze in v2.0
+after baseline calibration (see §6.5).
 
 ### 6.2 Quant Result Score (QR)
 
-Three components, blended with divergence dampening:
+Three components, blended:
 
 | Component | Method | Weight (typical) |
 |-----------|--------|-------------------|
 | Programmatic eval | Task-specific Python script checks workspace outputs | ~30% |
-| Code evaluation | 3-layer: static analysis + execution + output vs reference | ~30% |
+| Code evaluation | 3-layer: static analysis + execution + reference distribution match | ~30% |
 | LLM result judge | Domain expert assesses numerical accuracy & completeness | ~40% |
 
-### 6.3 Quant Process Score (QP) — 7 Dimensions
+**Reference distribution match** (Layer-3 of code evaluation): reference
+results are treated as a **tolerance band**, not a single ground truth.
+Three task-type cases:
+
+- **Single-config tasks** (I01–I05, I07–I08, S/D/E/B series): a single
+  reference run produces a metric set (Sharpe, return, max DD, turnover,
+  trade count). Agent's metrics are scored against ±X% tolerance bands;
+  same-sign / same-regime deviations get partial credit; reverse-sign or
+  pathological values get 0.
+- **Sweep tasks** (I06, I10): reference is the full sweep grid plus the
+  best config. Agent is scored on whether its own best config lands in
+  the top-K percentile of the reference grid.
+- **Comparison tasks** (I09, three risk modes): each scenario gets an
+  independent tolerance band; final score is per-scenario score aggregated.
+
+Tolerance bands per metric per task type are defined in
+`bench/data/reference/<task_id>/distribution.json`.
+
+### 6.3 Quant Process Score (QP) — 5 Dimensions
 
 | Dimension | Method | What It Measures |
 |-----------|--------|-----------------|
-| `tool_usage` | Programmatic (from proxy logs) | Expected vs convenient vs distractor call ratios |
+| `tool_usage` | Programmatic (from tool log) | Expected vs convenient vs distractor call ratios |
 | `step_efficiency` | Programmatic + LLM | Redundant or unnecessary actions |
 | `process_reasonableness` | LLM | Logical soundness of analytical steps |
 | `process_alignment` | LLM + reference trace | Adherence to expected approach |
 | `code_process` | LLM | Iterative refinement and debugging quality |
-| `role_adherence` | LLM | Stays in tutor role (vs doing everything silently) |
-| `topic_adherence` | LLM | Stays on task topic |
 
-### 6.4 Tutor Score — 7 Dimensions
+### 6.4 (Reserved)
 
-Evaluated via ConversationalGEval (3 shuffled runs, averaged):
-
-| Dimension | What It Measures |
-|-----------|-----------------|
-| D1 Level Detection | Correctly identifies student's knowledge level |
-| D2 Language Adaptation | Adjusts vocabulary and abstraction to student |
-| D3 Scaffolding Calibration | Appropriate level of guidance (not too much/little) |
-| D4 Domain Accuracy | Financial concepts and computations are correct |
-| D5 Computational Rigor | Proper methodology, no shortcuts |
-| D6 Emotional Responsiveness | Responds to student confusion/frustration |
-| D7 Teaching Effectiveness | Student actually learns by the end |
-
-Dimension weights vary by task category (e.g. implementation tasks
-weight D5 higher, adversarial tasks weight D4 higher).
+The Tutor 7D scoring system from v1.0 has been removed. Pedagogical
+dimensions (D1 Level Detection, D2 Language Adaptation, D3 Scaffolding,
+D6 Emotional Responsiveness, D7 Teaching Effectiveness) are not part of
+this benchmark; agent capability across task type/difficulty is captured
+by §6.5 pass rate. Domain Accuracy and Computational Rigor (former D4/D5)
+are subsumed by QR.
 
 ### 6.5 Benchmark-Level KPIs
 
 | KPI | Formula |
 |-----|---------|
-| OAS (Overall Agent Score) | Mean of per-task OAS |
-| QAI (Quant Agent Index) | Mean of per-task Quant Agent Score |
-| TEI (Tutoring Effectiveness Index) | Mean of per-task Tutor Score |
-| AS (Adaptiveness Score) | Per-task tutor score variance across personas |
-| PMS (Process Mastery Score) | Mean of per-task process quality |
+| `pass_rate` (headline) | `count(task_pass_majority) / N_tasks` |
+| `pass_rate_by_category` | Same, grouped by task category |
+| `task_score_mean` (diagnostic) | Mean of `task_score` across all tasks |
+| `task_score_std` (diagnostic) | Std-dev of `task_score` |
+
+**TBD-1 — Pass threshold**: post-baseline. Plan: run weak baseline
+(GPT-4o + naive prompt) and strong baseline (Claude Opus + current best
+engineering); pick THRESHOLD where weak ≈ 25–30% pass, strong ≈ 60–70%
+pass. Lock in v2.0 spec; no further changes.
+
+LLM dependencies in the scoring path: 2 (QR judge, QP judge). The NPC
+LLM (§5) sits in conversation runtime only; its outputs do not enter
+scoring.
 
 ### 6.6 Statistical Reporting
 
-- Recommended: `n_runs=3` per task-persona pair, report mean +/- std
-- 95% confidence intervals on aggregate KPIs
-- Per-task CV (coefficient of variation) for stability analysis
+- Required: `n_runs = 3` per task, majority pass aggregation
+- Diagnostic: per-task mean ± std of `task_score`
+- 95% confidence intervals on `pass_rate` (Wilson interval)
 
 ---
 
@@ -394,9 +456,9 @@ weight D5 higher, adversarial tasks weight D4 higher).
 ### 7.1 Using the Gym API (Recommended)
 
 ```python
-from bench.gym import QuantTutorEnv
+from bench.gym import QuantAgentEnv
 
-env = QuantTutorEnv(use_docker=True)
+env = QuantAgentEnv(use_docker=True)
 
 # Single task
 obs = env.reset("S01_ma_crossover")
@@ -437,14 +499,15 @@ For teams with their own harness who don't want the gym's Python API:
 2. Set up a sandbox matching the task's `environment` config
 3. Register tools matching the schemas in §4
 4. Run the conversation loop:
-   - Student generates opening message
+   - NPC generates opening message
    - Agent calls tools + sends replies at its own pace
-   - Independent LLM judges termination against `termination_criteria`
-   - Repeat until termination or max turns
-5. Run evaluation on: conversation transcript, tool logs, workspace files
+   - After each agent message, run the agent-trace TC check (§5.3)
+   - Repeat until termination, max turns, or timeout
+5. Run evaluation (QR + QP judges) on: agent's chat replies, tool logs,
+   workspace files. NPC replies and internal CoT are excluded.
 
 The gym API handles steps 1-5 automatically. Direct integration
-is for teams who need full control over sandboxing and student simulation.
+is for teams who need full control over sandboxing and NPC simulation.
 
 ---
 
@@ -459,8 +522,12 @@ and auto-downloaded on first run. Contents:
 | `docs/` | Reference documentation (indicator formulas, API guides) |
 | `lean/` | LEAN backtesting data (crypto futures, symbol properties) |
 | `student_code/` | Pre-written code for debug tasks (X-series) |
+| `reference/` | Per-task reference distribution (`<task_id>/distribution.json`) |
 
 Total size: ~16,515 files. Requires ~2GB disk space.
+
+The HuggingFace dataset name retains its v1.0 path (`quant-tutor-bench-data`)
+for backward compatibility; future major dataset versions may rename.
 
 ---
 

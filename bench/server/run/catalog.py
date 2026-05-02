@@ -26,7 +26,7 @@ class TaskEntry:
     task_id: str  # "D01_load_inspect_ohlcv"
     category: str  # "data_analysis"
     difficulty: str  # "medium"
-    persona_ids: list[str]
+    persona_id: str
     max_turns: int
     timeout_minutes: int
     source_path: Path
@@ -83,7 +83,7 @@ class TaskCatalog:
                 task_id=task_id,
                 category=data.get("category", ""),
                 difficulty=data.get("difficulty", ""),
-                persona_ids=data.get("persona_ids", []),
+                persona_id=data.get("persona_id", ""),
                 max_turns=data.get("max_turns", 30),
                 timeout_minutes=data.get("timeout_minutes", 15),
                 source_path=json_path,

@@ -110,33 +110,22 @@ class TestOperatorEvalParameters:
     async def test_eval_mode_passed(self, app, client, mock_eval_pipeline):
         sid = await _complete_session(client)
 
-        await client.post(f"/ops/session/{sid}/evaluate?eval_mode=tutor")
+        await client.post(f"/ops/session/{sid}/evaluate?eval_mode=qp")
         state = _get_state(app, sid)
         _wait_eval_done(state)
 
-        assert state._eval_mode == "tutor"
-        assert mock_eval_pipeline.call_args.kwargs["eval_mode"] == "tutor"
+        assert state._eval_mode == "qp"
+        assert mock_eval_pipeline.call_args.kwargs["eval_mode"] == "qp"
 
     @pytest.mark.asyncio
-    async def test_tutor_dims_passed(self, app, client, mock_eval_pipeline):
-        sid = await _complete_session(client)
-
-        await client.post(f"/ops/session/{sid}/evaluate?tutor_dims=D3,D4")
-        state = _get_state(app, sid)
-        _wait_eval_done(state)
-
-        assert state._tutor_dims == ["D3", "D4"]
-        assert mock_eval_pipeline.call_args.kwargs["tutor_dims"] == ["D3", "D4"]
-
-    @pytest.mark.asyncio
-    async def test_default_eval_mode_tutor(self, app, client, mock_eval_pipeline):
+    async def test_default_eval_mode_full(self, app, client, mock_eval_pipeline):
         sid = await _complete_session(client)
 
         await client.post(f"/ops/session/{sid}/evaluate")
         state = _get_state(app, sid)
         _wait_eval_done(state)
 
-        assert mock_eval_pipeline.call_args.kwargs["eval_mode"] == "tutor"
+        assert mock_eval_pipeline.call_args.kwargs["eval_mode"] == "full"
 
 
 class TestGetScores:
