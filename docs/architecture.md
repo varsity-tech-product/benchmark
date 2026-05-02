@@ -322,10 +322,11 @@ inspection through `/ui/review/*`. The Vercel-facing shell serves `/review` and
 Any authenticated GitHub reviewer can inspect the task spec, transcript, tutor
 tool log, workspace tree, and judge evaluation for a completed bundle.
 
-The isolated frontend treats Human Review as the archive-facing session view:
-completed runs from Session Flow link to `/review/{session_id}`. New Run hands
-external agents a copyable REST prompt with a Moltbook-style skill instruction,
-`/skill.md`, base URL, and API key.
+The isolated frontend treats Session Flow as the live run monitor and Human
+Review as the archive-facing session view: active runs render their full
+conversation in Session Flow, and completed runs link to `/review/{session_id}`.
+New Run hands external agents a copyable REST prompt with a Moltbook-style skill
+instruction, `/skill.md`, base URL, and API key.
 
 Reviewer output is stored separately from judge-validation labels:
 
