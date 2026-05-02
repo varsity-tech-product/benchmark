@@ -5,14 +5,8 @@
   "category": "end_to_end",
   "task_type": "multi_turn",
   "description": "Guide a student through systematically debugging a LEAN C# EMA crossover algorithm with three interacting bugs: inverted signal logic, missing warm-up, and excessive leverage. The agent must diagnose each bug, explain root causes, apply fixes, and verify improved performance.",
-  "persona_ids": [
-    "developer_crossover",
-    "fullstack_practitioner"
-  ],
-  "student_openings": {
-    "fullstack_practitioner": "I need to systematically debug a LEAN C# EMA crossover algorithm that has multiple issues. I've done similar work in Python before — let's focus on getting the architecture and edge cases right.",
-    "developer_crossover": "I need to systematically debug a LEAN C# EMA crossover algorithm. I can handle the code, but I don't understand the financial logic behind it. What should this do and why?"
-  },
+  "persona_id": "developer_crossover",
+  "student_opening": "I need to systematically debug a LEAN C# EMA crossover algorithm. I can handle the code, but I don't understand the financial logic behind it. What should this do and why?",
   "environment": {
     "data_files": [
       "E04_compound_bug.cs",
@@ -52,7 +46,7 @@
       "file_write"
     ],
     "quant_validation": {
-      "eval_script": "evaluation/test_scripts/end_to_end/E04_production_debugging.py"
+      "eval_script": "tasks/test_scripts/end_to_end/E04_production_debugging.py"
     },
     "termination_criteria": "The tutor has completed the following steps with computational evidence (not just verbal discussion): (1) Reviewed the student's buggy LEAN C# code and identified at least two of the three bugs (inverted signal logic, missing warm-up, excessive leverage). (2) Explained the root cause and downstream impact of each identified bug. (3) Showed corrected code addressing the identified bugs and attempted to verify the fix through backtest execution or logical analysis. (4) Responded to the student's follow-up with additional explanation or analysis beyond the initial fix. Once all four steps have been computationally demonstrated, the session is complete."
   },

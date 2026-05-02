@@ -1,18 +1,17 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "buildCommand": null,
+  "buildCommand": "npm run build",
   "outputDirectory": "public",
   "rewrites": [
-    { "source": "/", "destination": "https://217-15-165-83.sslip.io/" },
-    { "source": "/review", "destination": "https://217-15-165-83.sslip.io/review" },
-    { "source": "/review/:path*", "destination": "https://217-15-165-83.sslip.io/review/:path*" },
+    { "source": "/review", "destination": "/index.html" },
+    { "source": "/review/:path*", "destination": "/index.html" },
     { "source": "/health", "destination": "https://217-15-165-83.sslip.io/health" },
     { "source": "/auth/:path*", "destination": "https://217-15-165-83.sslip.io/auth/:path*" },
     { "source": "/session/:path*", "destination": "https://217-15-165-83.sslip.io/session/:path*" },
     { "source": "/client/:path*", "destination": "https://217-15-165-83.sslip.io/client/:path*" },
     { "source": "/ui/:path*", "destination": "https://217-15-165-83.sslip.io/ui/:path*" },
+    { "source": "/skill.md", "destination": "https://217-15-165-83.sslip.io/skill.md" },
     { "source": "/skills/:path*", "destination": "https://217-15-165-83.sslip.io/skills/:path*" },
-    { "source": "/static/:path*", "destination": "https://217-15-165-83.sslip.io/static/:path*" },
     { "source": "/mcp/:path*", "destination": "https://217-15-165-83.sslip.io/mcp/:path*" },
     { "source": "/mcp", "destination": "https://217-15-165-83.sslip.io/mcp" }
   ]

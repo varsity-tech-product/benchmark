@@ -121,6 +121,42 @@ TASK_PERSONA_MAP: dict[str, list[str]] = {
     "E01_build_ma_system": ["developer_crossover", "fullstack_practitioner"],
 }
 
+# Per-persona openings used by stability trials. Owned by this experiment so
+# that #122 collapsing task JSON to a single (persona_id, student_opening) does
+# not strip the alternate-persona fixtures the experiment compares against.
+STABILITY_TASK_OPENINGS: dict[str, dict[str, str]] = {
+    "I01_implement_sma": {
+        "fullstack_practitioner": "I've backtested SMA strategies in Python before but need to port one to LEAN C# for production. SMA(20) on BTCUSDT daily as a smoke test. I understand the trading logic — just need help with the LEAN API specifics: AddCrypto, indicator registration, SetHoldings.",
+        "developer_crossover": "I need to write a C# algorithm for a trading engine called LEAN. I'm a Python dev so C# syntax isn't a huge leap, but I have no idea what a 'moving average strategy' is supposed to do. What's the trading logic, and how do I translate it into LEAN's API?",
+    },
+    "S03_mean_reversion_research": {
+        "fullstack_practitioner": "I'm exploring how to research mean-reversion alpha in BTCUSDT daily data. I have experience with simpler strategies — what are the key trade-offs here?",
+        "finance_veteran": "I want to research mean-reversion alpha in BTCUSDT daily data. I understand the strategy logic from my trading experience — but I need help coding and backtesting it.",
+        "developer_crossover": "I want to research mean-reversion alpha in BTCUSDT daily data. I can write the code — but I need to understand the trading logic first. Why does this work?",
+        "double_novice": "I heard about how to research mean-reversion alpha in BTCUSDT daily data in class and want to try it. I'm new to both coding and trading — can you walk me through it step by step?",
+    },
+    "X02_lookahead": {
+        "fullstack_practitioner": "I'm debugging an issue: find and fix a look-ahead bias in an SMA crossover strategy. I've narrowed it down but want a second pair of eyes on the root cause.",
+        "developer_crossover": "I'm looking at code that should find and fix a look-ahead bias in an SMA crossover strategy. The code reads fine to me, but I'm not sure the financial logic is correct. What should it be doing?",
+    },
+    "D05_return_computation": {
+        "fullstack_practitioner": "I want to compute and compare simple returns vs log returns rigorously. I know the basics — let's focus on methodology and potential pitfalls.",
+        "finance_veteran": "I need to compute and compare simple returns vs log returns in Python. I understand what the data means financially — I just need help with the pandas side.",
+        "developer_crossover": "I need to compute and compare simple returns vs log returns. I can use pandas fine — but what do these financial metrics actually mean? Why would a trader care?",
+        "double_novice": "My professor asked us to compute and compare simple returns vs log returns. I'm new to both Python and finance — can you start from the basics?",
+    },
+    "A03_sharpe_misconception": {
+        "fullstack_practitioner": "My parameter sweep over 200 SMA configurations found one with Sharpe 5.0 on AAPL. Statistical significance looks solid. I'm ready to deploy — any final checks?",
+        "finance_veteran": "After testing 200 parameter combinations, I found an SMA crossover with Sharpe 5.0. That's extraordinary for a daily strategy — should I size up and run it live?",
+        "developer_crossover": "I ran a grid search over 200 SMA parameters and the best one has a Sharpe ratio of 5.0. My code is correct — is this a good result?",
+        "double_novice": "I tested 200 different settings for my trading strategy and one of them has something called a Sharpe ratio of 5.0. My friend says that's really good. Is it?",
+    },
+    "E01_build_ma_system": {
+        "fullstack_practitioner": "I need to build a complete moving average crossover trading system from scratch. I've done similar work in Python before — let's focus on getting the architecture and edge cases right.",
+        "developer_crossover": "I need to build a complete moving average crossover trading system. I can handle the code, but I don't understand the financial logic behind it. What should this do and why?",
+    },
+}
+
 # ---------------------------------------------------------------------------
 # Paths (relative to bench/)
 # ---------------------------------------------------------------------------

@@ -1,60 +1,136 @@
 ---
 name: quanttutorbench-rest-agent
-description: "Use when an external AI agent needs to run QuantTutorBench through the REST API only: create or claim a run, register/start a session, read student messages, send tutor replies, call allowed workspace tools, monitor status, and hand off completed runs. Keep guidance task-agnostic and use only public task labels plus client-visible API responses."
+description: "Use when an external AI agent needs to join QuantTutorBench, complete benchmark sessions through MCP or REST, call allowed tools, answer the student, monitor progress, and hand off terminal runs."
 ---
 
-# QuantTutorBench REST Agent
+# QuantTutorBench Agent Onboarding
 
-Use this skill to connect an external tutor agent to QuantTutorBench through REST.
-Teach platform mechanics only: authentication, run/session lifecycle, tool calls,
-turn handling, monitoring, and completion handoff.
+Use this guide to connect an external tutor agent to QuantTutorBench and finish
+each assigned benchmark run end to end. The platform provides the student
+messages, task-visible background, available tools, and run state. Your job is
+to keep working through the API until the session reaches a terminal status.
 
-## Neutrality Boundary
+## Operating Rule
 
-Use only state returned by public/client-visible REST responses:
+Use platform API responses and operator-provided connection values:
 
-- Public task labels such as `D01`, `X09`, or an operator-provided label.
-- `run_id`, `session_id`, `token`, `control_token`, `current_phase`, `next_allowed`.
-- `student_message`, optional `background`, live tool schemas, tool results, and terminal status.
+- `BASE`, public task label, API key, run token, and control token
+- `run_id`, `session_id`, `token`, `control_token`, `current_phase`, `next_allowed`
+- `student_message`, visible `background`, tool schemas, tool outputs, and terminal status
 
-Keep these out of agent prompts, student replies, examples, and documentation:
-
-- Hidden task IDs, ground truth, termination criteria, expected tools, convenient tools, distractor labels, judge rubrics, reference traces, and solution paths.
-- Task-category heuristics such as tool choices inferred from a label prefix.
-- Any suggested answer, strategy, code shape, or analysis direction for a specific task.
-
-Choose actions from the latest `student_message`, the live tool catalog, and the
-visible API state.
+Choose each next action from the latest student message, the visible background,
+the live tool catalog, and previous tool results.
 
 ## Base URL
 
-Use the operator-provided `BASE`. For the public production UI:
+Use the operator-provided `BASE`. Production:
 
 ```bash
 BASE="https://benchmark-liard.vercel.app"
 ```
 
-Use a JSON-capable HTTP client with long request timeouts. Student simulation and
-heavy tools can take minutes. A 900 second client timeout is a practical default.
+Use long request timeouts. Student simulation and tool calls can take minutes.
+A 900 second timeout is a practical default.
+
+## Connection Modes
+
+Prefer MCP when your runtime supports it. Use REST everywhere else. The same
+run/session lifecycle applies in both modes:
+
+1. Fetch task labels when creating runs with an API key.
+2. Create or claim a run.
+3. Register and start a session.
+4. Read the student message.
+5. Call allowed tools when useful.
+6. Send the tutor reply.
+7. Repeat until the server returns `completed` or `failed`.
+8. Return the run summary to the operator.
+
+### MCP
+
+Connect to Streamable HTTP MCP at:
+
+```text
+${BASE}/mcp
+```
+
+Use the run token as a bearer token:
+
+```http
+Authorization: Bearer <token>
+```
+
+Create or claim the run first through the UI or REST API. Start MCP after you
+have a run token.
+
+MCP exposes lifecycle tools plus task tools for the active run. The lifecycle
+tools are:
+
+- `register_session`
+- `start_session`
+- `get_background`
+- `send_message`
+
+After connecting, call `register_session` with `{}` or an operator-provided
+`persona_id`, then call `start_session`. Use `list_tools` to read the task tool
+catalog. Call task tools when their schemas match the current student need.
+Call `send_message` to deliver each tutor reply.
+
+If a tool call happens outside the current phase, the response includes guidance
+such as `current_phase` and `next_allowed`. Follow that guidance and continue
+from the allowed lifecycle or task tool.
+
+### REST
+
+Use the REST endpoints below when your runtime has a standard HTTP client.
+The API key authorizes task discovery, run creation, active-run listing, and
+client-side cancellation. The run token authorizes `/session/*` requests. The
+control token authorizes `/ui/runs/{run_id}*` monitoring requests.
 
 ## Tokens
 
-The platform user generates their REST API key in the UI after GitHub OAuth
-login. Use that key only to create runs. Use two run-specific token types after
-run creation:
+The platform user generates a REST API key in the UI after GitHub OAuth login.
+Use it for task label discovery and run creation.
 
-- `api_key`: user API key for `/client/runs/start`. Send as `Authorization: Bearer <api_key>`.
-- `token`: run token for `/session/*` requests. Send as `Authorization: Bearer <token>`.
-- `control_token`: owner token for `/ui/runs/{run_id}*` monitor/cancel endpoints. Send as `Authorization: Bearer <control_token>`.
+- `api_key`: user API key for `/client/tasks/catalog/labels`,
+  `/client/runs/start`, `/client/runs/active`, and
+  `/client/runs/{run_id}/cancel`; send as
+  `Authorization: Bearer <api_key>`.
+- `token`: run token for `/session/*`; send as `Authorization: Bearer <token>`.
+- `control_token`: owner token for `/ui/runs/{run_id}*`; send as `Authorization: Bearer <control_token>`.
 
 Store raw tokens only in memory or secure local runtime state. Log token hints,
 run IDs, and session IDs.
 
 ## Create Or Claim A Run
 
-### Existing Website Run
+### Discover Task Labels
 
-When the platform UI gives the agent a run token:
+When you have an API key, fetch the available public task labels:
+
+```http
+GET /client/tasks/catalog/labels
+Authorization: Bearer <api_key>
+```
+
+Response:
+
+```json
+{
+  "tasks": [
+    {"label": "D01"},
+    {"label": "D02"}
+  ]
+}
+```
+
+Use each `label` value as the `task` field for `/client/runs/start`. To complete
+the full benchmark, create one run per returned label and drive each run to a
+terminal status.
+
+### Claim A Website Run
+
+When the platform UI gives you a run token:
 
 ```http
 POST /client/runs/claim
@@ -62,15 +138,15 @@ Content-Type: application/json
 
 {
   "run_token": "<token>",
-  "client": {"name": "external_rest_agent", "version": "1.0"}
+  "client": {"name": "external_agent", "version": "1.0"}
 }
 ```
 
-Use the same `token` for the session lifecycle.
+Use the returned or provided `token` for the session lifecycle.
 
-### REST One-Step Run
+### Create A Run
 
-When the agent creates the run itself from a public task label:
+When you have an API key and public task label:
 
 ```http
 POST /client/runs/start
@@ -80,18 +156,15 @@ Content-Type: application/json
 {
   "task": "<public_task_label>",
   "mode": "agent",
-  "client": {"name": "external_rest_agent", "version": "1.0"}
+  "client": {"name": "external_agent", "version": "1.0"}
 }
 ```
 
-Expected fields include `run_id`, `token`, `control_token`,
-`public_task_label`, and `status`.
+Save `run_id`, `token`, `control_token`, `public_task_label`, and `status`.
 
 ## Session Lifecycle
 
 ### 1. Register
-
-The server resolves the task from the run token.
 
 ```http
 POST /session/register
@@ -102,9 +175,7 @@ Content-Type: application/json
 ```
 
 Use `{}` for persona auto-selection. Include `persona_id` only when the operator
-explicitly provides one.
-
-Save `session_id` from the response.
+explicitly provides one. Save `session_id`.
 
 ### 2. Start
 
@@ -116,8 +187,7 @@ Content-Type: application/json
 {}
 ```
 
-Save the first `student_message`. Also save `background` when present; treat it
-as client-visible task context.
+Save the first `student_message`. Save `background` when present.
 
 ### 3. Discover Tools
 
@@ -126,31 +196,49 @@ GET /session/{session_id}/tools
 Authorization: Bearer <token>
 ```
 
-Use the returned `tools[]` schemas as the allowed action surface. Domain tools
-are called through:
+Use the returned `tools[]` schemas as the allowed tool surface. Lifecycle actions
+use the dedicated REST endpoints in this section.
+
+Call a domain tool:
 
 ```http
 POST /session/{session_id}/tool/{tool_name}
 Authorization: Bearer <token>
 Content-Type: application/json
 
-{ "...tool arguments from schema...": "..." }
+{ "...arguments from schema...": "..." }
 ```
 
-For asynchronous heavy-tool responses with `202`, poll the provided `poll_url`
-or:
+For asynchronous tool responses with `202`, poll the provided `poll_url` or:
 
 ```http
 GET /session/{session_id}/tool/jobs/{job_id}
 Authorization: Bearer <token>
 ```
 
-Continue polling until `status` is `completed` or `failed`.
+Continue polling until `status` is `completed` or `failed`. Use completed tool
+outputs to decide the next tutor message or tool call.
 
-### 4. Turn Loop
+### 4. Work Until Done
 
-Each turn starts with the latest `student_message`. Compose a fresh tutor reply
-from that message and visible context.
+Each turn starts with the latest `student_message`. You should finish the task
+without asking the operator for step-by-step instructions. Continue until the
+server returns a terminal session status.
+
+The external agent owns the full loop for every assigned run: read, decide,
+call tools, answer the student, and repeat until terminal status.
+
+Recommended loop:
+
+1. Read the latest `student_message` and visible `background`.
+2. Inspect available tools when tool use may help answer or produce artifacts.
+3. Call allowed tools and wait for results.
+4. Send a tutor reply that directly helps the student.
+5. Read the response status.
+6. If `active`, save the next `student_message` and continue.
+7. If `completed` or `failed`, stop the loop and hand off the run summary.
+
+Send a tutor reply:
 
 ```http
 POST /session/{session_id}/send
@@ -174,10 +262,43 @@ Handle the response:
 - `status: "completed"`: record `reason`, stop the session loop, and hand off.
 - `status: "failed"`: record `reason` or `error`, stop the session loop, and hand off.
 
-Repeated identical tutor text can trigger `agent_stuck`, so every reply should
-reflect the latest student message.
+Every reply should reflect the latest student message. Repeated identical tutor
+text can trigger `agent_stuck`.
 
 ## Monitoring
+
+With an API key, list active runs created by the same API-key subject:
+
+```http
+GET /client/runs/active
+Authorization: Bearer <api_key>
+```
+
+The response contains token-safe run summaries:
+
+```json
+{
+  "runs": [
+    {
+      "run_id": "run_...",
+      "public_task_label": "D01",
+      "status": "claimed",
+      "session_id": null
+    }
+  ],
+  "count": 1
+}
+```
+
+Use this endpoint after an active-run quota response to find orphaned runs. To
+cancel a run owned by the same API-key subject:
+
+```http
+POST /client/runs/{run_id}/cancel
+Authorization: Bearer <api_key>
+```
+
+The returned run summary has `status: "cancelled"` when cancellation succeeds.
 
 When `control_token` is available:
 
@@ -191,8 +312,8 @@ GET /ui/runs/{run_id}/live
 Authorization: Bearer <control_token>
 ```
 
-Use live monitoring for status, conversation, and recent tool logs. Use cancel
-only when the operator requests it:
+Use live monitoring for status, conversation, and recent tool logs. Cancel only
+when the operator requests it:
 
 ```http
 POST /ui/runs/{run_id}/cancel
@@ -207,10 +328,10 @@ At terminal status, return this to the operator:
 - `session_id`
 - terminal `status`
 - terminal `reason` or `error`
-- visible task label
-- review link when available: `${BASE}/#/review/{session_id}`
+- public task label
+- review link: `${BASE}/#/review/{session_id}`
 
-The agent may read exported result and score state with the run token:
+Optional readbacks after terminal status:
 
 ```http
 GET /session/{session_id}/results
@@ -222,10 +343,10 @@ GET /session/{session_id}/scores
 Authorization: Bearer <token>
 ```
 
-Evaluation is operator-owned. Do not call scoring endpoints from the external
-agent; complete the job at terminal session status.
+The external agent completes the job at terminal session status. Evaluation is
+operator-owned.
 
-## REST Skeleton
+## Minimal REST Skeleton
 
 ```python
 import httpx
@@ -241,30 +362,40 @@ def post_json(client, path, payload=None, token=None):
     r.raise_for_status()
     return r.json()
 
+def get_json(client, path, token):
+    r = client.get(path, headers={"Authorization": f"Bearer {token}"})
+    r.raise_for_status()
+    return r.json()
+
 with httpx.Client(base_url=BASE, timeout=TIMEOUT) as client:
+    api_key = "<api_key_from_ui>"
+    catalog = get_json(client, "/client/tasks/catalog/labels", api_key)["tasks"]
+    public_task_label = catalog[0]["label"]
+
     run = post_json(client, "/client/runs/start", {
-        "task": "<public_task_label>",
+        "task": public_task_label,
         "mode": "agent",
-        "client": {"name": "external_rest_agent", "version": "1.0"},
-    }, token="<api_key_from_ui>")
+        "client": {"name": "external_agent", "version": "1.0"},
+    }, token=api_key)
+
     token = run["token"]
-
-    reg = post_json(client, "/session/register", {}, token=token)
-    sid = reg["session_id"]
-
-    start = post_json(client, f"/session/{sid}/start", {}, token=token)
+    sid = post_json(client, "/session/register", {}, token)["session_id"]
+    start = post_json(client, f"/session/{sid}/start", {}, token)
     latest_student = start["student_message"]
+    background = start.get("background")
 
     while True:
-        tutor_text = compose_reply_from_visible_state(latest_student)
-        reply = post_json(
-            client,
-            f"/session/{sid}/send",
-            {"text": tutor_text},
-            token=token,
-        )
-        status = reply.get("status")
-        if status != "active":
+        tools = get_json(client, f"/session/{sid}/tools", token)["tools"]
+        tutor_text = compose_reply(latest_student, background, tools)
+        reply = post_json(client, f"/session/{sid}/send", {"text": tutor_text}, token)
+        if reply.get("status") != "active":
+            print({
+                "run_id": run["run_id"],
+                "session_id": sid,
+                "status": reply.get("status"),
+                "reason": reply.get("reason") or reply.get("error"),
+                "review_url": f"{BASE}/#/review/{sid}",
+            })
             break
         latest_student = reply["student_message"]
 ```

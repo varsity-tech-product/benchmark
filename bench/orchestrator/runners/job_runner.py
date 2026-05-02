@@ -34,7 +34,7 @@ class JobSpec:
     trial_index: int = 0
     skip_eval: bool = False
     timeout_minutes: Optional[int] = None
-    eval_mode: str = "full"  # "full" | "qr" | "qp" | "tutor"
+    eval_mode: str = "full"  # "full" | "qr" | "qp"
 
 
 @dataclass
@@ -318,11 +318,9 @@ def _save_run_state(
 
 
 def _eval_results_from_task_result(result: TaskResult) -> dict:
-    out = {
+    return {
         "quant_result": result.quant_result_score,
         "quant_process": result.quant_process_score,
-        "tutor_scores": result.tutor_scores,
-        "tutor_scores_by_model": result.tutor_scores_by_model,
         "process_metrics": result.process_metrics,
         "eval_script_detail": result.eval_script_detail,
         "code_eval": result.code_eval,
@@ -330,9 +328,6 @@ def _eval_results_from_task_result(result: TaskResult) -> dict:
         "code_process": result.code_process,
         "tool_usage": result.tool_usage,
     }
-    if result.tutor_eval_error:
-        out["tutor_eval_error"] = result.tutor_eval_error
-    return out
 
 
 def _save_job_reports(

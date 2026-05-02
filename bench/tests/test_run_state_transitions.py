@@ -24,7 +24,7 @@ def _make_service(tmp: Path) -> RunService:
                 "category": "data",
                 "difficulty": "easy",
                 "description": "d",
-                "persona_ids": ["p"],
+                "persona_id": "p",
                 "max_turns": 4,
             }
         ),

@@ -10,7 +10,7 @@ from experiments.judge_validation.pairwise_stats import (
     PASS_THRESHOLD,
     compute_pairwise_stats,
 )
-from server.eval.judges.runtime.conv_pairwise import (
+from eval.judges.runtime.conv_pairwise import (
     EwanPairwiseGEval,
     PairwiseTestCase,
     VALID_MARGIN,
@@ -29,7 +29,7 @@ class _StubModel:
     def get_model_name(self) -> str:
         return self._model_name
 
-    async def a_generate(self, prompt: str):
+    async def a_generate(self, prompt: str, **_kwargs):
         return json.dumps(self._payload), 0.0
 
 

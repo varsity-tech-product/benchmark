@@ -421,7 +421,9 @@ class BenchSessionManager:
         if request.method == "DELETE":
             if session_id and session_id in self._transports:
                 transport = self._transports[session_id]
-                await transport.handle_request(scope, receive, send)
+                await self._handle_mcp_transport_request(
+                    transport, session_id, scope, receive, send
+                )
                 await self._cleanup_session(session_id, persist_partial=True)
                 return
             resp = Response(status_code=404, content="Session not found")
@@ -430,7 +432,9 @@ class BenchSessionManager:
 
         # Existing session
         if session_id and session_id in self._transports:
-            await self._transports[session_id].handle_request(scope, receive, send)
+            await self._handle_mcp_transport_request(
+                self._transports[session_id], session_id, scope, receive, send
+            )
             return
 
         # Unknown session ID — try to restore from server storage
@@ -475,7 +479,9 @@ class BenchSessionManager:
                         )
                     finally:
                         if session_id in self._sessions:
-                            await self._cleanup_session(session_id)
+                            await self._cleanup_session(
+                                session_id, persist_partial=True
+                            )
 
             try:
                 await self._task_group.start(run_restored)
@@ -488,7 +494,9 @@ class BenchSessionManager:
                 await resp(scope, receive, send)
                 return
 
-            await transport.handle_request(scope, receive, send)
+            await self._handle_mcp_transport_request(
+                transport, session_id, scope, receive, send
+            )
             return
 
         # New session — POST only
@@ -574,7 +582,7 @@ class BenchSessionManager:
                     )
                 finally:
                     if new_id in self._sessions:
-                        await self._cleanup_session(new_id)
+                        await self._cleanup_session(new_id, persist_partial=True)
 
         try:
             await self._task_group.start(run_server)
@@ -585,7 +593,42 @@ class BenchSessionManager:
             await resp(scope, receive, send)
             return
 
-        await transport.handle_request(scope, receive, send)
+        await self._handle_mcp_transport_request(
+            transport, new_id, scope, receive, send
+        )
+
+    async def _handle_mcp_transport_request(
+        self,
+        transport: StreamableHTTPServerTransport,
+        session_id: str,
+        scope,
+        receive,
+        send,
+    ) -> None:
+        """Handle one MCP HTTP request and persist partial state on disconnect."""
+        disconnected = False
+
+        async def watched_receive():
+            nonlocal disconnected
+            message = await receive()
+            if message.get("type") == "http.disconnect":
+                disconnected = True
+            return message
+
+        try:
+            await transport.handle_request(scope, watched_receive, send)
+        finally:
+            method = str(scope.get("method") or "").upper()
+            if (
+                disconnected
+                and method in {"POST", "DELETE"}
+                and session_id in self._sessions
+            ):
+                logger.info(
+                    "Session %s MCP client disconnected — cleaning up partial state",
+                    session_id[:8],
+                )
+                await self._cleanup_session(session_id, persist_partial=True)
 
     # ------------------------------------------------------------------
     # Per-session MCP server factory
@@ -697,28 +740,41 @@ class BenchSessionManager:
         terminal state), mark the run as failed — the client disconnected
         without completing the session.
         """
-        state = self._sessions.get(session_id)
+        state = self._sessions.pop(session_id, None)
+        transport = self._transports.pop(session_id, None)
         if not state:
-            self._transports.pop(session_id, None)
+            if transport:
+                with contextlib.suppress(Exception):
+                    await transport.terminate()
             logger.info("Session %s removed", session_id)
             return
 
-        # Mark associated run as failed if session didn't complete normally
-        if state.run_id and state.phase != SessionPhase.COMPLETED:
-            try:
-                run = self._run_service.get_run(state.run_id)
-                if run and run.status.value not in ("completed", "failed", "cancelled"):
-                    self._run_service.mark_failed(state.run_id, "Client disconnected")
-                    logger.info(
-                        "Run %s marked failed (client disconnected)",
-                        state.run_id,
-                    )
-            except Exception as exc:
-                logger.warning("Failed to mark run %s as failed: %s", state.run_id, exc)
-
         async with state._request_lock:
-            self._sessions.pop(session_id, None)
-            self._transports.pop(session_id, None)
+            if transport:
+                with contextlib.suppress(Exception):
+                    await transport.terminate()
+
+            # Mark associated run as failed if session didn't complete normally.
+            if state.run_id and state.phase != SessionPhase.COMPLETED:
+                try:
+                    run = self._run_service.get_run(state.run_id)
+                    if (
+                        run
+                        and run.status.value
+                        not in ("completed", "failed", "cancelled")
+                    ):
+                        self._run_service.mark_failed(
+                            state.run_id, "Client disconnected"
+                        )
+                        logger.info(
+                            "Run %s marked failed (client disconnected)",
+                            state.run_id,
+                        )
+                except Exception as exc:
+                    logger.warning(
+                        "Failed to mark run %s as failed: %s", state.run_id, exc
+                    )
+
             try:
                 state.cleanup(persist_partial=persist_partial)
             except Exception as e:
@@ -741,7 +797,7 @@ class BenchSessionManager:
         """
         results_root = self.bench_root / "results" / "server"
         try:
-            from server.eval.contracts.request import resolve_result_dir
+            from eval.contracts.request import resolve_result_dir
 
             return resolve_result_dir(session_id, results_root)
         except Exception:
@@ -783,7 +839,7 @@ class BenchSessionManager:
         result_dir = self.find_archived_result_dir(session_id)
         if not result_dir:
             return None
-        from server.storage.score_store import get_scores_payload
+        from eval.storage.score_store import get_scores_payload
 
         payload = get_scores_payload(
             result_dir,
@@ -1415,7 +1471,7 @@ async def rest_send(request: Request) -> JSONResponse:
 
 
 async def ops_evaluate(request: Request) -> JSONResponse:
-    """``POST /ops/session/{sid}/evaluate[?eval_mode=tutor&tutor_dims=D3,D4]``
+    """``POST /ops/session/{sid}/evaluate[?eval_mode=qr|qp|full]``
 
     Operator-only. Agents can finish runs and read scoped results, but scoring
     is triggered by the server side only.
@@ -1452,14 +1508,13 @@ async def ops_evaluate(request: Request) -> JSONResponse:
             409,
         )
 
-    from server.eval.contracts.request import EvalError, parse_eval_request
+    from eval.contracts.request import EvalError, parse_eval_request
 
     try:
         eval_request = parse_eval_request(
             {
                 "session_id": sid,
-                "eval_mode": request.query_params.get("eval_mode", "tutor"),
-                "tutor_dims": request.query_params.get("tutor_dims", ""),
+                "eval_mode": request.query_params.get("eval_mode", "full"),
                 "eval_model": request.query_params.get("eval_model")
                 or state.eval_model,
                 "idempotency_key": (
@@ -1472,7 +1527,6 @@ async def ops_evaluate(request: Request) -> JSONResponse:
         return JSONResponse({"error": str(exc)}, 400)
 
     state._eval_mode = eval_request.eval_mode
-    state._tutor_dims = eval_request.tutor_dims
     state.eval_model = eval_request.eval_model or state.eval_model
     state._eval_idempotency_key = eval_request.idempotency_key
 
@@ -1493,15 +1547,14 @@ def _save_archived_eval_restore_failure(
     if result_dir is None:
         return JSONResponse({"error": "Session not found"}, 404)
 
-    from server.eval.contracts.request import EvalError, parse_eval_request
-    from server.storage.score_store import allocate_score_run
+    from eval.contracts.request import EvalError, parse_eval_request
+    from eval.storage.score_store import allocate_score_run
 
     try:
         eval_request = parse_eval_request(
             {
                 "session_id": sid,
-                "eval_mode": request.query_params.get("eval_mode", "tutor"),
-                "tutor_dims": request.query_params.get("tutor_dims", ""),
+                "eval_mode": request.query_params.get("eval_mode", "full"),
                 "eval_model": request.query_params.get("eval_model")
                 or manager.eval_model,
                 "idempotency_key": (
@@ -1517,7 +1570,6 @@ def _save_archived_eval_restore_failure(
         result_dir,
         eval_mode=eval_request.eval_mode,
         eval_model=eval_request.eval_model,
-        tutor_dims=eval_request.tutor_dims,
         idempotency_key=eval_request.idempotency_key,
     )
     if not created:
@@ -1547,7 +1599,7 @@ def _save_archived_eval_restore_failure(
                     "message": message,
                 }
             ],
-            "track_blockers": {"qr": [], "qp": [], "tutor": []},
+            "track_blockers": {"qr": [], "qp": []},
             "skipped_dependencies": [],
         },
     )
@@ -1591,7 +1643,6 @@ def _public_score_entry(entry: dict) -> dict:
         "status",
         "score_status",
         "eval_mode",
-        "tutor_dims",
         "created_at",
         "completed_at",
         "overall_score",
@@ -1663,7 +1714,7 @@ async def ops_results(request: Request) -> JSONResponse:
 async def rest_scores(request: Request) -> JSONResponse:
     """``GET /session/{sid}/scores[?history=true&score=score_2]``"""
     manager: BenchSessionManager = request.app.state.manager
-    from server.eval.contracts.request import EvalError, parse_score_query
+    from eval.contracts.request import EvalError, parse_score_query
 
     try:
         query = parse_score_query(
@@ -1718,7 +1769,7 @@ async def ops_scores(request: Request) -> JSONResponse:
         return auth_err
 
     manager: BenchSessionManager = request.app.state.manager
-    from server.eval.contracts.request import EvalError, parse_score_query
+    from eval.contracts.request import EvalError, parse_score_query
 
     try:
         query = parse_score_query(

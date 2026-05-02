@@ -14,16 +14,6 @@
     "tabular-reasoning",
     "financial-documents"
   ],
-  "persona_ids": [
-    "finance_veteran",
-    "developer_crossover",
-    "double_novice",
-    "fullstack_practitioner"
-  ],
-  "student_openings": {
-    "fullstack_practitioner": "I want to think through What does the Weighted average actuarial assumptions rigorously. I'm familiar with the basics — what are the nuances?",
-    "finance_veteran": "I need help with What does the Weighted average actuarial assumptions. I understand the financial side — can you help me with the computational approach?",
-    "developer_crossover": "I'm trying to understand What does the Weighted average actuarial assumptions. Code and math are fine for me, but the financial meaning is what I need help with.",
-    "double_novice": "I'm learning about What does the Weighted average actuarial assumptions. I'm pretty new to both finance and coding — can you help me understand step by step?"
-  }
+  "persona_id": "finance_veteran",
+  "student_opening": "I need help with What does the Weighted average actuarial assumptions. I understand the financial side — can you help me with the computational approach?"
 }

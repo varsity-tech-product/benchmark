@@ -31,7 +31,7 @@ from experiments.judge_validation.review_packet import (  # noqa: E402
     build_review_packet,
     write_review_packet,
 )
-from server.eval.inputs.rubric_builder import (  # noqa: E402
+from eval.inputs.rubric_builder import (  # noqa: E402
     build_eval_params,
     build_rubric_metadata,
     build_rubric_text,
@@ -39,18 +39,18 @@ from server.eval.inputs.rubric_builder import (  # noqa: E402
     load_6d_rubric,
     load_rubric,
 )
-from server.eval.judges.runtime.call_policy import llm_call_with_retry  # noqa: E402
-from server.eval.judges.runtime.conv_geval import (  # noqa: E402
+from eval.judges.runtime.call_policy import llm_call_with_retry  # noqa: E402
+from eval.judges.runtime.conv_geval import (  # noqa: E402
     EvalTestCase,
     EwanConvGEval,
     Turn,
     format_turns,
 )
-from server.eval.judges.runtime.conv_pairwise import (  # noqa: E402
+from eval.judges.runtime.conv_pairwise import (  # noqa: E402
     EwanPairwiseGEval,
     PairwiseTestCase,
 )
-from server.eval.judges.runtime.model_resolver import resolve_ewan_model  # noqa: E402
+from eval.judges.runtime.model_resolver import resolve_ewan_model  # noqa: E402
 
 from experiments.judge_validation.pairwise_stats import (  # noqa: E402
     compute_pairwise_stats,
@@ -62,7 +62,7 @@ DEFAULT_HUMAN_LABELS = Path(__file__).resolve().parent / "human_labels.json"
 DEFAULT_HUMAN_SAMPLE_MAP = (
     Path(__file__).resolve().parent / "human_review_sample_map.json"
 )
-DEFAULT_RUBRIC_REGISTRY = BENCH_ROOT / "server/eval/rubrics/rubric_registry.json"
+DEFAULT_RUBRIC_REGISTRY = BENCH_ROOT / "eval/rubrics/rubric_registry.json"
 DEFAULT_OUTPUT_DIR = Path("experiments/judge_validation/results")
 DEFAULT_JUDGE_RUNS = DEFAULT_OUTPUT_DIR / "judge_runs.json"
 DEFAULT_REVIEW_PACKET_DIR = DEFAULT_OUTPUT_DIR / "human_review_packet"

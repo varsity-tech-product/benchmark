@@ -5,14 +5,8 @@
   "category": "debug",
   "task_type": "multi_turn",
   "description": "Guide a student to diagnose and fix conflicting alpha model insights in a LEAN Algorithm Framework strategy where trend and mean-reversion alphas net each other out under AccumulativeInsightPortfolioConstructionModel, producing near-zero trades. On the standalone 12-col pipeline, the alpha models should manage their state from subscribed symbols or data.Keys and update indicators manually instead of relying on OnSecuritiesChanged auto-registration.",
-  "persona_ids": [
-    "developer_crossover",
-    "fullstack_practitioner"
-  ],
-  "student_openings": {
-    "fullstack_practitioner": "I'm debugging an issue: diagnose and fix conflicting alpha model insights in a LEAN Algorithm Framework strategy. I've narrowed it down but want a second pair of eyes on the root cause.",
-    "developer_crossover": "I'm looking at code that combines multiple alpha models in a LEAN framework strategy, but trades are near zero. The code reads fine to me, but I'm not sure the financial logic is correct. What should it be doing?"
-  },
+  "persona_id": "developer_crossover",
+  "student_opening": "I'm looking at code that combines multiple alpha models in a LEAN framework strategy, but trades are near zero. The code reads fine to me, but I'm not sure the financial logic is correct. What should it be doing?",
   "environment": {
     "data_files": [
       "universe.json"
@@ -60,7 +54,7 @@
       "analyze_lean_results"
     ],
     "quant_validation": {
-      "eval_script": "evaluation/test_scripts/debug/X09_alpha_conflict.py"
+      "eval_script": "tasks/test_scripts/debug/X09_alpha_conflict.py"
     },
     "termination_criteria": "The tutor has completed the following steps with computational evidence (not just verbal discussion): (1) Reviewed the student's LEAN C# code and identified that TrendAlpha and ReversionAlpha emit opposing active insights on the same symbols under AccumulativeInsightPortfolioConstructionModel, causing the net target to stay near zero. (2) Explained why this produces near-zero trades, such as describing how the accumulative PCM aggregates all active Up and Down insights for each symbol. (3) Showed corrected C# code and presented backtest results demonstrating that trades now occur after the fix, with specific numerical evidence such as trade count or portfolio performance. (4) Responded to the student's follow-up about the conflict resolution or the fix with additional explanation or analysis beyond the initial demonstration. Once all four steps have been computationally demonstrated, the session is complete."
   },

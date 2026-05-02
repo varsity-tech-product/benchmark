@@ -59,7 +59,7 @@ REGISTER_SESSION_TOOL = Tool(
                 "type": "string",
                 "description": (
                     "Optional explicit student persona ID for deterministic reruns. "
-                    "Must be one of the task's supported persona_ids."
+                    "Overrides the task's default persona_id."
                 ),
             },
         },

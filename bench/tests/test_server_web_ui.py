@@ -57,7 +57,7 @@ class ResultIndexerTests(unittest.TestCase):
                     "category": "data_analysis",
                     "difficulty": "medium",
                     "description": "Demo task",
-                    "persona_ids": ["beginner_persona"],
+                    "persona_id": "beginner_persona",
                     "max_turns": 8,
                     "requires_code": True,
                 },
@@ -160,7 +160,6 @@ class ResultIndexerTests(unittest.TestCase):
                             "status": "completed_scored",
                             "eval_mode": "full",
                             "eval_model": "judge-a",
-                            "tutor_dims": None,
                             "created_at": "2026-01-01T01:01:01Z",
                             "completed_at": "2026-01-01T01:01:02Z",
                             "overall_score": 0.11,
@@ -172,7 +171,6 @@ class ResultIndexerTests(unittest.TestCase):
                             "status": "completed_scored",
                             "eval_mode": "full",
                             "eval_model": "judge-a",
-                            "tutor_dims": None,
                             "created_at": "2026-01-02T01:01:01Z",
                             "completed_at": "2026-01-02T01:01:02Z",
                             "overall_score": 0.82,
@@ -202,7 +200,6 @@ class ResultIndexerTests(unittest.TestCase):
                     "completed_at": "2026-01-02T01:01:02Z",
                     "qr": {"track": "qr", "score": 0.8, "status": "success"},
                     "qp": {"track": "qp", "score": 0.84, "status": "success"},
-                    "tutor": {"track": "tutor", "score": 0.82, "status": "success"},
                 },
             )
             _write_json(
@@ -210,9 +207,9 @@ class ResultIndexerTests(unittest.TestCase):
                 {
                     "version": "2.0",
                     "score_id": "score_2",
-                    "eval_cost_usd": 0.03,
-                    "eval_cost_by_track": {"qr": 0.01, "qp": 0.01, "tutor": 0.01},
-                    "eval_cost_by_model": {"judge-a": 0.03},
+                    "eval_cost_usd": 0.02,
+                    "eval_cost_by_track": {"qr": 0.01, "qp": 0.01},
+                    "eval_cost_by_model": {"judge-a": 0.02},
                 },
             )
             (result_dir / "agent_files" / "reports").mkdir(parents=True, exist_ok=True)
@@ -469,7 +466,7 @@ class UiRoutesTests(unittest.TestCase):
                     "category": "data_analysis",
                     "difficulty": "easy",
                     "description": "Demo task",
-                    "persona_ids": ["beginner_persona"],
+                    "persona_id": "beginner_persona",
                 },
             )
             _write_json(
@@ -774,7 +771,7 @@ class UiRoutesTests(unittest.TestCase):
                     "category": "data_analysis",
                     "difficulty": "easy",
                     "description": "Demo task",
-                    "persona_ids": ["beginner_persona"],
+                    "persona_id": "beginner_persona",
                 },
             )
             _write_json(
@@ -872,10 +869,14 @@ class HttpAppSmokeTests(unittest.TestCase):
 
         index_response = client.get("/")
         script_response = client.get("/static/js/app.js")
+        flow_response = client.get("/static/js/flow-demo.js")
+        run_agent_response = client.get("/static/js/run-agent.js")
         render_response = client.get("/static/js/render.js")
 
         self.assertEqual(index_response.status_code, 200)
         self.assertEqual(script_response.status_code, 200)
+        self.assertEqual(flow_response.status_code, 200)
+        self.assertEqual(run_agent_response.status_code, 200)
         self.assertEqual(render_response.status_code, 200)
         review_response = client.get("/review")
         review_detail_response = client.get("/review/demo-bundle")
@@ -889,6 +890,12 @@ class HttpAppSmokeTests(unittest.TestCase):
         self.assertIn('href="#/review"', index_response.text)
         self.assertIn('data-route="review"', index_response.text)
         self.assertIn('data-route="run"', index_response.text)
+        self.assertIn("flow-live-monitor", flow_response.text)
+        self.assertIn("flow-conversation", flow_response.text)
+        self.assertNotIn("#/run/", flow_response.text)
+        self.assertIn("route.indexOf('/run/')", script_response.text)
+        self.assertIn("renderRunMonitorPage", run_agent_response.text)
+        self.assertIn("retrying", run_agent_response.text)
         self.assertIn("Isolated UI", index_response.text)
 
 

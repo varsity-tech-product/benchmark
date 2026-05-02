@@ -112,9 +112,7 @@ class Layer1Runner:
         Caches metrics per category to avoid re-creating them for each item.
         """
         if category not in self._geval_cache and self.use_deepeval:
-            from evaluation.deepeval_metrics.quant_geval import (
-                create_quant_geval_metric,
-            )
+            from layer1.quant_geval import create_quant_geval_metric
 
             self._geval_cache[category] = create_quant_geval_metric(
                 model=self.eval_model,

@@ -19,7 +19,8 @@ GOOGLE_AGENT_MODEL_OR = "google/gemini-2.5-flash-preview"
 
 # --- Reference / Evaluation / Simulation ---
 REFERENCE_DEFAULT_MODEL = "openai/gpt-5.2"
-TC_CHECKER_MODEL = "anthropic/claude-sonnet-4-6"
+# TC_CHECKER_MODEL removed (#122 slice 5): TC is programmatic — see
+# server/core/tc_checker.py.
 
 # --- Student simulator model pool (vision-capable only) ---
 # All models must support image input via OpenRouter.

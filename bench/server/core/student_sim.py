@@ -1,7 +1,7 @@
 """Student simulator for QuantTutorBench.
 
 Generates student messages via a model object (resolved by
-``server.eval.judges.runtime.model_resolver.resolve_ewan_model``).
+``eval.judges.runtime.model_resolver.resolve_ewan_model``).
 
 Used by TutoringSession behind the ``send_message`` MCP tool.
 """
@@ -15,6 +15,7 @@ import os
 import re
 import textwrap
 import time
+import uuid
 
 from pydantic import BaseModel
 
@@ -25,6 +26,10 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 _MAX_GENERATE_ATTEMPTS = 3
+
+# Stamped on every NPC LLM call's audit row. Bump when the student-sim
+# prompt-construction path changes (template, system role, retry shape).
+_STUDENT_PROMPT_VERSION = "1.0"
 
 
 class StudentSimError(Exception):
@@ -382,7 +387,7 @@ class StudentSimulator:
     def model(self):
         """Lazy-resolve plain string model names on first use."""
         if isinstance(self._model, str) or self._model is None:
-            from server.eval.judges.runtime.model_resolver import resolve_ewan_model
+            from eval.judges.runtime.model_resolver import resolve_ewan_model
 
             self._model = resolve_ewan_model(self._model)
         return self._model
@@ -409,7 +414,13 @@ class StudentSimulator:
 
             # --- Network layer ---
             try:
-                result = self.model.generate(current_prompt, images=images or None)
+                result = self.model.generate(
+                    current_prompt,
+                    images=images or None,
+                    call_id=f"npc.student-{uuid.uuid4().hex[:8]}-attempt{attempt_idx}",
+                    prompt_id="npc.student",
+                    prompt_version=_STUDENT_PROMPT_VERSION,
+                )
             except Exception as exc:
                 attempt_record.update(
                     error_type="network",
@@ -536,3 +547,30 @@ class StudentSimulator:
         last = conversation[-1]["content"] if conversation else ""
         seed = hashlib.md5(last.encode()).digest()[0]
         return _CLOSING_POOL[seed % len(_CLOSING_POOL)]
+
+
+def require_student_model(model=None, *, temperature: float = 0.0):
+    """Resolve an NPC student-simulator model — must be vision-capable.
+
+    Restricted to ``STUDENT_MODEL_POOL_ALL`` (configured in
+    ``server.config.llm_config``) so the student can ingest image
+    attachments. Lives here rather than in ``bench/eval/`` because
+    student-model selection is an NPC-runtime concern, not a scoring
+    concern.
+    """
+    from eval.judges.runtime.model_resolver import require_ewan_model
+    from server.config.llm_config import (
+        SIMULATOR_DEFAULT_MODEL,
+        STUDENT_MODEL_POOL_ALL,
+    )
+
+    model = model or SIMULATOR_DEFAULT_MODEL
+    if isinstance(model, str) and model not in STUDENT_MODEL_POOL_ALL:
+        raise RuntimeError(
+            f"Student simulator model {model!r} is not in the "
+            "vision-capable model pool. Choose from: "
+            + ", ".join(sorted(STUDENT_MODEL_POOL_ALL))
+        )
+    return require_ewan_model(
+        model, purpose="student simulator", temperature=temperature
+    )

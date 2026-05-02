@@ -21,7 +21,7 @@ def _write_task(root: Path, task_id: str, category: str, difficulty: str) -> Non
                 "category": category,
                 "difficulty": difficulty,
                 "description": "demo",
-                "persona_ids": ["dev"],
+                "persona_id": "dev",
                 "max_turns": 4,
             }
         ),

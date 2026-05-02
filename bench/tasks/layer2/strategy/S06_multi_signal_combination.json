@@ -5,14 +5,8 @@
   "category": "strategy",
   "task_type": "multi_turn",
   "description": "Guide a student to synthesize multiple alpha sources into a single composite signal.",
-  "persona_ids": [
-    "finance_veteran",
-    "fullstack_practitioner"
-  ],
-  "student_openings": {
-    "fullstack_practitioner": "I'm exploring how to synthesize multiple alpha sources into a single composite. I have experience with simpler strategies — what are the key trade-offs here?",
-    "finance_veteran": "I want to synthesize multiple alpha sources into a single composite. I understand the strategy logic from my trading experience — but I need help coding and backtesting it."
-  },
+  "persona_id": "finance_veteran",
+  "student_opening": "I want to synthesize multiple alpha sources into a single composite. I understand the strategy logic from my trading experience — but I need help coding and backtesting it.",
   "environment": {
     "data_files": [
       "BTCUSDT_1d_2021_2024.csv",
@@ -56,7 +50,7 @@
       "construct_signal"
     ],
     "quant_validation": {
-      "eval_script": "evaluation/test_scripts/strategy/S06_multi_signal_combination.py"
+      "eval_script": "tasks/test_scripts/strategy/S06_multi_signal_combination.py"
     },
     "termination_criteria": "The tutor has completed the following research steps with computational evidence (not just verbal discussion): (1) Constructed at least two individual signals from distinct alpha sources or data features, each with a clear mathematical definition. (2) Combined the signals into a composite using an explicit method such as equal weighting, rank averaging, or optimized weighting, and analyzed signal relationships such as pairwise correlation or redundancy. (3) Evaluated the composite signal and compared its performance against at least one individual signal, presenting specific metric values such as IC, Sharpe ratio, or return spread. (4) Identified at least one condition under which signal diversification fails to provide benefit, supported by evidence: correlated drawdowns during a specific period, regime-dependent correlation breakdown, overfitting the combination weights, or statistical fragility such as out-of-sample degradation. Once all four steps have been computationally demonstrated, the research session is complete."
   },

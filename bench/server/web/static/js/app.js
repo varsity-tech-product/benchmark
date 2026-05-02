@@ -76,13 +76,17 @@
     );
   }
 
+  function isStaticPreview() {
+    return !!(window.QTB && window.QTB.staticPreview);
+  }
+
   function redirectToLogin() {
     window.location.href = loginUrl();
   }
 
   function authFetch(path, options) {
     return fetch(path, options).then(function (response) {
-      if (response.status === 401) {
+      if (response.status === 401 && !isStaticPreview()) {
         redirectToLogin();
       }
       return response;
@@ -144,7 +148,11 @@
         state.auth.authMode = payload.auth_mode || 'disabled';
         state.auth.user = payload.user || null;
         renderNavUser();
-        if (state.auth.authMode === 'github' && !payload.authenticated) {
+        if (
+          state.auth.authMode === 'github' &&
+          !payload.authenticated &&
+          !isStaticPreview()
+        ) {
           redirectToLogin();
         }
         return payload;
@@ -416,11 +424,11 @@
 
   function renderApiKeyModalBody(status) {
     var created = status && status.created_at ? formatTimestamp(status.created_at * 1000) : '';
-    var skillUrl = agentSkillUrl();
+    var rawSkillUrl = agentSkillRawUrl();
     var body =
       '<section class="info-section">' +
         '<h3>External REST Access</h3>' +
-        '<p class="detail-empty-note">Use this key as <code>Authorization: Bearer &lt;api_key&gt;</code> when creating runs through <code>/client/runs/start</code>. The raw key is shown once after generation. See the <a href="' + skillUrl + '" target="_blank" rel="noreferrer">REST agent skill</a> for the full platform workflow.</p>' +
+        '<p class="detail-empty-note">Use this key as <code>Authorization: Bearer &lt;api_key&gt;</code> when creating runs through <code>/client/runs/start</code>. The raw key is shown once after generation. Read <a href="' + rawSkillUrl + '" target="_blank" rel="noreferrer">skill.md</a> for the full platform workflow.</p>' +
         (status && status.has_key
           ? '<div class="info-grid">' +
               metaItem('Current Key', status.key_hint ? status.key_hint + '...' : 'Active') +
@@ -438,10 +446,6 @@
     if (generate) generate.addEventListener('click', rotateApiKey);
     var revoke = document.getElementById('api-key-revoke-btn');
     if (revoke) revoke.addEventListener('click', revokeApiKey);
-  }
-
-  function agentSkillUrl() {
-    return window.location.origin + '/skills/quanttutorbench-rest-agent';
   }
 
   function agentSkillRawUrl() {
@@ -473,7 +477,7 @@
             '<h3>Agent Prompt</h3>' +
             '<textarea id="api-key-agent-prompt" class="run-agent-prompt-text api-key-agent-prompt" readonly spellcheck="false">' + escapeHtml(prompt) + '</textarea>' +
             '<button class="btn btn-small run-copy-btn" id="api-key-copy-btn" type="button">Copy Prompt</button>' +
-            '<p class="detail-empty-note">The prompt includes the full REST API key, the skill URL, and a curl command for loading the skill file.</p>';
+            '<p class="detail-empty-note">The prompt includes the full REST API key, raw skill URL, and benchmark base URL.</p>';
           var copy = document.getElementById('api-key-copy-btn');
           if (copy) {
             copy.addEventListener('click', function () {
@@ -736,7 +740,7 @@
   }
 
   function renderTaskCard(task) {
-    var personaCount = (task.persona_ids || []).length;
+    var personaId = task.persona_id || '';
     var requiresCode = task.requires_code ? 'Requires code' : 'No code required';
 
     return '' +
@@ -745,7 +749,7 @@
         '<div class="task-meta-row">' +
           '<span class="badge">' + escapeHtml(titleCase(task.difficulty || 'unknown')) + '</span>' +
           '<span class="meta-chip">' + escapeHtml((task.max_turns || 0) + ' max turns') + '</span>' +
-          '<span class="meta-chip">' + escapeHtml(personaCount + ' persona' + (personaCount === 1 ? '' : 's')) + '</span>' +
+          '<span class="meta-chip">' + escapeHtml('Persona: ' + (personaId || 'unset')) + '</span>' +
         '</div>' +
         '<p class="task-description">' + escapeHtml(task.description || 'No description available.') + '</p>' +
         '<div class="task-meta-row">' +
@@ -791,14 +795,11 @@
               '</div>' +
             '</div>' +
             '<div class="run-agent-skill-url">' +
-              '<span>Skill URL</span>' +
-              '<code>' + escapeHtml(agentSkillUrl()) + '</code>' +
               '<span>Raw Skill URL</span>' +
               '<code>' + escapeHtml(agentSkillRawUrl()) + '</code>' +
             '</div>' +
             '<div class="run-agent-api-actions">' +
               '<button class="btn btn-primary" id="run-open-api-key-prompt" type="button">Open API Key Prompt</button>' +
-              '<a class="btn btn-secondary" href="' + escapeHtml(agentSkillUrl()) + '" target="_blank" rel="noreferrer">Open Skill</a>' +
             '</div>' +
           '</section>' +
         '</div>' +
@@ -2437,6 +2438,16 @@
     });
   }
 
+  function showRunDetail(runId) {
+    state.activeSessionId = null;
+    setAppDetailMode(false);
+    if (window.QTB && typeof window.QTB.renderRunMonitorPage === 'function') {
+      window.QTB.renderRunMonitorPage(app, runId);
+      return;
+    }
+    renderError('Run monitor unavailable', new Error('run-agent.js not loaded'));
+  }
+
   function showResultDetail(sessionId) {
     state.activeSessionId = sessionId;
     setAppDetailMode(true);
@@ -2477,6 +2488,11 @@
 
     if (route === '/run') {
       showRun();
+      return;
+    }
+
+    if (route.indexOf('/run/') === 0) {
+      showRunDetail(decodeURIComponent(route.slice('/run/'.length)));
       return;
     }
 

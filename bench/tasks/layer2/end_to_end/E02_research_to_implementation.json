@@ -5,14 +5,8 @@
   "category": "end_to_end",
   "task_type": "multi_turn",
   "description": "Guide a student through researching a Bollinger Band mean-reversion signal on BTC in Python, backtesting it to get preliminary metrics, then implementing the same strategy as a LEAN C# algorithm and comparing results across backends.",
-  "persona_ids": [
-    "developer_crossover",
-    "fullstack_practitioner"
-  ],
-  "student_openings": {
-    "fullstack_practitioner": "I need to research a Bollinger Band mean-reversion signal on BTC and then implement it in LEAN. I've done similar work in Python before — let's focus on getting the architecture and edge cases right.",
-    "developer_crossover": "I need to research a Bollinger Band mean-reversion signal on BTC. I can handle the code, but I don't understand the financial logic behind it. What should this do and why?"
-  },
+  "persona_id": "developer_crossover",
+  "student_opening": "I need to research a Bollinger Band mean-reversion signal on BTC. I can handle the code, but I don't understand the financial logic behind it. What should this do and why?",
   "environment": {
     "data_files": [
       "BTC_UTC.csv",
@@ -56,7 +50,7 @@
       "plot_chart"
     ],
     "quant_validation": {
-      "eval_script": "evaluation/test_scripts/end_to_end/E02_research_to_implementation.py"
+      "eval_script": "tasks/test_scripts/end_to_end/E02_research_to_implementation.py"
     },
     "termination_criteria": "The tutor has completed the following steps with computational evidence (not just verbal discussion): (1) Showed code and output for a Python Bollinger Band strategy prototype with at least one backtest metric such as Sharpe ratio or return. (2) Showed LEAN C# implementation code for the equivalent strategy, regardless of whether it compiles or runs successfully. (3) Discussed differences or trade-offs between the Python prototype and the LEAN implementation, such as execution model, data handling, or result discrepancies. (4) Responded to the student's follow-up with additional explanation or analysis beyond the initial comparison. Once all four steps have been computationally demonstrated, the session is complete."
   },

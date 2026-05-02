@@ -174,7 +174,7 @@ def test_record_token_usage_custom_attrs():
 def test_collect_evidence_with_logs():
     """collect_evidence aggregates tool log data and workspace files."""
     sys.path.insert(
-        0, os.path.join(os.path.dirname(__file__), "..", "evaluation", "test_scripts")
+        0, os.path.join(os.path.dirname(__file__), "..", "tasks", "test_scripts")
     )
     from common.evidence_helpers import collect_evidence
 
@@ -352,7 +352,7 @@ def test_generic_adapter_format_tools():
 def test_d02_eval_smoke():
     """D02 evaluation script runs end-to-end with mock data."""
     sys.path.insert(
-        0, os.path.join(os.path.dirname(__file__), "..", "evaluation", "test_scripts")
+        0, os.path.join(os.path.dirname(__file__), "..", "tasks", "test_scripts")
     )
     from data_analysis.D02_missing_data_detection_handling import evaluate
 

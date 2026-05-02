@@ -66,7 +66,7 @@ class QuantTutorTask(BaseModel):
 
     Layer 1 tasks use: description (as question), context, reference_answer,
     synthetic_response, and minimal ground_truth.
-    Layer 2 tasks use: persona_ids, student_openings, environment, and full
+    Layer 2 tasks use: persona_id, student_opening, environment, and full
     ground_truth with required_capabilities.
     """
 
@@ -82,9 +82,9 @@ class QuantTutorTask(BaseModel):
     synthetic_response: Optional[str] = None
     source_dataset: Optional[str] = None
     tags: list[str] = Field(default_factory=list)
-    # Layer 2 fields (multi-turn tutoring) — optional for Layer 1
-    persona_ids: list[str] = Field(default_factory=list)
-    student_openings: dict[str, str] = Field(default_factory=dict)
+    # Persona / opening — single value per #122 (collapsed from persona_ids[] + student_openings{})
+    persona_id: str = ""
+    student_opening: str = ""
     environment: Optional[EnvironmentConfig] = None
     ground_truth: Optional[GroundTruth] = None
     requires_code: bool = False
@@ -110,7 +110,7 @@ class StudentPersona(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def _reject_legacy_concept_keys(cls, data):
-        """See server.schemas.StudentPersona — same reject semantics here so
+        """See eval.contracts.schemas.StudentPersona — same reject semantics here so
         both model copies fail loudly on legacy payloads instead of silently
         dropping knowledge boundaries."""
         if isinstance(data, dict):
@@ -146,11 +146,6 @@ class TaskResult(BaseModel):
     workspace_files: list[str] = Field(default_factory=list)
     quant_result_score: Optional[float] = None
     quant_process_score: Optional[float] = None
-    tutor_scores: dict[str, float] = Field(default_factory=dict)
-    tutor_scores_by_model: dict[str, dict[str, float]] = Field(
-        default_factory=dict
-    )  # {model_name: {dim: score}} per-judge-model breakdown
-    tutor_eval_error: Optional[str] = None  # Exception message when tutor eval failed
     overall_score: Optional[float] = None
     # Extended metrics (design doc §6.1, §6.4)
     process_metrics: dict = Field(
@@ -182,7 +177,7 @@ class TaskResult(BaseModel):
     eval_aborted: bool = (
         False  # True when evaluation was aborted due to LLM call failures
     )
-    eval_mode: str = "full"  # "full" | "qr" | "qp" | "tutor"
+    eval_mode: str = "full"  # "full" | "qr" | "qp"
 
 
 class BenchmarkReport(BaseModel):
@@ -192,8 +187,6 @@ class BenchmarkReport(BaseModel):
     total_tasks: int = 0
     overall_agent_score: Optional[float] = None
     quant_agent_index: Optional[float] = None
-    tutoring_effectiveness_index: Optional[float] = None
-    adaptiveness_score: Optional[float] = None
     process_mastery_score: Optional[float] = None
     results_by_task: dict[str, TaskResult] = Field(default_factory=dict)
     results_by_difficulty: dict[str, float] = Field(default_factory=dict)
