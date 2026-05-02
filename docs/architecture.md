@@ -1,11 +1,17 @@
-# QuantTutorBench Architecture
+# QuantAgentBench Architecture
 
-This is the current shared architecture after the dev-to-ewan merge plan.
-When code and docs disagree, trust the code and update this file in the same
-change.
+This is the current shared architecture after #122 (Pure Quant Agent
+redefinition). When code and docs disagree, trust the code and update this
+file in the same change.
 
-The merge contract for the evaluation boundary lives at
-`bench/*MD/v6.0/eval/dev_merge_server_side_eval_contract.md`.
+The benchmark protocol lives in `BENCHMARK_SPEC.md` (v2.0). This document
+covers the implementation/repo layout. The merge contract for the evaluation
+boundary lives at `bench/*MD/v6.0/eval/dev_merge_server_side_eval_contract.md`.
+
+**Marketing name** "QuantAgentBench" is the working name pending #122 TBD-4.
+HuggingFace dataset `Varsity-Tech/quant-tutor-bench-data` and Docker images
+`quant-tutor-env:v2.2` / `quant-tutor-lean:v1.0` retain the v1.0 names for
+backward compatibility.
 
 ## Repo Map
 
@@ -24,7 +30,10 @@ vercel-frontend/       Vercel-hosted frontend shell
 ```
 
 `bench/server/` is the active path. `bench/orchestrator/` is legacy and should
-not be used as a new dependency for evaluation orchestration.
+not be used as a new dependency for evaluation orchestration; it still backs
+`bench/run_benchmark.py` (the reference harness CLI) and houses the older
+DeepEval-based simulator. Issue B (filed after #122 + #123 land) decommissions
+this path.
 
 `vercel-frontend/` is a thin static preview package. Its build step copies the
 current UI shell from `bench/server/web/templates/index.html` and static assets
@@ -121,30 +130,55 @@ The active evaluation pipeline is under `bench/server/eval/`:
 - `contracts/` validates scoring requests and output shape.
 - `core/coordinator.py` is the scoring coordinator used by REST and CLI.
 - `core/preflight.py` blocks non-computable tracks before LLM judging.
-- `tracks/qr.py`, `tracks/qp.py`, and `tracks/tutor.py` run track scoring.
-- `judges/` contains LLM-backed result/process/tutor judges.
+- `tracks/qr.py` and `tracks/qp.py` run track scoring. Per #122 the Tutor
+  track has been deleted (no `tracks/tutor.py`).
+- `judges/` contains LLM-backed result/process judges. Per #122 the
+  Tutor 7D judge (`tutor_6d.py`) has been deleted; only QR + QP remain.
 - `programmatic/` contains code, process, and tool-usage evaluators.
+  `programmatic/code_eval.py` Layer C compares agent outputs to the
+  reference treated as a tolerance band (sign-mismatch / pathological
+  → 0; same-regime → tiered relative-error). Task-type-specific
+  branches (single / sweep / comparison) are gated on
+  `bench/data/reference/<task_id>/distribution.json` data — the
+  distribution-aware scorer is the next code_eval increment.
 - `inputs/` builds task/persona/conversation/reference context.
-- `rubrics/` stores judge rubrics plus `rubric_registry.json`, the first-class
-  registry of judged dimensions and stable rubric IDs.
+- `rubrics/` stores judge rubrics plus `rubric_registry.json`. Per #122
+  the rubrics covering teaching_quality and student_adaptation have
+  been deleted; tutor-track mappings on quant_correctness and
+  failure_handling are removed.
 
 LLM judge prompts are built through `judges/runtime/conv_geval.py`. Prompt and
 output records include rubric ID/version, prompt template version, judge model,
 judge temperature, transcript source, dimension, output schema, context fields,
 and run timestamp metadata.
 
+Per #122 the scoring path now has **two LLM dependencies** (QR judge,
+QP judge). Standalone TC LLM was removed in slice 5; the TC checker
+(`server/core/tc_checker.py`) is purely programmatic — TC is met when
+the agent invokes every tool listed in `expected_mcp_tools`. The NPC
+student simulator remains the only LLM in the conversation runtime,
+and its replies do not enter scoring.
+
+The headline KPI is `pass_rate`: per-task `task_score = 0.60 * QR +
+0.40 * QP`, then `task_pass = task_score >= PASS_THRESHOLD`
+(placeholder 0.5; freezes after baseline calibration per #122 TBD-1).
+Wilson 95% CI on `pass_rate` is exposed alongside per-category pass
+rates (sub-headline) and `task_score_mean / std` (diagnostic).
+
 The operator REST endpoint calls `SessionState.request_evaluation()`, which
 allocates a `score_n` run and delegates to `EvalCoordinator`. The CLI entrypoint
 is:
 
 ```bash
-python -m server.scripts.eval_single run --session <session_id> --mode tutor
+python -m server.scripts.eval_single run --session <session_id> --mode full
 python -m server.scripts.eval_single get --session <session_id> --history
 python -m server.scripts.eval_single list
 ```
 
-If a batch driver is needed, it should be a thin wrapper around
-`EvalCoordinator` and `score_store`, not a second evaluator architecture.
+`--mode` accepts `full` (default), `qr`, or `qp`. `tutor` is no longer
+a valid mode. If a batch driver is needed, it should be a thin wrapper
+around `EvalCoordinator` and `score_store`, not a second evaluator
+architecture.
 
 ## Judge Validation
 
