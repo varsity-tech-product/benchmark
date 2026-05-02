@@ -291,7 +291,7 @@ class SessionState:
 
         # Check if evaluation was already run under the score_n store.
         try:
-            from server.storage.score_store import get_scores_payload
+            from eval.storage.score_store import get_scores_payload
 
             payload = get_scores_payload(result_dir)
             if payload.get("status") == "completed":
@@ -380,12 +380,9 @@ class SessionState:
         from server.core.registry import populate_proxy_for_task
         from server.core.session import TutoringSession
         from server.core.staging import create_staged_dirs, create_staged_sample_code
-        from server.core.student_sim import StudentSimulator
+        from server.core.student_sim import StudentSimulator, require_student_model
         from server.core.tc_checker import TCChecker, parse_tc_items
         from server.data_manager import ensure_data
-        from eval.judges.runtime.model_resolver import (
-            require_student_model,
-        )
 
         self._closed = False
 
@@ -750,7 +747,7 @@ class SessionState:
                 )
 
             from eval.contracts.request import parse_eval_request
-            from server.storage.score_store import allocate_score_run
+            from eval.storage.score_store import allocate_score_run
 
             request = parse_eval_request(
                 {
@@ -1207,7 +1204,7 @@ class SessionState:
                 self._eval_status = "failed"
             if self._result_dir:
                 try:
-                    from server.storage.score_store import update_score_run
+                    from eval.storage.score_store import update_score_run
 
                     update_score_run(
                         self._result_dir,
@@ -1244,7 +1241,7 @@ class SessionState:
         ``evaluations/score_n``.
         """
         if self._result_dir:
-            from server.storage.score_store import get_scores_payload
+            from eval.storage.score_store import get_scores_payload
 
             return get_scores_payload(
                 self._result_dir,
@@ -1259,7 +1256,7 @@ class SessionState:
         """Read all score_n entries from evaluations/index.json."""
         if not self._result_dir:
             return {"session_id": self.session_id, "scores": [], "evaluations": []}
-        from server.storage.score_store import get_scores_payload
+        from eval.storage.score_store import get_scores_payload
 
         payload = get_scores_payload(self._result_dir, history=True)
         payload["session_id"] = self.session_id
@@ -1358,7 +1355,7 @@ class SessionState:
 
     def _load_task(self, task_id: str):
         """Load task JSON by ID."""
-        from server.schemas import QuantTutorTask
+        from eval.contracts.schemas import QuantTutorTask
 
         tasks_dir = self.bench_root / "tasks"
         for json_path in tasks_dir.rglob(f"{task_id}.json"):
@@ -1367,7 +1364,7 @@ class SessionState:
 
     def _load_persona(self, persona_id: str):
         """Load persona JSON by ID."""
-        from server.schemas import StudentPersona
+        from eval.contracts.schemas import StudentPersona
 
         personas_dir = self.bench_root / "personas"
         for json_path in personas_dir.rglob(f"{persona_id}.json"):

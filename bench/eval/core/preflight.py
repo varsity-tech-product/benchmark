@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from server.config.llm_config import has_openrouter_api_key
+from eval.llm_config import has_openrouter_api_key
 from eval.contracts.request import EvalRequest
 
 

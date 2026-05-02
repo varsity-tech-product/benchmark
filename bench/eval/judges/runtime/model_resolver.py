@@ -11,14 +11,13 @@ Public API:
 import logging
 import random
 
-from server.config.llm_config import (
+from eval.llm_config import (
     EVAL_DEFAULT_MODELS,
     EVAL_JUDGE_TEMPERATURE,
-    STUDENT_MODEL_POOL_ALL,
     get_openrouter_base_url,
     has_openrouter_api_key,
 )
-from server.config.pricing import _resolve_pricing
+from config.pricing import _resolve_pricing
 from eval.judges.runtime.llm_client import EwanLLMClient
 
 log = logging.getLogger(__name__)
@@ -130,29 +129,3 @@ def require_ewan_model(
     )
 
 
-def require_student_model(
-    model=None,
-    *,
-    temperature=EVAL_JUDGE_TEMPERATURE,
-):
-    """Resolve a student simulator model — must be vision-capable.
-
-    Only models in ``STUDENT_MODEL_POOL_ALL`` are accepted.  This ensures
-    the student LLM can handle image attachments.
-    """
-    from server.config.llm_config import SIMULATOR_DEFAULT_MODEL
-
-    model = model or SIMULATOR_DEFAULT_MODEL
-
-    if isinstance(model, str) and model not in STUDENT_MODEL_POOL_ALL:
-        raise RuntimeError(
-            f"Student simulator model {model!r} is not in the "
-            f"vision-capable model pool. Choose from: "
-            + ", ".join(sorted(STUDENT_MODEL_POOL_ALL))
-        )
-
-    return require_ewan_model(
-        model,
-        purpose="student simulator",
-        temperature=temperature,
-    )

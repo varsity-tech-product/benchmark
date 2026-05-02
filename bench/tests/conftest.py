@@ -485,7 +485,7 @@ def mock_eval_pipeline():
         from datetime import datetime, timezone
 
         from eval.judge_reliability import build_judge_reliability_metadata
-        from server.storage.score_store import (
+        from eval.storage.score_store import (
             allocate_score_run,
             summarize_score,
             update_score_run,

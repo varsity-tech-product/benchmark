@@ -28,7 +28,7 @@ from eval.core.coordinator import (
     load_run_state,
     load_task_by_id,
 )
-from server.storage.score_store import allocate_score_run, get_scores_payload
+from eval.storage.score_store import allocate_score_run, get_scores_payload
 
 BENCH_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_RESULTS_ROOT = BENCH_ROOT / "results" / "server"

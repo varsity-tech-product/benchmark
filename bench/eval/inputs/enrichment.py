@@ -10,7 +10,7 @@ Two enrichment modes:
 
 from collections import defaultdict
 
-from server.tool_filters import NON_SUBSTANTIVE_TOOLS
+from eval.tool_filters import NON_SUBSTANTIVE_TOOLS
 
 _MAX_RESULT_CHARS = 500
 _MAX_SUMMARY_CHARS = 1500

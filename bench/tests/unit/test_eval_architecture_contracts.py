@@ -7,7 +7,7 @@ from eval.contracts.output import TrackResult
 from eval.contracts.request import EvalRequest
 from eval.core.coordinator import EvalCoordinator
 from eval.judge_reliability import build_judge_reliability_metadata
-from server.storage.score_store import allocate_score_run, get_scores_payload
+from eval.storage.score_store import allocate_score_run, get_scores_payload
 
 
 def test_eval_package_uses_canonical_module_paths():

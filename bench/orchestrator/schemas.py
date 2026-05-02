@@ -110,7 +110,7 @@ class StudentPersona(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def _reject_legacy_concept_keys(cls, data):
-        """See server.schemas.StudentPersona — same reject semantics here so
+        """See eval.contracts.schemas.StudentPersona — same reject semantics here so
         both model copies fail loudly on legacy payloads instead of silently
         dropping knowledge boundaries."""
         if isinstance(data, dict):

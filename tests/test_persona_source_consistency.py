@@ -161,7 +161,7 @@ def _import_student_persona_classes():
         sys.path.insert(0, bench_dir)
 
     from orchestrator.schemas import StudentPersona as OrchestratorStudentPersona
-    from server.schemas import StudentPersona as ServerStudentPersona
+    from eval.contracts.schemas import StudentPersona as ServerStudentPersona
 
     return [ServerStudentPersona, OrchestratorStudentPersona]
 

@@ -13,10 +13,10 @@ from experiments.student_sim_stability.core.paths import RESOURCE_ROOT
 from server.config.prompt_config import (
     build_user_description as _server_build_user_description,
 )
-from server.schemas import StudentPersona
+from eval.contracts.schemas import StudentPersona
 
 if TYPE_CHECKING:
-    from server.schemas import QuantTutorTask
+    from eval.contracts.schemas import QuantTutorTask
 
 CONTRACTS_DIR = RESOURCE_ROOT / "contracts"
 CONTRACT_VERSION = "v1.0.0"

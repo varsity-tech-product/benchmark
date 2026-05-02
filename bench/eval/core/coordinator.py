@@ -16,11 +16,11 @@ from typing import Any
 
 from eval.contracts.output import EvalOutput, TrackResult
 from eval.contracts.request import EvalRequest, resolve_result_dir
+from eval.contracts.schemas import QuantTutorTask, StudentPersona
 from eval.core.preflight import PreflightReport, run_preflight
 from eval.judge_reliability import build_judge_reliability_metadata
 from eval.inputs.enrichment import enrich_conversation_with_tools
-from server.schemas import QuantTutorTask, StudentPersona
-from server.storage.score_store import (
+from eval.storage.score_store import (
     summarize_score,
     update_score_run,
     write_score_files,

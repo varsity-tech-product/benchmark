@@ -839,7 +839,7 @@ class BenchSessionManager:
         result_dir = self.find_archived_result_dir(session_id)
         if not result_dir:
             return None
-        from server.storage.score_store import get_scores_payload
+        from eval.storage.score_store import get_scores_payload
 
         payload = get_scores_payload(
             result_dir,
@@ -1548,7 +1548,7 @@ def _save_archived_eval_restore_failure(
         return JSONResponse({"error": "Session not found"}, 404)
 
     from eval.contracts.request import EvalError, parse_eval_request
-    from server.storage.score_store import allocate_score_run
+    from eval.storage.score_store import allocate_score_run
 
     try:
         eval_request = parse_eval_request(

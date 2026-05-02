@@ -37,7 +37,7 @@ from eval.judges.runtime.model_resolver import (
     resolve_ewan_model,
     short_model_name,
 )
-from server.tool_filters import NON_SUBSTANTIVE_TOOLS
+from eval.tool_filters import NON_SUBSTANTIVE_TOOLS
 
 # ──────────────────────────────────────────────────────────────
 # QP Dimension Weights (5 dimensions)

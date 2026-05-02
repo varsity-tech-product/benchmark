@@ -9,7 +9,7 @@ Interface contract — every model object exposes:
 
 from typing import Any
 
-from server.config.llm_config import (
+from eval.llm_config import (
     create_openrouter_async_client,
     get_openrouter_base_url,
 )

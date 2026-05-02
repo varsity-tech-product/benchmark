@@ -536,3 +536,30 @@ class StudentSimulator:
         last = conversation[-1]["content"] if conversation else ""
         seed = hashlib.md5(last.encode()).digest()[0]
         return _CLOSING_POOL[seed % len(_CLOSING_POOL)]
+
+
+def require_student_model(model=None, *, temperature: float = 0.0):
+    """Resolve an NPC student-simulator model — must be vision-capable.
+
+    Restricted to ``STUDENT_MODEL_POOL_ALL`` (configured in
+    ``server.config.llm_config``) so the student can ingest image
+    attachments. Lives here rather than in ``bench/eval/`` because
+    student-model selection is an NPC-runtime concern, not a scoring
+    concern.
+    """
+    from eval.judges.runtime.model_resolver import require_ewan_model
+    from server.config.llm_config import (
+        SIMULATOR_DEFAULT_MODEL,
+        STUDENT_MODEL_POOL_ALL,
+    )
+
+    model = model or SIMULATOR_DEFAULT_MODEL
+    if isinstance(model, str) and model not in STUDENT_MODEL_POOL_ALL:
+        raise RuntimeError(
+            f"Student simulator model {model!r} is not in the "
+            "vision-capable model pool. Choose from: "
+            + ", ".join(sorted(STUDENT_MODEL_POOL_ALL))
+        )
+    return require_ewan_model(
+        model, purpose="student simulator", temperature=temperature
+    )

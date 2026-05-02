@@ -13,7 +13,7 @@ import os
 import re as _re
 from typing import Optional
 
-from server.tool_filters import NON_SUBSTANTIVE_TOOLS, PROTOCOL_ONLY_TOOLS
+from eval.tool_filters import NON_SUBSTANTIVE_TOOLS, PROTOCOL_ONLY_TOOLS
 
 # ──────────────────────────────────────────────────────────────
 # Conversation formatting (unified entry point)

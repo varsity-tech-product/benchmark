@@ -10,7 +10,7 @@ from typing import Any
 from eval.contracts.output import EvalOutput, TrackResult
 from eval.contracts.request import EvalRequest, normalize_eval_mode
 from eval.judge_reliability import build_judge_reliability_metadata
-from server.storage.score_store import (
+from eval.storage.score_store import (
     allocate_score_run,
     summarize_score,
     update_score_run,
@@ -332,7 +332,7 @@ def save_eval_results(
         score_id = run.score_id
         created_at = run.created_at
     elif created_at is None:
-        from server.storage.score_store import load_index
+        from eval.storage.score_store import load_index
 
         index = load_index(result_dir)
         entry = next(
@@ -445,7 +445,7 @@ def run_evaluation(
         created_at = run.created_at
     else:
         # Keep index-created timestamp when possible.
-        from server.storage.score_store import load_index
+        from eval.storage.score_store import load_index
 
         index = load_index(result_dir)
         entry = next(

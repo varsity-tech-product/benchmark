@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 from config.prompt_config import flatten_concepts
 
 if TYPE_CHECKING:
-    from server.schemas import QuantTutorTask, StudentPersona
+    from eval.contracts.schemas import QuantTutorTask, StudentPersona
 
 
 # ── Emotional Profile Expansion ───────────────────────────────
