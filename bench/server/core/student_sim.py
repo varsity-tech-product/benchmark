@@ -132,12 +132,15 @@ _GOODBYE_PATTERNS = (
     # "I'm done" — must end the clause or carry closing context
     r"\b(?:I[' ]?m|I am)\s+done(?:\.|!|$)",
     r"\b(?:I[' ]?m|I am)\s+done\s+(?:for now|here|with (?:this|that|today|the (?:topic|material|explanation)))",
-    # "I'm all set"
-    r"\b(?:I[' ]?m|I am)\s+all set\b",
+    # "I'm all set" — clause-final or explicit closing context.
+    # Avoids matching "I'm all set with the rolling window, but stuck on Y."
+    r"\b(?:I[' ]?m|I am)\s+all set(?:\s+(?:for now|now|here|with (?:that|this)))?(?:\.|!|$)",
     # "I'm good" — only with closing context (avoids "I'm good at math")
     r"\b(?:I[' ]?m|I am)\s+good\s+(?:to (?:stop|end|wrap up|go|leave|move on|call it)|for now|here|with (?:this|that))",
-    # "I think I'm done|all set|all good" — unambiguous closing
-    r"\bI think (?:I[' ]?m|I am|we[' ]?re|we are)\s+(?:done|all set|all good)\b",
+    # "I think I'm done|all set|all good" — clause-final or closing context.
+    # Avoids matching "I think I'm done loading the data, what's next?" or
+    # "I think I'm all good with the basics but unsure about Y."
+    r"\bI think (?:I[' ]?m|I am|we[' ]?re|we are)\s+(?:done|all set|all good)(?:\s+(?:for now|now|here|with (?:that|this)))?(?:\.|!|$)",
     # "I think I'm good|fine" — must be clause-final, with the optional
     # closing-context phrase itself ending the clause. Avoids matching
     # "I think I'm good with the rolling window..." or "fine with that part".
@@ -172,7 +175,11 @@ def signaled_end_of_session(text: str) -> bool:
     """
     if not text or not text.strip():
         return False
-    stripped = text.strip()
+    # The LLM-driven student persona emits Unicode curly apostrophes
+    # (U+2019) in contractions like "I'm". The goodbye patterns use the
+    # ASCII apostrophe, so normalize before matching to avoid false negatives.
+    normalized = text.replace("’", "'").replace("‘", "'").replace("ʼ", "'")
+    stripped = normalized.strip()
     # Trailing question — student is still asking, not done.
     if stripped.endswith("?"):
         return False
