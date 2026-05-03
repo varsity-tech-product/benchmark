@@ -27,7 +27,7 @@ jobs:
         with:
           python-version: '3.12'
           cache: pip
-      - run: pip install -r requirements.txt
+      - run: pip install -r requirements.txt pytest-timeout
       - run: pytest bench/tests/ -x --timeout=60
         continue-on-error: true
 
@@ -105,7 +105,21 @@ jobs:
             ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} << 'EOF'
             set -e
             sudo systemctl restart quanttutor
-            sleep 6
+            # Poll /health for up to 60s; new code's cold start can exceed 6s
+            # after Bundle v1 + audit sink + run service initialization (#122/#123).
+            for i in $(seq 1 30); do
+              if curl -sf -m 3 http://127.0.0.1:8000/health >/dev/null 2>&1; then
+                echo "health ok after ${i}*2s"
+                break
+              fi
+              if [ $i -eq 30 ]; then
+                echo "health probe timed out after 60s"
+                sudo systemctl status quanttutor --no-pager | head -20
+                tail -50 /var/log/quanttutor.log
+                exit 1
+              fi
+              sleep 2
+            done
             sudo systemctl is-active quanttutor
             # /health deep probe: docker daemon + LEAN image + disk (returns 503 on any failure)
             curl -sf http://127.0.0.1:8000/health >/dev/null
