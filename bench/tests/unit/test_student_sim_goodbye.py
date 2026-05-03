@@ -38,6 +38,10 @@ _NEGATIVE_PHRASES = [
     # Codex P1 finding: "I think I'm good with X" must NOT terminate
     "I think I'm good with the rolling window, but stuck on the resampling.",
     "I think I'm fine with that part, but the resampling still confuses me.",
+    # Issue #137 Codex P2 finding: broad "all set" shouldn't match mid-clause
+    "I'm all set with the rolling window, but stuck on the resampling.",
+    "I think I'm all set with the basics but the slow window still confuses me.",
+    "I think I'm done loading the data, anything else I should check.",
     "I'm done loading the data. What's next?",
     "Let me try this on the actual dataset and see what happens.",
     "I'm good at math but new to pandas, so this is helpful.",
@@ -66,3 +70,21 @@ def test_trailing_question_disqualifies_otherwise_matching_text():
     assert not signaled_end_of_session(
         "I think I'm good — but one more question, what about Y?"
     )
+
+
+# Regression for #137: student persona emits curly apostrophes (U+2019)
+# in contractions; the regex must still terminate. Verified against the
+# real A02 transcript that timed out at 10 student turns instead of
+# terminating at the third clear goodbye.
+_CURLY_GOODBYES = [
+    "Thanks — I’m good for now. I was stressed at first.",
+    "Sounds good — thanks, I’m all set for now.",
+    "Thanks, I appreciate it — I’m done for now.",
+    "Thanks — I’m all set now.",
+    "I think I’m done now though, so I’m going to stop here.",
+]
+
+
+@pytest.mark.parametrize("text", _CURLY_GOODBYES)
+def test_curly_apostrophe_variants_terminate(text):
+    assert signaled_end_of_session(text), f"Expected terminate: {text!r}"
