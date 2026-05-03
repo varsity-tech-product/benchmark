@@ -16,6 +16,7 @@
   };
 
   var POLL_MS = 2000;
+  var LIVE_STATUSES = {waiting: true, claimed: true, active: true};
 
   var _root = null;
   var _pollTimer = null;
