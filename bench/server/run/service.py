@@ -287,6 +287,71 @@ class RunService:
         logger.info("Run cancelled: %s", run_id)
         return assignment
 
+    def reset_for_retry(self, run_id: str) -> RunAssignment:
+        """Reset a COMPLETED run back to CLAIMED so a fresh session can bind.
+
+        Used by the public retry endpoint when the prior session terminated
+        with an infrastructure-class failure. Clears the run-level pointers
+        to the failed session (session_id, result_dir, error, completed_at,
+        eval_status); the underlying bundle on disk is left untouched so the
+        failure receipt is preserved. ``claimed_at`` is refreshed so the
+        idle-claim sweeper does not retire the run between reset and the
+        follow-up bind_session.
+        """
+        assignment = self._get_or_raise(run_id)
+        if assignment.status != RunStatus.COMPLETED:
+            raise ValueError(
+                f"Run {run_id} is '{assignment.status.value}', "
+                f"only 'completed' runs can be reset for retry"
+            )
+        now = _now_iso()
+        assignment.status = RunStatus.CLAIMED
+        assignment.session_id = None
+        assignment.result_dir = None
+        assignment.error = None
+        assignment.completed_at = None
+        assignment.eval_status = "pending"
+        assignment.claimed_at = now
+        assignment.updated_at = now
+        self._store.save(assignment)
+        logger.info("Run reset for retry: %s", run_id)
+        return assignment
+
+    def restore_after_failed_retry(
+        self,
+        run_id: str,
+        *,
+        session_id: Optional[str],
+        result_dir: Optional[str],
+        completed_at: Optional[str],
+        eval_status: str,
+        error: Optional[str],
+    ) -> RunAssignment:
+        """Roll a CLAIMED retry back to its prior COMPLETED state.
+
+        Used by the retry endpoint when ``reset_for_retry`` succeeded but
+        the follow-up session register failed (e.g. transient sandbox
+        startup error). Re-attaches the original failure receipt so the
+        run remains pointing at the failed bundle and stays eligible for
+        another retry.
+        """
+        assignment = self._get_or_raise(run_id)
+        if assignment.status != RunStatus.CLAIMED:
+            raise ValueError(
+                f"Run {run_id} is '{assignment.status.value}', "
+                f"expected 'claimed' for retry rollback"
+            )
+        assignment.status = RunStatus.COMPLETED
+        assignment.session_id = session_id
+        assignment.result_dir = result_dir
+        assignment.completed_at = completed_at
+        assignment.eval_status = eval_status
+        assignment.error = error
+        assignment.updated_at = _now_iso()
+        self._store.save(assignment)
+        logger.info("Run %s restored after failed retry attempt", run_id)
+        return assignment
+
     def update_eval_status(self, run_id: str, eval_status: str) -> None:
         """Mirror SessionState._eval_status into RunAssignment."""
         assignment = self._store.get(run_id)

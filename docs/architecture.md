@@ -110,6 +110,15 @@ the client catalog.
 restarting the tutoring runtime. Restore does not re-trigger auto-eval; the
 score store is the source of truth for whether an eval has run.
 
+`POST /session/{sid}/retry` (run-token gated) lets the owning agent retry
+a session whose `termination_reason` classifies as
+`infrastructure_failure` (currently `student_sim_error:*`). The retry calls
+`RunService.reset_for_retry()` to rebind the same RunAssignment back to
+`claimed`, allocates a fresh session_id, and returns it. Other categories
+(`agent_gave_up`, `max_turns_reached`, `terminal_success`, `unknown`) are
+not retryable and return 409. The original failed bundle remains on disk
+under its session_id as the failure receipt.
+
 ## Canonical Storage
 
 Results are stored in-bundle:
