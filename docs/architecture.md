@@ -71,11 +71,16 @@ Clients cannot trigger scoring:
 - no public `POST /session/{sid}/evaluate`
 - no scoring through `POST /session/{sid}/tool/{name}`
 
-Scoring is server/operator-owned:
+Scoring is server-owned. Two server-side triggers:
 
-- `POST /ops/session/{sid}/evaluate`
-- `GET /ops/session/{sid}/results`
-- `GET /ops/session/{sid}/scores`
+- **auto** — every terminal transition to `completed` (via `send_message`
+  or the idle-timeout sweep) enqueues one eval keyed
+  `auto:{session_id}`. The client then polls
+  `GET /session/{sid}/scores`.
+- **operator** — `POST /ops/session/{sid}/evaluate` (admin-token gated)
+  for re-evaluation, alternate `eval_mode`, or recovery on bundles whose
+  auto-eval failed. Operator reads stay at `GET /ops/session/{sid}/results`
+  and `GET /ops/session/{sid}/scores`.
 
 The `/ops/*` surface is gated by the admin-token mechanism in
 `server.web.ui_app`. Client read endpoints stay export-scoped and, when run
@@ -93,12 +98,17 @@ the client catalog.
 1. `register_session` loads task/persona and prepares runtime state.
 2. `start_session` returns the student opening and enters `in_session`.
 3. `send_message` advances the student simulator and tool trace.
-4. Terminal status persists a result bundle and enters `completed`.
+4. Terminal status persists a result bundle, enters `completed`, and
+   `_trigger_auto_eval()` enqueues a server-internal eval keyed
+   `auto:{session_id}`. The same trigger fires from the idle-timeout sweep
+   when a session crosses its deadline. The judge runs in a background
+   thread; clients poll `GET /session/{sid}/scores` for the result.
 5. `completed` is terminal for MCP/client tools.
 
 `restore_from_storage()` reconstructs enough completed-session state from
 `run_state.json` to read results, read scores, or run operator scoring without
-restarting the tutoring runtime.
+restarting the tutoring runtime. Restore does not re-trigger auto-eval; the
+score store is the source of truth for whether an eval has run.
 
 ## Canonical Storage
 

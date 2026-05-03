@@ -290,11 +290,13 @@ class BenchSessionManager:
                         async with state._request_lock:
                             if state.phase != SessionPhase.IN_SESSION:
                                 continue
+                            save_ok = False
                             try:
                                 if state.session is not None:
                                     state.session.force_complete("timeout")
                                 state.phase = SessionPhase.COMPLETED
                                 state._save_results()
+                                save_ok = True
                             except Exception:
                                 logger.warning(
                                     "Session %s save failed in sweep",
@@ -302,6 +304,8 @@ class BenchSessionManager:
                                     exc_info=True,
                                 )
                             state._destroy_container()
+                            if save_ok:
+                                state._trigger_auto_eval()
                             # Notify Run layer so run status tracks the
                             # force-completion. Swallow ValueError from
                             # mark_completed guards (e.g. run was cancelled
