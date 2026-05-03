@@ -246,6 +246,127 @@ def summarize_score(
     return summary
 
 
+SCORE_RESPONSE_SCHEMA_VERSION = "1.0"
+
+# Public score_status enum per #131 D-3 — pinned for external clients.
+# ``interrupted`` is the coordinator's status when an eval was cancelled
+# mid-flight (see eval/core/coordinator.py); kept distinct from ``failed``
+# so clients can tell user-cancellation from eval-crash.
+PUBLIC_SCORE_STATUSES = frozenset(
+    {
+        "pending",
+        "running",
+        "completed_scored",
+        "completed_not_computable",
+        "failed",
+        "interrupted",
+    }
+)
+
+_QR_DIM_KEYS = ("result_judge", "code_eval", "programmatic")
+_QP_DIM_KEYS = (
+    "tool_usage",
+    "action_economy",
+    "code_lifecycle",
+    "task_planning",
+    "problem_solving",
+)
+
+
+def _coerce_dim_score(raw: Any) -> float | None:
+    if isinstance(raw, bool) or not isinstance(raw, (int, float)):
+        return None
+    return float(raw)
+
+
+def _extract_dimension(
+    name: str, track: str, container: dict[str, Any]
+) -> dict[str, Any] | None:
+    data = container.get(name)
+    if not isinstance(data, dict):
+        return None
+    if "score" not in data and not data.get("status"):
+        return None
+    return {
+        "name": name,
+        "track": track,
+        "score": _coerce_dim_score(data.get("score")),
+        "status": data.get("status"),
+    }
+
+
+def _track_view(track_data: Any) -> dict[str, Any] | None:
+    if not isinstance(track_data, dict):
+        return None
+    return {
+        "score": _coerce_dim_score(track_data.get("score")),
+        "status": track_data.get("status"),
+        "blockers": list(track_data.get("blocking_missing") or []),
+    }
+
+
+def build_v1_response(
+    score_data: dict[str, Any],
+    cost_data: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Build the v1 forward-compat score response from persisted score+cost data.
+
+    Public top-level: ``task_score``, ``task_pass``, ``score_id``,
+    ``score_status``, ``schema_version``. Everything else lives in
+    ``detail`` so adding fields later is non-breaking.
+
+    ``task_pass`` is masked to ``None`` while ``PASS_THRESHOLD_CALIBRATED``
+    is False (#131 D-2) — clients should treat absence as "not yet known".
+    """
+    from eval.core.scoring import PASS_THRESHOLD, PASS_THRESHOLD_CALIBRATED
+
+    qr = score_data.get("qr") if isinstance(score_data.get("qr"), dict) else None
+    qp = score_data.get("qp") if isinstance(score_data.get("qp"), dict) else None
+    overall = _coerce_dim_score(score_data.get("overall_score"))
+
+    if PASS_THRESHOLD_CALIBRATED and overall is not None:
+        task_pass: bool | None = overall >= PASS_THRESHOLD
+    else:
+        task_pass = None
+
+    dimensions: list[dict[str, Any]] = []
+    qr_detail = qr.get("detail") if qr and isinstance(qr.get("detail"), dict) else {}
+    for name in _QR_DIM_KEYS:
+        dim = _extract_dimension(name, "qr", qr_detail)
+        if dim is not None:
+            dimensions.append(dim)
+    qp_detail = qp.get("detail") if qp and isinstance(qp.get("detail"), dict) else {}
+    for name in _QP_DIM_KEYS:
+        dim = _extract_dimension(name, "qp", qp_detail)
+        if dim is not None:
+            dimensions.append(dim)
+
+    detail: dict[str, Any] = {
+        "dimensions": dimensions,
+        "tracks": {
+            "qr": _track_view(qr),
+            "qp": _track_view(qp),
+        },
+        "judge_reliability": score_data.get("judge_reliability") or {},
+        "blocking_missing": score_data.get("blocking_missing", []),
+    }
+    if cost_data:
+        detail["cost"] = {
+            "eval_cost_usd": cost_data.get("eval_cost_usd"),
+            "eval_cost_by_track": cost_data.get("eval_cost_by_track") or {},
+            "eval_cost_by_model": cost_data.get("eval_cost_by_model") or {},
+        }
+
+    return {
+        "schema_version": SCORE_RESPONSE_SCHEMA_VERSION,
+        "score_id": score_data.get("score_id"),
+        "score_status": score_data.get("score_status"),
+        "task_score": overall,
+        "task_pass": task_pass,
+        "detail": detail,
+    }
+
+
 def get_scores_payload(
     result_dir: Path,
     *,

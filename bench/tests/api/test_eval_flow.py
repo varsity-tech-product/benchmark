@@ -158,6 +158,12 @@ class TestGetScores:
         body = resp.json()
         assert body["status"] in ("running", "completed", "failed")
         assert body["score_id"] == "score_1"
+        # #131: v1 fields are present even before the score lands so
+        # external clients see a uniform shape across the lifecycle.
+        assert body["schema_version"] == "1.0"
+        assert "task_score" in body
+        assert "task_pass" in body
+        assert "detail" in body
 
     @pytest.mark.asyncio
     async def test_public_scores_completed_without_private_cost(
@@ -171,11 +177,36 @@ class TestGetScores:
         data = resp.json()
         assert data["status"] == "completed"
         assert data["score_id"] == "score_1"
-        assert data["scores"]["overall_score"] == 0.775
-        assert data["scores"]["judge_reliability"]["validation_run_id"]
+        assert data["task_score"] == 0.775
+        assert data["detail"]["judge_reliability"]["validation_run_id"]
         assert "score" not in data
         assert "cost" not in data
-        assert "eval_cost_usd" not in data["scores"]
+        # #131 P2: legacy summary slot dropped; cost lives only on the ops side.
+        assert "scores" not in data
+        assert "cost" not in data["detail"]
+
+    @pytest.mark.asyncio
+    async def test_public_scores_v1_top_level_shape(
+        self, app, client, mock_eval_pipeline
+    ):
+        """#131 done criterion: top-level task_score + task_pass + detail."""
+        sid, state = await _complete_and_wait_for_auto_eval(app, client)
+
+        resp = await client.get(f"/session/{sid}/scores")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["schema_version"] == "1.0"
+        assert data["score_status"] == "completed_scored"
+        assert isinstance(data["task_score"], float)
+        assert data["task_score"] == 0.775
+        # task_pass is None until PASS_THRESHOLD_CALIBRATED flips True (D-2).
+        assert data["task_pass"] is None
+        assert isinstance(data["detail"], dict)
+        assert data["detail"]["tracks"]["qr"]["score"] == 0.85
+        assert data["detail"]["tracks"]["qp"]["score"] == 0.70
+        assert isinstance(data["detail"]["dimensions"], list)
+        assert "cost" not in data["detail"]  # public path strips the cost blob
 
     @pytest.mark.asyncio
     async def test_ops_scores_include_private_cost(
@@ -190,6 +221,9 @@ class TestGetScores:
         assert data["status"] == "completed"
         assert data["score_id"] == "score_1"
         assert data["cost"]["eval_cost_usd"] == 0.003
+        # #131: ops also gets the v1 shape; cost is mirrored under detail.
+        assert data["task_score"] == 0.775
+        assert data["detail"]["cost"]["eval_cost_usd"] == 0.003
 
     @pytest.mark.asyncio
     async def test_scores_history_after_multiple_evals(
