@@ -16,7 +16,7 @@ import json
 import logging
 import math
 import os
-from dataclasses import asdict
+from dataclasses import asdict, is_dataclass
 from pathlib import Path
 
 from server.audit import record_event
@@ -123,7 +123,14 @@ def _is_protocol_tool_log(log) -> bool:
 def _safe_tool_log_dict(log) -> dict:
     if isinstance(log, dict):
         return log
-    return asdict(log)
+    if is_dataclass(log):
+        return asdict(log)
+    # Restored sessions wrap tool logs as SimpleNamespace (see
+    # SessionState.restore_from_storage); asdict() rejects those, so fall
+    # back to __dict__ before giving up.
+    if hasattr(log, "__dict__"):
+        return dict(log.__dict__)
+    return {"raw": str(log)}
 
 
 # ---------------------------------------------------------------------------
