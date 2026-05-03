@@ -99,6 +99,60 @@ class TestRepeatDetectionViaAPI:
 
 
 # ---------------------------------------------------------------------------
+# Student-satisfied termination (issue #132)
+# ---------------------------------------------------------------------------
+
+
+class TestStudentSatisfiedViaAPI:
+    @pytest.mark.asyncio
+    async def test_student_goodbye_terminates_session(self, app, client, monkeypatch):
+        sid, _ = await register_and_start(client)
+        state = _get_session_state(app, sid)
+        # Force the next student reply to be the canonical D02 goodbye.
+        monkeypatch.setattr(
+            state.session._student_sim,
+            "generate_message",
+            lambda *a, **kw: "Got it, I'm good to stop here for now.",
+        )
+
+        body = await send_message(client, sid, "Anything else I can help with?")
+        assert body["status"] == "completed"
+        assert body["reason"] == "student_satisfied"
+
+    @pytest.mark.asyncio
+    async def test_subsequent_send_after_student_satisfied_denied(
+        self, app, client, monkeypatch
+    ):
+        sid, _ = await register_and_start(client)
+        state = _get_session_state(app, sid)
+        monkeypatch.setattr(
+            state.session._student_sim,
+            "generate_message",
+            lambda *a, **kw: "Thanks, that's all I needed!",
+        )
+
+        await send_message(client, sid, "Anything else?")
+        # Phase is COMPLETED — REST permission check returns 403.
+        resp = await client.post(f"/session/{sid}/send", json={"text": "hello?"})
+        assert resp.status_code == 403
+        assert resp.json().get("allowed") == []
+
+    @pytest.mark.asyncio
+    async def test_student_question_does_not_terminate(self, app, client, monkeypatch):
+        sid, _ = await register_and_start(client)
+        state = _get_session_state(app, sid)
+        # Mentions "stop" but is asking a question — must NOT terminate.
+        monkeypatch.setattr(
+            state.session._student_sim,
+            "generate_message",
+            lambda *a, **kw: "Before we stop, one quick question: what about edges?",
+        )
+
+        body = await send_message(client, sid, "Make sense so far?")
+        assert body["status"] == "active"
+
+
+# ---------------------------------------------------------------------------
 # Deadline timeout
 # ---------------------------------------------------------------------------
 

@@ -117,6 +117,69 @@ _JSON_RE = re.compile(r"\{.*\}", re.DOTALL)
 
 
 # ---------------------------------------------------------------------------
+# Student end-of-session signal detection
+# ---------------------------------------------------------------------------
+
+# Phrases the student persona uses when satisfied and ready to end the session.
+# Conservative list — only clear closing signals. False negatives (one extra
+# turn) are cheaper than false positives (truncating a still-active session).
+_GOODBYE_PATTERNS = (
+    # "good to stop / end / wrap up / call it"
+    r"\bgood to (?:stop|end|wrap up|leave it|move on|call it)\b",
+    # "stop here for now", "stop here." — clause-final stop signal
+    r"\b(?:stop|wrap up|leave it|call it)(?:\s+here)?\s+for now\b",
+    r"\bstop here(?:\.|!|$)",
+    # "I'm done" — must end the clause or carry closing context
+    r"\b(?:I[' ]?m|I am)\s+done(?:\.|!|$)",
+    r"\b(?:I[' ]?m|I am)\s+done\s+(?:for now|here|with (?:this|that|today|the (?:topic|material|explanation)))",
+    # "I'm all set"
+    r"\b(?:I[' ]?m|I am)\s+all set\b",
+    # "I'm good" — only with closing context (avoids "I'm good at math")
+    r"\b(?:I[' ]?m|I am)\s+good\s+(?:to (?:stop|end|wrap up|go|leave|move on|call it)|for now|here|with (?:this|that))",
+    # "I think I'm done|all set|all good" — unambiguous closing
+    r"\bI think (?:I[' ]?m|I am|we[' ]?re|we are)\s+(?:done|all set|all good)\b",
+    # "I think I'm good|fine" — must be clause-final, with the optional
+    # closing-context phrase itself ending the clause. Avoids matching
+    # "I think I'm good with the rolling window..." or "fine with that part".
+    r"\bI think (?:I[' ]?m|I am|we[' ]?re|we are)\s+(?:good|fine)(?:\s+(?:for now|here|with (?:that|this)))?(?:\.|!|$)",
+    # "That's all (I needed)"
+    r"\bthat[' ]?s all (?:I needed|I had|for now|the help I needed|I was after)\b",
+    r"\bthanks,? that[' ]?s all\b",
+    r"\bthat[' ]?s (?:all|it),? thanks\b",
+    # "No more questions"
+    r"\bno (?:more|further|other) questions\b",
+    # "Call it a day", "let's wrap up"
+    r"\bcall it (?:a day|done|here)\b",
+    r"\blet[' ]?s (?:wrap|call) (?:up|it up|things up|it (?:done|a day))\b",
+    # Intent to apply independently — only with explicit "this/that/it" object
+    # and clause-final marker (avoids "let me try this on the data")
+    r"\b(?:I[' ]?ll|let me)\s+(?:go )?(?:try|run|test|apply|implement|practice|revisit|experiment with)\s+(?:this|that|it)(?:\s+(?:on my own|myself|now|out))?(?:\.|!|$)",
+)
+
+_GOODBYE_RE = re.compile("|".join(_GOODBYE_PATTERNS), re.IGNORECASE)
+
+
+def signaled_end_of_session(text: str) -> bool:
+    """Heuristic: did the student's reply signal session-end satisfaction?
+
+    Triggered by phrases the student persona uses to wind down — "I'm good
+    to stop here for now", "I'm done", "thanks, that's all", "no more
+    questions", "let me try this on my own". A trailing question mark
+    disqualifies the match (a student still asking is not actually done).
+
+    Conservative by design: false negatives are cheaper than false positives.
+    Returns False on empty input.
+    """
+    if not text or not text.strip():
+        return False
+    stripped = text.strip()
+    # Trailing question — student is still asking, not done.
+    if stripped.endswith("?"):
+        return False
+    return bool(_GOODBYE_RE.search(stripped))
+
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
