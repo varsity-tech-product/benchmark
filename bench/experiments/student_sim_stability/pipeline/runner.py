@@ -35,6 +35,7 @@ from experiments.student_sim_stability.core.config import (
     NEUTRAL_CONTROL_OPENING,
     OUTPUT_DIR,
     REPEATS,
+    STABILITY_TASK_OPENINGS,
     STUDENT_MODEL_SOURCE,
     STUDENT_MODELS,
     TASK_PERSONA_MAP,
@@ -55,8 +56,8 @@ from server.config.llm_config import (
 )
 from server.config.pricing import get_llm_cost_kwargs
 from server.core.student_sim import StudentSimulator
-from server.eval.judges.runtime.llm_client import EwanLLMClient
-from server.schemas import QuantTutorTask, StudentPersona
+from eval.judges.runtime.llm_client import EwanLLMClient
+from eval.contracts.schemas import QuantTutorTask, StudentPersona
 
 logger = logging.getLogger(__name__)
 
@@ -185,9 +186,9 @@ def run_single_trial(
     )
 
     if use_persona:
-        opening = (task.student_openings or {}).get(
-            persona_id, "Hi, I need help with this topic."
-        )
+        opening = STABILITY_TASK_OPENINGS.get(task.task_id, {}).get(
+            persona_id
+        ) or task.student_opening or "Hi, I need help with this topic."
         opening_source = FIXTURE_OPENING_SOURCE
     else:
         opening = NEUTRAL_CONTROL_OPENING

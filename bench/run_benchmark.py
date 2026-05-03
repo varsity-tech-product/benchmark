@@ -167,15 +167,15 @@ def _build_job_spec(task, persona, args, result_base_dir: Path):
     )
 
 
-def _build_jobs_for_tasks(tasks, persona_ids, args, result_base_dir: Path) -> list:
-    """Build JobSpec list for multiple tasks × personas."""
+def _build_jobs_for_tasks(tasks, persona_override, args, result_base_dir: Path) -> list:
+    """Build JobSpec list for multiple tasks. Each task has a single persona;
+    ``persona_override`` (str | None) replaces it when set."""
 
     jobs = []
     for task in tasks:
-        pids = persona_ids or task.persona_ids
-        for pid in pids:
-            persona = _load_persona(pid)
-            jobs.append(_build_job_spec(task, persona, args, result_base_dir))
+        pid = persona_override or task.persona_id
+        persona = _load_persona(pid)
+        jobs.append(_build_job_spec(task, persona, args, result_base_dir))
     return jobs
 
 
@@ -218,29 +218,6 @@ def _print_single_result(result):
     print(f"Quant Result:  {_fmt_score(result.quant_result_score)}")
     print(f"Quant Process: {_fmt_score(result.quant_process_score)}")
     print(f"Overall:       {_fmt_score(result.overall_score)}")
-
-    if result.tutor_scores:
-        print("\n--- Tutor Dimension Scores (7D, averaged) ---")
-        for dim, score in sorted(result.tutor_scores.items()):
-            if dim.startswith("_"):
-                continue
-            if isinstance(score, (int, float)):
-                print(f"  {dim}: {score:.4f}")
-            else:
-                print(f"  {dim}: {score}")
-
-    if result.tutor_scores_by_model:
-        print("\n--- Per-Model Tutor Scores ---")
-        for model_name, dim_scores in sorted(result.tutor_scores_by_model.items()):
-            clean = {
-                k: v
-                for k, v in dim_scores.items()
-                if not k.startswith("_") and isinstance(v, (int, float))
-            }
-            avg = sum(clean.values()) / len(clean) if clean else 0.0
-            print(f"  [{model_name}] avg={avg:.4f}")
-            for dim, score in sorted(clean.items()):
-                print(f"    {dim}: {score:.4f}")
 
     if result.process_metrics:
         print("\n--- Process Metrics (QP 5 Dimensions) ---")
@@ -758,7 +735,7 @@ def cmd_run(args):
     """Run the full benchmark (Layer 1 + Layer 2, or individually via --layer)."""
     from orchestrator.orchestrator import BenchmarkOrchestrator
     from orchestrator.schemas import BenchmarkReport
-    from server.eval.core.scoring import (
+    from eval.core.scoring import (
         compute_combined_benchmark_kpis,
         compute_task_score,
     )
@@ -850,27 +827,27 @@ def cmd_run(args):
             for task in tasks:
                 if task_filter and task.task_id not in task_filter:
                     continue
-                for persona_id in task.persona_ids:
-                    if persona_filter and persona_id not in persona_filter:
-                        continue
-                    persona = _load_persona(persona_id)
-                    for trial in range(args.trials):
-                        jobs.append(
-                            JobSpec(
-                                task=task,
-                                persona=persona,
-                                agent_type=getattr(args, "agent", "generic"),
-                                condition_name=getattr(args, "condition", "agent"),
-                                max_turns=args.max_turns,
-                                use_docker=args.docker,
-                                save_result=save_result,
-                                result_base_dir=result_base_dir,
-                                eval_model=getattr(args, "eval_model", None),
-                                simulator_model=getattr(args, "simulator_model", None),
-                                model_override=getattr(args, "model", None),
-                                trial_index=trial,
-                            )
+                persona_id = task.persona_id
+                if persona_filter and persona_id not in persona_filter:
+                    continue
+                persona = _load_persona(persona_id)
+                for trial in range(args.trials):
+                    jobs.append(
+                        JobSpec(
+                            task=task,
+                            persona=persona,
+                            agent_type=getattr(args, "agent", "generic"),
+                            condition_name=getattr(args, "condition", "agent"),
+                            max_turns=args.max_turns,
+                            use_docker=args.docker,
+                            save_result=save_result,
+                            result_base_dir=result_base_dir,
+                            eval_model=getattr(args, "eval_model", None),
+                            simulator_model=getattr(args, "simulator_model", None),
+                            model_override=getattr(args, "model", None),
+                            trial_index=trial,
                         )
+                    )
 
             print(f"  Running {len(jobs)} jobs with {workers} workers...")
             job_results = run_jobs_parallel(
@@ -900,7 +877,6 @@ def cmd_run(args):
             )
             report.results_by_task = l2_report.results_by_task
             report.total_tasks = l2_report.total_tasks
-            report.adaptiveness_score = l2_report.adaptiveness_score
             report.process_mastery_score = l2_report.process_mastery_score
             report.results_by_difficulty = l2_report.results_by_difficulty
             report.results_by_category = l2_report.results_by_category
@@ -916,7 +892,6 @@ def cmd_run(args):
         compute_task_score(
             r.quant_result_score,
             r.quant_process_score,
-            r.tutor_scores,
             category=r.category,
             requires_code=r.requires_code,
         )
@@ -933,19 +908,15 @@ def cmd_run(args):
 
     report.overall_agent_score = combined_kpis.get("overall_agent_score")
     report.quant_agent_index = combined_kpis.get("quant_agent_index")
-    report.tutoring_effectiveness_index = combined_kpis.get(
-        "tutoring_effectiveness_index"
-    )
     report.combined_result_subscore = combined_kpis.get("combined_result_subscore")
 
     # Compute KPIs that may not have been set in parallel path
     if workers > 1 and all_l2_scores:
-        from server.eval.core.scoring import compute_benchmark_kpis
+        from eval.core.scoring import compute_benchmark_kpis
 
         kpis = compute_benchmark_kpis(
             all_l2_scores, task_result_objects=all_result_objects
         )
-        report.adaptiveness_score = kpis.get("adaptiveness_score")
         report.process_mastery_score = kpis.get("process_mastery_score")
 
         import statistics as _stats
@@ -986,11 +957,6 @@ def cmd_run(args):
                 f"{_fmt_score(report.layer1_mean_score)} (weight=0.40)"
             )
     print(
-        f"Tutoring Effectiveness (TEI):    "
-        f"{_fmt_score(report.tutoring_effectiveness_index)}"
-    )
-    print(f"Adaptiveness Score (AS):         {_fmt_score(report.adaptiveness_score)}")
-    print(
         f"Process Mastery Score (PMS):      {_fmt_score(report.process_mastery_score)}"
     )
     if "layer1" in layers_evaluated and report.layer1_summary:
@@ -1024,13 +990,10 @@ def cmd_run_single(args):
     runonly = getattr(args, "runonly", False)
     evalonly = getattr(args, "evalonly", False)
 
-    # Determine personas
-    if args.persona:
-        persona_ids = [args.persona]
-        if not evalonly:
-            workers = 1
-    else:
-        persona_ids = task.persona_ids
+    # Determine persona (single per task; CLI override allowed)
+    persona_ids = [args.persona] if args.persona else [task.persona_id]
+    if args.persona and not evalonly:
+        workers = 1
 
     result_base_dir = _build_result_base_dir(args, "run-single")
 
@@ -1143,15 +1106,15 @@ def cmd_run_group(args):
         print(f"Group not found: {args.group}")
         sys.exit(1)
 
-    persona_ids = [args.persona] if args.persona else None
+    persona_override = args.persona
 
     result_base_dir = _build_result_base_dir(args, "run-group")
-    jobs = _build_jobs_for_tasks(tasks, persona_ids, args, result_base_dir)
+    jobs = _build_jobs_for_tasks(tasks, persona_override, args, result_base_dir)
 
     print(f"=== QuantTutorBench - Group: {args.group} ===")
     print(
         f"Tasks: {len(tasks)} | "
-        f"Personas: {len(persona_ids) if persona_ids else 'all'} each | "
+        f"Persona: {persona_override or 'task default'} | "
         f"Jobs: {len(jobs)} | Workers: {workers}"
     )
     if evalonly:
@@ -1186,17 +1149,17 @@ def cmd_run_layer2(args):
 
     workers = _validate_workers(args)
     tasks = _load_all_layer2_tasks()
-    persona_ids = [args.persona] if args.persona else None
+    persona_override = args.persona
 
     result_base_dir = _build_result_base_dir(args, "run-layer2")
-    jobs = _build_jobs_for_tasks(tasks, persona_ids, args, result_base_dir)
+    jobs = _build_jobs_for_tasks(tasks, persona_override, args, result_base_dir)
 
     runonly = getattr(args, "runonly", False)
     evalonly = getattr(args, "evalonly", False)
     print("=== QuantTutorBench - Layer 2 (All Tasks) ===")
     print(
         f"Tasks: {len(tasks)} | "
-        f"Personas: {len(persona_ids) if persona_ids else 'all'} each | "
+        f"Persona: {persona_override or 'task default'} | "
         f"Jobs: {len(jobs)} | Workers: {workers}"
     )
     if evalonly:
@@ -1228,7 +1191,7 @@ def cmd_run_layer2(args):
 def cmd_list_tasks(args):
     """List all available tasks."""
     tasks_dir = BENCH_ROOT / "tasks"
-    print(f"{'ID':<30} {'Layer':<8} {'Category':<20} {'Difficulty':<10} {'Personas'}")
+    print(f"{'ID':<30} {'Layer':<8} {'Category':<20} {'Difficulty':<10} {'Persona'}")
     print("-" * 95)
     for layer_dir in sorted(tasks_dir.iterdir()):
         if layer_dir.is_dir():
@@ -1238,7 +1201,7 @@ def cmd_list_tasks(args):
                     for task_file in sorted(category_dir.glob("*.json")):
                         with open(task_file) as f:
                             task = json.load(f)
-                        personas = ", ".join(task.get("persona_ids", []))
+                        personas = task.get("persona_id", "")
                         print(
                             f"{task['task_id']:<30} {layer_name:<8} {task['category']:<20} {task['difficulty']:<10} {personas}"
                         )
@@ -1375,20 +1338,11 @@ def cmd_test_e2e(args):
     # Test 5: Scoring pipeline
     print("[5/8] Testing scoring pipeline...")
     try:
-        from server.eval.core.scoring import compute_task_score
+        from eval.core.scoring import compute_task_score
 
         score = compute_task_score(
             quant_result_score=0.8,
             quant_process_score=0.6,
-            tutor_dimension_scores={
-                "D1": 0.7,
-                "D2": 0.8,
-                "D3": 0.6,
-                "D4": 0.9,
-                "D5": 0.7,
-                "D6": 0.5,
-                "D7": 0.8,
-            },
         )
         if 0 < score["overall_score"] <= 1:
             passed.append(f"Scoring: overall={score['overall_score']:.4f}")
@@ -1400,7 +1354,7 @@ def cmd_test_e2e(args):
     # Test 5b: Combined scoring pipeline (Layer 1 + Layer 2)
     print("[5b/8] Testing combined scoring pipeline...")
     try:
-        from server.eval.core.scoring import compute_combined_benchmark_kpis
+        from eval.core.scoring import compute_combined_benchmark_kpis
 
         combined = compute_combined_benchmark_kpis(
             layer2_task_results=[score],  # reuse 'score' from test 5
@@ -1585,9 +1539,9 @@ def _add_common_args(parser):
     )
     parser.add_argument(
         "--eval-mode",
-        choices=["full", "qr", "qp", "tutor"],
+        choices=["full", "qr", "qp"],
         default="full",
-        help="Evaluation scope: full (default), qr, qp, or tutor.",
+        help="Evaluation scope: full (default), qr, or qp.",
     )
     parser.add_argument(
         "--live",
@@ -1695,7 +1649,7 @@ def main():
     single_parser.add_argument(
         "--persona",
         default=None,
-        help="Persona ID (omit to run all personas in parallel)",
+        help="Persona ID (override the task's default persona)",
     )
     _add_common_args(single_parser)
 
@@ -1714,7 +1668,7 @@ def main():
     group_parser.add_argument(
         "--persona",
         default=None,
-        help="Single persona (omit for all)",
+        help="Persona ID (override the task's default persona)",
     )
     _add_common_args(group_parser)
 
@@ -1723,7 +1677,7 @@ def main():
     layer2_parser.add_argument(
         "--persona",
         default=None,
-        help="Single persona (omit for all)",
+        help="Persona ID (override the task's default persona)",
     )
     _add_common_args(layer2_parser)
 

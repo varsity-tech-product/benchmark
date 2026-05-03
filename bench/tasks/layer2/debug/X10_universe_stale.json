@@ -5,14 +5,8 @@
   "category": "debug",
   "task_type": "multi_turn",
   "description": "Guide a student to diagnose and fix survivorship bias and stale universe issues in a LEAN multi-symbol momentum strategy that subscribes all symbols statically without listing-date checks and uses end-of-period volume averages.",
-  "persona_ids": [
-    "developer_crossover",
-    "fullstack_practitioner"
-  ],
-  "student_openings": {
-    "fullstack_practitioner": "I'm debugging an issue: diagnose and fix survivorship bias and stale universe issues in a LEAN momentum strategy. I've narrowed it down but want a second pair of eyes on the root cause.",
-    "developer_crossover": "I'm looking at code for a LEAN multi-symbol momentum strategy, but the backtest results seem too good to be true. The code reads fine to me, but I'm not sure the financial logic is correct. What should it be doing?"
-  },
+  "persona_id": "developer_crossover",
+  "student_opening": "I'm looking at code for a LEAN multi-symbol momentum strategy, but the backtest results seem too good to be true. The code reads fine to me, but I'm not sure the financial logic is correct. What should it be doing?",
   "environment": {
     "data_files": [
       "universe.json"
@@ -58,7 +52,7 @@
       "analyze_lean_results"
     ],
     "quant_validation": {
-      "eval_script": "evaluation/test_scripts/debug/X10_universe_stale.py"
+      "eval_script": "tasks/test_scripts/debug/X10_universe_stale.py"
     },
     "termination_criteria": "The tutor has completed the following steps with computational evidence (not just verbal discussion): (1) Reviewed the student's LEAN C# code and identified the two look-ahead bias issues: static universe subscription without listing-date checks, and full-period volume averages instead of trailing. (2) Explained why these cause inflated backtest results, such as describing how trading symbols before their listing date or using future volume data produces unrealistic performance. (3) Showed corrected C# code with listing-date guards and trailing volume, and presented backtest results demonstrating more realistic performance after the fix, with specific numerical evidence such as reduced returns or Sharpe ratio. (4) Responded to the student's follow-up about survivorship bias or the fix with additional explanation or analysis beyond the initial demonstration. Once all four steps have been computationally demonstrated, the session is complete."
   },

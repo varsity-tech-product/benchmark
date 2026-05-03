@@ -45,6 +45,20 @@ def _wait_eval_done(state):
     raise AssertionError("evaluation did not finish")
 
 
+async def _complete_and_wait_for_auto_eval(app, client):
+    """Drive completion and block until the P0 auto-eval has settled.
+
+    Post-#126 P0 every terminal transition kicks off a server-internal
+    eval keyed ``auto:{session_id}``. Tests that want to drive operator
+    re-evaluation deterministically need the auto-eval to finish first
+    so the next ops_evaluate allocates a fresh ``score_n``.
+    """
+    sid = await _complete_session(client)
+    state = _get_state(app, sid)
+    _wait_eval_done(state)
+    return sid, state
+
+
 class TestPublicEvaluationBoundary:
     @pytest.mark.asyncio
     async def test_public_evaluate_route_absent_after_completion(self, client):
@@ -65,21 +79,23 @@ class TestPublicEvaluationBoundary:
 
 class TestOperatorEvaluation:
     @pytest.mark.asyncio
-    async def test_ops_evaluate_starts_score_run(self, app, client, mock_eval_pipeline):
-        sid = await _complete_session(client)
+    async def test_ops_evaluate_appends_score_run_after_auto_eval(
+        self, app, client, mock_eval_pipeline
+    ):
+        # Auto-eval (P0) takes score_1, operator gets score_2.
+        sid, state = await _complete_and_wait_for_auto_eval(app, client)
 
         resp = await client.post(f"/ops/session/{sid}/evaluate")
 
         assert resp.status_code == 200
         body = resp.json()
         assert body["status"] in ("running", "completed")
-        assert body["score_id"] == "score_1"
+        assert body["score_id"] == "score_2"
 
-        state = _get_state(app, sid)
         _wait_eval_done(state)
         with state._eval_lock:
             assert state._eval_status == "completed"
-            assert state._active_score_id == "score_1"
+            assert state._active_score_id == "score_2"
 
     @pytest.mark.asyncio
     async def test_ops_evaluate_denied_before_completion(self, client):
@@ -90,74 +106,65 @@ class TestOperatorEvaluation:
         assert resp.status_code == 409
 
     @pytest.mark.asyncio
-    async def test_ops_evaluate_appends_score_run(
+    async def test_ops_evaluate_appends_two_score_runs(
         self, app, client, mock_eval_pipeline
     ):
-        sid = await _complete_session(client)
-        state = _get_state(app, sid)
+        sid, state = await _complete_and_wait_for_auto_eval(app, client)
 
         first = await client.post(f"/ops/session/{sid}/evaluate")
-        assert first.json()["score_id"] == "score_1"
+        assert first.json()["score_id"] == "score_2"
         _wait_eval_done(state)
 
         second = await client.post(f"/ops/session/{sid}/evaluate")
         assert second.status_code == 200
-        assert second.json()["score_id"] == "score_2"
+        assert second.json()["score_id"] == "score_3"
 
 
 class TestOperatorEvalParameters:
     @pytest.mark.asyncio
     async def test_eval_mode_passed(self, app, client, mock_eval_pipeline):
-        sid = await _complete_session(client)
+        sid, state = await _complete_and_wait_for_auto_eval(app, client)
 
-        await client.post(f"/ops/session/{sid}/evaluate?eval_mode=tutor")
-        state = _get_state(app, sid)
+        await client.post(f"/ops/session/{sid}/evaluate?eval_mode=qp")
         _wait_eval_done(state)
 
-        assert state._eval_mode == "tutor"
-        assert mock_eval_pipeline.call_args.kwargs["eval_mode"] == "tutor"
+        assert state._eval_mode == "qp"
+        assert mock_eval_pipeline.call_args.kwargs["eval_mode"] == "qp"
 
     @pytest.mark.asyncio
-    async def test_tutor_dims_passed(self, app, client, mock_eval_pipeline):
-        sid = await _complete_session(client)
-
-        await client.post(f"/ops/session/{sid}/evaluate?tutor_dims=D3,D4")
-        state = _get_state(app, sid)
-        _wait_eval_done(state)
-
-        assert state._tutor_dims == ["D3", "D4"]
-        assert mock_eval_pipeline.call_args.kwargs["tutor_dims"] == ["D3", "D4"]
-
-    @pytest.mark.asyncio
-    async def test_default_eval_mode_tutor(self, app, client, mock_eval_pipeline):
-        sid = await _complete_session(client)
+    async def test_default_eval_mode_full(self, app, client, mock_eval_pipeline):
+        sid, state = await _complete_and_wait_for_auto_eval(app, client)
 
         await client.post(f"/ops/session/{sid}/evaluate")
-        state = _get_state(app, sid)
         _wait_eval_done(state)
 
-        assert mock_eval_pipeline.call_args.kwargs["eval_mode"] == "tutor"
+        assert mock_eval_pipeline.call_args.kwargs["eval_mode"] == "full"
 
 
 class TestGetScores:
     @pytest.mark.asyncio
-    async def test_public_scores_pending_before_eval(self, client):
+    async def test_public_scores_show_auto_eval_after_completion(
+        self, app, client
+    ):
+        # Post-#126 P0 the auto-eval is already in flight by the time the
+        # client sees the completion turn — so /scores never lingers in
+        # 'pending'. It transitions through 'running' to 'completed' or
+        # 'failed' with no client trigger.
         sid = await _complete_session(client)
 
         resp = await client.get(f"/session/{sid}/scores")
 
         assert resp.status_code == 200
-        assert resp.json()["status"] == "pending"
+        body = resp.json()
+        assert body["status"] in ("running", "completed", "failed")
+        assert body["score_id"] == "score_1"
 
     @pytest.mark.asyncio
     async def test_public_scores_completed_without_private_cost(
         self, app, client, mock_eval_pipeline
     ):
-        sid = await _complete_session(client)
-        state = _get_state(app, sid)
+        sid, state = await _complete_and_wait_for_auto_eval(app, client)
 
-        await client.post(f"/ops/session/{sid}/evaluate")
-        _wait_eval_done(state)
         resp = await client.get(f"/session/{sid}/scores")
 
         assert resp.status_code == 200
@@ -174,25 +181,21 @@ class TestGetScores:
     async def test_ops_scores_include_private_cost(
         self, app, client, mock_eval_pipeline
     ):
-        sid = await _complete_session(client)
-        state = _get_state(app, sid)
+        sid, state = await _complete_and_wait_for_auto_eval(app, client)
 
-        await client.post(f"/ops/session/{sid}/evaluate")
-        _wait_eval_done(state)
         resp = await client.get(f"/ops/session/{sid}/scores")
 
         assert resp.status_code == 200
         data = resp.json()
         assert data["status"] == "completed"
         assert data["score_id"] == "score_1"
-        assert data["cost"]["eval_cost_usd"] == 0.006
+        assert data["cost"]["eval_cost_usd"] == 0.003
 
     @pytest.mark.asyncio
     async def test_scores_history_after_multiple_evals(
         self, app, client, mock_eval_pipeline
     ):
-        sid = await _complete_session(client)
-        state = _get_state(app, sid)
+        sid, state = await _complete_and_wait_for_auto_eval(app, client)
 
         await client.post(f"/ops/session/{sid}/evaluate")
         _wait_eval_done(state)
@@ -204,7 +207,11 @@ class TestGetScores:
         assert resp.status_code == 200
         data = resp.json()
         assert data["status"] == "history"
-        assert [s["score_id"] for s in data["scores"]] == ["score_1", "score_2"]
+        assert [s["score_id"] for s in data["scores"]] == [
+            "score_1",
+            "score_2",
+            "score_3",
+        ]
         assert all("cost" not in s for s in data["scores"])
 
 

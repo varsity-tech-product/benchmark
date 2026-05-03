@@ -5,14 +5,8 @@
   "category": "implementation",
   "task_type": "multi_turn",
   "description": "Guide a student to implement a multi-alpha portfolio composition system using LEAN's Algorithm Framework. The student must create three independent AlphaModel classes (trend via SMA crossover, mean-reversion via RSI extremes, momentum via ROC), register them with AddAlpha(), compare InsightWeighting vs EqualWeighting portfolio construction models by running two backtests with different configurations, and analyze the results. On the standalone 12-col pipeline, the alpha models should manage symbol state from the subscribed symbols or from data.Keys and update indicators manually instead of relying on OnSecuritiesChanged auto-registration. This tests multi-model composition, explicit insight weighting, and systematic comparison.",
-  "persona_ids": [
-    "developer_crossover",
-    "fullstack_practitioner"
-  ],
-  "student_openings": {
-    "fullstack_practitioner": "I need to implement a multi-alpha portfolio composition system using LEAN's Algorithm Framework. I've done similar work in Python before — let's focus on getting the architecture and edge cases right.",
-    "developer_crossover": "I need to implement a multi-alpha portfolio composition system using LEAN's Algorithm Framework. I can handle the code, but I don't understand the financial logic behind it. What should this do and why?"
-  },
+  "persona_id": "developer_crossover",
+  "student_opening": "I need to implement a multi-alpha portfolio composition system using LEAN's Algorithm Framework. I can handle the code, but I don't understand the financial logic behind it. What should this do and why?",
   "environment": {
     "data_files": [
       "universe.json"
@@ -61,7 +55,7 @@
       "analyze_lean_results"
     ],
     "quant_validation": {
-      "eval_script": "evaluation/test_scripts/I08_multi_alpha.py"
+      "eval_script": "tasks/test_scripts/I08_multi_alpha.py"
     },
     "termination_criteria": "The tutor has completed the following steps with computational evidence (not just verbal discussion): (1) Showed C# code for multiple AlphaModel classes registered via AddAlpha, each with distinct signal logic. (2) Presented backtest results for at least one portfolio construction configuration with specific numerical values such as Sharpe ratio or total return. (3) Showed a comparison of results across different portfolio construction models or weight configurations with specific numbers. (4) Responded to the student's follow-up about the implementation or results with additional explanation, code refinement, or analysis beyond the initial demonstration. Once all four steps have been computationally demonstrated, the session is complete."
   },

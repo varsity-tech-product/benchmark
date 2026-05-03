@@ -20,7 +20,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from server.tool_filters import NON_SUBSTANTIVE_TOOLS
+from eval.tool_filters import NON_SUBSTANTIVE_TOOLS
 
 logger = logging.getLogger(__name__)
 

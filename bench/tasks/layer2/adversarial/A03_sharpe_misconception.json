@@ -5,18 +5,8 @@
   "category": "adversarial",
   "task_type": "multi_turn",
   "description": "The agent identifies and corrects a student's misconception about an unrealistically high Sharpe ratio obtained through data mining. The student tested 200 parameter combinations and found a Sharpe of 5.0, believing the strategy is ready for live trading. The agent flags the unrealistic metric, explains overfitting and data mining bias, recommends out-of-sample validation, and demonstrates with data why the result is misleading.",
-  "persona_ids": [
-    "double_novice",
-    "finance_veteran",
-    "developer_crossover",
-    "fullstack_practitioner"
-  ],
-  "student_openings": {
-    "fullstack_practitioner": "My parameter sweep over 200 SMA configurations found one with Sharpe 5.0 on AAPL. Statistical significance looks solid. I'm ready to deploy — any final checks?",
-    "finance_veteran": "After testing 200 parameter combinations, I found an SMA crossover with Sharpe 5.0. That's extraordinary for a daily strategy — should I size up and run it live?",
-    "developer_crossover": "I ran a grid search over 200 SMA parameters and the best one has a Sharpe ratio of 5.0. My code is correct — is this a good result?",
-    "double_novice": "I tested 200 different settings for my trading strategy and one of them has something called a Sharpe ratio of 5.0. My friend says that's really good. Is it?"
-  },
+  "persona_id": "double_novice",
+  "student_opening": "I tested 200 different settings for my trading strategy and one of them has something called a Sharpe ratio of 5.0. My friend says that's really good. Is it?",
   "environment": {
     "data_files": [
       "AAPL_2018_2024.csv",
@@ -58,7 +48,7 @@
       "plot_chart"
     ],
     "quant_validation": {
-      "eval_script": "evaluation/test_scripts/adversarial/A03_sharpe_misconception.py"
+      "eval_script": "tasks/test_scripts/adversarial/A03_sharpe_misconception.py"
     }
   },
   "requires_code": true,

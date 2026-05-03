@@ -25,7 +25,7 @@ def _make_log(name, result_text, args=None):
 
 
 def test_lean_code_eval_success():
-    from evaluation.code_eval import evaluate_code_combined
+    from eval.programmatic.code_eval import evaluate_code_combined
 
     logs = [
         _make_log(
@@ -65,7 +65,7 @@ def test_lean_code_eval_success():
 
 
 def test_lean_code_eval_all_compile_errors():
-    from evaluation.code_eval import evaluate_code_combined
+    from eval.programmatic.code_eval import evaluate_code_combined
 
     logs = [
         _make_log("run_lean_backtest", "=== Trial 1 Result ===\nStatus: compile_error"),
@@ -95,7 +95,7 @@ def test_lean_code_eval_all_compile_errors():
 
 
 def test_lean_code_eval_empty_trades():
-    from evaluation.code_eval import evaluate_code_combined
+    from eval.programmatic.code_eval import evaluate_code_combined
 
     logs = [
         _make_log(
@@ -126,7 +126,7 @@ def test_lean_code_eval_empty_trades():
 
 
 def test_lean_code_eval_no_trials():
-    from evaluation.code_eval import evaluate_code_combined
+    from eval.programmatic.code_eval import evaluate_code_combined
 
     logs = [
         _make_log("shell_exec", "echo hello"),
@@ -152,7 +152,7 @@ def test_lean_code_eval_no_trials():
 
 
 def test_python_task_unchanged():
-    from evaluation.code_eval import evaluate_code_combined
+    from eval.programmatic.code_eval import evaluate_code_combined
 
     logs = []  # No tool logs, no code
 
@@ -171,46 +171,10 @@ def test_python_task_unchanged():
     print(f"✓ Python regression: applicable={result['applicable']}")
 
 
-# ================================================================
-# Test 6: Debug judge guideline
-# ================================================================
-
-
-def test_debug_judge_guideline():
-    from evaluation.deepeval_metrics.result_judge import _build_result_judge_prompt
-
-    prompt_debug = _build_result_judge_prompt(
-        task_description="Fix alpha conflict bug",
-        category="debug",
-        agent_key_outputs="Trades: 1484",
-        agent_workspace_files=["Algorithm.cs"],
-        agent_summary="Fixed the PCM.",
-        reference=None,
-    )
-
-    prompt_strategy = _build_result_judge_prompt(
-        task_description="Research MA crossover",
-        category="strategy",
-        agent_key_outputs="Sharpe: 1.2",
-        agent_workspace_files=["results.csv"],
-        agent_summary="Computed metrics.",
-        reference=None,
-    )
-
-    assert "DEBUG TASKS" in prompt_debug, "Debug guideline should be in debug prompt"
-    assert "bug was resolved, not whether the strategy is profitable" in prompt_debug
-    assert (
-        "DEBUG TASKS" not in prompt_strategy
-    ), "Debug guideline should NOT be in strategy prompt"
-
-    print("✓ Debug judge guideline injected for debug category only")
-
-
 if __name__ == "__main__":
     test_lean_code_eval_success()
     test_lean_code_eval_all_compile_errors()
     test_lean_code_eval_empty_trades()
     test_lean_code_eval_no_trials()
     test_python_task_unchanged()
-    test_debug_judge_guideline()
     print("\nAll tests passed.")

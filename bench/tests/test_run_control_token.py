@@ -29,7 +29,7 @@ def _write_task(root: Path) -> None:
                 "category": "data",
                 "difficulty": "easy",
                 "description": "d",
-                "persona_ids": ["p"],
+                "persona_id": "p",
                 "max_turns": 4,
             }
         ),
@@ -161,6 +161,7 @@ class ControlTokenTests(unittest.TestCase):
             self.assertEqual(body["runs"][0]["turn"], 1)
             self.assertEqual(len(body["runs"][0]["conversation"]), 60)
             self.assertEqual(body["runs"][0]["conversation"][0]["content"], "message 0")
+            self.assertEqual(body["runs"][0]["conversation"][-1]["content"], "message 59")
             self.assertEqual(
                 body["runs"][0]["recent_tool_logs"][0]["name"],
                 "run_lean_backtest",

@@ -76,7 +76,7 @@ def _session_random_seed(
     return _stable_int_seed(task_id, session_id)
 
 
-def _resolve_persona_pin(task_id: str, persona_ids: list[str]) -> Optional[str]:
+def _resolve_persona_pin(task_id: str) -> Optional[str]:
     """Return an internal-only pinned persona override, if configured."""
     raw_json = os.environ.get("QTB_TEST_PERSONA_PIN_JSON", "").strip()
     if raw_json:
@@ -88,28 +88,10 @@ def _resolve_persona_pin(task_id: str, persona_ids: list[str]) -> Optional[str]:
             if isinstance(mapping, dict):
                 desired = mapping.get(task_id) or mapping.get("*")
                 if desired:
-                    desired = str(desired)
-                    if desired in persona_ids:
-                        return desired
-                    logger.warning(
-                        "Ignoring persona pin '%s' for task %s; valid options: %s",
-                        desired,
-                        task_id,
-                        persona_ids,
-                    )
+                    return str(desired)
 
     desired = os.environ.get("QTB_TEST_PERSONA_PIN", "").strip()
-    if not desired:
-        return None
-    if desired in persona_ids:
-        return desired
-    logger.warning(
-        "Ignoring persona pin '%s' for task %s; valid options: %s",
-        desired,
-        task_id,
-        persona_ids,
-    )
-    return None
+    return desired or None
 
 
 def _task_is_lean(task) -> bool:
@@ -233,7 +215,6 @@ class SessionState:
 
         # Evaluation parameters (set before internal evaluation if non-default)
         self._eval_mode: str = "full"
-        self._tutor_dims: Optional[list[str]] = None
         self._eval_idempotency_key: Optional[str] = None
 
     # ------------------------------------------------------------------
@@ -310,7 +291,7 @@ class SessionState:
 
         # Check if evaluation was already run under the score_n store.
         try:
-            from server.storage.score_store import get_scores_payload
+            from eval.storage.score_store import get_scores_payload
 
             payload = get_scores_payload(result_dir)
             if payload.get("status") == "completed":
@@ -399,12 +380,9 @@ class SessionState:
         from server.core.registry import populate_proxy_for_task
         from server.core.session import TutoringSession
         from server.core.staging import create_staged_dirs, create_staged_sample_code
-        from server.core.student_sim import StudentSimulator
+        from server.core.student_sim import StudentSimulator, require_student_model
         from server.core.tc_checker import TCChecker, parse_tc_items
         from server.data_manager import ensure_data
-        from server.eval.judges.runtime.model_resolver import (
-            require_student_model,
-        )
 
         self._closed = False
 
@@ -420,23 +398,15 @@ class SessionState:
                 task.ground_truth.convenient_tools if task.ground_truth else ()
             )
 
-            if not task.persona_ids:
+            if not task.persona_id:
                 return {
                     "accepted": False,
-                    "error": f"Task {task_id} has no persona_ids",
+                    "error": f"Task {task_id} has no persona_id",
                 }
 
             session_seed = _session_random_seed(task_id, self.session_id, task.seed)
             selected_persona_id = persona_id.strip() if persona_id else None
             if selected_persona_id:
-                if selected_persona_id not in task.persona_ids:
-                    return {
-                        "accepted": False,
-                        "error": (
-                            f"Unsupported persona_id '{selected_persona_id}' for task {task_id}. "
-                            f"Valid persona_ids: {task.persona_ids}"
-                        ),
-                    }
                 logger.info(
                     "Session %s using explicitly requested persona=%s for task=%s",
                     self.session_id,
@@ -444,11 +414,9 @@ class SessionState:
                     task_id,
                 )
             else:
-                selected_persona_id = _resolve_persona_pin(task_id, task.persona_ids)
+                selected_persona_id = _resolve_persona_pin(task_id)
             if selected_persona_id is None:
-                selected_persona_id = random.Random(session_seed).choice(
-                    task.persona_ids
-                )
+                selected_persona_id = task.persona_id
             elif not persona_id:
                 logger.info(
                     "Session %s using internally pinned persona=%s for task=%s",
@@ -576,7 +544,16 @@ class SessionState:
                 model=resolved_sim_model,
             )
 
-            tc_checker = TCChecker(tc_items) if tc_items else None
+            required_tools = (
+                list(task.ground_truth.expected_mcp_tools)
+                if task.ground_truth and task.ground_truth.expected_mcp_tools
+                else []
+            )
+            tc_checker = (
+                TCChecker(tc_items or [], required_tools=required_tools)
+                if (tc_items or required_tools)
+                else None
+            )
 
             effective_timeout = task.timeout_minutes
             deadline = None
@@ -720,6 +697,7 @@ class SessionState:
                     self.session_id,
                     data.get("reason", "unknown"),
                 )
+            self._trigger_auto_eval()
             # Notify Run layer
             if self._on_completed:
                 try:
@@ -740,12 +718,57 @@ class SessionState:
     # Internal server-side evaluation trigger
     # ------------------------------------------------------------------
 
-    def request_evaluation(self) -> dict:
+    def _trigger_auto_eval(self) -> None:
+        """Enqueue a server-internal eval after a terminal transition.
+
+        Idempotent on the in-memory ``_eval_status`` guard and on the
+        ``auto:{session_id}`` key in the score store, so duplicate triggers
+        (e.g. an idle-sweep racing with handle_send_message) collapse onto
+        the same score record. Called by the public REST completion paths;
+        operators can still run additional evals via ``ops_evaluate`` with
+        a different idempotency key.
+        """
+        if self.phase != SessionPhase.COMPLETED or not self._result_dir:
+            return
+        with self._eval_lock:
+            if self._eval_status != "pending":
+                return
+        try:
+            # Pass auto params explicitly so a concurrent ops_evaluate
+            # mutation of _eval_mode / _eval_idempotency_key / eval_model
+            # cannot leak into score_1.
+            result = self.request_evaluation(
+                eval_mode="full",
+                eval_model=self.eval_model,
+                idempotency_key=f"auto:{self.session_id}",
+            )
+        except Exception as exc:
+            logger.warning(
+                "[auto-eval:%s] enqueue failed: %s", self.session_id[:8], exc
+            )
+            return
+        logger.info(
+            "[auto-eval:%s] status=%s score_id=%s",
+            self.session_id[:8],
+            result.get("status"),
+            result.get("score_id"),
+        )
+
+    def request_evaluation(
+        self,
+        *,
+        eval_mode: str | None = None,
+        eval_model: str | None = None,
+        idempotency_key: str | None = None,
+    ) -> dict:
         """Start an internal evaluation run for a completed result bundle.
 
         Each non-concurrent call appends a new score_n evaluation run.
         Concurrent calls return the active running score instead of starting
-        a second run.
+        a second run. When ``eval_mode`` / ``eval_model`` / ``idempotency_key``
+        are passed explicitly the call ignores instance-state defaults — used
+        by ``_trigger_auto_eval`` so its parameters cannot be perturbed by a
+        racing operator request that mutated the instance fields.
         """
         if self._closed:
             return {
@@ -769,26 +792,31 @@ class SessionState:
                     }
                 )
 
-            from server.eval.contracts.request import parse_eval_request
-            from server.storage.score_store import allocate_score_run
+            from eval.contracts.request import parse_eval_request
+            from eval.storage.score_store import allocate_score_run
 
             request = parse_eval_request(
                 {
                     "session_id": self.session_id,
-                    "eval_mode": self._eval_mode,
-                    "tutor_dims": self._tutor_dims,
-                    "eval_model": self.eval_model,
-                    "idempotency_key": self._eval_idempotency_key,
+                    "eval_mode": (
+                        eval_mode if eval_mode is not None else self._eval_mode
+                    ),
+                    "eval_model": (
+                        eval_model if eval_model is not None else self.eval_model
+                    ),
+                    "idempotency_key": (
+                        idempotency_key
+                        if idempotency_key is not None
+                        else self._eval_idempotency_key
+                    ),
                 }
             )
             self._eval_mode = request.eval_mode
-            self._tutor_dims = request.tutor_dims
             self.eval_model = request.eval_model or self.eval_model
             run, created = allocate_score_run(
                 self._result_dir,
                 eval_mode=request.eval_mode,
                 eval_model=request.eval_model,
-                tutor_dims=request.tutor_dims,
                 idempotency_key=request.idempotency_key,
             )
             self._active_score_id = run.score_id
@@ -1199,7 +1227,6 @@ class SessionState:
                 bench_root=str(self.bench_root),
                 eval_model=self.eval_model,
                 eval_mode=self._eval_mode,
-                tutor_dims=self._tutor_dims,
                 score_id=score_id,
             )
 
@@ -1231,7 +1258,7 @@ class SessionState:
                 self._eval_status = "failed"
             if self._result_dir:
                 try:
-                    from server.storage.score_store import update_score_run
+                    from eval.storage.score_store import update_score_run
 
                     update_score_run(
                         self._result_dir,
@@ -1268,7 +1295,7 @@ class SessionState:
         ``evaluations/score_n``.
         """
         if self._result_dir:
-            from server.storage.score_store import get_scores_payload
+            from eval.storage.score_store import get_scores_payload
 
             return get_scores_payload(
                 self._result_dir,
@@ -1283,7 +1310,7 @@ class SessionState:
         """Read all score_n entries from evaluations/index.json."""
         if not self._result_dir:
             return {"session_id": self.session_id, "scores": [], "evaluations": []}
-        from server.storage.score_store import get_scores_payload
+        from eval.storage.score_store import get_scores_payload
 
         payload = get_scores_payload(self._result_dir, history=True)
         payload["session_id"] = self.session_id
@@ -1382,7 +1409,7 @@ class SessionState:
 
     def _load_task(self, task_id: str):
         """Load task JSON by ID."""
-        from server.schemas import QuantTutorTask
+        from eval.contracts.schemas import QuantTutorTask
 
         tasks_dir = self.bench_root / "tasks"
         for json_path in tasks_dir.rglob(f"{task_id}.json"):
@@ -1391,7 +1418,7 @@ class SessionState:
 
     def _load_persona(self, persona_id: str):
         """Load persona JSON by ID."""
-        from server.schemas import StudentPersona
+        from eval.contracts.schemas import StudentPersona
 
         personas_dir = self.bench_root / "personas"
         for json_path in personas_dir.rglob(f"{persona_id}.json"):

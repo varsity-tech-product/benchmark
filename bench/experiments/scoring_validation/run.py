@@ -398,7 +398,7 @@ def _aggregate_scores(
 
 
 def _load_task_and_persona(task_id: str, persona_id: str):
-    from server.eval.core.coordinator import load_persona_by_id, load_task_by_id
+    from eval.core.coordinator import load_persona_by_id, load_task_by_id
 
     return load_task_by_id(BENCH_ROOT, task_id), load_persona_by_id(
         BENCH_ROOT, persona_id
@@ -406,7 +406,7 @@ def _load_task_and_persona(task_id: str, persona_id: str):
 
 
 def _active_dims(category: str, requires_code: bool) -> list[str]:
-    from server.eval.judges.tutor_6d import get_dimension_weight
+    from eval.judges.tutor_6d import get_dimension_weight
 
     return [
         dim
@@ -418,10 +418,10 @@ def _active_dims(category: str, requires_code: bool) -> list[str]:
 def _dimension_contexts(
     session: dict, score_lookup: dict[tuple[str, str], dict]
 ) -> list[dict]:
-    from server.eval.core.coordinator import coerce_tool_logs
-    from server.eval.inputs.context_builder import build_tutor_context
-    from server.eval.inputs.enrichment import enrich_conversation_with_tools
-    from server.eval.inputs.rubric_builder import (
+    from eval.core.coordinator import coerce_tool_logs
+    from eval.inputs.context_builder import build_tutor_context
+    from eval.inputs.enrichment import enrich_conversation_with_tools
+    from eval.inputs.rubric_builder import (
         build_rubric_text,
         get_max_score,
         load_6d_rubric,

@@ -16,7 +16,6 @@
   };
 
   var POLL_MS = 2000;
-  var LIVE_STATUSES = {waiting: true, claimed: true, active: true};
 
   var _root = null;
   var _pollTimer = null;
@@ -308,11 +307,21 @@
       );
       return;
     }
-    container.insertAdjacentHTML('beforeend', fullMessageHtml(msg));
+    container.insertAdjacentHTML('beforeend', messageHtml(msg));
+  }
+
+  function messageHtml(msg) {
+    var roleClass = normalizedRole(msg && msg.role);
+    var role = roleLabel(msg && msg.role, roleClass);
+    return '' +
+      '<div class="flow-message flow-message-' + escapeHtml(roleClass) + '">' +
+        '<strong>' + escapeHtml(role) + '</strong>' +
+        '<div class="flow-message-body">' + renderMessageContent(msg) + '</div>' +
+      '</div>';
   }
 
   function conversationNodes(container) {
-    return Array.prototype.slice.call(container.querySelectorAll('.msg, .flow-full-message'));
+    return Array.prototype.slice.call(container.querySelectorAll('.msg, .flow-message'));
   }
 
   function removeConversationTail(nodes, startIndex) {
@@ -362,6 +371,58 @@
     }
   }
 
+  function renderMessageContent(msg) {
+    var text = messageText(msg);
+    return escapeHtml(text).replace(/\n/g, '<br>');
+  }
+
+  function messageText(msg) {
+    if (!msg) return '';
+
+    if (Array.isArray(msg.content_blocks)) {
+      var blockText = msg.content_blocks.map(contentBlockText).filter(Boolean);
+      if (blockText.length) return blockText.join('\n\n');
+    }
+
+    var content = msg.content != null ? msg.content : msg.message;
+    if (Array.isArray(content)) {
+      return content.map(contentBlockText).filter(Boolean).join('\n\n');
+    }
+    if (content && typeof content === 'object') {
+      return JSON.stringify(content, null, 2);
+    }
+    return String(content == null ? '' : content);
+  }
+
+  function contentBlockText(block) {
+    if (!block) return '';
+    if (typeof block === 'string') return block;
+    if (typeof block !== 'object') return '';
+    if (block.type === 'text') return block.text || '';
+    if (block.text) return block.text;
+    if (block.type === 'tool_use' && block.name === 'send_message' && block.input) {
+      return block.input.text || '';
+    }
+    return '';
+  }
+
+  function normalizedRole(role) {
+    return (role === 'user' || role === 'student') ? 'student' : 'tutor';
+  }
+
+  function roleLabel(role, roleClass) {
+    if (roleClass === 'student') return 'Student';
+    if (role === 'assistant' || role === 'tutor' || !role) return 'Tutor';
+    return titleCase(role);
+  }
+
+  function domainToolLogs(logs) {
+    return (logs || []).filter(function (log) {
+      var name = String((log && (log.name || log.tool_name)) || '');
+      return name !== 'send_message';
+    });
+  }
+
   function toolListHtml(logs) {
     return '<div class="flow-tool-list">' + logs.map(function (log) {
       var ok = log.success === false ? ' err' : ' ok';
@@ -375,23 +436,6 @@
           '<div class="flow-tool-meta">' + escapeHtml(formatTime(log.timestamp)) + '</div>' +
         '</div>';
     }).join('') + '</div>';
-  }
-
-  function fullMessageHtml(msg) {
-    var role = (msg.role === 'user' || msg.role === 'student') ? 'student' : 'tutor';
-    var label = role === 'student' ? 'Student' : 'Tutor';
-    return '' +
-      '<div class="flow-full-message ' + role + '">' +
-        '<div class="flow-full-message-label">' + escapeHtml(label) + '</div>' +
-        '<div class="flow-full-message-body">' + escapeHtml(msg.content || msg.message || '') + '</div>' +
-      '</div>';
-  }
-
-  function domainToolLogs(logs) {
-    return (logs || []).filter(function (log) {
-      var name = String((log && (log.name || log.tool_name)) || '');
-      return name !== 'send_message';
-    });
   }
 
   function emptyConversationText(run) {

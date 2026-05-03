@@ -9,6 +9,7 @@ import pytest
 import pytest_asyncio
 
 from tests.helpers import (
+    DEFAULT_PERSONA_ID,
     DEFAULT_TASK_ID,
     DEFAULT_TASK_LABEL,
     create_run,
@@ -178,6 +179,149 @@ class TestSessionStatus:
         # what distinguishes a DELETE from a normal finish.
         assert run_state["termination_reason"] == "agent_abandoned"
         assert run_state["session_status"] in ("completed", "failed")
+
+    @pytest.mark.asyncio
+    async def test_mcp_disconnect_persists_review_bundle(
+        self, client, app, bench_root, monkeypatch
+    ):
+        """MCP stream disconnect should leave a reviewable partial bundle."""
+        import json
+
+        import anyio
+
+        from server.run.models import RunStatus
+
+        run_id, token = await create_run(client, task=DEFAULT_TASK_LABEL)
+        manager = app._manager
+        session_ready = anyio.Event()
+
+        class FakeTransport:
+            def __init__(self, *args, **kwargs):
+                self.session_id = kwargs.get("mcp_session_id")
+
+            def connect(self):
+                return self
+
+            async def __aenter__(self):
+                return object(), object()
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return False
+
+            async def handle_request(self, scope, receive, send):
+                await session_ready.wait()
+                await send(
+                    {"type": "http.response.start", "status": 200, "headers": []}
+                )
+                await receive()
+                await receive()
+                await send(
+                    {
+                        "type": "http.response.body",
+                        "body": b"",
+                        "more_body": False,
+                    }
+                )
+
+        class FakeMcpServer:
+            def __init__(self, state):
+                self._state = state
+
+            def create_initialization_options(self):
+                return {}
+
+            async def run(self, read_stream, write_stream, options):
+                registered = self._state.register(
+                    self._state._run_task_id or DEFAULT_TASK_ID,
+                    DEFAULT_PERSONA_ID,
+                )
+                assert "error" not in registered, registered
+                started = self._state.start()
+                assert "error" not in started, started
+                reply = json.loads(
+                    self._state.handle_send_message(
+                        "some conversation before MCP disconnect"
+                    )
+                )
+                assert reply["status"] == "active", reply
+                session_ready.set()
+                await anyio.sleep_forever()
+
+        monkeypatch.setattr(
+            "server.api.http_app.StreamableHTTPServerTransport", FakeTransport
+        )
+        monkeypatch.setattr(
+            manager,
+            "_create_mcp_server",
+            lambda state: FakeMcpServer(state),
+        )
+
+        messages = []
+
+        received = 0
+
+        async def receive():
+            nonlocal received
+            received += 1
+            if received == 1:
+                return {"type": "http.request", "body": b"", "more_body": False}
+            return {"type": "http.disconnect"}
+
+        async def send(message):
+            messages.append(message)
+
+        scope = {
+            "type": "http",
+            "http_version": "1.1",
+            "method": "POST",
+            "scheme": "http",
+            "path": "/mcp",
+            "raw_path": b"/mcp",
+            "root_path": "",
+            "query_string": b"",
+            "headers": [(b"authorization", f"Bearer {token}".encode("utf-8"))],
+            "client": ("testclient", 50000),
+            "server": ("testserver", 80),
+        }
+
+        async with anyio.create_task_group() as task_group:
+            manager._task_group = task_group
+            try:
+                await manager.handle_mcp_request(scope, receive, send)
+                for _ in range(50):
+                    run = manager._run_service.get_run(run_id)
+                    if run and run.session_id and manager.find_archived_result_dir(
+                        run.session_id
+                    ):
+                        break
+                    await anyio.sleep(0.01)
+            finally:
+                task_group.cancel_scope.cancel()
+                manager._task_group = None
+
+        assert any(
+            message.get("type") == "http.response.start"
+            and message.get("status") == 200
+            for message in messages
+        )
+        run = manager._run_service.get_run(run_id)
+        assert run is not None
+        assert run.session_id
+        assert run.status == RunStatus.FAILED
+        assert run.error == "Client disconnected"
+
+        task_root = bench_root / "results" / "server" / DEFAULT_TASK_ID
+        matches = list(task_root.rglob(f"*_{run.session_id[:12]}"))
+        assert matches, f"bundle was not persisted under {task_root}"
+
+        bundle = matches[0]
+        assert (bundle / ".session_id").read_text(encoding="utf-8") == run.session_id
+        run_state = json.loads((bundle / "run_state.json").read_text())
+        assert run_state["termination_reason"] == "agent_abandoned"
+
+        review_resp = await client.get(f"/ui/review/bundles/{run.session_id}")
+        assert review_resp.status_code == 200, review_resp.text
+        assert review_resp.json()["bundle_id"] == run.session_id
 
     @pytest.mark.asyncio
     async def test_list_sessions(self, client):

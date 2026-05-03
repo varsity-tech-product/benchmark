@@ -51,7 +51,7 @@ from experiments.student_sim_stability.pipeline._render_common import (
 from experiments.student_sim_stability.pipeline._render_common import (
     truncate as _truncate,
 )
-from server.schemas import QuantTutorTask, StudentPersona
+from eval.contracts.schemas import QuantTutorTask, StudentPersona
 
 _D1_PROMPT = rubric_prompt_template("S1")
 _D2_PROMPT = rubric_prompt_template("S3")

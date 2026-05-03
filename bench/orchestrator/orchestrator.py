@@ -30,7 +30,7 @@ from config.prompt_config import (
     build_user_description,
 )
 from mcp_servers.registry import create_proxy_for_task, register_session_tools
-from server.eval.core.scoring import compute_benchmark_kpis, compute_task_score
+from eval.core.scoring import compute_benchmark_kpis, compute_task_score
 
 from orchestrator.agent_adapters.base_adapter import BaseAgentAdapter
 from orchestrator.container_manager import ContainerManager
@@ -683,30 +683,30 @@ class BenchmarkOrchestrator:
             if task_filter and task.task_id not in task_filter:
                 continue
 
-            for persona_id in task.persona_ids:
-                if persona_filter and persona_id not in persona_filter:
-                    continue
+            persona_id = task.persona_id
+            if persona_filter and persona_id not in persona_filter:
+                continue
 
-                try:
-                    persona = self.load_persona(persona_id)
-                except FileNotFoundError:
-                    continue
+            try:
+                persona = self.load_persona(persona_id)
+            except FileNotFoundError:
+                continue
 
-                for trial in range(num_trials):
-                    result_key = f"{task.task_id}_{persona_id}_t{trial}"
-                    print(f"  Running: {result_key}...")
+            for trial in range(num_trials):
+                result_key = f"{task.task_id}_{persona_id}_t{trial}"
+                print(f"  Running: {result_key}...")
 
-                    result = self.run_single_task(
-                        task=task,
-                        persona=persona,
-                        agent=agent,
-                        run_index=trial,
-                        max_turns=max_turns_override or task.max_turns,
-                        tools_enabled=tools_enabled,
-                    )
+                result = self.run_single_task(
+                    task=task,
+                    persona=persona,
+                    agent=agent,
+                    run_index=trial,
+                    max_turns=max_turns_override or task.max_turns,
+                    tools_enabled=tools_enabled,
+                )
 
-                    report.results_by_task[result_key] = result
-                    report.total_tasks += 1
+                report.results_by_task[result_key] = result
+                report.total_tasks += 1
 
         # Compute KPIs
         all_result_objects = list(report.results_by_task.values())
@@ -714,7 +714,6 @@ class BenchmarkOrchestrator:
             compute_task_score(
                 r.quant_result_score,
                 r.quant_process_score,
-                r.tutor_scores,
                 category=r.category,
                 requires_code=r.requires_code,
             )
@@ -727,10 +726,6 @@ class BenchmarkOrchestrator:
             )
             report.overall_agent_score = kpis.get("overall_agent_score", 0.0)
             report.quant_agent_index = kpis.get("quant_agent_index", 0.0)
-            report.tutoring_effectiveness_index = kpis.get(
-                "tutoring_effectiveness_index", 0.0
-            )
-            report.adaptiveness_score = kpis.get("adaptiveness_score", 0.0)
             report.process_mastery_score = kpis.get("process_mastery_score", 0.0)
 
             # Populate results_by_difficulty and results_by_category (§6.4)
@@ -766,17 +761,16 @@ class BenchmarkOrchestrator:
         """Run post-hoc evaluation through the v6 coordinator.
 
         This legacy method is intentionally only a thin adapter now. The
-        coordinator owns QR/QP/Tutor isolation, missing-score semantics, and
-        result-judge/tutor/process execution.
+        coordinator owns QR/QP isolation, missing-score semantics, and
+        result-judge/process execution.
         """
         mode = {
             "qr_only": "qr",
             "qp_only": "qp",
-            "tutor_only": "tutor",
         }.get(eval_mode, eval_mode)
 
         print(f"  Eval mode: {mode}")
-        from server.eval.core.coordinator import evaluate_tracks
+        from eval.core.coordinator import evaluate_tracks
 
         return evaluate_tracks(
             task=task,

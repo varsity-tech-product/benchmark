@@ -688,7 +688,7 @@ def build_scenario(
     Combines task description with the persona-specific opening message
     and learning goals derived from required_capabilities.
     """
-    opening = task.student_openings.get(persona_id, "")
+    opening = task.student_opening
     parts = [
         f"Tutoring scenario: {task.description}",
         "",

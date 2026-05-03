@@ -3,19 +3,19 @@ import threading
 import time
 from types import SimpleNamespace
 
-from server.eval.contracts.output import TrackResult
-from server.eval.contracts.request import EvalRequest
-from server.eval.core.coordinator import EvalCoordinator
-from server.eval.judge_reliability import build_judge_reliability_metadata
-from server.storage.score_store import allocate_score_run, get_scores_payload
+from eval.contracts.output import TrackResult
+from eval.contracts.request import EvalRequest
+from eval.core.coordinator import EvalCoordinator
+from eval.judge_reliability import build_judge_reliability_metadata
+from eval.storage.score_store import allocate_score_run, get_scores_payload
 
 
 def test_eval_package_uses_canonical_module_paths():
-    from server.eval.contracts.request import EvalRequest as CanonicalEvalRequest
-    from server.eval.core.coordinator import EvalCoordinator as CanonicalCoordinator
-    from server.eval.judges.process_metrics import evaluate_all_process_metrics
-    from server.eval.programmatic.code_process import _is_code_exec
-    from server.eval.tracks.qr import evaluate as evaluate_qr
+    from eval.contracts.request import EvalRequest as CanonicalEvalRequest
+    from eval.core.coordinator import EvalCoordinator as CanonicalCoordinator
+    from eval.judges.process_metrics import evaluate_all_process_metrics
+    from eval.programmatic.code_process import _is_code_exec
+    from eval.tracks.qr import evaluate as evaluate_qr
 
     assert CanonicalCoordinator is EvalCoordinator
     assert CanonicalEvalRequest is EvalRequest
@@ -28,10 +28,10 @@ def test_coordinator_interrupt_sets_track_cancel_and_collects_completed_result(
     monkeypatch,
     tmp_path,
 ):
-    from server.eval.tracks import qr
+    from eval.tracks import qr
 
     monkeypatch.setattr(
-        "server.eval.judges.runtime.model_resolver.require_ewan_model",
+        "eval.judges.runtime.model_resolver.require_ewan_model",
         lambda *args, **kwargs: None,
     )
     track_cancel_seen = threading.Event()
@@ -129,14 +129,14 @@ def test_judge_reliability_reference_matches_legacy_sonnet_aliases():
 
 
 def test_qp_model_unavailable_preserves_programmatic_dimensions(monkeypatch):
-    from server.eval.tracks import qp
+    from eval.tracks import qp
 
     monkeypatch.setattr(
-        "server.eval.programmatic.tool_usage.evaluate_tool_usage",
+        "eval.programmatic.tool_usage.evaluate_tool_usage",
         lambda **kwargs: {"score": 0.8, "status": "success", "reason": "ok"},
     )
     monkeypatch.setattr(
-        "server.eval.programmatic.code_process.evaluate_code_lifecycle",
+        "eval.programmatic.code_process.evaluate_code_lifecycle",
         lambda logs: {"score": 0.6, "status": "success", "reason": "code used"},
     )
     task = SimpleNamespace(
@@ -176,45 +176,6 @@ def test_qp_model_unavailable_preserves_programmatic_dimensions(monkeypatch):
     assert result.detail["task_planning"]["status"] == "failed"
     assert result.detail["_weights_used"]["code_lifecycle"] == 0.15
     assert result.detail["_weights_effective"] == {}
-
-
-def test_tutor_model_unavailable_writes_weights_and_blockers():
-    from server.eval.tracks import tutor
-
-    result = tutor.evaluate(
-        task=SimpleNamespace(
-            category="data_analysis",
-            requires_code=True,
-        ),
-        persona=SimpleNamespace(persona_id="persona"),
-        conversation=[
-            {"role": "user", "content": "Question"},
-            {"role": "assistant", "content": "Answer"},
-        ],
-        enriched_conversation=[],
-        eval_model=None,
-        tutor_dims=None,
-        preflight={
-            "track_blockers": {
-                "tutor": [
-                    {
-                        "code": "eval_model_unavailable",
-                        "track": "tutor",
-                        "reason": "missing key",
-                    }
-                ]
-            }
-        },
-    )
-
-    assert result.score is None
-    assert result.detail["_weights_used"]["D1"] == 1
-    assert result.detail["_weights_used"]["D6"] == 0
-    assert any(
-        item.get("dimension") == "D1_finance_adaptation"
-        for item in result.detail["_blocking_missing"]
-    )
-    assert "D6_safety_boundaries" not in result.detail
 
 
 def test_multi_score_read_reports_running_entry(tmp_path):
