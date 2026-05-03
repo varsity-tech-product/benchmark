@@ -15,7 +15,8 @@ Session status semantics
 ``send_message`` returns one of three ``status`` values:
 
 - ``"active"``    — session is still running; student reply included
-- ``"completed"`` — session ended normally (objectives_met / max_turns / timeout)
+- ``"completed"`` — session ended normally (objectives_met / student_satisfied
+                    / max_turns / timeout)
 - ``"failed"``    — session aborted due to an abnormal condition
                     (student_sim_error:* / agent_stuck)
 """
@@ -598,6 +599,19 @@ class TutoringSession:
             self._completion_reason = reason
             return self._result("", "failed", reason=reason, sim_error=sim_error)
         self._conversation.append({"role": "user", "content": reply, "ts": time.time()})
+
+        # ── Student-end signal (heuristic on the reply text) ──
+        # The student persona's own reply is treated as the session closing
+        # — no extra closing message is appended on top.
+        from server.core.student_sim import signaled_end_of_session
+
+        if signaled_end_of_session(reply):
+            self._done = True
+            self._completion_reason = "student_satisfied"
+            logger.info(
+                "Student signaled end-of-session at turn %d.", self._turn
+            )
+            return self._result(reply, "completed", reason="student_satisfied")
 
         return self._result(reply, "active")
 

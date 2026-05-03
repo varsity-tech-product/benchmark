@@ -57,6 +57,7 @@ class TestClassifySessionFailure:
 
     def test_terminal_categories(self):
         assert _classify_session_failure("objectives_met") == "terminal_success"
+        assert _classify_session_failure("student_satisfied") == "terminal_success"
         assert _classify_session_failure("max_turns") == "max_turns_reached"
         assert _classify_session_failure("timeout") == "max_turns_reached"
 
