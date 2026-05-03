@@ -384,6 +384,7 @@ class FakeTCChecker:
         conversation,
         turn_evidence=None,
         turn_index=None,
+        tool_logs=None,
     ) -> bool:
         self._check_count += 1
         newly = []
