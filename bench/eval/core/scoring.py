@@ -25,6 +25,11 @@ LAYER1_RESULT_WEIGHT = 0.40  # λ: Layer 1 contribution to Result Sub-score
 # and strong ≈ 60-70% pass. Lock in v2.0 spec, freeze.
 PASS_THRESHOLD = 0.5
 
+# Per #131 D-2: until baseline calibration ships, the v1 score response masks
+# task_pass to None so external clients don't see misleading pass/fail signals.
+# Flip this to True in the same change that sets a calibrated PASS_THRESHOLD.
+PASS_THRESHOLD_CALIBRATED = False
+
 
 def _score_value(value: Any) -> float | None:
     """Return a real numeric score, preserving missing/non-computable as None."""

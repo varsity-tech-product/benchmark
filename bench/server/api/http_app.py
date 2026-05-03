@@ -1828,8 +1828,101 @@ def _public_score_entry(entry: dict) -> dict:
     return out
 
 
+def _legacy_score_fields_enabled() -> bool:
+    """Dual-emit window per #131 D-1.
+
+    Default ON in P0 so the existing UI keeps reading legacy keys
+    (``overall_score``, ``quant_result``, ``quant_process``). Flipped OFF
+    in P2 once the UI cuts over to the v1 shape (``task_score`` /
+    ``task_pass`` / ``detail.tracks``).
+    """
+    return _bool_env("BENCH_SCORE_RESPONSE_LEGACY_FIELDS", True)
+
+
+def _v1_single_score_response(payload: dict, *, public: bool) -> dict:
+    """Convert a single-score store payload into the #131 v1 response shape.
+
+    ``public`` strips operator-only blobs (full ``score`` + ``cost``);
+    ``public=False`` keeps them so ops dashboards still surface raw eval
+    detail.
+
+    Pending / running / failed envelopes still return the v1 fields with
+    nulls so external clients only ever see the new shape — the contract
+    is uniform regardless of where the eval is in its lifecycle.
+    """
+    from eval.storage.score_store import (
+        SCORE_RESPONSE_SCHEMA_VERSION,
+        build_v1_response,
+    )
+
+    score = payload.get("score") if isinstance(payload.get("score"), dict) else None
+    cost = payload.get("cost") if isinstance(payload.get("cost"), dict) else None
+    include_legacy = _legacy_score_fields_enabled()
+
+    if score is None:
+        body: dict = {
+            "schema_version": SCORE_RESPONSE_SCHEMA_VERSION,
+            "status": payload.get("status"),
+            "score_id": payload.get("score_id"),
+            "score_status": payload.get("score_status") or payload.get("status"),
+            "task_score": None,
+            "task_pass": None,
+            "detail": {},
+        }
+        if "error" in payload:
+            body["error"] = payload["error"]
+        if include_legacy:
+            scores_summary = payload.get("scores")
+            if isinstance(scores_summary, dict):
+                body["scores"] = (
+                    _public_score_summary(scores_summary)
+                    if public
+                    else dict(scores_summary)
+                )
+        return body
+
+    # Public path mirrors the pre-#131 behaviour of dropping cost entirely
+    # from the response; ops keeps it under detail.cost + raw cost blob.
+    body = build_v1_response(
+        score,
+        cost if not public else None,
+        include_legacy=include_legacy,
+    )
+    body["status"] = payload.get("status")
+
+    if include_legacy:
+        scores_summary = payload.get("scores")
+        if isinstance(scores_summary, dict):
+            body["scores"] = (
+                _public_score_summary(scores_summary)
+                if public
+                else dict(scores_summary)
+            )
+
+    if not public:
+        body["score"] = score
+        if cost is not None:
+            body["cost"] = cost
+
+    return body
+
+
+def _is_single_score_envelope(payload: dict) -> bool:
+    """Single-score envelopes carry a score_id (or score blob) but no scores list."""
+    if isinstance(payload.get("score"), dict):
+        return True
+    if isinstance(payload.get("scores"), list):
+        return False
+    if payload.get("score_id"):
+        return True
+    return payload.get("status") == "pending" and "scores" not in payload
+
+
 def _public_scores_payload(payload: dict) -> dict:
     """Strip private score internals from a score-store payload."""
+    if _is_single_score_envelope(payload):
+        return _v1_single_score_response(payload, public=True)
+
     out = {
         key: value
         for key, value in payload.items()
@@ -1848,6 +1941,13 @@ def _public_scores_payload(payload: dict) -> dict:
         else:
             out["scores"] = scores
     return out
+
+
+def _ops_scores_payload(payload: dict) -> dict:
+    """Operator-side equivalent — keeps raw score/cost but applies the v1 shape."""
+    if _is_single_score_envelope(payload):
+        return _v1_single_score_response(payload, public=False)
+    return payload
 
 
 async def rest_results(request: Request) -> JSONResponse:
@@ -1972,17 +2072,19 @@ async def ops_scores(request: Request) -> JSONResponse:
             status_filter=query.status_filter,
         )
         if payload is not None:
-            return JSONResponse(payload)
+            return JSONResponse(_ops_scores_payload(payload))
         raise
     if not state:
         return JSONResponse({"error": "Session not found"}, 404)
 
     return JSONResponse(
-        state.get_eval_scores(
-            history=query.history,
-            score_id=query.score_id,
-            score_ids=query.score_ids,
-            status_filter=query.status_filter,
+        _ops_scores_payload(
+            state.get_eval_scores(
+                history=query.history,
+                score_id=query.score_id,
+                score_ids=query.score_ids,
+                status_filter=query.status_filter,
+            )
         )
     )
 
