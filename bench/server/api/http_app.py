@@ -290,11 +290,13 @@ class BenchSessionManager:
                         async with state._request_lock:
                             if state.phase != SessionPhase.IN_SESSION:
                                 continue
+                            save_ok = False
                             try:
                                 if state.session is not None:
                                     state.session.force_complete("timeout")
                                 state.phase = SessionPhase.COMPLETED
                                 state._save_results()
+                                save_ok = True
                             except Exception:
                                 logger.warning(
                                     "Session %s save failed in sweep",
@@ -302,6 +304,8 @@ class BenchSessionManager:
                                     exc_info=True,
                                 )
                             state._destroy_container()
+                            if save_ok:
+                                state._trigger_auto_eval()
                             # Notify Run layer so run status tracks the
                             # force-completion. Swallow ValueError from
                             # mark_completed guards (e.g. run was cancelled
@@ -1079,6 +1083,176 @@ async def rest_register(request: Request) -> JSONResponse:
             payload={"error": error},
         )
         return JSONResponse(result, status_code=code)
+
+
+_RETRYABLE_FAILURE = "infrastructure_failure"
+
+
+def _classify_session_failure(termination_reason: str | None) -> str:
+    """Map a session termination_reason to a retry-eligibility category.
+
+    Categories (per #126 P1):
+    - ``infrastructure_failure`` — retryable (NPC/student-sim crash, sandbox
+      crash; surfaces today as ``student_sim_error:*``).
+    - ``agent_gave_up`` — not retryable (``agent_stuck``, ``agent_abandoned``).
+    - ``max_turns_reached`` — not retryable (``max_turns``, ``timeout``;
+      session-level timeout is treated as exhaustion, not infra failure).
+    - ``terminal_success`` — not retryable (``objectives_met``).
+    - ``unknown`` — not retryable; defensive default.
+    """
+    if not termination_reason:
+        return "unknown"
+    if termination_reason.startswith("student_sim_error:"):
+        return _RETRYABLE_FAILURE
+    if termination_reason in ("agent_stuck", "agent_abandoned"):
+        return "agent_gave_up"
+    if termination_reason == "objectives_met":
+        return "terminal_success"
+    if termination_reason in ("max_turns", "timeout"):
+        return "max_turns_reached"
+    return "unknown"
+
+
+async def rest_retry_session(request: Request) -> JSONResponse:
+    """``POST /session/{sid}/retry`` — owner-scoped retry of a failed session.
+
+    Only sessions whose ``termination_reason`` classifies as
+    ``infrastructure_failure`` are retryable. The retry resets the
+    underlying RunAssignment back to CLAIMED, allocates a fresh session
+    under the same run, and returns the new session_id. The original
+    bundle remains on disk under its session_id as the failure receipt.
+    """
+    manager: BenchSessionManager = request.app.state.manager
+    sid = request.path_params["sid"]
+    try:
+        state = manager.get_or_restore_session(sid)
+    except Exception:
+        return JSONResponse({"error": "Session not found"}, 404)
+    if not state:
+        return JSONResponse({"error": "Session not found"}, 404)
+
+    auth_err = _authorize_rest_session_request(request, manager, state)
+    if auth_err is not None:
+        return auth_err
+
+    if state.phase != SessionPhase.COMPLETED:
+        return JSONResponse(
+            {
+                "error": "Session is not in a terminal state",
+                "current_phase": state.phase.value,
+            },
+            409,
+        )
+
+    if not state.run_id:
+        return JSONResponse(
+            {"error": "Session is not bound to a run"},
+            409,
+        )
+
+    run_state = state.get_run_results()
+    termination_reason = run_state.get("termination_reason")
+    category = _classify_session_failure(termination_reason)
+    if category != _RETRYABLE_FAILURE:
+        return JSONResponse(
+            {
+                "error": "Session is not retryable",
+                "category": category,
+                "termination_reason": termination_reason,
+            },
+            409,
+        )
+
+    # Snapshot the COMPLETED run so the retry can be undone if the new
+    # session fails to register — otherwise a transient sandbox failure
+    # would leave the run in FAILED with no session_id pointer back to
+    # the failure bundle, blocking any further retry attempt.
+    pre_reset_run = manager._run_service.get_run(state.run_id)
+    pre_reset_snapshot = (
+        {
+            "session_id": pre_reset_run.session_id,
+            "result_dir": pre_reset_run.result_dir,
+            "completed_at": pre_reset_run.completed_at,
+            "eval_status": pre_reset_run.eval_status,
+            "error": pre_reset_run.error,
+        }
+        if pre_reset_run is not None
+        else None
+    )
+
+    try:
+        run = manager._run_service.reset_for_retry(state.run_id)
+    except (ValueError, KeyError) as exc:
+        return JSONResponse({"error": str(exc)}, 409)
+
+    new_state = manager.create_rest_session()
+    new_state.run_id = run.run_id
+    new_state._run_task_id = run.task_id
+    new_state.owner_user_id = run.owner_user_id
+    new_state.owner_github_login = run.owner_github_login
+    new_state.owner_email = run.owner_email
+    new_state.visibility = run.visibility
+    new_state._on_completed = lambda result_dir: manager._run_service.mark_completed(
+        run.run_id, result_dir
+    )
+    # Preserve the original persona so the retry exercises the same
+    # student assignment; falling through to a random pick would change
+    # the scenario and make scores incomparable across attempts.
+    register_result = await asyncio.to_thread(
+        new_state.register, run.task_id, state.persona_id or None
+    )
+    if "session_id" not in register_result:
+        new_state.cleanup()
+        # Re-attach the original COMPLETED failure receipt so the run
+        # stays eligible for another retry.
+        if pre_reset_snapshot is not None:
+            try:
+                manager._run_service.restore_after_failed_retry(
+                    run.run_id, **pre_reset_snapshot
+                )
+            except Exception:
+                logger.warning(
+                    "Run %s restore_after_failed_retry failed",
+                    run.run_id,
+                    exc_info=True,
+                )
+        return JSONResponse(register_result, 500)
+
+    manager.register_rest_session(new_state)
+    manager._run_service.bind_session(run.run_id, new_state.session_id)
+
+    logger.info(
+        "[REST:%s] retry → new session=%s run=%s",
+        sid[:8],
+        new_state.session_id[:8],
+        run.run_id,
+    )
+    record_event(
+        manager.bench_root,
+        _audit_user_from_state(state),
+        "session.retry",
+        request=request,
+        run_id=run.run_id,
+        session_id=new_state.session_id,
+        task_id=run.task_id,
+        success=True,
+        payload={
+            "previous_session_id": sid,
+            "termination_reason": termination_reason,
+            "category": category,
+        },
+    )
+    return JSONResponse(
+        {
+            "status": "retry_started",
+            "session_id": new_state.session_id,
+            "previous_session_id": sid,
+            "run_id": run.run_id,
+            "category": category,
+            "termination_reason": termination_reason,
+            "next_action": f"POST /session/{new_state.session_id}/start",
+        }
+    )
 
 
 async def rest_start(request: Request) -> JSONResponse:
@@ -1929,6 +2103,7 @@ def create_app(
         ),
         Route("/session/{sid}/tool/{name}", rest_tool_call, methods=["POST"]),
         Route("/session/{sid}/send", rest_send, methods=["POST"]),
+        Route("/session/{sid}/retry", rest_retry_session, methods=["POST"]),
         Route("/session/{sid}/results", rest_results, methods=["GET"]),
         Route("/session/{sid}/scores", rest_scores, methods=["GET"]),
         # Operator-only evaluation surface: not reachable from MCP or

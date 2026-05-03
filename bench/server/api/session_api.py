@@ -697,6 +697,7 @@ class SessionState:
                     self.session_id,
                     data.get("reason", "unknown"),
                 )
+            self._trigger_auto_eval()
             # Notify Run layer
             if self._on_completed:
                 try:
@@ -717,12 +718,57 @@ class SessionState:
     # Internal server-side evaluation trigger
     # ------------------------------------------------------------------
 
-    def request_evaluation(self) -> dict:
+    def _trigger_auto_eval(self) -> None:
+        """Enqueue a server-internal eval after a terminal transition.
+
+        Idempotent on the in-memory ``_eval_status`` guard and on the
+        ``auto:{session_id}`` key in the score store, so duplicate triggers
+        (e.g. an idle-sweep racing with handle_send_message) collapse onto
+        the same score record. Called by the public REST completion paths;
+        operators can still run additional evals via ``ops_evaluate`` with
+        a different idempotency key.
+        """
+        if self.phase != SessionPhase.COMPLETED or not self._result_dir:
+            return
+        with self._eval_lock:
+            if self._eval_status != "pending":
+                return
+        try:
+            # Pass auto params explicitly so a concurrent ops_evaluate
+            # mutation of _eval_mode / _eval_idempotency_key / eval_model
+            # cannot leak into score_1.
+            result = self.request_evaluation(
+                eval_mode="full",
+                eval_model=self.eval_model,
+                idempotency_key=f"auto:{self.session_id}",
+            )
+        except Exception as exc:
+            logger.warning(
+                "[auto-eval:%s] enqueue failed: %s", self.session_id[:8], exc
+            )
+            return
+        logger.info(
+            "[auto-eval:%s] status=%s score_id=%s",
+            self.session_id[:8],
+            result.get("status"),
+            result.get("score_id"),
+        )
+
+    def request_evaluation(
+        self,
+        *,
+        eval_mode: str | None = None,
+        eval_model: str | None = None,
+        idempotency_key: str | None = None,
+    ) -> dict:
         """Start an internal evaluation run for a completed result bundle.
 
         Each non-concurrent call appends a new score_n evaluation run.
         Concurrent calls return the active running score instead of starting
-        a second run.
+        a second run. When ``eval_mode`` / ``eval_model`` / ``idempotency_key``
+        are passed explicitly the call ignores instance-state defaults — used
+        by ``_trigger_auto_eval`` so its parameters cannot be perturbed by a
+        racing operator request that mutated the instance fields.
         """
         if self._closed:
             return {
@@ -752,9 +798,17 @@ class SessionState:
             request = parse_eval_request(
                 {
                     "session_id": self.session_id,
-                    "eval_mode": self._eval_mode,
-                    "eval_model": self.eval_model,
-                    "idempotency_key": self._eval_idempotency_key,
+                    "eval_mode": (
+                        eval_mode if eval_mode is not None else self._eval_mode
+                    ),
+                    "eval_model": (
+                        eval_model if eval_model is not None else self.eval_model
+                    ),
+                    "idempotency_key": (
+                        idempotency_key
+                        if idempotency_key is not None
+                        else self._eval_idempotency_key
+                    ),
                 }
             )
             self._eval_mode = request.eval_mode

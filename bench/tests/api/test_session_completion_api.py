@@ -149,3 +149,72 @@ class TestPostCompletion:
         if resp.status_code == 200:
             data = resp.json()
             assert "conversation" in data or "error" not in data
+
+
+class TestAutoEvalOnCompletion:
+    """Issue #126 P0: terminal REST transition enqueues server-internal eval."""
+
+    @pytest.mark.asyncio
+    async def test_auto_eval_runs_on_max_turns_completion(
+        self, app, client, monkeypatch
+    ):
+        from server.api.session_api import SessionState
+
+        sid, _ = await register_and_start(client)
+        state = _get_session_state(app, sid)
+        state.session._max_turns = 1
+
+        seen: dict = {}
+        original = SessionState.request_evaluation
+
+        def _spy(
+            self,
+            *,
+            eval_mode=None,
+            eval_model=None,
+            idempotency_key=None,
+        ):
+            seen["sid"] = self.session_id
+            seen["key"] = idempotency_key
+            return original(
+                self,
+                eval_mode=eval_mode,
+                eval_model=eval_model,
+                idempotency_key=idempotency_key,
+            )
+
+        monkeypatch.setattr(SessionState, "request_evaluation", _spy)
+        # Stub the heavy background eval — we only need to verify the
+        # enqueue path, not the judge pipeline.
+        monkeypatch.setattr(SessionState, "_run_evaluation", lambda self, sid: None)
+
+        await send_message(client, sid, "Done.")
+
+        assert seen["sid"] == sid
+        assert seen["key"] == f"auto:{sid}"
+
+        from eval.storage.score_store import load_index
+
+        assert state._result_dir is not None
+        index = load_index(state._result_dir)
+        assert len(index["scores"]) == 1
+        assert index["scores"][0]["idempotency_key"] == f"auto:{sid}"
+
+    @pytest.mark.asyncio
+    async def test_auto_eval_visible_via_public_scores_endpoint(
+        self, app, client, monkeypatch
+    ):
+        from server.api.session_api import SessionState
+
+        sid, _ = await register_and_start(client)
+        state = _get_session_state(app, sid)
+        state.session._max_turns = 1
+        monkeypatch.setattr(SessionState, "_run_evaluation", lambda self, sid: None)
+
+        await send_message(client, sid, "Done.")
+
+        resp = await client.get(f"/session/{sid}/scores")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body.get("status") in ("running", "completed", "pending")
+        assert body.get("score_id") == "score_1"
