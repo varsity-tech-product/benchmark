@@ -177,11 +177,13 @@ class TestGetScores:
         data = resp.json()
         assert data["status"] == "completed"
         assert data["score_id"] == "score_1"
-        assert data["scores"]["overall_score"] == 0.775
-        assert data["scores"]["judge_reliability"]["validation_run_id"]
+        assert data["task_score"] == 0.775
+        assert data["detail"]["judge_reliability"]["validation_run_id"]
         assert "score" not in data
         assert "cost" not in data
-        assert "eval_cost_usd" not in data["scores"]
+        # #131 P2: legacy summary slot dropped; cost lives only on the ops side.
+        assert "scores" not in data
+        assert "cost" not in data["detail"]
 
     @pytest.mark.asyncio
     async def test_public_scores_v1_top_level_shape(

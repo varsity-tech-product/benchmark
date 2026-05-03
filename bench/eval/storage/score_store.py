@@ -308,8 +308,6 @@ def _track_view(track_data: Any) -> dict[str, Any] | None:
 def build_v1_response(
     score_data: dict[str, Any],
     cost_data: dict[str, Any] | None = None,
-    *,
-    include_legacy: bool = False,
 ) -> dict[str, Any]:
     """Build the v1 forward-compat score response from persisted score+cost data.
 
@@ -319,10 +317,6 @@ def build_v1_response(
 
     ``task_pass`` is masked to ``None`` while ``PASS_THRESHOLD_CALIBRATED``
     is False (#131 D-2) — clients should treat absence as "not yet known".
-
-    ``include_legacy=True`` (the dual-emit window per #131 D-1) merges the
-    ``summarize_score`` fields onto the response root so existing internal
-    callers don't break before the UI cuts over.
     """
     from eval.core.scoring import PASS_THRESHOLD, PASS_THRESHOLD_CALIBRATED
 
@@ -363,7 +357,7 @@ def build_v1_response(
             "eval_cost_by_model": cost_data.get("eval_cost_by_model") or {},
         }
 
-    response: dict[str, Any] = {
+    return {
         "schema_version": SCORE_RESPONSE_SCHEMA_VERSION,
         "score_id": score_data.get("score_id"),
         "score_status": score_data.get("score_status"),
@@ -371,15 +365,6 @@ def build_v1_response(
         "task_pass": task_pass,
         "detail": detail,
     }
-
-    if include_legacy:
-        legacy = summarize_score(score_data, cost_data)
-        # Don't let legacy keys clobber the v1 promises.
-        for key in ("score_id", "score_status"):
-            legacy.pop(key, None)
-        response.update(legacy)
-
-    return response
 
 
 def get_scores_payload(

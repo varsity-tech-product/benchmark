@@ -176,6 +176,13 @@ class Scores:
 The dataclass is per-task. Benchmark-level KPIs (pass rate over the task
 suite) are computed by aggregating over `task_pass` across all tasks (§6.5).
 
+REST clients consume the v1 envelope returned by
+`GET /session/{sid}/scores` (see `docs/architecture.md` Public Reads). The
+public top level is `schema_version`, `score_id`, `score_status`,
+`task_score`, `task_pass`; per-track scores and process metric breakdowns
+live under the opaque `detail` blob. `task_pass` is null until baseline
+calibration ships (TBD-1).
+
 ### 3.4 Turn Definition
 
 One **turn** = one `send_message()` call. The agent may make

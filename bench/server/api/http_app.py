@@ -1828,17 +1828,6 @@ def _public_score_entry(entry: dict) -> dict:
     return out
 
 
-def _legacy_score_fields_enabled() -> bool:
-    """Dual-emit window per #131 D-1.
-
-    Default ON in P0 so the existing UI keeps reading legacy keys
-    (``overall_score``, ``quant_result``, ``quant_process``). Flipped OFF
-    in P2 once the UI cuts over to the v1 shape (``task_score`` /
-    ``task_pass`` / ``detail.tracks``).
-    """
-    return _bool_env("BENCH_SCORE_RESPONSE_LEGACY_FIELDS", True)
-
-
 def _v1_single_score_response(payload: dict, *, public: bool) -> dict:
     """Convert a single-score store payload into the #131 v1 response shape.
 
@@ -1857,7 +1846,6 @@ def _v1_single_score_response(payload: dict, *, public: bool) -> dict:
 
     score = payload.get("score") if isinstance(payload.get("score"), dict) else None
     cost = payload.get("cost") if isinstance(payload.get("cost"), dict) else None
-    include_legacy = _legacy_score_fields_enabled()
 
     if score is None:
         body: dict = {
@@ -1871,33 +1859,12 @@ def _v1_single_score_response(payload: dict, *, public: bool) -> dict:
         }
         if "error" in payload:
             body["error"] = payload["error"]
-        if include_legacy:
-            scores_summary = payload.get("scores")
-            if isinstance(scores_summary, dict):
-                body["scores"] = (
-                    _public_score_summary(scores_summary)
-                    if public
-                    else dict(scores_summary)
-                )
         return body
 
     # Public path mirrors the pre-#131 behaviour of dropping cost entirely
     # from the response; ops keeps it under detail.cost + raw cost blob.
-    body = build_v1_response(
-        score,
-        cost if not public else None,
-        include_legacy=include_legacy,
-    )
+    body = build_v1_response(score, cost if not public else None)
     body["status"] = payload.get("status")
-
-    if include_legacy:
-        scores_summary = payload.get("scores")
-        if isinstance(scores_summary, dict):
-            body["scores"] = (
-                _public_score_summary(scores_summary)
-                if public
-                else dict(scores_summary)
-            )
 
     if not public:
         body["score"] = score

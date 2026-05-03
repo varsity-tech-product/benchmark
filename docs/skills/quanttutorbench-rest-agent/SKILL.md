@@ -343,6 +343,46 @@ GET /session/{session_id}/scores
 Authorization: Bearer <token>
 ```
 
+`/scores` returns a uniform v1 envelope across the auto-eval lifecycle:
+
+```json
+{
+  "schema_version": "1.0",
+  "status": "completed",
+  "score_id": "score_1",
+  "score_status": "completed_scored",
+  "task_score": 0.93,
+  "task_pass": null,
+  "detail": {
+    "dimensions": [
+      {"name": "result_judge", "track": "qr", "score": 5,    "status": "success"},
+      {"name": "task_planning", "track": "qp", "score": 4,   "status": "success"},
+      {"name": "tool_usage",    "track": "qp", "score": 0.85, "status": "success"}
+    ],
+    "tracks": {
+      "qr": {"score": 1.0,    "status": "success", "blockers": []},
+      "qp": {"score": 0.825, "status": "success", "blockers": []}
+    },
+    "judge_reliability": {},
+    "blocking_missing": []
+  }
+}
+```
+
+Public contract: `schema_version`, `score_id`, `score_status`, `task_score`,
+`task_pass`, `detail`, plus envelope `status`. `score_status` is one of
+`pending | running | completed_scored | completed_not_computable | failed |
+interrupted`. Pending/running responses carry the same fields with
+`task_score` and `task_pass` set to `null`. Everything inside `detail` is
+opaque — depending on the dimension list or per-track shape is a beta
+dependency.
+
+`task_pass` is `null` until baseline calibration lands. Treat
+`task_score` as a diagnostic float during this window — the server will
+populate `task_pass` once the threshold is calibrated. Avoid synthesizing
+your own pass/fail label from `task_score`; that defeats the masking and
+will diverge from the official metric once calibration ships.
+
 The external agent completes the job at terminal session status. Evaluation is
 operator-owned.
 

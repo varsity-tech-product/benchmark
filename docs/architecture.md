@@ -367,12 +367,33 @@ conversation, key results, trace summary, and workspace file names. It must not
 return raw tool logs, owner internals, debug histories, judge prompts, raw judge
 responses, evaluator traces, or cost internals.
 
-`GET /session/{sid}/scores` is read-only. It returns pending/running/completed
-score state from `eval.storage.score_store` and strips private score/cost internals.
+`GET /session/{sid}/scores` is read-only. It returns the v1 score response
+shape from `eval.storage.score_store.build_v1_response()` and strips private
+score/cost internals.
+
+The v1 contract has a small public top level — clients should program against
+just these fields:
+
+| Field | Type | Notes |
+|---|---|---|
+| `schema_version` | str | Pinned `"1.0"` for the v1 envelope. |
+| `score_id` | str \| null | `score_n` allocated by the score store. |
+| `score_status` | enum | One of `pending \| running \| completed_scored \| completed_not_computable \| failed \| interrupted`. |
+| `task_score` | float \| null | `0.6 * QR + 0.4 * QP`; null when not yet computable. |
+| `task_pass` | bool \| null | `task_score >= PASS_THRESHOLD`; null while `PASS_THRESHOLD_CALIBRATED = False`. |
+| `detail` | object | Opaque forward-compat blob — see below. |
+| `status` | str | Envelope state from the score store (`pending \| running \| completed \| failed \| partial \| not_found \| history`). `partial` only appears for multi-id `?score_ids=` lookups when requested entries mix terminal and in-flight states. |
+
+Everything else lives in `detail` and is **not part of the public contract**
+— clients depending on `detail.dimensions[*].name`, `detail.tracks.{qr,qp}`,
+or `detail.judge_reliability` are taking a beta dependency that may shift as
+the eval pipeline evolves (multi-judge panel, variable rubric, etc.).
+`detail.cost` is omitted from the public response and only surfaced via the
+operator path.
 
 Operator reads under `/ops/session/{sid}/results` and
-`/ops/session/{sid}/scores` return full server-side payloads for audit and
-debugging.
+`/ops/session/{sid}/scores` return the same v1 envelope plus the raw
+`score`/`cost` blobs and `detail.cost` for audit and debugging.
 
 ## Web UI
 
