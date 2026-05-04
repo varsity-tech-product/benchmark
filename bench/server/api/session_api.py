@@ -3,7 +3,7 @@
 Each MCP HTTP session maps to one ``SessionState`` instance that manages:
 - Task + persona loading (random persona selection)
 - Container + tool setup
-- TutoringSession lifecycle (student simulation, termination checking)
+- TutoringSession lifecycle (user simulation, termination checking)
 - Result saving (run_state.json + agent_files/)
 - Internal evaluation triggering (background thread; server/operator only)
 
@@ -125,7 +125,7 @@ def _lean_template_type(task) -> str:
     return "generic"
 
 
-def _lean_template_context(task, *, student_code_dir: Optional[str | Path]) -> dict:
+def _lean_template_context(task, *, user_code_dir: Optional[str | Path]) -> dict:
     environment = getattr(task, "environment", None)
     template_type = _lean_template_type(task)
     return {
@@ -134,7 +134,7 @@ def _lean_template_context(task, *, student_code_dir: Optional[str | Path]) -> d
         "template_type": template_type,
         "expects_universe": template_type == "multi_symbol",
         "sandbox_image": environment.sandbox_image if environment else "",
-        "student_code_available": bool(student_code_dir),
+        "user_code_available": bool(user_code_dir),
     }
 
 
@@ -144,7 +144,7 @@ class SessionState:
     Lifecycle:
         1. Created by BenchSessionManager when a new MCP connection arrives.
         2. ``register(task_id)`` — loads task, picks persona, creates container.
-        3. ``start()`` — returns student opening, enters IN_SESSION.
+        3. ``start()`` — returns user opening, enters IN_SESSION.
         4. ``handle_send_message(text)`` — routes through proxy, may complete.
         5. Server/operator evaluation may run after results are saved.
         6. ``cleanup()`` — destroys container and temp dirs.
@@ -176,7 +176,7 @@ class SessionState:
         self.session = None  # TutoringSession
         self.container_manager = None
         self.container = None
-        self.student_sim = None
+        self.user_sim = None
         self.staged_temp_dirs: list = []
 
         # Timing
@@ -236,7 +236,7 @@ class SessionState:
         reconstructs enough state to service any API call: evaluate, get
         results, get scores.
 
-        No container, proxy, or student simulator is needed — only the
+        No container, proxy, or user simulator is needed — only the
         persisted conversation, tool logs, and task/persona metadata.
         """
         from types import SimpleNamespace
@@ -315,7 +315,7 @@ class SessionState:
         self,
         *,
         docs_available: list[str],
-        student_code_dir: Optional[Path | str],
+        user_code_dir: Optional[Path | str],
     ) -> dict:
         """Build the truthful runtime context exposed to tools."""
         environment = self.task.environment if self.task else None
@@ -326,7 +326,7 @@ class SessionState:
             "docs_available": list(docs_available or []),
             "max_backtest_trials": max_backtest_trials,
             "sandbox_image": environment.sandbox_image if environment else "",
-            "student_code_available": bool(student_code_dir),
+            "user_code_available": bool(user_code_dir),
         }
 
     def _build_tool_env(
@@ -335,13 +335,13 @@ class SessionState:
         data_dir: str | Path,
         docs_dir: str | Path,
         workspace_dir: str | Path,
-        student_code_dir: Optional[str | Path],
+        user_code_dir: Optional[str | Path],
         docs_available: list[str],
     ) -> dict[str, str]:
         """Build per-session tool environment variables."""
         context = self._build_session_context(
             docs_available=docs_available,
-            student_code_dir=student_code_dir,
+            user_code_dir=user_code_dir,
         )
         env = {
             "QTB_DATA_DIR": str(data_dir),
@@ -351,11 +351,11 @@ class SessionState:
             "LEAN_RUN_TIMEOUT": "300",
             "QTB_SESSION_CONTEXT_JSON": json.dumps(context),
         }
-        if student_code_dir:
-            env["QTB_STUDENT_CODE_DIR"] = str(student_code_dir)
+        if user_code_dir:
+            env["QTB_USER_CODE_DIR"] = str(user_code_dir)
         if self.task and _task_is_lean(self.task):
             env["QTB_LEAN_TEMPLATE_CONTEXT_JSON"] = json.dumps(
-                _lean_template_context(self.task, student_code_dir=student_code_dir)
+                _lean_template_context(self.task, user_code_dir=user_code_dir)
             )
         return env
 
@@ -380,7 +380,7 @@ class SessionState:
         from server.core.registry import populate_proxy_for_task
         from server.core.session import TutoringSession
         from server.core.staging import create_staged_dirs, create_staged_sample_code
-        from server.core.student_sim import StudentSimulator, require_student_model
+        from server.core.user_sim import UserSimulator, require_user_model
         from server.core.tc_checker import TCChecker, parse_tc_items
         from server.data_manager import ensure_data
 
@@ -435,7 +435,7 @@ class SessionState:
 
             load_server_env(self.bench_root)
             try:
-                resolved_sim_model = require_student_model(
+                resolved_sim_model = require_user_model(
                     SIMULATOR_DEFAULT_MODEL,
                 )
             except RuntimeError as exc:
@@ -463,12 +463,12 @@ class SessionState:
                 )
             )
 
-            student_code_dir = None
+            user_code_dir = None
             if task.sample_code:
-                student_code_dir, sample_temp_dirs = create_staged_sample_code(
+                user_code_dir, sample_temp_dirs = create_staged_sample_code(
                     task.sample_code,
                     data_search_dirs=paths.data_search_dirs,
-                    student_code_dir=paths.student_code,
+                    user_code_dir=paths.user_code,
                 )
                 self.staged_temp_dirs.extend(sample_temp_dirs)
 
@@ -476,7 +476,7 @@ class SessionState:
                 task_id=f"{task_id}_{self.session_id[:8]}",
                 data_dir=staged_data_dir,
                 docs_dir=staged_docs_dir,
-                student_code_dir=student_code_dir,
+                user_code_dir=user_code_dir,
                 sandbox_image=(
                     task.environment.sandbox_image if task.environment else None
                 ),
@@ -491,14 +491,14 @@ class SessionState:
                 data_dir=staged_data_dir,
                 docs_dir=staged_docs_dir,
                 workspace_dir=self.container.workspace_path,
-                student_code_dir=student_code_dir,
+                user_code_dir=user_code_dir,
                 docs_available=docs_available,
             )
             container_tool_env = self._build_tool_env(
                 data_dir="/data",
                 docs_dir="/docs",
                 workspace_dir="/workspace",
-                student_code_dir="/student_code" if student_code_dir else None,
+                user_code_dir="/user_code" if user_code_dir else None,
                 docs_available=docs_available,
             )
 
@@ -533,7 +533,7 @@ class SessionState:
             )
             has_tc = tc_items is not None
 
-            self.student_sim = StudentSimulator(
+            self.user_sim = UserSimulator(
                 scenario=build_scenario(
                     task, self.persona_id, has_incremental_tc=has_tc
                 ),
@@ -564,7 +564,7 @@ class SessionState:
             self.session = TutoringSession(
                 task=task,
                 persona=persona,
-                student_sim=self.student_sim,
+                user_sim=self.user_sim,
                 tc_checker=tc_checker,
                 max_turns=task.max_turns,
                 deadline=deadline,
@@ -620,7 +620,7 @@ class SessionState:
     # ------------------------------------------------------------------
 
     def start(self) -> dict:
-        """Handle ``start_session()`` — return student opening + available tools.
+        """Handle ``start_session()`` — return user opening + available tools.
 
         After phase transitions to IN_SESSION, the full tool list is
         included so the agent can start working without an extra
@@ -661,7 +661,7 @@ class SessionState:
 
         ``reasoning`` is forwarded to the proxy (which records it in the
         tool log ``args``) and to the underlying session. It is never
-        delivered to the student.
+        delivered to the user.
 
         Returns:
             Raw JSON string from TutoringSession (via proxy).
@@ -1098,14 +1098,14 @@ class SessionState:
                 attachments=attachments,
                 reasoning=reasoning,
             )
-            # Log student reply
+            # Log user reply
             try:
                 data = json.loads(result)
                 logger.info(
-                    "[%s] student reply (status=%s): %s...",
+                    "[%s] user reply (status=%s): %s...",
                     self.session_id[:8],
                     data.get("status", "?"),
-                    data.get("student_message", "")[:100],
+                    data.get("user_message", "")[:100],
                 )
             except Exception:
                 pass
@@ -1172,7 +1172,7 @@ class SessionState:
             conversation=conversation,
             tool_logs=tool_logs,
             workspace_path=(self.container.workspace_path if self.container else None),
-            simulator_cost=(self.student_sim.total_cost if self.student_sim else 0.0),
+            simulator_cost=(self.user_sim.total_cost if self.user_sim else 0.0),
             tc_checker_cost=tc_cost,
             duration_seconds=duration,
             distractor_names=distractor_names,
@@ -1398,7 +1398,7 @@ class SessionState:
         self.session = None
         self.container_manager = None
         self.container = None
-        self.student_sim = None
+        self.user_sim = None
         self._start_time = None
         self._result_dir = None
         self.phase = SessionPhase.UNREGISTERED
@@ -1418,11 +1418,11 @@ class SessionState:
 
     def _load_persona(self, persona_id: str):
         """Load persona JSON by ID."""
-        from eval.contracts.schemas import StudentPersona
+        from eval.contracts.schemas import UserPersona
 
         personas_dir = self.bench_root / "personas"
         for json_path in personas_dir.rglob(f"{persona_id}.json"):
-            return StudentPersona(**json.loads(json_path.read_text()))
+            return UserPersona(**json.loads(json_path.read_text()))
         return None
 
     def _get_domain_tools(self) -> list[Tool]:

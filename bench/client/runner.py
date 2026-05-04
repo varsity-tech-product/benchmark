@@ -89,7 +89,7 @@ async def run_via_attach(
         # 4. Start session
         start = await transport.start_session()
         background = start.get("background", "")
-        opening = start.get("student_message", "")
+        opening = start.get("user_message", "")
         logger.info("[%s] Session started: %s...", task_label, opening[:80])
 
         # 5. List tools
@@ -307,7 +307,7 @@ async def run_single_task(
                 start_result = await mcp.call_tool("start_session", {})
                 start = _parse_tool_result(start_result)
                 background = start.get("background", "")
-                opening = start.get("student_message", "")
+                opening = start.get("user_message", "")
 
                 tools_result = await mcp.list_tools()
                 all_tools = convert_mcp_tools(tools_result)

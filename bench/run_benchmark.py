@@ -116,11 +116,11 @@ def _load_all_layer2_tasks() -> list:
 
 def _load_persona(persona_id: str):
     """Load a persona by ID."""
-    from orchestrator.schemas import StudentPersona
+    from orchestrator.schemas import UserPersona
 
     persona_path = BENCH_ROOT / "personas" / f"{persona_id}.json"
     with open(persona_path) as f:
-        return StudentPersona(**json.load(f))
+        return UserPersona(**json.load(f))
 
 
 # ---------------------------------------------------------------------------
@@ -211,7 +211,7 @@ def _print_single_result(result):
     """Print detailed result for a single task (preserves existing display)."""
     print(f"\n--- Conversation ({len(result.turns)} turns) ---")
     for turn in result.turns:
-        prefix = "Student" if turn.role == "user" else "Tutor"
+        prefix = "User" if turn.role == "user" else "Tutor"
         print(f"\n[{prefix}]: {turn.content[:200]}...")
 
     print("\n--- Scores ---")
@@ -1044,7 +1044,7 @@ def cmd_run_single(args):
                 tr = job_result.task_result
                 print(f"\n--- Conversation ({len(tr.turns)} turns) ---")
                 for turn in tr.turns:
-                    prefix = "Student" if turn.role == "user" else "Tutor"
+                    prefix = "User" if turn.role == "user" else "Tutor"
                     print(f"\n[{prefix}]: {turn.content[:200]}...")
                 print("\n[RUNONLY] Evaluation skipped.")
             else:
@@ -1273,7 +1273,7 @@ def cmd_test_e2e(args):
 
     # Test 1: Schema validation
     print("[1/8] Validating task schemas...")
-    from orchestrator.schemas import QuantTutorTask, StudentPersona
+    from orchestrator.schemas import QuantTutorTask, UserPersona
 
     tasks_dir = BENCH_ROOT / "tasks"
     task_count = 0
@@ -1301,7 +1301,7 @@ def cmd_test_e2e(args):
         persona_count += 1
         try:
             with open(pf) as f:
-                StudentPersona(**json.load(f))
+                UserPersona(**json.load(f))
         except Exception as e:
             errors.append(f"Persona schema: {pf.name}: {e}")
     if persona_count > 0:
@@ -1500,7 +1500,7 @@ def _add_common_args(parser):
     parser.add_argument(
         "--simulator-model",
         default=None,
-        help="LLM model for student simulator (OpenRouter format)",
+        help="LLM model for user simulator (OpenRouter format)",
     )
     parser.add_argument(
         "--model",
@@ -1607,7 +1607,7 @@ def main():
     run_parser.add_argument(
         "--simulator-model",
         default=None,
-        help="LLM model for student simulator (OpenRouter format)",
+        help="LLM model for user simulator (OpenRouter format)",
     )
     run_parser.add_argument(
         "--layer",

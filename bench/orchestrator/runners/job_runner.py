@@ -13,7 +13,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Optional
 
-from orchestrator.schemas import QuantTutorTask, StudentPersona, TaskResult
+from orchestrator.schemas import QuantTutorTask, UserPersona, TaskResult
 
 
 @dataclass
@@ -21,7 +21,7 @@ class JobSpec:
     """One benchmark job = (task, persona, trial)."""
 
     task: QuantTutorTask
-    persona: StudentPersona
+    persona: UserPersona
     agent_type: str  # "generic", "openai", "anthropic", "google"
     condition_name: str  # "agent", "baseline", ...
     use_docker: bool

@@ -1,6 +1,6 @@
 """Single LLM call entry point for the eval pipeline.
 
-After #122 the scoring path has three LLM consumers: the NPC student
+After #122 the scoring path has three LLM consumers: the NPC user
 simulator, the QR judge, and the QP judge. This module funnels every
 one of them through ``LLMRunner.call()`` so that:
 

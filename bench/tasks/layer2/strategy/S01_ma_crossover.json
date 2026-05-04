@@ -6,7 +6,7 @@
   "task_type": "multi_turn",
   "description": "Guide a student to build and test a moving average crossover strategy on equity data.",
   "persona_id": "fullstack_practitioner",
-  "student_opening": "I want to benchmark a basic SMA crossover before building something more complex. Let's set up the backtest properly — walk-forward friendly, with transaction cost assumptions. What parameters do you recommend as a starting point?",
+  "user_opening": "I want to benchmark a basic SMA crossover before building something more complex. Let's set up the backtest properly — walk-forward friendly, with transaction cost assumptions. What parameters do you recommend as a starting point?",
   "environment": {
     "data_files": [
       "AAPL_2018_2024.csv",

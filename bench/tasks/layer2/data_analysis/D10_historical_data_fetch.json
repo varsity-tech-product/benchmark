@@ -6,7 +6,7 @@
   "task_type": "multi_turn",
   "description": "Guide the student to fetch historical market price and macroeconomic data from public APIs, validate and save both datasets as CSV files, and teach quant data-ingestion caveats including adjusted prices, macro release lag, and point-in-time leakage risk.",
   "persona_id": "double_novice",
-  "student_opening": "My professor asked us to fetch historical market price and macroeconomic data from public APIs. I'm new to both Python and finance — can you start from the basics?",
+  "user_opening": "My professor asked us to fetch historical market price and macroeconomic data from public APIs. I'm new to both Python and finance — can you start from the basics?",
   "environment": {
     "data_files": [],
     "core_mcp_tools": [

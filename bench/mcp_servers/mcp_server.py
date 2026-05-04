@@ -103,7 +103,7 @@ def _build_standalone_server(task_id: str, persona_id: str, use_docker: bool = T
 
     from mcp_servers.registry import create_proxy_for_task, register_session_tools
     from mcp_servers.session import TutoringSession
-    from mcp_servers.student_sim import StudentSimulator
+    from mcp_servers.user_sim import UserSimulator
     from mcp_servers.tc_checker import TCChecker, parse_tc_items
     from scripts.data_manager import ensure_data
 
@@ -136,12 +136,12 @@ def _build_standalone_server(task_id: str, persona_id: str, use_docker: bool = T
         force_temp_data_dir=bool(custom_data_dir),
     )
 
-    student_code_dir = paths.student_code if task.category.value == "debug" else None
+    user_code_dir = paths.user_code if task.category.value == "debug" else None
     container = container_manager.create_container(
         task_id=f"{task_id}_{persona_id}_mcp",
         data_dir=staged_data_dir,
         docs_dir=staged_docs_dir,
-        student_code_dir=student_code_dir,
+        user_code_dir=user_code_dir,
         sandbox_image=(task.environment.sandbox_image if task.environment else None),
         network_enabled=(
             task.environment.network_enabled if task.environment else False
@@ -163,7 +163,7 @@ def _build_standalone_server(task_id: str, persona_id: str, use_docker: bool = T
         "docs_available": list(docs_available),
         "max_backtest_trials": max_bt,
         "sandbox_image": sandbox_image,
-        "student_code_available": bool(student_code_dir),
+        "user_code_available": bool(user_code_dir),
     }
     task_id_upper = task_id.upper()
     if task.category.value == "debug" or task.sample_code:
@@ -182,7 +182,7 @@ def _build_standalone_server(task_id: str, persona_id: str, use_docker: bool = T
         "template_type": template_type,
         "expects_universe": template_type == "multi_symbol",
         "sandbox_image": sandbox_image,
-        "student_code_available": bool(student_code_dir),
+        "user_code_available": bool(user_code_dir),
     }
 
     if container_manager.use_docker:
@@ -216,7 +216,7 @@ def _build_standalone_server(task_id: str, persona_id: str, use_docker: bool = T
 
     from config.model_resolver import resolve_deepeval_model
 
-    student_sim = StudentSimulator(
+    user_sim = UserSimulator(
         scenario=build_scenario(task, persona_id, has_incremental_tc=has_tc),
         user_description=build_user_description(persona, has_incremental_tc=has_tc),
         model=resolve_deepeval_model(SIMULATOR_DEFAULT_MODEL),
@@ -251,7 +251,7 @@ def _build_standalone_server(task_id: str, persona_id: str, use_docker: bool = T
     session = TutoringSession(
         task=task,
         persona=persona,
-        student_sim=student_sim,
+        user_sim=user_sim,
         tc_checker=tc_checker,
         max_turns=task.max_turns,
         proxy=proxy,
@@ -285,9 +285,9 @@ def _load_persona(persona_id: str):
 
     personas_dir = Path(__file__).parent.parent / "personas"
     for json_path in personas_dir.rglob(f"{persona_id}.json"):
-        from orchestrator.schemas import StudentPersona
+        from orchestrator.schemas import UserPersona
 
-        return StudentPersona(**_json.loads(json_path.read_text()))
+        return UserPersona(**_json.loads(json_path.read_text()))
     raise FileNotFoundError(f"Persona not found: {persona_id}")
 
 

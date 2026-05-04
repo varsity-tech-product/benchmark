@@ -6,7 +6,7 @@
   "task_type": "multi_turn",
   "description": "Guide a student to synthesize multiple alpha sources into a single composite signal.",
   "persona_id": "finance_veteran",
-  "student_opening": "I want to synthesize multiple alpha sources into a single composite. I understand the strategy logic from my trading experience — but I need help coding and backtesting it.",
+  "user_opening": "I want to synthesize multiple alpha sources into a single composite. I understand the strategy logic from my trading experience — but I need help coding and backtesting it.",
   "environment": {
     "data_files": [
       "BTCUSDT_1d_2021_2024.csv",

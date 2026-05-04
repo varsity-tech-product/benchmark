@@ -6,7 +6,7 @@
   "task_type": "multi_turn",
   "description": "Guide a student to find and fix a missing warm-up period in a LEAN EMA crossover algorithm. Without SetWarmUp and IsWarmingUp guard, the EMA indicators compute on insufficient history, causing incorrect early signals.",
   "persona_id": "developer_crossover",
-  "student_opening": "I'm looking at code for a LEAN EMA crossover algorithm that might be missing a warm-up period. The code reads fine to me, but I'm not sure the financial logic is correct. What should it be doing?",
+  "user_opening": "I'm looking at code for a LEAN EMA crossover algorithm that might be missing a warm-up period. The code reads fine to me, but I'm not sure the financial logic is correct. What should it be doing?",
   "environment": {
     "data_files": [
       "universe.json"
@@ -57,7 +57,7 @@
     "termination_criteria": "The tutor has completed the following steps with computational evidence (not just verbal discussion): (1) Reviewed the student's LEAN C# code and identified the missing SetWarmUp call and IsWarmingUp guard that cause EMA indicators to emit unreliable values during early bars. (2) Explained why warm-up is necessary, such as describing how EMAs need sufficient history to converge and how trading on partially initialized indicators produces false signals. (3) Showed corrected C# code with the warm-up fix and presented backtest results demonstrating that trades no longer appear in the warm-up period, with specific numerical evidence such as trade count or first-trade date. (4) Responded to the student's follow-up about the warm-up mechanism or the fix with additional explanation or analysis beyond the initial demonstration. Once all four steps have been computationally demonstrated, the session is complete."
   },
   "requires_code": true,
-  "sample_code": "student_code/warmup_bug.cs",
+  "sample_code": "user_code/warmup_bug.cs",
   "max_turns": 10,
   "timeout_minutes": 20
 }

@@ -72,8 +72,8 @@ def evaluate(
                 if "rolling(20)" in text or "rolling(window=20)" in text:
                     results["bug_is_fixed"] = True
 
-    # Also check student_code path for in-place edits
-    buggy_file = os.path.join(workspace_path, "..", "student_code", "ma_offbyone.py")
+    # Also check user_code path for in-place edits
+    buggy_file = os.path.join(workspace_path, "..", "user_code", "ma_offbyone.py")
     if os.path.exists(buggy_file):
         try:
             with open(buggy_file) as f:

@@ -38,7 +38,7 @@ DRAFT_TOOL_SPECS: dict[str, ToolSpec] = {
         name="note_to_self",
         description=(
             "Record your reasoning, observations, or intermediate findings "
-            "for your own reference. Content is not shown to the student. "
+            "for your own reference. Content is not shown to the user. "
             "Use this to organize your thoughts before responding."
         ),
         input_schema=_schema(
@@ -61,7 +61,7 @@ DRAFT_TOOL_SPECS: dict[str, ToolSpec] = {
                 "The thought is trivial or obvious from context.",
             ),
             common_mistakes=(
-                "Writing to the student instead of to yourself — this tool is private.",
+                "Writing to the user instead of to yourself — this tool is private.",
             ),
             returns="A short acknowledgment. The note is logged automatically.",
             related_tools=("send_message", "shell_exec"),
@@ -545,7 +545,7 @@ DRAFT_TOOL_SPECS: dict[str, ToolSpec] = {
                     "type": "string",
                     "description": (
                         "Relative path to the sandbox C# algorithm source file. "
-                        "This may be in the working area or a mounted student_code area."
+                        "This may be in the working area or a mounted user_code area."
                     ),
                 },
                 "params_json": {
@@ -610,7 +610,7 @@ DRAFT_TOOL_SPECS: dict[str, ToolSpec] = {
             ToolExample(
                 intent="Run mounted task-provided code with an explicit fully-qualified entrypoint",
                 args={
-                    "algorithm_path": "student_code/student_code.cs",
+                    "algorithm_path": "user_code/user_code.cs",
                     "full_type_name": "MyNamespace.MyStrategy",
                 },
             ),

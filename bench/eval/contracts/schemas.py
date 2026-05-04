@@ -66,7 +66,7 @@ class QuantTutorTask(BaseModel):
 
     Layer 1 tasks use: description (as question), context, reference_answer,
     synthetic_response, and minimal ground_truth.
-    Layer 2 tasks use: persona_id, student_opening, environment, and full
+    Layer 2 tasks use: persona_id, user_opening, environment, and full
     ground_truth with required_capabilities.
     """
 
@@ -82,9 +82,9 @@ class QuantTutorTask(BaseModel):
     synthetic_response: Optional[str] = None
     source_dataset: Optional[str] = None
     tags: list[str] = Field(default_factory=list)
-    # Persona / opening — single value per #122 (collapsed from persona_ids[] + student_openings{})
+    # Persona / opening — single value per #122 (collapsed from persona_ids[] + user_openings{})
     persona_id: str = ""
-    student_opening: str = ""
+    user_opening: str = ""
     environment: Optional[EnvironmentConfig] = None
     ground_truth: Optional[GroundTruth] = None
     requires_code: bool = False
@@ -97,7 +97,7 @@ class QuantTutorTask(BaseModel):
     )
 
 
-class StudentPersona(BaseModel):
+class UserPersona(BaseModel):
     persona_id: str
     knowledge_level: str
     description: str
@@ -111,7 +111,7 @@ class StudentPersona(BaseModel):
     def _reject_legacy_concept_keys(cls, data):
         """Hard-fail on pre-2026-04-24 field names so renamed-schema silently
         dropping legacy keys (Pydantic default ``extra='ignore'``) can never
-        produce a student with empty knowledge boundaries. See the 2026-04-24
+        produce a user with empty knowledge boundaries. See the 2026-04-24
         persona migration: ``known_concepts``/``unknown_concepts`` were
         renamed to ``familiar_concepts``/``unfamiliar_concepts``.
         """
@@ -122,7 +122,7 @@ class StudentPersona(BaseModel):
             ):
                 if legacy in data:
                     raise ValueError(
-                        f"StudentPersona received legacy field {legacy!r}; "
+                        f"UserPersona received legacy field {legacy!r}; "
                         f"rename to {current!r} (2026-04-24 schema migration)."
                     )
         return data

@@ -14,7 +14,7 @@ Usage:
 
 Or via the global helper (used by simulation.py / mcp_proxy.py):
     from orchestrator.live_monitor import emit
-    emit("student_message", {"content": "..."})
+    emit("user_message", {"content": "..."})
 """
 
 import json
@@ -165,7 +165,7 @@ _DASHBOARD_HTML = textwrap.dedent(
   :root {
     --bg: #0f1117; --surface: #1a1d27; --border: #2a2d3a;
     --text: #e4e4e7; --muted: #71717a; --accent: #6366f1;
-    --student: #3b82f6; --tutor: #10b981; --tool: #f59e0b;
+    --user: #3b82f6; --tutor: #10b981; --tool: #f59e0b;
     --error: #ef4444; --success: #22c55e;
   }
   * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -190,7 +190,7 @@ _DASHBOARD_HTML = textwrap.dedent(
 
   .msg { max-width: 85%; padding: 10px 14px; border-radius: 12px; font-size: 13px;
          line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
-  .msg.student { align-self: flex-end; background: var(--student); color: white;
+  .msg.user { align-self: flex-end; background: var(--user); color: white;
                  border-bottom-right-radius: 4px; }
   .msg.tutor { align-self: flex-start; background: var(--surface); border: 1px solid var(--border);
                border-bottom-left-radius: 4px; }
@@ -285,7 +285,7 @@ function addMessage(role, content) {
   div.className = 'msg ' + role;
   const label = document.createElement('div');
   label.className = 'label';
-  label.textContent = role === 'student' ? 'Student' : 'Tutor';
+  label.textContent = role === 'user' ? 'User' : 'Tutor';
   div.appendChild(label);
   div.appendChild(document.createTextNode(truncate(content, 3000)));
   chat.appendChild(div);
@@ -353,8 +353,8 @@ function connect() {
     if (!startTime) startTime = Date.now();
 
     switch (data.type) {
-      case 'student_message':
-        addMessage('student', data.content);
+      case 'user_message':
+        addMessage('user', data.content);
         if (data.turn_index != null) turnEl.textContent = 'Turn ' + (data.turn_index + 1);
         break;
       case 'tutor_response':

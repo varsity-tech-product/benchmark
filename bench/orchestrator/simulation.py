@@ -1,7 +1,7 @@
 """ConversationSimulator configuration for QuantTutorBench.
 
 Wraps DeepEval's ConversationSimulator to drive multi-turn tutoring dialogues.
-The simulator plays the student role using persona definitions from task + persona JSON.
+The simulator plays the user role using persona definitions from task + persona JSON.
 
 Reference: https://github.com/confident-ai/deepeval
 DeepEval API:
@@ -108,7 +108,7 @@ from config.model_resolver import resolve_deepeval_model
 from config.prompt_config import build_scenario, build_user_description
 
 from orchestrator.live_monitor import emit
-from orchestrator.schemas import QuantTutorTask, StudentPersona
+from orchestrator.schemas import QuantTutorTask, UserPersona
 
 if TYPE_CHECKING:
     from mcp_servers.session import TutoringSession
@@ -172,7 +172,7 @@ class _EfficientSimulator(ConversationSimulator):
 
     Instead of sending the full conversation to the checker LLM every turn,
     this maintains a persistent TC coverage bitmap and only sends the latest
-    exchange (1 student + 1 tutor message) plus the coverage state.
+    exchange (1 user + 1 tutor message) plus the coverage state.
 
     Token savings: ~97% vs native checker (fixed ~1400 tokens/check vs O(n)).
     DeepEvalError risk: eliminated (custom JSON parsing with graceful fallback).
@@ -197,7 +197,7 @@ class _EfficientSimulator(ConversationSimulator):
 
     def stop_conversation(self, turns, golden, progress=None, pbar_turns_id=None):
         """Incremental TC checker — replaces DeepEval's full-history checker."""
-        # Count exchanges (1 exchange = 1 student msg + 1 tutor response)
+        # Count exchanges (1 exchange = 1 user msg + 1 tutor response)
         n_exchanges = len([t for t in turns if t.role == "user"])
 
         # Gate 1: skip early exchanges
@@ -225,7 +225,7 @@ class _EfficientSimulator(ConversationSimulator):
                 from orchestrator.live_monitor import emit
 
                 turn_idx = len([t for t in turns if t.role == "user"]) - 1
-                emit("student_message", {"content": closing, "turn_index": turn_idx})
+                emit("user_message", {"content": closing, "turn_index": turn_idx})
             except Exception:
                 pass
             return True
@@ -373,14 +373,14 @@ class _EfficientSimulator(ConversationSimulator):
             return []
 
     def _generate_closing(self, turns) -> str:
-        """Generate a natural student closing message."""
+        """Generate a natural user closing message."""
         recent = turns[-4:] if len(turns) >= 4 else turns
         recent_text = "\n".join(
-            f"[{'Student' if t.role == 'user' else 'Tutor'}]: {t.content[:300]}"
+            f"[{'User' if t.role == 'user' else 'Tutor'}]: {t.content[:300]}"
             for t in recent
         )
         prompt = (
-            "You are the student in this tutoring session. The tutor has "
+            "You are the user in this tutoring session. The tutor has "
             "successfully covered all your learning goals with real "
             "computations and results. The session is now ending.\n\n"
             "Write a brief FINAL closing message (1-3 sentences):\n"
@@ -422,7 +422,7 @@ def _normalize_content(content) -> str:
 
 def build_conversational_golden(
     task: QuantTutorTask,
-    persona: StudentPersona,
+    persona: UserPersona,
 ) -> "ConversationalGolden":
     """Build a DeepEval ConversationalGolden from task + persona.
 
@@ -470,7 +470,7 @@ def create_model_callback(
     """Create the model_callback function for ConversationSimulator.
 
     DeepEval's ConversationSimulator expects Callable[[str], str]:
-    it passes the student's message as a string and expects the agent's
+    it passes the user's message as a string and expects the agent's
     response as a string. The simulator tracks turn history internally.
 
     Args:
@@ -489,7 +489,7 @@ def create_model_callback(
     _MAX_REPEATS: int = 2  # Force-stop after 2 consecutive identical responses
 
     def model_callback(input: str, **kwargs):
-        """Route student message to agent, return response as Turn.
+        """Route user message to agent, return response as Turn.
 
         DeepEval v3.8+ passes keyword args: input, turns, thread_id.
         We match the 'input' parameter name so DeepEval can introspect it.
@@ -545,7 +545,7 @@ def create_model_callback(
 
         conversation_history.append({"role": "user", "content": input})
         turn_idx = len([m for m in conversation_history if m["role"] == "user"]) - 1
-        emit("student_message", {"content": input, "turn_index": turn_idx})
+        emit("user_message", {"content": input, "turn_index": turn_idx})
 
         proxy.set_turn(turn_idx)
 
@@ -582,7 +582,7 @@ def create_model_callback(
             response = "Let me continue our discussion."
 
         # Post-turn cancel check: if tools were rejected during this turn,
-        # exit before the simulator generates the next student message.
+        # exit before the simulator generates the next user message.
         if cancel_event is not None and cancel_event.is_set():
             conversation_history.append(
                 {"role": "assistant", "content": response or ""}
@@ -635,21 +635,21 @@ def create_model_callback(
     return model_callback
 
 
-def _append_student_closing(test_case, resolved_model, golden) -> None:
-    """Append a natural student closing message if conversation ends on tutor turn.
+def _append_user_closing(test_case, resolved_model, golden) -> None:
+    """Append a natural user closing message if conversation ends on tutor turn.
 
-    DeepEval's stop_conversation() checks *before* generating the next student
+    DeepEval's stop_conversation() checks *before* generating the next user
     message, so conversations always end with the tutor's reply.  This adds a
-    brief student wrap-up for a more natural ending.
+    brief user wrap-up for a more natural ending.
 
-    Skipped if the conversation already ends on a student message (e.g. when
+    Skipped if the conversation already ends on a user message (e.g. when
     the incremental TC checker injected a closing via stop_conversation).
     """
     if not test_case.turns or test_case.turns[-1].role != "assistant":
         return
     try:
         prompt = (
-            "You are the student in the conversation below. The tutor just "
+            "You are the user in the conversation below. The tutor just "
             "finished answering your last question. Write a brief closing "
             "message (1-2 sentences) that thanks the tutor and mentions one "
             "specific thing you learned or plan to try. Stay in character.\n\n"
@@ -666,7 +666,7 @@ def _append_student_closing(test_case, resolved_model, golden) -> None:
 
                 turn_idx = len([t for t in test_case.turns if t.role == "user"]) - 1
                 emit(
-                    "student_message", {"content": text.strip(), "turn_index": turn_idx}
+                    "user_message", {"content": text.strip(), "turn_index": turn_idx}
                 )
             except Exception:
                 pass
@@ -676,7 +676,7 @@ def _append_student_closing(test_case, resolved_model, golden) -> None:
 
 def run_conversation_simulation(
     task: QuantTutorTask,
-    persona: StudentPersona,
+    persona: UserPersona,
     agent_adapter,
     proxy,
     simulator_model: str = SIMULATOR_DEFAULT_MODEL,
@@ -689,16 +689,16 @@ def run_conversation_simulation(
 
     Args:
         task: The benchmark task.
-        persona: The student persona.
+        persona: The user persona.
         agent_adapter: The agent adapter.
         proxy: The MCPProxy instance.
-        simulator_model: LLM model for student simulation.
+        simulator_model: LLM model for user simulation.
         max_turns: Maximum conversation turns (exchanges, not messages).
         tools_enabled: If False, no tools are passed to the agent.
 
     Returns:
         Tuple of (ConversationalTestCase, simulator_cost).
-        simulator_cost is the accumulated USD cost of student message generation,
+        simulator_cost is the accumulated USD cost of user message generation,
         or None if cost tracking is unavailable.
     """
     if not DEEPEVAL_AVAILABLE:
@@ -743,7 +743,7 @@ def run_conversation_simulation(
     )
 
     # Retry loop: DeepEval's simulate() can silently return [] when it
-    # catches an internal exception (e.g. student-simulator LLM failure,
+    # catches an internal exception (e.g. user-simulator LLM failure,
     # context overflow from a very long agent response).  We detect this
     # by checking for 0 turns despite the agent having consumed tokens,
     # and retry with a fresh simulator instance.
@@ -792,7 +792,7 @@ def run_conversation_simulation(
             )
             simulator_cost = getattr(simulator, "simulation_cost", None)
             tc = ConversationalTestCase(turns=timeout_exc.turns)
-            _append_student_closing(tc, resolved_model, golden)
+            _append_user_closing(tc, resolved_model, golden)
             return tc, simulator_cost
         except Exception as exc:
             logger.warning(
@@ -823,7 +823,7 @@ def run_conversation_simulation(
                     attempt + 1,
                     len(test_cases[0].turns),
                 )
-            _append_student_closing(test_cases[0], resolved_model, golden)
+            _append_user_closing(test_cases[0], resolved_model, golden)
             return test_cases[0], simulator_cost
 
         # Detect token consumption to distinguish "agent worked but
@@ -870,26 +870,26 @@ def run_conversation_simulation(
 # The agent's system prompt already contains task context (via set_task_context),
 # so this only needs to instruct it on the interaction protocol.
 _AGENT_BOOTSTRAP = (
-    "A student is waiting for your help. Here is their opening message:\n\n"
+    "A user is waiting for your help. Here is their opening message:\n\n"
     '"{opening}"\n\n'
     "You have access to tools for data analysis, coding, backtesting, "
-    "and communicating with the student.\n\n"
-    "IMPORTANT: To talk to the student, you MUST use the send_message "
+    "and communicating with the user.\n\n"
+    "IMPORTANT: To talk to the user, you MUST use the send_message "
     "tool. Your text responses are internal notes — only send_message "
-    "delivers messages to the student.\n\n"
+    "delivers messages to the user.\n\n"
     "Workflow:\n"
     "1. Use tools (shell_exec, file_read, fetch_market_data, etc.) to "
     "prepare your teaching.\n"
-    "2. Use send_message(text=...) to respond to the student.\n"
-    "3. Read the student's reply from the send_message result.\n"
+    "2. Use send_message(text=...) to respond to the user.\n"
+    "3. Read the user's reply from the send_message result.\n"
     "4. Repeat until send_message returns status 'completed'.\n\n"
-    "Begin by addressing the student's opening message."
+    "Begin by addressing the user's opening message."
 )
 
 
 def run_agent_session(
     task: "QuantTutorTask",
-    persona: "StudentPersona",
+    persona: "UserPersona",
     agent_adapter,
     proxy,
     session: "TutoringSession",
@@ -898,14 +898,14 @@ def run_agent_session(
 ) -> list[dict[str, str]]:
     """Run a tutoring session where the agent drives the loop.
 
-    The agent interacts with the student via ``send_message`` tool calls
+    The agent interacts with the user via ``send_message`` tool calls
     and uses other MCP tools autonomously.  The conversation is managed
     by ``TutoringSession``; this function only bootstraps the agent and
     handles edge cases.
 
     Args:
         task: The benchmark task.
-        persona: The student persona.
+        persona: The user persona.
         agent_adapter: The agent adapter (BaseAgentAdapter).
         proxy: MCPProxy with session tools already registered.
         session: TutoringSession backing the session tools.
@@ -927,11 +927,11 @@ def run_agent_session(
         if hasattr(agent_adapter, "set_cancel_event"):
             agent_adapter.set_cancel_event(cancel_event)
 
-    # Get student opening and inject into session
-    opening = task.student_opening or "Hi, I need help with this topic."
-    session.inject_student_opening(opening)
+    # Get user opening and inject into session
+    opening = task.user_opening or "Hi, I need help with this topic."
+    session.inject_user_opening(opening)
 
-    # Build bootstrap prompt with the student's opening
+    # Build bootstrap prompt with the user's opening
     bootstrap = _AGENT_BOOTSTRAP.format(opening=opening)
 
     # Give the agent enough iterations for the full session.
@@ -959,7 +959,7 @@ def run_agent_session(
         response = ""
 
     # Fallback: if agent returned text but never called send_message,
-    # treat the text as the agent's first message to the student.
+    # treat the text as the agent's first message to the user.
     if response and not session.conversation:
         logger.warning(
             "Agent did not call send_message. Wrapping text response "

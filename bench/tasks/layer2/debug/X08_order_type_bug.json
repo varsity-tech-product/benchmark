@@ -6,7 +6,7 @@
   "task_type": "multi_turn",
   "description": "Guide a student to find and fix an order type bug in a LEAN momentum strategy where LimitOrder at current price is used instead of MarketOrder, causing most orders to go unfilled in trending markets.",
   "persona_id": "developer_crossover",
-  "student_opening": "I'm looking at code that should find and fix an order type bug in a LEAN momentum strategy. The code reads fine to me, but I'm not sure the financial logic is correct. What should it be doing?",
+  "user_opening": "I'm looking at code that should find and fix an order type bug in a LEAN momentum strategy. The code reads fine to me, but I'm not sure the financial logic is correct. What should it be doing?",
   "environment": {
     "data_files": [
       "universe.json"
@@ -56,7 +56,7 @@
     "termination_criteria": "The tutor has completed the following steps with computational evidence (not just verbal discussion): (1) Reviewed the student's LEAN C# code and identified the LimitOrder bug where orders are placed at the current close price, causing unfilled orders when the market gaps away in trending conditions. (2) Explained why MarketOrder ensures immediate fills while LimitOrder at a stale price expires unfilled, such as describing the mechanics of order matching in trending markets. (3) Showed corrected C# code with MarketOrder and presented backtest results demonstrating significantly more filled trades, with specific numerical evidence such as trade count before vs after the fix. (4) Responded to the student's follow-up about order types or the fix with additional explanation or analysis beyond the initial demonstration. Once all four steps have been computationally demonstrated, the session is complete."
   },
   "requires_code": true,
-  "sample_code": "student_code/order_type_bug.cs",
+  "sample_code": "user_code/order_type_bug.cs",
   "max_turns": 10,
   "timeout_minutes": 20
 }

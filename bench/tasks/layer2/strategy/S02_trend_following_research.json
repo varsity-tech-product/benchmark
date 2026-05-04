@@ -6,7 +6,7 @@
   "task_type": "multi_turn",
   "description": "Guide a student to conduct systematic alpha research on trend-following patterns in BTCUSDT daily data.",
   "persona_id": "double_novice",
-  "student_opening": "I heard about how to conduct systematic alpha research on trend-following in class and want to try it. I'm new to both coding and trading — can you walk me through it step by step?",
+  "user_opening": "I heard about how to conduct systematic alpha research on trend-following in class and want to try it. I'm new to both coding and trading — can you walk me through it step by step?",
   "environment": {
     "data_files": [
       "BTCUSDT_1d_2021_2024.csv"

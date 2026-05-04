@@ -6,7 +6,7 @@
   "task_type": "multi_turn",
   "description": "Guide the student to convert raw OHLCV columns into proper data types, handle timezone normalization, and validate schema integrity.",
   "persona_id": "double_novice",
-  "student_opening": "My professor asked us to convert raw OHLCV columns into proper data types and handle timezone normalization. I'm new to both Python and finance — can you start from the basics?",
+  "user_opening": "My professor asked us to convert raw OHLCV columns into proper data types and handle timezone normalization. I'm new to both Python and finance — can you start from the basics?",
   "environment": {
     "data_files": [
       "AAPL_dirty.csv"

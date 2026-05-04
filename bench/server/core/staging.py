@@ -76,14 +76,14 @@ def create_staged_sample_code(
     sample_code: str | None,
     *,
     data_search_dirs: list[str] | None = None,
-    student_code_dir: str | None = None,
+    user_code_dir: str | None = None,
 ) -> tuple[str | None, list[str]]:
     """Create a task-local sample-code directory with a neutral filename.
 
-    The mounted ``/student_code`` directory should reveal only the current
+    The mounted ``/user_code`` directory should reveal only the current
     task's starter file, not benchmark-internal filenames such as
     ``alpha_conflict.cs``. The staged copy is renamed to
-    ``student_code.<ext>`` while preserving file contents.
+    ``user_code.<ext>`` while preserving file contents.
     """
     if not sample_code:
         return None, []
@@ -91,15 +91,15 @@ def create_staged_sample_code(
     data_search_dirs = data_search_dirs or []
     candidates: list[Path] = []
 
-    if sample_code.startswith("student_code/") and student_code_dir:
-        rel = sample_code[len("student_code/") :]
-        candidates.append(Path(student_code_dir) / rel)
+    if sample_code.startswith("user_code/") and user_code_dir:
+        rel = sample_code[len("user_code/") :]
+        candidates.append(Path(user_code_dir) / rel)
     elif sample_code.startswith("data/"):
         rel = sample_code[len("data/") :]
         candidates.extend(Path(root) / rel for root in data_search_dirs)
     else:
-        if student_code_dir:
-            candidates.append(Path(student_code_dir) / sample_code)
+        if user_code_dir:
+            candidates.append(Path(user_code_dir) / sample_code)
         candidates.extend(Path(root) / sample_code for root in data_search_dirs)
 
     source = next((path for path in candidates if path.is_file()), None)
@@ -108,9 +108,9 @@ def create_staged_sample_code(
             f"Could not resolve sample_code '{sample_code}' from the staged task inputs."
         )
 
-    staged_dir = tempfile.mkdtemp(prefix="qtb_student_")
+    staged_dir = tempfile.mkdtemp(prefix="qtb_user_")
     suffix = source.suffix or ".txt"
-    destination = Path(staged_dir) / f"student_code{suffix}"
+    destination = Path(staged_dir) / f"user_code{suffix}"
     shutil.copy2(source, destination)
     return staged_dir, [staged_dir]
 

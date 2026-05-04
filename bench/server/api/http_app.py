@@ -1092,22 +1092,22 @@ def _classify_session_failure(termination_reason: str | None) -> str:
     """Map a session termination_reason to a retry-eligibility category.
 
     Categories (per #126 P1):
-    - ``infrastructure_failure`` — retryable (NPC/student-sim crash, sandbox
-      crash; surfaces today as ``student_sim_error:*``).
+    - ``infrastructure_failure`` — retryable (NPC/user-sim crash, sandbox
+      crash; surfaces today as ``user_sim_error:*``).
     - ``agent_gave_up`` — not retryable (``agent_stuck``, ``agent_abandoned``).
     - ``max_turns_reached`` — not retryable (``max_turns``, ``timeout``;
       session-level timeout is treated as exhaustion, not infra failure).
     - ``terminal_success`` — not retryable (``objectives_met``,
-      ``student_satisfied``).
+      ``user_satisfied``).
     - ``unknown`` — not retryable; defensive default.
     """
     if not termination_reason:
         return "unknown"
-    if termination_reason.startswith("student_sim_error:"):
+    if termination_reason.startswith("user_sim_error:"):
         return _RETRYABLE_FAILURE
     if termination_reason in ("agent_stuck", "agent_abandoned"):
         return "agent_gave_up"
-    if termination_reason in ("objectives_met", "student_satisfied"):
+    if termination_reason in ("objectives_met", "user_satisfied"):
         return "terminal_success"
     if termination_reason in ("max_turns", "timeout"):
         return "max_turns_reached"
@@ -1197,7 +1197,7 @@ async def rest_retry_session(request: Request) -> JSONResponse:
         run.run_id, result_dir
     )
     # Preserve the original persona so the retry exercises the same
-    # student assignment; falling through to a random pick would change
+    # user assignment; falling through to a random pick would change
     # the scenario and make scores incomparable across attempts.
     register_result = await asyncio.to_thread(
         new_state.register, run.task_id, state.persona_id or None
@@ -1604,7 +1604,7 @@ async def rest_send(request: Request) -> JSONResponse:
     text = body.get("text", "")
     if not text or not text.strip():
         return JSONResponse(
-            {"error": "Empty message. Provide text to send to the student."}, 400
+            {"error": "Empty message. Provide text to send to the user."}, 400
         )
 
     attachments = body.get("attachments") or []
@@ -1637,10 +1637,10 @@ async def rest_send(request: Request) -> JSONResponse:
         )
     data = json.loads(result)
     logger.info(
-        "[REST:%s] student reply (status=%s): %s...",
+        "[REST:%s] user reply (status=%s): %s...",
         sid[:8],
         data.get("status", "?"),
-        data.get("student_message", "")[:100],
+        data.get("user_message", "")[:100],
     )
     return JSONResponse(data)
 

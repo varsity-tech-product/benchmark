@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 from config.prompt_config import flatten_concepts
 
 if TYPE_CHECKING:
-    from eval.contracts.schemas import QuantTutorTask, StudentPersona
+    from eval.contracts.schemas import QuantTutorTask, UserPersona
 
 
 # ── Emotional Profile Expansion ───────────────────────────────
@@ -32,10 +32,10 @@ EMOTIONAL_PROFILE_DESCRIPTIONS: dict[str, str] = (
 
 
 def build_user_description(
-    persona: StudentPersona,
+    persona: UserPersona,
     has_incremental_tc: bool = False,
 ) -> str:
-    """Build user_description string for the student simulator LLM.
+    """Build user_description string for the user simulator LLM.
 
     Combines the persona's background description, concept knowledge,
     emotional profile, and behavioral rules into a structured prompt.
@@ -97,7 +97,7 @@ def build_scenario(
     persona_id: str,
     has_incremental_tc: bool = False,
 ) -> str:
-    """Build scenario string for the student simulator LLM.
+    """Build scenario string for the user simulator LLM.
 
     Combines task description with persona-specific opening and
     learning goals derived from required_capabilities.
@@ -107,7 +107,7 @@ def build_scenario(
     incremental TC checking.  Termination is handled externally by the
     TC checker and hardcoded closing pool.
     """
-    opening = task.student_opening
+    opening = task.user_opening
     parts = [
         f"Scenario: {task.description}",
         f'Your opening message was: "{opening}"',

@@ -1,8 +1,8 @@
-"""Artifact visibility digest for student steering.
+"""Artifact visibility digest for user steering.
 
 This stays intentionally shallow. It does not attempt task-specific semantic
 coverage. It only answers whether the tutor appears to have generated code or
-output artifacts that match the student's latest request but were not pasted
+output artifacts that match the user's latest request but were not pasted
 into the chat.
 """
 
@@ -78,8 +78,8 @@ def _looks_like_summary(ext: str, preview: str) -> bool:
     return stripped.startswith("#") or stripped.startswith("- ")
 
 
-def classify_student_request(latest_student_text: str) -> dict[str, bool]:
-    text = latest_student_text or ""
+def classify_user_request(latest_user_text: str) -> dict[str, bool]:
+    text = latest_user_text or ""
     return {
         "asks_for_code": bool(_ASK_CODE_RE.search(text)),
         "asks_for_output": bool(_ASK_OUTPUT_RE.search(text)),
@@ -101,14 +101,14 @@ def build_visible_artifact_digest(
     *,
     workspace_path: Optional[str],
     previous_snapshot: Optional[dict[str, dict]],
-    latest_student_text: str,
+    latest_user_text: str,
     latest_agent_text: str,
     shared_filenames: frozenset[str] = frozenset(),
 ) -> tuple[dict[str, dict], dict]:
     """Return ``(new_snapshot, artifact_digest)`` for the current tutor turn.
 
     *shared_filenames* contains workspace-relative paths that the agent
-    attached this turn.  These files are already visible to the student
+    attached this turn.  These files are already visible to the user
     via the file ledger and should not be flagged as hidden artifacts.
     """
     current_snapshot = scan_workspace_snapshot(workspace_path)
@@ -157,7 +157,7 @@ def build_visible_artifact_digest(
 
         artifact_entries.append(entry)
 
-    request_signals = classify_student_request(latest_student_text)
+    request_signals = classify_user_request(latest_user_text)
     chat_signals = classify_chat_visibility(latest_agent_text)
 
     artifact_ready_but_not_shown = (
@@ -196,12 +196,12 @@ def build_visible_artifact_digest(
         },
         "steering_signals": {
             "artifact_ready_but_not_shown": artifact_ready_but_not_shown,
-            "student_should_request_literal_code": (
+            "user_should_request_literal_code": (
                 request_signals["asks_for_code"]
                 and has_new_code_artifact
                 and not chat_signals["assistant_pasted_code"]
             ),
-            "student_should_request_literal_output": (
+            "user_should_request_literal_output": (
                 request_signals["asks_for_output"]
                 and has_new_output_artifact
                 and not chat_signals["assistant_pasted_output"]

@@ -6,7 +6,7 @@
   "task_type": "multi_turn",
   "description": "Guide the student to collect realtime market updates from a streaming or polling endpoint, store timestamped updates as a CSV file, and teach quant microstructure and data-quality concepts.",
   "persona_id": "double_novice",
-  "student_opening": "My professor asked us to collect realtime market updates from a streaming or polling endpoint. I'm new to both Python and finance — can you start from the basics?",
+  "user_opening": "My professor asked us to collect realtime market updates from a streaming or polling endpoint. I'm new to both Python and finance — can you start from the basics?",
   "environment": {
     "data_files": [],
     "core_mcp_tools": [

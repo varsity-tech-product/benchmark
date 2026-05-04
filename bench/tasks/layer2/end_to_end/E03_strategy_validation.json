@@ -6,7 +6,7 @@
   "task_type": "multi_turn",
   "description": "Guide a student through validating a time-series momentum signal on SPY with rigorous train/test methodology — from exploratory data analysis, through signal formalization and evaluation, to proper in-sample / out-of-sample separation and overfitting assessment.",
   "persona_id": "developer_crossover",
-  "student_opening": "I need to validate a time-series momentum signal on SPY. I can handle the code, but I don't understand the financial logic behind it. What should this do and why?",
+  "user_opening": "I need to validate a time-series momentum signal on SPY. I can handle the code, but I don't understand the financial logic behind it. What should this do and why?",
   "environment": {
     "data_files": [
       "SPY_2018_2024.csv",

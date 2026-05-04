@@ -136,7 +136,7 @@ def _turn_from_dict(d: dict) -> ConversationTurn:
     return ConversationTurn(
         turn=int(d.get("turn", 0) or 0),
         agent=_agent_message_from_dict(d.get("agent") or {}),
-        student=_student_message_from_dict(d.get("student")) if d.get("student") else None,
+        user=_user_message_from_dict(d.get("user")) if d.get("user") else None,
         tool_calls=[
             _tool_call_from_dict(tc)
             for tc in (d.get("tool_calls") or [])
@@ -156,7 +156,7 @@ def _agent_message_from_dict(d: dict) -> AgentMessage:
     )
 
 
-def _student_message_from_dict(d: dict | None) -> StudentMessage | None:
+def _user_message_from_dict(d: dict | None) -> StudentMessage | None:
     if not isinstance(d, dict):
         return None
     return StudentMessage(text=str(d.get("text", "")))

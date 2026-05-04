@@ -408,11 +408,11 @@
   }
 
   function normalizedRole(role) {
-    return (role === 'user' || role === 'student') ? 'student' : 'tutor';
+    return (role === 'user' || role === 'user') ? 'user' : 'tutor';
   }
 
   function roleLabel(role, roleClass) {
-    if (roleClass === 'student') return 'Student';
+    if (roleClass === 'user') return 'User';
     if (role === 'assistant' || role === 'tutor' || !role) return 'Tutor';
     return titleCase(role);
   }

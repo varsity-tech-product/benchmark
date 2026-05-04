@@ -92,7 +92,7 @@ class ContainerManager:
         task_id: str,
         data_dir: str,
         docs_dir: str,
-        student_code_dir: Optional[str] = None,
+        user_code_dir: Optional[str] = None,
         sandbox_image: Optional[str] = None,
         network_enabled: bool = False,
         lean_data_dir: Optional[str] = None,
@@ -106,7 +106,7 @@ class ContainerManager:
                       May be a staged/filtered directory.
             docs_dir: Host-side directory to mount as /docs (read-only).
                       May be a staged/filtered directory.
-            student_code_dir: If provided, mounted as /student_code (read-only).
+            user_code_dir: If provided, mounted as /user_code (read-only).
             lean_data_dir: If provided, mounted as /lean/Data (LEAN metadata only).
             sandbox_image: Docker image override (default: self.docker_image).
         """
@@ -122,8 +122,8 @@ class ContainerManager:
                 f"-v {data_dir}:/data:ro",
                 f"-v {docs_dir}:/docs:ro",
             ]
-            if student_code_dir:
-                mounts.append(f"-v {student_code_dir}:/student_code:ro")
+            if user_code_dir:
+                mounts.append(f"-v {user_code_dir}:/user_code:ro")
             if lean_data_dir:
                 mounts.append(f"-v {lean_data_dir}:/lean/Data:ro")
             if custom_data_dir:

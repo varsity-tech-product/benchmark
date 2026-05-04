@@ -117,7 +117,7 @@ def _make_bundle(task_id: str, persona_id: str) -> Bundle:
             ConversationTurn(
                 turn=1,
                 agent=AgentMessage(text="Here's a brief plan."),
-                student=StudentMessage(text="Walk me through the strategy."),
+                user=StudentMessage(text="Walk me through the strategy."),
             ),
         ],
     )

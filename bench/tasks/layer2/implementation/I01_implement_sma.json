@@ -6,7 +6,7 @@
   "task_type": "multi_turn",
   "description": "Guide a student to implement a Simple Moving Average (SMA) trend-following strategy as a LEAN C# algorithm on a single crypto symbol (BTCUSDT). The student must subscribe to one symbol, create an SMA indicator, implement a price-vs-SMA entry/exit rule, handle warm-up correctly, and produce a trade log. This is the simplest possible LEAN strategy — the 'hello world' of algorithmic trading on QuantConnect.",
   "persona_id": "fullstack_practitioner",
-  "student_opening": "I've backtested SMA strategies in Python before but need to port one to LEAN C# for production. SMA(20) on BTCUSDT daily as a smoke test. I understand the trading logic — just need help with the LEAN API specifics: AddCrypto, indicator registration, SetHoldings.",
+  "user_opening": "I've backtested SMA strategies in Python before but need to port one to LEAN C# for production. SMA(20) on BTCUSDT daily as a smoke test. I understand the trading logic — just need help with the LEAN API specifics: AddCrypto, indicator registration, SetHoldings.",
   "environment": {
     "data_files": [
       "universe.json"

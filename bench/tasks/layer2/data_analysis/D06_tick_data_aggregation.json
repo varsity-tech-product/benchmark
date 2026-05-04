@@ -6,7 +6,7 @@
   "task_type": "multi_turn",
   "description": "Guide the student to aggregate tick-level data into OHLCV bars, save the result as a CSV file, and apply proper timestamp handling and microstructure quality checks.",
   "persona_id": "double_novice",
-  "student_opening": "My professor asked us to aggregate tick-level data into OHLCV bars, save the result. I'm new to both Python and finance — can you start from the basics?",
+  "user_opening": "My professor asked us to aggregate tick-level data into OHLCV bars, save the result. I'm new to both Python and finance — can you start from the basics?",
   "environment": {
     "data_files": [
       "tick_data_sample.csv"

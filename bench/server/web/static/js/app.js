@@ -2164,7 +2164,7 @@
     Array.prototype.forEach.call(container.querySelectorAll('.msg.tutor .msg-label'), function (label) {
       label.textContent = 'Assistant';
     });
-    Array.prototype.forEach.call(container.querySelectorAll('.msg.student .msg-label'), function (label) {
+    Array.prototype.forEach.call(container.querySelectorAll('.msg.user .msg-label'), function (label) {
       label.textContent = 'Student';
     });
   }
@@ -2251,7 +2251,7 @@
     return {
       none: [{value: '', label: 'Section-level'}],
       turn_index: conversation.map(function (turn, index) {
-        var role = turn.role === 'user' || turn.role === 'student' ? 'Student' : 'Assistant';
+        var role = turn.role === 'user' ? 'User' : 'Assistant';
         return {
           value: String(index),
           label: 'Turn ' + index + ' - ' + role + ' - ' + truncateReviewOption(turn.content || turn.message || '', 72)

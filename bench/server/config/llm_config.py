@@ -22,7 +22,7 @@ REFERENCE_DEFAULT_MODEL = "openai/gpt-5.2"
 # TC_CHECKER_MODEL removed (#122 slice 5): TC is programmatic — see
 # server/core/tc_checker.py.
 
-# --- Student simulator model pool (vision-capable only) ---
+# --- User simulator model pool (vision-capable only) ---
 # All models must support image input via OpenRouter.
 # Source: https://openrouter.ai/models?supported_parameters=images
 # Last verified: 2026-04-15
@@ -63,11 +63,11 @@ STUDENT_MODEL_POOL: dict[str, list[str]] = {
 }
 
 # Flat set for fast membership check
-STUDENT_MODEL_POOL_ALL: frozenset[str] = frozenset(
+USER_MODEL_POOL_ALL: frozenset[str] = frozenset(
     model for tier in STUDENT_MODEL_POOL.values() for model in tier
 )
 
-SIMULATOR_DEFAULT_MODEL = "openai/gpt-5.4"  # must be in STUDENT_MODEL_POOL_ALL
+SIMULATOR_DEFAULT_MODEL = "openai/gpt-5.4"  # must be in USER_MODEL_POOL_ALL
 EVAL_DEFAULT_MODELS: list[str] = [
     "anthropic/claude-haiku-4.5",
     # "anthropic/claude-sonnet-4-6",
@@ -77,12 +77,12 @@ EVAL_DEFAULT_MODELS: list[str] = [
 EVAL_DEFAULT_MODEL = EVAL_DEFAULT_MODELS[0]
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 
-# --- Issue #83 student-simulator validation experiment ---
+# --- Issue #83 user-simulator validation experiment ---
 # This is the single model-list entrypoint for
-# bench/experiments/student_sim_stability. Edit these values to change the
-# three student-simulator candidates, the live tutor stimulus, or the judge
+# bench/experiments/user_sim_stability. Edit these values to change the
+# three user-simulator candidates, the live tutor stimulus, or the judge
 # panel used by that experiment.
-STUDENT_SIM_STABILITY_STUDENT_MODELS: list[str] = [
+STUDENT_SIM_STABILITY_USER_MODELS: list[str] = [
     "openai/gpt-5.4",
     "anthropic/claude-sonnet-4-6",
     "google/gemini-3.1-pro-preview",

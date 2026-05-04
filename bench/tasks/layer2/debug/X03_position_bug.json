@@ -6,7 +6,7 @@
   "task_type": "multi_turn",
   "description": "Guide a student to find and fix a missing short position in a Bollinger Band mean-reversion strategy where the short signal is incorrectly coded as flat (0 instead of -1).",
   "persona_id": "developer_crossover",
-  "student_opening": "I'm looking at code that should find and fix a missing short position in a Bollinger Band mean-reversion strategy. The code reads fine to me, but I'm not sure the financial logic is correct. What should it be doing?",
+  "user_opening": "I'm looking at code that should find and fix a missing short position in a Bollinger Band mean-reversion strategy. The code reads fine to me, but I'm not sure the financial logic is correct. What should it be doing?",
   "environment": {
     "data_files": [
       "AAPL_2018_2024.csv"
@@ -52,7 +52,7 @@
     "termination_criteria": "The tutor has completed the following steps with computational evidence (not just verbal discussion): (1) Reviewed the student's Bollinger Band code and identified that the short signal is coded as 0 (flat) instead of -1 (short) when price crosses above the upper band. (2) Explained the three-state position model (1 = long, 0 = flat, -1 = short) and why coding shorts as 0 means the strategy never takes short positions, missing half of the mean-reversion signals. (3) Showed the corrected code with Position = -1 for upper band crossovers and presented execution results demonstrating the fix, such as short_days > 0 or short-side returns appearing. (4) Responded to the student's follow-up about the position logic or the fix with additional explanation or analysis beyond the initial demonstration. Once all four steps have been computationally demonstrated, the session is complete."
   },
   "requires_code": true,
-  "sample_code": "student_code/position_bug.py",
+  "sample_code": "user_code/position_bug.py",
   "max_turns": 10,
   "timeout_minutes": 15
 }

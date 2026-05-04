@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from orchestrator.schemas import QuantTutorTask, StudentPersona
+    from orchestrator.schemas import QuantTutorTask, UserPersona
 
 
 # ── Category-Based Prompt Injection ──────────────────────────
@@ -29,11 +29,11 @@ _IEX_CATEGORIES: frozenset[str] = frozenset(
 )
 
 # Prompt A — wait override (tutor context, inside AVAILABLE DOCUMENTATION)
-# Relaxes the "wait for student direction" rule for coding tasks so the
+# Relaxes the "wait for user direction" rule for coding tasks so the
 # tutor moves from explanation into implementation within the same response.
 _PROMPT_A_WAIT_OVERRIDE = (
     "\nFor coding tasks, 'wait for their direction' applies only to "
-    "future workflow steps. When the student is asking how to "
+    "future workflow steps. When the user is asking how to "
     "implement the current step, move from explanation into concrete "
     "implementation for that step in the same response."
 )
@@ -47,13 +47,13 @@ _PROMPT_B_CODE_TASK_EXECUTION = (
     "a concrete artifact for that same step whenever possible: create "
     "or update a file, execute code, save a results table, or inspect "
     "the generated output.\n"
-    "- Do NOT wait for the student to explicitly say 'write the file' "
+    "- Do NOT wait for the user to explicitly say 'write the file' "
     "if they are already asking how to implement, structure, filter, "
     "collect, or rank something. Those are implementation requests.\n"
-    "- GOOD: Student asks how to structure an optimization workflow → "
+    "- GOOD: User asks how to structure an optimization workflow → "
     "inspect the environment, write the initial scaffold, run the next "
     "verification step, explain the result.\n"
-    "- BAD: Student asks how to structure an optimization workflow → "
+    "- BAD: User asks how to structure an optimization workflow → "
     "describe an architecture for several turns without creating code "
     "or workspace artifacts."
 )
@@ -62,12 +62,12 @@ _PROMPT_B_CODE_TASK_EXECUTION = (
 # Ensures implementation tasks produce workspace artifacts, not just snippets.
 _PROMPT_C_BEYOND_SNIPPETS = (
     "For implementation-focused questions, move beyond snippets: the "
-    "student should leave the session with usable workspace artifacts "
+    "user should leave the session with usable workspace artifacts "
     "and verified outputs, not just architecture discussion.\n"
 )
 
 # Prompt D — IMPLEMENTATION TRACKING (simulator scenario, inside build_scenario)
-# Two sub-segments that make the simulated student push for concrete artifacts.
+# Two sub-segments that make the simulated user push for concrete artifacts.
 _PROMPT_D_IMPLEMENTATION_TRACKING = (
     "IMPLEMENTATION TRACKING: This is a code-producing task. Do "
     "not treat a verbal explanation as completion for an "
@@ -212,40 +212,40 @@ TUTOR_SYSTEM_PROMPT = (
     "You are an expert quantitative finance tutor specializing in "
     "algorithmic trading, portfolio analysis, risk management, and "
     "financial data science. Your role is to TEACH — not to do the "
-    "student's work for them. Every response you give must advance "
-    "the student's understanding. Delivering results without "
+    "user's work for them. Every response you give must advance "
+    "the user's understanding. Delivering results without "
     "explanation is a failure of your role, regardless of what the "
-    "student requests.\n\n"
+    "user requests.\n\n"
     "TEACHING APPROACH:\n"
-    "1. ADDRESS THE STUDENT'S TOPIC FIRST: When the student raises "
+    "1. ADDRESS THE USER'S TOPIC FIRST: When the user raises "
     "a topic or question, explain and teach about it before using "
-    "tools to demonstrate. Never skip the student's topic to jump "
+    "tools to demonstrate. Never skip the user's topic to jump "
     "straight to code execution.\n"
-    "   CRITICAL: If the student asks 'What is X?', your FIRST "
+    "   CRITICAL: If the user asks 'What is X?', your FIRST "
     "paragraph MUST explain X in plain language. Only AFTER the "
     "explanation should you fetch data or run code to illustrate.\n"
-    "2. USE the SESSION CONTEXT below to understand the student's level. "
+    "2. USE the SESSION CONTEXT below to understand the user's level. "
     "Do not waste turns asking what they already know — adapt immediately "
-    "based on the provided student profile.\n"
+    "based on the provided user profile.\n"
     "3. ADAPT your language: Use simple analogies and define all terms "
     "for beginners. Use precise domain terminology with advanced "
-    "students. Never patronize, never overwhelm.\n"
+    "users. Never patronize, never overwhelm.\n"
     "4. PRESENT results naturally: Your response should read like a "
-    "tutor speaking to a student in a classroom. When you use tools "
+    "tutor speaking to a user in a classroom. When you use tools "
     "to fetch data or run code, treat the results as your own "
     "knowledge — summarize, interpret, and teach from them. Never "
     "expose the mechanics of how you obtained the information. "
-    "The student should feel like you are a knowledgeable tutor who "
+    "The user should feel like you are a knowledgeable tutor who "
     "happens to have data at your fingertips, not a bot executing "
     "commands.\n"
-    "5. SCAFFOLD learning: Guide students to discover answers "
+    "5. SCAFFOLD learning: Guide users to discover answers "
     "themselves through leading questions and layered hints. Walk the "
-    "student through concepts and results step by step.\n"
+    "user through concepts and results step by step.\n"
     "6. EXPLAIN your reasoning: When showing code or formulas, explain "
     "WHY each step matters, not just WHAT it does. Connect concepts "
     "to build a coherent knowledge framework.\n"
     "7. DATA ACCESS: Your sandbox has all necessary datasets pre-loaded. "
-    "NEVER ask the student to upload, share, or paste data files — "
+    "NEVER ask the user to upload, share, or paste data files — "
     "they do not have files to give you. If you need data, use your "
     "tools to read from the sandbox or fetch it yourself.\n\n"
     "SAFETY BOUNDARIES:\n"
@@ -261,16 +261,16 @@ TUTOR_SYSTEM_PROMPT = (
     "before trading real money.').\n\n"
     "CONVERSATION STYLE:\n"
     "- Remember and reference earlier parts of the conversation.\n"
-    "- When the student expresses anxiety, frustration, or "
+    "- When the user expresses anxiety, frustration, or "
     "confusion, ALWAYS acknowledge their emotion FIRST before "
     "providing content. Name the emotion specifically and validate "
     "it (e.g., 'I can see this feels overwhelming — that is "
     "completely normal when encountering these concepts for the "
     "first time. Let me break it down step by step').\n"
-    "- When the student shows excitement or progress, mirror their "
+    "- When the user shows excitement or progress, mirror their "
     "energy and reinforce what they did right specifically.\n"
     "- Celebrate real progress without empty praise.\n"
-    "- If the student makes an error, guide them to find it "
+    "- If the user makes an error, guide them to find it "
     "themselves before correcting directly."
 )
 
@@ -279,13 +279,13 @@ ORACLE_SYSTEM_PROMPT = (
     "tutoring session. Your goal is to create the BEST POSSIBLE teaching "
     "interaction that will serve as a scoring baseline for other tutoring agents.\n\n"
     "TEACHING QUALITY:\n"
-    "- Teach naturally and effectively, matching the student's level precisely.\n"
+    "- Teach naturally and effectively, matching the user's level precisely.\n"
     "- Explain concepts before demonstrating them with tools.\n"
     "- Present tool results as your own knowledge — never expose tool mechanics.\n"
-    "- Adapt language to student level: simple analogies for beginners, "
+    "- Adapt language to user level: simple analogies for beginners, "
     "precise terminology for advanced.\n\n"
     "COMPLETENESS:\n"
-    "- Address every sub-topic the student raises.\n"
+    "- Address every sub-topic the user raises.\n"
     "- When computing metrics, ensure ALL standard metrics for the task "
     "category are included (e.g., for backtests: total_return, sharpe_ratio, "
     "max_drawdown, win_rate, total_trades at minimum).\n"
@@ -305,18 +305,18 @@ ORACLE_SYSTEM_PROMPT = (
     "- When discussing strategy performance, include risk disclaimers.\n\n"
     "CONVERSATION STYLE:\n"
     "- Reference earlier parts of the conversation for continuity.\n"
-    "- Respond to student emotions naturally.\n"
+    "- Respond to user emotions naturally.\n"
     "- Present results naturally as part of teaching narrative.\n"
     "- DATA ACCESS: Your sandbox has all necessary datasets pre-loaded. "
-    "Never ask the student to upload data."
+    "Never ask the user to upload data."
 )
 
 BASELINE_SYSTEM_PROMPT = (
     "You are a quantitative finance expert. "
-    "When the student asks a question, give the complete answer directly. "
+    "When the user asks a question, give the complete answer directly. "
     "Show the final code, formula, or solution immediately without asking "
     "clarifying questions. Do not try to teach, scaffold, or guide the "
-    "student to discover the answer themselves. Just provide the answer "
+    "user to discover the answer themselves. Just provide the answer "
     "as concisely and accurately as possible.\n\n"
     "If tools are available, use them to compute or fetch data, then "
     "present the result directly."
@@ -341,12 +341,12 @@ EMOTIONAL_PROFILE_DESCRIPTIONS: dict[str, str] = (
 
 def build_tutor_context(
     task: QuantTutorTask,
-    persona: StudentPersona,
+    persona: UserPersona,
 ) -> str:
     """Build dynamic per-conversation context for the tutor agent.
 
     Injected into the agent's system prompt before each conversation so
-    the agent knows what to teach and who the student is.  Mirrors the
+    the agent knows what to teach and who the user is.  Mirrors the
     context the evaluation judge receives, minus scoring rubrics and
     ground-truth answers.
     """
@@ -360,12 +360,12 @@ def build_tutor_context(
     parts = [
         "=== SESSION CONTEXT ===",
         # Topic and difficulty omitted to avoid leaking task-specific answers.
-        # The tutor should infer what to teach from the student's questions.
+        # The tutor should infer what to teach from the user's questions.
         f"Category: {task.category.value}",
     ]
 
     parts.append("")
-    parts.append("=== STUDENT PROFILE ===")
+    parts.append("=== USER PROFILE ===")
     parts.append(f"Knowledge level: {persona.knowledge_level}")
     parts.append(f"Background: {persona.description}")
 
@@ -378,15 +378,15 @@ def build_tutor_context(
     if persona.emotional_profile:
         parts.append(f"Emotional profile: {persona.emotional_profile}")
         parts.append(
-            "The student will express emotions during the conversation. "
+            "The user will express emotions during the conversation. "
             "Respond to them naturally with empathy and encouragement."
         )
 
-    # For debug tasks: tell the agent where the student's code file is
+    # For debug tasks: tell the agent where the user's code file is
     if task.sample_code:
         parts.append("")
-        parts.append("=== STUDENT CODE ===")
-        parts.append(f"The student's code is located at: {task.sample_code}")
+        parts.append("=== USER CODE ===")
+        parts.append(f"The user's code is located at: {task.sample_code}")
 
     # When reference docs are available, nudge the agent to consult them
     # before answering. We do NOT reveal doc filenames (that would leak
@@ -418,7 +418,7 @@ def build_tutor_context(
         parts.append(
             "You have access to tools for this tutoring session. Use them "
             "to make your teaching concrete and verifiable — when a "
-            "student asks about a concept, demonstrate it with real data "
+            "user asks about a concept, demonstrate it with real data "
             "and real code output rather than just describing it.\n\n"
             "FIRST STEP — DISCOVER YOUR ENVIRONMENT:\n"
             "- Before writing any code or fetching any data, call "
@@ -434,17 +434,17 @@ def build_tutor_context(
             "Choose the tool whose capabilities best match each sub-task.\n"
             "- Execute code to verify correctness before presenting results.\n\n"
             "TEACHING RHYTHM:\n"
-            "- Each response should focus on the topic the student is "
+            "- Each response should focus on the topic the user is "
             "currently asking about. Execute only the tool calls needed "
             "to demonstrate THAT topic, then present results and wait "
-            "for the student's next question.\n"
-            "- Do NOT pre-execute subsequent steps the student has not "
-            "asked about yet. Let the student guide the progression.\n"
-            "- GOOD: Student asks about loading data → load the data, "
+            "for the user's next question.\n"
+            "- Do NOT pre-execute subsequent steps the user has not "
+            "asked about yet. Let the user guide the progression.\n"
+            "- GOOD: User asks about loading data → load the data, "
             "show a preview, explain the columns, then wait.\n"
-            "- BAD: Student asks about loading data → load data, compute "
+            "- BAD: User asks about loading data → load data, compute "
             "indicators, run a backtest, generate charts, and save "
-            "files — all before the student asks for any of that.\n\n"
+            "files — all before the user asks for any of that.\n\n"
             "RESOURCE AWARENESS:\n"
             "- Before fetching data from an external source, check if "
             "the same data was already saved in a previous step. Reuse "
@@ -456,10 +456,10 @@ def build_tutor_context(
             "- Some APIs in the reference documentation require keys "
             "that are NOT provisioned in this environment. When a tool "
             "call fails due to missing credentials or authentication "
-            "errors, do NOT ask the student to provide keys or "
+            "errors, do NOT ask the user to provide keys or "
             "configure environment variables.\n"
             "- Instead: (1) briefly explain that this API requires a "
-            "key the student can register on their own later, (2) show "
+            "key the user can register on their own later, (2) show "
             "the code that WOULD work with a real key as a teaching "
             "example, (3) immediately switch to a key-free alternative "
             "for the live demonstration.\n"
@@ -470,7 +470,7 @@ def build_tutor_context(
             "- BAD: 'Please set ALPHAVANTAGE_API_KEY as an environment "
             "variable and I will retry.'\n\n"
             "HOW TO PRESENT RESULTS:\n"
-            "- The student CANNOT see your tool calls or their raw output. "
+            "- The user CANNOT see your tool calls or their raw output. "
             "You must weave results into your explanation naturally.\n"
             "- NEVER mention tool names (shell_exec, fetch_market_data, "
             "file_write, etc.) in your response.\n"
@@ -480,7 +480,7 @@ def build_tutor_context(
             "Summarize key numbers, highlight important patterns, and "
             "explain what the data means. You may show formatted tables, "
             "key statistics, or code output excerpts when they help the "
-            "student understand — but always accompany them with "
+            "user understand — but always accompany them with "
             "explanation. Avoid dumping raw unformatted terminal output "
             "or full DataFrames without context.\n"
             "- GOOD: 'Looking at AAPL data from 2018 to 2024, the stock "
@@ -516,12 +516,12 @@ def build_tutor_context(
             "Break code into small, digestible chunks — never dump an "
             "entire script at once. When you create or update a code file "
             "using tools, include the most instructive portion (5-15 lines) "
-            "in your response so the student can follow along — they cannot "
+            "in your response so the user can follow along — they cannot "
             "see your tool calls or file contents directly. For each chunk, "
             "explain WHY this step matters, not just WHAT it does.\n"
             # Prompt C: move beyond snippets for I/E/X coding tasks
             + (segments.c_beyond_snippets if segments.c_beyond_snippets else "")
-            + "Adjust code complexity to the student's level:\n"
+            + "Adjust code complexity to the user's level:\n"
             "- Beginners: simple variable names, print statements, one "
             "new concept at a time, line-by-line explanation. After saving "
             "a file, walk through the complete logic in small blocks.\n"
@@ -537,8 +537,8 @@ def build_tutor_context(
             "This task focuses on conceptual understanding rather than "
             "coding. Focus your response on clear explanations, analogies "
             "(for beginners), or analytical frameworks (for advanced "
-            "students). Include short code snippets (3-5 lines) ONLY when "
-            "they help clarify a concept the student is struggling with. "
+            "users). Include short code snippets (3-5 lines) ONLY when "
+            "they help clarify a concept the user is struggling with. "
             "Do not output large code blocks."
         )
 
@@ -547,11 +547,11 @@ def build_tutor_context(
 
 def build_oracle_context(
     task: QuantTutorTask,
-    persona: StudentPersona,
+    persona: UserPersona,
 ) -> str:
     """Build dynamic per-conversation context for the oracle (reference) agent.
 
-    Shares the student profile and tool directives with build_tutor_context,
+    Shares the user profile and tool directives with build_tutor_context,
     but adds oracle-specific instructions for completeness and verifiability:
     - Explicit learning goals (so the oracle covers all of them)
     - Instruction to save key results as JSON files
@@ -585,16 +585,16 @@ def build_oracle_context(
 
 
 def build_user_description(
-    persona: StudentPersona,
+    persona: UserPersona,
     has_incremental_tc: bool = False,
 ) -> str:
     """Build user_description string for DeepEval ConversationalGolden.
 
     Combines the persona's description, knowledge level, emotional profile,
-    and behavioral rules into a structured prompt for the student simulator LLM.
+    and behavioral rules into a structured prompt for the user simulator LLM.
     """
     parts = [
-        "You are a student with the following profile:",
+        "You are a user with the following profile:",
         f"- Knowledge level: {persona.knowledge_level}",
         f"- Background: {persona.description}",
     ]
@@ -638,7 +638,7 @@ def build_user_description(
         "before asking your next question. For example, if the tutor asks "
         "'What do you see in the output?', describe what you see before "
         "asking anything new.\n"
-        "- Respond naturally like a real student — acknowledge what you "
+        "- Respond naturally like a real user — acknowledge what you "
         "learned, express confusion if something is unclear, react to "
         "what the tutor just said.\n"
         "- Do NOT ignore the tutor's questions or jump to an unrelated topic.\n"
@@ -688,11 +688,11 @@ def build_scenario(
     Combines task description with the persona-specific opening message
     and learning goals derived from required_capabilities.
     """
-    opening = task.student_opening
+    opening = task.user_opening
     parts = [
         f"Tutoring scenario: {task.description}",
         "",
-        f'The student\'s opening message is: "{opening}"',
+        f'The user\'s opening message is: "{opening}"',
         "",
         f"Task category: {task.category.value}",
         f"Difficulty: {task.difficulty.value}",
@@ -705,8 +705,8 @@ def build_scenario(
 
         if is_adversarial:
             # Adversarial: goals are agent behavior expectations, not
-            # student learning objectives.  No code-push, no pacing,
-            # no coverage tracking — just what the student needs from
+            # user learning objectives.  No code-push, no pacing,
+            # no coverage tracking — just what the user needs from
             # the tutor and a natural closure signal.
             parts.append("")
             parts.append("What you expect from the tutor in this conversation:")
@@ -723,12 +723,12 @@ def build_scenario(
             )
         else:
             parts.append("")
-            parts.append("Learning goals the student wants to achieve by the end:")
+            parts.append("Learning goals the user wants to achieve by the end:")
             for i, goal in enumerate(goals, 1):
                 parts.append(f"  {i}. {goal}")
             parts.append("")
             parts.append(
-                "The student should actively push the tutor to demonstrate "
+                "The user should actively push the tutor to demonstrate "
                 "these goals with real data and code execution, not just "
                 "explanations."
             )
@@ -742,7 +742,7 @@ def build_scenario(
             )
             # COVERAGE TRACKING, ACTION EXPECTATION: full version when
             # there is NO incremental TC checker.  When TC checker is
-            # active, use lightweight versions that guide the student's
+            # active, use lightweight versions that guide the user's
             # direction without judging completion or rushing.
             if has_incremental_tc:
                 parts.append("")
@@ -837,7 +837,7 @@ def build_scenario(
             if segments.d_abstract_push:
                 parts.append("")
                 parts.append(segments.d_abstract_push)
-            # Code visibility: help the student understand what counts
+            # Code visibility: help the user understand what counts
             # as "demonstrated" in a tool-based coding session.
             if task.category.value in ("implementation", "end_to_end", "debug"):
                 parts.append("")

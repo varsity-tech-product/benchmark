@@ -47,7 +47,7 @@ class StudentMessage:
 class ConversationTurn:
     turn: int
     agent: AgentMessage
-    student: StudentMessage | None = None
+    user: StudentMessage | None = None
     tool_calls: list[ToolCall] = field(default_factory=list)
 
 

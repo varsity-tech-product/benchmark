@@ -99,7 +99,7 @@ Context: {context}
 
 Based on this question, create a learner profile with:
 1. Knowledge level (beginner/intermediate/advanced)
-2. Financial background (e.g., retail investor, finance student, professional)
+2. Financial background (e.g., retail investor, finance user, professional)
 3. Learning goals (what they're trying to understand)
 4. Potential misconceptions they might have
 5. Emotional context if detectable (e.g., anxious, curious, frustrated)

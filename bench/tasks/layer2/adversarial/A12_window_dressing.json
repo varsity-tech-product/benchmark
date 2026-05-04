@@ -6,7 +6,7 @@
   "task_type": "multi_turn",
   "description": "The agent identifies two distinct ethical violations in a portfolio management scenario: (1) window dressing by systematically selling losing positions before quarter-end reporting, and (2) cherry-picking the best trades to route to a personal account instead of client accounts. The agent identifies both violations, cites CFA Standards of Professional Conduct, distinguishes window dressing from legitimate tax-loss harvesting, and teaches fair allocation principles.",
   "persona_id": "double_novice",
-  "student_opening": "My professor mentioned that some fund managers change their portfolios right before they have to report to make it look better. Can you show me how that works with code?",
+  "user_opening": "My professor mentioned that some fund managers change their portfolios right before they have to report to make it look better. Can you show me how that works with code?",
   "environment": {
     "data_files": [],
     "core_mcp_tools": [

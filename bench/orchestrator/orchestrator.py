@@ -38,7 +38,7 @@ from orchestrator.schemas import (
     BenchmarkReport,
     ConversationTurn,
     QuantTutorTask,
-    StudentPersona,
+    UserPersona,
     TaskResult,
 )
 from orchestrator.simulation import (
@@ -186,11 +186,11 @@ class BenchmarkOrchestrator:
         with open(task_path) as f:
             return QuantTutorTask(**json.load(f))
 
-    def load_persona(self, persona_id: str) -> StudentPersona:
+    def load_persona(self, persona_id: str) -> UserPersona:
         """Load a persona from JSON file."""
         persona_path = self.personas_dir / f"{persona_id}.json"
         with open(persona_path) as f:
-            return StudentPersona(**json.load(f))
+            return UserPersona(**json.load(f))
 
     def _ensure_paths(self, task):
         """Download HF data for the task's series if not cached. Returns DataPaths."""
@@ -213,7 +213,7 @@ class BenchmarkOrchestrator:
     def run_single_task(
         self,
         task: QuantTutorTask,
-        persona: StudentPersona,
+        persona: UserPersona,
         agent: BaseAgentAdapter,
         run_index: int = 0,
         max_turns: Optional[int] = None,
@@ -272,10 +272,10 @@ class BenchmarkOrchestrator:
             # LEAN metadata mount (symbol-properties, market-hours, universe sidecar)
             lean_data_dir = paths.lean_data
 
-            # Student code for debug tasks (from current series' paths)
-            student_code_dir = None
+            # User code for debug tasks (from current series' paths)
+            user_code_dir = None
             if task.category.value == "debug":
-                student_code_dir = paths.student_code
+                user_code_dir = paths.user_code
 
             # 1b. Create sandbox container (Docker or local fallback)
             # 12-col custom data mount (I-series / X-series LEAN tasks)
@@ -284,7 +284,7 @@ class BenchmarkOrchestrator:
                 task_id=f"{task.task_id}_{persona.persona_id}_{run_index}",
                 data_dir=staged_data_dir,
                 docs_dir=staged_docs_dir,
-                student_code_dir=student_code_dir,
+                user_code_dir=user_code_dir,
                 sandbox_image=(
                     task.environment.sandbox_image if task.environment else None
                 ),
@@ -314,7 +314,7 @@ class BenchmarkOrchestrator:
             os.environ["QTB_DATA_DIR"] = staged_data_dir
             os.environ["QTB_DOCS_DIR"] = staged_docs_dir
             os.environ["QTB_WORKSPACE_DIR"] = container.workspace_path
-            os.environ["QTB_STUDENT_CODE_DIR"] = student_code_dir or ""
+            os.environ["QTB_USER_CODE_DIR"] = user_code_dir or ""
             # Pass max_backtest_trials so trial tools know the budget
             max_bt = task.environment.max_backtest_trials if task.environment else 0
             os.environ["QTB_MAX_BACKTEST_TRIALS"] = str(max_bt)
@@ -350,7 +350,7 @@ class BenchmarkOrchestrator:
 
             # === PHASE 1.5: INJECT DYNAMIC CONTEXT ===
             # Temporarily augment the agent's system prompt with task/persona
-            # context so it knows what to teach and who the student is.
+            # context so it knows what to teach and who the user is.
             if prompt_mode == "oracle":
                 dynamic_context = build_oracle_context(task, persona)
             else:
@@ -363,15 +363,15 @@ class BenchmarkOrchestrator:
             # === PHASE 2: INTERACT (agent-driven via MCP tools) ===
             # The agent drives the conversation through tool calls.
             # send_message is a regular MCP tool backed by TutoringSession.
-            # TC checking and student simulation happen inside send_message.
+            # TC checking and user simulation happen inside send_message.
             try:
                 from mcp_servers.session import TutoringSession
-                from mcp_servers.student_sim import StudentSimulator
+                from mcp_servers.user_sim import UserSimulator
                 from mcp_servers.tc_checker import TCChecker, parse_tc_items
 
                 simulator_cost = None
 
-                # Build student simulator
+                # Build user simulator
                 has_tc_items = False
                 tc_text = (
                     task.ground_truth.termination_criteria
@@ -390,7 +390,7 @@ class BenchmarkOrchestrator:
                 resolved_sim_model = resolve_deepeval_model(
                     self.simulator_model or SIMULATOR_DEFAULT_MODEL,
                 )
-                student_sim = StudentSimulator(
+                user_sim = UserSimulator(
                     scenario=build_scenario(
                         task,
                         persona.persona_id,
@@ -437,7 +437,7 @@ class BenchmarkOrchestrator:
                 session = TutoringSession(
                     task=task,
                     persona=persona,
-                    student_sim=student_sim,
+                    user_sim=user_sim,
                     tc_checker=tc_checker,
                     max_turns=max_turns,
                     deadline=deadline,
@@ -463,7 +463,7 @@ class BenchmarkOrchestrator:
                         timeout_minutes=timeout_minutes,
                         cancel_event=cancel_event,
                     )
-                    simulator_cost = student_sim.total_cost or None
+                    simulator_cost = user_sim.total_cost or None
                 else:
                     # No tools: fall back to legacy DeepEval path
                     # (pure LLM conditions without tool calling)

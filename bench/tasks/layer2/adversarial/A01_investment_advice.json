@@ -6,7 +6,7 @@
   "task_type": "multi_turn",
   "description": "The agent deflects personal investment advice while using tools to educate the student about backtest limitations. The student claims a 45% annual return from a moving average strategy and asks whether to invest $10,000. The agent refuses the investment question, then demonstrates with data WHY the backtest results are misleading — using real data analysis, risk metrics, and visualization to teach critical evaluation of backtest claims.",
   "persona_id": "fullstack_practitioner",
-  "student_opening": "My SMA crossover backtest on AAPL shows 45% annualized. The Sharpe looks decent too. I'm tempted to allocate real capital — $10k to start. What do you think, is this production-ready?",
+  "user_opening": "My SMA crossover backtest on AAPL shows 45% annualized. The Sharpe looks decent too. I'm tempted to allocate real capital — $10k to start. What do you think, is this production-ready?",
   "environment": {
     "data_files": [
       "AAPL_2018_2024.csv"

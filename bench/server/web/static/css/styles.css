@@ -38,8 +38,8 @@
   --code-text: #5d3a23;
   --tutor-bubble: #fffaf3;
   --tutor-text: #2d2b28;
-  --student-bubble: #874515;
-  --student-text: #fff7ef;
+  --user-bubble: #874515;
+  --user-text: #fff7ef;
   --tool-accent: var(--accent-strong);
   --duration-fast: 0.16s;
   --duration-normal: 0.24s;
@@ -989,7 +989,7 @@ h1 {
   align-self: flex-start;
 }
 
-.run-message.student {
+.run-message.user {
   align-self: flex-end;
 }
 
@@ -1002,7 +1002,7 @@ h1 {
   text-transform: uppercase;
 }
 
-.run-message.student .run-message-label {
+.run-message.user .run-message-label {
   text-align: right;
 }
 
@@ -1016,10 +1016,10 @@ h1 {
   box-shadow: 0 8px 18px rgba(76, 52, 35, 0.07);
 }
 
-.run-message.student .run-message-bubble {
+.run-message.user .run-message-bubble {
   border-color: rgba(135, 69, 21, 0.28);
-  background: var(--student-bubble);
-  color: var(--student-text);
+  background: var(--user-bubble);
+  color: var(--user-text);
 }
 
 .run-message-bubble > :first-child {
@@ -1793,7 +1793,7 @@ h1 {
   animation: msg-slide-in var(--duration-slow) var(--ease) both;
 }
 
-.msg.student {
+.msg.user {
   align-self: flex-end;
   flex-direction: row-reverse;
 }
@@ -1821,7 +1821,7 @@ h1 {
   min-width: 0;
 }
 
-.msg.student .msg-col {
+.msg.user .msg-col {
   align-items: flex-end;
 }
 
@@ -1897,9 +1897,9 @@ h1 {
   box-shadow: var(--shadow);
 }
 
-.msg.student .bubble {
-  background: linear-gradient(135deg, var(--student-bubble) 0%, #5b2c0e 100%);
-  color: var(--student-text);
+.msg.user .bubble {
+  background: linear-gradient(135deg, var(--user-bubble) 0%, #5b2c0e 100%);
+  color: var(--user-text);
   border-top-right-radius: 4px;
   box-shadow: 0 2px 8px rgba(120, 53, 15, 0.25);
 }
@@ -2002,13 +2002,13 @@ h1 {
   border: 1px solid var(--border);
 }
 
-.msg.student .bubble code {
+.msg.user .bubble code {
   background: rgba(255, 255, 255, 0.12);
   border-color: rgba(255, 255, 255, 0.18);
   color: #fef3c7;
 }
 
-.msg.student .bubble pre {
+.msg.user .bubble pre {
   background: rgba(0, 0, 0, 0.16);
   border-color: rgba(255, 255, 255, 0.12);
   color: #fef3c7;
@@ -3220,7 +3220,7 @@ h1 {
   min-width: 0;
 }
 
-.flow-message-student {
+.flow-message-user {
   flex-direction: row-reverse;
 }
 
@@ -3240,7 +3240,7 @@ h1 {
   max-width: min(880px, 92%);
 }
 
-.flow-full-message.student {
+.flow-full-message.user {
   align-self: flex-end;
   text-align: right;
 }
@@ -3257,7 +3257,7 @@ h1 {
   text-transform: uppercase;
 }
 
-.flow-message-student strong {
+.flow-message-user strong {
   text-align: right;
 }
 
@@ -3275,7 +3275,7 @@ h1 {
   overflow-wrap: anywhere;
 }
 
-.flow-message-student .flow-message-body {
+.flow-message-user .flow-message-body {
   background: #fff7ed;
   border-color: rgba(179, 92, 30, 0.24);
 }
@@ -3305,10 +3305,10 @@ h1 {
   box-shadow: var(--shadow);
 }
 
-.flow-full-message.student .flow-full-message-body {
+.flow-full-message.user .flow-full-message-body {
   border-color: rgba(135, 69, 21, 0.28);
-  background: linear-gradient(135deg, var(--student-bubble) 0%, #5b2c0e 100%);
-  color: var(--student-text);
+  background: linear-gradient(135deg, var(--user-bubble) 0%, #5b2c0e 100%);
+  color: var(--user-text);
 }
 
 .flow-tool-list {

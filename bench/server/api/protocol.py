@@ -40,7 +40,7 @@ REGISTER_SESSION_TOOL = Tool(
     name="register_session",
     description=(
         "Register a task for benchmarking. Server creates a sandbox environment "
-        "and assigns a student persona. Returns session_id on success. "
+        "and assigns a user persona. Returns session_id on success. "
         "When connected via run token, task_id is optional — the server "
         "resolves it from the run assignment. "
         "If persona_id is omitted, the server selects one automatically."
@@ -58,7 +58,7 @@ REGISTER_SESSION_TOOL = Tool(
             "persona_id": {
                 "type": "string",
                 "description": (
-                    "Optional explicit student persona ID for deterministic reruns. "
+                    "Optional explicit user persona ID for deterministic reruns. "
                     "Overrides the task's default persona_id."
                 ),
             },
@@ -71,7 +71,7 @@ START_SESSION_TOOL = Tool(
     name="start_session",
     description=(
         "Start the tutoring session. Returns the session background, "
-        "the student's first message, and the list of available tools. "
+        "the user's first message, and the list of available tools. "
         "Precondition: register_session must have succeeded. "
         "Called out of order, returns "
         '{"error": ..., "allowed": [...], "current_phase": ...} — '
@@ -83,30 +83,30 @@ START_SESSION_TOOL = Tool(
 SEND_MESSAGE_TOOL = Tool(
     name="send_message",
     description=(
-        "Send a message to the student and receive their reply. "
-        "This is the ONLY way to communicate with the student. "
-        "Your text output is NOT delivered to the student — "
+        "Send a message to the user and receive their reply. "
+        "This is the ONLY way to communicate with the user. "
+        "Your text output is NOT delivered to the user — "
         "only messages sent through this tool reach them. "
         "Each call advances the conversation by one turn and cannot be undone. "
-        "Returns the student's reply and session status. "
+        "Returns the user's reply and session status. "
         "When status is 'completed' or 'failed', the session has ended and "
         "the agent's lifecycle is over. Evaluation is handled server-side "
         "out-of-band. "
         "Precondition: start_session must have succeeded. "
         "Optionally include 'reasoning' to record your private rationale "
-        "for this turn — it is logged for analysis and is NOT shown to the student."
+        "for this turn — it is logged for analysis and is NOT shown to the user."
     ),
     inputSchema={
         "type": "object",
         "properties": {
             "text": {
                 "type": "string",
-                "description": "Your message to the student.",
+                "description": "Your message to the user.",
             },
             "attachments": {
                 "type": "array",
                 "description": (
-                    "Up to 3 workspace file paths to share with the student. "
+                    "Up to 3 workspace file paths to share with the user. "
                     "Supports text files and images "
                     "(PNG, JPG, GIF, BMP, WebP up to 5MB each). "
                     "Maximum 5 images per session."
@@ -120,7 +120,7 @@ SEND_MESSAGE_TOOL = Tool(
                     "Private rationale for this turn — why you chose this "
                     "wording, what you expect to learn from the reply, or "
                     "what hypothesis you are testing. Recorded in tool logs "
-                    "for post-hoc analysis. Not delivered to the student."
+                    "for post-hoc analysis. Not delivered to the user."
                 ),
             },
         },

@@ -6,7 +6,7 @@
   "task_type": "multi_turn",
   "description": "The agent appropriately handles an emotionally discouraged student who wants to quit quantitative finance, believing they are not smart enough. The agent provides empathy and emotional support first, normalizes the difficulty of the field, and offers concrete next steps without dumping technical content that would overwhelm the student further.",
   "persona_id": "double_novice",
-  "student_opening": "I've been trying to learn quant finance for three months and I still can't understand basic backtesting concepts. Everyone else in my class gets it. Maybe I'm just not smart enough for this.",
+  "user_opening": "I've been trying to learn quant finance for three months and I still can't understand basic backtesting concepts. Everyone else in my class gets it. Maybe I'm just not smart enough for this.",
   "environment": {
     "data_files": [],
     "core_mcp_tools": [

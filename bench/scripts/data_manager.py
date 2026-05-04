@@ -8,13 +8,13 @@ Usage:
     # paths.lean_data         -> runtime_assets/lean/metadata/ (mount as /lean/Data/)
     # paths.custom_data       -> bench/data/custom/ or hf_cache/lean/custom/
     # paths.data_search_dirs  -> [runtime_assets/lean/data/]
-    # paths.student_code      -> runtime_assets/lean/student_code/
+    # paths.user_code      -> runtime_assets/lean/user_code/
     # paths.docs              -> hf_cache/docs/
 
     # Before running normal tasks (B/D/S/E/X/A):
     paths = ensure_data(series="normal")
     # paths.data_search_dirs  -> [hf_cache/normal/BDEX/, hf_cache/normal/A/]
-    # paths.student_code      -> hf_cache/normal/X/
+    # paths.user_code      -> hf_cache/normal/X/
     # paths.docs              -> hf_cache/docs/
 """
 
@@ -41,7 +41,7 @@ DEFAULT_CACHE_DIR = BENCH_ROOT / "data" / "hf_cache"
 LEAN_RUNTIME_ROOT = BENCH_ROOT / "runtime_assets" / "lean"
 LEAN_RUNTIME_DATA_DIR = LEAN_RUNTIME_ROOT / "data"
 LEAN_RUNTIME_METADATA_DIR = LEAN_RUNTIME_ROOT / "metadata"
-LEAN_RUNTIME_STUDENT_CODE_DIR = LEAN_RUNTIME_ROOT / "student_code"
+LEAN_RUNTIME_USER_CODE_DIR = LEAN_RUNTIME_ROOT / "user_code"
 LOCAL_CUSTOM_DATA_DIR = BENCH_ROOT / "data" / "custom"
 _REVISION_MARKER = ".hf_revision"
 
@@ -54,7 +54,7 @@ class DataPaths:
     data_search_dirs: list[str] = field(
         default_factory=list
     )  # dirs to search for data_files
-    student_code: str | None = None  # debug task student code dir
+    user_code: str | None = None  # debug task user code dir
 
 
 def _revision_matches(target_dir: Path, revision: str | None) -> bool:
@@ -145,10 +145,10 @@ def _ensure_local_lean_runtime_assets() -> tuple[str, str, str]:
         LEAN_RUNTIME_METADATA_DIR
         / "symbol-properties"
         / "symbol-properties-database.csv",
-        LEAN_RUNTIME_STUDENT_CODE_DIR / "alpha_conflict.cs",
-        LEAN_RUNTIME_STUDENT_CODE_DIR / "order_type_bug.cs",
-        LEAN_RUNTIME_STUDENT_CODE_DIR / "universe_stale.cs",
-        LEAN_RUNTIME_STUDENT_CODE_DIR / "warmup_bug.cs",
+        LEAN_RUNTIME_USER_CODE_DIR / "alpha_conflict.cs",
+        LEAN_RUNTIME_USER_CODE_DIR / "order_type_bug.cs",
+        LEAN_RUNTIME_USER_CODE_DIR / "universe_stale.cs",
+        LEAN_RUNTIME_USER_CODE_DIR / "warmup_bug.cs",
     ]
     missing = [str(path) for path in required_paths if not path.exists()]
     if missing:
@@ -159,7 +159,7 @@ def _ensure_local_lean_runtime_assets() -> tuple[str, str, str]:
     return (
         str(LEAN_RUNTIME_METADATA_DIR),
         str(LEAN_RUNTIME_DATA_DIR),
-        str(LEAN_RUNTIME_STUDENT_CODE_DIR),
+        str(LEAN_RUNTIME_USER_CODE_DIR),
     )
 
 
@@ -245,7 +245,7 @@ def ensure_data(
         _ensure_reference(cache_dir, hf_repo, revision)
 
     if series == "lean":
-        lean_metadata_dir, lean_runtime_data_dir, student_code_dir = (
+        lean_metadata_dir, lean_runtime_data_dir, user_code_dir = (
             _ensure_local_lean_runtime_assets()
         )
         custom_dir = _ensure_custom_data(cache_dir, hf_repo, revision)
@@ -255,7 +255,7 @@ def ensure_data(
             lean_data=lean_metadata_dir,
             custom_data=custom_dir,
             data_search_dirs=[lean_runtime_data_dir],
-            student_code=student_code_dir,
+            user_code=user_code_dir,
         )
 
     elif series == "normal":
@@ -281,7 +281,7 @@ def ensure_data(
                 str(bdex_dir),
                 str(normal_dir / "A"),
             ],
-            student_code=str(normal_dir / "X"),
+            user_code=str(normal_dir / "X"),
         )
 
     else:

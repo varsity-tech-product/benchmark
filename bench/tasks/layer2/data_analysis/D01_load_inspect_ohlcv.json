@@ -6,7 +6,7 @@
   "task_type": "multi_turn",
   "description": "Guide the student to load and inspect OHLCV stock data, explain what each column represents, and perform basic data exploration including date range and pattern identification.",
   "persona_id": "fullstack_practitioner",
-  "student_opening": "I'm starting a new alpha research project and need to validate the data quality first. Can you walk me through a systematic OHLCV inspection — gaps, outliers, corporate action artifacts?",
+  "user_opening": "I'm starting a new alpha research project and need to validate the data quality first. Can you walk me through a systematic OHLCV inspection — gaps, outliers, corporate action artifacts?",
   "environment": {
     "data_files": [
       "AAPL_2018_2024.csv",

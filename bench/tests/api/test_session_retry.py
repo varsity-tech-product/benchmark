@@ -41,13 +41,13 @@ def _force_termination_reason(state, reason: str) -> None:
 
 
 class TestClassifySessionFailure:
-    def test_student_sim_error_is_infrastructure(self):
+    def test_user_sim_error_is_infrastructure(self):
         assert (
-            _classify_session_failure("student_sim_error:network")
+            _classify_session_failure("user_sim_error:network")
             == "infrastructure_failure"
         )
         assert (
-            _classify_session_failure("student_sim_error:parse")
+            _classify_session_failure("user_sim_error:parse")
             == "infrastructure_failure"
         )
 
@@ -57,7 +57,7 @@ class TestClassifySessionFailure:
 
     def test_terminal_categories(self):
         assert _classify_session_failure("objectives_met") == "terminal_success"
-        assert _classify_session_failure("student_satisfied") == "terminal_success"
+        assert _classify_session_failure("user_satisfied") == "terminal_success"
         assert _classify_session_failure("max_turns") == "max_turns_reached"
         assert _classify_session_failure("timeout") == "max_turns_reached"
 
@@ -128,7 +128,7 @@ class TestRetryEndpoint:
         state.session._max_turns = 1
         await send_message(client, sid, "Done.")
         # Patch persisted reason to simulate an NPC/sandbox crash.
-        _force_termination_reason(state, "student_sim_error:network")
+        _force_termination_reason(state, "user_sim_error:network")
 
         resp = await client.post(f"/session/{sid}/retry")
         assert resp.status_code == 200
@@ -159,7 +159,7 @@ class TestRetryEndpoint:
 
         state.session._max_turns = 1
         await send_message(client, sid, "Done.")
-        _force_termination_reason(state, "student_sim_error:network")
+        _force_termination_reason(state, "user_sim_error:network")
 
         resp = await client.post(f"/session/{sid}/retry")
         assert resp.status_code == 200
@@ -180,7 +180,7 @@ class TestRetryEndpoint:
         state.session._max_turns = 1
         await send_message(client, sid, "Done.")
         original_result_dir = str(state._result_dir)
-        _force_termination_reason(state, "student_sim_error:network")
+        _force_termination_reason(state, "user_sim_error:network")
 
         # Force the next register() to fail so the rollback path runs.
         def _fail_register(self, task_id, persona_id=None):
@@ -209,7 +209,7 @@ class TestRetryEndpoint:
         state = _get_state(app, sid)
         state.session._max_turns = 1
         await send_message(client, sid, "Done.")
-        _force_termination_reason(state, "student_sim_error:network")
+        _force_termination_reason(state, "user_sim_error:network")
 
         resp = await client.post(f"/session/{sid}/retry")
         assert resp.status_code == 200

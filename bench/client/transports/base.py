@@ -21,7 +21,7 @@ class SessionTransport(ABC):
 
     @abstractmethod
     async def start_session(self) -> dict:
-        """Start the session. Returns {"student_message": ..., "background": ...}."""
+        """Start the session. Returns {"user_message": ..., "background": ...}."""
 
     @abstractmethod
     async def list_tools(self) -> list[dict]:
@@ -38,10 +38,10 @@ class SessionTransport(ABC):
         attachments: Optional[list] = None,
         reasoning: Optional[str] = None,
     ) -> dict:
-        """Send message to student. Returns {"student_message": ..., "status": ...}.
+        """Send message to user. Returns {"user_message": ..., "status": ...}.
 
         ``reasoning`` is an optional private rationale recorded server-side
-        for trace analysis. It is NOT delivered to the student.
+        for trace analysis. It is NOT delivered to the user.
         """
 
     @abstractmethod

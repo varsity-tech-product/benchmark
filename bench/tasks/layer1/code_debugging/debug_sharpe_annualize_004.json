@@ -17,5 +17,5 @@
     "risk-metrics"
   ],
   "persona_id": "finance_veteran",
-  "student_opening": "There's a bug related to I calculated the Sharpe ratio for my strategy but it seems. I understand the financial logic but I'm struggling with the Python code. Can you help?"
+  "user_opening": "There's a bug related to I calculated the Sharpe ratio for my strategy but it seems. I understand the financial logic but I'm struggling with the Python code. Can you help?"
 }

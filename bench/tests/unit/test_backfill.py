@@ -19,9 +19,9 @@ def _write_run_state(result_dir: Path, payload: dict) -> Path:
     return p
 
 
-def _conv_pair(student: str, agent: str, *, ts_start: float = 0.0) -> list[dict]:
+def _conv_pair(user: str, agent: str, *, ts_start: float = 0.0) -> list[dict]:
     return [
-        {"role": "user", "content": student, "ts": ts_start},
+        {"role": "user", "content": user, "ts": ts_start},
         {"role": "assistant", "content": agent, "ts": ts_start + 1.0},
     ]
 
@@ -99,9 +99,9 @@ def test_conversation_pairs_alternating_user_assistant(tmp_path):
         backfill(run_state, bench_root=_bench_root_with_task(tmp_path, "S01_ma_crossover"))
     )
     assert [t.turn for t in bundle.conversation] == [1, 2]
-    assert bundle.conversation[0].student.text == "u0"
+    assert bundle.conversation[0].user.text == "u0"
     assert bundle.conversation[0].agent.text == "a0"
-    assert bundle.conversation[1].student.text == "u1"
+    assert bundle.conversation[1].user.text == "u1"
     assert bundle.conversation[1].agent.text == "a1"
     assert bundle.session.turn_count == 2
 
@@ -109,7 +109,7 @@ def test_conversation_pairs_alternating_user_assistant(tmp_path):
 def test_trailing_lone_user_becomes_turn_with_empty_agent(tmp_path):
     """Repro of X01-shaped legacy bundle: 5 conv entries (u,a,u,a,u) +
     3 send_message logs where the third is the synthetic 'agent_stuck'
-    auto-completion. Bundle should have 3 student-led turns; the third
+    auto-completion. Bundle should have 3 user-led turns; the third
     has empty agent text — not duplicated text from the synthetic log."""
     state = _minimal_run_state(
         conversation=_conv_pair("u0", "a0", ts_start=100)
@@ -122,7 +122,7 @@ def test_trailing_lone_user_becomes_turn_with_empty_agent(tmp_path):
                 "send_message",
                 turn_index=2,
                 args={"text": "Repeated message for completion"},
-                result='{"student_message": "", "status": "completed", "reason": "agent_stuck"}',
+                result='{"user_message": "", "status": "completed", "reason": "agent_stuck"}',
             ),
         ],
     )
@@ -131,7 +131,7 @@ def test_trailing_lone_user_becomes_turn_with_empty_agent(tmp_path):
         backfill(run_state, bench_root=_bench_root_with_task(tmp_path, "S01_ma_crossover"))
     )
     assert bundle.session.turn_count == 3
-    assert [t.student.text for t in bundle.conversation] == ["u0", "u1", "u2-no-reply"]
+    assert [t.user.text for t in bundle.conversation] == ["u0", "u1", "u2-no-reply"]
     assert [t.agent.text for t in bundle.conversation] == ["a0", "a1", ""]
     # The synthetic send_message log content must not bleed into the third agent message.
     assert "Repeated message for completion" not in bundle.conversation[2].agent.text

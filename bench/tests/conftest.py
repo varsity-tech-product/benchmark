@@ -109,7 +109,7 @@ if str(_BENCH_ROOT) not in sys.path:
 # 2. Fake LLM model — deterministic, zero-cost replacement for OpenRouter.
 # ---------------------------------------------------------------------------
 
-_STUDENT_REPLIES = [
+_USER_REPLIES = [
     "Thanks, that makes sense. Can you show me the actual code?",
     "I see the bug now. Let me try fixing it.",
     "Got it. What should the correct value be?",
@@ -121,7 +121,7 @@ _CLOSING_MESSAGE = "Thanks for all the help! I understand the issue much better 
 
 
 class FakeLLMModel:
-    """Deterministic LLM stand-in for StudentSimulator.
+    """Deterministic LLM stand-in for UserSimulator.
 
     Cycles through canned replies. Returns (text, 0.0) cost tuples
     to match the real model interface.
@@ -133,13 +133,13 @@ class FakeLLMModel:
     def generate(self, prompt: str, schema=None, images=None, **_kwargs):
         self._call_count += 1
 
-        # StudentSimulator structured output (SimulatedInput)
+        # UserSimulator structured output (SimulatedInput)
         if schema is not None:
             try:
                 return (
                     schema(
-                        simulated_input=_STUDENT_REPLIES[
-                            self._call_count % len(_STUDENT_REPLIES)
+                        simulated_input=_USER_REPLIES[
+                            self._call_count % len(_USER_REPLIES)
                         ]
                     ),
                     0.0,
@@ -151,7 +151,7 @@ class FakeLLMModel:
         if "closing" in prompt.lower():
             return _CLOSING_MESSAGE, 0.0
 
-        reply = _STUDENT_REPLIES[self._call_count % len(_STUDENT_REPLIES)]
+        reply = _USER_REPLIES[self._call_count % len(_USER_REPLIES)]
         return json.dumps({"simulated_input": reply}), 0.0
 
 
@@ -182,7 +182,7 @@ class FakeTCModel:
 def _mock_llm_resolution():
     """Replace ``require_ewan_model`` / ``resolve_ewan_model`` globally.
 
-    Every component that resolves a model (StudentSimulator,
+    Every component that resolves a model (UserSimulator,
     evaluation pipeline) will get a FakeLLMModel instead of calling
     OpenRouter.
     """
@@ -218,10 +218,10 @@ def _mock_ensure_data(tmp_path):
 
     data_dir = tmp_path / "data"
     docs_dir = tmp_path / "docs"
-    student_code_dir = tmp_path / "student_code"
+    user_code_dir = tmp_path / "user_code"
     data_dir.mkdir()
     docs_dir.mkdir()
-    student_code_dir.mkdir()
+    user_code_dir.mkdir()
 
     # Create minimal data file so staging doesn't produce empty dirs
     (data_dir / "AAPL_2018_2024.csv").write_text(
@@ -239,8 +239,8 @@ def _mock_ensure_data(tmp_path):
         "# Pandas Time Series\nBasic guide.\n", encoding="utf-8"
     )
 
-    # Create student code files referenced by debug tasks (X01, etc.)
-    (student_code_dir / "ma_offbyone.py").write_text(
+    # Create user code files referenced by debug tasks (X01, etc.)
+    (user_code_dir / "ma_offbyone.py").write_text(
         "import pandas as pd\n"
         "df = pd.read_csv('AAPL_2018_2024.csv')\n"
         "df['SMA_20'] = df['Close'].rolling(19).mean()  # BUG: should be 20\n"
@@ -253,7 +253,7 @@ def _mock_ensure_data(tmp_path):
         lean_data=None,
         custom_data=None,
         data_search_dirs=[str(data_dir)],
-        student_code=str(student_code_dir),
+        user_code=str(user_code_dir),
     )
 
     with patch("server.data_manager.ensure_data", return_value=fake_paths):
@@ -427,7 +427,7 @@ def make_session(_mock_llm_resolution):
     The session is pre-started (opening injected).
     """
     from server.core.session import TutoringSession
-    from server.core.student_sim import StudentSimulator
+    from server.core.user_sim import UserSimulator
 
     def _factory(
         max_turns=10,
@@ -441,13 +441,13 @@ def make_session(_mock_llm_resolution):
             sample_code="",
             category=types.SimpleNamespace(value="debug"),
             max_turns=max_turns,
-            student_opening="Hi, I need help.",
+            user_opening="Hi, I need help.",
         )
         persona = types.SimpleNamespace(
             persona_id="fullstack_practitioner",
             description="A developer learning quantitative finance.",
         )
-        student_sim = StudentSimulator(
+        user_sim = UserSimulator(
             scenario="Debug a moving average bug",
             user_description="Intermediate developer",
             model=_mock_llm_resolution,
@@ -455,14 +455,14 @@ def make_session(_mock_llm_resolution):
         session = TutoringSession(
             task=task,
             persona=persona,
-            student_sim=student_sim,
+            user_sim=user_sim,
             tc_checker=tc_checker,
             max_turns=max_turns,
             deadline=deadline,
             workspace_path=workspace_path,
         )
         # Inject opening so session is ready for send_message
-        session.inject_student_opening("Hi, I need help.")
+        session.inject_user_opening("Hi, I need help.")
         return session
 
     return _factory
