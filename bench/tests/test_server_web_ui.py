@@ -234,10 +234,10 @@ class ResultIndexerTests(unittest.TestCase):
             self.assertEqual(summary["step_count"], 5)
 
             self.assertEqual(detail["score_json"]["score_id"], "score_2")
-            self.assertEqual(detail["cost_json"]["eval_cost_usd"], 0.03)
+            self.assertEqual(detail["cost_json"]["eval_cost_usd"], 0.02)
             self.assertEqual(detail["eval_history"][0]["score_id"], "score_2")
-            self.assertAlmostEqual(detail["evaluation_cost"], 0.03)
-            self.assertAlmostEqual(detail["total_cost"], 0.05)
+            self.assertAlmostEqual(detail["evaluation_cost"], 0.02)
+            self.assertAlmostEqual(detail["total_cost"], 0.04)
             self.assertEqual(
                 detail["workspace_files"], ["reports/chart.png", "notes.md"]
             )
@@ -501,7 +501,7 @@ class UiRoutesTests(unittest.TestCase):
                                 {
                                     "user_message": "Got it",
                                     "status": "completed",
-                                    "reason": "objectives_met",
+                                    "reason": "user_satisfied",
                                 }
                             ),
                             "turn_index": 0,
@@ -632,7 +632,7 @@ class UiRoutesTests(unittest.TestCase):
             self.assertEqual(payload["send_message_count"], 1)
             self.assertEqual(payload["send_message_events"][0]["status"], "completed")
             self.assertEqual(
-                payload["send_message_events"][0]["reason"], "objectives_met"
+                payload["send_message_events"][0]["reason"], "user_satisfied"
             )
 
             workspace_payload = workspace_response.json()

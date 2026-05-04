@@ -236,10 +236,10 @@ judge model, judge temperature, transcript source, dimension, output
 schema, context fields, and run timestamp metadata.
 
 Per #122 the scoring path has **two LLM dependencies** (QR judge, QP
-judge). The TC checker (`server/core/tc_checker.py`) is purely
-programmatic — TC is met when the agent invokes every tool listed in
-`expected_mcp_tools`. The NPC user simulator remains the only LLM in
-the conversation runtime; its replies do not enter scoring.
+judge). Required-tool coverage is computed post-hoc in
+`eval/judges/process_metrics.py` from `expected_mcp_tools` and recorded
+tool names. The NPC user simulator remains the only LLM in the
+conversation runtime; its replies do not enter scoring.
 
 The headline KPI is `pass_rate`: per-task `task_score = 0.60 * QR +
 0.40 * QP`, then `task_pass = task_score >= PASS_THRESHOLD`

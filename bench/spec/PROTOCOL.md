@@ -136,7 +136,7 @@ REST: POST /session/{sid}/send  {"text": "Let me help you debug this...",
 | Response | Body |
 |----------|------|
 | Active   | `{"user_message": "Oh I see...", "status": "active", "current_phase": "in_session", "next_allowed": ["send_message"]}` |
-| Completed | `{"user_message": "Thanks!", "status": "completed", "reason": "objectives_met", "current_phase": "completed", "next_allowed": []}` |
+| Completed | `{"user_message": "Thanks!", "status": "completed", "reason": "user_satisfied", "current_phase": "completed", "next_allowed": []}` |
 | Empty text (400) | `{"error": "Empty message. Provide text to send to the user."}` |
 | Bad reasoning type (400) | `{"error": "reasoning must be a string"}` |
 
@@ -225,7 +225,7 @@ POST /session/abc123/send  {"text": "I see the issue. The window calculation..."
 
 # 5. Repeat until completed
 POST /session/abc123/send  {"text": "Exactly. Here's the corrected version..."}
--> {"user_message": "Thanks!", "status": "completed", "reason": "objectives_met"}
+-> {"user_message": "Thanks!", "status": "completed", "reason": "user_satisfied"}
 
 # 6. Agent's lifecycle is over. Operator scores the bundle out-of-band.
 GET /ops/session/abc123/results              # Authorization: Bearer <admin_token>

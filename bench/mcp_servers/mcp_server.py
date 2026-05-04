@@ -104,7 +104,6 @@ def _build_standalone_server(task_id: str, persona_id: str, use_docker: bool = T
     from mcp_servers.registry import create_proxy_for_task, register_session_tools
     from mcp_servers.session import TutoringSession
     from mcp_servers.user_sim import UserSimulator
-    from mcp_servers.tc_checker import TCChecker, parse_tc_items
     from scripts.data_manager import ensure_data
 
     # Load task and persona
@@ -210,25 +209,18 @@ def _build_standalone_server(task_id: str, persona_id: str, use_docker: bool = T
     )
 
     # Create session
-    tc_text = task.ground_truth.termination_criteria if task.ground_truth else None
-    tc_items = parse_tc_items(tc_text, task.category.value, persona_id=persona_id)
-    has_tc = tc_items is not None
-
     from config.model_resolver import resolve_deepeval_model
 
     user_sim = UserSimulator(
-        scenario=build_scenario(task, persona_id, has_incremental_tc=has_tc),
-        user_description=build_user_description(persona, has_incremental_tc=has_tc),
+        scenario=build_scenario(task, persona_id, has_incremental_tc=False),
+        user_description=build_user_description(persona, has_incremental_tc=False),
         model=resolve_deepeval_model(SIMULATOR_DEFAULT_MODEL),
     )
 
-    tc_checker = TCChecker(tc_items) if tc_items else None
-
-    # GoalChecker for non-TC categories (data_analysis, end_to_end, adversarial).
-    # Replicates DeepEval stop_conversation() behavior.
+    # GoalChecker replicates DeepEval stop_conversation() behavior.
     # Logic aligned with build_conversational_golden() (simulation.py:438-450).
     goal_checker = None
-    if tc_items is None and task.ground_truth:
+    if task.ground_truth:
         gt = task.ground_truth
         if gt.termination_criteria:
             if task.category.value in ("implementation", "end_to_end", "debug"):
@@ -252,7 +244,6 @@ def _build_standalone_server(task_id: str, persona_id: str, use_docker: bool = T
         task=task,
         persona=persona,
         user_sim=user_sim,
-        tc_checker=tc_checker,
         max_turns=task.max_turns,
         proxy=proxy,
         goal_checker=goal_checker,

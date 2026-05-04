@@ -4,7 +4,6 @@ Manages the conversation between agent and simulated user.
 Backs the ``send_message`` session flow.
 
 Defense layers aligned with Legacy path (simulation.py create_model_callback):
-- TC checker exception isolation
 - Closing generation fallback (hardcoded text)
 - Timeout graceful wrap-up with closing
 - Agent repeat detection (force-stop after consecutive identical messages)
@@ -15,8 +14,7 @@ Session status semantics
 ``send_message`` returns one of three ``status`` values:
 
 - ``"active"``    — session is still running; user reply included
-- ``"completed"`` — session ended normally (objectives_met / user_satisfied
-                    / max_turns / timeout)
+- ``"completed"`` — session ended normally (user_satisfied / max_turns / timeout)
 - ``"failed"``    — session aborted due to an abnormal condition
                     (user_sim_error:* / agent_stuck)
 """
@@ -29,7 +27,6 @@ import time
 from typing import Optional
 
 from server.core.artifact_digest import build_visible_artifact_digest
-from server.core.tc_evidence import build_turn_evidence
 from server.core.workspace_delta import scan_workspace_snapshot
 
 logger = logging.getLogger(__name__)
@@ -78,9 +75,9 @@ def build_background(task) -> str:
         "To communicate with the user, you MUST use the send_message "
         "tool. This is the only way your words reach the user. Your "
         "text output outside of send_message is NOT visible to them. "
-        "The user cannot see your tool calls, file operations, "
-        "raw command output, or files in your workspace. If you generate "
-        "charts, code files, or other artifacts the user should see, "
+        "The user receives structured summaries of your tool calls, "
+        "file operations, and command output. If you generate charts, "
+        "code files, or other artifacts that require full inspection, "
         "include their file paths in the 'attachments' parameter of "
         "send_message.",
     ]
@@ -286,7 +283,6 @@ class TutoringSession:
 
     - Maintains the conversation history
     - Generates user replies via UserSimulator
-    - Checks termination criteria via TCChecker
     - Tracks turn count and enforces limits
     - Detects stuck agents (repeat detection)
     """
@@ -296,7 +292,6 @@ class TutoringSession:
         task,
         persona,
         user_sim,
-        tc_checker,
         max_turns: int,
         deadline: Optional[float] = None,
         proxy=None,
@@ -305,7 +300,6 @@ class TutoringSession:
         self._task = task
         self._persona = persona
         self._user_sim = user_sim
-        self._tc_checker = tc_checker
         self._max_turns = max_turns
         self._deadline = deadline
         self._proxy = proxy  # For set_turn() calls
@@ -384,10 +378,9 @@ class TutoringSession:
         2. Resolve attachments
         3. Repeat detection (model_callback:606-624)
         4. Record + advance turn
-        5. TC check (_EfficientSimulator.stop_conversation)
-        6. Deadline check
-        8. Max turns (_append_user_closing:642-678)
-        9. Generate user reply (generate_next_user_input)
+        5. Deadline check
+        6. Max turns (_append_user_closing:642-678)
+        7. Generate user reply (generate_next_user_input)
 
         Returns JSON: {user_message, status[, reason]}
         """
@@ -503,40 +496,10 @@ class TutoringSession:
         if self._proxy is not None:
             self._proxy.set_turn(self._turn)
 
-        tc_turn_index = self._current_tool_turn_index()
-        turn_evidence = self._build_turn_evidence(tc_turn_index)
         attached_filenames = frozenset(a["filename"] for a in resolved_attachments)
         artifact_digest = self._build_artifact_digest(text, attached_filenames)
 
-        # ── TC check ──  (aligned: _EfficientSimulator.stop_conversation)
-        try:
-            full_tool_logs = (
-                self._proxy.get_logs() if self._proxy is not None else []
-            )
-            tc_met = self._tc_checker is not None and self._tc_checker.check(
-                self._conversation,
-                turn_evidence=turn_evidence,
-                turn_index=tc_turn_index,
-                tool_logs=full_tool_logs,
-            )
-        except Exception as exc:
-            logger.warning("TC check failed: %s", exc)
-            tc_met = False
-
-        if tc_met:
-            closing = self._safe_closing()
-            if closing:
-                self._conversation.append(
-                    {"role": "user", "content": closing, "ts": time.time()}
-                )
-            self._done = True
-            self._completion_reason = "objectives_met"
-            logger.info("TC fully covered at turn %d.", self._turn)
-            return self._result(closing, "completed", reason="objectives_met")
-
         # ── Deadline check ──
-        # Let the just-sent tutor message contribute to TC completion
-        # before converting the session into a timeout.
         if self._deadline is not None and time.time() > self._deadline:
             self._done = True
             self._completion_reason = "timeout"
@@ -569,6 +532,7 @@ class TutoringSession:
                     artifact_digest,
                 ),
                 file_ledger=self._file_ledger,
+                tool_logs=(self._proxy.get_logs() if self._proxy is not None else []),
                 workspace_path=self._workspace_path,
             )
         except Exception as exc:
@@ -658,18 +622,6 @@ class TutoringSession:
         return "registered"
 
     @property
-    def tc_debug_history(self) -> list[dict]:
-        if self._tc_checker is None:
-            return []
-        return self._tc_checker.debug_history
-
-    @property
-    def tc_coverage_summary(self) -> Optional[dict]:
-        if self._tc_checker is None:
-            return None
-        return self._tc_checker.coverage_summary
-
-    @property
     def file_ledger(self) -> dict[str, dict]:
         """All files shared via attachments — latest versions, keyed by filename."""
         return dict(self._file_ledger)
@@ -743,15 +695,6 @@ class TutoringSession:
 
     def _current_tool_turn_index(self) -> int:
         return max(self._turn - 1, 0)
-
-    def _build_turn_evidence(self, turn_index: int) -> Optional[dict]:
-        if self._proxy is None:
-            return None
-        try:
-            return build_turn_evidence(self._proxy.get_logs(), turn_index)
-        except Exception as exc:
-            logger.debug("Failed to build TC turn evidence: %s", exc)
-            return None
 
     def _build_artifact_digest(
         self,
@@ -865,23 +808,7 @@ class TutoringSession:
         Artifact digest data is still recorded in ``_artifact_debug_history``
         for the evaluation pipeline to consume.
         """
-        if self._tc_checker is None:
-            return ""
-
         signals: list[str] = []
-        coverage = self._tc_checker.coverage_summary
-        covered = coverage.get("covered", 0)
-        total = coverage.get("total", 0)
-        stalled_turns = self._tc_checker.stalled_turns
-
-        if total and covered >= max(total - 1, 1):
-            signals.append(
-                "- Your main learning goal appears mostly satisfied. If you still need something, ask one focused clarification. Otherwise, wrap up naturally."
-            )
-        if stalled_turns >= 2:
-            signals.append(
-                "- The conversation has not made visible progress for multiple tutor turns. Do not repeat the same complaint indefinitely; ask one narrower question or close if the core idea is already clear."
-            )
         if self._turn >= max(self._max_turns - 2, 1):
             signals.append(
                 "- The session is nearing its natural limit. Prioritize one final concrete clarification over opening a brand-new branch."

@@ -41,8 +41,7 @@ def build_user_description(
     emotional profile, and behavioral rules into a structured prompt.
 
     The ``has_incremental_tc`` parameter is accepted for API compatibility
-    but no longer changes the output — all tasks are expected to use
-    incremental TC checking.
+    and no longer changes the output.
     """
     parts = [
         f"Your profile: {persona.description}",
@@ -83,10 +82,11 @@ def build_user_description(
         "you to upload or share anything, say you have no files.】\n"
         "- You interact through TEXT-ONLY chat. You cannot upload files "
         "or transfer data — the tutor has their own sandbox.\n"
-        "- You can only see what appears in this chat — if the tutor "
-        "mentions files or outputs not shown here, ask once for the "
-        "key content to be pasted. Do not repeat a request the tutor "
-        "already fulfilled."
+        "- You see the tutor's chat replies plus structured tool-call logs "
+        "summarizing sandbox actions, arguments, success flags, and results. "
+        "If the tutor mentions files or outputs absent from both the chat "
+        "and visible tool logs, ask once for the key content to be pasted. "
+        "Do not repeat a request the tutor already fulfilled."
     )
 
     return "\n".join(parts)
@@ -103,9 +103,8 @@ def build_scenario(
     learning goals derived from required_capabilities.
 
     The ``has_incremental_tc`` parameter is accepted for API compatibility
-    but no longer changes the output — all tasks are expected to use
-    incremental TC checking.  Termination is handled externally by the
-    TC checker and hardcoded closing pool.
+    and no longer changes the output. Termination is handled by the
+    user persona, max-turn/deadline guards, and the hardcoded closing pool.
     """
     opening = task.user_opening
     parts = [

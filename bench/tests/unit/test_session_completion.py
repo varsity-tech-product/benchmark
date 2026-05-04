@@ -1,13 +1,11 @@
 """Unit tests for all TutoringSession completion paths.
 
-Tests TC met, max turns, repeat detection, deadline timeout,
-goal checker, and force_complete — all without server or HTTP.
+Tests max turns, repeat detection, deadline timeout, user-driven completion,
+and force_complete — all without server or HTTP.
 """
 
 import json
 import time
-
-from tests.conftest import FakeTCChecker
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -17,58 +15,6 @@ from tests.conftest import FakeTCChecker
 def _send(session, text="Here is how to fix the bug."):
     """Send a message and return parsed JSON result."""
     return json.loads(session.handle_send_message(text))
-
-
-# ---------------------------------------------------------------------------
-# TC Completion
-# ---------------------------------------------------------------------------
-
-
-class TestTCCompletion:
-    def test_tc_met_returns_completed(self, make_session):
-        tc = FakeTCChecker(complete_on_check=1)
-        session = make_session(tc_checker=tc)
-        result = _send(session)
-        assert result["status"] == "completed"
-        assert result["reason"] == "objectives_met"
-
-    def test_tc_met_sets_done_flag(self, make_session):
-        tc = FakeTCChecker(complete_on_check=1)
-        session = make_session(tc_checker=tc)
-        _send(session)
-        assert session.done is True
-
-    def test_tc_met_appends_closing(self, make_session):
-        tc = FakeTCChecker(complete_on_check=1)
-        session = make_session(tc_checker=tc)
-        result = _send(session)
-        assert result["user_message"]  # closing message present
-        # Conversation should end with a user (user) closing
-        conv = session.conversation
-        assert conv[-1]["role"] == "user"
-
-    def test_tc_not_met_stays_active(self, make_session):
-        tc = FakeTCChecker()  # never completes
-        session = make_session(tc_checker=tc)
-        result = _send(session)
-        assert result["status"] == "active"
-        assert session.done is False
-
-    def test_tc_met_on_second_turn(self, make_session):
-        tc = FakeTCChecker(complete_on_check=2)
-        session = make_session(tc_checker=tc)
-        r1 = _send(session, "First message")
-        assert r1["status"] == "active"
-        r2 = _send(session, "Second message")
-        assert r2["status"] == "completed"
-        assert r2["reason"] == "objectives_met"
-
-    def test_send_after_tc_met_returns_completed(self, make_session):
-        tc = FakeTCChecker(complete_on_check=1)
-        session = make_session(tc_checker=tc)
-        _send(session)
-        result = _send(session, "Another message")
-        assert result["status"] == "completed"
 
 
 # ---------------------------------------------------------------------------

@@ -94,3 +94,15 @@ class TestEmptyAndMalformed:
         raw = json.dumps({"reply_a": "", "reply_b": ""})
         with pytest.raises(ValueError):
             _parse_simulated_input_strict(raw)
+
+    @pytest.mark.parametrize(
+        "heading",
+        [
+            "Session context visible to you:",
+            "Agent tool activity visible to you:",
+            "Recent tool turns:",
+        ],
+    )
+    def test_prompt_context_headings_raise(self, heading):
+        with pytest.raises(ValueError):
+            _parse_simulated_input_strict(f"{heading}\n[turn 1 - agent]")

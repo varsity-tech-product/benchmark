@@ -363,28 +363,14 @@ class BenchmarkOrchestrator:
             # === PHASE 2: INTERACT (agent-driven via MCP tools) ===
             # The agent drives the conversation through tool calls.
             # send_message is a regular MCP tool backed by TutoringSession.
-            # TC checking and user simulation happen inside send_message.
+            # Completion checks and user simulation happen inside send_message.
             try:
                 from mcp_servers.session import TutoringSession
                 from mcp_servers.user_sim import UserSimulator
-                from mcp_servers.tc_checker import TCChecker, parse_tc_items
 
                 simulator_cost = None
 
                 # Build user simulator
-                has_tc_items = False
-                tc_text = (
-                    task.ground_truth.termination_criteria
-                    if task.ground_truth
-                    else None
-                )
-                tc_items = parse_tc_items(
-                    tc_text,
-                    task.category.value,
-                    persona_id=persona.persona_id,
-                )
-                has_tc_items = tc_items is not None
-
                 from config.model_resolver import resolve_deepeval_model
 
                 resolved_sim_model = resolve_deepeval_model(
@@ -394,26 +380,20 @@ class BenchmarkOrchestrator:
                     scenario=build_scenario(
                         task,
                         persona.persona_id,
-                        has_incremental_tc=has_tc_items,
+                        has_incremental_tc=False,
                     ),
                     user_description=build_user_description(
                         persona,
-                        has_incremental_tc=has_tc_items,
+                        has_incremental_tc=False,
                     ),
                     model=resolved_sim_model,
                 )
 
-                tc_checker = None
-                if tc_items:
-                    tc_checker = TCChecker(tc_items)
-
-                # GoalChecker for non-TC categories (data_analysis,
-                # end_to_end, adversarial).  Replicates DeepEval
-                # stop_conversation() behavior.
+                # GoalChecker replicates DeepEval stop_conversation() behavior.
                 # Logic aligned with build_conversational_golden()
                 # (simulation.py:438-450).
                 goal_checker = None
-                if tc_items is None and task.ground_truth:
+                if task.ground_truth:
                     gt = task.ground_truth
                     stop_criteria = gt.termination_criteria
                     if isinstance(stop_criteria, dict):
@@ -438,7 +418,6 @@ class BenchmarkOrchestrator:
                     task=task,
                     persona=persona,
                     user_sim=user_sim,
-                    tc_checker=tc_checker,
                     max_turns=max_turns,
                     deadline=deadline,
                     proxy=proxy,
@@ -452,7 +431,7 @@ class BenchmarkOrchestrator:
                     print(
                         f"  Agent-driven session "
                         f"(simulator={self.simulator_model or 'default'}, "
-                        f"tc={'incremental' if tc_items else 'native'})..."
+                        f"termination=user_persona+goal_checker)..."
                     )
                     conversation = run_agent_session(
                         task=task,

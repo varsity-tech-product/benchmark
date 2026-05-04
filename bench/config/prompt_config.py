@@ -740,10 +740,8 @@ def build_scenario(
                 "subsequent turn. Space goals across the conversation so the "
                 "tutor has room to teach each one properly."
             )
-            # COVERAGE TRACKING, ACTION EXPECTATION: full version when
-            # there is NO incremental TC checker.  When TC checker is
-            # active, use lightweight versions that guide the user's
-            # direction without judging completion or rushing.
+            # COVERAGE TRACKING, ACTION EXPECTATION: legacy compatibility.
+            # Lightweight mode guides direction with fewer completion cues.
             if has_incremental_tc:
                 parts.append("")
                 parts.append(
@@ -800,10 +798,8 @@ def build_scenario(
                 "the setup tips — I will try that on my own later! For "
                 "now, can we go back to [next uncovered learning goal]?'"
             )
-            # COMPLETION, TURN BUDGET, IMPLEMENTATION TRACKING: only when
-            # there is NO incremental TC checker.  These rules involve
-            # completion judgment or rushing — the TC checker handles
-            # termination instead.
+            # COMPLETION, TURN BUDGET, IMPLEMENTATION TRACKING:
+            # full prompt mode includes explicit completion pacing.
             segments = get_filtered_prompt_segments(
                 task.category.value,
                 task.requires_code,

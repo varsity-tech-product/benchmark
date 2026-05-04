@@ -125,12 +125,12 @@ The server ends the session when one of these fires:
 
 | `status` | `reason` | What it means |
 |---|---|---|
-| `completed` | `objectives_met` | T/C checker fired — task objectives covered. Cleanest possible close. |
+| `completed` | `user_satisfied` | User persona set `task_end=true` after deciding the task is complete. |
 | `completed` | `max_turns` | Hit `task.max_turns` (e.g. I01 = 15). Natural close. |
 | `completed` | `timeout` | `task.timeout_minutes` deadline reached. Still treated as `completed` (see `_is_failed_reason` in `bench/server/core/session.py`). |
 | `completed` | `agent_abandoned` | DELETE during an active session. Bundle persists since #54. |
 | `failed` | `agent_stuck` | You sent the **same `text` 3× in a row** — repeat-detector. |
-| `failed` | `student_sim_error:*` | Student-sim LLM failure. Response also carries `sim_error` with structured failure metadata. Not your fault. |
+| `failed` | `user_sim_error:*` | User-sim LLM failure. Response also carries `sim_error` with structured failure metadata. Infrastructure-owned failure. |
 
 There is **no "agent declares done" tool** in the protocol. The protocol
 terminates only via server-side signals. The natural endpoint is
@@ -202,9 +202,9 @@ Each one is grounded in a live failure mode (sessions `01e84317` and
    server end the session.
 
 4. **Don't DELETE active sessions to "clean up" early.** It's safe since
-   #54 (the bundle persists), but `reason=agent_abandoned` is a worse
-   audit trail than `reason=max_turns` or `reason=objectives_met`. Drive to
-   natural terminal whenever possible.
+   #54 (the bundle persists), and `reason=user_satisfied`, `reason=max_turns`,
+   or `reason=timeout` gives the clean lifecycle signal. Drive to a natural
+   terminal whenever possible.
 
 5. **Auth.** Only `/ops/*` endpoints need `QTB_ADMIN_TOKEN`. The agent
    surface (`/client/runs/*`, `/session/*`) uses the per-run bearer

@@ -233,9 +233,6 @@ class ResultIndexer:
             "simulator_cost": self._coerce_float(
                 run_state.get("simulator_cost"), default=None
             ),
-            "tc_checker_cost": self._coerce_float(
-                run_state.get("tc_checker_cost"), default=None
-            ),
             "evaluation_cost": self._coerce_float(
                 (latest_cost or {}).get("eval_cost_usd"), default=None
             ),
