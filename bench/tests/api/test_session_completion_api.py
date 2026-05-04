@@ -109,10 +109,11 @@ class TestStudentSatisfiedViaAPI:
         sid, _ = await register_and_start(client)
         state = _get_session_state(app, sid)
         # Force the next student reply to be the canonical D02 goodbye.
+        # task_end=False here exercises the regex fallback path.
         monkeypatch.setattr(
             state.session._student_sim,
             "generate_message",
-            lambda *a, **kw: "Got it, I'm good to stop here for now.",
+            lambda *a, **kw: ("Got it, I'm good to stop here for now.", False),
         )
 
         body = await send_message(client, sid, "Anything else I can help with?")
@@ -128,7 +129,7 @@ class TestStudentSatisfiedViaAPI:
         monkeypatch.setattr(
             state.session._student_sim,
             "generate_message",
-            lambda *a, **kw: "Thanks, that's all I needed!",
+            lambda *a, **kw: ("Thanks, that's all I needed!", False),
         )
 
         await send_message(client, sid, "Anything else?")
@@ -145,11 +146,36 @@ class TestStudentSatisfiedViaAPI:
         monkeypatch.setattr(
             state.session._student_sim,
             "generate_message",
-            lambda *a, **kw: "Before we stop, one quick question: what about edges?",
+            lambda *a, **kw: (
+                "Before we stop, one quick question: what about edges?",
+                False,
+            ),
         )
 
         body = await send_message(client, sid, "Make sense so far?")
         assert body["status"] == "active"
+
+    @pytest.mark.asyncio
+    async def test_task_end_flag_terminates_paraphrased_closure(
+        self, app, client, monkeypatch
+    ):
+        # Issue #139: paraphrased closure that the regex misses still
+        # terminates because the persona emits task_end=True.
+        sid, _ = await register_and_start(client)
+        state = _get_session_state(app, sid)
+        monkeypatch.setattr(
+            state.session._student_sim,
+            "generate_message",
+            lambda *a, **kw: (
+                "Perfect — that feels like the right stopping point for now. "
+                "I'll come back later for the rest.",
+                True,
+            ),
+        )
+
+        body = await send_message(client, sid, "Sounds good?")
+        assert body["status"] == "completed"
+        assert body["reason"] == "student_satisfied"
 
 
 # ---------------------------------------------------------------------------

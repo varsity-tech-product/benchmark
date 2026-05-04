@@ -284,7 +284,7 @@ def run_probes(
                 "source": "probe_tutor_script",
             }
         ]
-        message = sim.generate_message(conversation)
+        message, _ = sim.generate_message(conversation)
         expected_signals = (probe.get("expected_signals_by_persona") or {}).get(
             persona_id, []
         )

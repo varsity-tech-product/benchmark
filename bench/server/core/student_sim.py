@@ -55,9 +55,16 @@ class StudentSimError(Exception):
 
 
 class SimulatedInput(BaseModel):
-    """Schema for structured student message output."""
+    """Schema for structured student message output.
+
+    ``task_end`` lets the persona itself signal that the conversation is
+    over. The session loop sends the reply to the agent and then closes —
+    no more turns. Defaults to ``False`` for backward compatibility with
+    older personas that have not been re-prompted yet.
+    """
 
     simulated_input: str
+    task_end: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -80,7 +87,19 @@ _NEXT_MESSAGE_PROMPT = textwrap.dedent(
     Conversation so far:
     {transcript}
 
-    Respond with a JSON object containing a single key `simulated_input`.
+    Respond with a JSON object with two keys:
+      - `simulated_input` (string): your next reply to the tutor.
+      - `task_end` (boolean): set to true ONLY when you would naturally
+        walk away from this conversation — your question is fully
+        answered, you have what you need, and the next thing you would
+        do is leave the chat. Set to false in every other case,
+        including when you are still asking, still confused, still
+        working through something, or just being polite.
+
+    When `task_end` is true, your `simulated_input` should read as a
+    natural goodbye / sign-off message — that is the last thing the
+    tutor will see before the session closes.
+
     JSON Output:
 """
 )
@@ -95,7 +114,9 @@ _REPAIR_PROMPT = textwrap.dedent(
     {bad_output}
     ---
     Return ONLY valid JSON in this exact shape, with no markdown, commentary, or extra keys:
-    {{"simulated_input": "..."}}
+    {{"simulated_input": "...", "task_end": false}}
+    Set `task_end` to true only if you would naturally end the chat now;
+    otherwise leave it false.
 """
 )
 
@@ -339,13 +360,19 @@ def _collect_images_from_ledger(
     return images
 
 
-def _parse_simulated_input_strict(raw: str) -> tuple[str, str]:
-    """Extract ``simulated_input`` from JSON output.
+def _parse_simulated_input_strict(raw: str) -> tuple[str, bool, str]:
+    """Extract ``simulated_input`` and ``task_end`` from JSON output.
 
-    Returns ``(text, parse_method)`` on success where ``parse_method`` is one of:
+    Returns ``(text, task_end, parse_method)`` on success where
+    ``parse_method`` is one of:
     - ``"json"``: extracted from ``simulated_input`` key
     - ``"json_single_value"``: extracted from the only string value in a JSON object
     - ``"fallback_text"``: accepted as natural-language student message
+
+    ``task_end`` defaults to ``False`` whenever the field is missing,
+    not a real Python bool, or the canonical key path is bypassed
+    (single-value / fallback-text). Bias to False so a malformed
+    response never accidentally terminates a still-active session.
 
     Raises ``ValueError`` if parsing fails.  Empty-output errors have the
     prefix ``"empty:"`` so callers can distinguish them from structural parse
@@ -360,7 +387,11 @@ def _parse_simulated_input_strict(raw: str) -> tuple[str, str]:
             data = json.loads(match.group())
             text = data.get("simulated_input")
             if text and text.strip():
-                return text.strip(), "json"
+                raw_end = data.get("task_end", False)
+                # Strict bool: only Python True terminates. Anything else
+                # (string "true", 1, missing) is treated as False.
+                task_end = raw_end is True
+                return text.strip(), task_end, "json"
             # simulated_input missing or empty — try single-value fallback
             # before giving up: if the object has exactly one string value and
             # it passes the usability check, accept it with a warning.
@@ -375,7 +406,7 @@ def _parse_simulated_input_strict(raw: str) -> tuple[str, str]:
                     "accepted single string value from JSON (key drift). raw=%r",
                     raw[:120],
                 )
-                return string_values[0].strip(), "json_single_value"
+                return string_values[0].strip(), False, "json_single_value"
         except (json.JSONDecodeError, TypeError):
             pass
         # JSON found but no usable value — not usable as-is
@@ -384,7 +415,7 @@ def _parse_simulated_input_strict(raw: str) -> tuple[str, str]:
     # No JSON — check if raw text is usable as a student message
     stripped = raw.strip()
     if _is_usable_student_message(stripped):
-        return stripped, "fallback_text"
+        return stripped, False, "fallback_text"
 
     raise ValueError(f"No JSON and text not usable as student message: {raw[:120]!r}")
 
@@ -462,8 +493,14 @@ class StudentSimulator:
             self._model = resolve_ewan_model(self._model)
         return self._model
 
-    def _generate_parsed(self, prompt: str, images: list[dict] | None = None) -> str:
+    def _generate_parsed(
+        self, prompt: str, images: list[dict] | None = None
+    ) -> tuple[str, bool]:
         """Generate text via model with retry, parse JSON output, track cost.
+
+        Returns ``(text, task_end)``.  ``task_end`` is the persona-emitted
+        end-of-session flag (defaults to ``False`` for any non-canonical
+        parse path or missing key).
 
         Retry strategy (budget: ``_MAX_GENERATE_ATTEMPTS``):
         - network error  → retry with original prompt (transient failure)
@@ -519,8 +556,12 @@ class StudentSimulator:
 
             # --- Parse layer ---
             try:
-                parsed, parse_method = _parse_simulated_input_strict(text)
-                attempt_record.update(error_type=None, parse_method=parse_method)
+                parsed, task_end, parse_method = _parse_simulated_input_strict(text)
+                attempt_record.update(
+                    error_type=None,
+                    parse_method=parse_method,
+                    task_end=task_end,
+                )
                 attempts.append(attempt_record)
                 if len(attempts) > 1:
                     logger.info(
@@ -528,7 +569,7 @@ class StudentSimulator:
                         attempt_idx + 1,
                         _MAX_GENERATE_ATTEMPTS,
                     )
-                return parsed
+                return parsed, task_end
             except ValueError as exc:
                 detail = str(exc)
                 # Distinguish empty output from structural parse failure so
@@ -570,7 +611,7 @@ class StudentSimulator:
         runtime_guidance: str = "",
         file_ledger: dict[str, dict] | None = None,
         workspace_path: str | None = None,
-    ) -> str:
+    ) -> tuple[str, bool]:
         """Generate the next student message given conversation history.
 
         Args:
@@ -581,7 +622,10 @@ class StudentSimulator:
                 student can see shared workspace files in temporal context.
 
         Returns:
-            The student's next message as a string.
+            ``(text, task_end)`` — the student's next message and the
+            persona-emitted end-of-session flag. ``task_end=True`` means
+            the session loop should send this reply to the agent and
+            then close (no further turns).
         """
         runtime_guidance_block = ""
         if runtime_guidance.strip():
