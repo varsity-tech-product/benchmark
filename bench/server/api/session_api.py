@@ -23,11 +23,14 @@ import json
 import logging
 import os
 import random
+import shutil
 import threading
 import time
+from dataclasses import asdict, is_dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
+import anyio
 from mcp.types import TextContent, Tool
 
 from server.config.llm_config import EVAL_DEFAULT_MODEL
@@ -49,6 +52,36 @@ from .protocol import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+async def _run_state_sync(use_docker: bool, func, *args, **kwargs):
+    if not use_docker:
+        return await _run_sync_worker(func, *args, **kwargs)
+    if kwargs:
+        return await anyio.to_thread.run_sync(lambda: func(*args, **kwargs))
+    return await anyio.to_thread.run_sync(func, *args)
+
+
+async def _run_sync_worker(func, *args, **kwargs):
+    done = threading.Event()
+    outcome: dict[str, object] = {}
+
+    def runner() -> None:
+        try:
+            outcome["value"] = func(*args, **kwargs)
+        except BaseException as exc:
+            outcome["error"] = exc
+        finally:
+            done.set()
+
+    thread = threading.Thread(target=runner, name="qtb-session-worker", daemon=True)
+    thread.start()
+    while not done.is_set():
+        await anyio.sleep(0.01)
+    thread.join()
+    if "error" in outcome:
+        raise outcome["error"]  # type: ignore[misc]
+    return outcome.get("value")
 
 
 def _stable_int_seed(*parts: object) -> int:
@@ -76,8 +109,17 @@ def _session_random_seed(
     return _stable_int_seed(task_id, session_id)
 
 
-def _resolve_persona_pin(task_id: str) -> Optional[str]:
+def _resolve_persona_pin(
+    task_id: str, persona_ids: Optional[list[str]] = None
+) -> Optional[str]:
     """Return an internal-only pinned persona override, if configured."""
+    allowed = set(persona_ids or [])
+
+    def _allowed(value: str) -> Optional[str]:
+        if allowed and value not in allowed:
+            return None
+        return value
+
     raw_json = os.environ.get("QTB_TEST_PERSONA_PIN_JSON", "").strip()
     if raw_json:
         try:
@@ -88,10 +130,10 @@ def _resolve_persona_pin(task_id: str) -> Optional[str]:
             if isinstance(mapping, dict):
                 desired = mapping.get(task_id) or mapping.get("*")
                 if desired:
-                    return str(desired)
+                    return _allowed(str(desired))
 
     desired = os.environ.get("QTB_TEST_PERSONA_PIN", "").strip()
-    return desired or None
+    return _allowed(desired) if desired else None
 
 
 def _task_is_lean(task) -> bool:
@@ -136,6 +178,27 @@ def _lean_template_context(task, *, user_code_dir: Optional[str | Path]) -> dict
         "sandbox_image": environment.sandbox_image if environment else "",
         "user_code_available": bool(user_code_dir),
     }
+
+
+def _int_env(name: str, default: int, *, minimum: int = 0) -> int:
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        return default
+    return max(minimum, value)
+
+
+def _safe_tool_log_dict(log) -> dict:
+    if isinstance(log, dict):
+        return dict(log)
+    if is_dataclass(log):
+        return asdict(log)
+    if hasattr(log, "__dict__"):
+        return dict(log.__dict__)
+    return {"raw": str(log)}
 
 
 class SessionState:
@@ -197,6 +260,16 @@ class SessionState:
         self.owner_github_login: str = ""
         self.owner_email: str = ""
         self.visibility: str = "private"
+        self._latest_layer_tag: str = ""
+        self._snapshot_tags: list[str] = []
+        self._snapshot_interval: int = _int_env(
+            "QTB_RESUME_SNAPSHOT_INTERVAL", 5, minimum=1
+        )
+        self._snapshot_keep: int = _int_env(
+            "QTB_RESUME_SNAPSHOT_KEEP", 3, minimum=1
+        )
+        self._resume_layer_tag: str = ""
+        self._suppress_active_persist: bool = False
         # Callback invoked after successful register(). Used by http_app to
         # bind the session to a RunAssignment without injecting RunService
         # into SessionState.
@@ -308,6 +381,97 @@ class SessionState:
             session_id[:8],
             task_id,
             persona_id,
+        )
+        return state
+
+    @classmethod
+    def restore_active_from_storage(
+        cls,
+        *,
+        state_path: Path,
+        bench_root: Path,
+        use_docker: bool,
+        eval_model: str = EVAL_DEFAULT_MODEL,
+    ) -> "SessionState":
+        """Restore an ACTIVE session from results/runs/{run_id}/run_state.json."""
+        run_state = json.loads(Path(state_path).read_text(encoding="utf-8"))
+        session_id = str(run_state["session_id"])
+        task_id = str(run_state["task_id"])
+        persona_id = str(run_state["persona_id"])
+
+        state = cls(
+            session_id=session_id,
+            use_docker=use_docker,
+            bench_root=bench_root,
+            eval_model=eval_model,
+        )
+        state.run_id = str(run_state.get("run_id") or "")
+        state._run_task_id = task_id
+        state.owner_user_id = str(run_state.get("owner_user_id") or "")
+        state.owner_github_login = str(run_state.get("owner_github_login") or "")
+        state.owner_email = str(run_state.get("owner_email") or "")
+        state.visibility = str(run_state.get("visibility") or "private")
+        state._latest_layer_tag = str(run_state.get("latest_layer_tag") or "")
+        state._resume_layer_tag = state._latest_layer_tag
+        state._snapshot_tags = [
+            str(tag) for tag in run_state.get("snapshot_tags", []) if tag
+        ]
+        state._snapshot_interval = max(
+            1,
+            int(run_state.get("snapshot_interval") or state._snapshot_interval),
+        )
+        state._snapshot_keep = max(
+            1,
+            int(run_state.get("snapshot_keep") or state._snapshot_keep),
+        )
+
+        state._suppress_active_persist = True
+        try:
+            registered = state.register(task_id, persona_id)
+            if "error" in registered:
+                raise RuntimeError(str(registered.get("error")))
+        finally:
+            state._suppress_active_persist = False
+
+        snapshot_dir = Path(
+            run_state.get("workspace_snapshot_path")
+            or state_path.parent / "workspace_snapshot"
+        )
+        state._restore_active_workspace_snapshot(snapshot_dir)
+        if state.user_sim is not None:
+            state.user_sim.total_cost = float(run_state.get("simulator_cost") or 0.0)
+
+        if state.proxy is not None and hasattr(state.proxy, "restore_logs"):
+            state.proxy.restore_logs(run_state.get("tool_logs", []))
+
+        turn_count = int(run_state.get("turn_count") or 0)
+        if state.session is not None and hasattr(
+            state.session, "restore_runtime_state"
+        ):
+            state.session.restore_runtime_state(
+                conversation=run_state.get("conversation", []),
+                turn_count=turn_count,
+                session_status=str(run_state.get("session_status") or "active"),
+                completion_reason=run_state.get("termination_reason"),
+                file_ledger=run_state.get("file_ledger") or {},
+                artifact_debug_history=run_state.get("artifact_debug_history") or [],
+            )
+        if state.proxy is not None and hasattr(state.proxy, "set_turn"):
+            state.proxy.set_turn(turn_count)
+
+        phase = str(run_state.get("phase") or SessionPhase.IN_SESSION.value)
+        try:
+            state.phase = SessionPhase(phase)
+        except ValueError:
+            state.phase = SessionPhase.IN_SESSION
+        state._start_time = time.time() - float(run_state.get("duration_seconds") or 0)
+        state._closed = False
+        state._persist_active_state()
+        logger.info(
+            "Restored active session %s from %s using layer=%s",
+            session_id[:8],
+            state_path,
+            state._latest_layer_tag or "none",
         )
         return state
 
@@ -471,19 +635,22 @@ class SessionState:
                 )
                 self.staged_temp_dirs.extend(sample_temp_dirs)
 
+            base_sandbox_img = (
+                task.environment.sandbox_image if task.environment else None
+            )
             self.container = self.container_manager.create_container(
                 task_id=f"{task_id}_{self.session_id[:8]}",
                 data_dir=staged_data_dir,
                 docs_dir=staged_docs_dir,
                 user_code_dir=user_code_dir,
-                sandbox_image=(
-                    task.environment.sandbox_image if task.environment else None
-                ),
+                sandbox_image=(self._resume_layer_tag or base_sandbox_img),
                 network_enabled=(
                     task.environment.network_enabled if task.environment else False
                 ),
                 lean_data_dir=paths.lean_data,
                 custom_data_dir=paths.custom_data,
+                restore_workspace_snapshot=bool(self._resume_layer_tag),
+                resource_image=base_sandbox_img,
             )
 
             local_tool_env = self._build_tool_env(
@@ -582,6 +749,7 @@ class SessionState:
                         exc,
                     )
 
+            self._persist_active_state()
             return {
                 "session_id": self.session_id,
                 "current_phase": self.phase.value,
@@ -619,6 +787,7 @@ class SessionState:
         ]
         data["current_phase"] = self.phase.value
         data["next_allowed"] = next_allowed_for_phase(self.phase)
+        self._persist_active_state()
         return data
 
     # ------------------------------------------------------------------
@@ -661,6 +830,8 @@ class SessionState:
         if session_status in ("completed", "failed"):
             self.phase = SessionPhase.COMPLETED
             self._save_results()
+            self._cleanup_resume_layers()
+            self._remove_active_state()
             self._destroy_container()
             if session_status == "failed":
                 logger.error(
@@ -689,6 +860,8 @@ class SessionState:
                     )
         data.setdefault("current_phase", self.phase.value)
         data.setdefault("next_allowed", next_allowed_for_phase(self.phase))
+        if self.phase != SessionPhase.COMPLETED:
+            self._persist_active_state()
         return json.dumps(data)
 
     # ------------------------------------------------------------------
@@ -846,7 +1019,9 @@ class SessionState:
         """Route a domain tool call through the proxy."""
         if self._closed:
             return json.dumps({"success": False, "output": "Error: Session is closed"})
-        return self.proxy.call_tool(name, **kwargs)
+        result = self.proxy.call_tool(name, **kwargs)
+        self._persist_active_state()
+        return result
 
     # ------------------------------------------------------------------
     # Tool visibility per phase (for MCP list_tools)
@@ -1025,13 +1200,15 @@ class SessionState:
                         ),
                     )
                 ]
-            result = await asyncio.to_thread(self.register, task_id, persona_id)
+            result = await _run_state_sync(
+                self.use_docker, self.register, task_id, persona_id
+            )
             if "session_id" in result:
                 await self._notify_tools_changed()
             return [TextContent(type="text", text=json.dumps(result))]
 
         if name == "start_session":
-            result = await asyncio.to_thread(self.start)
+            result = await _run_state_sync(self.use_docker, self.start)
             await self._notify_tools_changed()
             return [TextContent(type="text", text=json.dumps(result))]
 
@@ -1069,11 +1246,13 @@ class SessionState:
                 "yes" if reasoning else "no",
                 text[:100],
             )
-            result = await asyncio.to_thread(
-                self.handle_send_message,
-                text,
-                attachments=attachments,
-                reasoning=reasoning,
+            result = await _run_state_sync(
+                self.use_docker,
+                lambda: self.handle_send_message(
+                    text,
+                    attachments=attachments,
+                    reasoning=reasoning,
+                )
             )
             # Log user reply
             try:
@@ -1093,11 +1272,15 @@ class SessionState:
         # Domain tool — route through proxy
         if name in HEAVY_TOOLS:
             async with backtest_sem():
-                result = await asyncio.to_thread(
-                    self.call_domain_tool, name, **arguments
+                result = await _run_state_sync(
+                    self.use_docker,
+                    lambda: self.call_domain_tool(name, **arguments)
                 )
         else:
-            result = await asyncio.to_thread(self.call_domain_tool, name, **arguments)
+            result = await _run_state_sync(
+                self.use_docker,
+                lambda: self.call_domain_tool(name, **arguments)
+            )
         result_preview = str(result)[:150]
         logger.debug("[%s] %s -> %s...", self.session_id[:8], name, result_preview)
         return [TextContent(type="text", text=str(result))]
@@ -1105,6 +1288,214 @@ class SessionState:
     # ------------------------------------------------------------------
     # Result saving
     # ------------------------------------------------------------------
+
+    def _active_run_state_path(self) -> Path | None:
+        if not self.run_id:
+            return None
+        return self.bench_root / "results" / "runs" / self.run_id / "run_state.json"
+
+    def _active_workspace_snapshot_path(self) -> Path | None:
+        state_path = self._active_run_state_path()
+        if state_path is None:
+            return None
+        return state_path.parent / "workspace_snapshot"
+
+    def _turn_count(self) -> int:
+        return int(getattr(self.session, "turn", 0) or 0) if self.session else 0
+
+    def _copy_active_workspace_snapshot(self) -> Path | None:
+        if self.container is None:
+            return None
+        source = Path(self.container.workspace_path)
+        if not source.is_dir():
+            return None
+        dest = self._active_workspace_snapshot_path()
+        if dest is None:
+            return None
+        tmp = dest.with_name(f".{dest.name}.tmp")
+        shutil.rmtree(tmp, ignore_errors=True)
+        shutil.copytree(source, tmp, symlinks=True)
+        shutil.rmtree(dest, ignore_errors=True)
+        os.replace(tmp, dest)
+        return dest
+
+    def _restore_active_workspace_snapshot(self, snapshot_dir: Path) -> None:
+        if self.container is None or not snapshot_dir.is_dir():
+            return
+        dest = Path(self.container.workspace_path)
+        dest.mkdir(parents=True, exist_ok=True)
+        for child in dest.iterdir():
+            if child.is_dir() and not child.is_symlink():
+                shutil.rmtree(child)
+            else:
+                child.unlink()
+        for child in snapshot_dir.iterdir():
+            target = dest / child.name
+            if child.is_dir() and not child.is_symlink():
+                shutil.copytree(child, target, symlinks=True)
+            else:
+                shutil.copy2(child, target, follow_symlinks=False)
+
+    def _maybe_commit_resume_snapshot(self, *, force: bool = False) -> None:
+        if not self.run_id or not self.container_manager or not self.container:
+            return
+        turn_count = self._turn_count()
+        if not force and (turn_count <= 0 or turn_count % self._snapshot_interval != 0):
+            return
+        if not force and self._latest_layer_tag.endswith(f"-{turn_count}"):
+            return
+        if not hasattr(self.container_manager, "commit_resume_snapshot"):
+            return
+        try:
+            tag = self.container_manager.commit_resume_snapshot(
+                self.container.container_id,
+                run_id=self.run_id,
+                turn_count=turn_count,
+            )
+        except Exception as exc:
+            logger.warning(
+                "Session %s resume snapshot failed at turn %s: %s",
+                self.session_id,
+                turn_count,
+                exc,
+            )
+            return
+        if not tag:
+            return
+        self._latest_layer_tag = tag
+        if tag in self._snapshot_tags:
+            self._snapshot_tags.remove(tag)
+        self._snapshot_tags.append(tag)
+        while len(self._snapshot_tags) > self._snapshot_keep:
+            old = self._snapshot_tags.pop(0)
+            try:
+                self.container_manager.remove_image(old)
+            except Exception as exc:
+                logger.debug("Could not remove old resume layer %s: %s", old, exc)
+
+    def _cleanup_resume_layers(self) -> None:
+        tags = list(
+            dict.fromkeys([*self._snapshot_tags, self._latest_layer_tag])
+        )
+        tags = [tag for tag in tags if tag]
+        if not tags:
+            self._latest_layer_tag = ""
+            return
+        manager = self.container_manager
+        if manager is None:
+            try:
+                from server.core.container import ContainerManager
+
+                manager = ContainerManager(use_docker=self.use_docker)
+            except Exception:
+                manager = None
+        if manager is None or not hasattr(manager, "remove_image"):
+            return
+        for tag in tags:
+            try:
+                manager.remove_image(tag)
+            except Exception as exc:
+                logger.debug("Could not remove resume layer %s: %s", tag, exc)
+        self._snapshot_tags = []
+        self._latest_layer_tag = ""
+
+    def _remove_active_state(self) -> None:
+        state_path = self._active_run_state_path()
+        if state_path is None:
+            return
+        try:
+            state_path.unlink(missing_ok=True)
+        except OSError as exc:
+            logger.debug("Could not remove active run_state %s: %s", state_path, exc)
+        snapshot_path = self._active_workspace_snapshot_path()
+        if snapshot_path is not None:
+            shutil.rmtree(snapshot_path, ignore_errors=True)
+
+    def _active_run_payload(self) -> dict:
+        conversation = self.session.conversation if self.session else []
+        tool_logs = (
+            [_safe_tool_log_dict(log) for log in self.proxy.get_logs()]
+            if self.proxy
+            else []
+        )
+        distractor_names = (
+            self.proxy.get_distractor_names() if self.proxy is not None else []
+        )
+        try:
+            from eval.tool_filters import NON_SUBSTANTIVE_TOOLS
+
+            step_count = sum(
+                1 for log in tool_logs if log.get("name") not in NON_SUBSTANTIVE_TOOLS
+            )
+        except Exception:
+            step_count = len(tool_logs)
+        duration = time.time() - self._start_time if self._start_time else 0.0
+        session_status = (
+            self.session.session_status if self.session else self.phase.value
+        )
+        termination_reason = self.session.completion_reason if self.session else None
+        return {
+            "active_state_version": 1,
+            "run_id": self.run_id or "",
+            "public_task_label": self.task_id.split("_")[0] if self.task_id else "",
+            "owner_user_id": self.owner_user_id,
+            "owner_github_login": self.owner_github_login,
+            "owner_email": self.owner_email,
+            "visibility": self.visibility,
+            "task_id": self.task_id,
+            "session_id": self._storage_session_id(),
+            "persona_id": self.persona_id,
+            "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+            "phase": self.phase.value,
+            "session_status": session_status,
+            "termination_reason": termination_reason,
+            "turn_count": self._turn_count(),
+            "conversation": conversation,
+            "tool_logs": tool_logs,
+            "distractor_names": distractor_names,
+            "file_ledger": self.session.file_ledger if self.session else {},
+            "artifact_debug_history": (
+                self.session.artifact_debug_history if self.session else []
+            ),
+            "simulator_cost": self.user_sim.total_cost if self.user_sim else 0.0,
+            "duration_seconds": duration,
+            "step_count": step_count,
+            "latest_layer_tag": self._latest_layer_tag,
+            "snapshot_tags": list(self._snapshot_tags),
+            "snapshot_interval": self._snapshot_interval,
+            "snapshot_keep": self._snapshot_keep,
+            "workspace_snapshot_path": (
+                str(path)
+                if (path := self._active_workspace_snapshot_path()) and path.exists()
+                else ""
+            ),
+        }
+
+    def _persist_active_state(self, *, force_snapshot: bool = False) -> Path | None:
+        if self._suppress_active_persist:
+            return None
+        state_path = self._active_run_state_path()
+        if state_path is None:
+            return None
+        if force_snapshot:
+            self._maybe_commit_resume_snapshot(force=True)
+            self._copy_active_workspace_snapshot()
+        else:
+            self._maybe_commit_resume_snapshot(force=False)
+        state_path.parent.mkdir(parents=True, exist_ok=True)
+        tmp_path = state_path.with_name(f".{state_path.name}.tmp")
+        tmp_path.write_text(
+            json.dumps(self._active_run_payload(), indent=2, default=str),
+            encoding="utf-8",
+        )
+        os.replace(tmp_path, state_path)
+        return state_path
+
+    def suspend_for_resume(self) -> None:
+        """Persist an active checkpoint, snapshot the container, and release it."""
+        self._persist_active_state(force_snapshot=True)
+        self._destroy_container()
+        self._closed = True
 
     def _storage_session_id(self) -> str:
         """Session ID for result storage.
@@ -1339,6 +1730,8 @@ class SessionState:
                     self.session_id,
                 )
                 self._save_results()
+                self._cleanup_resume_layers()
+                self._remove_active_state()
             except Exception as exc:
                 logger.warning(
                     "Session %s: save before cleanup failed: %s",

@@ -18,6 +18,7 @@ import logging
 import os
 import shutil
 import subprocess
+import threading
 import time
 from pathlib import Path
 from typing import AsyncIterator
@@ -110,6 +111,36 @@ def _bool_env(name: str, default: bool) -> bool:
     return default
 
 
+async def _run_manager_sync(manager, func, *args, **kwargs):
+    if not manager.use_docker:
+        return await _run_sync_worker(func, *args, **kwargs)
+    if kwargs:
+        return await anyio.to_thread.run_sync(lambda: func(*args, **kwargs))
+    return await anyio.to_thread.run_sync(func, *args)
+
+
+async def _run_sync_worker(func, *args, **kwargs):
+    done = threading.Event()
+    outcome: dict[str, object] = {}
+
+    def runner() -> None:
+        try:
+            outcome["value"] = func(*args, **kwargs)
+        except BaseException as exc:
+            outcome["error"] = exc
+        finally:
+            done.set()
+
+    thread = threading.Thread(target=runner, name="qtb-sync-worker", daemon=True)
+    thread.start()
+    while not done.is_set():
+        await anyio.sleep(0.01)
+    thread.join()
+    if "error" in outcome:
+        raise outcome["error"]  # type: ignore[misc]
+    return outcome.get("value")
+
+
 def _rest_session_token_required() -> bool:
     if os.environ.get("QTB_REQUIRE_SESSION_TOKEN", "").strip():
         return _bool_env("QTB_REQUIRE_SESSION_TOKEN", False)
@@ -162,6 +193,27 @@ def _authorize_rest_job_request(
     return None
 
 
+def _authorize_run_token_request(
+    request: Request, manager: "BenchSessionManager", run_id: str
+):
+    """Authorize a run-scoped API request with the run token."""
+    raw = extract_bearer_token(request)
+    if not raw:
+        return (
+            JSONResponse({"error": "Authorization: Bearer <token> required"}, 401),
+            None,
+        )
+    run = manager._run_service.resolve_token(raw, allow_expired_bound=True)
+    if run is None:
+        return (
+            JSONResponse({"error": "Invalid or expired token"}, status_code=401),
+            None,
+        )
+    if run.run_id != run_id:
+        return JSONResponse({"error": "Run token does not own this run"}, 403), None
+    return None, run
+
+
 class NoCacheStaticFiles(StaticFiles):
     """StaticFiles variant that forces browser revalidation for UI assets."""
 
@@ -199,6 +251,7 @@ class BenchSessionManager:
 
         self._sessions: dict[str, SessionState] = {}
         self._transports: dict[str, StreamableHTTPServerTransport] = {}
+        self._resume_locks: dict[str, asyncio.Lock] = {}
         self._task_group: anyio.abc.TaskGroup | None = None
 
         # Run layer
@@ -219,7 +272,7 @@ class BenchSessionManager:
         # Any pending/running jobs on disk at startup lost their worker when
         # the previous process died; fail them cleanly so clients polling a
         # stale job_id get a terminal state instead of timing out.
-        orphans = await asyncio.to_thread(self._job_store.mark_orphans_failed)
+        orphans = await anyio.to_thread.run_sync(self._job_store.mark_orphans_failed)
         if orphans:
             logger.warning(
                 "Startup: failed %d orphan tool job(s) from previous run", orphans
@@ -237,7 +290,7 @@ class BenchSessionManager:
                 )
                 for sid in list(self._sessions):
                     try:
-                        await self._cleanup_session(sid)
+                        await self._cleanup_session(sid, suspend_active=True)
                     except Exception as e:
                         logger.warning("Cleanup failed for session %s: %s", sid, e)
                 tg.cancel_scope.cancel()
@@ -296,6 +349,8 @@ class BenchSessionManager:
                                     state.session.force_complete("timeout")
                                 state.phase = SessionPhase.COMPLETED
                                 state._save_results()
+                                state._cleanup_resume_layers()
+                                state._remove_active_state()
                                 save_ok = True
                             except Exception:
                                 logger.warning(
@@ -484,7 +539,9 @@ class BenchSessionManager:
                     finally:
                         if session_id in self._sessions:
                             await self._cleanup_session(
-                                session_id, persist_partial=True
+                                session_id,
+                                persist_partial=True,
+                                suspend_active=True,
                             )
 
             try:
@@ -586,7 +643,11 @@ class BenchSessionManager:
                     )
                 finally:
                     if new_id in self._sessions:
-                        await self._cleanup_session(new_id, persist_partial=True)
+                        await self._cleanup_session(
+                            new_id,
+                            persist_partial=True,
+                            suspend_active=True,
+                        )
 
         try:
             await self._task_group.start(run_server)
@@ -629,10 +690,14 @@ class BenchSessionManager:
                 and session_id in self._sessions
             ):
                 logger.info(
-                    "Session %s MCP client disconnected — cleaning up partial state",
+                    "Session %s MCP client disconnected — suspending active state",
                     session_id[:8],
                 )
-                await self._cleanup_session(session_id, persist_partial=True)
+                await self._cleanup_session(
+                    session_id,
+                    persist_partial=True,
+                    suspend_active=True,
+                )
 
     # ------------------------------------------------------------------
     # Per-session MCP server factory
@@ -737,12 +802,12 @@ class BenchSessionManager:
         session_id: str,
         *,
         persist_partial: bool = False,
+        suspend_active: bool = False,
     ):
         """Remove session state and free resources.
 
-        If the session is bound to a Run that is still active (not in a
-        terminal state), mark the run as failed — the client disconnected
-        without completing the session.
+        Resumable ACTIVE runs are suspended with a run_state checkpoint and
+        container layer. Other unfinished run sessions are marked failed.
         """
         state = self._sessions.pop(session_id, None)
         transport = self._transports.pop(session_id, None)
@@ -758,8 +823,30 @@ class BenchSessionManager:
                 with contextlib.suppress(Exception):
                     await transport.terminate()
 
-            # Mark associated run as failed if session didn't complete normally.
-            if state.run_id and state.phase != SessionPhase.COMPLETED:
+            suspended = False
+            if (
+                suspend_active
+                and state.run_id
+                and state.phase in (SessionPhase.REGISTERED, SessionPhase.IN_SESSION)
+            ):
+                try:
+                    run = self._run_service.get_run(state.run_id)
+                    if run and run.status == RunStatus.ACTIVE:
+                        state.suspend_for_resume()
+                        suspended = True
+                        logger.info(
+                            "Run %s suspended for resume at session=%s",
+                            state.run_id,
+                            session_id[:8],
+                        )
+                except Exception as exc:
+                    logger.warning(
+                        "Run %s suspend for resume failed: %s",
+                        state.run_id,
+                        exc,
+                    )
+
+            if state.run_id and state.phase != SessionPhase.COMPLETED and not suspended:
                 try:
                     run = self._run_service.get_run(state.run_id)
                     if (
@@ -779,10 +866,11 @@ class BenchSessionManager:
                         "Failed to mark run %s as failed: %s", state.run_id, exc
                     )
 
-            try:
-                state.cleanup(persist_partial=persist_partial)
-            except Exception as e:
-                logger.warning("Session %s cleanup error: %s", session_id, e)
+            if not suspended:
+                try:
+                    state.cleanup(persist_partial=persist_partial)
+                except Exception as e:
+                    logger.warning("Session %s cleanup error: %s", session_id, e)
         logger.info("Session %s removed", session_id)
 
     # ------------------------------------------------------------------
@@ -854,6 +942,52 @@ class BenchSessionManager:
         )
         payload["session_id"] = session_id
         return payload
+
+    def active_run_state_path(self, run_id: str) -> Path:
+        return self.bench_root / "results" / "runs" / run_id / "run_state.json"
+
+    def get_run_replay_state(self, run) -> dict | None:
+        """Read run replay state from active storage or completed result_dir."""
+        active_path = self.active_run_state_path(run.run_id)
+        if active_path.exists():
+            try:
+                return json.loads(active_path.read_text(encoding="utf-8"))
+            except Exception:
+                logger.warning("Could not read active run_state: %s", active_path)
+        if run.result_dir:
+            state_path = Path(run.result_dir) / "run_state.json"
+            if state_path.exists():
+                try:
+                    return json.loads(state_path.read_text(encoding="utf-8"))
+                except Exception:
+                    logger.warning("Could not read completed run_state: %s", state_path)
+        return None
+
+    def resume_run(self, run) -> SessionState:
+        """Restore an ACTIVE run into memory from its active run_state file."""
+        if run.status != RunStatus.ACTIVE:
+            raise ValueError(
+                f"Run {run.run_id} is '{run.status.value}', expected 'active'"
+            )
+        if not run.session_id:
+            raise ValueError("Run has no session_id")
+        state = self.get_session(run.session_id)
+        if state is not None:
+            return state
+        state_path = self.active_run_state_path(run.run_id)
+        if not state_path.exists():
+            raise FileNotFoundError(str(state_path))
+        state = SessionState.restore_active_from_storage(
+            state_path=state_path,
+            bench_root=self.bench_root,
+            use_docker=self.use_docker,
+            eval_model=self.eval_model,
+        )
+        state._on_completed = lambda result_dir: self._run_service.mark_completed(
+            run.run_id, result_dir
+        )
+        self._sessions[state.session_id] = state
+        return state
 
     def list_sessions(self, task_id: str = "") -> list[dict]:
         results = []
@@ -979,16 +1113,16 @@ async def rest_health(request: Request) -> JSONResponse:
     checks: dict[str, dict] = {}
     if manager.use_docker:
         docker, image, disk = await asyncio.gather(
-            asyncio.to_thread(_health_check_docker),
-            asyncio.to_thread(_health_check_lean_image),
-            asyncio.to_thread(_health_check_disk),
+            anyio.to_thread.run_sync(_health_check_docker),
+            anyio.to_thread.run_sync(_health_check_lean_image),
+            anyio.to_thread.run_sync(_health_check_disk),
         )
         checks["docker"] = docker
         checks["lean_image"] = image
         checks["disk"] = disk
     else:
         checks["mode"] = {"ok": True, "docker": False}
-        checks["disk"] = await asyncio.to_thread(_health_check_disk)
+        checks["disk"] = await anyio.to_thread.run_sync(_health_check_disk)
     ok = all(c.get("ok") for c in checks.values())
     return JSONResponse(
         {"status": "ok" if ok else "down", "checks": checks},
@@ -1043,7 +1177,7 @@ async def rest_register(request: Request) -> JSONResponse:
     state._on_completed = lambda result_dir: manager._run_service.mark_completed(
         run.run_id, result_dir
     )
-    result = await asyncio.to_thread(state.register, task_id, persona_id)
+    result = await _run_manager_sync(manager, state.register, task_id, persona_id)
 
     if "session_id" in result:
         manager.register_rest_session(state)
@@ -1198,7 +1332,8 @@ async def rest_retry_session(request: Request) -> JSONResponse:
     # Preserve the original persona so the retry exercises the same
     # user assignment; falling through to a random pick would change
     # the scenario and make scores incomparable across attempts.
-    register_result = await asyncio.to_thread(
+    register_result = await _run_manager_sync(
+        manager,
         new_state.register, run.task_id, state.persona_id or None
     )
     if "session_id" not in register_result:
@@ -1277,7 +1412,7 @@ async def rest_start(request: Request) -> JSONResponse:
 
     async with state._request_lock:
         state._last_activity = time.time()
-        result = await asyncio.to_thread(state.start)
+        result = await _run_manager_sync(manager, state.start)
     logger.info("[REST:%s] session started", sid[:8])
     record_event(
         manager.bench_root,
@@ -1447,7 +1582,10 @@ async def rest_tool_call(request: Request) -> JSONResponse:
         )
 
     async with state._request_lock:
-        result = await asyncio.to_thread(state.call_domain_tool, name, **body)
+        result = await _run_manager_sync(
+            manager,
+            lambda: state.call_domain_tool(name, **body)
+        )
     result_preview = str(result)[:150]
     logger.debug("[REST:%s] %s -> %s...", sid[:8], name, result_preview)
     try:
@@ -1491,7 +1629,10 @@ async def _execute_tool_job(
         async with backtest_sem():
             store.update(job_id, status=JOB_STATUS_RUNNING, started_at=time.time())
             state._last_activity = time.time()
-            result = await asyncio.to_thread(state.call_domain_tool, name, **body)
+            result = await _run_manager_sync(
+                manager,
+                lambda: state.call_domain_tool(name, **body)
+            )
         try:
             parsed = json.loads(result)
         except (json.JSONDecodeError, TypeError):
@@ -1628,11 +1769,13 @@ async def rest_send(request: Request) -> JSONResponse:
     )
     async with state._request_lock:
         state._last_activity = time.time()
-        result = await asyncio.to_thread(
-            state.handle_send_message,
-            text,
-            attachments=attachments,
-            reasoning=reasoning,
+        result = await _run_manager_sync(
+            manager,
+            lambda: state.handle_send_message(
+                text,
+                attachments=attachments,
+                reasoning=reasoning,
+            )
         )
     data = json.loads(result)
     logger.info(
@@ -1706,7 +1849,7 @@ async def ops_evaluate(request: Request) -> JSONResponse:
 
     async with state._request_lock:
         state._last_activity = time.time()
-        result = await asyncio.to_thread(state.request_evaluation)
+        result = await _run_manager_sync(manager, state.request_evaluation)
     logger.info("[OPS:%s] evaluate: %s", sid[:8], result.get("status"))
     return JSONResponse(result)
 
@@ -2117,6 +2260,96 @@ async def rest_list(request: Request) -> JSONResponse:
     return JSONResponse({"sessions": sessions})
 
 
+async def api_run_resume(request: Request) -> JSONResponse:
+    """``POST /api/runs/{run_id}/resume`` — rehydrate an active run."""
+    manager: BenchSessionManager = request.app.state.manager
+    run_id = request.path_params["run_id"]
+    auth_err, run = _authorize_run_token_request(request, manager, run_id)
+    if auth_err is not None:
+        return auth_err
+
+    lock = manager._resume_locks.setdefault(run_id, asyncio.Lock())
+    async with lock:
+        try:
+            state = await _run_manager_sync(manager, manager.resume_run, run)
+        except FileNotFoundError:
+            return JSONResponse({"error": "No resumable state found"}, status_code=404)
+        except ValueError as exc:
+            return JSONResponse({"error": str(exc)}, status_code=409)
+        except Exception as exc:
+            logger.error("Run %s resume failed: %s", run_id, exc, exc_info=True)
+            return JSONResponse({"error": f"Resume failed: {exc}"}, status_code=500)
+
+    base_url = str(request.base_url).rstrip("/")
+    return JSONResponse(
+        {
+            "run_id": run_id,
+            "session_id": state.session_id,
+            "run_status": run.status.value,
+            "phase": state.phase.value,
+            "mcp_url": f"{base_url}/mcp",
+            "endpoint": f"/session/{state.session_id}",
+            "send_endpoint": f"/session/{state.session_id}/send",
+            "latest_layer_tag": state._latest_layer_tag,
+        }
+    )
+
+
+async def api_run_replay(request: Request) -> JSONResponse:
+    """``GET /api/runs/{run_id}/replay`` — read-only conversation/tool replay."""
+    manager: BenchSessionManager = request.app.state.manager
+    run_id = request.path_params["run_id"]
+    auth_err, run = _authorize_run_token_request(request, manager, run_id)
+    if auth_err is not None:
+        return auth_err
+
+    state = manager.get_run_replay_state(run)
+    if state is None:
+        return JSONResponse({"error": "Replay state not found"}, status_code=404)
+    return JSONResponse(
+        {
+            "run_id": run_id,
+            "session_id": state.get("session_id"),
+            "phase": state.get("phase"),
+            "turn_count": state.get("turn_count", 0),
+            "conversation": state.get("conversation", []),
+            "tool_logs": state.get("tool_logs", []),
+        }
+    )
+
+
+async def api_run_state(request: Request) -> JSONResponse:
+    """``GET /api/runs/{run_id}/state`` — active resume metadata."""
+    manager: BenchSessionManager = request.app.state.manager
+    run_id = request.path_params["run_id"]
+    auth_err, run = _authorize_run_token_request(request, manager, run_id)
+    if auth_err is not None:
+        return auth_err
+
+    live = manager.get_session(run.session_id) if run.session_id else None
+    replay = manager.get_run_replay_state(run)
+    phase = live.phase.value if live is not None else None
+    turn_count = 0
+    latest_layer_tag = ""
+    if replay:
+        phase = phase or replay.get("phase")
+        turn_count = int(replay.get("turn_count") or 0)
+        latest_layer_tag = str(replay.get("latest_layer_tag") or "")
+    if live is not None:
+        turn_count = live._turn_count()
+        latest_layer_tag = live._latest_layer_tag
+    return JSONResponse(
+        {
+            "run_id": run_id,
+            "run_status": run.status.value,
+            "session_id": run.session_id,
+            "phase": phase,
+            "turn_count": turn_count,
+            "latest_layer_tag": latest_layer_tag,
+        }
+    )
+
+
 # ---------------------------------------------------------------------------
 # ASGI app factory
 # ---------------------------------------------------------------------------
@@ -2175,6 +2408,9 @@ def create_app(
         Route("/session/{sid}/retry", rest_retry_session, methods=["POST"]),
         Route("/session/{sid}/results", rest_results, methods=["GET"]),
         Route("/session/{sid}/scores", rest_scores, methods=["GET"]),
+        Route("/api/runs/{run_id}/resume", api_run_resume, methods=["POST"]),
+        Route("/api/runs/{run_id}/replay", api_run_replay, methods=["GET"]),
+        Route("/api/runs/{run_id}/state", api_run_state, methods=["GET"]),
         # Operator-only evaluation surface: not reachable from MCP or
         # client-facing /session tool dispatch.
         Route("/ops/session/{sid}/evaluate", ops_evaluate, methods=["POST"]),
