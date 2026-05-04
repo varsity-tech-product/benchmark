@@ -133,6 +133,23 @@ def _safe_tool_log_dict(log) -> dict:
     return {"raw": str(log)}
 
 
+def _live_required_tool_coverage(session_state) -> dict | None:
+    """Compute required-tool coverage from live proxy logs on demand."""
+    task = getattr(session_state, "task", None)
+    ground_truth = getattr(task, "ground_truth", None)
+    required_tools = list(getattr(ground_truth, "expected_mcp_tools", []) or [])
+    if not required_tools:
+        return None
+    proxy = getattr(session_state, "proxy", None)
+    logs = proxy.get_logs() if proxy is not None else []
+    from eval.judges.process_metrics import compute_required_tool_coverage
+
+    return compute_required_tool_coverage(
+        proxy_logs=logs,
+        required_tools=required_tools,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Route factory
 # ---------------------------------------------------------------------------
@@ -811,6 +828,8 @@ def ui_routes(manager) -> list[Route]:
             for log in session.proxy.get_logs()[-20:]:
                 recent_logs.append(_safe_tool_log_dict(log))
 
+        coverage = _live_required_tool_coverage(session)
+
         return JSONResponse(
             _sanitize_for_json(
                 {
@@ -820,6 +839,7 @@ def ui_routes(manager) -> list[Route]:
                     "turn": turn,
                     "conversation": conversation,
                     "recent_tool_logs": recent_logs,
+                    "required_tool_coverage": coverage,
                 }
             )
         )
@@ -864,6 +884,7 @@ def ui_routes(manager) -> list[Route]:
             for log in logs[-20:]:
                 recent_logs.append(_safe_tool_log_dict(log))
             payload["recent_tool_logs"] = recent_logs
+            payload["required_tool_coverage"] = _live_required_tool_coverage(session)
 
         return payload
 

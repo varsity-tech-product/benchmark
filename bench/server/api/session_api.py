@@ -381,7 +381,6 @@ class SessionState:
         from server.core.session import TutoringSession
         from server.core.staging import create_staged_dirs, create_staged_sample_code
         from server.core.user_sim import UserSimulator, require_user_model
-        from server.core.tc_checker import TCChecker, parse_tc_items
         from server.data_manager import ensure_data
 
         self._closed = False
@@ -523,36 +522,15 @@ class SessionState:
                 env_overrides=local_tool_env,
             )
 
-            tc_text = (
-                task.ground_truth.termination_criteria if task.ground_truth else None
-            )
-            tc_items = parse_tc_items(
-                tc_text,
-                task.category.value,
-                persona_id=self.persona_id,
-            )
-            has_tc = tc_items is not None
-
             self.user_sim = UserSimulator(
                 scenario=build_scenario(
-                    task, self.persona_id, has_incremental_tc=has_tc
+                    task, self.persona_id, has_incremental_tc=False
                 ),
                 user_description=build_user_description(
                     self.persona,
-                    has_incremental_tc=has_tc,
+                    has_incremental_tc=False,
                 ),
                 model=resolved_sim_model,
-            )
-
-            required_tools = (
-                list(task.ground_truth.expected_mcp_tools)
-                if task.ground_truth and task.ground_truth.expected_mcp_tools
-                else []
-            )
-            tc_checker = (
-                TCChecker(tc_items or [], required_tools=required_tools)
-                if (tc_items or required_tools)
-                else None
             )
 
             effective_timeout = task.timeout_minutes
@@ -565,7 +543,6 @@ class SessionState:
                 task=task,
                 persona=persona,
                 user_sim=self.user_sim,
-                tc_checker=tc_checker,
                 max_turns=task.max_turns,
                 deadline=deadline,
                 proxy=self.proxy,
@@ -1162,18 +1139,12 @@ class SessionState:
         distractor_names = self.proxy.get_distractor_names()
         duration = time.time() - self._start_time if self._start_time else 0.0
 
-        # TC checker cost (if incremental TC was used)
-        tc_cost = 0.0
-        if self.session and self.session._tc_checker:
-            tc_cost = getattr(self.session._tc_checker, "total_cost", 0.0)
-
         save_run_state(
             result_dir=result_dir,
             conversation=conversation,
             tool_logs=tool_logs,
             workspace_path=(self.container.workspace_path if self.container else None),
             simulator_cost=(self.user_sim.total_cost if self.user_sim else 0.0),
-            tc_checker_cost=tc_cost,
             duration_seconds=duration,
             distractor_names=distractor_names,
             task_id=self.task_id,
@@ -1183,8 +1154,6 @@ class SessionState:
             termination_reason=(
                 self.session.completion_reason if self.session else None
             ),
-            tc_coverage=(self.session.tc_coverage_summary if self.session else None),
-            tc_debug_history=(self.session.tc_debug_history if self.session else None),
             artifact_debug_history=(
                 self.session.artifact_debug_history if self.session else None
             ),

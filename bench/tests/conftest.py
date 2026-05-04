@@ -155,24 +155,6 @@ class FakeLLMModel:
         return json.dumps({"simulated_input": reply}), 0.0
 
 
-class FakeTCModel:
-    """Deterministic TC checker model.
-
-    Returns "no items covered" by default. Tests can set
-    ``force_all_covered = True`` to simulate TC completion.
-    """
-
-    def __init__(self):
-        self.force_all_covered = False
-        self._call_count = 0
-
-    def generate(self, prompt: str, schema=None, images=None, **_kwargs):
-        self._call_count += 1
-        if self.force_all_covered:
-            return '{"covered_items": [1, 2, 3, 4, 5]}', 0.0
-        return '{"covered_items": []}', 0.0
-
-
 # ---------------------------------------------------------------------------
 # 3. Autouse: mock LLM model resolution (prevents API key requirement).
 # ---------------------------------------------------------------------------
@@ -325,95 +307,6 @@ def workspace(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# 7. FakeTCChecker — controllable TC checker for completion tests.
-# ---------------------------------------------------------------------------
-
-
-class FakeTCChecker:
-    """TC checker that can be configured to report completion on a specific turn.
-
-    Usage::
-
-        checker = FakeTCChecker(["item1", "item2"], complete_on_check=2)
-        # First check() → False, second check() → True (all covered)
-    """
-
-    def __init__(
-        self,
-        tc_items: list[str] | None = None,
-        complete_on_check: int | None = None,
-    ):
-        self.tc_items = tc_items or ["TC1", "TC2", "TC3"]
-        self._complete_on_check = complete_on_check
-        self._check_count = 0
-        self.covered: list[bool] = [False] * len(self.tc_items)
-        self.history: list[dict] = []
-        self.total_cost: float = 0.0
-
-    @property
-    def all_covered(self) -> bool:
-        return all(self.covered)
-
-    @property
-    def coverage_summary(self) -> dict:
-        covered_indices = [i + 1 for i, c in enumerate(self.covered) if c]
-        return {
-            "total": len(self.tc_items),
-            "covered": sum(self.covered),
-            "covered_indices": covered_indices,
-            "items": [
-                {"text": t, "covered": c} for t, c in zip(self.tc_items, self.covered)
-            ],
-        }
-
-    @property
-    def debug_history(self) -> list[dict]:
-        return list(self.history)
-
-    @property
-    def stalled_turns(self) -> int:
-        count = 0
-        for entry in reversed(self.history):
-            if entry.get("newly_covered_indices"):
-                break
-            count += 1
-        return count
-
-    def check(
-        self,
-        conversation,
-        turn_evidence=None,
-        turn_index=None,
-        tool_logs=None,
-    ) -> bool:
-        self._check_count += 1
-        newly = []
-        if (
-            self._complete_on_check is not None
-            and self._check_count >= self._complete_on_check
-        ):
-            newly = [i + 1 for i, c in enumerate(self.covered) if not c]
-            self.covered = [True] * len(self.tc_items)
-        self.history.append(
-            {
-                "turn_index": turn_index,
-                "covered_before_indices": [],
-                "newly_covered_indices": newly,
-                "covered_after_indices": [
-                    i + 1 for i, c in enumerate(self.covered) if c
-                ],
-            }
-        )
-        return self.all_covered
-
-
-@pytest.fixture
-def fake_tc_checker():
-    """Create a FakeTCChecker. Call with ``complete_on_check=N`` to control."""
-    return FakeTCChecker
-
-
-# ---------------------------------------------------------------------------
 # 8. TutoringSession factory for unit tests.
 # ---------------------------------------------------------------------------
 
@@ -422,8 +315,8 @@ def fake_tc_checker():
 def make_session(_mock_llm_resolution):
     """Factory to build a TutoringSession with controlled dependencies.
 
-    Returns a callable ``(max_turns=10, tc_checker=None,
-    deadline=None, workspace_path=None) → TutoringSession``.
+    Returns a callable ``(max_turns=10, deadline=None, workspace_path=None)
+    → TutoringSession``.
     The session is pre-started (opening injected).
     """
     from server.core.session import TutoringSession
@@ -431,7 +324,6 @@ def make_session(_mock_llm_resolution):
 
     def _factory(
         max_turns=10,
-        tc_checker=None,
         deadline=None,
         workspace_path=None,
     ):
@@ -456,7 +348,6 @@ def make_session(_mock_llm_resolution):
             task=task,
             persona=persona,
             user_sim=user_sim,
-            tc_checker=tc_checker,
             max_turns=max_turns,
             deadline=deadline,
             workspace_path=workspace_path,

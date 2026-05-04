@@ -19,8 +19,8 @@ GOOGLE_AGENT_MODEL_OR = "google/gemini-2.5-flash-preview"
 
 # --- Reference / Evaluation / Simulation ---
 REFERENCE_DEFAULT_MODEL = "openai/gpt-5.2"
-# TC_CHECKER_MODEL removed (#122 slice 5): TC is programmatic — see
-# server/core/tc_checker.py.
+# Runtime checker model removed; tool coverage is computed post-hoc in
+# eval.judges.process_metrics.
 
 # --- User simulator model pool (vision-capable only) ---
 # All models must support image input via OpenRouter.
@@ -155,7 +155,7 @@ def create_openrouter_sync_client(
 
 
 # --- Evaluation temperature ---
-# Judge / TC checker / simulator temperature.  Deterministic (0.0) ensures
+# Judge / simulator temperature.  Deterministic (0.0) ensures
 # reproducible scores across runs.  Agent temperature is NOT controlled here
 # --- agents run at their provider's default to reflect real-world behaviour.
 EVAL_JUDGE_TEMPERATURE = 0.0

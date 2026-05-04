@@ -10,7 +10,7 @@ must serialise both shapes without raising.
 from types import SimpleNamespace
 
 from server.core.proxy import ToolCallLog
-from server.web.ui_app import _safe_tool_log_dict
+from server.web.ui_app import _live_required_tool_coverage, _safe_tool_log_dict
 
 
 def test_dict_passes_through():
@@ -55,3 +55,33 @@ def test_unknown_object_returns_raw_marker():
     out = _safe_tool_log_dict(Opaque())
     assert isinstance(out, dict)
     assert "raw" in out
+
+
+def test_live_required_tool_coverage_computes_from_proxy_logs():
+    session_state = SimpleNamespace(
+        task=SimpleNamespace(
+            ground_truth=SimpleNamespace(
+                expected_mcp_tools=["file_read", "shell_exec", "run_backtest"]
+            )
+        ),
+        proxy=SimpleNamespace(
+            get_logs=lambda: [
+                ToolCallLog(name="file_read", args={}, result="ok"),
+                ToolCallLog(name="shell_exec", args={}, result="ok"),
+            ]
+        ),
+    )
+
+    coverage = _live_required_tool_coverage(session_state)
+
+    assert coverage["coverage_ratio"] == 0.6667
+    assert coverage["missing_tools"] == ["run_backtest"]
+
+
+def test_live_required_tool_coverage_skips_without_expected_tools():
+    session_state = SimpleNamespace(
+        task=SimpleNamespace(ground_truth=SimpleNamespace(expected_mcp_tools=[])),
+        proxy=SimpleNamespace(get_logs=lambda: []),
+    )
+
+    assert _live_required_tool_coverage(session_state) is None

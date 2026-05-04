@@ -1306,7 +1306,6 @@
 
     var serverCost = [
       metaItem('Simulator Cost', detail.simulator_cost != null ? formatCost(detail.simulator_cost) : '—'),
-      metaItem('TC Checker Cost', detail.tc_checker_cost != null ? formatCost(detail.tc_checker_cost) : '—'),
       metaItem('Duration', formatDuration(detail.duration_seconds))
     ].join('');
 

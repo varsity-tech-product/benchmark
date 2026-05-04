@@ -84,7 +84,7 @@ _NEXT_MESSAGE_PROMPT = textwrap.dedent(
     back in full detail — you are a user, not a co-teacher.
     {runtime_guidance_block}
 
-    Conversation so far:
+    Session context visible to you:
     {transcript}
 
     Respond with a JSON object with two keys:
@@ -99,6 +99,10 @@ _NEXT_MESSAGE_PROMPT = textwrap.dedent(
     When `task_end` is true, your `simulated_input` should read as a
     natural goodbye / sign-off message — that is the last thing the
     tutor will see before the session closes.
+
+    When tool logs show failures or repeated tool calls without progress,
+    you may either give a hint in your reply or set `task_end` to true if
+    continuing would waste turns.
 
     JSON Output:
 """
@@ -231,7 +235,20 @@ def _format_transcript(
     return json.dumps(trimmed, indent=4, ensure_ascii=False)
 
 
-_LEDGER_BUDGET = 20_000
+_LEDGER_BUDGET = 6_000
+_TOOL_LOG_BUDGET = 10_000
+_TOOL_RESULT_MAX_CHARS = 500
+_TOOL_LOG_DETAILED_TURNS = 5
+_TOOL_LOG_MIN_DETAILED_TURNS = 3
+_PROTOCOL_TOOL_NAMES = frozenset(
+    {
+        "register_session",
+        "start_session",
+        "send_message",
+        "get_background",
+        "get_session_info",
+    }
+)
 
 
 def _compute_file_diff(base_content: str, current_content: str, filename: str) -> str:
@@ -252,19 +269,39 @@ def _format_transcript_with_files(
     file_ledger: dict[str, dict],
     budget: int = _LEDGER_BUDGET,
 ) -> str:
-    """Format conversation with inlined file content/diffs.
+    """Format conversation with inlined file content.
 
     Files are shown inline with the conversation turn that shared them.
-    First share of a file shows full content; subsequent shares of the
-    same file show a unified diff from the previous version.  When total
-    file content exceeds *budget*, oldest turns degrade to reference-only.
+    First share of a file shows full content; subsequent shares degrade to
+    reference-only. When total file content exceeds *budget*, oldest first
+    shares also degrade to reference-only.
     """
     if not file_ledger:
         return _format_transcript(conversation)
 
-    # Phase 1: compute file display info for each entry with attachments.
-    # [(conv_idx, filename, display_text, char_count), ...]
-    file_entries: list[tuple[int, str, str, int]] = []
+    file_map = _build_file_display_map(conversation, file_ledger, budget)
+
+    result = []
+    for idx, entry in enumerate(conversation):
+        item: dict = {"role": entry["role"], "content": entry["content"]}
+        if idx in file_map:
+            item["files"] = "\n".join(file_map[idx])
+        result.append(item)
+
+    return json.dumps(result, indent=4, ensure_ascii=False)
+
+
+def _build_file_display_map(
+    conversation: list[dict],
+    file_ledger: dict[str, dict],
+    budget: int = _LEDGER_BUDGET,
+) -> dict[int, list[str]]:
+    """Return conversation-indexed attachment text under the file budget."""
+    if not file_ledger:
+        return {}
+
+    file_entries: list[dict] = []
+    seen_filenames: set[str] = set()
 
     for idx, entry in enumerate(conversation):
         atts = entry.get("attachments")
@@ -277,53 +314,252 @@ def _format_transcript_with_files(
             # Images — text reference only (actual data goes via multimodal API)
             if (ledger and ledger.get("is_image")) or att.get("is_image"):
                 text = f"[Image: {fname}]"
-                file_entries.append((idx, fname, text, 0))
+                file_entries.append(
+                    {
+                        "idx": idx,
+                        "filename": fname,
+                        "text": text,
+                        "char_count": 0,
+                        "degraded_text": text,
+                    }
+                )
+                seen_filenames.add(fname)
                 continue
 
-            prev = ledger["prev_content"] if ledger else None
+            content = str(att.get("content", ""))
+            if fname in seen_filenames:
+                file_entries.append(
+                    {
+                        "idx": idx,
+                        "filename": fname,
+                        "text": f"[Attached: {fname}]",
+                        "char_count": 0,
+                        "degraded_text": f"[Attached: {fname}]",
+                    }
+                )
+                continue
 
-            if prev is not None and att["content"] != prev:
-                # Update — show diff (or full if diff is larger)
-                diff_text = _compute_file_diff(prev, att["content"], fname)
-                if diff_text and len(diff_text) < len(att["content"]):
-                    text = f"[File: {fname} (updated)]\n{diff_text}"
-                    file_entries.append((idx, fname, text, len(diff_text)))
-                    continue
+            text = f"[File: {fname}]\n{content}"
+            file_entries.append(
+                {
+                    "idx": idx,
+                    "filename": fname,
+                    "text": text,
+                    "char_count": len(content),
+                    "degraded_text": f"[Attached: {fname}]",
+                }
+            )
+            seen_filenames.add(fname)
 
-            # First share or diff-larger-than-full fallback
-            text = f"[File: {fname}]\n{att['content']}"
-            file_entries.append((idx, fname, text, len(att["content"])))
-
-    # Phase 2: budget — degrade oldest entries first when over budget.
-    total_chars = sum(e[3] for e in file_entries)
-    degraded: set[tuple[int, str]] = set()
+    total_chars = sum(int(e["char_count"]) for e in file_entries)
+    degraded: set[int] = set()
 
     if total_chars > budget:
-        sorted_oldest_first = sorted(file_entries, key=lambda e: e[0])
         excess = total_chars - budget
-        for entry in sorted_oldest_first:
+        for entry_idx, entry in enumerate(file_entries):
             if excess <= 0:
                 break
-            degraded.add((entry[0], entry[1]))
-            excess -= entry[3]
+            char_count = int(entry["char_count"])
+            if char_count <= 0:
+                continue
+            degraded.add(entry_idx)
+            excess -= char_count
 
-    # Phase 3: build conv-index → file-text map.
     file_map: dict[int, list[str]] = {}
-    for idx, fname, text, _chars in file_entries:
-        if (idx, fname) in degraded:
-            file_map.setdefault(idx, []).append(f"[Attached: {fname}]")
-        else:
-            file_map.setdefault(idx, []).append(text)
+    for entry_idx, entry in enumerate(file_entries):
+        text = entry["degraded_text"] if entry_idx in degraded else entry["text"]
+        file_map.setdefault(int(entry["idx"]), []).append(str(text))
 
-    # Phase 4: assemble transcript JSON.
-    result = []
+    return file_map
+
+
+def _tool_log_get(log, key: str, default=None):
+    if isinstance(log, dict):
+        return log.get(key, default)
+    return getattr(log, key, default)
+
+
+def _coerce_tool_success(value) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return True
+    if isinstance(value, (int, float)):
+        return bool(value)
+    return str(value).strip().lower() not in {"false", "0", "no", "failed"}
+
+
+def _normalize_tool_log(log) -> dict | None:
+    name = str(
+        _tool_log_get(log, "name")
+        or _tool_log_get(log, "tool_name")
+        or _tool_log_get(log, "tool")
+        or ""
+    ).strip()
+    if not name or name in _PROTOCOL_TOOL_NAMES:
+        return None
+
+    args = _tool_log_get(log, "args", {})
+    if not isinstance(args, dict):
+        args = {"value": args}
+
+    try:
+        turn_index = int(_tool_log_get(log, "turn_index", 0) or 0)
+    except (TypeError, ValueError):
+        turn_index = 0
+
+    return {
+        "name": name,
+        "args": args,
+        "result": str(_tool_log_get(log, "result", "") or ""),
+        "success": _coerce_tool_success(_tool_log_get(log, "success", True)),
+        "turn": max(turn_index, 0) + 1,
+    }
+
+
+def _truncate_success_result(result: str, max_chars: int = _TOOL_RESULT_MAX_CHARS) -> str:
+    if len(result) <= max_chars:
+        return result
+    omitted = len(result) - max_chars
+    return f"{result[:max_chars]}... [{omitted:,} chars omitted]"
+
+
+def _format_tool_detail(log: dict, ordinal: int) -> str:
+    args_text = json.dumps(log["args"], ensure_ascii=False, sort_keys=True, default=str)
+    if log["success"]:
+        result_text = json.dumps(
+            _truncate_success_result(log["result"]),
+            ensure_ascii=False,
+        )
+        return f"    {ordinal}. {log['name']}({args_text}) -> ok, {result_text}"
+    return f"    {ordinal}. {log['name']}({args_text}) -> FAILED: {log['result']}"
+
+
+def _format_tool_summary(turn: int, logs: list[dict]) -> str:
+    counts: dict[str, int] = {}
+    for log in logs:
+        counts[log["name"]] = counts.get(log["name"], 0) + 1
+    count_text = ", ".join(f"{name}x{count}" for name, count in counts.items())
+    failures = sum(1 for log in logs if not log["success"])
+    status = "all success" if failures == 0 else f"{failures} failed"
+    return f"[turn {turn}: {count_text}, {status}]"
+
+
+def _group_tool_logs_by_turn(tool_logs: list) -> list[tuple[int, list[dict]]]:
+    grouped: dict[int, list[dict]] = {}
+    order: list[int] = []
+    for raw in tool_logs or []:
+        log = _normalize_tool_log(raw)
+        if log is None:
+            continue
+        turn = int(log["turn"])
+        if turn not in grouped:
+            grouped[turn] = []
+            order.append(turn)
+        grouped[turn].append(log)
+    return [(turn, grouped[turn]) for turn in order]
+
+
+def _render_tool_log_context(
+    groups: list[tuple[int, list[dict]]],
+    detailed_turns: int,
+) -> str:
+    if not groups:
+        return ""
+
+    detailed_turns = max(0, min(detailed_turns, len(groups)))
+    older = groups[:-detailed_turns] if detailed_turns else groups
+    recent = groups[-detailed_turns:] if detailed_turns else []
+
+    lines: list[str] = []
+    if older:
+        lines.append("Older tool turns:")
+        lines.extend(_format_tool_summary(turn, logs) for turn, logs in older)
+    if recent:
+        if lines:
+            lines.append("")
+        lines.append("Recent tool turns:")
+        for turn, logs in recent:
+            lines.append(f"[turn {turn} - agent]")
+            lines.append("  tools:")
+            for i, log in enumerate(logs, 1):
+                lines.append(_format_tool_detail(log, i))
+
+    return "\n".join(lines)
+
+
+def _format_tool_log_context(
+    tool_logs: list,
+    budget: int = _TOOL_LOG_BUDGET,
+) -> str:
+    """Format tool logs for the user persona under a bounded prompt budget."""
+    groups = _group_tool_logs_by_turn(tool_logs)
+    if not groups:
+        return ""
+
+    candidates = list(
+        range(
+            min(_TOOL_LOG_DETAILED_TURNS, len(groups)),
+            _TOOL_LOG_MIN_DETAILED_TURNS - 1,
+            -1,
+        )
+    )
+    if _TOOL_LOG_MIN_DETAILED_TURNS > len(groups):
+        candidates = [len(groups)]
+    candidates.extend(i for i in (2, 1, 0) if i not in candidates)
+
+    best = ""
+    for detailed_turns in candidates:
+        rendered = _render_tool_log_context(groups, detailed_turns)
+        best = rendered
+        if len(rendered) <= budget:
+            return rendered
+
+    if len(best) <= budget:
+        return best
+
+    marker = f"[tool log context clipped to {budget:,} chars]\n"
+    if budget <= len(marker):
+        return marker[:budget]
+    return marker + best[-(budget - len(marker)) :]
+
+
+def _format_user_context(
+    conversation: list[dict],
+    file_ledger: dict[str, dict] | None = None,
+    tool_logs: list | None = None,
+) -> str:
+    """Format visible chat, shared files, and tool activity for user-sim."""
+    file_map = _build_file_display_map(conversation, file_ledger or {})
+    tool_context = _format_tool_log_context(tool_logs or [])
+
+    lines: list[str] = []
+    if tool_context:
+        lines.append("Agent tool activity visible to you:")
+        lines.append(tool_context)
+        lines.append("")
+
+    lines.append("Conversation so far:")
+    agent_turn = 0
     for idx, entry in enumerate(conversation):
-        item: dict = {"role": entry["role"], "content": entry["content"]}
+        role = entry.get("role", "")
+        if role == "assistant":
+            agent_turn += 1
+            label = f"[turn {agent_turn} - agent]"
+            message_key = "reply"
+        else:
+            label = f"[turn {agent_turn} - user]"
+            message_key = "message"
+        lines.append(label)
         if idx in file_map:
-            item["files"] = "\n".join(file_map[idx])
-        result.append(item)
+            lines.append("  files:")
+            for file_text in file_map[idx]:
+                for file_line in file_text.splitlines() or [""]:
+                    lines.append(f"    {file_line}")
+        content = json.dumps(entry.get("content", ""), ensure_ascii=False)
+        lines.append(f"  {message_key}: {content}")
 
-    return json.dumps(result, indent=4, ensure_ascii=False)
+    return "\n".join(lines)
 
 
 def _collect_images_from_ledger(
@@ -423,7 +659,9 @@ def _parse_simulated_input_strict(raw: str) -> tuple[str, bool, str]:
 # Patterns that indicate prompt leakage or meta content — not a real user message
 _META_PATTERNS = re.compile(
     r"simulated_input|JSON Output:|You are role-playing|"
-    r"Respond with a JSON|Reply format:|Conversation so far:|"
+    r"Respond with a JSON|Reply format:|Session context visible to you:|"
+    r"Agent tool activity visible to you:|Conversation so far:|"
+    r"Older tool turns:|Recent tool turns:|"
     r"^```\w*\n",  # Code fence at start of output
     re.IGNORECASE | re.MULTILINE,
 )
@@ -610,6 +848,7 @@ class UserSimulator:
         conversation: list[dict[str, str]],
         runtime_guidance: str = "",
         file_ledger: dict[str, dict] | None = None,
+        tool_logs: list | None = None,
         workspace_path: str | None = None,
     ) -> tuple[str, bool]:
         """Generate the next user message given conversation history.
@@ -618,8 +857,11 @@ class UserSimulator:
             conversation: [{"role": "user"|"assistant", "content": "..."}]
                 "user" = user, "assistant" = tutor.
             file_ledger: Mapping of filename → {base_content, current_content, ...}.
-                Used to inline file content/diffs into the transcript so the
-                user can see shared workspace files in temporal context.
+                Used to inline first-share file content into the transcript so
+                the user can see shared workspace files in temporal context.
+            tool_logs: Tool-call logs visible to the user persona. Tool names,
+                arguments, success flags, and results are included under a
+                bounded budget; private reasoning stays out of the prompt.
 
         Returns:
             ``(text, task_end)`` — the user's next message and the
@@ -635,12 +877,16 @@ class UserSimulator:
                 "Do NOT quote or reveal them directly.\n"
                 f"{runtime_guidance.strip()}\n"
             )
-        if file_ledger:
-            transcript = _format_transcript_with_files(conversation, file_ledger)
-            images = _collect_images_from_ledger(file_ledger, workspace_path)
-        else:
-            transcript = _format_transcript(conversation)
-            images = []
+        transcript = _format_user_context(
+            conversation,
+            file_ledger=file_ledger,
+            tool_logs=tool_logs,
+        )
+        images = (
+            _collect_images_from_ledger(file_ledger, workspace_path)
+            if file_ledger
+            else []
+        )
         prompt = _NEXT_MESSAGE_PROMPT.format(
             user_description=self.user_description,
             scenario=self.scenario,

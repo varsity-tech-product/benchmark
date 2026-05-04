@@ -2,8 +2,8 @@
 
 Generates user messages via a DeepEval model object (resolved by
 ``config.model_resolver.resolve_deepeval_model``).  Prompt templates and
-output parsing are aligned with DeepEval's ConversationSimulator to ensure
-bit-exact user behavior across Legacy and MCP paths.
+output parsing follow DeepEval's ConversationSimulator shape while adding
+bounded tool-call context for the benchmark MCP path.
 
 Used by TutoringSession behind the ``send_message`` MCP tool.
 """
@@ -29,8 +29,8 @@ class SimulatedInput(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Prompt templates — copied verbatim from DeepEval template.py to ensure
-# identical user message distributions across Legacy and MCP paths.
+# Prompt templates — based on DeepEval template.py, with benchmark-visible
+# tool activity added to subsequent user turns.
 # ---------------------------------------------------------------------------
 
 # Multimodal rules block — from DeepEval template.py:10-16.
@@ -131,6 +131,13 @@ _NEXT_MESSAGE_PROMPT = textwrap.dedent(
     Previous Conversation:
     {transcript}
 
+    Agent tool activity visible to you:
+    {tool_context}
+
+    When tool logs show failures or repeated tool calls without progress, \
+    you may ask the tutor to summarize what they know, try a different \
+    concrete action, or wrap up once continuing would waste turns.
+
     JSON Output:
 """
 )
@@ -145,8 +152,7 @@ _CLOSING_PROMPT = (
     "Reply with ONLY the closing message."
 )
 
-# Hardcoded fallback when closing generation fails (aligned with
-# _EfficientSimulator._generate_closing fallback in simulation.py:401-405).
+# Hardcoded fallback when closing generation fails.
 _CLOSING_FALLBACK = (
     "Thanks for walking me through all of this — "
     "I have a much clearer picture now. "
@@ -155,6 +161,20 @@ _CLOSING_FALLBACK = (
 
 # Regex for extracting JSON from LLM output.
 _JSON_RE = re.compile(r"\{.*\}", re.DOTALL)
+
+_TOOL_LOG_BUDGET = 10_000
+_TOOL_RESULT_MAX_CHARS = 500
+_TOOL_LOG_DETAILED_TURNS = 5
+_TOOL_LOG_MIN_DETAILED_TURNS = 3
+_PROTOCOL_TOOL_NAMES = {
+    "register_session",
+    "start_session",
+    "send_message",
+    "get_session_info",
+    "get_system_prompt",
+    "list_tasks",
+    "get_task_info",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -200,6 +220,157 @@ def _parse_simulated_input(raw: str) -> str:
     return (raw or "").strip()
 
 
+def _tool_log_get(log, key: str, default=None):
+    if isinstance(log, dict):
+        return log.get(key, default)
+    return getattr(log, key, default)
+
+
+def _coerce_tool_success(value) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return True
+    if isinstance(value, (int, float)):
+        return bool(value)
+    return str(value).strip().lower() not in {"false", "0", "no", "failed"}
+
+
+def _normalize_tool_log(log) -> dict | None:
+    name = str(
+        _tool_log_get(log, "name")
+        or _tool_log_get(log, "tool_name")
+        or _tool_log_get(log, "tool")
+        or ""
+    ).strip()
+    if not name or name in _PROTOCOL_TOOL_NAMES:
+        return None
+
+    args = _tool_log_get(log, "args", {})
+    if not isinstance(args, dict):
+        args = {"value": args}
+
+    try:
+        turn_index = int(_tool_log_get(log, "turn_index", 0) or 0)
+    except (TypeError, ValueError):
+        turn_index = 0
+
+    return {
+        "name": name,
+        "args": args,
+        "result": str(_tool_log_get(log, "result", "") or ""),
+        "success": _coerce_tool_success(_tool_log_get(log, "success", True)),
+        "turn": max(turn_index, 0) + 1,
+    }
+
+
+def _truncate_success_result(result: str, max_chars: int = _TOOL_RESULT_MAX_CHARS) -> str:
+    if len(result) <= max_chars:
+        return result
+    omitted = len(result) - max_chars
+    return f"{result[:max_chars]}... [{omitted:,} chars omitted]"
+
+
+def _format_tool_detail(log: dict, ordinal: int) -> str:
+    args_text = json.dumps(log["args"], ensure_ascii=False, sort_keys=True, default=str)
+    if log["success"]:
+        result_text = json.dumps(
+            _truncate_success_result(log["result"]),
+            ensure_ascii=False,
+        )
+        return f"    {ordinal}. {log['name']}({args_text}) -> ok, {result_text}"
+    return f"    {ordinal}. {log['name']}({args_text}) -> FAILED: {log['result']}"
+
+
+def _format_tool_summary(turn: int, logs: list[dict]) -> str:
+    counts: dict[str, int] = {}
+    for log in logs:
+        counts[log["name"]] = counts.get(log["name"], 0) + 1
+    count_text = ", ".join(f"{name}x{count}" for name, count in counts.items())
+    failures = sum(1 for log in logs if not log["success"])
+    status = "all success" if failures == 0 else f"{failures} failed"
+    return f"[turn {turn}: {count_text}, {status}]"
+
+
+def _group_tool_logs_by_turn(tool_logs: list) -> list[tuple[int, list[dict]]]:
+    grouped: dict[int, list[dict]] = {}
+    order: list[int] = []
+    for raw in tool_logs or []:
+        log = _normalize_tool_log(raw)
+        if log is None:
+            continue
+        turn = int(log["turn"])
+        if turn not in grouped:
+            grouped[turn] = []
+            order.append(turn)
+        grouped[turn].append(log)
+    return [(turn, grouped[turn]) for turn in order]
+
+
+def _render_tool_log_context(
+    groups: list[tuple[int, list[dict]]],
+    detailed_turns: int,
+) -> str:
+    if not groups:
+        return ""
+
+    detailed_turns = max(0, min(detailed_turns, len(groups)))
+    older = groups[:-detailed_turns] if detailed_turns else groups
+    recent = groups[-detailed_turns:] if detailed_turns else []
+
+    lines: list[str] = []
+    if older:
+        lines.append("Older tool turns:")
+        lines.extend(_format_tool_summary(turn, logs) for turn, logs in older)
+    if recent:
+        if lines:
+            lines.append("")
+        lines.append("Recent tool turns:")
+        for turn, logs in recent:
+            lines.append(f"[turn {turn} - agent]")
+            lines.append("  tools:")
+            for i, log in enumerate(logs, 1):
+                lines.append(_format_tool_detail(log, i))
+
+    return "\n".join(lines)
+
+
+def _format_tool_log_context(
+    tool_logs: list,
+    budget: int = _TOOL_LOG_BUDGET,
+) -> str:
+    """Format tool logs for the user persona under a bounded prompt budget."""
+    groups = _group_tool_logs_by_turn(tool_logs)
+    if not groups:
+        return "No domain tool calls yet."
+
+    candidates = list(
+        range(
+            min(_TOOL_LOG_DETAILED_TURNS, len(groups)),
+            _TOOL_LOG_MIN_DETAILED_TURNS - 1,
+            -1,
+        )
+    )
+    if _TOOL_LOG_MIN_DETAILED_TURNS > len(groups):
+        candidates = [len(groups)]
+    candidates.extend(i for i in (2, 1, 0) if i not in candidates)
+
+    best = ""
+    for detailed_turns in candidates:
+        rendered = _render_tool_log_context(groups, detailed_turns)
+        best = rendered
+        if len(rendered) <= budget:
+            return rendered
+
+    if len(best) <= budget:
+        return best
+
+    marker = f"[tool log context clipped to {budget:,} chars]\n"
+    if budget <= len(marker):
+        return marker[:budget]
+    return marker + best[-(budget - len(marker)) :]
+
+
 # ---------------------------------------------------------------------------
 # UserSimulator
 # ---------------------------------------------------------------------------
@@ -208,9 +379,9 @@ def _parse_simulated_input(raw: str) -> str:
 class UserSimulator:
     """Generates user messages via a DeepEval model object.
 
-    Prompt templates, conversation history format, and output parsing are
-    aligned with DeepEval's ConversationSimulator to produce identical
-    user message distributions across Legacy and MCP paths.
+    Prompt templates, conversation history format, and output parsing follow
+    DeepEval's ConversationSimulator, with benchmark tool activity added to
+    subsequent user turns.
 
     Accepts any object returned by ``resolve_deepeval_model()`` —
     ``GPTModel``, ``_OAuthAnthropicModel``, or a plain model-name string.
@@ -276,13 +447,14 @@ class UserSimulator:
     def generate_message(
         self,
         conversation: list[dict[str, str]],
+        tool_logs: list | None = None,
     ) -> str:
         """Generate the next user message given conversation history.
 
         Uses ``_FIRST_MESSAGE_PROMPT`` when the conversation has no
         assistant turns yet (aligned with DeepEval's
         ``generate_first_user_input``), otherwise uses
-        ``_NEXT_MESSAGE_PROMPT`` (aligned with ``generate_next_user_input``).
+        ``_NEXT_MESSAGE_PROMPT`` plus visible tool activity.
 
         Args:
             conversation: [{"role": "user"|"assistant", "content": "..."}]
@@ -304,6 +476,7 @@ class UserSimulator:
                 scenario=self.scenario,
                 transcript=_format_transcript(conversation),
                 multimodal_rules=_MULTIMODAL_RULES,
+                tool_context=_format_tool_log_context(tool_logs or []),
             )
         return self._generate_parsed(prompt)
 
@@ -313,8 +486,7 @@ class UserSimulator:
     ) -> str:
         """Generate a natural closing message from the user.
 
-        Closing uses a simpler prompt (no JSON output) aligned with
-        _EfficientSimulator._generate_closing (simulation.py:372-405).
+        Closing uses a simpler prompt with no JSON output.
         """
         prompt = _CLOSING_PROMPT.format(
             scenario=self.scenario[:400],

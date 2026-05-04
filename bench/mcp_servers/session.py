@@ -4,7 +4,6 @@ Manages the conversation between agent and simulated user.
 Backs the ``send_message`` and ``get_session_info`` MCP tools.
 
 Defense layers aligned with Legacy path (simulation.py create_model_callback):
-- TC checker exception isolation
 - User simulator fallback on failure
 - Closing generation fallback (hardcoded text)
 - Timeout graceful wrap-up with closing
@@ -23,8 +22,7 @@ from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 
-# Hardcoded closing fallback — aligned with _EfficientSimulator._generate_closing
-# (simulation.py:401-405) and UserSimulator._CLOSING_FALLBACK.
+# Hardcoded closing fallback aligned with UserSimulator._CLOSING_FALLBACK.
 _CLOSING_FALLBACK = (
     "Thanks for walking me through all of this — "
     "I have a much clearer picture now. "
@@ -41,7 +39,7 @@ _MAX_REPEATS = 2
 
 
 # ---------------------------------------------------------------------------
-# GoalChecker — for non-TC categories (data_analysis, end_to_end, adversarial)
+# GoalChecker — goal-based completion fallback
 # ---------------------------------------------------------------------------
 
 
@@ -53,7 +51,7 @@ class ConversationCompletion(BaseModel):
 
 
 class GoalChecker:
-    """Goal-based termination for non-incremental-TC categories.
+    """Goal-based termination.
 
     Replicates DeepEval's ``stop_conversation()`` behavior: each turn,
     sends the full conversation + expected_outcome to an LLM that judges
@@ -135,8 +133,7 @@ class TutoringSession:
 
     - Maintains the conversation history
     - Generates user replies via UserSimulator
-    - Checks termination criteria via TCChecker (incremental TC categories)
-    - Checks goal achievement via GoalChecker (non-TC categories)
+    - Checks goal achievement via GoalChecker
     - Tracks turn count and enforces limits
     - Detects stuck agents (repeat detection)
     """
@@ -146,7 +143,6 @@ class TutoringSession:
         task,
         persona,
         user_sim,
-        tc_checker,
         max_turns: int,
         deadline: Optional[float] = None,
         proxy=None,
@@ -156,8 +152,7 @@ class TutoringSession:
         self._task = task
         self._persona = persona
         self._user_sim = user_sim
-        self._tc_checker = tc_checker  # None if category doesn't use incremental TC
-        self._goal_checker = goal_checker  # None if category uses incremental TC
+        self._goal_checker = goal_checker
         self._max_turns = max_turns
         self._deadline = deadline
         self._proxy = proxy  # For set_turn() calls
@@ -218,10 +213,9 @@ class TutoringSession:
         2. Repeat detection (model_callback:606-624)
         3. Record + advance turn
         4. Deadline check (model_callback:517-537)
-        5. TC check (_EfficientSimulator.stop_conversation)
-        6. Goal check (DeepEval stop_conversation + stop_simulation)
-        7. Max turns (_append_user_closing:642-678)
-        8. Generate user reply (generate_next_user_input)
+        5. Goal check (DeepEval stop_conversation + stop_simulation)
+        6. Max turns (_append_user_closing:642-678)
+        7. Generate user reply (generate_next_user_input)
 
         Returns JSON: {user_reply, status, turn, max_turns[, reason]}
         """
@@ -276,23 +270,6 @@ class TutoringSession:
                 self._conversation.append({"role": "user", "content": closing})
             return self._result(closing, "completed", reason="timeout")
 
-        # ── TC check ──  (aligned: _EfficientSimulator.stop_conversation)
-        try:
-            tc_met = self._tc_checker is not None and self._tc_checker.check(
-                self._conversation
-            )
-        except Exception as exc:
-            logger.warning("TC check failed: %s", exc)
-            tc_met = False
-
-        if tc_met:
-            closing = self._safe_closing()
-            if closing:
-                self._conversation.append({"role": "user", "content": closing})
-            self._done = True
-            logger.info("TC fully covered at turn %d.", self._turn)
-            return self._result(closing, "completed", reason="objectives_met")
-
         # ── Goal check ──  (aligned: DeepEval stop_conversation + stop_simulation)
         try:
             goals_met = self._goal_checker is not None and self._goal_checker.check(
@@ -321,7 +298,10 @@ class TutoringSession:
 
         # ── Generate user reply ──  (aligned: generate_next_user_input)
         try:
-            reply = self._user_sim.generate_message(self._conversation)
+            reply = self._user_sim.generate_message(
+                self._conversation,
+                tool_logs=(self._proxy.get_logs() if self._proxy is not None else []),
+            )
         except Exception as exc:
             logger.warning("UserSimulator.generate_message failed: %s", exc)
             reply = _USER_FALLBACK
@@ -403,7 +383,7 @@ class TutoringSession:
     def _safe_closing(self) -> str:
         """Generate user closing with fallback on failure.
 
-        Aligned with _EfficientSimulator._generate_closing (simulation.py:372-405).
+        Uses the user simulator closing prompt, with a fixed fallback.
         """
         try:
             closing = self._user_sim.generate_closing(self._conversation)

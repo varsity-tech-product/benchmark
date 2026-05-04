@@ -87,6 +87,8 @@ SEND_MESSAGE_TOOL = Tool(
         "This is the ONLY way to communicate with the user. "
         "Your text output is NOT delivered to the user — "
         "only messages sent through this tool reach them. "
+        "The user also receives structured summaries of previous tool calls "
+        "and their results. "
         "Each call advances the conversation by one turn and cannot be undone. "
         "Returns the user's reply and session status. "
         "When status is 'completed' or 'failed', the session has ended and "

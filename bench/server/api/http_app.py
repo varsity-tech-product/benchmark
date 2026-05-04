@@ -1097,8 +1097,7 @@ def _classify_session_failure(termination_reason: str | None) -> str:
     - ``agent_gave_up`` — not retryable (``agent_stuck``, ``agent_abandoned``).
     - ``max_turns_reached`` — not retryable (``max_turns``, ``timeout``;
       session-level timeout is treated as exhaustion, not infra failure).
-    - ``terminal_success`` — not retryable (``objectives_met``,
-      ``user_satisfied``).
+    - ``terminal_success`` — not retryable (``user_satisfied``).
     - ``unknown`` — not retryable; defensive default.
     """
     if not termination_reason:
@@ -1107,7 +1106,7 @@ def _classify_session_failure(termination_reason: str | None) -> str:
         return _RETRYABLE_FAILURE
     if termination_reason in ("agent_stuck", "agent_abandoned"):
         return "agent_gave_up"
-    if termination_reason in ("objectives_met", "user_satisfied"):
+    if termination_reason == "user_satisfied":
         return "terminal_success"
     if termination_reason in ("max_turns", "timeout"):
         return "max_turns_reached"

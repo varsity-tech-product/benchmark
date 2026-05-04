@@ -20,7 +20,6 @@ GOOGLE_AGENT_MODEL_OR = "google/gemini-2.5-flash-preview"
 # --- Reference / Evaluation / Simulation ---
 REFERENCE_DEFAULT_MODEL = "openai/gpt-5.2"
 SIMULATOR_DEFAULT_MODEL = "openai/gpt-5.2"
-TC_CHECKER_MODEL = "anthropic/claude-sonnet-4-6"
 EVAL_DEFAULT_MODELS: list[str] = [
     # "anthropic/claude-haiku-4.5",
     "anthropic/claude-sonnet-4.6",
@@ -67,7 +66,7 @@ OPENAI_ENABLE_REASONING = False
 OPENAI_REASONING_EFFORT = "medium"
 
 # --- Evaluation temperature ---
-# Judge / TC checker / simulator temperature.  Deterministic (0.0) ensures
+# Judge / simulator temperature.  Deterministic (0.0) ensures
 # reproducible scores across runs.  Agent temperature is NOT controlled here
 # — agents run at their provider's default to reflect real-world behaviour.
 EVAL_JUDGE_TEMPERATURE = 0.0

@@ -11,7 +11,6 @@ DeepEval API:
 
 import json
 import logging
-import re
 import time
 from typing import TYPE_CHECKING, Callable, Optional
 
@@ -50,17 +49,6 @@ _MAX_SIMULATION_RETRIES = 2
 
 # HTTP status codes that will never resolve on retry (payment, auth, forbidden).
 _NON_RETRYABLE_STATUSES = {401, 402, 403}
-
-# Categories that use the incremental TC checker (must have numbered TC items).
-_INCREMENTAL_CHECKER_CATEGORIES = {"strategy", "backtest", "implementation", "debug"}
-
-
-def _resolve_checker_model(model_name: str):
-    """Resolve TC checker model — skip OAuth for reliable JSON calls."""
-    from config.model_resolver import resolve_deepeval_model
-
-    return resolve_deepeval_model(model_name, skip_oauth=True)
-
 
 def _is_non_retryable(exc: Exception) -> bool:
     """Return True for errors that cannot possibly succeed on retry.
@@ -103,7 +91,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from config.llm_config import SIMULATOR_DEFAULT_MODEL, TC_CHECKER_MODEL
+from config.llm_config import SIMULATOR_DEFAULT_MODEL
 from config.model_resolver import resolve_deepeval_model
 from config.prompt_config import build_scenario, build_user_description
 
@@ -112,301 +100,6 @@ from orchestrator.schemas import QuantTutorTask, UserPersona
 
 if TYPE_CHECKING:
     from mcp_servers.session import TutoringSession
-
-# ---------------------------------------------------------------------------
-# TC parsing
-# ---------------------------------------------------------------------------
-
-
-def _parse_tc_items(
-    task: QuantTutorTask, persona_id: Optional[str] = None
-) -> Optional[list[str]]:
-    """Parse numbered TC items from termination_criteria text.
-
-    Only applies to categories in _INCREMENTAL_CHECKER_CATEGORIES.
-    Returns None if the task doesn't qualify or TC can't be parsed.
-
-    Supports two formats:
-      - String: "... (1) first item (2) second item ... Once all N steps ..."
-      - Dict:   {"persona_id": "... (1) ... (2) ...", ...}
-        When persona_id is provided, the matching entry is used.
-
-    Expected format: "... (1) first item (2) second item ... Once all N steps ..."
-    """
-    if task.category.value not in _INCREMENTAL_CHECKER_CATEGORIES:
-        return None
-    tc = getattr(task.ground_truth, "termination_criteria", None)
-    if not tc:
-        return None
-    # Support per-persona TC (dict keyed by persona_id)
-    if isinstance(tc, dict):
-        if persona_id and persona_id in tc:
-            tc = tc[persona_id]
-        else:
-            # Fallback: use the first available entry
-            tc = next(iter(tc.values()), None)
-            if not tc:
-                return None
-    if not isinstance(tc, str):
-        return None
-    # Negative lookbehind (?<![A-Za-z]) prevents matching indicator
-    # notation like SMA(20), RSI(14), EMA(10) as TC item delimiters.
-    items = re.findall(
-        r"(?<![A-Za-z])\(\d+\)\s*(.+?)(?=(?<![A-Za-z])\(\d+\)|Once all|$)",
-        tc,
-        re.DOTALL,
-    )
-    items = [item.strip().rstrip(".") for item in items if item.strip()]
-    if len(items) < 2:
-        return None  # Can't parse numbered items → fall back to native
-    return items
-
-
-# ---------------------------------------------------------------------------
-# EfficientSimulator — incremental TC checker
-# ---------------------------------------------------------------------------
-
-
-class _EfficientSimulator(ConversationSimulator):
-    """ConversationSimulator with incremental TC coverage tracking.
-
-    Instead of sending the full conversation to the checker LLM every turn,
-    this maintains a persistent TC coverage bitmap and only sends the latest
-    exchange (1 user + 1 tutor message) plus the coverage state.
-
-    Token savings: ~97% vs native checker (fixed ~1400 tokens/check vs O(n)).
-    DeepEvalError risk: eliminated (custom JSON parsing with graceful fallback).
-    """
-
-    def __init__(
-        self,
-        tc_items: list[str],
-        golden: "ConversationalGolden",
-        checker_model=None,
-        **kwargs,
-    ):
-        super().__init__(**kwargs)
-        self._tc_items = tc_items
-        self._covered = [False] * len(tc_items)
-        # Check from the very first exchange to avoid blind spots.
-        self._min_check_exchange = 1
-        self._last_check_exchange = 0
-        self._golden = golden
-        # Separate model for TC checking (defaults to simulator_model if None)
-        self._checker_model = checker_model or self.simulator_model
-
-    def stop_conversation(self, turns, golden, progress=None, pbar_turns_id=None):
-        """Incremental TC checker — replaces DeepEval's full-history checker."""
-        # Count exchanges (1 exchange = 1 user msg + 1 tutor response)
-        n_exchanges = len([t for t in turns if t.role == "user"])
-
-        # Gate 1: skip early exchanges
-        if n_exchanges < self._min_check_exchange:
-            return False
-
-        # Gate 2: check every exchange (no skip-turn optimisation)
-        if n_exchanges <= self._last_check_exchange:
-            return False
-        self._last_check_exchange = n_exchanges
-
-        # Gate 3: incremental LLM check (last 1 exchange only)
-        newly = self._incremental_check(turns)
-        for idx in newly:
-            self._covered[idx] = True
-
-        if all(self._covered):
-            logger.info(
-                "TC fully covered after %d exchanges. Injecting closing.",
-                n_exchanges,
-            )
-            closing = self._generate_closing(turns)
-            turns.append(Turn(role="user", content=closing))
-            try:
-                from orchestrator.live_monitor import emit
-
-                turn_idx = len([t for t in turns if t.role == "user"]) - 1
-                emit("user_message", {"content": closing, "turn_index": turn_idx})
-            except Exception:
-                pass
-            return True
-
-        return False
-
-    _TC_TRUNC = 3000  # per-message truncation limit for checker
-
-    # Regex for fenced code blocks
-    _CODE_BLOCK_RE = re.compile(r"```[^\n]*\n(.*?)```", re.DOTALL)
-
-    def _incremental_check(self, turns) -> list[int]:
-        """Check if the latest exchange newly covers any uncovered TC items.
-
-        Three-pass strategy for long messages:
-          1. Head (first _TC_TRUNC chars)
-          2. Tail (last _TC_TRUNC chars) — skipped if head suffices
-          3. Code blocks — only when uncovered TC items mention "code" and
-             head+tail missed them.  Extracts fenced code blocks with
-             surrounding context so the checker can evaluate code-related
-             criteria regardless of where the code appears in the message.
-        """
-        recent = turns[-2:] if len(turns) >= 2 else turns
-        needs_tail = any(len(t.content) > self._TC_TRUNC for t in recent)
-
-        # --- Pass 1: head (first _TC_TRUNC chars) ---
-        head_json = json.dumps(
-            [{"role": t.role, "content": t.content[: self._TC_TRUNC]} for t in recent],
-            ensure_ascii=False,
-        )
-        newly = self._call_checker(head_json)
-
-        # Short-circuit: if head already covers all remaining, skip tail
-        if not needs_tail or self._all_covered_after(newly):
-            return newly
-
-        # --- Pass 2: tail (last _TC_TRUNC chars) for long messages ---
-        tail_json = json.dumps(
-            [
-                {
-                    "role": t.role,
-                    "content": (
-                        t.content[-self._TC_TRUNC :]
-                        if len(t.content) > self._TC_TRUNC
-                        else t.content
-                    ),
-                }
-                for t in recent
-            ],
-            ensure_ascii=False,
-        )
-        newly_tail = self._call_checker(tail_json)
-        # Merge (deduplicate)
-        seen = set(newly)
-        for idx in newly_tail:
-            if idx not in seen:
-                newly.append(idx)
-                seen.add(idx)
-
-        if self._all_covered_after(newly):
-            return newly
-
-        # --- Pass 3: code-focused check ---
-        # Only when uncovered TC items mention "code" and messages contain
-        # fenced code blocks that may have fallen in the head/tail blind zone.
-        has_code_tc = any(
-            "code" in self._tc_items[i].lower()
-            for i, c in enumerate(self._covered)
-            if not c and i not in seen
-        )
-        if not has_code_tc:
-            return newly
-
-        code_snippets = []
-        for t in recent:
-            if t.role != "assistant":
-                continue
-            for m in self._CODE_BLOCK_RE.finditer(t.content):
-                start = max(0, m.start() - 200)
-                end = min(len(t.content), m.end() + 200)
-                code_snippets.append(t.content[start:end])
-
-        if not code_snippets:
-            return newly
-
-        code_content = "\n---\n".join(code_snippets)[: self._TC_TRUNC]
-        code_json = json.dumps(
-            [{"role": "assistant", "content": code_content}],
-            ensure_ascii=False,
-        )
-        newly_code = self._call_checker(code_json)
-        for idx in newly_code:
-            if idx not in seen:
-                newly.append(idx)
-                seen.add(idx)
-
-        return newly
-
-    def _all_covered_after(self, newly: list[int]) -> bool:
-        """Check if applying *newly* would cover all TC items."""
-        for i, c in enumerate(self._covered):
-            if not c and i not in newly:
-                return False
-        return True
-
-    def _call_checker(self, exchange_json: str) -> list[int]:
-        """Single checker LLM call. Returns list of newly-covered indices (0-based)."""
-        uncovered_lines = []
-        covered_lines = []
-        for i, tc in enumerate(self._tc_items):
-            if self._covered[i]:
-                covered_lines.append(f"  {i + 1}. [COVERED] {tc}")
-            else:
-                uncovered_lines.append(f"  {i + 1}. [NOT COVERED] {tc}")
-
-        prompt = (
-            "You are tracking a tutoring session's progress against "
-            "specific learning objectives.\n\n"
-            "Current status:\n" + "\n".join(covered_lines + uncovered_lines) + "\n\n"
-            "Latest exchange:\n" + exchange_json + "\n\n"
-            "Which NOT-YET-COVERED items (if any) were demonstrated with "
-            "computational evidence (actual numbers, code execution, or "
-            "concrete analysis) in this exchange? "
-            'Return ONLY a JSON object: {"newly_covered": [1, 3]} '
-            'or {"newly_covered": []} if none were covered.'
-        )
-
-        try:
-            result = self._checker_model.generate(prompt)
-            text = result[0] if isinstance(result, tuple) else result
-            match = re.search(r"\{.*\}", text, re.DOTALL)
-            if not match:
-                return []
-            data = json.loads(match.group())
-            indices = data.get("newly_covered", [])
-            return [
-                i - 1
-                for i in indices
-                if isinstance(i, int)
-                and 1 <= i <= len(self._tc_items)
-                and not self._covered[i - 1]
-            ]
-        except Exception as exc:
-            logger.debug("Incremental TC check failed: %s", exc)
-            return []
-
-    def _generate_closing(self, turns) -> str:
-        """Generate a natural user closing message."""
-        recent = turns[-4:] if len(turns) >= 4 else turns
-        recent_text = "\n".join(
-            f"[{'User' if t.role == 'user' else 'Tutor'}]: {t.content[:300]}"
-            for t in recent
-        )
-        prompt = (
-            "You are the user in this tutoring session. The tutor has "
-            "successfully covered all your learning goals with real "
-            "computations and results. The session is now ending.\n\n"
-            "Write a brief FINAL closing message (1-3 sentences):\n"
-            "- Thank the tutor for the session\n"
-            "- Mention one specific thing you learned\n"
-            "- Say goodbye\n\n"
-            "IMPORTANT: Do NOT ask any new questions, request more analysis, "
-            "or suggest next steps that require the tutor's help. "
-            "This is a goodbye message — the session is over.\n\n"
-            f"Your profile: {self._golden.user_description}\n\n"
-            f"Recent conversation:\n{recent_text}\n\n"
-            "Reply with ONLY the closing message, no JSON."
-        )
-        try:
-            result = self.simulator_model.generate(prompt)
-            text = result[0] if isinstance(result, tuple) else result
-            if text and text.strip():
-                return text.strip()
-        except Exception as exc:
-            logger.debug("Failed to generate closing: %s", exc)
-        return (
-            "Thanks for walking me through all of this — "
-            "I have a much clearer picture now. "
-            "I'll try applying these techniques to my own data."
-        )
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -426,35 +119,27 @@ def build_conversational_golden(
 ) -> "ConversationalGolden":
     """Build a DeepEval ConversationalGolden from task + persona.
 
-    For tasks using the incremental TC checker (strategy category), the
-    native DeepEval checker is disabled. For all other tasks, termination
-    criteria are passed through when available.
+    Termination criteria are passed to DeepEval when available.
     """
     if not DEEPEVAL_AVAILABLE:
         raise ImportError("deepeval is required. Install with: pip install deepeval")
 
-    tc_items = _parse_tc_items(task, persona_id=persona.persona_id)
-
-    if tc_items is not None:
-        # Incremental checker will handle termination — disable native
-        stop_outcome = None
-    else:
-        stop_outcome = task.ground_truth.termination_criteria
-        if isinstance(stop_outcome, dict):
-            stop_outcome = "\n".join(
-                f"{key}: {value}" for key, value in stop_outcome.items()
-            )
+    stop_outcome = task.ground_truth.termination_criteria
+    if isinstance(stop_outcome, dict):
+        stop_outcome = "\n".join(
+            f"{key}: {value}" for key, value in stop_outcome.items()
+        )
 
     return ConversationalGolden(
         scenario=build_scenario(
             task,
             persona.persona_id,
-            has_incremental_tc=(tc_items is not None),
+            has_incremental_tc=False,
         ),
         expected_outcome=stop_outcome,
         user_description=build_user_description(
             persona,
-            has_incremental_tc=(tc_items is not None),
+            has_incremental_tc=False,
         ),
     )
 
@@ -642,8 +327,7 @@ def _append_user_closing(test_case, resolved_model, golden) -> None:
     message, so conversations always end with the tutor's reply.  This adds a
     brief user wrap-up for a more natural ending.
 
-    Skipped if the conversation already ends on a user message (e.g. when
-    the incremental TC checker injected a closing via stop_conversation).
+    Skipped if the conversation already ends on a user message.
     """
     if not test_case.turns or test_case.turns[-1].role != "assistant":
         return
@@ -729,9 +413,6 @@ def run_conversation_simulation(
     # Build golden
     golden = build_conversational_golden(task, persona)
 
-    # Parse TC items for incremental checker
-    tc_items = _parse_tc_items(task, persona_id=persona.persona_id)
-
     # Create model callback
     callback = create_model_callback(
         agent_adapter,
@@ -753,22 +434,11 @@ def run_conversation_simulation(
         # Fresh simulator instance per attempt (resets DeepEval internals).
         # The model_callback is reused — its conversation_history accumulates
         # across attempts, but DeepEval tracks turns independently.
-        if tc_items is not None:
-            resolved_checker = _resolve_checker_model(TC_CHECKER_MODEL)
-            simulator = _EfficientSimulator(
-                tc_items=tc_items,
-                golden=golden,
-                checker_model=resolved_checker,
-                model_callback=callback,
-                simulator_model=resolved_model,
-                async_mode=False,
-            )
-        else:
-            simulator = ConversationSimulator(
-                model_callback=callback,
-                simulator_model=resolved_model,
-                async_mode=False,
-            )
+        simulator = ConversationSimulator(
+            model_callback=callback,
+            simulator_model=resolved_model,
+            async_mode=False,
+        )
 
         try:
             test_cases = simulator.simulate(

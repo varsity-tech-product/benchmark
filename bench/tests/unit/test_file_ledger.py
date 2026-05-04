@@ -1,10 +1,11 @@
 """Unit tests for file ledger and transcript-with-files formatting.
 
-Tests _compute_file_diff, _format_transcript_with_files, and the
-ledger budget degradation logic in isolation — no server, no LLM.
+Tests _compute_file_diff, _format_transcript_with_files, and prompt-context
+budget degradation logic in isolation — no server, no LLM.
 """
 
 import json
+from types import SimpleNamespace
 
 import pytest
 
@@ -14,7 +15,10 @@ from server.core.user_sim import (
     _compute_file_diff,
     _format_transcript,
     _format_transcript_with_files,
+    _format_tool_log_context,
+    _format_user_context,
 )
+from mcp_servers.user_sim import _format_tool_log_context as _format_mcp_tool_context
 
 
 # ---------------------------------------------------------------------------
@@ -107,10 +111,7 @@ class TestFormatTranscriptWithFiles:
         assert "[File: strategy.py]" in parsed[1]["files"]
         assert "pandas" in parsed[1]["files"]
 
-    def test_updated_file_shows_diff(self):
-        # File must be large enough that the diff is smaller than the full content.
-        # Unified diff headers add ~80 chars of overhead, so the file needs
-        # many unchanged lines for the diff to be more compact.
+    def test_second_share_degrades_to_reference(self):
         lines = [f"line_{i} = {i}" for i in range(30)]
         base = "\n".join(lines) + "\n"
         lines[15] = "line_15 = 999  # FIXED"
@@ -141,14 +142,10 @@ class TestFormatTranscriptWithFiles:
         assert "[File: s.py]" in parsed[1]["files"]
         assert "line_0" in parsed[1]["files"]
 
-        # Second share: diff (smaller than full file)
-        assert "(updated)" in parsed[3]["files"]
-        assert "-line_15 = 15" in parsed[3]["files"]
-        assert "+line_15 = 999" in parsed[3]["files"]
+        assert parsed[3]["files"] == "[Attached: s.py]"
+        assert "line_15 = 999" not in parsed[3]["files"]
 
-    def test_diff_larger_than_full_falls_back(self):
-        """When diff is larger than full content, show full content instead."""
-        # Completely different files produce a large diff
+    def test_second_share_degrades_for_small_file(self):
         base = "aaa\n"
         current = "completely\ndifferent\ncontent\nwith\nmany\nnew\nlines\n"
         conv = _make_conversation(
@@ -171,8 +168,8 @@ class TestFormatTranscriptWithFiles:
         }
         result = _format_transcript_with_files(conv, ledger)
         parsed = json.loads(result)
-        # Second entry should have file content (either diff or full)
-        assert "files" in parsed[3]
+        assert parsed[1]["files"].startswith("[File: f.py]")
+        assert parsed[3]["files"] == "[Attached: f.py]"
 
     def test_entries_without_attachments_unchanged(self):
         conv = _make_conversation(
@@ -274,6 +271,107 @@ class TestBudgetDegradation:
         parsed = json.loads(result)
         for entry in parsed:
             assert "files" not in entry
+
+
+class TestToolLogPromptContext:
+    def test_user_context_excludes_protocol_logs_and_reasoning(self):
+        conv = _make_conversation(
+            ("user", "help"),
+            ("assistant", "I checked the files."),
+        )
+        logs = [
+            SimpleNamespace(
+                name="shell_exec",
+                args={"command": "ls"},
+                result="a.py\nb.py",
+                success=True,
+                turn_index=0,
+            ),
+            SimpleNamespace(
+                name="send_message",
+                args={"text": "I checked the files.", "reasoning": "private plan"},
+                result="{}",
+                success=True,
+                turn_index=0,
+            ),
+        ]
+
+        context = _format_user_context(conv, tool_logs=logs)
+
+        assert "shell_exec" in context
+        assert "send_message" not in context
+        assert "private plan" not in context
+        assert 'reply: "I checked the files."' in context
+
+    def test_success_results_truncate_but_failures_stay_full(self):
+        success_result = "x" * 700
+        failure_result = "ValueError: Close column missing\n" + ("detail\n" * 80)
+        logs = [
+            SimpleNamespace(
+                name="file_read",
+                args={"path": "large.txt"},
+                result=success_result,
+                success=True,
+                turn_index=0,
+            ),
+            SimpleNamespace(
+                name="compute_indicator",
+                args={"indicator": "RSI"},
+                result=failure_result,
+                success=False,
+                turn_index=0,
+            ),
+        ]
+
+        context = _format_tool_log_context(logs)
+
+        assert "[200 chars omitted]" in context
+        assert success_result not in context
+        assert failure_result in context
+        assert "FAILED" in context
+
+    def test_older_tool_turns_fold_into_summaries(self):
+        logs = [
+            SimpleNamespace(
+                name="shell_exec" if i % 2 else "file_read",
+                args={"i": i},
+                result="ok",
+                success=True,
+                turn_index=i,
+            )
+            for i in range(7)
+        ]
+
+        context = _format_tool_log_context(logs)
+
+        assert "[turn 1:" in context
+        assert "Recent tool turns:" in context
+        assert "[turn 7 - agent]" in context
+
+    def test_legacy_mcp_tool_context_filters_protocol_reasoning(self):
+        logs = [
+            SimpleNamespace(
+                name="run_backtest",
+                args={"config": "trial.json"},
+                result="Sharpe: 1.4",
+                success=True,
+                turn_index=1,
+            ),
+            SimpleNamespace(
+                name="send_message",
+                args={"text": "done", "reasoning": "private chain"},
+                result="{}",
+                success=True,
+                turn_index=1,
+            ),
+        ]
+
+        context = _format_mcp_tool_context(logs)
+
+        assert "run_backtest" in context
+        assert "Sharpe: 1.4" in context
+        assert "send_message" not in context
+        assert "private chain" not in context
 
 
 class TestFileLedgerIntegration:
