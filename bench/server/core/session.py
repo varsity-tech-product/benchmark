@@ -562,7 +562,7 @@ class TutoringSession:
 
         # ── Generate student reply ──  (aligned: generate_next_user_input)
         try:
-            reply = self._student_sim.generate_message(
+            reply, task_end = self._student_sim.generate_message(
                 self._conversation,
                 runtime_guidance=self._build_student_runtime_guidance(
                     text,
@@ -600,16 +600,27 @@ class TutoringSession:
             return self._result("", "failed", reason=reason, sim_error=sim_error)
         self._conversation.append({"role": "user", "content": reply, "ts": time.time()})
 
-        # ── Student-end signal (heuristic on the reply text) ──
-        # The student persona's own reply is treated as the session closing
-        # — no extra closing message is appended on top.
+        # ── Student-end signal ──
+        # Primary: persona-emitted `task_end` flag (issue #139). The reply
+        # still flows to the agent first; the session closes after.
+        # Fallback: regex heuristic on the reply text (issues #132/#137) —
+        # cheap belt-and-suspenders for personas that don't emit the flag.
+        if task_end:
+            self._done = True
+            self._completion_reason = "student_satisfied"
+            logger.info(
+                "Student persona emitted task_end=true at turn %d.", self._turn
+            )
+            return self._result(reply, "completed", reason="student_satisfied")
+
         from server.core.student_sim import signaled_end_of_session
 
         if signaled_end_of_session(reply):
             self._done = True
             self._completion_reason = "student_satisfied"
             logger.info(
-                "Student signaled end-of-session at turn %d.", self._turn
+                "Student signaled end-of-session at turn %d (regex fallback).",
+                self._turn,
             )
             return self._result(reply, "completed", reason="student_satisfied")
 

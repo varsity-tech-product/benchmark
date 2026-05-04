@@ -217,7 +217,7 @@ def run_single_trial(
         )
 
         if turn_idx < n_turns - 1:
-            student_msg = sim.generate_message(conversation)
+            student_msg, _ = sim.generate_message(conversation)
             conversation.append(
                 {
                     "role": "user",
