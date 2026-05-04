@@ -59,6 +59,27 @@ to the production service.
 The `BenchSessionManager` in `http_app.py` owns live sessions, the run store,
 quota checks, background tool jobs, cleanup, and restore-from-storage.
 
+## Production Deployment
+
+Production runs on the VPS under Linux user `bench` from
+`/home/bench/benchmark`. The systemd unit lives at
+`deploy/quanttutor.service` and starts:
+
+```bash
+cd /home/bench/benchmark/bench
+/home/bench/benchmark/.venv/bin/python -m server --host 127.0.0.1 --port 8000 --docker
+```
+
+GitHub Actions deploys through a self-hosted runner installed on the VPS with
+labels `production,bench-vps`. The workflow in `.github/workflows/deploy.yml`
+syncs the checkout into `/home/bench/benchmark`, maintains the virtualenv,
+rebuilds sandbox Docker images when Dockerfiles change, restarts `quanttutor`,
+and verifies `/health`.
+
+The `bench` SSH IP allowlist stays in `/etc/security/access.conf`. The
+self-hosted runner keeps deployment local to the VPS and preserves that SSH
+policy.
+
 ## Permission Boundary
 
 Clients can read public task labels, create or claim runs, register/start
