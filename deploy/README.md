@@ -23,6 +23,9 @@ The GitHub runner service runs as `bench`. The deployment workflow syncs the
 checked-out repository into `/home/bench/benchmark`, installs Python
 dependencies into `/home/bench/benchmark/.venv`, rebuilds Docker images when
 the Dockerfiles change, restarts `quanttutor`, and checks `/health`.
+Manual workflow runs default to code sync, restart, and health check only.
+Use the workflow inputs to request Docker image rebuilds, dependency installs,
+or systemd unit reinstalls during manual maintenance runs.
 
 Required sudoers entry for workflow restarts:
 

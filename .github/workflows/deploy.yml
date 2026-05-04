@@ -15,6 +15,22 @@ on:
       - '!bench/*MD/**'
       - '!bench/**.md'
   workflow_dispatch:
+    inputs:
+      rebuild_docker:
+        description: Rebuild Docker sandbox images
+        required: false
+        default: false
+        type: boolean
+      reinstall_deps:
+        description: Reinstall Python dependencies
+        required: false
+        default: false
+        type: boolean
+      reinstall_service:
+        description: Reinstall the systemd service file
+        required: false
+        default: false
+        type: boolean
 
 concurrency:
   group: vps-deploy
@@ -52,9 +68,9 @@ jobs:
         id: changes
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "docker=true" >> $GITHUB_OUTPUT
-            echo "deps=true" >> $GITHUB_OUTPUT
-            echo "service=true" >> $GITHUB_OUTPUT
+            echo "docker=${{ inputs.rebuild_docker }}" >> $GITHUB_OUTPUT
+            echo "deps=${{ inputs.reinstall_deps }}" >> $GITHUB_OUTPUT
+            echo "service=${{ inputs.reinstall_service }}" >> $GITHUB_OUTPUT
           else
             BEFORE="${{ github.event.before }}"
             if [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
