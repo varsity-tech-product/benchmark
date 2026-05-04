@@ -43,7 +43,7 @@ SCORING RUBRIC (1-10 scale):
 
 Score 1-2 — Critically Incorrect:
 Contains factual errors in financial concepts, formulas, or definitions. Confuses fundamental terms
-(e.g., variance vs. standard deviation, Sharpe vs. Sortino ratio). Would mislead a student.
+(e.g., variance vs. standard deviation, Sharpe vs. Sortino ratio). Would mislead a user.
 
 Score 3-4 — Below Average:
 Factually correct at a surface level but superficial. Repeats textbook definitions without insight.
@@ -61,7 +61,7 @@ mentions related concepts and common misconceptions. Appropriate depth for the q
 Score 9-10 — Excellent:
 Deeply nuanced explanation addressing edge cases and common misconceptions. Draws connections
 between concepts to build a coherent knowledge framework. Uses concrete quantitative examples.
-Distinguishes between theoretical and practical considerations. Would genuinely help a student
+Distinguishes between theoretical and practical considerations. Would genuinely help a user
 build lasting understanding.
 
 EVALUATION INSTRUCTIONS:
@@ -158,7 +158,7 @@ CODE_QUALITY_CRITERIA = """You are evaluating a quantitative finance tutoring re
 
 WHAT TO EVALUATE:
 Is the code correct, efficient, well-explained, and appropriate for the task?
-Does the explanation help the student UNDERSTAND the code, not just copy it?
+Does the explanation help the user UNDERSTAND the code, not just copy it?
 
 SCORING RUBRIC (1-10 scale):
 
@@ -177,7 +177,7 @@ Includes basic comments. Explanation covers what the code does at a high level.
 Score 7-8 — Good:
 Correct, efficient code using vectorized operations where appropriate. Well-commented with
 clear variable names. Explanation covers WHY each step is needed, not just WHAT it does.
-Includes output interpretation. Code complexity matches the student's level.
+Includes output interpretation. Code complexity matches the user's level.
 
 Score 9-10 — Excellent:
 Production-quality code: vectorized operations, proper error handling, configurable parameters,
@@ -252,7 +252,7 @@ EVALUATION INSTRUCTIONS:
 - Check that numerical claims about the data are accurate.
 - Evaluate whether conclusions are supported by the evidence presented.
 - A response that describes data without interpreting it should score lower.
-- Consider whether the response helps the student develop data analysis skills."""
+- Consider whether the response helps the user develop data analysis skills."""
 
 DATA_INTERPRETATION_RUBRIC = [
     {
@@ -291,7 +291,7 @@ Logical errors in the reasoning chain. Skips critical steps. Final answer is wro
 intermediate steps are wrong. Tool calls (if any) produce wrong inputs or misinterpret outputs.
 
 Score 3-4 — Below Average:
-Correct final answer but reasoning is unclear or skips steps. The student would not be able
+Correct final answer but reasoning is unclear or skips steps. The user would not be able
 to reproduce the reasoning. Tool usage is present but not explained.
 
 Score 5-6 — Sufficient:
@@ -322,7 +322,7 @@ MULTI_STEP_REASONING_RUBRIC = [
     },
     {
         "score_range": (3, 4),
-        "expected_outcome": "Correct answer but unclear reasoning. Steps skipped. Student cannot reproduce the logic.",
+        "expected_outcome": "Correct answer but unclear reasoning. Steps skipped. User cannot reproduce the logic.",
     },
     {
         "score_range": (5, 6),

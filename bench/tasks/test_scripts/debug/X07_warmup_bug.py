@@ -35,7 +35,7 @@ def evaluate(
     }
 
     # --- 1. warmup_added (0.25) ---
-    # Check for SetWarmUp in .cs files in workspace or student_code
+    # Check for SetWarmUp in .cs files in workspace or user_code
     fix_result = check_fix_applied(
         workspace_path,
         tool_logs,

@@ -6,7 +6,7 @@
   "task_type": "multi_turn",
   "description": "Guide a student to implement a multi-timeframe strategy on LEAN that uses 4h bars for trend direction and 1h bars for precise entry timing, applied across ~20 liquid crypto futures. The student must learn to use LEAN's Consolidate() to build 4h bars from 1h data, manage per-symbol dual-timeframe indicator state, and ensure 4h indicators only update on 4h bar completion. Running this at scale across 20 symbols with 3 years of hourly data tests both correctness and performance.",
   "persona_id": "developer_crossover",
-  "student_opening": "I need to implement a multi-timeframe strategy on LEAN that combines 4h and 1h bars. I can handle the code, but I don't understand the financial logic behind it. What should this do and why?",
+  "user_opening": "I need to implement a multi-timeframe strategy on LEAN that combines 4h and 1h bars. I can handle the code, but I don't understand the financial logic behind it. What should this do and why?",
   "environment": {
     "data_files": [
       "universe.json"

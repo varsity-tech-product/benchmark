@@ -17,5 +17,5 @@
     "look-ahead-bias"
   ],
   "persona_id": "finance_veteran",
-  "student_opening": "There's a bug related to My code calculates daily returns but the results look wrong. I understand the financial logic but I'm struggling with the Python code. Can you help?"
+  "user_opening": "There's a bug related to My code calculates daily returns but the results look wrong. I understand the financial logic but I'm struggling with the Python code. Can you help?"
 }

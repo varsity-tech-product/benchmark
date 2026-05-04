@@ -50,7 +50,7 @@ def _make_bundle() -> Bundle:
             ConversationTurn(
                 turn=1,
                 agent=AgentMessage(text="hello", reasoning=None, attachments=[]),
-                student=StudentMessage(text="hi back"),
+                user=StudentMessage(text="hi back"),
                 tool_calls=[
                     ToolCall(
                         call_id="tc_001",
@@ -67,7 +67,7 @@ def _make_bundle() -> Bundle:
             ConversationTurn(
                 turn=2,
                 agent=AgentMessage(text="ok", reasoning="thinking"),
-                student=None,
+                user=None,
             ),
         ],
         workspace_manifest=[
@@ -189,7 +189,7 @@ def test_reader_rejects_non_dict_payload():
         bundle_io.from_dict([1, 2, 3])  # type: ignore[arg-type]
 
 
-def test_turn_with_none_student_roundtrips():
+def test_turn_with_none_user_roundtrips():
     b = Bundle(
         schema_version=SCHEMA_VERSION,
         task_id="S01",
@@ -200,8 +200,8 @@ def test_turn_with_none_student_roundtrips():
         runtime=RuntimeInfo(),
         agent_metadata=AgentMetadata(),
         conversation=[
-            ConversationTurn(turn=1, agent=AgentMessage(text="hi"), student=None),
+            ConversationTurn(turn=1, agent=AgentMessage(text="hi"), user=None),
         ],
     )
     b2 = bundle_io.from_json(bundle_io.to_json(b))
-    assert b2.conversation[0].student is None
+    assert b2.conversation[0].user is None

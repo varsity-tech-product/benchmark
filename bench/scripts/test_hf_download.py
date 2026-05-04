@@ -55,7 +55,7 @@ def main():
         print(f"  lean_data:  {paths.lean_data}")
         print(f"  custom:     {paths.custom_data}")
         print(f"  search:     {paths.data_search_dirs}")
-        print(f"  student:    {paths.student_code}")
+        print(f"  user:    {paths.user_code}")
 
         # Verify key files
         checks = [
@@ -108,7 +108,7 @@ def main():
         )
         print(f"  docs:     {paths2.docs}")
         print(f"  search:   {paths2.data_search_dirs}")
-        print(f"  student:  {paths2.student_code}")
+        print(f"  user:  {paths2.user_code}")
 
         checks2 = [
             ("docs dir", Path(paths2.docs).is_dir()),

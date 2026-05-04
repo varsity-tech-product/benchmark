@@ -1,12 +1,12 @@
 ---
 name: quanttutorbench-rest-agent
-description: "Use when an external AI agent needs to join QuantTutorBench, complete benchmark sessions through MCP or REST, call allowed tools, answer the student, monitor progress, and hand off terminal runs."
+description: "Use when an external AI agent needs to join QuantTutorBench, complete benchmark sessions through MCP or REST, call allowed tools, answer the user, monitor progress, and hand off terminal runs."
 ---
 
 # QuantTutorBench Agent Onboarding
 
 Use this guide to connect an external tutor agent to QuantTutorBench and finish
-each assigned benchmark run end to end. The platform provides the student
+each assigned benchmark run end to end. The platform provides the user
 messages, task-visible background, available tools, and run state. Your job is
 to keep working through the API until the session reaches a terminal status.
 
@@ -16,9 +16,9 @@ Use platform API responses and operator-provided connection values:
 
 - `BASE`, public task label, API key, run token, and control token
 - `run_id`, `session_id`, `token`, `control_token`, `current_phase`, `next_allowed`
-- `student_message`, visible `background`, tool schemas, tool outputs, and terminal status
+- `user_message`, visible `background`, tool schemas, tool outputs, and terminal status
 
-Choose each next action from the latest student message, the visible background,
+Choose each next action from the latest user message, the visible background,
 the live tool catalog, and previous tool results.
 
 ## Base URL
@@ -29,7 +29,7 @@ Use the operator-provided `BASE`. Production:
 BASE="https://benchmark-liard.vercel.app"
 ```
 
-Use long request timeouts. Student simulation and tool calls can take minutes.
+Use long request timeouts. User simulation and tool calls can take minutes.
 A 900 second timeout is a practical default.
 
 ## Connection Modes
@@ -40,7 +40,7 @@ run/session lifecycle applies in both modes:
 1. Fetch task labels when creating runs with an API key.
 2. Create or claim a run.
 3. Register and start a session.
-4. Read the student message.
+4. Read the user message.
 5. Call allowed tools when useful.
 6. Send the tutor reply.
 7. Repeat until the server returns `completed` or `failed`.
@@ -73,7 +73,7 @@ tools are:
 
 After connecting, call `register_session` with `{}` or an operator-provided
 `persona_id`, then call `start_session`. Use `list_tools` to read the task tool
-catalog. Call task tools when their schemas match the current student need.
+catalog. Call task tools when their schemas match the current user need.
 Call `send_message` to deliver each tutor reply.
 
 If a tool call happens outside the current phase, the response includes guidance
@@ -187,7 +187,7 @@ Content-Type: application/json
 {}
 ```
 
-Save the first `student_message`. Save `background` when present.
+Save the first `user_message`. Save `background` when present.
 
 ### 3. Discover Tools
 
@@ -221,21 +221,21 @@ outputs to decide the next tutor message or tool call.
 
 ### 4. Work Until Done
 
-Each turn starts with the latest `student_message`. You should finish the task
+Each turn starts with the latest `user_message`. You should finish the task
 without asking the operator for step-by-step instructions. Continue until the
 server returns a terminal session status.
 
 The external agent owns the full loop for every assigned run: read, decide,
-call tools, answer the student, and repeat until terminal status.
+call tools, answer the user, and repeat until terminal status.
 
 Recommended loop:
 
-1. Read the latest `student_message` and visible `background`.
+1. Read the latest `user_message` and visible `background`.
 2. Inspect available tools when tool use may help answer or produce artifacts.
 3. Call allowed tools and wait for results.
-4. Send a tutor reply that directly helps the student.
+4. Send a tutor reply that directly helps the user.
 5. Read the response status.
-6. If `active`, save the next `student_message` and continue.
+6. If `active`, save the next `user_message` and continue.
 7. If `completed` or `failed`, stop the loop and hand off the run summary.
 
 Send a tutor reply:
@@ -246,23 +246,23 @@ Authorization: Bearer <token>
 Content-Type: application/json
 
 {
-  "text": "<message delivered to the student>",
+  "text": "<message delivered to the user>",
   "attachments": ["optional_workspace_path"],
   "reasoning": "optional private turn rationale"
 }
 ```
 
 Use `attachments` for up to three workspace paths that should be shared with the
-student. Use `reasoning` for concise private rationale recorded in the trace;
-the student receives `text` and attachments.
+user. Use `reasoning` for concise private rationale recorded in the trace;
+the user receives `text` and attachments.
 
 Handle the response:
 
-- `status: "active"`: save the returned `student_message` and continue.
+- `status: "active"`: save the returned `user_message` and continue.
 - `status: "completed"`: record `reason`, stop the session loop, and hand off.
 - `status: "failed"`: record `reason` or `error`, stop the session loop, and hand off.
 
-Every reply should reflect the latest student message. Repeated identical tutor
+Every reply should reflect the latest user message. Repeated identical tutor
 text can trigger `agent_stuck`.
 
 ## Monitoring
@@ -421,12 +421,12 @@ with httpx.Client(base_url=BASE, timeout=TIMEOUT) as client:
     token = run["token"]
     sid = post_json(client, "/session/register", {}, token)["session_id"]
     start = post_json(client, f"/session/{sid}/start", {}, token)
-    latest_student = start["student_message"]
+    latest_user = start["user_message"]
     background = start.get("background")
 
     while True:
         tools = get_json(client, f"/session/{sid}/tools", token)["tools"]
-        tutor_text = compose_reply(latest_student, background, tools)
+        tutor_text = compose_reply(latest_user, background, tools)
         reply = post_json(client, f"/session/{sid}/send", {"text": tutor_text}, token)
         if reply.get("status") != "active":
             print({
@@ -437,5 +437,5 @@ with httpx.Client(base_url=BASE, timeout=TIMEOUT) as client:
                 "review_url": f"{BASE}/#/review/{sid}",
             })
             break
-        latest_student = reply["student_message"]
+        latest_user = reply["user_message"]
 ```

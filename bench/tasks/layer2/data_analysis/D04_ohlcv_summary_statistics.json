@@ -6,7 +6,7 @@
   "task_type": "multi_turn",
   "description": "Guide the student to compute and interpret core OHLCV summary statistics, including distribution diagnostics and volume behavior.",
   "persona_id": "double_novice",
-  "student_opening": "My professor asked us to compute and interpret core OHLCV summary statistics. I'm new to both Python and finance — can you start from the basics?",
+  "user_opening": "My professor asked us to compute and interpret core OHLCV summary statistics. I'm new to both Python and finance — can you start from the basics?",
   "environment": {
     "data_files": [
       "AAPL_2018_2024.csv",

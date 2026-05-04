@@ -6,7 +6,7 @@
   "task_type": "multi_turn",
   "description": "Guide the student to align irregular alternative data with price data, normalize and handle missing values, construct lag-safe merged features, and evaluate information content for predictive signal quality.",
   "persona_id": "double_novice",
-  "student_opening": "My professor asked us to align irregular alternative data with price data and build merged features. I'm new to both Python and finance — can you start from the basics?",
+  "user_opening": "My professor asked us to align irregular alternative data with price data and build merged features. I'm new to both Python and finance — can you start from the basics?",
   "environment": {
     "data_files": [
       "AAPL_2018_2024.csv",

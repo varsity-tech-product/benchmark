@@ -16,5 +16,5 @@
     "financial-reports"
   ],
   "persona_id": "finance_veteran",
-  "student_opening": "I need help with what was the percentage change in net sales from 2000 to. I understand the financial side — can you help me with the computational approach?"
+  "user_opening": "I need help with what was the percentage change in net sales from 2000 to. I understand the financial side — can you help me with the computational approach?"
 }

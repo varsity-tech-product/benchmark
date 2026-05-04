@@ -6,7 +6,7 @@
   "task_type": "multi_turn",
   "description": "Guide a student to extend a backtest engine to support synchronized multi-asset replay for BTCUSDT and ETHUSDT daily data, then implement a BTC/ETH ratio mean-reversion strategy with per-asset accounting.",
   "persona_id": "finance_veteran",
-  "student_opening": "I need to extend a backtest engine to support synchronized multi-asset replay and per-asset accounting. I know what good backtesting looks like from experience — can you help me implement it in code?",
+  "user_opening": "I need to extend a backtest engine to support synchronized multi-asset replay and per-asset accounting. I know what good backtesting looks like from experience — can you help me implement it in code?",
   "environment": {
     "data_files": [
       "BTCUSDT_1d_2021_2024.csv",

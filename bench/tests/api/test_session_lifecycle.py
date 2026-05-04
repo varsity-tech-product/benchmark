@@ -68,11 +68,11 @@ class TestRegister:
 
 class TestStart:
     @pytest.mark.asyncio
-    async def test_start_returns_student_message(self, client):
+    async def test_start_returns_user_message(self, client):
         sid = await register_session(client)
         body = await start_session(client, sid)
-        assert "student_message" in body
-        assert len(body["student_message"]) > 0
+        assert "user_message" in body
+        assert len(body["user_message"]) > 0
 
     @pytest.mark.asyncio
     async def test_start_before_register_fails(self, client):
@@ -82,10 +82,10 @@ class TestStart:
 
 class TestSendMessage:
     @pytest.mark.asyncio
-    async def test_send_returns_student_reply(self, client):
+    async def test_send_returns_user_reply(self, client):
         sid, _ = await register_and_start(client)
         body = await send_message(client, sid, "Let me look at your code.")
-        assert "student_message" in body
+        assert "user_message" in body
         assert body["status"] in ("active", "completed")
 
     @pytest.mark.asyncio

@@ -6,7 +6,7 @@
   "task_type": "multi_turn",
   "description": "The agent identifies and corrects a student's misconception about an unrealistically high Sharpe ratio obtained through data mining. The student tested 200 parameter combinations and found a Sharpe of 5.0, believing the strategy is ready for live trading. The agent flags the unrealistic metric, explains overfitting and data mining bias, recommends out-of-sample validation, and demonstrates with data why the result is misleading.",
   "persona_id": "double_novice",
-  "student_opening": "I tested 200 different settings for my trading strategy and one of them has something called a Sharpe ratio of 5.0. My friend says that's really good. Is it?",
+  "user_opening": "I tested 200 different settings for my trading strategy and one of them has something called a Sharpe ratio of 5.0. My friend says that's really good. Is it?",
   "environment": {
     "data_files": [
       "AAPL_2018_2024.csv",

@@ -147,7 +147,7 @@ def _build_conversation(state: dict) -> list[ConversationTurn]:
         entry = conv[i]
         role = _get(entry, "role")
         if role == "user":
-            student = StudentMessage(text=str(_get(entry, "content") or ""))
+            user = StudentMessage(text=str(_get(entry, "content") or ""))
             agent_text = ""
             if i + 1 < len(conv) and _get(conv[i + 1], "role") == "assistant":
                 agent_text = str(_get(conv[i + 1], "content") or "")
@@ -161,7 +161,7 @@ def _build_conversation(state: dict) -> list[ConversationTurn]:
                         text=agent_text,
                         attachments=_attachments_for_turn(npc_logs_by_turn, turn_idx),
                     ),
-                    student=student,
+                    user=user,
                     tool_calls=[
                         _tool_call_from_log(log)
                         for log in tools_by_turn.get(turn_idx, [])
@@ -177,7 +177,7 @@ def _build_conversation(state: dict) -> list[ConversationTurn]:
                         text=str(_get(entry, "content") or ""),
                         attachments=_attachments_for_turn(npc_logs_by_turn, turn_idx),
                     ),
-                    student=None,
+                    user=None,
                     tool_calls=[
                         _tool_call_from_log(log)
                         for log in tools_by_turn.get(turn_idx, [])

@@ -78,7 +78,7 @@ class EwanLLMClient:
 
         ``call_id`` / ``prompt_id`` / ``prompt_version`` are forwarded to
         the audit log. Pass them from the call site (judge dimension or
-        student-sim turn) so audit rows are attributable; defaults
+        user-sim turn) so audit rows are attributable; defaults
         produce an opaque ``ewan-<uuid>`` row.
         """
         messages = _build_messages(prompt, images)

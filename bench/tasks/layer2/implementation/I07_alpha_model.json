@@ -6,7 +6,7 @@
   "task_type": "multi_turn",
   "description": "Guide a student to migrate from a classic LEAN algorithm (manual OnData + SetHoldings) to the Algorithm Framework pattern. The student must implement a custom AlphaModel class that emits Insight objects based on EMA(10)/EMA(30) crossovers, wire it with EqualWeightingPortfolioConstructionModel and ImmediateExecutionModel via SetAlpha/SetPortfolioConstruction/SetExecution, and subscribe ~20 crypto futures. On the standalone 12-col pipeline, the alpha should manage symbol state from the subscribed symbols or from data.Keys and update indicators manually instead of relying on OnSecuritiesChanged auto-registration. This tests understanding of the framework pipeline: Alpha → Portfolio Construction → Execution.",
   "persona_id": "developer_crossover",
-  "student_opening": "I need to migrate from a classic LEAN algorithm to the Algorithm Framework pattern. I can handle the code, but I don't understand the financial logic behind it. What should this do and why?",
+  "user_opening": "I need to migrate from a classic LEAN algorithm to the Algorithm Framework pattern. I can handle the code, but I don't understand the financial logic behind it. What should this do and why?",
   "environment": {
     "data_files": [
       "universe.json"

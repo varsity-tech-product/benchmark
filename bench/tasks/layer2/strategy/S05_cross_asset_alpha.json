@@ -6,7 +6,7 @@
   "task_type": "multi_turn",
   "description": "Guide a student to research alpha from cross-asset dynamics between BTC and ETH.",
   "persona_id": "finance_veteran",
-  "student_opening": "I want to research alpha from cross-asset dynamics between BTC and ETH. I understand the strategy logic from my trading experience — but I need help coding and backtesting it.",
+  "user_opening": "I want to research alpha from cross-asset dynamics between BTC and ETH. I understand the strategy logic from my trading experience — but I need help coding and backtesting it.",
   "environment": {
     "data_files": [
       "BTCUSDT_1d_2021_2024.csv",

@@ -8,7 +8,7 @@ import json
 
 import pytest
 
-from server.core.student_sim import (
+from server.core.user_sim import (
     _LEDGER_BUDGET,
     _collect_images_from_ledger,
     _compute_file_diff,

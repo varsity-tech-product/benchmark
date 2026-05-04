@@ -17,5 +17,5 @@
     "visualization"
   ],
   "persona_id": "finance_veteran",
-  "student_opening": "I need to code I have a CSV file with columns 'Date' and 'Close'. I know what the result should look like financially — just need help writing it in Python."
+  "user_opening": "I need to code I have a CSV file with columns 'Date' and 'Close'. I know what the result should look like financially — just need help writing it in Python."
 }

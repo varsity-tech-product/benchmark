@@ -108,7 +108,7 @@ class ResultIndexerTests(unittest.TestCase):
                             },
                             "result": json.dumps(
                                 {
-                                    "student_message": "Thanks, that helps.",
+                                    "user_message": "Thanks, that helps.",
                                     "status": "active",
                                 }
                             ),
@@ -248,7 +248,7 @@ class ResultIndexerTests(unittest.TestCase):
                 detail["send_message_events"][0]["request_text"], "Rendered answer"
             )
             self.assertEqual(
-                detail["send_message_events"][0]["student_message"],
+                detail["send_message_events"][0]["user_message"],
                 "Thanks, that helps.",
             )
             self.assertEqual(detail["send_message_events"][0]["status"], "active")
@@ -499,7 +499,7 @@ class UiRoutesTests(unittest.TestCase):
                             "args": {"text": "Answer"},
                             "result": json.dumps(
                                 {
-                                    "student_message": "Got it",
+                                    "user_message": "Got it",
                                     "status": "completed",
                                     "reason": "objectives_met",
                                 }
@@ -562,7 +562,7 @@ class UiRoutesTests(unittest.TestCase):
                         "section": "conversation",
                         "target": {"turn_index": 0},
                         "severity": "concern",
-                        "comment": "Student acknowledgement is terse.",
+                        "comment": "User acknowledgement is terse.",
                         "tags": ["persona_signal"],
                     }
                 },
@@ -686,7 +686,7 @@ class UiRoutesTests(unittest.TestCase):
             self.assertEqual(saved["github_user_id"], "local-dev")
             self.assertEqual(
                 review_reload_response.json()["review"]["opinions"][0]["comment"],
-                "Student acknowledgement is terse.",
+                "User acknowledgement is terse.",
             )
             prefix_payload = review_prefix_post_response.json()
             self.assertEqual(prefix_payload["bundle_id"], session_id)

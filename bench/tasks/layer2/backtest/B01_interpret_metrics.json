@@ -6,7 +6,7 @@
   "task_type": "multi_turn",
   "description": "Guide a student to compute basic backtest performance metrics such as Sharpe ratio, total return, and maximum drawdown from OHLCV price data, interpret what each metric means, and assess whether a strategy is promising or problematic.",
   "persona_id": "double_novice",
-  "student_opening": "I want to learn how to compute and interpret basic backtest metrics in Python. I'm new to both coding and finance — can you walk me through it from the very beginning?",
+  "user_opening": "I want to learn how to compute and interpret basic backtest metrics in Python. I'm new to both coding and finance — can you walk me through it from the very beginning?",
   "environment": {
     "data_files": [
       "AAPL_2018_2024.csv",

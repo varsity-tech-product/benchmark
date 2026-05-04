@@ -6,7 +6,7 @@
   "task_type": "multi_turn",
   "description": "Guide the student to detect and handle missing values in OHLCV data while distinguishing expected market-closure gaps from true data-feed issues.",
   "persona_id": "double_novice",
-  "student_opening": "My professor asked us to detect and handle missing values in OHLCV data while distinguishing market-closure gaps from real issues. I'm new to both Python and finance — can you start from the basics?",
+  "user_opening": "My professor asked us to detect and handle missing values in OHLCV data while distinguishing market-closure gaps from real issues. I'm new to both Python and finance — can you start from the basics?",
   "environment": {
     "data_files": [
       "AAPL_dirty.csv"

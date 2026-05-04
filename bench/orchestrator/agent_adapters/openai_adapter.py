@@ -68,10 +68,10 @@ DEFAULT_AGENT_MAX_TURNS = 16
 COMPACTION_TOKEN_THRESHOLD = 100_000
 
 COMPACTION_SUMMARY_PROMPT = (
-    "You have been tutoring a student. Summarize the conversation so far "
+    "You have been tutoring a user. Summarize the conversation so far "
     "into a concise continuation context that allows you to resume "
     "naturally.  Include:\n"
-    "1. Task Overview — the student's learning goal and current topic\n"
+    "1. Task Overview — the user's learning goal and current topic\n"
     "2. Current State — what has been completed, files created, key "
     "tool outputs\n"
     "3. Important Discoveries — constraints, decisions, errors resolved\n"
@@ -353,7 +353,7 @@ class OpenAIAgentAdapter(BaseAgentAdapter):
                                 "role": "user",
                                 "content": (
                                     "[SYSTEM: You have used all available tool-call rounds. "
-                                    "Please respond to the student NOW with a helpful text "
+                                    "Please respond to the user NOW with a helpful text "
                                     "message summarizing what you accomplished and any "
                                     "guidance. Do NOT call any more tools.]"
                                 ),

@@ -40,23 +40,23 @@ class SampleCodeStagingTests(unittest.TestCase):
     def test_create_staged_sample_code_uses_neutral_filename(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
-            student_root = root / "student_code"
-            student_root.mkdir()
-            source = student_root / "alpha_conflict.cs"
+            user_root = root / "user_code"
+            user_root.mkdir()
+            source = user_root / "alpha_conflict.cs"
             source.write_text("// demo", encoding="utf-8")
 
             staged_dir, temp_dirs = create_staged_sample_code(
-                "student_code/alpha_conflict.cs",
-                student_code_dir=str(student_root),
+                "user_code/alpha_conflict.cs",
+                user_code_dir=str(user_root),
             )
 
             self.assertIsNotNone(staged_dir)
             staged_root = Path(staged_dir)
             self.assertEqual(
-                sorted(p.name for p in staged_root.iterdir()), ["student_code.cs"]
+                sorted(p.name for p in staged_root.iterdir()), ["user_code.cs"]
             )
             self.assertEqual(
-                (staged_root / "student_code.cs").read_text(encoding="utf-8"), "// demo"
+                (staged_root / "user_code.cs").read_text(encoding="utf-8"), "// demo"
             )
             self.assertEqual(temp_dirs, [staged_dir])
 
@@ -68,7 +68,7 @@ class SessionContextTests(unittest.TestCase):
         state.task = SimpleNamespace(
             category=SimpleNamespace(value="debug"),
             requires_code=True,
-            sample_code="student_code/alpha_conflict.cs",
+            sample_code="user_code/alpha_conflict.cs",
             environment=SimpleNamespace(
                 sandbox_image="quant-tutor-env:v2.2-lean",
                 max_backtest_trials=5,
@@ -77,7 +77,7 @@ class SessionContextTests(unittest.TestCase):
 
         context = state._build_session_context(
             docs_available=["algorithm_framework_guide.md"],
-            student_code_dir="/student_code",
+            user_code_dir="/user_code",
         )
 
         self.assertEqual(
@@ -88,7 +88,7 @@ class SessionContextTests(unittest.TestCase):
                 "docs_available": ["algorithm_framework_guide.md"],
                 "max_backtest_trials": 5,
                 "sandbox_image": "quant-tutor-env:v2.2-lean",
-                "student_code_available": True,
+                "user_code_available": True,
             },
         )
         self.assertNotIn("task_id", context)

@@ -6,7 +6,7 @@ in any environment that has ``bench/`` on ``sys.path`` without
 pulling in ``bench/server/``.
 
 The duplicate pieces in ``bench/server/config/llm_config.py`` are
-server runtime concerns (NPC student model pool, agent transport
+server runtime concerns (NPC user model pool, agent transport
 flags, etc.) — those stay where they are.
 """
 

@@ -15,5 +15,5 @@
     "financial-reports"
   ],
   "persona_id": "finance_veteran",
-  "student_opening": "I need help with what was the total operating expenses in 2018 in millions. I understand the financial side — can you help me with the computational approach?"
+  "user_opening": "I need help with what was the total operating expenses in 2018 in millions. I understand the financial side — can you help me with the computational approach?"
 }

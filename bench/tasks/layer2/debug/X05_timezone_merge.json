@@ -6,7 +6,7 @@
   "task_type": "multi_turn",
   "description": "Guide a student to find and fix a timezone misalignment bug in a crypto-stock correlation analysis where BTC (UTC) and AAPL (Eastern Time) data are merged on calendar date without timezone conversion, causing a 1-day shift.",
   "persona_id": "developer_crossover",
-  "student_opening": "I'm looking at code that should correlate crypto and stock data, but I think there might be a timezone issue. The code reads fine to me, but I'm not sure the financial logic is correct. What should it be doing?",
+  "user_opening": "I'm looking at code that should correlate crypto and stock data, but I think there might be a timezone issue. The code reads fine to me, but I'm not sure the financial logic is correct. What should it be doing?",
   "environment": {
     "data_files": [
       "AAPL_2018_2024.csv",
@@ -50,7 +50,7 @@
     "termination_criteria": "The tutor has completed the following steps with computational evidence (not just verbal discussion): (1) Reviewed the student's merge code and identified the timezone mismatch where BTC data in UTC and AAPL data in Eastern Time are merged on calendar date without tz_convert, causing a 1-day offset. (2) Explained why 00:00 UTC maps to the previous day in Eastern Time and how this causes each BTC row to be aligned with the wrong AAPL trading day. (3) Showed the corrected code with tz_convert('US/Eastern') applied before extracting .dt.date and presented execution results demonstrating the fix, such as the correlation value changing. (4) Responded to the student's follow-up about the timezone alignment or the fix with additional explanation or analysis beyond the initial demonstration. Once all four steps have been computationally demonstrated, the session is complete."
   },
   "requires_code": true,
-  "sample_code": "student_code/timezone_merge.py",
+  "sample_code": "user_code/timezone_merge.py",
   "max_turns": 10,
   "timeout_minutes": 15
 }

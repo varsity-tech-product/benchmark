@@ -83,7 +83,7 @@ class TCChecker:
         if self.all_covered:
             return True
 
-        # Get the latest exchange (last student + tutor message)
+        # Get the latest exchange (last user + tutor message)
         recent = conversation[-2:] if len(conversation) >= 2 else conversation
         if not recent:
             return False

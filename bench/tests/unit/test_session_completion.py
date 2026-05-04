@@ -42,8 +42,8 @@ class TestTCCompletion:
         tc = FakeTCChecker(complete_on_check=1)
         session = make_session(tc_checker=tc)
         result = _send(session)
-        assert result["student_message"]  # closing message present
-        # Conversation should end with a user (student) closing
+        assert result["user_message"]  # closing message present
+        # Conversation should end with a user (user) closing
         conv = session.conversation
         assert conv[-1]["role"] == "user"
 
@@ -177,7 +177,7 @@ class TestForceComplete:
 
     def test_force_complete_appends_closing_when_last_is_assistant(self, make_session):
         session = make_session()
-        _send(session)  # generates assistant + student turn
+        _send(session)  # generates assistant + user turn
         # Now add an assistant message as the last
         session._conversation.append({"role": "assistant", "content": "bye"})
         closing = session.force_complete("timeout")
@@ -186,7 +186,7 @@ class TestForceComplete:
 
     def test_force_complete_no_closing_when_last_is_user(self, make_session):
         session = make_session()
-        # Last message is user (student opening)
+        # Last message is user (user opening)
         closing = session.force_complete("timeout")
         assert closing == ""
 

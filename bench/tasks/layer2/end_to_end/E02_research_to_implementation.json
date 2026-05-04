@@ -6,7 +6,7 @@
   "task_type": "multi_turn",
   "description": "Guide a student through researching a Bollinger Band mean-reversion signal on BTC in Python, backtesting it to get preliminary metrics, then implementing the same strategy as a LEAN C# algorithm and comparing results across backends.",
   "persona_id": "developer_crossover",
-  "student_opening": "I need to research a Bollinger Band mean-reversion signal on BTC. I can handle the code, but I don't understand the financial logic behind it. What should this do and why?",
+  "user_opening": "I need to research a Bollinger Band mean-reversion signal on BTC. I can handle the code, but I don't understand the financial logic behind it. What should this do and why?",
   "environment": {
     "data_files": [
       "BTC_UTC.csv",

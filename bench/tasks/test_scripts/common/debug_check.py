@@ -47,18 +47,18 @@ def check_fix_applied(
                     except (IOError, UnicodeDecodeError):
                         continue
 
-    # Also check student_code directory (in-place edits)
-    student_dir = (
-        os.path.join(workspace_path, "..", "student_code") if workspace_path else ""
+    # Also check user_code directory (in-place edits)
+    user_dir = (
+        os.path.join(workspace_path, "..", "user_code") if workspace_path else ""
     )
-    if os.path.isdir(student_dir):
-        for fname in os.listdir(student_dir):
+    if os.path.isdir(user_dir):
+        for fname in os.listdir(user_dir):
             if fname.endswith(file_extension):
-                fpath = os.path.join(student_dir, fname)
+                fpath = os.path.join(user_dir, fname)
                 try:
                     with open(fpath) as f:
                         text = f.read()
-                    workspace_texts.append(("student_code:" + fname, text))
+                    workspace_texts.append(("user_code:" + fname, text))
                 except (IOError, UnicodeDecodeError):
                     continue
 
@@ -93,7 +93,7 @@ def check_fix_applied(
     # the same or later than bug source (the fix replaces the bug)
     if result["fixed"] and result["bug_still_present"]:
         # If fix was found in tool args (file_write), the bug may only
-        # appear in the original student code read — that's expected
+        # appear in the original user code read — that's expected
         if (
             "tool_arg" in result["fix_found_in"]
             or "workspace" in result["fix_found_in"]

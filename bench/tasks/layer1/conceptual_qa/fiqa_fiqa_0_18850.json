@@ -14,5 +14,5 @@
     "financial-qa"
   ],
   "persona_id": "finance_veteran",
-  "student_opening": "I need help with considered a business expense on a business trip. I understand the financial side — can you help me with the computational approach?"
+  "user_opening": "I need help with considered a business expense on a business trip. I understand the financial side — can you help me with the computational approach?"
 }

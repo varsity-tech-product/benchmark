@@ -440,7 +440,7 @@ class ClaudeAgentAdapter(BaseAgentAdapter):
             # message lacks a substantive text conclusion.  This covers:
             #   (a) Final message is pure tool_use with no text at all
             #   (b) Final message has only transition text (< 100 chars like
-            #       "Now the charts:") followed by tool_use — the student
+            #       "Now the charts:") followed by tool_use — the user
             #       would see the transition but no summary of tool results.
             last_needs_summary = False
             if final_message is not None:
@@ -786,12 +786,12 @@ class ClaudeAgentAdapter(BaseAgentAdapter):
 
         parts = []
         for msg in messages[:-1]:
-            role = "Student" if msg["role"] == "user" else "Tutor"
+            role = "User" if msg["role"] == "user" else "Tutor"
             parts.append(f"[{role}]: {msg['content']}")
 
         parts.append(
-            f"\n[Student's latest message]: {messages[-1]['content']}\n\n"
-            f"Respond to the student's latest message as the tutor."
+            f"\n[User's latest message]: {messages[-1]['content']}\n\n"
+            f"Respond to the user's latest message as the tutor."
         )
         return "\n\n".join(parts)
 

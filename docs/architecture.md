@@ -22,7 +22,7 @@ bench/
   client/              External client adapters for MCP and REST
   orchestrator/        Legacy pre-server batch scaffolding
   tasks/               Task definitions + per-task eval scripts (test_scripts/)
-  personas/            Student persona profiles
+  personas/            User persona profiles
   data/                Market/reference data
   experiments/         Validation experiments and generated report pipelines
   layer1/              Layer 1 (single-turn knowledge) runner + GEval config
@@ -96,8 +96,8 @@ the client catalog.
 `server.api.session_api.SessionState` owns one tutoring session:
 
 1. `register_session` loads task/persona and prepares runtime state.
-2. `start_session` returns the student opening and enters `in_session`.
-3. `send_message` advances the student simulator and tool trace.
+2. `start_session` returns the user opening and enters `in_session`.
+3. `send_message` advances the user simulator and tool trace.
 4. Terminal status persists a result bundle, enters `completed`, and
    `_trigger_auto_eval()` enqueues a server-internal eval keyed
    `auto:{session_id}`. The same trigger fires from the idle-timeout sweep
@@ -112,7 +112,7 @@ score store is the source of truth for whether an eval has run.
 
 `POST /session/{sid}/retry` (run-token gated) lets the owning agent retry
 a session whose `termination_reason` classifies as
-`infrastructure_failure` (currently `student_sim_error:*`). The retry calls
+`infrastructure_failure` (currently `user_sim_error:*`). The retry calls
 `RunService.reset_for_retry()` to rebind the same RunAssignment back to
 `claimed`, allocates a fresh session_id, and returns it. Other categories
 (`agent_gave_up`, `max_turns_reached`, `terminal_success`, `unknown`) are
@@ -217,7 +217,7 @@ schema, context fields, and run timestamp metadata.
 Per #122 the scoring path has **two LLM dependencies** (QR judge, QP
 judge). The TC checker (`server/core/tc_checker.py`) is purely
 programmatic — TC is met when the agent invokes every tool listed in
-`expected_mcp_tools`. The NPC student simulator remains the only LLM in
+`expected_mcp_tools`. The NPC user simulator remains the only LLM in
 the conversation runtime; its replies do not enter scoring.
 
 The headline KPI is `pass_rate`: per-task `task_score = 0.60 * QR +
@@ -263,7 +263,7 @@ and the LLM provider. Within `bench/eval/`,
 `chat.completions.create()` appears only at `runner.py:140`; everything
 else goes through `LLMRunner.call(call_id, model_id, messages,
 prompt_id, prompt_version, ...)`. After #123 there are three call
-sites — NPC student simulator, QR judge, QP judge — and all three
+sites — NPC user simulator, QR judge, QP judge — and all three
 emit attributable audit rows.
 
 Each call writes one `LLMCallRecord` to a pluggable `AuditSink`.
@@ -278,7 +278,7 @@ environment variable: set it to a file path to capture every call,
 unset to silence. One JSONL line carries
 `call_id, model_id, prompt_id, prompt_version, prompt_hash, tokens_in,
 tokens_out, cost_usd, latency_ms, ts, success, error`. `prompt_id` is
-the rubric ID for judges and `"npc.student"` for the NPC; `prompt_version`
+the rubric ID for judges and `"npc.user"` for the NPC; `prompt_version`
 tracks the rendered prompt template version (rubric content version
 lives in `prompt_id` + `prompt_hash`).
 

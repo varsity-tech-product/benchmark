@@ -6,7 +6,7 @@
   "task_type": "multi_turn",
   "description": "Guide a student to implement a dual moving average crossover strategy as a LEAN C# algorithm using daily bars that runs across the Binance futures universe loaded from universe.json. Unlike a single-symbol backtest, the student must dynamically subscribe to the symbols, manage per-symbol indicator state, implement equal-weight position sizing across active positions, and produce both per-symbol and universe-level aggregated results. This is how institutional trend-following strategies are actually tested.",
   "persona_id": "developer_crossover",
-  "student_opening": "I need to implement a dual moving average crossover strategy as a LEAN C# algorithm. I can handle the code, but I don't understand the financial logic behind it. What should this do and why?",
+  "user_opening": "I need to implement a dual moving average crossover strategy as a LEAN C# algorithm. I can handle the code, but I don't understand the financial logic behind it. What should this do and why?",
   "environment": {
     "data_files": [
       "universe.json"

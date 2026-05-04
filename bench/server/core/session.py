@@ -1,6 +1,6 @@
 """Tutoring session state manager for QuantTutorBench.
 
-Manages the conversation between agent and simulated student.
+Manages the conversation between agent and simulated user.
 Backs the ``send_message`` session flow.
 
 Defense layers aligned with Legacy path (simulation.py create_model_callback):
@@ -8,17 +8,17 @@ Defense layers aligned with Legacy path (simulation.py create_model_callback):
 - Closing generation fallback (hardcoded text)
 - Timeout graceful wrap-up with closing
 - Agent repeat detection (force-stop after consecutive identical messages)
-- Max-turns student closing (aligned with _append_student_closing)
+- Max-turns user closing (aligned with _append_user_closing)
 
 Session status semantics
 ------------------------
 ``send_message`` returns one of three ``status`` values:
 
-- ``"active"``    — session is still running; student reply included
-- ``"completed"`` — session ended normally (objectives_met / student_satisfied
+- ``"active"``    — session is still running; user reply included
+- ``"completed"`` — session ended normally (objectives_met / user_satisfied
                     / max_turns / timeout)
 - ``"failed"``    — session aborted due to an abnormal condition
-                    (student_sim_error:* / agent_stuck)
+                    (user_sim_error:* / agent_stuck)
 """
 
 import base64
@@ -45,7 +45,7 @@ _MAX_REPEATS = 2
 def _is_failed_reason(reason: str | None) -> bool:
     if not reason:
         return False
-    return reason == "agent_stuck" or reason.startswith("student_sim_error:")
+    return reason == "agent_stuck" or reason.startswith("user_sim_error:")
 
 
 # ---------------------------------------------------------------------------
@@ -63,7 +63,7 @@ def build_background(task) -> str:
     env = task.environment if task.environment else None
     sandbox_image = (env.sandbox_image or "") if env else ""
     is_lean = "lean" in sandbox_image
-    has_student_code = bool(task.sample_code)
+    has_user_code = bool(task.sample_code)
     has_docs = bool(env.docs_available) if env else False
     has_data = bool(
         (env.data_files if env else None)
@@ -75,12 +75,12 @@ def build_background(task) -> str:
         "You are operating inside a sandboxed tutoring environment for "
         "quantitative finance. A Python runtime with common data-science "
         "packages is available.",
-        "To communicate with the student, you MUST use the send_message "
-        "tool. This is the only way your words reach the student. Your "
+        "To communicate with the user, you MUST use the send_message "
+        "tool. This is the only way your words reach the user. Your "
         "text output outside of send_message is NOT visible to them. "
-        "The student cannot see your tool calls, file operations, "
+        "The user cannot see your tool calls, file operations, "
         "raw command output, or files in your workspace. If you generate "
-        "charts, code files, or other artifacts the student should see, "
+        "charts, code files, or other artifacts the user should see, "
         "include their file paths in the 'attachments' parameter of "
         "send_message.",
     ]
@@ -94,8 +94,8 @@ def build_background(task) -> str:
             "are tracked and budget-limited."
         )
 
-    if has_student_code:
-        parts.append("The student's existing code is mounted at /student_code/.")
+    if has_user_code:
+        parts.append("The user's existing code is mounted at /user_code/.")
 
     if has_docs:
         parts.append("Reference documentation is mounted at /docs/.")
@@ -281,11 +281,11 @@ def _resolve_attachments(
 class TutoringSession:
     """Manages a single tutoring session.
 
-    The agent interacts with the student exclusively through
+    The agent interacts with the user exclusively through
     ``send_message`` tool calls.  This class:
 
     - Maintains the conversation history
-    - Generates student replies via StudentSimulator
+    - Generates user replies via UserSimulator
     - Checks termination criteria via TCChecker
     - Tracks turn count and enforces limits
     - Detects stuck agents (repeat detection)
@@ -295,7 +295,7 @@ class TutoringSession:
         self,
         task,
         persona,
-        student_sim,
+        user_sim,
         tc_checker,
         max_turns: int,
         deadline: Optional[float] = None,
@@ -304,7 +304,7 @@ class TutoringSession:
     ):
         self._task = task
         self._persona = persona
-        self._student_sim = student_sim
+        self._user_sim = user_sim
         self._tc_checker = tc_checker
         self._max_turns = max_turns
         self._deadline = deadline
@@ -338,9 +338,9 @@ class TutoringSession:
     # ------------------------------------------------------------------
 
     def handle_start_session(self) -> str:
-        """Start the session — return background + student's first message.
+        """Start the session — return background + user's first message.
 
-        Returns {background, student_message}.  ``background`` is a factual
+        Returns {background, user_message}.  ``background`` is a factual
         description of the environment (no directives, no scoring hints).
         The client decides how to present it to the agent.
 
@@ -349,7 +349,7 @@ class TutoringSession:
         if self._session_info_called:
             return json.dumps({"error": "Session already started"})
 
-        opening = self._get_student_opening()
+        opening = self._get_user_opening()
         self._conversation.append(
             {"role": "user", "content": opening, "ts": time.time()}
         )
@@ -359,7 +359,7 @@ class TutoringSession:
         return json.dumps(
             {
                 "background": background,
-                "student_message": opening,
+                "user_message": opening,
             }
         )
 
@@ -369,11 +369,11 @@ class TutoringSession:
         attachments: list[str] | None = None,
         reasoning: str | None = None,
     ) -> str:
-        """Process agent message, generate student reply.
+        """Process agent message, generate user reply.
 
         ``reasoning`` is the agent's private rationale for this turn.
         It is stored as metadata on the conversation entry for trace
-        analysis but is NEVER passed to the student simulator (which
+        analysis but is NEVER passed to the user simulator (which
         only reads ``entry["content"]``).
 
         Execution order aligned with Legacy model_callback
@@ -386,10 +386,10 @@ class TutoringSession:
         4. Record + advance turn
         5. TC check (_EfficientSimulator.stop_conversation)
         6. Deadline check
-        8. Max turns (_append_student_closing:642-678)
-        9. Generate student reply (generate_next_user_input)
+        8. Max turns (_append_user_closing:642-678)
+        9. Generate user reply (generate_next_user_input)
 
-        Returns JSON: {student_message, status[, reason]}
+        Returns JSON: {user_message, status[, reason]}
         """
         # ── Pre-checks ──
         if self._done:
@@ -401,7 +401,7 @@ class TutoringSession:
         if not text or not text.strip():
             return json.dumps(
                 {
-                    "error": "Empty message. Provide text to send to the student.",
+                    "error": "Empty message. Provide text to send to the user.",
                     "status": "active",
                     "turn": self._turn,
                     "max_turns": self._max_turns,
@@ -457,7 +457,7 @@ class TutoringSession:
 
         # ── Record agent message + advance turn ──
         msg_entry: dict = {"role": "assistant", "content": text, "ts": time.time()}
-        # Stash private rationale on the entry for trace analysis. Student
+        # Stash private rationale on the entry for trace analysis. User
         # simulator reads only ``content``, so this never leaks.
         if reasoning and reasoning.strip():
             msg_entry["reasoning"] = reasoning.strip()
@@ -548,7 +548,7 @@ class TutoringSession:
                 )
             return self._result(closing, "completed", reason="timeout")
 
-        # ── Max turns check ──  (aligned: _append_student_closing:642-678)
+        # ── Max turns check ──  (aligned: _append_user_closing:642-678)
         if self._turn >= self._max_turns:
             self._done = True
             self._completion_reason = "max_turns"
@@ -560,11 +560,11 @@ class TutoringSession:
                 )
             return self._result(closing, "completed", reason="max_turns")
 
-        # ── Generate student reply ──  (aligned: generate_next_user_input)
+        # ── Generate user reply ──  (aligned: generate_next_user_input)
         try:
-            reply, task_end = self._student_sim.generate_message(
+            reply, task_end = self._user_sim.generate_message(
                 self._conversation,
-                runtime_guidance=self._build_student_runtime_guidance(
+                runtime_guidance=self._build_user_runtime_guidance(
                     text,
                     artifact_digest,
                 ),
@@ -572,17 +572,17 @@ class TutoringSession:
                 workspace_path=self._workspace_path,
             )
         except Exception as exc:
-            from server.core.student_sim import StudentSimError
+            from server.core.user_sim import UserSimError
 
             error_type = (
                 exc.error_type
-                if isinstance(exc, StudentSimError)
+                if isinstance(exc, UserSimError)
                 else type(exc).__name__
             )
-            reason = f"student_sim_error:{error_type}"
+            reason = f"user_sim_error:{error_type}"
             sim_error = (
                 exc.summary
-                if isinstance(exc, StudentSimError)
+                if isinstance(exc, UserSimError)
                 else {
                     "final_error_type": type(exc).__name__,
                     "attempt_count": 0,
@@ -591,7 +591,7 @@ class TutoringSession:
                 }
             )
             logger.error(
-                "Student simulator failed at turn %d, terminating session: %s",
+                "User simulator failed at turn %d, terminating session: %s",
                 self._turn,
                 exc,
             )
@@ -600,29 +600,29 @@ class TutoringSession:
             return self._result("", "failed", reason=reason, sim_error=sim_error)
         self._conversation.append({"role": "user", "content": reply, "ts": time.time()})
 
-        # ── Student-end signal ──
+        # ── User-end signal ──
         # Primary: persona-emitted `task_end` flag (issue #139). The reply
         # still flows to the agent first; the session closes after.
         # Fallback: regex heuristic on the reply text (issues #132/#137) —
         # cheap belt-and-suspenders for personas that don't emit the flag.
         if task_end:
             self._done = True
-            self._completion_reason = "student_satisfied"
+            self._completion_reason = "user_satisfied"
             logger.info(
-                "Student persona emitted task_end=true at turn %d.", self._turn
+                "User persona emitted task_end=true at turn %d.", self._turn
             )
-            return self._result(reply, "completed", reason="student_satisfied")
+            return self._result(reply, "completed", reason="user_satisfied")
 
-        from server.core.student_sim import signaled_end_of_session
+        from server.core.user_sim import signaled_end_of_session
 
         if signaled_end_of_session(reply):
             self._done = True
-            self._completion_reason = "student_satisfied"
+            self._completion_reason = "user_satisfied"
             logger.info(
-                "Student signaled end-of-session at turn %d (regex fallback).",
+                "User signaled end-of-session at turn %d (regex fallback).",
                 self._turn,
             )
-            return self._result(reply, "completed", reason="student_satisfied")
+            return self._result(reply, "completed", reason="user_satisfied")
 
         return self._result(reply, "active")
 
@@ -632,7 +632,7 @@ class TutoringSession:
 
     @property
     def conversation(self) -> list[dict[str, str]]:
-        """Full conversation history (student=user, tutor=assistant)."""
+        """Full conversation history (user=user, tutor=assistant)."""
         return list(self._conversation)
 
     @property
@@ -686,9 +686,9 @@ class TutoringSession:
     ) -> str:
         """Mark the session complete outside ``send_message``.
 
-        Used by server-side timeout sweepers. We only append a student closing
-        when the latest visible message came from the tutor; if the student is
-        already the last speaker, a second consecutive student message would
+        Used by server-side timeout sweepers. We only append a user closing
+        when the latest visible message came from the tutor; if the user is
+        already the last speaker, a second consecutive user message would
         look artificial in the saved transcript.
         """
         if self._done:
@@ -718,21 +718,21 @@ class TutoringSession:
 
     def _result(
         self,
-        student_message: str,
+        user_message: str,
         status: str,
         reason: str | None = None,
         sim_error: dict | None = None,
     ) -> str:
         """Build JSON result dict.
 
-        New architecture: returns {student_message, status} only.
+        New architecture: returns {user_message, status} only.
         Does NOT expose turn or max_turns to Client.
         ``sim_error`` carries structured failure metadata when ``status="failed"``
         due to a simulator error, so callers can inspect failure details without
         parsing log files.
         """
         d: dict = {
-            "student_message": student_message or "",
+            "user_message": user_message or "",
             "status": status,
         }
         if reason:
@@ -758,15 +758,15 @@ class TutoringSession:
         latest_agent_text: str,
         shared_filenames: frozenset[str] = frozenset(),
     ) -> dict:
-        latest_student_text = ""
+        latest_user_text = ""
         if len(self._conversation) >= 2 and self._conversation[-2]["role"] == "user":
-            latest_student_text = self._conversation[-2]["content"]
+            latest_user_text = self._conversation[-2]["content"]
 
         try:
             new_snapshot, digest = build_visible_artifact_digest(
                 workspace_path=self._workspace_path,
                 previous_snapshot=self._workspace_snapshot,
-                latest_student_text=latest_student_text,
+                latest_user_text=latest_user_text,
                 latest_agent_text=latest_agent_text,
                 shared_filenames=shared_filenames,
             )
@@ -796,7 +796,7 @@ class TutoringSession:
 
         if chat_signals.get("assistant_pasted_code"):
             pending["needs_code"] = False
-        elif steering_signals.get("student_should_request_literal_code") or (
+        elif steering_signals.get("user_should_request_literal_code") or (
             request_signals.get("asks_for_code")
             and chat_signals.get("assistant_refers_to_hidden_artifacts")
             and not chat_signals.get("assistant_pasted_code")
@@ -805,7 +805,7 @@ class TutoringSession:
 
         if chat_signals.get("assistant_pasted_output"):
             pending["needs_output"] = False
-        elif steering_signals.get("student_should_request_literal_output") or (
+        elif steering_signals.get("user_should_request_literal_output") or (
             request_signals.get("asks_for_output")
             and chat_signals.get("assistant_refers_to_hidden_artifacts")
             and not chat_signals.get("assistant_pasted_output")
@@ -825,12 +825,12 @@ class TutoringSession:
             or pending["needs_code"]
             or pending["needs_output"]
         )
-        steering_signals["student_should_request_literal_code"] = bool(
-            steering_signals.get("student_should_request_literal_code")
+        steering_signals["user_should_request_literal_code"] = bool(
+            steering_signals.get("user_should_request_literal_code")
             or pending["needs_code"]
         )
-        steering_signals["student_should_request_literal_output"] = bool(
-            steering_signals.get("student_should_request_literal_output")
+        steering_signals["user_should_request_literal_output"] = bool(
+            steering_signals.get("user_should_request_literal_output")
             or pending["needs_output"]
         )
         steering_signals["avoid_new_branch"] = bool(
@@ -851,7 +851,7 @@ class TutoringSession:
             },
         }
 
-    def _build_student_runtime_guidance(
+    def _build_user_runtime_guidance(
         self,
         latest_agent_text: str,
         artifact_digest: Optional[dict] = None,
@@ -859,7 +859,7 @@ class TutoringSession:
         """Build steering notes for conversation pacing only.
 
         Artifact visibility signals (B1-B4) are intentionally excluded.
-        The student should not be coached to request code/output — if the
+        The user should not be coached to request code/output — if the
         agent fails to share artifacts, that is the agent's fault and
         should be penalised in evaluation, not compensated at runtime.
         Artifact digest data is still recorded in ``_artifact_debug_history``
@@ -892,17 +892,17 @@ class TutoringSession:
 
         return "\n".join(
             [
-                "Guide the student's next reply with these hidden steering notes:",
+                "Guide the user's next reply with these hidden steering notes:",
                 *signals,
             ]
         )
 
     def _safe_closing(self) -> str:
-        """Select a pre-written student closing message."""
-        return self._student_sim.generate_closing(self._conversation)
+        """Select a pre-written user closing message."""
+        return self._user_sim.generate_closing(self._conversation)
 
-    def inject_student_opening(self, opening: str) -> None:
-        """Inject the student opening into conversation without start_session.
+    def inject_user_opening(self, opening: str) -> None:
+        """Inject the user opening into conversation without start_session.
 
         Used by the reference harness when the opening is already in the
         agent's bootstrap prompt.
@@ -913,7 +913,7 @@ class TutoringSession:
             )
             self._session_info_called = True
 
-    def _get_student_opening(self) -> str:
+    def _get_user_opening(self) -> str:
         """Get the opening message for this task."""
-        opening = getattr(self._task, "student_opening", "")
+        opening = getattr(self._task, "user_opening", "")
         return opening or "Hi, I need help with this topic."

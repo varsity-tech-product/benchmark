@@ -189,7 +189,7 @@ class MCPProxy:
             log.result = (
                 "Error: Session time limit reached. "
                 "No further tool calls can be executed. "
-                "Please summarize your findings for the student."
+                "Please summarize your findings for the user."
             )
             log.success = False
             log.duration_ms = 0.0

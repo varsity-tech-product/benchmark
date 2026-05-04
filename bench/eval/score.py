@@ -110,8 +110,8 @@ def _bundle_to_flat_conversation(turns: list[ConversationTurn]) -> list[dict]:
     coordinator pipeline reads."""
     flat: list[dict] = []
     for turn in turns:
-        if turn.student is not None:
-            flat.append({"role": "user", "content": turn.student.text, "ts": ""})
+        if turn.user is not None:
+            flat.append({"role": "user", "content": turn.user.text, "ts": ""})
         if turn.agent.text:
             flat.append({"role": "assistant", "content": turn.agent.text, "ts": ""})
     return flat
