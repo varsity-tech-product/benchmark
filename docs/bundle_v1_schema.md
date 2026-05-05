@@ -90,7 +90,7 @@ Top-level fields in `1.0.0-alpha`:
 | `task_id` | string | Producer task identifier. |
 | `timestamps` | object | `created_at`, `started_at`, `completed_at`, `duration_seconds`. |
 | `agent_id` | string | Producer/harness/model identifier. |
-| `sandbox_digest` | object | Sandbox image, digest, and runtime metadata. |
+| `sandbox_digest` | object | Sandbox image URI, image digest when present, resource limits, data mounts, and runtime policy metadata. |
 | `telemetry` | object | Generic counters, costs, and timing metadata. |
 | `messages` | array | Generic conversation messages. |
 | `tool_calls` | array | Generic tool calls with arbitrary args/result JSON. |

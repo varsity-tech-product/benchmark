@@ -58,12 +58,15 @@ def build_background(task) -> str:
     behavioural directives or scoring hints.
     """
     env = task.environment if task.environment else None
-    sandbox_image = (env.sandbox_image or "") if env else ""
+    sandbox_image = (
+        getattr(env, "sandbox_image_uri", None) or getattr(env, "sandbox_image", "") or ""
+    ) if env else ""
     is_lean = "lean" in sandbox_image
     has_user_code = bool(task.sample_code)
     has_docs = bool(env.docs_available) if env else False
     has_data = bool(
         (env.data_files if env else None)
+        or (getattr(env, "data_mounts", None) if env else None)
         or getattr(task, "series", None)
         or getattr(task, "custom_data_key", None)
     )

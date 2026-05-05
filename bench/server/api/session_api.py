@@ -140,9 +140,72 @@ def _task_is_lean(task) -> bool:
     environment = getattr(task, "environment", None)
     if environment is None:
         return False
-    sandbox_image = str(getattr(environment, "sandbox_image", "") or "").lower()
+    sandbox_image = _environment_sandbox_image(environment).lower()
     core_tools = list(getattr(environment, "core_mcp_tools", []) or [])
     return "lean" in sandbox_image or "run_lean_backtest" in core_tools
+
+
+def _environment_sandbox_image(environment) -> str:
+    if environment is None:
+        return ""
+    spec = getattr(environment, "sandbox_spec", None)
+    image_uri = str(getattr(spec, "image_uri", "") or "").strip()
+    if image_uri:
+        return image_uri
+    return str(getattr(environment, "sandbox_image", "") or "")
+
+
+def _environment_resource_limits(environment) -> dict:
+    spec = getattr(environment, "sandbox_spec", None)
+    limits = getattr(spec, "resource_limits", None)
+    resolved = dict(limits or {})
+    if "network_enabled" not in resolved and bool(
+        getattr(environment, "network_enabled", False)
+    ):
+        resolved["network_enabled"] = True
+    return resolved
+
+
+def _environment_network_enabled(environment) -> bool:
+    limits = _environment_resource_limits(environment)
+    value = limits.get("network_enabled")
+    if value is None:
+        return bool(getattr(environment, "network_enabled", False))
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+    return bool(value)
+
+
+def _environment_sandbox_digest(environment) -> dict:
+    if environment is None:
+        return {}
+    from platform_api.contracts import DataMount
+    from platform_api.runtime import build_sandbox_digest
+
+    data_mounts = []
+    for item in getattr(environment, "data_mounts", []) or []:
+        if hasattr(item, "model_dump"):
+            payload = item.model_dump()
+        elif isinstance(item, dict):
+            payload = dict(item)
+        else:
+            payload = {
+                "uri": getattr(item, "uri"),
+                "target_path": getattr(item, "target_path"),
+                "read_only": getattr(item, "read_only", True),
+            }
+        data_mounts.append(
+            DataMount(
+                uri=str(payload["uri"]),
+                target_path=str(payload["target_path"]),
+                read_only=bool(payload.get("read_only", True)),
+            )
+        )
+    return build_sandbox_digest(
+        _environment_sandbox_image(environment),
+        resource_limits=_environment_resource_limits(environment),
+        data_mounts=tuple(data_mounts),
+    )
 
 
 def _effective_core_tool_names(task) -> list[str]:
@@ -175,7 +238,7 @@ def _lean_template_context(task, *, user_code_dir: Optional[str | Path]) -> dict
         "requires_code": bool(task.requires_code),
         "template_type": template_type,
         "expects_universe": template_type == "multi_symbol",
-        "sandbox_image": environment.sandbox_image if environment else "",
+        "sandbox_image": _environment_sandbox_image(environment),
         "user_code_available": bool(user_code_dir),
     }
 
@@ -489,7 +552,7 @@ class SessionState:
             "requires_code": bool(self.task.requires_code) if self.task else False,
             "docs_available": list(docs_available or []),
             "max_backtest_trials": max_backtest_trials,
-            "sandbox_image": environment.sandbox_image if environment else "",
+            "sandbox_image": _environment_sandbox_image(environment),
             "user_code_available": bool(user_code_dir),
         }
 
@@ -604,7 +667,7 @@ class SessionState:
             except RuntimeError as exc:
                 return {"error": str(exc)}
 
-            sandbox_img = task.environment.sandbox_image if task.environment else ""
+            sandbox_img = _environment_sandbox_image(task.environment)
             series = "lean" if sandbox_img and "lean" in sandbox_img else "normal"
             paths = ensure_data(
                 series=series,
@@ -636,7 +699,9 @@ class SessionState:
                 self.staged_temp_dirs.extend(sample_temp_dirs)
 
             base_sandbox_img = (
-                task.environment.sandbox_image if task.environment else None
+                _environment_sandbox_image(task.environment)
+                if task.environment
+                else None
             )
             self.container = self.container_manager.create_container(
                 task_id=f"{task_id}_{self.session_id[:8]}",
@@ -645,12 +710,20 @@ class SessionState:
                 user_code_dir=user_code_dir,
                 sandbox_image=(self._resume_layer_tag or base_sandbox_img),
                 network_enabled=(
-                    task.environment.network_enabled if task.environment else False
+                    _environment_network_enabled(task.environment)
+                    if task.environment
+                    else False
                 ),
                 lean_data_dir=paths.lean_data,
                 custom_data_dir=paths.custom_data,
+                data_mounts=task.environment.data_mounts if task.environment else [],
                 restore_workspace_snapshot=bool(self._resume_layer_tag),
                 resource_image=base_sandbox_img,
+                resource_limits=(
+                    _environment_resource_limits(task.environment)
+                    if task.environment
+                    else None
+                ),
             )
 
             local_tool_env = self._build_tool_env(
@@ -1460,6 +1533,9 @@ class SessionState:
             "simulator_cost": self.user_sim.total_cost if self.user_sim else 0.0,
             "duration_seconds": duration,
             "step_count": step_count,
+            "sandbox_digest": _environment_sandbox_digest(
+                self.task.environment if self.task else None
+            ),
             "latest_layer_tag": self._latest_layer_tag,
             "snapshot_tags": list(self._snapshot_tags),
             "snapshot_interval": self._snapshot_interval,
@@ -1554,6 +1630,9 @@ class SessionState:
             owner_github_login=self.owner_github_login,
             owner_email=self.owner_email,
             visibility=self.visibility,
+            sandbox_digest=_environment_sandbox_digest(
+                self.task.environment if self.task else None
+            ),
         )
         logger.info("Results saved: %s", result_dir)
 

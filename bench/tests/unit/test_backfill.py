@@ -98,6 +98,47 @@ def test_backfill_populates_top_level_fields(tmp_path):
     validate_bundle_path(out)
 
 
+def test_backfill_prefers_sandbox_spec_digest_and_data_mounts(tmp_path):
+    task_id = "S01_ma_crossover"
+    run_state = _write_run_state(tmp_path / "result", _minimal_run_state(task_id=task_id))
+    bench = tmp_path / "bench"
+    task_dir = bench / "tasks" / "layer2" / "strategy"
+    task_dir.mkdir(parents=True)
+    image = "quanttutor/lean@sha256:" + "d" * 64
+    (task_dir / f"{task_id}.json").write_text(
+        json.dumps(
+            {
+                "task_id": task_id,
+                "version": "2.3",
+                "category": "strategy",
+                "environment": {
+                    "sandbox_image": "legacy:image",
+                    "sandbox_spec": {
+                        "image_uri": image,
+                        "resource_limits": {"cpu_count": 2, "memory_mb": 1024},
+                    },
+                    "data_mounts": [
+                        {
+                            "uri": "hf://Varsity-Tech/quant-tutor-bench-data@"
+                            + "a" * 40,
+                            "target_path": "/data/lean",
+                            "read_only": True,
+                        }
+                    ],
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    bundle = bundle_io.read(backfill(run_state, bench_root=bench))
+
+    assert bundle.sandbox_digest["sandbox_image"] == image
+    assert bundle.sandbox_digest["digest"] == "sha256:" + "d" * 64
+    assert bundle.sandbox_digest["resource_limits"]["cpu_count"] == 2
+    assert bundle.sandbox_digest["data_mounts"][0]["target_path"] == "/data/lean"
+
+
 def test_backfill_writes_bundle_next_to_run_state_by_default(tmp_path):
     run_state = _write_run_state(tmp_path / "result", _minimal_run_state())
     out = backfill(run_state, bench_root=_bench_root_with_task(tmp_path, "S01_ma_crossover"))

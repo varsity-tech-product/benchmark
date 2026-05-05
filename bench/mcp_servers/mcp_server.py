@@ -24,6 +24,37 @@ from mcp.types import TextContent, Tool
 logger = logging.getLogger(__name__)
 
 
+def _environment_sandbox_image(environment) -> str:
+    if environment is None:
+        return ""
+    return str(
+        getattr(environment, "sandbox_image_uri", None)
+        or getattr(environment, "sandbox_image", "")
+        or ""
+    )
+
+
+def _environment_resource_limits(environment) -> dict:
+    spec = getattr(environment, "sandbox_spec", None)
+    limits = getattr(spec, "resource_limits", None)
+    resolved = dict(limits or {})
+    if "network_enabled" not in resolved and bool(
+        getattr(environment, "network_enabled", False)
+    ):
+        resolved["network_enabled"] = True
+    return resolved
+
+
+def _environment_network_enabled(environment) -> bool:
+    limits = _environment_resource_limits(environment)
+    value = limits.get("network_enabled")
+    if value is None:
+        return bool(getattr(environment, "network_enabled", False))
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+    return bool(value)
+
+
 def create_mcp_server(proxy, name: str = "QuantTutorBench") -> Server:
     """Create an MCP server backed by a configured MCPProxy.
 
@@ -111,7 +142,7 @@ def _build_standalone_server(task_id: str, persona_id: str, use_docker: bool = T
     persona = _load_persona(persona_id)
 
     # Download data
-    sandbox_img = task.environment.sandbox_image if task.environment else ""
+    sandbox_img = _environment_sandbox_image(task.environment)
     if sandbox_img and "lean" in sandbox_img:
         paths = ensure_data(series="lean", revision=DATASET_REVISION)
     else:
@@ -141,18 +172,26 @@ def _build_standalone_server(task_id: str, persona_id: str, use_docker: bool = T
         data_dir=staged_data_dir,
         docs_dir=staged_docs_dir,
         user_code_dir=user_code_dir,
-        sandbox_image=(task.environment.sandbox_image if task.environment else None),
+        sandbox_image=(
+            _environment_sandbox_image(task.environment) if task.environment else None
+        ),
         network_enabled=(
-            task.environment.network_enabled if task.environment else False
+            _environment_network_enabled(task.environment) if task.environment else False
         ),
         lean_data_dir=paths.lean_data,
         custom_data_dir=custom_data_dir,
+        data_mounts=task.environment.data_mounts if task.environment else [],
+        resource_limits=(
+            _environment_resource_limits(task.environment) if task.environment else None
+        ),
     )
 
     max_bt = task.environment.max_backtest_trials if task.environment else 0
     task_core_tools = list(task.environment.core_mcp_tools if task.environment else [])
-    sandbox_image = task.environment.sandbox_image if task.environment else ""
-    is_lean_task = "lean" in str(sandbox_image).lower() or "run_lean_backtest" in task_core_tools
+    sandbox_image = _environment_sandbox_image(task.environment)
+    is_lean_task = (
+        "lean" in str(sandbox_image).lower() or "run_lean_backtest" in task_core_tools
+    )
     if is_lean_task and "get_lean_template" not in task_core_tools:
         task_core_tools.append("get_lean_template")
 

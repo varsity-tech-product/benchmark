@@ -109,7 +109,12 @@ def _code_eval(
     try:
         from eval.programmatic.code_eval import evaluate_code_combined
 
-        sandbox_img = task.environment.sandbox_image if task.environment else ""
+        env = task.environment if task.environment else None
+        sandbox_img = (
+            getattr(env, "sandbox_image_uri", None)
+            or getattr(env, "sandbox_image", "")
+            or ""
+        )
         result = evaluate_code_combined(
             workspace_path=workspace_path,
             tool_logs=tool_logs,

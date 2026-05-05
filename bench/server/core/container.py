@@ -9,8 +9,8 @@ import tempfile
 import threading
 import time
 from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Optional
+from pathlib import Path, PurePosixPath
+from typing import Optional, Sequence
 
 
 @dataclass
@@ -88,6 +88,78 @@ class ContainerManager:
                 return preset
         return cls._RESOURCE_PRESETS["_default"]
 
+    @staticmethod
+    def _apply_resource_limits(
+        mem_limit: str,
+        cpu_limit: str,
+        resource_limits: dict | None,
+    ) -> tuple[str, str]:
+        if not resource_limits:
+            return mem_limit, cpu_limit
+        if resource_limits.get("memory"):
+            mem_limit = str(resource_limits["memory"])
+        elif resource_limits.get("memory_mb"):
+            mem_limit = f"{int(resource_limits['memory_mb'])}m"
+        cpu_value = resource_limits.get("cpus", resource_limits.get("cpu_count"))
+        if cpu_value not in (None, ""):
+            cpu_limit = str(cpu_value)
+        return mem_limit, cpu_limit
+
+    @staticmethod
+    def _normalize_data_mounts(data_mounts: Sequence[object] | None):
+        if not data_mounts:
+            return ()
+        from platform_api.contracts import DataMount
+
+        normalized = []
+        for item in data_mounts:
+            if isinstance(item, DataMount):
+                normalized.append(item)
+                continue
+            if hasattr(item, "model_dump"):
+                payload = item.model_dump()
+            elif isinstance(item, dict):
+                payload = dict(item)
+            else:
+                payload = {
+                    "uri": getattr(item, "uri"),
+                    "target_path": getattr(item, "target_path"),
+                    "read_only": getattr(item, "read_only", True),
+                }
+            normalized.append(
+                DataMount(
+                    uri=str(payload["uri"]),
+                    target_path=str(payload["target_path"]),
+                    read_only=bool(payload.get("read_only", True)),
+                )
+            )
+        return tuple(normalized)
+
+    @staticmethod
+    def _prepare_nested_mount_targets(
+        mounts: Sequence[object],
+        parent_mounts: Sequence[tuple[str | None, str]],
+    ) -> None:
+        for mount in mounts:
+            container_path = PurePosixPath(getattr(mount, "container_path"))
+            host_path = Path(str(getattr(mount, "host_path")))
+            for parent_host, parent_container in parent_mounts:
+                if not parent_host:
+                    continue
+                parent_path = PurePosixPath(parent_container)
+                try:
+                    relative_target = container_path.relative_to(parent_path)
+                except ValueError:
+                    continue
+                if not relative_target.parts:
+                    continue
+                staged_target = Path(parent_host, *relative_target.parts)
+                if host_path.is_dir():
+                    staged_target.mkdir(parents=True, exist_ok=True)
+                else:
+                    staged_target.parent.mkdir(parents=True, exist_ok=True)
+                    staged_target.touch(exist_ok=True)
+
     def create_container(
         self,
         task_id: str,
@@ -100,6 +172,8 @@ class ContainerManager:
         custom_data_dir: Optional[str] = None,
         restore_workspace_snapshot: bool = False,
         resource_image: Optional[str] = None,
+        data_mounts: Sequence[object] | None = None,
+        resource_limits: dict | None = None,
     ) -> ContainerInfo:
         """Create a sandboxed Docker container (or local workspace fallback).
 
@@ -115,6 +189,7 @@ class ContainerManager:
         """
         image = sandbox_image or self.docker_image
         workspace = tempfile.mkdtemp(prefix=f"qtb_{task_id}_")
+        normalized_data_mounts = self._normalize_data_mounts(data_mounts)
 
         if self.use_docker:
             if custom_data_dir and data_dir and os.path.isdir(data_dir):
@@ -131,10 +206,33 @@ class ContainerManager:
                 mounts.append(f"-v {lean_data_dir}:/lean/Data:ro")
             if custom_data_dir:
                 mounts.append(f"-v {custom_data_dir}:/data/custom:ro")
+            if normalized_data_mounts:
+                from platform_api.runtime import DataMountResolver
+
+                resolver = DataMountResolver(base_dir=Path.cwd())
+                resolved_data_mounts = resolver.resolve_all(normalized_data_mounts)
+                self._prepare_nested_mount_targets(
+                    resolved_data_mounts,
+                    (
+                        (data_dir, "/data"),
+                        (docs_dir, "/docs"),
+                        (user_code_dir, "/user_code"),
+                        (lean_data_dir, "/lean/Data"),
+                        (custom_data_dir, "/data/custom"),
+                    ),
+                )
+                mounts.extend(
+                    f"-v {mount.to_docker_volume()}" for mount in resolved_data_mounts
+                )
 
             network_flag = "--network bridge" if network_enabled else "--network none"
             network_mode = "bridge" if network_enabled else "none"
             mem_limit, cpu_limit = self._resolve_resources(resource_image or image)
+            mem_limit, cpu_limit = self._apply_resource_limits(
+                mem_limit,
+                cpu_limit,
+                resource_limits,
+            )
             cmd = (
                 f"docker run -d --name qtb_{task_id}_{int(time.time())} "
                 f"{network_flag} --cpus {cpu_limit} --memory {mem_limit} "

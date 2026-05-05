@@ -45,6 +45,7 @@ def save_run_state(
     owner_github_login: str = "",
     owner_email: str = "",
     visibility: str = "private",
+    sandbox_digest: Optional[dict] = None,
 ) -> Path:
     """Save ``run_state.json`` and ``.session_id``."""
     result_dir = Path(result_dir)
@@ -111,6 +112,7 @@ def save_run_state(
         "simulator_cost": simulator_cost,
         "artifact_debug_history": artifact_debug_history or [],
         "duration_seconds": duration_seconds,
+        "sandbox_digest": sandbox_digest or {},
         "key_results": key_results,
         "trace_summary": trace_summary,
         "step_count": step_count,

@@ -56,14 +56,24 @@ first on `sys.path`.
 
 - `contracts/` defines the three plugin ABCs: `TaskSuite`, `NPCProvider`, and
   `Evaluator`. Shared dataclasses include `EvalItem`, `EvalSample`,
-  `TranscriptMessage`, `ToolLog`, `FileArtifact`, `NPCReply`, `Score`, and
-  `EvaluatorMetadata`.
+  `TranscriptMessage`, `ToolLog`, `FileArtifact`, `NPCReply`, `Score`,
+  `EvaluatorMetadata`, `DataMount`, and `SandboxSpec`.
 - `runtime/` defines `SandboxRuntime`, `SandboxCreateRequest`, `SandboxMount`,
   `SandboxHandle`, `ExecResult`, `ToolRequest`, `ToolResult`, and `ToolRouter`.
   `DockerSandboxRuntime` owns image pulls, container creation with volume,
   CPU/memory, and network flags, process execution through `docker exec`, and
   routed tool calls. `LocalSandboxRuntime` covers unit tests and local
   development flows.
+- Stage 1 data-plane declarations use
+  `DataMount(uri, target_path, read_only=True)` with
+  `hf://owner/dataset@<40-char-commit-sha>`,
+  `s3://bucket/key?versionId=...`, and `file://...` URIs. `http://` and
+  `https://` sources stay outside Stage 1. Data mounts materialize to a local
+  cache or existing file path before bind mounting into the sandbox.
+- `SandboxSpec(image_uri, resource_limits)` is the TaskSuite-owned sandbox
+  declaration. Stage 1 records `cpu_count` or `cpus`, `memory_mb` or `memory`,
+  `wall_timeout_seconds`, and `network_enabled`. Reference base images are the
+  supported Stage 1 image policy; forked or untrusted images belong to Stage 2.
 - `plugins/loader.py` loads implementation triples from explicit
   `PluginSpec`s, JSON/TOML config files, and Python entry points under
   `quantagentbench.plugins`.
