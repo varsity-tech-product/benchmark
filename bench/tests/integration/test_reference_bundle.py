@@ -15,6 +15,7 @@ from platform_api.contracts import (
 )
 from platform_api.plugins import PluginBundle
 from server.api.session_api import SessionState
+from server.config.benchmark_config import DATASET_REVISION
 from server.reference import load_reference_bundle
 
 LEGACY_TASK = "A01_investment_advice"
@@ -119,9 +120,8 @@ def test_reference_task_suite_emits_hf_uri_without_local_cache(bench_root):
     uris = {mount.target_path: mount.uri for mount in item.data_mounts}
     assert (
         uris["/data/SPY_2018_2024.csv"]
-        == "hf://Varsity-Tech/quant-tutor-bench-data@"
-        "793bca3f8dc70d379d423358f4159eca2d8be83f/BDS/SPY_2018_2024.csv"
-        "?repo_type=dataset"
+        == f"hf://Varsity-Tech/quant-tutor-bench-data@{DATASET_REVISION}"
+        "/BDS/SPY_2018_2024.csv?repo_type=dataset"
     )
 
 

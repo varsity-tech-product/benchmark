@@ -1,8 +1,8 @@
 """Generate the v3.0-only data files referenced by the new L1/L2 tasks.
 
-These files don't ship in the legacy HuggingFace BDEX/A/X dataset because
-they were introduced for v3.0 tasks. We synthesize them with deterministic
-seeds so the benchmark is reproducible without external data fetches.
+These files were introduced for v3.0 tasks. We synthesize them with
+deterministic seeds anchored to the pinned BTC reference so the benchmark is
+reproducible across clean checkouts and refreshed HF caches.
 
 Outputs go to both:
   * bench/data/hf_cache/normal/BDEX/  (runtime data_search_dir)
@@ -17,18 +17,26 @@ Usage:
 
 from __future__ import annotations
 
-import os
+import shutil
+import sys
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
 BENCH_ROOT = Path(__file__).resolve().parents[1]
+if str(BENCH_ROOT) not in sys.path:
+    sys.path.insert(0, str(BENCH_ROOT))
+
+from config.benchmark_config import DATASET_REPO_ID, DATASET_REVISION  # noqa: E402
+
 BDEX = BENCH_ROOT / "data" / "hf_cache" / "normal" / "BDEX"
 NORMAL_X = BENCH_ROOT / "data" / "hf_cache" / "normal" / "X"
 FROZEN_MARKET = BENCH_ROOT / "data" / "frozen" / "market"
 FROZEN_STUDENT = BENCH_ROOT / "data" / "frozen" / "student_code"
 BTC_REF = FROZEN_MARKET / "BTCUSDT_1d_2021_2024.csv"
+BTC_REF_FALLBACK = BDEX / "BTCUSDT_1d_2021_2024.csv"
+NORMAL_CACHE_REVISION = BDEX.parent / ".hf_revision"
 
 CRYPTO_COLS = [
     "timestamp",
@@ -65,7 +73,7 @@ def _ohlcv_from_close(close: np.ndarray, rng: np.random.Generator) -> dict:
 
 def gen_altcoin(symbol: str, seed: int, beta: float, idio_vol: float) -> None:
     """Daily OHLCV correlated with BTC. Crypto schema, ms timestamps."""
-    btc = pd.read_csv(BTC_REF)
+    btc = pd.read_csv(_btc_reference_path())
     n = len(btc)
     rng = np.random.default_rng(seed)
     btc_ret = btc["close"].pct_change().fillna(0).to_numpy()
@@ -371,11 +379,42 @@ if __name__ == "__main__":
     (NORMAL_X / "stats_misuse.py").write_text(stats_misuse)
 
 
-def main() -> None:
-    if not BTC_REF.exists():
-        raise FileNotFoundError(
-            f"BTC reference not found at {BTC_REF}; cannot anchor altcoin generation"
+def _btc_reference_path() -> Path:
+    if BTC_REF.exists():
+        return BTC_REF
+    if BTC_REF_FALLBACK.exists():
+        try:
+            cache_revision = NORMAL_CACHE_REVISION.read_text(encoding="utf-8").strip()
+        except OSError:
+            cache_revision = ""
+        if cache_revision == DATASET_REVISION:
+            return BTC_REF_FALLBACK
+    return _materialize_btc_reference()
+
+
+def _materialize_btc_reference() -> Path:
+    try:
+        from huggingface_hub import hf_hub_download
+
+        downloaded = hf_hub_download(
+            repo_id=DATASET_REPO_ID,
+            repo_type="dataset",
+            revision=DATASET_REVISION,
+            filename="BDS/BTCUSDT_1d_2021_2024.csv",
         )
+    except Exception as exc:
+        raise FileNotFoundError(
+            "BTC reference not found at "
+            f"{BTC_REF} or a matching-revision {BTC_REF_FALLBACK}; "
+            "could not download pinned BTC reference from HuggingFace"
+        ) from exc
+    FROZEN_MARKET.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(downloaded, BTC_REF)
+    return BTC_REF
+
+
+def main() -> None:
+    _btc_reference_path()
 
     print("Generating altcoins...")
     gen_altcoin("SOLUSDT", seed=101, beta=0.85, idio_vol=0.04)
