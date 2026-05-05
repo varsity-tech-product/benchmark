@@ -1,0 +1,51 @@
+{
+  "task_id": "L1_DAT_05_feature_engineering_pipeline",
+  "version": "3.0",
+  "layer": "L1",
+  "category": "data_engineering",
+  "subcategory": "feature_engineering",
+  "task_type": "agent_execution",
+  "difficulty": "medium",
+  "description": "Build a feature-engineering pipeline from OHLCV data with explicit anti-leakage safeguards, then diagnose feature redundancy via correlation/VIF.",
+  "agent_prompt": "Build a feature-engineering pipeline in /workspace/src/ that constructs at least 10 diverse features from /workspace/data/AAPL_2018_2024.csv and /workspace/data/SPY_2018_2024.csv. Required feature classes: returns (1d, 5d, 20d), rolling volatility (5d, 20d), trend indicators (SMA20-SMA50 spread, RSI14), volume features (volume z-score, dollar volume), cross-sectional (AAPL_return - SPY_return), and lagged features. All rolling computations must use only past data (closed='left' or shift). Produce outputs at /workspace/output/: features.csv (date-indexed, all features, NaN at warmup), leakage_audit.json (for each feature: {name, formula, max_lookback_days, leakage_test_passed}), redundancy_diagnostics.json (correlation_matrix, vif_per_feature, redundant_pairs above 0.95 correlation), and feature_summary.csv (per-feature: n_obs, mean, std, n_missing).",
+  "environment": {
+    "data_files": [
+      "AAPL_2018_2024.csv",
+      "SPY_2018_2024.csv"
+    ],
+    "core_mcp_tools": [
+      "shell_exec",
+      "file_write",
+      "file_read",
+      "file_list",
+      "get_environment_info"
+    ],
+    "docs_available": [
+      "moving_averages.md",
+      "pandas_timeseries.md",
+      "statistical_tests.md"
+    ],
+    "sandbox_image": "quant-bench-env:v3.0",
+    "network_enabled": false
+  },
+  "ground_truth": {
+    "required_capabilities": [
+      "Construct diverse features across return, volatility, trend, volume, and cross-sectional categories",
+      "Apply explicit anti-leakage safeguards in feature construction",
+      "Audit each feature for lookback discipline",
+      "Diagnose feature redundancy using correlation and VIF"
+    ],
+    "expected_outputs": [
+      {"path": "output/features.csv", "type": "csv", "min_rows": 100},
+      {"path": "output/leakage_audit.json", "type": "json"},
+      {
+        "path": "output/redundancy_diagnostics.json",
+        "type": "json",
+        "required_keys": ["correlation_matrix", "vif_per_feature", "redundant_pairs"]
+      },
+      {"path": "output/feature_summary.csv", "type": "csv", "min_rows": 10}
+    ],
+    "verification_script": "tasks/test_scripts/L1/L1_DAT_05_feature_engineering_pipeline.py"
+  },
+  "timeout_minutes": 20
+}

@@ -1,0 +1,64 @@
+{
+  "task_id": "L1_DAT_06_data_ingestion",
+  "version": "3.0",
+  "layer": "L1",
+  "category": "data_engineering",
+  "subcategory": "ingestion",
+  "task_type": "agent_execution",
+  "difficulty": "medium",
+  "description": "Build a data ingestion pipeline that fetches both historical (REST/batch) and realtime (streaming/polling) market data, validates each, and surfaces ingestion-specific quality concerns (adjustments, latency, out-of-order).",
+  "agent_prompt": "Build a data ingestion pipeline in /workspace/src/ with two components: (1) historical fetcher: pull AAPL daily OHLCV (last 5 years) and one macroeconomic series (e.g. FRED CPI or unemployment) from public APIs, save as /workspace/output/AAPL_history.csv and /workspace/output/macro_series.csv, and produce /workspace/output/historical_validation.json with shape, dtypes, date_range, missing_count, has_adjustment_metadata flag; (2) realtime capture: poll a public quote/trade endpoint (or simulate with a local generator if no network — document choice) for 60 seconds, save timestamped records to /workspace/output/realtime_capture.csv with columns ts_recv, ts_event, symbol, price, size, side, then produce /workspace/output/realtime_diagnostics.json with n_records, latency_ms_p50, latency_ms_p99, n_out_of_order_by_ts_event, max_gap_ms_between_records. Write /workspace/output/ingestion_caveats.md documenting: adjusted-vs-unadjusted prices and corporate actions; macro release lag and revision risk; quote-vs-trade semantics and bid-ask spread; latency and out-of-order tick handling.",
+  "environment": {
+    "data_files": [],
+    "core_mcp_tools": [
+      "shell_exec",
+      "file_write",
+      "file_read",
+      "file_list",
+      "get_environment_info"
+    ],
+    "docs_available": [
+      "data_fetch_historical.md",
+      "data_fetch_realtime.md"
+    ],
+    "sandbox_image": "quant-bench-env:v3.0",
+    "network_enabled": true
+  },
+  "ground_truth": {
+    "required_capabilities": [
+      "Fetch historical price and macro data from public APIs and validate",
+      "Capture realtime (or simulated) market updates with timestamps",
+      "Diagnose latency and out-of-order tick issues",
+      "Document quant-specific ingestion caveats (adjustments, lag, microstructure)"
+    ],
+    "expected_outputs": [
+      {"path": "output/AAPL_history.csv", "type": "csv", "min_rows": 100},
+      {"path": "output/macro_series.csv", "type": "csv", "min_rows": 1},
+      {
+        "path": "output/historical_validation.json",
+        "type": "json",
+        "required_keys": ["shape", "date_range", "missing_count", "has_adjustment_metadata"]
+      },
+      {
+        "path": "output/realtime_capture.csv",
+        "type": "csv",
+        "required_columns": ["ts_recv", "ts_event", "symbol", "price", "size", "side"],
+        "min_rows": 1
+      },
+      {
+        "path": "output/realtime_diagnostics.json",
+        "type": "json",
+        "required_keys": [
+          "n_records",
+          "latency_ms_p50",
+          "latency_ms_p99",
+          "n_out_of_order_by_ts_event",
+          "max_gap_ms_between_records"
+        ]
+      },
+      {"path": "output/ingestion_caveats.md", "type": "markdown"}
+    ],
+    "verification_script": "tasks/test_scripts/L1/L1_DAT_06_data_ingestion.py"
+  },
+  "timeout_minutes": 20
+}

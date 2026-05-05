@@ -1,0 +1,53 @@
+{
+  "task_id": "L1_DAT_03_broken_data_feed_diagnosis",
+  "version": "3.0",
+  "layer": "L1",
+  "category": "data_engineering",
+  "subcategory": "anomaly_detection",
+  "task_type": "agent_execution",
+  "difficulty": "hard",
+  "description": "Diagnose multiple simultaneous data-feed issues in a corrupted OHLCV file, map symptoms to root causes, and produce a remediation checklist with before/after evidence.",
+  "agent_prompt": "Diagnose data-feed problems in /workspace/data/AAPL_dirty.csv (OHLCV daily). Identify at least three distinct issue classes from the following list and document each: missing rows, duplicate timestamps, price outliers (likely corporate action artifacts), volume spikes/zeros, timezone drift, OHLC inconsistencies (e.g. high < close). For each issue identified: (1) write a diagnostic counter to /workspace/output/diagnostics.json under key issues (each entry: {issue_type, count, sample_indices, suspected_root_cause}); (2) generate a fixed dataset at /workspace/output/AAPL_clean.csv applying explicit remediation (drop, interpolate, adjust, flag — your choice but document); (3) produce a remediation checklist at /workspace/output/remediation_checklist.md listing each issue, the rule applied, and a validation check that should pass on the clean output. Also produce /workspace/output/before_after_summary.csv comparing row count, date range, missing_count, duplicate_count, outlier_count between dirty and clean.",
+  "environment": {
+    "data_files": [
+      "AAPL_dirty.csv"
+    ],
+    "core_mcp_tools": [
+      "shell_exec",
+      "file_write",
+      "file_read",
+      "file_list",
+      "get_environment_info"
+    ],
+    "docs_available": [
+      "pandas_timeseries.md",
+      "pandas_data_loading.md"
+    ],
+    "sandbox_image": "quant-bench-env:v3.0",
+    "network_enabled": false
+  },
+  "ground_truth": {
+    "required_capabilities": [
+      "Identify multiple classes of data-feed issues",
+      "Map symptoms to plausible root causes such as corporate actions, timezone drift, or feed errors",
+      "Apply explicit remediation with before/after evidence",
+      "Produce a reusable validation checklist"
+    ],
+    "expected_outputs": [
+      {
+        "path": "output/diagnostics.json",
+        "type": "json",
+        "required_keys": ["issues"]
+      },
+      {"path": "output/AAPL_clean.csv", "type": "csv", "min_rows": 100},
+      {"path": "output/remediation_checklist.md", "type": "markdown"},
+      {
+        "path": "output/before_after_summary.csv",
+        "type": "csv",
+        "min_rows": 1
+      }
+    ],
+    "verification_script": "tasks/test_scripts/L1/L1_DAT_03_broken_data_feed_diagnosis.py"
+  },
+  "timeout_minutes": 25
+}

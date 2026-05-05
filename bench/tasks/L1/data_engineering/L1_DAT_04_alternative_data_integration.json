@@ -1,0 +1,64 @@
+{
+  "task_id": "L1_DAT_04_alternative_data_integration",
+  "version": "3.0",
+  "layer": "L1",
+  "category": "data_engineering",
+  "subcategory": "alt_data_merge",
+  "task_type": "agent_execution",
+  "difficulty": "hard",
+  "description": "Align irregular alternative data with price data using point-in-time discipline, normalize and handle missing values, and evaluate information content via correlation diagnostics.",
+  "agent_prompt": "Merge alternative data with price data using point-in-time discipline. Inputs: /workspace/data/AAPL_2018_2024.csv (daily OHLCV) and /workspace/data/sentiment_data.csv (irregular timestamps with sentiment_score column). Build a merge pipeline in /workspace/src/ that: (1) aligns sentiment to AAPL daily index with explicit lag (e.g. T+1 to avoid look-ahead from intraday-published sentiment); (2) handles missing sentiment days by forward-fill within a configurable max_ffill_days then leaving NaN beyond; (3) normalizes sentiment to z-score using only past data (rolling 90d mean/std); (4) verifies the merged dataset has no future leakage (assert sentiment value at date T was published <= T-1 close). Produce outputs at /workspace/output/: merged.csv (date, AAPL_open, AAPL_close, AAPL_return_t1, sentiment_raw, sentiment_zscore_pit), leakage_check.json (passed: bool, evidence: list of timestamp-pair examples), info_content.json (correlation between sentiment_zscore_pit and forward-1d AAPL return, including p-value and bootstrap CI), and merge_diagnostics.json (n_aapl_days, n_sentiment_days, n_merged, n_ffilled, n_dropped).",
+  "environment": {
+    "data_files": [
+      "AAPL_2018_2024.csv",
+      "sentiment_data.csv"
+    ],
+    "core_mcp_tools": [
+      "shell_exec",
+      "file_write",
+      "file_read",
+      "file_list",
+      "get_environment_info"
+    ],
+    "docs_available": [
+      "pandas_timeseries.md",
+      "statistical_tests.md"
+    ],
+    "sandbox_image": "quant-bench-env:v3.0",
+    "network_enabled": false
+  },
+  "ground_truth": {
+    "required_capabilities": [
+      "Align irregular alternative data with price data using explicit lag",
+      "Apply point-in-time discipline to prevent look-ahead leakage",
+      "Normalize alternative data using only past values",
+      "Test information content with correlation and significance",
+      "Produce structured merge diagnostics"
+    ],
+    "expected_outputs": [
+      {
+        "path": "output/merged.csv",
+        "type": "csv",
+        "required_columns": ["date", "sentiment_raw", "sentiment_zscore_pit"],
+        "min_rows": 100
+      },
+      {
+        "path": "output/leakage_check.json",
+        "type": "json",
+        "required_keys": ["passed", "evidence"]
+      },
+      {
+        "path": "output/info_content.json",
+        "type": "json",
+        "required_keys": ["correlation", "p_value"]
+      },
+      {
+        "path": "output/merge_diagnostics.json",
+        "type": "json",
+        "required_keys": ["n_aapl_days", "n_sentiment_days", "n_merged"]
+      }
+    ],
+    "verification_script": "tasks/test_scripts/L1/L1_DAT_04_alternative_data_integration.py"
+  },
+  "timeout_minutes": 25
+}

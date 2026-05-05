@@ -1,0 +1,59 @@
+{
+  "task_id": "L1_DBG_05_statistical_test_misuse",
+  "version": "3.0",
+  "layer": "L1",
+  "category": "debug",
+  "subcategory": "statistical_methodology",
+  "task_type": "agent_execution",
+  "difficulty": "medium",
+  "description": "Identify three statistical methodology bugs in code that tests a trading signal: multiple-testing without correction, autocorrelation-violating i.i.d. assumption, and one-sided vs two-sided test misuse.",
+  "sample_code": "student_code/stats_misuse.py",
+  "agent_prompt": "Read the buggy stats code at /workspace/student_code/stats_misuse.py running on /workspace/data/AAPL_2018_2024.csv. The script tests 100 candidate parameter combinations of a momentum signal and claims 'we found a significant signal at p < 0.01'. The code has THREE statistical methodology bugs: (B1) it runs a t-test on each of 100 parameter combinations and picks the most significant — multiple-testing problem with no Bonferroni or FDR correction; (B2) the t-test on the chosen strategy's daily returns assumes i.i.d. observations, but the returns are autocorrelated (Ljung-Box test should reject), inflating apparent significance; (B3) the result is reported as one-sided p < 0.01 even though the original hypothesis was two-sided (the sign of the effect was not pre-registered). Tasks: (1) identify all three issues and write /workspace/output/stats_diagnosis.md explaining each misuse with the relevant statistical concept; (2) produce /workspace/output/corrected_stats.py applying Bonferroni correction across the 100 tests, a permutation-based test on the chosen strategy that does not assume i.i.d., and the correct two-sided framing; (3) write /workspace/output/p_values_compared.json with keys naive_pvalue, bonferroni_corrected_pvalue, permutation_pvalue, two_sided_corrected_pvalue, and honest_significance_at_005 (boolean: significant after all corrections at alpha=0.05).",
+  "environment": {
+    "data_files": [
+      "AAPL_2018_2024.csv"
+    ],
+    "core_mcp_tools": [
+      "shell_exec",
+      "file_write",
+      "file_read",
+      "file_list",
+      "get_environment_info"
+    ],
+    "docs_available": [
+      "statistical_tests.md",
+      "signal_evaluation.md"
+    ],
+    "sandbox_image": "quant-bench-env:v3.0",
+    "network_enabled": false
+  },
+  "ground_truth": {
+    "required_capabilities": [
+      "Identify multiple-testing problem and apply correction",
+      "Detect i.i.d. violation via autocorrelation diagnostic",
+      "Use a permutation-based test that does not assume i.i.d.",
+      "Apply correct two-sided versus one-sided framing",
+      "Compare naive versus corrected p-values and judge honest significance"
+    ],
+    "expected_outputs": [
+      {"path": "output/stats_diagnosis.md", "type": "markdown"},
+      {"path": "output/corrected_stats.py", "type": "python"},
+      {
+        "path": "output/p_values_compared.json",
+        "type": "json",
+        "required_keys": [
+          "naive_pvalue",
+          "bonferroni_corrected_pvalue",
+          "permutation_pvalue",
+          "two_sided_corrected_pvalue",
+          "honest_significance_at_005"
+        ],
+        "constraints": [
+          {"key": "bonferroni_corrected_pvalue", "op": ">=", "ref": "naive_pvalue"}
+        ]
+      }
+    ],
+    "verification_script": "tasks/test_scripts/L1/L1_DBG_05_statistical_test_misuse.py"
+  },
+  "timeout_minutes": 20
+}

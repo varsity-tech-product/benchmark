@@ -1,0 +1,65 @@
+{
+  "task_id": "L1_ALR_01_volume_microstructure_alpha",
+  "version": "3.0",
+  "layer": "L1",
+  "category": "alpha_research",
+  "subcategory": "microstructure",
+  "task_type": "agent_execution",
+  "difficulty": "hard",
+  "description": "Engineer at least one alpha signal from non-price BTCUSDT futures microstructure data (volume, taker buy/sell, trade count) and evaluate it via IC, quantile spread, horizon decay, and subperiod robustness.",
+  "agent_prompt": "Research a microstructure-based alpha on BTCUSDT futures using only non-price (volume / orderflow) features. Inputs at /workspace/data/: BTCUSDT_1d_2021_2024.csv, BTCUSDT_1h_2023_2024.csv, BTCUSDT_5m_2024Q4.csv. Each file contains columns including taker_buy_volume, taker_sell_volume, trade_count alongside OHLCV. Tasks: (1) engineer at least 3 candidate signals with explicit mathematical definitions documented at /workspace/output/signal_definitions.md (examples: taker buy/sell imbalance ratio, volume z-score residual after removing rolling mean, trade-count surprise, cross-timeframe orderflow divergence); (2) for each signal, evaluate predictive content vs forward 1d returns using: rank IC (mean and t-stat), top-vs-bottom quintile return spread (annualized), hit rate; write /workspace/output/signal_evaluation.csv with columns signal_name, ic_mean, ic_tstat, q5_q1_spread_ann, hit_rate; (3) horizon decay analysis — recompute IC at horizons {1d, 3d, 5d, 10d} and write /workspace/output/horizon_decay.csv (signal_name × horizon → IC); (4) subperiod robustness — split sample into 3 calendar periods and report per-period IC; write /workspace/output/subperiod_robustness.csv; (5) deployment constraints memo at /workspace/output/deployment_notes.md identifying execution cost sensitivity, signal decay speed, capacity, or stability concern for each signal, with quantitative evidence from steps 2-4.",
+  "environment": {
+    "data_files": [
+      "BTCUSDT_1d_2021_2024.csv",
+      "BTCUSDT_1h_2023_2024.csv",
+      "BTCUSDT_5m_2024Q4.csv"
+    ],
+    "core_mcp_tools": [
+      "shell_exec",
+      "file_write",
+      "file_read",
+      "file_list",
+      "get_environment_info"
+    ],
+    "docs_available": [
+      "alpha_research_methodology.md",
+      "signal_evaluation.md",
+      "crypto_futures_basics.md"
+    ],
+    "sandbox_image": "quant-bench-env:v3.0",
+    "network_enabled": false
+  },
+  "ground_truth": {
+    "required_capabilities": [
+      "Engineer derived features from non-price microstructure data with explicit mathematical definitions",
+      "Evaluate signal quality using rank IC, quantile return spread, and hit rate",
+      "Analyze IC decay across multiple forward horizons",
+      "Test robustness across calendar subperiods",
+      "Identify deployment constraints supported by quantitative evidence"
+    ],
+    "expected_outputs": [
+      {"path": "output/signal_definitions.md", "type": "markdown"},
+      {
+        "path": "output/signal_evaluation.csv",
+        "type": "csv",
+        "required_columns": ["signal_name", "ic_mean", "ic_tstat", "q5_q1_spread_ann", "hit_rate"],
+        "min_rows": 3
+      },
+      {
+        "path": "output/horizon_decay.csv",
+        "type": "csv",
+        "required_columns": ["signal_name"],
+        "min_rows": 3
+      },
+      {
+        "path": "output/subperiod_robustness.csv",
+        "type": "csv",
+        "required_columns": ["signal_name"],
+        "min_rows": 3
+      },
+      {"path": "output/deployment_notes.md", "type": "markdown"}
+    ],
+    "verification_script": "tasks/test_scripts/L1/L1_ALR_01_volume_microstructure_alpha.py"
+  },
+  "timeout_minutes": 50
+}

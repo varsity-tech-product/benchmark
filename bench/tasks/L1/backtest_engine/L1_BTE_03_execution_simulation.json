@@ -1,0 +1,73 @@
+{
+  "task_id": "L1_BTE_03_execution_simulation",
+  "version": "3.0",
+  "layer": "L1",
+  "category": "backtest_engine",
+  "subcategory": "execution_simulation",
+  "task_type": "agent_execution",
+  "difficulty": "hard",
+  "description": "Build a futures backtest engine with realistic execution simulation for a BTCUSDT breakout strategy, reporting gross versus net performance with each cost component (slippage, maker/taker fees, funding) broken out separately.",
+  "agent_prompt": "Build a futures backtest engine in /workspace/src/ that simulates realistic execution costs for a BTCUSDT breakout strategy. Inputs: BTCUSDT_1d_2021_2024.csv, BTCUSDT_1h_2023_2024.csv, BTCUSDT_5m_2024Q4.csv, BTCUSDT_funding_2021_2024.csv at /workspace/data/. The engine must include: (1) a configurable slippage model (e.g. proportional to spread or volatility), (2) separate maker and taker fee accounting, (3) 8-hour funding-rate payments applied to open positions using the provided funding series. Implement a simple breakout strategy (e.g. close above N-day high → long; close below N-day low → flat) on daily bars. Run the backtest end-to-end and write outputs to /workspace/output/: cost_breakdown.json (keys: gross_return, net_after_fees_return, net_after_funding_return, slippage_cost_total, maker_fee_total, taker_fee_total, funding_paid_total), trade_log.csv with per-trade fill price, side, fee_paid, fee_type, and equity_curves.csv with gross and net columns aligned to dates.",
+  "environment": {
+    "data_files": [
+      "BTCUSDT_1d_2021_2024.csv",
+      "BTCUSDT_1h_2023_2024.csv",
+      "BTCUSDT_5m_2024Q4.csv",
+      "BTCUSDT_funding_2021_2024.csv"
+    ],
+    "core_mcp_tools": [
+      "shell_exec",
+      "file_write",
+      "file_read",
+      "file_list",
+      "get_environment_info"
+    ],
+    "docs_available": [
+      "backtesting_101.md",
+      "risk_metrics.md",
+      "crypto_futures_basics.md"
+    ],
+    "sandbox_image": "quant-bench-env:v3.0",
+    "network_enabled": false
+  },
+  "ground_truth": {
+    "required_capabilities": [
+      "Build a fill or execution simulator with configurable slippage",
+      "Model maker and taker fee differentiation",
+      "Account for funding-rate payments on open futures positions",
+      "Break down performance into gross, net-of-fees, and net-of-fees-and-funding components",
+      "Produce a trade-level log including fee attribution"
+    ],
+    "expected_outputs": [
+      {
+        "path": "output/cost_breakdown.json",
+        "type": "json",
+        "required_keys": [
+          "gross_return",
+          "net_after_fees_return",
+          "net_after_funding_return",
+          "slippage_cost_total",
+          "maker_fee_total",
+          "taker_fee_total",
+          "funding_paid_total"
+        ],
+        "constraints": [
+          {"key": "net_after_fees_return", "op": "<=", "ref": "gross_return"},
+          {"key": "net_after_funding_return", "op": "<=", "ref": "net_after_fees_return"}
+        ]
+      },
+      {
+        "path": "output/trade_log.csv",
+        "type": "csv",
+        "required_columns": ["fill_price", "side", "fee_paid", "fee_type"]
+      },
+      {
+        "path": "output/equity_curves.csv",
+        "type": "csv",
+        "required_columns": ["gross", "net"]
+      }
+    ],
+    "verification_script": "tasks/test_scripts/L1/L1_BTE_03_execution_simulation.py"
+  },
+  "timeout_minutes": 40
+}

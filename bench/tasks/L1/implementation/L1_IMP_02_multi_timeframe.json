@@ -1,0 +1,59 @@
+{
+  "task_id": "L1_IMP_02_multi_timeframe",
+  "version": "3.0",
+  "layer": "L1",
+  "category": "implementation",
+  "subcategory": "lean_multi_timeframe",
+  "task_type": "agent_execution",
+  "difficulty": "hard",
+  "description": "Implement a multi-timeframe LEAN C# strategy that uses 4h bars for trend direction (EMA20) and 1h bars for entry timing (RSI14), applied across ~20 liquid crypto futures with per-symbol dual-timeframe state.",
+  "agent_prompt": "Implement a LEAN C# algorithm in /workspace/src/MultiTimeframe.cs running a multi-timeframe strategy on the top-20 liquid symbols from /workspace/data/universe.json. Requirements: (1) subscribe to all 20 symbols at hourly resolution; (2) use Consolidate() to build 4h bars per symbol; (3) maintain a Dictionary<Symbol, IndicatorPair> with EMA(20) on 4h bars and RSI(14) on 1h bars per symbol; (4) entry rule: 1h RSI signal must agree with 4h EMA trend direction (long: price > EMA20 4h AND RSI 1h < 30; short: price < EMA20 4h AND RSI 1h > 70); (5) ensure 4h indicators only update when a 4h bar completes (no mid-period updates); (6) per-symbol position state with stop-loss; (7) equal-weight sizing across active positions. Run via run_lean_backtest with 3 years of hourly data. Outputs at /workspace/output/: backtest_summary.json (total_return, sharpe, max_drawdown, n_trades), trade_log.csv (per-trade with timestamp, symbol, side, price, qty, indicator_4h_value, indicator_1h_value), per_symbol_summary.csv.",
+  "environment": {
+    "data_files": [
+      "universe.json"
+    ],
+    "core_mcp_tools": [
+      "shell_exec",
+      "file_write",
+      "file_read",
+      "file_list",
+      "get_environment_info",
+      "run_lean_backtest",
+      "submit_trial",
+      "select_submission",
+      "get_trial_status"
+    ],
+    "docs_available": [
+      "lean_algorithm_guide.md",
+      "moving_averages.md"
+    ],
+    "sandbox_image": "quant-bench-env:v3.0-lean",
+    "network_enabled": false,
+    "max_backtest_trials": 5
+  },
+  "ground_truth": {
+    "required_capabilities": [
+      "Subscribe at hourly resolution and Consolidate() to 4h per symbol",
+      "Manage per-symbol dual-timeframe indicator state (EMA + RSI)",
+      "Implement multi-timeframe entry: 4h trend filter gates 1h entry signal",
+      "Ensure 4h indicators only update on 4h bar completion",
+      "Manage per-symbol position state with sizing across multiple active positions",
+      "Produce per-symbol and universe-level results"
+    ],
+    "expected_outputs": [
+      {
+        "path": "output/backtest_summary.json",
+        "type": "json",
+        "required_keys": ["total_return", "sharpe", "max_drawdown", "n_trades"]
+      },
+      {
+        "path": "output/trade_log.csv",
+        "type": "csv",
+        "required_columns": ["timestamp", "symbol", "side", "price", "qty", "indicator_4h_value", "indicator_1h_value"]
+      },
+      {"path": "output/per_symbol_summary.csv", "type": "csv", "min_rows": 1}
+    ],
+    "verification_script": "tasks/test_scripts/L1/L1_IMP_02_multi_timeframe.py"
+  },
+  "timeout_minutes": 35
+}

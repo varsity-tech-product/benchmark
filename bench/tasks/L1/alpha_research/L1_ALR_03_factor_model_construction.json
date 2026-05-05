@@ -1,0 +1,68 @@
+{
+  "task_id": "L1_ALR_03_factor_model_construction",
+  "version": "3.0",
+  "layer": "L1",
+  "category": "alpha_research",
+  "subcategory": "factor_model",
+  "task_type": "agent_execution",
+  "difficulty": "hard",
+  "description": "Construct a 3-factor cross-sectional model on a 30-stock SP500 panel: estimate factor loadings via time-series regression, compute factor returns, and run residual diagnostics including alpha t-stats.",
+  "agent_prompt": "Build a 3-factor cross-sectional model in /workspace/src/. Inputs at /workspace/data/: sp500_top30_2018_2024.csv (daily prices for 30 stocks), market_cap_2018_2024.csv (per-stock daily market cap), book_to_price_2018_2024.csv (per-stock daily book/price ratio). Construct three factor proxies daily: (1) market = equal-weight return of the 30 stocks; (2) size = top-15 small-cap minus top-15 large-cap return (cross-sectional sort each day by market cap); (3) value = top-15 high B/P minus top-15 low B/P return. For each stock estimate factor loadings via OLS time-series regression of stock excess return (use risk-free rate = 0 for simplicity) on the three factors over the full sample, then compute residuals, R^2, and the alpha t-statistic. Write outputs to /workspace/output/: factor_loadings.csv (one row per stock with columns ticker, beta_market, beta_size, beta_value, r_squared, alpha_pct_ann, alpha_tstat), factor_returns.csv (date-indexed daily market_ret, size_ret, value_ret), residual_analysis.json (mean_r_squared, max_r_squared, min_r_squared, n_stocks_with_alpha_tstat_above_2, mean_abs_residual_bps), model_diagnostics.md briefly explaining factor construction choices and any stocks with notably high residual variance.",
+  "environment": {
+    "data_files": [
+      "sp500_top30_2018_2024.csv",
+      "market_cap_2018_2024.csv",
+      "book_to_price_2018_2024.csv"
+    ],
+    "core_mcp_tools": [
+      "shell_exec",
+      "file_write",
+      "file_read",
+      "file_list",
+      "get_environment_info"
+    ],
+    "docs_available": [
+      "alpha_research_methodology.md",
+      "statistical_tests.md"
+    ],
+    "sandbox_image": "quant-bench-env:v3.0",
+    "network_enabled": false
+  },
+  "ground_truth": {
+    "required_capabilities": [
+      "Construct daily factor portfolios from cross-sectional sorts on market cap and book/price",
+      "Estimate factor loadings via OLS time-series regression",
+      "Compute residuals, R-squared, and alpha t-statistics",
+      "Diagnose model fit across the panel",
+      "Document factor construction choices in writing"
+    ],
+    "expected_outputs": [
+      {
+        "path": "output/factor_loadings.csv",
+        "type": "csv",
+        "required_columns": ["ticker", "beta_market", "beta_size", "beta_value", "r_squared", "alpha_pct_ann", "alpha_tstat"],
+        "min_rows": 30
+      },
+      {
+        "path": "output/factor_returns.csv",
+        "type": "csv",
+        "required_columns": ["date", "market_ret", "size_ret", "value_ret"],
+        "min_rows": 100
+      },
+      {
+        "path": "output/residual_analysis.json",
+        "type": "json",
+        "required_keys": [
+          "mean_r_squared",
+          "max_r_squared",
+          "min_r_squared",
+          "n_stocks_with_alpha_tstat_above_2",
+          "mean_abs_residual_bps"
+        ]
+      },
+      {"path": "output/model_diagnostics.md", "type": "markdown"}
+    ],
+    "verification_script": "tasks/test_scripts/L1/L1_ALR_03_factor_model_construction.py"
+  },
+  "timeout_minutes": 40
+}
