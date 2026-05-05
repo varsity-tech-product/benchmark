@@ -1,4 +1,4 @@
-"""Tests for run_state.json -> bundle.json v1 backfill."""
+"""Tests for run_state.json -> Bundle v1 alpha backfill."""
 
 from __future__ import annotations
 
@@ -10,6 +10,8 @@ import pytest
 
 from eval.backfill.run_state_to_bundle import backfill, main
 from eval.contracts import bundle_io
+from eval.contracts.bundle import REFERENCE_ARTIFACT_KEY, SCHEMA_VERSION
+from eval.contracts.bundle_schema import validate_bundle_path
 
 
 def _write_run_state(result_dir: Path, payload: dict) -> Path:
@@ -54,15 +56,25 @@ def _minimal_run_state(**overrides) -> dict:
 
 
 def _bench_root_with_task(tmp_path: Path, task_id: str) -> Path:
-    """Build a fake bench root with one task JSON the backfill can find."""
     bench = tmp_path / "bench"
     task_dir = bench / "tasks" / "layer2" / "strategy"
     task_dir.mkdir(parents=True)
     (task_dir / f"{task_id}.json").write_text(
-        json.dumps({"task_id": task_id, "version": "2.2", "category": "strategy"}),
+        json.dumps(
+            {
+                "task_id": task_id,
+                "version": "2.2",
+                "category": "strategy",
+                "environment": {"sandbox_image": "quant-tutor-env:v2.2"},
+            }
+        ),
         encoding="utf-8",
     )
     return bench
+
+
+def _qtb(bundle):
+    return bundle.artifacts[REFERENCE_ARTIFACT_KEY]
 
 
 def test_backfill_populates_top_level_fields(tmp_path):
@@ -73,13 +85,17 @@ def test_backfill_populates_top_level_fields(tmp_path):
     out = backfill(run_state, bench_root=bench_root)
     bundle = bundle_io.read(out)
 
-    assert bundle.schema_version == "1.0"
+    assert bundle.schema_version == SCHEMA_VERSION
+    assert bundle.bundle_id == state["session_id"]
     assert bundle.task_id == state["task_id"]
-    assert bundle.task_version == "2.2"
-    assert bundle.task_spec_hash  # non-empty sha256
+    assert bundle.agent_id == "ref_harness"
+    assert bundle.sandbox_digest["sandbox_image"] == "quant-tutor-env:v2.2"
+    assert _qtb(bundle)["task_version"] == "2.2"
+    assert _qtb(bundle)["task_spec_hash"]
     assert bundle.persona_id == state["persona_id"]
-    assert bundle.session.session_id == state["session_id"]
-    assert bundle.session.termination_reason == "tc_pass"
+    assert bundle.session_id == state["session_id"]
+    assert bundle.termination_reason == "tc_pass"
+    validate_bundle_path(out)
 
 
 def test_backfill_writes_bundle_next_to_run_state_by_default(tmp_path):
@@ -89,7 +105,25 @@ def test_backfill_writes_bundle_next_to_run_state_by_default(tmp_path):
     assert out.exists()
 
 
-def test_conversation_pairs_alternating_user_assistant(tmp_path):
+def test_backfill_legacy_bundle_id_is_unique_without_session_or_run_id(tmp_path):
+    bench_root = _bench_root_with_task(tmp_path, "B01_interpret_metrics")
+    state = _minimal_run_state(
+        task_id="B01_interpret_metrics",
+        conversation=_conv_pair("u", "a"),
+    )
+    del state["session_id"]
+    left = _write_run_state(tmp_path / "results" / "agent_a" / "result", state)
+    right = _write_run_state(tmp_path / "results" / "agent_b" / "result", state)
+
+    left_bundle = bundle_io.read(backfill(left, bench_root=bench_root))
+    right_bundle = bundle_io.read(backfill(right, bench_root=bench_root))
+
+    assert left_bundle.bundle_id.startswith("legacy-B01_interpret_metrics-")
+    assert right_bundle.bundle_id.startswith("legacy-B01_interpret_metrics-")
+    assert left_bundle.bundle_id != right_bundle.bundle_id
+
+
+def test_conversation_messages_preserve_order_and_turn_index(tmp_path):
     state = _minimal_run_state(
         conversation=_conv_pair("u0", "a0", ts_start=100)
         + _conv_pair("u1", "a1", ts_start=200),
@@ -98,19 +132,13 @@ def test_conversation_pairs_alternating_user_assistant(tmp_path):
     bundle = bundle_io.read(
         backfill(run_state, bench_root=_bench_root_with_task(tmp_path, "S01_ma_crossover"))
     )
-    assert [t.turn for t in bundle.conversation] == [1, 2]
-    assert bundle.conversation[0].user.text == "u0"
-    assert bundle.conversation[0].agent.text == "a0"
-    assert bundle.conversation[1].user.text == "u1"
-    assert bundle.conversation[1].agent.text == "a1"
-    assert bundle.session.turn_count == 2
+    assert [m.role for m in bundle.messages] == ["user", "assistant", "user", "assistant"]
+    assert [m.content for m in bundle.messages] == ["u0", "a0", "u1", "a1"]
+    assert [m.turn_index for m in bundle.messages] == [0, 0, 1, 1]
+    assert bundle.telemetry["message_count"] == 4
 
 
-def test_trailing_lone_user_becomes_turn_with_empty_agent(tmp_path):
-    """Repro of X01-shaped legacy bundle: 5 conv entries (u,a,u,a,u) +
-    3 send_message logs where the third is the synthetic 'agent_stuck'
-    auto-completion. Bundle should have 3 user-led turns; the third
-    has empty agent text — not duplicated text from the synthetic log."""
+def test_trailing_lone_user_is_preserved_without_synthetic_agent_text(tmp_path):
     state = _minimal_run_state(
         conversation=_conv_pair("u0", "a0", ts_start=100)
         + _conv_pair("u1", "a1", ts_start=200)
@@ -130,17 +158,16 @@ def test_trailing_lone_user_becomes_turn_with_empty_agent(tmp_path):
     bundle = bundle_io.read(
         backfill(run_state, bench_root=_bench_root_with_task(tmp_path, "S01_ma_crossover"))
     )
-    assert bundle.session.turn_count == 3
-    assert [t.user.text for t in bundle.conversation] == ["u0", "u1", "u2-no-reply"]
-    assert [t.agent.text for t in bundle.conversation] == ["a0", "a1", ""]
-    # The synthetic send_message log content must not bleed into the third agent message.
-    assert "Repeated message for completion" not in bundle.conversation[2].agent.text
+    assert [m.content for m in bundle.messages if m.role == "user"] == [
+        "u0",
+        "u1",
+        "u2-no-reply",
+    ]
+    assert [m.content for m in bundle.messages if m.role == "assistant"] == ["a0", "a1"]
+    assert len([tc for tc in bundle.tool_calls if tc.tool_name == "send_message"]) == 3
 
 
-def test_domain_tool_only_logs_yield_full_conversation(tmp_path):
-    """Repro of run-single shape: conversation is fully populated, tool_logs
-    are domain tools only (no send_message). Bundle should mirror the
-    persisted conversation and attach tool_logs by turn_index."""
+def test_domain_tool_logs_are_flat_generic_tool_calls(tmp_path):
     state = _minimal_run_state(
         conversation=_conv_pair("u0", "a0", ts_start=100)
         + _conv_pair("u1", "a1", ts_start=200)
@@ -155,18 +182,16 @@ def test_domain_tool_only_logs_yield_full_conversation(tmp_path):
     bundle = bundle_io.read(
         backfill(run_state, bench_root=_bench_root_with_task(tmp_path, "S01_ma_crossover"))
     )
-    assert bundle.session.turn_count == 3
-    assert [t.tool_calls[0].tool for t in bundle.conversation] == [
+    assert [tc.tool_name for tc in bundle.tool_calls] == [
         "file_read",
         "shell_exec",
         "run_lean_backtest",
     ]
-    assert bundle.conversation[1].tool_calls[0].args == {"command": "ls"}
+    assert bundle.tool_calls[1].args == {"command": "ls"}
+    assert bundle.tool_calls[1].result == "a\nb"
 
 
-def test_send_message_logs_excluded_from_tool_calls(tmp_path):
-    """The synthetic send_message NPC tool is the conversation conduit, not a
-    domain tool call — must not appear in any turn's tool_calls list."""
+def test_send_message_logs_are_marked_as_conversation_transport(tmp_path):
     state = _minimal_run_state(
         tool_logs=[
             _tool_log("send_message", turn_index=0, args={"text": "hello"}),
@@ -177,14 +202,11 @@ def test_send_message_logs_excluded_from_tool_calls(tmp_path):
     bundle = bundle_io.read(
         backfill(run_state, bench_root=_bench_root_with_task(tmp_path, "S01_ma_crossover"))
     )
-    tools = bundle.conversation[0].tool_calls
-    assert len(tools) == 1
-    assert tools[0].tool == "file_read"
+    assert [tc.tool_name for tc in bundle.tool_calls] == ["send_message", "file_read"]
+    assert bundle.tool_calls[0].metadata["conversation_transport"] is True
 
 
-def test_send_message_attachments_carry_into_agent_message(tmp_path):
-    """attachments live on the synthetic send_message log's args, not on the
-    conversation entry — backfill must pull them forward to agent.attachments."""
+def test_send_message_attachments_carry_into_assistant_message(tmp_path):
     attachments = [{"path": "report.csv", "kind": "csv"}]
     state = _minimal_run_state(
         tool_logs=[
@@ -195,10 +217,42 @@ def test_send_message_attachments_carry_into_agent_message(tmp_path):
     bundle = bundle_io.read(
         backfill(run_state, bench_root=_bench_root_with_task(tmp_path, "S01_ma_crossover"))
     )
-    assert bundle.conversation[0].agent.attachments == attachments
+    assistant = next(m for m in bundle.messages if m.role == "assistant")
+    assert assistant.attachments == attachments
 
 
-def test_truncates_long_tool_results(tmp_path):
+def test_consecutive_assistant_attachments_match_send_message_turn(tmp_path):
+    state = _minimal_run_state(
+        conversation=[
+            {"role": "assistant", "content": "a0"},
+            {"role": "assistant", "content": "a1"},
+        ],
+        tool_logs=[
+            _tool_log(
+                "send_message",
+                turn_index=0,
+                args={"text": "a0", "attachments": [{"path": "a0.csv"}]},
+            ),
+            _tool_log(
+                "send_message",
+                turn_index=1,
+                args={"text": "a1", "attachments": [{"path": "a1.csv"}]},
+            ),
+        ],
+    )
+    run_state = _write_run_state(tmp_path / "result", state)
+    bundle = bundle_io.read(
+        backfill(run_state, bench_root=_bench_root_with_task(tmp_path, "S01_ma_crossover"))
+    )
+
+    assert [message.turn_index for message in bundle.messages] == [0, 1]
+    assert [message.attachments for message in bundle.messages] == [
+        [{"path": "a0.csv"}],
+        [{"path": "a1.csv"}],
+    ]
+
+
+def test_preserves_long_tool_results_as_artifact_json(tmp_path):
     long_blob = "x" * 10000
     state = _minimal_run_state(
         tool_logs=[_tool_log("shell_exec", turn_index=0, result=long_blob)],
@@ -207,10 +261,7 @@ def test_truncates_long_tool_results(tmp_path):
     bundle = bundle_io.read(
         backfill(run_state, bench_root=_bench_root_with_task(tmp_path, "S01_ma_crossover"))
     )
-    tc = bundle.conversation[0].tool_calls[0]
-    assert tc.result_truncated is True
-    assert tc.result_preview.endswith("...")
-    assert len(tc.result_preview) <= 4096 + 3
+    assert bundle.tool_calls[0].result == long_blob
 
 
 def test_workspace_manifest_hashes_files(tmp_path):
@@ -226,12 +277,13 @@ def test_workspace_manifest_hashes_files(tmp_path):
         backfill(run_state, bench_root=_bench_root_with_task(tmp_path, "S01_ma_crossover"))
     )
 
-    paths = [w.path for w in bundle.workspace_manifest]
+    paths = [w.path for w in bundle.workspace.files]
     assert paths == sorted(paths)
     assert "Algorithm.cs" in paths
     assert "subdir/data.csv" in paths
 
-    cs_entry = next(w for w in bundle.workspace_manifest if w.path == "Algorithm.cs")
+    cs_entry = next(w for w in bundle.workspace.files if w.path == "Algorithm.cs")
+    assert cs_entry.size_bytes == len("class A {}")
     assert cs_entry.size == len("class A {}")
     assert cs_entry.sha256 == hashlib.sha256(b"class A {}").hexdigest()
 
@@ -243,8 +295,8 @@ def test_handles_missing_task_json(tmp_path):
     (bench_root / "tasks" / "layer2").mkdir(parents=True)
 
     bundle = bundle_io.read(backfill(run_state, bench_root=bench_root))
-    assert bundle.task_version == ""
-    assert bundle.task_spec_hash == ""
+    assert _qtb(bundle)["task_version"] == ""
+    assert _qtb(bundle)["task_spec_hash"] == ""
 
 
 def test_handles_empty_conversation(tmp_path):
@@ -253,8 +305,8 @@ def test_handles_empty_conversation(tmp_path):
     bundle = bundle_io.read(
         backfill(run_state, bench_root=_bench_root_with_task(tmp_path, "S01_ma_crossover"))
     )
-    assert bundle.conversation == []
-    assert bundle.session.turn_count == 0
+    assert bundle.messages == []
+    assert bundle.telemetry["message_count"] == 0
 
 
 def test_main_recursive_walks_results_tree(tmp_path):
@@ -294,8 +346,6 @@ def test_main_rejects_path_with_no_run_state(tmp_path):
 
 
 def test_real_sample_smokes(tmp_path):
-    """Backfill any existing run_state.json in bench/results/server/ and
-    verify the result deserializes round-trip clean."""
     bench_root = Path(__file__).resolve().parents[2]
     samples = list((bench_root / "results" / "server").rglob("run_state.json"))
     if not samples:
@@ -306,15 +356,14 @@ def test_real_sample_smokes(tmp_path):
     backfill(sample, bench_root=bench_root, output=out)
 
     bundle = bundle_io.read(out)
-    assert bundle.schema_version == "1.0"
+    assert bundle.schema_version == SCHEMA_VERSION
     assert bundle.task_id
     assert bundle.persona_id
-    assert bundle.session.session_id
+    assert bundle.session_id
+    validate_bundle_path(out)
 
 
 def test_real_run_single_sample_smokes(tmp_path):
-    """Same smoke for the older bench/results/run-single/ shape (domain tools
-    only, no send_message logs)."""
     bench_root = Path(__file__).resolve().parents[2]
     samples = list((bench_root / "results" / "run-single").rglob("run_state.json"))
     if not samples:
@@ -324,4 +373,5 @@ def test_real_run_single_sample_smokes(tmp_path):
     out = tmp_path / "bundle.json"
     backfill(sample, bench_root=bench_root, output=out)
     bundle = bundle_io.read(out)
-    assert bundle.schema_version == "1.0"
+    assert bundle.schema_version == SCHEMA_VERSION
+    validate_bundle_path(out)

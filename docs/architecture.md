@@ -239,17 +239,18 @@ of server in #123 since score persistence is a scoring concern).
 
 ### Bundle v1
 
-`bench/eval/contracts/bundle.py` defines the immutable per-session artifact
-that the scoring path reads from. A `bundle.json` carries `task_id`,
-`task_version`, `task_spec_hash` (sha256 of the canonical task JSON),
-`persona_id`, session metadata, runtime metadata (sandbox image, NPC
-model, `bench_eval_version`, seed), agent self-report metadata,
-turn-keyed `conversation` with nested `tool_calls`, and a
-`workspace_manifest` (path + sha256 + size for every file under
-`agent_files/`). `contracts/bundle_io.py` is the JSON serializer; the
-reader is forward-compatible within the v1 major (unknown fields drop
-silently, missing optional fields fall back to dataclass defaults). See
-`bench/eval/contracts/schema_evolution.md` for the rules.
+`bench/eval/contracts/bundle.py` defines the generic Bundle v1 alpha artifact
+that the scoring path reads from. A `bundle.json` carries `bundle_id`,
+`schema_version = "1.0.0-alpha"`, `task_id`, `timestamps`, `agent_id`,
+`sandbox_digest`, `telemetry`, flat `messages`, flat `tool_calls`,
+namespaced `artifacts`, and a `workspace` file snapshot (path + sha256 +
+size for every file under `agent_files/`). Reference-harness fields such
+as `persona_id`, `session_id`, `termination_reason`, task version/hash, TC
+debug data, and scores live under `artifacts.quanttutor`. `contracts/bundle_io.py`
+is the JSON serializer; `contracts/bundle_schema.py` validates against
+`contracts/bundle_v1_alpha.schema.json`. See
+`docs/bundle_v1_schema.md` and `bench/eval/contracts/schema_evolution.md`
+for the rules.
 
 `bench/eval/backfill/run_state_to_bundle.py` converts legacy
 `run_state.json` artifacts to v1 bundles in place; pass `--recursive` to
