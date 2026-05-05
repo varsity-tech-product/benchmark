@@ -180,8 +180,9 @@ class TestMCPGetBackground:
         await _register(session_state)
         await _start(session_state)
         results = await session_state.handle_tool_call("get_background", {})
-        text = results[0].text
-        assert "tutoring environment" in text.lower() or "send_message" in text
+        background = json.loads(results[0].text)
+        assert background["schema_version"] == "platform_background.v1"
+        assert background["mounts"]["workspace"]["path"] == "/workspace"
 
     @pytest.mark.asyncio
     async def test_get_background_before_start_denied(self, session_state):

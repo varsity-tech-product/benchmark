@@ -20,11 +20,13 @@ Session status semantics
 """
 
 import base64
+from dataclasses import asdict, is_dataclass
 import json
 import logging
 import os
 import time
-from typing import Optional
+from collections.abc import Mapping, Sequence
+from typing import Any, Optional
 
 from server.core.artifact_digest import build_visible_artifact_digest
 from server.core.workspace_delta import scan_workspace_snapshot
@@ -46,69 +48,147 @@ def _is_failed_reason(reason: str | None) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# Session background builder — factual environment description, no directives
+# Session background builder
 # ---------------------------------------------------------------------------
 
 
-def build_background(task) -> str:
-    """Build a factual background description of the session environment.
+def _field(obj: Any, name: str, default: Any = None) -> Any:
+    if obj is None:
+        return default
+    if isinstance(obj, Mapping):
+        return obj.get(name, default)
+    return getattr(obj, name, default)
 
-    Content is determined by what the container actually provides — derived
-    from task definition fields, not hardcoded per category.  Contains NO
-    behavioural directives or scoring hints.
-    """
-    env = task.environment if task.environment else None
-    sandbox_image = (
-        getattr(env, "sandbox_image_uri", None) or getattr(env, "sandbox_image", "") or ""
-    ) if env else ""
-    is_lean = "lean" in sandbox_image
-    has_user_code = bool(task.sample_code)
-    has_docs = bool(env.docs_available) if env else False
-    has_data = bool(
-        (env.data_files if env else None)
-        or (getattr(env, "data_mounts", None) if env else None)
-        or getattr(task, "series", None)
-        or getattr(task, "custom_data_key", None)
+
+def _jsonable(value: Any) -> Any:
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if hasattr(value, "model_dump"):
+        return _jsonable(value.model_dump(mode="json"))
+    if is_dataclass(value):
+        return _jsonable(asdict(value))
+    if isinstance(value, Mapping):
+        return {str(key): _jsonable(item) for key, item in value.items()}
+    if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
+        return [_jsonable(item) for item in value]
+    return str(value)
+
+
+def _as_list(value: Any) -> list[Any]:
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return value
+    if isinstance(value, tuple):
+        return list(value)
+    return [value]
+
+
+def _sandbox_image(env: Any) -> str:
+    if env is None:
+        return ""
+    return str(
+        _field(env, "sandbox_image_uri") or _field(env, "sandbox_image", "") or ""
     )
 
-    parts: list[str] = [
-        "You are operating inside a sandboxed tutoring environment for "
-        "quantitative finance. A Python runtime with common data-science "
-        "packages is available.",
-        "To communicate with the user, you MUST use the send_message "
-        "tool. This is the only way your words reach the user. Your "
-        "text output outside of send_message is NOT visible to them. "
-        "The user receives structured summaries of your tool calls, "
-        "file operations, and command output. If you generate charts, "
-        "code files, or other artifacts that require full inspection, "
-        "include their file paths in the 'attachments' parameter of "
-        "send_message.",
+
+def _resource_limits(env: Any) -> dict[str, Any]:
+    if env is None:
+        return {}
+
+    limits = _field(env, "sandbox_resource_limits")
+    if not limits:
+        spec = _field(env, "sandbox_spec")
+        limits = _field(spec, "resource_limits", {}) if spec else {}
+
+    jsonable_limits = _jsonable(limits or {})
+    result = dict(jsonable_limits) if isinstance(jsonable_limits, Mapping) else {}
+    if _field(env, "network_enabled", False):
+        result.setdefault("network_enabled", True)
+    return result
+
+
+def _data_mount_fact(item: Any) -> dict[str, Any]:
+    fact: dict[str, Any] = {}
+    target_path = _field(item, "target_path")
+    if target_path:
+        fact["target_path"] = str(target_path)
+    fact["read_only"] = bool(_field(item, "read_only", True))
+    return fact
+
+
+def build_background(task) -> dict[str, Any]:
+    """Build JSON-able platform facts for the session environment."""
+    env = _field(task, "environment")
+    sandbox_image = _sandbox_image(env)
+    data_files = [str(item) for item in _as_list(_field(env, "data_files"))]
+    data_mounts = [
+        fact
+        for item in _as_list(_field(env, "data_mounts"))
+        if (fact := _data_mount_fact(item)).get("target_path")
+    ]
+    docs_available = [str(item) for item in _as_list(_field(env, "docs_available"))]
+    sample_code = _field(task, "sample_code")
+    legacy_data_sources = {
+        key: str(value)
+        for key in ("series", "custom_data_key")
+        if (value := _field(task, key))
+    }
+
+    has_user_code = bool(sample_code)
+    has_docs = bool(docs_available)
+    has_data = bool(data_files or data_mounts or legacy_data_sources)
+    systems: list[dict[str, Any]] = [
+        {
+            "name": "python_runtime",
+            "package_profile": "common_data_science",
+        }
     ]
 
-    if is_lean:
-        parts.append(
-            "An algorithmic trading engine is available in this environment. "
-            "You can compile and execute C# trading algorithms, run backtests "
-            "against historical market data, and inspect detailed results "
-            "including trade logs and performance metrics. Backtest executions "
-            "are tracked and budget-limited."
+    if "lean" in sandbox_image.lower():
+        systems.append(
+            {
+                "name": "algorithmic_trading_engine",
+                "language": "csharp",
+                "capabilities": [
+                    "compile_algorithms",
+                    "run_backtests",
+                    "inspect_trade_logs",
+                    "inspect_performance_metrics",
+                ],
+                "max_backtest_trials": int(_field(env, "max_backtest_trials", 0) or 0),
+            }
         )
 
-    if has_user_code:
-        parts.append("The user's existing code is mounted at /user_code/.")
-
-    if has_docs:
-        parts.append("Reference documentation is mounted at /docs/.")
-
-    if has_data:
-        parts.append("Market data files are pre-loaded at /data/.")
-
-    parts.append(
-        "Call get_environment_info for detailed directory listings, "
-        "available packages, and session constraints."
-    )
-
-    return "\n\n".join(parts)
+    return {
+        "schema_version": "platform_background.v1",
+        "domain": "quantitative_finance",
+        "sandbox": {
+            "image": sandbox_image,
+            "resource_limits": _resource_limits(env),
+        },
+        "systems": systems,
+        "mounts": {
+            "workspace": {"path": "/workspace", "present": True},
+            "user_code": {
+                "path": "/user_code",
+                "present": has_user_code,
+            },
+            "docs": {
+                "path": "/docs",
+                "present": has_docs,
+            },
+            "data": {
+                "path": "/data",
+                "present": has_data,
+                "mounts": data_mounts,
+            },
+        },
+        "tooling": {
+            "discovery": "MCP list_tools",
+            "schema_source": "Tool inputSchema returned by MCP list_tools",
+        },
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -337,8 +417,8 @@ class TutoringSession:
     def handle_start_session(self) -> str:
         """Start the session — return background + user's first message.
 
-        Returns {background, user_message}.  ``background`` is a factual
-        description of the environment (no directives, no scoring hints).
+        Returns {background, user_message}. ``background`` is a structured
+        platform fact object describing the environment.
         The client decides how to present it to the agent.
 
         Can only be called once per session.

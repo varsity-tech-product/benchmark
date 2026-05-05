@@ -119,22 +119,75 @@ class SessionContextTests(unittest.TestCase):
         from server.core.session import build_background
 
         task = SimpleNamespace(
-            sample_code=None,
+            sample_code="user_code/alpha_conflict.cs",
             series=None,
             custom_data_key=None,
             environment=SimpleNamespace(
                 sandbox_image="legacy:image",
                 sandbox_image_uri="spec:image-lean",
-                docs_available=[],
+                docs_available=["alpha_conflict_guide.md"],
                 data_files=[],
-                data_mounts=[{"target_path": "/data/lean"}],
+                data_mounts=[
+                    {
+                        "uri": "file:///secret/alpha_conflict_source",
+                        "target_path": "/data/lean",
+                        "read_only": True,
+                    }
+                ],
             ),
         )
 
         background = build_background(task)
 
-        self.assertIn("algorithmic trading engine", background)
-        self.assertIn("Market data files are pre-loaded", background)
+        json.dumps(background)
+        self.assertEqual(background["schema_version"], "platform_background.v1")
+        self.assertEqual(background["sandbox"]["image"], "spec:image-lean")
+        self.assertTrue(background["mounts"]["user_code"]["present"])
+        self.assertNotIn("source", background["mounts"]["user_code"])
+        self.assertTrue(background["mounts"]["docs"]["present"])
+        self.assertNotIn("files", background["mounts"]["docs"])
+        self.assertTrue(background["mounts"]["data"]["present"])
+        self.assertNotIn("files", background["mounts"]["data"])
+        self.assertEqual(
+            background["mounts"]["data"]["mounts"][0]["target_path"],
+            "/data/lean",
+        )
+        self.assertNotIn("uri", background["mounts"]["data"]["mounts"][0])
+        self.assertIn(
+            "algorithmic_trading_engine",
+            {system["name"] for system in background["systems"]},
+        )
+
+        raw = json.dumps(background)
+        for phrase in (
+            "If the tutor asks",
+            "send_message",
+            "MUST",
+            "Call get_environment_info",
+            "only way your words reach the user",
+            "alpha_conflict",
+            "file://",
+            "secret",
+        ):
+            self.assertNotIn(phrase, raw)
+
+    def test_reference_prompt_owns_user_behavior_rules(self):
+        from server.config.prompt_config import build_user_description
+        from server.reference.prompts import RefSystemPrompt
+
+        persona = SimpleNamespace(
+            description="Comfortable with Python and basic quant workflows.",
+            familiar_concepts=["returns"],
+            unfamiliar_concepts=["slippage"],
+            emotional_profile="",
+            behavioral_rules=["Ask for clarification when confused."],
+        )
+
+        prompt = build_user_description(persona)
+
+        self.assertEqual(prompt, RefSystemPrompt.build_user_description(persona))
+        self.assertIn("[If the tutor asks you a question", prompt)
+        self.assertIn("Ask for clarification when confused.", prompt)
 
     def test_sandbox_digest_preserves_legacy_network_flag(self):
         digest = _environment_sandbox_digest(
