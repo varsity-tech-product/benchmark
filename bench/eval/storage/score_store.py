@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import json
+import os
+import tempfile
+import threading
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
@@ -16,6 +19,7 @@ except ImportError:  # pragma: no cover
 
 
 INDEX_VERSION = "2.0"
+_INDEX_THREAD_LOCK = threading.RLock()
 
 
 @dataclass
@@ -49,14 +53,15 @@ def _locked_index(result_dir: Path):
     root = _eval_root(result_dir)
     root.mkdir(parents=True, exist_ok=True)
     lock_path = root / ".lock"
-    with lock_path.open("a+", encoding="utf-8") as lock_file:
-        if fcntl is not None:
-            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
-        try:
-            yield
-        finally:
+    with _INDEX_THREAD_LOCK:
+        with lock_path.open("a+", encoding="utf-8") as lock_file:
             if fcntl is not None:
-                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                if fcntl is not None:
+                    fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
 
 
 def _empty_index() -> dict[str, Any]:
@@ -88,10 +93,26 @@ def load_index(result_dir: Path) -> dict[str, Any]:
 def save_index(result_dir: Path, index: dict[str, Any]) -> None:
     root = _eval_root(result_dir)
     root.mkdir(parents=True, exist_ok=True)
-    _index_path(result_dir).write_text(
-        json.dumps(index, indent=2, default=str),
-        encoding="utf-8",
-    )
+    payload = json.dumps(index, indent=2, default=str)
+    tmp_path: Path | None = None
+    with _INDEX_THREAD_LOCK:
+        try:
+            with tempfile.NamedTemporaryFile(
+                "w",
+                encoding="utf-8",
+                dir=root,
+                prefix=".index.",
+                suffix=".tmp",
+                delete=False,
+            ) as tmp:
+                tmp.write(payload)
+                tmp.flush()
+                os.fsync(tmp.fileno())
+                tmp_path = Path(tmp.name)
+            tmp_path.replace(_index_path(result_dir))
+        finally:
+            if tmp_path is not None and tmp_path.exists():
+                tmp_path.unlink()
 
 
 def _entry_matches_status(

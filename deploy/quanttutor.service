@@ -12,6 +12,7 @@ SupplementaryGroups=docker
 WorkingDirectory=/home/bench/benchmark/bench
 EnvironmentFile=-/home/bench/benchmark/.env
 Environment=PYTHONUNBUFFERED=1
+Environment=QTB_PLUGIN_CONFIG=/home/bench/benchmark/bench/server/reference/bundle.json
 ExecStart=/home/bench/benchmark/.venv/bin/python -m server --host 127.0.0.1 --port 8000 --docker
 Restart=on-failure
 RestartSec=5

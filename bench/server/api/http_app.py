@@ -28,6 +28,7 @@ import anyio
 from mcp.server import Server
 from mcp.server.streamable_http import StreamableHTTPServerTransport
 from mcp.types import TextContent
+from platform_api.plugins import PluginBundle
 from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import FileResponse, JSONResponse, Response
@@ -38,6 +39,7 @@ from server.audit import record_event
 from server.config.bootstrap import load_server_env
 from server.config.llm_config import EVAL_DEFAULT_MODEL
 from server.quota import QuotaExceeded, QuotaManager
+from server.reference import load_reference_bundle
 from server.run import JobStore, RunService, RunStore, TaskCatalog
 from server.run.jobs import (
     JOB_STATUS_COMPLETED,
@@ -242,12 +244,17 @@ class BenchSessionManager:
         use_docker: bool = True,
         bench_root: str | Path | None = None,
         eval_model: str = EVAL_DEFAULT_MODEL,
+        plugin_bundle: PluginBundle | None = None,
     ):
         self.use_docker = use_docker
         self.bench_root = (
             Path(bench_root) if bench_root else Path(__file__).parent.parent.parent
         )
         self.eval_model = eval_model
+        self.plugin_bundle = plugin_bundle or load_reference_bundle(
+            bench_root=self.bench_root,
+            eval_model=eval_model,
+        )
 
         self._sessions: dict[str, SessionState] = {}
         self._transports: dict[str, StreamableHTTPServerTransport] = {}
@@ -597,6 +604,7 @@ class BenchSessionManager:
             use_docker=self.use_docker,
             bench_root=self.bench_root,
             eval_model=self.eval_model,
+            plugin_bundle=self.plugin_bundle,
         )
         # Bind to Run
         state.run_id = run.run_id
@@ -982,6 +990,7 @@ class BenchSessionManager:
             bench_root=self.bench_root,
             use_docker=self.use_docker,
             eval_model=self.eval_model,
+            plugin_bundle=self.plugin_bundle,
         )
         state._on_completed = lambda result_dir: self._run_service.mark_completed(
             run.run_id, result_dir
@@ -1012,6 +1021,7 @@ class BenchSessionManager:
             use_docker=self.use_docker,
             bench_root=self.bench_root,
             eval_model=self.eval_model,
+            plugin_bundle=self.plugin_bundle,
         )
         return state
 
@@ -1042,6 +1052,7 @@ class BenchSessionManager:
             result_dir=result_dir,
             bench_root=self.bench_root,
             eval_model=self.eval_model,
+            plugin_bundle=self.plugin_bundle,
         )
         # Cache in memory so subsequent calls don't re-read from disk
         self._sessions[session_id] = state
@@ -2375,6 +2386,7 @@ def create_app(
     use_docker: bool = True,
     bench_root: str | Path | None = None,
     eval_model: str = EVAL_DEFAULT_MODEL,
+    plugin_bundle: PluginBundle | None = None,
 ) -> _ServerApp:
     """Create the QuantTutorBench ASGI application."""
     load_server_env(bench_root)
@@ -2382,6 +2394,7 @@ def create_app(
         use_docker=use_docker,
         bench_root=bench_root,
         eval_model=eval_model,
+        plugin_bundle=plugin_bundle,
     )
 
     @contextlib.asynccontextmanager

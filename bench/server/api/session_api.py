@@ -3,7 +3,7 @@
 Each MCP HTTP session maps to one ``SessionState`` instance that manages:
 - Task + persona loading (random persona selection)
 - Container + tool setup
-- TutoringSession lifecycle (user simulation, termination checking)
+- Session lifecycle (user simulation, termination checking)
 - Result saving (run_state.json + agent_files/)
 - Internal evaluation triggering (background thread; server/operator only)
 
@@ -32,8 +32,11 @@ from typing import TYPE_CHECKING, Optional
 
 import anyio
 from mcp.types import TextContent, Tool
+from platform_api.contracts import EvalItem, EvalSample, ToolLog, TranscriptMessage
+from platform_api.plugins import PluginBundle
 
 from server.config.llm_config import EVAL_DEFAULT_MODEL
+from server.reference import load_reference_bundle
 
 if TYPE_CHECKING:
     from mcp.server import Server
@@ -282,15 +285,23 @@ class SessionState:
         use_docker: bool = True,
         bench_root: Optional[Path] = None,
         eval_model: str = EVAL_DEFAULT_MODEL,
+        plugin_bundle: PluginBundle | None = None,
     ):
         self.session_id = session_id
         self.phase = SessionPhase.UNREGISTERED
         self.use_docker = use_docker
-        self.bench_root = bench_root or Path(__file__).parent.parent.parent
+        self.bench_root = (
+            Path(bench_root) if bench_root else Path(__file__).parent.parent.parent
+        )
         self.eval_model = eval_model
+        self.plugin_bundle = plugin_bundle or load_reference_bundle(
+            bench_root=self.bench_root,
+            eval_model=eval_model,
+        )
 
         # Task state (set during register)
         self.task = None
+        self.eval_item: EvalItem | None = None
         self.persona = None
         self.task_id: str = ""
         self.persona_id: str = ""
@@ -299,7 +310,7 @@ class SessionState:
 
         # Runtime components (set during register)
         self.proxy = None
-        self.session = None  # TutoringSession
+        self.session = None  # Session
         self.container_manager = None
         self.container = None
         self.user_sim = None
@@ -364,6 +375,7 @@ class SessionState:
         result_dir: Path,
         bench_root: Path,
         eval_model: str = EVAL_DEFAULT_MODEL,
+        plugin_bundle: PluginBundle | None = None,
     ) -> "SessionState":
         """Restore a COMPLETED session from server storage (run_state.json).
 
@@ -388,6 +400,7 @@ class SessionState:
             use_docker=False,
             bench_root=bench_root,
             eval_model=eval_model,
+            plugin_bundle=plugin_bundle,
         )
 
         # Load task and persona from server data store
@@ -455,6 +468,7 @@ class SessionState:
         bench_root: Path,
         use_docker: bool,
         eval_model: str = EVAL_DEFAULT_MODEL,
+        plugin_bundle: PluginBundle | None = None,
     ) -> "SessionState":
         """Restore an ACTIVE session from results/runs/{run_id}/run_state.json."""
         run_state = json.loads(Path(state_path).read_text(encoding="utf-8"))
@@ -467,6 +481,7 @@ class SessionState:
             use_docker=use_docker,
             bench_root=bench_root,
             eval_model=eval_model,
+            plugin_bundle=plugin_bundle,
         )
         state.run_id = str(run_state.get("run_id") or "")
         state._run_task_id = task_id
@@ -594,30 +609,36 @@ class SessionState:
         """Handle ``register_session(task_id, persona_id?)``.
 
         Heavy operation: loads task, selects persona, creates container,
-        registers tools, creates TutoringSession. If ``persona_id`` is
+        registers tools, creates Session. If ``persona_id`` is
         provided, it overrides the default random persona selection.
 
         """
         from server.config.benchmark_config import DATASET_REVISION
         from server.config.bootstrap import load_server_env
         from server.config.llm_config import SIMULATOR_DEFAULT_MODEL
-        from server.config.prompt_config import build_scenario, build_user_description
         from server.core.container import ContainerManager
         from server.core.proxy import MCPProxy
         from server.core.registry import populate_proxy_for_task
-        from server.core.session import TutoringSession
+        from server.core.session import Session
         from server.core.staging import create_staged_dirs, create_staged_sample_code
-        from server.core.user_sim import UserSimulator, require_user_model
+        from server.core.user_sim import require_user_model
         from server.data_manager import ensure_data
 
         self._closed = False
 
         try:
-            task = self._load_task(task_id)
-            if task is None:
+            try:
+                eval_item = self.plugin_bundle.task_suite.get_task(task_id)
+                task = self._task_from_eval_item(eval_item)
+            except Exception:
+                logger.exception("Plugin task lookup failed for %s", task_id)
+                eval_item = None
+                task = None
+            if task is None or eval_item is None:
                 return {"error": f"Task not found: {task_id}"}
 
             self.task = task
+            self.eval_item = eval_item
             self.task_id = task_id
             self._task_core_tool_names = tuple(_effective_core_tool_names(task))
             self._task_convenient_tool_names = tuple(
@@ -660,12 +681,19 @@ class SessionState:
             self.persona_id = selected_persona_id
 
             load_server_env(self.bench_root)
-            try:
-                resolved_sim_model = require_user_model(
-                    SIMULATOR_DEFAULT_MODEL,
-                )
-            except RuntimeError as exc:
-                return {"error": str(exc)}
+            build_user_simulator = getattr(
+                self.plugin_bundle.npc_provider,
+                "build_user_simulator",
+                None,
+            )
+            resolved_sim_model = None
+            if callable(build_user_simulator):
+                try:
+                    resolved_sim_model = require_user_model(
+                        SIMULATOR_DEFAULT_MODEL,
+                    )
+                except RuntimeError as exc:
+                    return {"error": str(exc)}
 
             sandbox_img = _environment_sandbox_image(task.environment)
             series = "lean" if sandbox_img and "lean" in sandbox_img else "normal"
@@ -762,16 +790,13 @@ class SessionState:
                 env_overrides=local_tool_env,
             )
 
-            self.user_sim = UserSimulator(
-                scenario=build_scenario(
-                    task, self.persona_id, has_incremental_tc=False
-                ),
-                user_description=build_user_description(
+            self.user_sim = None
+            if callable(build_user_simulator):
+                self.user_sim = build_user_simulator(
+                    task,
                     self.persona,
-                    has_incremental_tc=False,
-                ),
-                model=resolved_sim_model,
-            )
+                    model=resolved_sim_model,
+                )
 
             effective_timeout = task.timeout_minutes
             deadline = None
@@ -779,7 +804,7 @@ class SessionState:
                 deadline = time.time() + effective_timeout * 60
             self.proxy.set_deadline(deadline)
 
-            self.session = TutoringSession(
+            self.session = Session(
                 task=task,
                 persona=persona,
                 user_sim=self.user_sim,
@@ -787,6 +812,8 @@ class SessionState:
                 deadline=deadline,
                 proxy=self.proxy,
                 workspace_path=self.container.workspace_path,
+                npc_provider=self.plugin_bundle.npc_provider,
+                eval_item=eval_item,
             )
 
             # Keep protocol traffic in raw logs; downstream reports decide what to hide.
@@ -883,7 +910,7 @@ class SessionState:
         delivered to the user.
 
         Returns:
-            Raw JSON string from TutoringSession (via proxy).
+            Raw JSON string from Session (via proxy).
         """
         if self._closed:
             return json.dumps({"error": "Session is closed", "status": "closed"})
@@ -1545,6 +1572,7 @@ class SessionState:
                 if (path := self._active_workspace_snapshot_path()) and path.exists()
                 else ""
             ),
+            "plugin_bundle": getattr(self.plugin_bundle, "name", ""),
         }
 
     def _persist_active_state(self, *, force_snapshot: bool = False) -> Path | None:
@@ -1647,26 +1675,28 @@ class SessionState:
         to avoid races with ``request_evaluation`` reads.
         """
         try:
-            from server.storage.eval_writer import run_evaluation
-
             if not self._result_dir:
                 raise RuntimeError("No result_dir — session results not saved")
 
-            conversation = self.session.conversation
-            tool_logs = self.proxy.get_logs()
-            distractor_names = self.proxy.get_distractor_names()
-
-            eval_results = run_evaluation(
-                task=self.task,
-                persona=self.persona,
-                result_dir=self._result_dir,
-                conversation=conversation,
-                tool_logs=tool_logs,
-                distractor_names=distractor_names,
-                bench_root=str(self.bench_root),
-                eval_model=self.eval_model,
-                eval_mode=self._eval_mode,
-                score_id=score_id,
+            eval_item = self.eval_item
+            if eval_item is None:
+                eval_item = self.plugin_bundle.task_suite.get_task(self.task_id)
+                self.eval_item = eval_item
+            sample = self._build_eval_sample(score_id)
+            score = self.plugin_bundle.evaluator.evaluate(eval_item, sample)
+            summary = (
+                score.metrics.get("summary")
+                if isinstance(score.metrics, dict)
+                else None
+            )
+            eval_results = (
+                dict(summary)
+                if isinstance(summary, dict)
+                else {
+                    "score_status": score.status,
+                    "overall_score": score.value,
+                    "reason": score.reason,
+                }
             )
 
             with self._eval_lock:
@@ -1830,6 +1860,7 @@ class SessionState:
                 exc_info=True,
             )
         self.task = None
+        self.eval_item = None
         self.persona = None
         self.task_id = ""
         self.persona_id = ""
@@ -1850,12 +1881,113 @@ class SessionState:
 
     def _load_task(self, task_id: str):
         """Load task JSON by ID."""
+        try:
+            return self._task_from_eval_item(
+                self.plugin_bundle.task_suite.get_task(task_id)
+            )
+        except Exception:
+            pass
+
         from eval.contracts.schemas import QuantTutorTask
 
         tasks_dir = self.bench_root / "tasks"
         for json_path in tasks_dir.rglob(f"{task_id}.json"):
             return QuantTutorTask(**json.loads(json_path.read_text()))
         return None
+
+    def _task_from_eval_item(self, eval_item: EvalItem):
+        """Extract the reference business task from an EvalItem envelope."""
+        get_business_task = getattr(
+            self.plugin_bundle.task_suite,
+            "get_business_task",
+            None,
+        )
+        if callable(get_business_task):
+            return get_business_task(eval_item.task_id)
+
+        from eval.contracts.schemas import QuantTutorTask
+
+        raw = eval_item.payload.get("quant_tutor_task")
+        if hasattr(raw, "model_dump"):
+            return raw
+        if isinstance(raw, dict):
+            return QuantTutorTask(**raw)
+        return None
+
+    def _build_eval_sample(self, score_id: str) -> EvalSample:
+        """Build a platform EvalSample from the completed session state."""
+        conversation = self.session.conversation if self.session else []
+        transcript = tuple(
+            TranscriptMessage(
+                role=str(entry.get("role") or ""),
+                content=str(entry.get("content") or ""),
+                ts=(
+                    entry.get("ts")
+                    if isinstance(entry.get("ts"), (int, float))
+                    else None
+                ),
+                metadata={
+                    key: value
+                    for key, value in entry.items()
+                    if key not in {"role", "content", "ts"}
+                },
+            )
+            for entry in conversation
+        )
+        raw_tool_logs = self.proxy.get_logs() if self.proxy else []
+        tool_logs = tuple(
+            log
+            for raw in raw_tool_logs
+            if (log := self._contract_tool_log(raw)) is not None
+        )
+        workspace_path = (
+            self.container.workspace_path
+            if self.container
+            else str(self._result_dir / "agent_files") if self._result_dir else ""
+        )
+        payload = {
+            "task": self.task,
+            "persona": self.persona,
+            "result_dir": str(self._result_dir) if self._result_dir else "",
+            "workspace_path": workspace_path,
+            "eval_model": self.eval_model,
+            "eval_mode": self._eval_mode,
+            "score_id": score_id,
+            "session_id": self.session_id,
+            "distractor_names": (
+                self.proxy.get_distractor_names() if self.proxy is not None else []
+            ),
+        }
+        return EvalSample(
+            sample_id=score_id,
+            task_id=self.task_id,
+            transcript=transcript,
+            tool_logs=tool_logs,
+            files={},
+            payload=payload,
+        )
+
+    @staticmethod
+    def _contract_tool_log(raw) -> ToolLog | None:
+        data = _safe_tool_log_dict(raw)
+        name = str(data.get("name") or data.get("tool_name") or "")
+        if not name:
+            return None
+        args = data.get("args") or {}
+        if not isinstance(args, dict):
+            args = {"value": args}
+        metadata = data.get("metadata") or {}
+        if not isinstance(metadata, dict):
+            metadata = {}
+        return ToolLog(
+            name=name,
+            args=args,
+            result=str(data.get("result") or ""),
+            success=bool(data.get("success", True)),
+            duration_ms=float(data.get("duration_ms") or 0.0),
+            turn_index=int(data.get("turn_index") or 0),
+            metadata=metadata,
+        )
 
     def _load_persona(self, persona_id: str):
         """Load persona JSON by ID."""

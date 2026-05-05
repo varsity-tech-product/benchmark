@@ -1,0 +1,14 @@
+{
+  "plugins": [
+    {
+      "name": "reference",
+      "task_suite": "server.reference.task_suite:ReferenceTaskSuite",
+      "npc_provider": "server.reference.npc_provider:ReferenceNPCProvider",
+      "evaluator": "server.reference.evaluator:ReferenceEvaluator",
+      "metadata": {
+        "business_schema": "QuantTutorTask",
+        "version": "1.0"
+      }
+    }
+  ]
+}
