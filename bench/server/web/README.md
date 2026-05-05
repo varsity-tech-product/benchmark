@@ -21,7 +21,7 @@ Main pieces:
 Current routes:
 - `GET /`
 - `#/flow-demo` SPA route for run flow monitoring
-- `#/run` SPA route for REST agent prompt generation
+- `#/my-run` SPA route for owned run progress
 - `#/review` SPA route for archived session review
 - `#/tasks` SPA route for task browsing
 - `GET /ui/tasks`
@@ -40,9 +40,12 @@ Current routes:
 - `POST /client/runs/{run_id}/cancel`
 - `POST /client/runs/{run_id}/trace`
 
+- `#/run` redirects to `#/my-run`.
+
 Run route scope:
-- `#/run` opens a copyable REST agent prompt directly.
-- The prompt surface generates a fresh REST API key through `/ui/api-key` and embeds a short Moltbook-style instruction, `/skill.md`, base URL, and key in a textarea.
+- `#/my-run` shows owned runs grouped by task id with completed, in-progress, failed, and not-started counts.
+- `#/my-run/{run_id}` opens the owner run monitor.
+- The nav API Key dialog generates a fresh REST API key through `/ui/api-key` and embeds the REST instruction, `/skill.md`, base URL, and key in a textarea.
 - External agents discover public labels through `/client/tasks/catalog/labels`, create or claim runs through the REST skill workflow, list active owned runs through `/client/runs/active`, and cancel owned orphaned runs through `/client/runs/{run_id}/cancel`.
 - Hidden task metadata stays in the server/client execution context.
 - Session Flow owns run lifecycle browsing. Human Review owns archived session inspection.

@@ -166,7 +166,13 @@ def ui_routes(manager) -> list[Route]:
     review_store = ReviewStore(manager.bench_root, indexer)
     auth = AuthService(manager.bench_root)
 
+    def _mine_scope_requested(request: Request) -> bool:
+        mine = request.query_params.get("mine", "").strip().lower()
+        return mine in ("1", "true", "yes", "on")
+
     def _scope_flags(request: Request, user) -> tuple[bool, bool]:
+        if _mine_scope_requested(request):
+            return False, False
         scope = request.query_params.get("scope", "").strip().lower()
         include_all = bool(getattr(user, "is_admin", False)) and scope in ("", "all")
         include_org = scope == "org"
@@ -187,6 +193,11 @@ def ui_routes(manager) -> list[Route]:
 
     def _client_owns_run(run, user) -> bool:
         return str(run.owner_user_id or "") == _client_owner_id(user)
+
+    def _ui_run_dict(run) -> dict:
+        payload = run.public_dict()
+        payload["task_id"] = run.task_id
+        return payload
 
     async def auth_login(request: Request):
         return await auth.login(request)
@@ -738,6 +749,8 @@ def ui_routes(manager) -> list[Route]:
             include_all=include_all,
             include_org=include_org,
         )
+        if _mine_scope_requested(request):
+            return JSONResponse({"runs": [_ui_run_dict(r) for r in runs]})
         return JSONResponse({"runs": [r.public_dict() for r in runs]})
 
     async def get_run(request: Request) -> JSONResponse:
@@ -951,7 +964,9 @@ def ui_routes(manager) -> list[Route]:
             session_id=run.session_id if run else "",
             success=True,
         )
-        return JSONResponse(run.public_dict() if run else {"status": "cancelled"})
+        if run is None:
+            return JSONResponse({"status": "cancelled"})
+        return JSONResponse(run.public_dict())
 
     # -----------------------------------------------------------------------
     # New: /client/runs/*

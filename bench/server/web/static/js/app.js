@@ -284,7 +284,7 @@
     if (route.indexOf('/flow-demo') === 0) current = 'flow';
     else if (route.indexOf('/review') === 0) current = 'review';
     else if (route.indexOf('/tasks') === 0) current = 'tasks';
-    else if (route.indexOf('/run') === 0) current = 'run';
+    else if (route.indexOf('/my-run') === 0 || route.indexOf('/run') === 0) current = 'my-run';
     else current = 'flow';
     var links = document.querySelectorAll('.nav-link');
     Array.prototype.forEach.call(links, function (link) {
@@ -449,10 +449,16 @@
   }
 
   function agentSkillRawUrl() {
+    if (window.QTB && typeof window.QTB.agentSkillRawUrl === 'function') {
+      return window.QTB.agentSkillRawUrl();
+    }
     return window.location.origin + '/skill.md';
   }
 
   function buildAgentPrompt(apiKey) {
+    if (window.QTB && typeof window.QTB.buildAgentPrompt === 'function') {
+      return window.QTB.buildAgentPrompt(apiKey);
+    }
     var rawSkillUrl = agentSkillRawUrl();
     var baseUrl = window.location.origin;
     return [
@@ -758,10 +764,6 @@
       '</article>';
   }
 
-  function runModeLabel() {
-    return 'Agent Prompt';
-  }
-
   function renderRunPage(payload) {
     state.run.mode = 'agent';
 
@@ -769,43 +771,7 @@
       window.QTB.renderMyAgentPage(app, state, payload);
       return;
     }
-    renderAgentRunPage(payload);
-  }
-
-  function renderAgentRunPage(payload) {
-    app.innerHTML =
-      '<section class="page run-page">' +
-        '<header class="page-header run-sticky-header">' +
-          '<div class="page-title-wrap">' +
-            '<p class="eyebrow">Run · Agent Prompt</p>' +
-            '<h1>Agent prompt access.</h1>' +
-            '<p class="subtitle">Generate a REST API key prompt from the API key dialog, then paste it into your external agent.</p>' +
-          '</div>' +
-          '<div class="summary-strip">' +
-            buildSummaryPill('Mode', runModeLabel()) +
-            buildSummaryPill('Status', 'Prompt Ready') +
-          '</div>' +
-        '</header>' +
-        '<div class="run-agent-prompt-panel">' +
-          '<section class="panel run-agent-prompt-card">' +
-            '<div class="run-agent-prompt-head">' +
-              '<div>' +
-                '<h2>Agent Prompt</h2>' +
-                '<p class="detail-empty-note">The API key dialog can generate the same copyable prompt with the raw skill URL and REST key.</p>' +
-              '</div>' +
-            '</div>' +
-            '<div class="run-agent-skill-url">' +
-              '<span>Raw Skill URL</span>' +
-              '<code>' + escapeHtml(agentSkillRawUrl()) + '</code>' +
-            '</div>' +
-            '<div class="run-agent-api-actions">' +
-              '<button class="btn btn-primary" id="run-open-api-key-prompt" type="button">Open API Key Prompt</button>' +
-            '</div>' +
-          '</section>' +
-        '</div>' +
-      '</section>';
-    var promptBtn = document.getElementById('run-open-api-key-prompt');
-    if (promptBtn) promptBtn.addEventListener('click', openApiKeyModal);
+    renderError('My Run unavailable', new Error('run-agent.js unavailable'));
   }
 
   function metaItem(label, value) {
@@ -2431,7 +2397,7 @@
       window.QTB.renderMyAgentPage(app, state, {tasks: [], personas: []});
       return;
     }
-    renderLoading('Loading agent prompt', 'Fetching task metadata before opening the fallback agent run surface.');
+    renderLoading('Loading my runs', 'Fetching current run progress.');
     ensureTasks().then(renderRunPage).catch(function (error) {
       renderError('Run unavailable', error);
     });
@@ -2486,12 +2452,22 @@
     }
 
     if (route === '/run') {
-      showRun();
+      location.hash = '#/my-run';
       return;
     }
 
     if (route.indexOf('/run/') === 0) {
-      showRunDetail(decodeURIComponent(route.slice('/run/'.length)));
+      location.hash = '#/my-run/' + route.slice('/run/'.length);
+      return;
+    }
+
+    if (route === '/my-run') {
+      showRun();
+      return;
+    }
+
+    if (route.indexOf('/my-run/') === 0) {
+      showRunDetail(decodeURIComponent(route.slice('/my-run/'.length)));
       return;
     }
 
