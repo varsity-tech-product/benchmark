@@ -1,0 +1,32 @@
+{
+  "task_id": "L0_convfinqa_convfinqa_train_2035",
+  "version": "3.0",
+  "layer": "L0",
+  "category": "multi_step_reasoning",
+  "task_type": "single_turn",
+  "requires_tool": false,
+  "question": "what was the percent of the decline in the weighted average risk-free interest rate from 2002 to 2003",
+  "reference_answer": "**Answer:** -18.8%\n\n**Reasoning:** subtract(3.03, 3.73), divide(#0, 3.73)",
+  "source_dataset": "convfinqa",
+  "source_id": "convfinqa_train_2035",
+  "tags": [
+    "conversational",
+    "numerical-reasoning",
+    "financial-reports"
+  ],
+  "context": "**Context:**\nillumina , inc .\nnotes to consolidated financial statements 2014 ( continued ) advertising costs the company expenses advertising costs as incurred .\nadvertising costs were approximately $ 440000 for 2003 , $ 267000 for 2002 and $ 57000 for 2001 .\nincome taxes a deferred income tax asset or liability is computed for the expected future impact of differences between the financial reporting and tax bases of assets and liabilities , as well as the expected future tax benefit to be derived from tax loss and credit carryforwards .\ndeferred income tax expense is generally the net change during the year in the deferred income tax asset or liability .\nvaluation allowances are established when realizability of deferred tax assets is uncertain .\nthe effect of tax rate changes is reflected in tax expense during the period in which such changes are enacted .\nforeign currency translation the functional currencies of the company 2019s wholly owned subsidiaries are their respective local currencies .\naccordingly , all balance sheet accounts of these operations are translated to u.s .\ndollars using the exchange rates in effect at the balance sheet date , and revenues and expenses are translated using the average exchange rates in effect during the period .\nthe gains and losses from foreign currency translation of these subsidiaries 2019 financial statements are recorded directly as a separate component of stockholders 2019 equity under the caption 2018 2018accumulated other comprehensive income . 2019 2019 stock-based compensation at december 28 , 2003 , the company has three stock-based employee and non-employee director compensation plans , which are described more fully in note 5 .\nas permitted by sfas no .\n123 , accounting for stock-based compensation , the company accounts for common stock options granted , and restricted stock sold , to employees , founders and directors using the intrinsic value method and , thus , recognizes no compensation expense for options granted , or restricted stock sold , with exercise prices equal to or greater than the fair value of the company 2019s common stock on the date of the grant .\nthe company has recorded deferred stock compensation related to certain stock options , and restricted stock , which were granted prior to the company 2019s initial public offering with exercise prices below estimated fair value ( see note 5 ) , which is being amortized on an accelerated amortiza- tion methodology in accordance with financial accounting standards board interpretation number ( 2018 2018fin 2019 2019 ) 28 .\npro forma information regarding net loss is required by sfas no .\n123 and has been determined as if the company had accounted for its employee stock options and employee stock purchases under the fair value method of that statement .\nthe fair value for these options was estimated at the dates of grant using the fair value option pricing model ( black scholes ) with the following weighted-average assumptions for 2003 , 2002 and 2001 : year ended year ended year ended december 28 , december 29 , december 30 , 2003 2002 2001 weighted average risk-free interest rate******* 3.03% ( 3.03 % ) 3.73% ( 3.73 % ) 4.65% ( 4.65 % ) expected dividend yield********************* 0% ( 0 % ) 0% ( 0 % ) 0% ( 0 % ) weighted average volatility ****************** 103% ( 103 % ) 104% ( 104 % ) 119% ( 119 % ) estimated life ( in years ) ********************** 5 5 5 .\n\n**Table:**\n|  | year ended december 28 2003 | year ended december 29 2002 | year ended december 30 2001 |\n| --- | --- | --- | --- |\n| weighted average risk-free interest rate | 3.03% ( 3.03 % ) | 3.73% ( 3.73 % ) | 4.65% ( 4.65 % ) |\n| expected dividend yield | 0% ( 0 % ) | 0% ( 0 % ) | 0% ( 0 % ) |\n| weighted average volatility | 103% ( 103 % ) | 104% ( 104 % ) | 119% ( 119 % ) |\n| estimated life ( in years ) | 5 | 5 | 5 |\n| weighted average fair value of options granted | $ 3.31 | $ 4.39 | $ 7.51 |\n\n.",
+  "conversation_history": [
+    {
+      "question": "what is the difference between the weighted average risk-free interest rate of 2003 and 2002?",
+      "answer": ""
+    },
+    {
+      "question": "what is the weighted average risk-free interest rate of 2002?",
+      "answer": ""
+    },
+    {
+      "question": "how much does that difference represents in relation to weighted average risk-free interest rate of 2002?",
+      "answer": ""
+    }
+  ]
+}

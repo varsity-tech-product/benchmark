@@ -1,0 +1,14 @@
+{
+  "task_id": "L0_money.stackexchange_10649",
+  "version": "3.0",
+  "layer": "L0",
+  "category": "conceptual_qa",
+  "task_type": "single_turn",
+  "requires_tool": false,
+  "question": "It seems a lot of people recommend lifecycle funds. They're even an allowed default investment for 401ks now. But given how little I trust Wall Street, I'm curious if there's any quality academic research demonstrating that rebalancing towards a \"glide path\" is better than rebalancing to a static allocation.\n\nIs there any research suggesting that \"age-appropriate\" portfolios means less stock and more fixed-income assets with age?",
+  "reference_answer": "I think not. I think a discussion of optimum mix is pretty independent of age. While a 20 year old may have 40 years till retirement, a 60 year old retiree has to plan for 30 years or more of spending. I'd bet that no two posters here would give the same optimum mix for a given age, why would anyone expect the Wall Street firms to come up with something better than your own gut suggests?",
+  "source_dataset": "money.stackexchange",
+  "source_id": "10649",
+  "tags": [],
+  "title": "Should I fund retirement with a static asset allocation or an age based glide path?"
+}

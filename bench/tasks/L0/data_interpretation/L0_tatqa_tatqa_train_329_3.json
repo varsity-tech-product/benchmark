@@ -1,0 +1,17 @@
+{
+  "task_id": "L0_tatqa_tatqa_train_329_3",
+  "version": "3.0",
+  "layer": "L0",
+  "category": "data_interpretation",
+  "task_type": "single_turn",
+  "requires_tool": false,
+  "question": "What was the change in the net cash provided by operating activities from 2018 to 2019?",
+  "reference_answer": "**Answer:** 1407\n\n**Type:** arithmetic\n\n**Derivation:** 35,746 - 34,339",
+  "source_dataset": "tatqa",
+  "source_id": "tatqa_train_329_3",
+  "tags": [
+    "tabular-reasoning",
+    "financial-documents"
+  ],
+  "context": "**Table:**\n|  |  | (dollars in millions) |\n| --- | --- | --- |\n| Years Ended December 31, | 2019 | 2018 |\n| Net cash provided by operating activities | $ 35,746 | $ 34,339 |\n| Less Capital expenditures (including capitalized software) | 17,939 | 16,658 |\n| Free cash flow | $ 17,807 | $ 17,681 |\n\nFree Cash Flow\n\nFree cash flow is a non-GAAP financial measure that reflects an additional way of viewing our liquidity that, when viewed with our GAAP results, provides a more complete understanding of factors and trends affecting our cash flows. Free cash flow is calculated by subtracting capital expenditures from net cash provided by operating activities. We believe it is a more conservative measure of cash flow since purchases of fixed assets are necessary for ongoing operations.\n\nFree cash flow has limitations due to the fact that it does not represent the residual cash flow available for discretionary expenditures. For example, free cash flow does not incorporate payments made on finance lease obligations or cash payments for business acquisitions or wireless licenses. Therefore, we believe it is important to view free cash flow as a complement to our entire consolidated statements of cash flows.\n\nThe following table reconciles net cash provided by operating activities to Free cash flow:\n\nThe increase in free cash flow during 2019 is a reflection of the increase in operating cash flows, partially offset by the increase in capital expenditures discussed above."
+}

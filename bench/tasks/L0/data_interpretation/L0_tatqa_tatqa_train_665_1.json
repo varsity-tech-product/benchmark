@@ -1,0 +1,17 @@
+{
+  "task_id": "L0_tatqa_tatqa_train_665_1",
+  "version": "3.0",
+  "layer": "L0",
+  "category": "data_interpretation",
+  "task_type": "single_turn",
+  "requires_tool": false,
+  "question": "What caused the increase in the Revenue in Europe, C. I. S., Africa, Middle East?",
+  "reference_answer": "**Answer:** Revenue in Europe, C. I. S., Africa, Middle East increased moderately on growth in a majority of industrial businesses, driven by substantial growth at SGRE\n\n**Type:** span",
+  "source_dataset": "tatqa",
+  "source_id": "tatqa_train_665_1",
+  "tags": [
+    "tabular-reasoning",
+    "financial-documents"
+  ],
+  "context": "**Table:**\n|  |  | Fiscal year |  | % Change |\n| --- | --- | --- | --- | --- |\n| (in millions of €) | 2019 | 2018 | Actual | Comp. |\n| Europe, C. I. S., Africa, Middle East | 44,360 | 42,782 | 4% | 4% |\n| therein: Germany | 12,282 | 11,729 | 5% | 4 % |\n| Americas | 23,796 | 22,115 | 8% | 3% |\n| therein: U. S. | 17,993 | 16,012 | 12% | 6% |\n| Asia, Australia | 18,693 | 18,147 | 3% | 2% |\n| therein: China | 8,405 | 8,102 | 4% | 3% |\n| Siemens | 86,849 | 83,044 | 5 % | 3 % |\n| therein: emerging markets1 | 27,607 | 28,272 | (2) % | (2) % |\n\n1 As defined by the International Monetary Fund.\n\nRevenue related to external customers went up moderately yearover- year on growth in nearly all industrial businesses. SGRE and Siemens Healthineers posted the highest growth rates, while revenue at Gas and Power declined moderately in a difficult market environment. The revenue decline in emerging markets was due mainly to lower revenue in Egypt, where in fiscal 2018 Gas and Power recorded sharply higher revenue from large orders.\n\nRevenue in Europe, C. I. S., Africa, Middle East increased moderately on growth in a majority of industrial businesses, driven by substantial growth at SGRE. Gas and Power posted a clear decline in a difficult market environment. In Germany, revenue was up moderately with significant growth in Mobility and Gas and Power, partly offset by a decline in SGRE.\n\nIn the Americas, revenue came in clearly higher year-over-year, benefiting from positive currency translation effects. Siemens Healthineers, Smart Infrastructure and Gas and Power recorded the largest increases, while SGRE posted clearly lower revenue in the region. In the U. S., all industrial businesses posted higher revenues year-over-year, with SGRE and Smart Infrastructure recording the strongest growth rates.\n\nRevenue in Asia, Australia rose moderately year-over-year on growth in the majority of industrial businesses, led by Siemens Healthineers and Digital Industries. Gas and Power and SGRE posted lower revenue year-over-year. In China, revenue was also\nup in the majority of industrial businesses, led by Siemens Healthineers. In contrast, SGRE posted substantially lower revenue year-over-year in that country."
+}

@@ -1,0 +1,32 @@
+{
+  "task_id": "L0_convfinqa_convfinqa_train_876",
+  "version": "3.0",
+  "layer": "L0",
+  "category": "multi_step_reasoning",
+  "task_type": "single_turn",
+  "requires_tool": false,
+  "question": "what is the percentage change in total current liabilities from 2006 to 2007?",
+  "reference_answer": "**Answer:** -6.3%\n\n**Reasoning:** subtract(639.2, 682.0), divide(#0, 682.0)",
+  "source_dataset": "convfinqa",
+  "source_id": "convfinqa_train_876",
+  "tags": [
+    "conversational",
+    "numerical-reasoning",
+    "financial-reports"
+  ],
+  "context": "**Context:**\n2007 annual report 39 corporate snap-on 2019s general corporate expenses totaled $ 53.8 million in 2006 , up from $ 46.4 million in 2005 , primarily due to $ 15.2 million of increased stock-based and performance-based incentive compensation , including $ 6.3 million from the january 1 , 2006 , adoption of sfas no .\n123 ( r ) .\nincreased expenses in 2006 also included $ 4.2 million of higher insurance and other costs .\nthese expense increases were partially offset by $ 9.5 million of benefits from rci initiatives .\nsee note 13 to the consolidated financial statements for information on the company 2019s adoption of sfas no .\n123 ( r ) .\nfinancial condition snap-on 2019s growth has historically been funded by a combination of cash provided by operating activities and debt financing .\nsnap-on believes that its cash from operations , coupled with its sources of borrowings , are sufficient to fund its anticipated requirements for working capital , capital expenditures , restructuring activities , acquisitions , common stock repurchases and dividend payments .\ndue to snap-on 2019s credit rating over the years , external funds have been available at a reasonable cost .\nas of the close of business on february 15 , 2008 , snap-on 2019s long-term debt and commercial paper was rated a3 and p-2 by moody 2019s investors service and a- and a-2 by standard & poor 2019s .\nsnap-on believes that the strength of its balance sheet , combined with its cash flows from operating activities , affords the company the financial flexibility to respond to both internal growth opportunities and those available through acquisitions .\nthe following discussion focuses on information included in the accompanying consolidated balance sheets .\nsnap-on has been focused on improving asset utilization by making more effective use of its investment in certain working capital items .\nthe company assesses management 2019s operating performance and effectiveness relative to those components of working capital , particularly accounts receivable and inventories , that are more directly impacted by operational decisions .\nas of december 29 , 2007 , working capital ( current assets less current liabilities ) of $ 548.2 million was up $ 117.0 million from $ 431.2 million as of december 30 , 2006 .\nthe increase in year-over-year working capital primarily reflects higher levels of 201ccash and cash equivalents 201d of $ 29.6 million , lower 201cnotes payable and current maturities of long-term debt 201d of $ 27.7 million , and $ 27.7 million of increased 201caccounts receivable 2013 net of allowances . 201d the following represents the company 2019s working capital position as of december 29 , 2007 , and december 30 , 2006 .\n( amounts in millions ) 2007 2006 .\n\n**Table:**\n| ( amounts in millions ) ad | 2007 | 2006 |\n| --- | --- | --- |\n| cash and cash equivalents | $ 93.0 | $ 63.4 |\n| accounts receivable 2013 net of allowances | 586.9 | 559.2 |\n| inventories | 322.4 | 323.0 |\n| other current assets | 185.1 | 167.6 |\n| total current assets | 1187.4 | 1113.2 |\n| accounts payable | -171.6 ( 171.6 ) | -178.8 ( 178.8 ) |\n| notes payable and current maturities of long-term debt | -15.9 ( 15.9 ) | -43.6 ( 43.6 ) |\n| other current liabilities | -451.7 ( 451.7 ) | -459.6 ( 459.6 ) |\n| total current liabilities | -639.2 ( 639.2 ) | -682.0 ( 682.0 ) |\n| total working capital | $ 548.2 | $ 431.2 |\n\naccounts receivable at the end of 2007 was $ 586.9 million , up $ 27.7 million from year-end 2006 levels .\nthe year-over- year increase in accounts receivable primarily reflects the impact of higher sales in the fourth quarter of 2007 and $ 25.1 million of currency translation .\nthis increase in accounts receivable was partially offset by lower levels of receivables as a result of an improvement in days sales outstanding from 76 days at year-end 2006 to 73 days at year-end 2007. .",
+  "conversation_history": [
+    {
+      "question": "what was the change in value of total current liabilities from 2006 to 2007?",
+      "answer": ""
+    },
+    {
+      "question": "what was the value of total current liabilities in 2006?",
+      "answer": ""
+    },
+    {
+      "question": "what was the percent change?",
+      "answer": ""
+    }
+  ]
+}

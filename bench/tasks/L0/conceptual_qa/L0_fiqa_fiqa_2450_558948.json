@@ -1,0 +1,15 @@
+{
+  "task_id": "L0_fiqa_fiqa_2450_558948",
+  "version": "3.0",
+  "layer": "L0",
+  "category": "conceptual_qa",
+  "task_type": "single_turn",
+  "requires_tool": false,
+  "question": "My account's been labeled as “day trader” and I got a big margin call. What should I do? What trades can I place in the blocked period?",
+  "reference_answer": "You need to contact the trading company and ask them what's going on. If it's simply a matter of needing to add more cash because you are now classified as a day trader, then call them, ask them what you need to do to not be considered a day trader, and do that. It would likely consist of not trading for a week and then trading less than you were going forward to avoid getting classified as a day trader again.  That would be the easy problem to solve, so I hope that's right.",
+  "source_dataset": "fiqa",
+  "source_id": "fiqa_2450_558948",
+  "tags": [
+    "financial-qa"
+  ]
+}

@@ -1,0 +1,15 @@
+{
+  "task_id": "L0_fiqa_fiqa_5574_189874",
+  "version": "3.0",
+  "layer": "L0",
+  "category": "conceptual_qa",
+  "task_type": "single_turn",
+  "requires_tool": false,
+  "question": "What prevents investors from buying high yield stocks and selling them as soon as their dividend is paid out?",
+  "reference_answer": "The market is not stupid. It realises that a company is worth less after paying out dividends than before paying them. (It's obvious, since that company has just given out part of its earnings.) So after a company pays out dividends, its stock price normally drops approximately by the amount paid. Therefore if you buy, get the dividend, and immediately sell, under normal conditions you won't make any profit.",
+  "source_dataset": "fiqa",
+  "source_id": "fiqa_5574_189874",
+  "tags": [
+    "financial-qa"
+  ]
+}

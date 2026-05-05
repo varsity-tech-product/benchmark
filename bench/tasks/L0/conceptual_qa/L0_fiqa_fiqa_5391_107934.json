@@ -1,0 +1,15 @@
+{
+  "task_id": "L0_fiqa_fiqa_5391_107934",
+  "version": "3.0",
+  "layer": "L0",
+  "category": "conceptual_qa",
+  "task_type": "single_turn",
+  "requires_tool": false,
+  "question": "effect of bond issue on income statement",
+  "reference_answer": "No, it would not show up on the income statement as it isn't income. It would show up in the cash flow statement as a result of financing activities.",
+  "source_dataset": "fiqa",
+  "source_id": "fiqa_5391_107934",
+  "tags": [
+    "financial-qa"
+  ]
+}

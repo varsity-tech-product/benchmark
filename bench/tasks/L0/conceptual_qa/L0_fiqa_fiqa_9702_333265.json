@@ -1,0 +1,15 @@
+{
+  "task_id": "L0_fiqa_fiqa_9702_333265",
+  "version": "3.0",
+  "layer": "L0",
+  "category": "conceptual_qa",
+  "task_type": "single_turn",
+  "requires_tool": false,
+  "question": "How should one structure a portfolio given the possibility that a Total Stock Market Index might decline and not recover for a long time?",
+  "reference_answer": "Common financial advice is just that - it is common and general in nature and not specific for your financial needs, your goals and your risk tolerance. Regarding the possibility of a US market not going anywhere over a long period of time, well it is not a possibility, it has happened. See chart below:  It took 13 years for the S&P 500 to break through 1550, a level first reached in March 2000, tested in October 2007 (just before the GFC) and finally broken through in March 2013. If you had bought in early 2000 you would still be behind when you take inflation into account. If you took the strategy of dollar cost averaging and bought the same dollar value (say $10,000) of the index every six months (beginning of each January and each July) starting from the start of 2000 and bought your last portion in January 2013, you would have a return of about 35% over 13.5 years (or an average of 2.6% per year). Now lets look at the same chart below, but this time add some trend lines.  If we instead bought whenever the price crossed above the downtrend-line and sold whenever the price crossed below the uptrend-line (with the first purchase at the start of January 2000), we would have a return of 93% over the 13.5 years (or an average of 6.9% per year). Another more aggressive option (but manageable if you incorporate a risk management strategy) is to buy long when the price crosses the downtrend-line and sell your existing long position and sell short when the price drops below the uptrend-line. That is profiting both up-trending and down-trending markets. Again we start our buying at the start of January 2000. By shorting the index when the market is in a down-trend you could increase the above returns of 93% by another 54%, for a total return of 147% over 13.5 years (or an average of 10.9% per year). To conclude, using a simple long term strategy to time the markets may result in considerably higher returns than dollar cost averaging over the medium to long term, and I know which strategy would help me sleep better at night.",
+  "source_dataset": "fiqa",
+  "source_id": "fiqa_9702_333265",
+  "tags": [
+    "financial-qa"
+  ]
+}

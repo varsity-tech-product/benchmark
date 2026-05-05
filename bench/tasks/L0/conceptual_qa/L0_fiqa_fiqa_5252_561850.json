@@ -1,0 +1,15 @@
+{
+  "task_id": "L0_fiqa_fiqa_5252_561850",
+  "version": "3.0",
+  "layer": "L0",
+  "category": "conceptual_qa",
+  "task_type": "single_turn",
+  "requires_tool": false,
+  "question": "What are some sources of information on dividend schedules and amounts?",
+  "reference_answer": "You can use Yahoo! Finance to pull this information in my use. It is listed under Key Statistics -> Dividends & Splits. For example here is Exxon Mobile (XOM): Dividend Payout Information",
+  "source_dataset": "fiqa",
+  "source_id": "fiqa_5252_561850",
+  "tags": [
+    "financial-qa"
+  ]
+}

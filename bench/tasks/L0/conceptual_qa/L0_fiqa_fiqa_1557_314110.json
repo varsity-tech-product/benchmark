@@ -1,0 +1,15 @@
+{
+  "task_id": "L0_fiqa_fiqa_1557_314110",
+  "version": "3.0",
+  "layer": "L0",
+  "category": "conceptual_qa",
+  "task_type": "single_turn",
+  "requires_tool": false,
+  "question": "Free cash flow and capex on morningstar.com",
+  "reference_answer": "\"Free Cash Flow (FCF) is not a metric/data point which represents any ACTUAL cash flow of a company. FCF is a data point which communicates how much cash a company has after Operating cash requirements and cash expenditures \"\"required\"\" to grow and maintain the existing business. FCF can be used to pay dividends, buy back stock, purchase companies, et cetera.  None of which are REQUIRED to run the business.\"",
+  "source_dataset": "fiqa",
+  "source_id": "fiqa_1557_314110",
+  "tags": [
+    "financial-qa"
+  ]
+}

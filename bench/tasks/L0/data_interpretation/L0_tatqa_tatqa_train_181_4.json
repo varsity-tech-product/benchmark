@@ -1,0 +1,17 @@
+{
+  "task_id": "L0_tatqa_tatqa_train_181_4",
+  "version": "3.0",
+  "layer": "L0",
+  "category": "data_interpretation",
+  "task_type": "single_turn",
+  "requires_tool": false,
+  "question": "What is the company's net interest expense in 2018?",
+  "reference_answer": "**Answer:** -65\n\n**Type:** arithmetic\n\n**Derivation:** -$85 + 20",
+  "source_dataset": "tatqa",
+  "source_id": "tatqa_train_181_4",
+  "tags": [
+    "tabular-reasoning",
+    "financial-documents"
+  ],
+  "context": "**Table:**\n|  | For the year ended |  |  |\n| --- | --- | --- | --- |\n|  | September 30, 2019 | September 30, 2018 | Increase (Decrease) |\n|  | (Amounts in thousands) |  |  |\n| Interest expense | $(99) | $(85) | $(14) |\n| Interest income | 323 | 20 | 303 |\n| Foreign exchange gain (loss) | 157 | 263 | (106) |\n| Other income, net | 3 | 297 | (294) |\n| Total other income (expense), net | $384 | $495 | $(111) |\n\nOther Income/Expense\n\nThe following table details our other income/expenses for the years ended September 30, 2019 and 2018:\n\nThe decrease to other income (expenses) for the fiscal year ended September 30, 2019 as compared to the fiscal year ended September 30, 2018 was primarily driven by a decrease in Other income, net of $0.3 mil."
+}

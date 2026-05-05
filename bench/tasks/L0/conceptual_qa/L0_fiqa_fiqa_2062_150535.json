@@ -1,0 +1,15 @@
+{
+  "task_id": "L0_fiqa_fiqa_2062_150535",
+  "version": "3.0",
+  "layer": "L0",
+  "category": "conceptual_qa",
+  "task_type": "single_turn",
+  "requires_tool": false,
+  "question": "How would I use Google Finance to find financial data about LinkedIn & its stock?",
+  "reference_answer": "It's been traded publicly for only about a month.  I wouldn't put much credence in a P/E ratio just yet because it hasn't had to report anything like a grown-up publicly traded company yet.",
+  "source_dataset": "fiqa",
+  "source_id": "fiqa_2062_150535",
+  "tags": [
+    "financial-qa"
+  ]
+}

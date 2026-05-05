@@ -1,0 +1,15 @@
+{
+  "task_id": "L0_fiqa_fiqa_8792_441768",
+  "version": "3.0",
+  "layer": "L0",
+  "category": "conceptual_qa",
+  "task_type": "single_turn",
+  "requires_tool": false,
+  "question": "Why do requirements after a margin call vary?",
+  "reference_answer": "Initial Margins and Maintenance margins can be used for both stocks as well as futures. It depends on which broker you use and what services they offer. The initial Margin is used to cover the purchase, the maintenance margin is used to ask additional funds in case the value of the underlying equity changes drastically before settlement. You can start with the investopedia article on initial margin and Maintenance margin",
+  "source_dataset": "fiqa",
+  "source_id": "fiqa_8792_441768",
+  "tags": [
+    "financial-qa"
+  ]
+}

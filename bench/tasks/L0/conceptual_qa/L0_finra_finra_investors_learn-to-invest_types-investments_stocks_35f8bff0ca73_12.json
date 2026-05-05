@@ -1,0 +1,17 @@
+{
+  "task_id": "L0_finra_finra_investors_learn-to-invest_types-investments_stocks_35f8bff0ca73_12",
+  "version": "3.0",
+  "layer": "L0",
+  "category": "conceptual_qa",
+  "task_type": "single_turn",
+  "requires_tool": false,
+  "question": "How do inflation risk and interest rate risk affect stocks, especially when they happen together?",
+  "reference_answer": "These two risks can operate separately or in tandem. Interest rate risk, in this context, simply refers to the challenges that a rising interest rate causes for businesses that need financing. As their costs go up with interest rate increases, it becomes harder for them to stay in business. If rates climb during a time of inflation—which often happens since increasing interest rates is a tool the Federal Reserve commonly uses to fight inflation—then a company might see its financing costs climb as the value of the dollars it's bringing in decreases.",
+  "source_dataset": "finra",
+  "source_id": "finra_investors_learn-to-invest_types-investments_stocks_35f8bff0ca73_12",
+  "tags": [
+    "investor-education",
+    "regulatory"
+  ],
+  "title": "Stocks | FINRA.org"
+}

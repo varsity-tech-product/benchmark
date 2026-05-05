@@ -1,0 +1,36 @@
+{
+  "task_id": "L0_convfinqa_convfinqa_train_2880",
+  "version": "3.0",
+  "layer": "L0",
+  "category": "multi_step_reasoning",
+  "task_type": "single_turn",
+  "requires_tool": false,
+  "question": "what portion of the net change in net revenue is due to the retail electric price?",
+  "reference_answer": "**Answer:** 38.4%\n\n**Reasoning:** subtract(5051, 4694), divide(137, #0)",
+  "source_dataset": "convfinqa",
+  "source_id": "convfinqa_train_2880",
+  "tags": [
+    "conversational",
+    "numerical-reasoning",
+    "financial-reports"
+  ],
+  "context": "**Context:**\nentergy corporation and subsidiaries management's financial discussion and analysis refer to 201cselected financial data - five-year comparison of entergy corporation and subsidiaries 201d which accompanies entergy corporation 2019s financial statements in this report for further information with respect to operating statistics .\nin november 2007 the board approved a plan to pursue a separation of entergy 2019s non-utility nuclear business from entergy through a spin-off of the business to entergy shareholders .\nin april 2010 , entergy announced that it planned to unwind the business infrastructure associated with the proposed spin-off transaction .\nas a result of the plan to unwind the business infrastructure , entergy recorded expenses in 2010 for the write-off of certain capitalized costs incurred in connection with the planned spin-off transaction .\nthese costs are discussed in more detail below and throughout this section .\nnet revenue utility following is an analysis of the change in net revenue comparing 2010 to 2009 .\namount ( in millions ) .\n\n**Table:**\n|  | amount ( in millions ) |\n| --- | --- |\n| 2009 net revenue | $ 4694 |\n| volume/weather | 231 |\n| retail electric price | 137 |\n| provision for regulatory proceedings | 26 |\n| rough production cost equalization | 19 |\n| ano decommissioning trust | -24 ( 24 ) |\n| fuel recovery | -44 ( 44 ) |\n| other | 12 |\n| 2010 net revenue | $ 5051 |\n\nthe volume/weather variance is primarily due to an increase of 8362 gwh , or 8% ( 8 % ) , in billed electricity usage in all retail sectors , including the effect on the residential sector of colder weather in the first quarter 2010 compared to 2009 and warmer weather in the second and third quarters 2010 compared to 2009 .\nthe industrial sector reflected strong sales growth on continuing signs of economic recovery .\nthe improvement in this sector was primarily driven by inventory restocking and strong exports with the chemicals , refining , and miscellaneous manufacturing sectors leading the improvement .\nthe retail electric price variance is primarily due to : increases in the formula rate plan riders at entergy gulf states louisiana effective november 2009 , january 2010 , and september 2010 , at entergy louisiana effective november 2009 , and at entergy mississippi effective july 2009 ; a base rate increase at entergy arkansas effective july 2010 ; rate actions at entergy texas , including base rate increases effective in may and august 2010 ; a formula rate plan provision of $ 16.6 million recorded in the third quarter 2009 for refunds that were made to customers in accordance with settlements approved by the lpsc ; and the recovery in 2009 by entergy arkansas of 2008 extraordinary storm costs , as approved by the apsc , which ceased in january 2010 .\nthe recovery of storm costs is offset in other operation and maintenance expenses .\nsee note 2 to the financial statements for further discussion of the proceedings referred to above. .",
+  "conversation_history": [
+    {
+      "question": "what was net revenue in 2010?",
+      "answer": ""
+    },
+    {
+      "question": "what was net revenue in 2009?",
+      "answer": ""
+    },
+    {
+      "question": "what was the difference in net revenues?",
+      "answer": ""
+    },
+    {
+      "question": "what is the value of retail elastic price to the difference in net revenue?",
+      "answer": ""
+    }
+  ]
+}

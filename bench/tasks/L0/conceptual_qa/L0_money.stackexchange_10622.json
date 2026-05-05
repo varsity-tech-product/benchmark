@@ -1,0 +1,14 @@
+{
+  "task_id": "L0_money.stackexchange_10622",
+  "version": "3.0",
+  "layer": "L0",
+  "category": "conceptual_qa",
+  "task_type": "single_turn",
+  "requires_tool": false,
+  "question": "It's been shown time and time again (e.g. in Stocks for the Long Run) that the most profitable time to buy stocks is when sentiment is poor and that stocks usually recover very quickly at the end of a recession. Similarly, Robert Schiller notes in Irrational Exuberence that stocks fluctuate much more than the present value of future dividends (or, I would note, future earnings).\n\nIf the market is reasonably efficient, why wouldn't this become a self-defeating prophecy, with the eventual recovery priced in throughout the whole recession? Given that the business cycle isn't predictable and owning stocks with a short time horizon is generally a bad idea, why would anyone buy stocks in the first place if they weren't prepared to ride out a recession if one happens?",
+  "reference_answer": "The satisfaction from gains packs less of an emotional impact than the fear of loss. It's very difficult for many people to overcome this fear, so when prices begin to fall, many investors sell to minimize their potential loss. This causes a further drop, which can lead to more selling as other investors reach their emotional threshold for loss.\n\nThis emotion-based selling keeps the market inefficient in the short term. If there aren't enough value investors waiting to scoop up the stock at the new discount, it can stay undervalued for a long time.",
+  "source_dataset": "money.stackexchange",
+  "source_id": "10622",
+  "tags": [],
+  "title": "Why does the stock market consistently overreact to the business cycle?"
+}

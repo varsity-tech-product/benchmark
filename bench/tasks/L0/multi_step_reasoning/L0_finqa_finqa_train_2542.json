@@ -1,0 +1,17 @@
+{
+  "task_id": "L0_finqa_finqa_train_2542",
+  "version": "3.0",
+  "layer": "L0",
+  "category": "multi_step_reasoning",
+  "task_type": "single_turn",
+  "requires_tool": false,
+  "question": "what is the rate of return on an investment in s&p500 index from 2015 to 2016?",
+  "reference_answer": "**Answer:** 1.4%\n\n**Reasoning:** subtract(177.01, 174.56), divide(#0, 174.56)",
+  "source_dataset": "finqa",
+  "source_id": "finqa_train_2542",
+  "tags": [
+    "numerical-reasoning",
+    "financial-reports"
+  ],
+  "context": "**Context:**\nstock price performance the following graph shows a comparison of the cumulative total return on our common stock , the standard & poor 2019s 500 index and the standard & poor 2019s retail index .\nthe graph assumes that the value of an investment in our common stock and in each such index was $ 100 on december 31 , 2011 , and that any dividends have been reinvested .\nthe comparison in the graph below is based solely on historical data and is not intended to forecast the possible future performance of our common stock .\ncomparison of cumulative total return among advance auto parts , inc. , s&p 500 index and s&p retail index company/index december 31 , december 29 , december 28 , january 3 , january 2 , december 31 .\n\n**Table:**\n| company/index | december 31 2011 | december 29 2012 | december 28 2013 | january 3 2015 | january 2 2016 | december 31 2016 |\n| --- | --- | --- | --- | --- | --- | --- |\n| advance auto parts | $ 100.00 | $ 102.87 | $ 158.46 | $ 228.88 | $ 217.49 | $ 244.64 |\n| s&p 500 index | 100.00 | 114.07 | 152.98 | 174.56 | 177.01 | 198.18 |\n| s&p retail index | 100.00 | 122.23 | 178.55 | 196.06 | 245.31 | 256.69 |\n\n."
+}

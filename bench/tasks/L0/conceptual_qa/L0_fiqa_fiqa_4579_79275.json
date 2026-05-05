@@ -1,0 +1,15 @@
+{
+  "task_id": "L0_fiqa_fiqa_4579_79275",
+  "version": "3.0",
+  "layer": "L0",
+  "category": "conceptual_qa",
+  "task_type": "single_turn",
+  "requires_tool": false,
+  "question": "Higher returns from international markets?",
+  "reference_answer": "Foreign stocks tend to be more volatile -- higher risk trades off against higher return potential, always. The better reason for having some money in that area is that, as with bonds, it moves out-of-sync with the US markets and once you pick your preferred distribution, maintaining that balance semi-automatically takes advantage of that to improve your return-vs-risk position. I have a few percent of my total investments in an international stock index fund, and a few percent in an international REIT, both being fairly low-fee. (Low fees mean more of the money reaches you, and seems to be one of the better reasons for preferring one fund over another following the same segment of the market.) They're there because the model my investment advisor uses -- and validated with monte-carlo simulation of my specific mix -- shows that keeping them in the mix at this low level is likely to result in a better long-term outcome than if i left them out. No guarantees, but probabilities lean toward this specfic mix doing what i need. I don't pretend to be able to justify that via theory or to explain why these specific ratios work... but I understand enough about the process to trust that they are on (perhaps of many) reasonable solutions to get the best odds given my specific risk tolerance, timeline, and distaste for actively managing my money more than a few times a year. If that.",
+  "source_dataset": "fiqa",
+  "source_id": "fiqa_4579_79275",
+  "tags": [
+    "financial-qa"
+  ]
+}

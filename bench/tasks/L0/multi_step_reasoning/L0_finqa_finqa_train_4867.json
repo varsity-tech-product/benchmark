@@ -1,0 +1,17 @@
+{
+  "task_id": "L0_finqa_finqa_train_4867",
+  "version": "3.0",
+  "layer": "L0",
+  "category": "multi_step_reasoning",
+  "task_type": "single_turn",
+  "requires_tool": false,
+  "question": "in millions for 2014 , 2013 , and 2012 , what was the minimum amount of commissions and fees?",
+  "reference_answer": "**Answer:** 3053\n\n**Reasoning:** table_min(commissions and fees, none)",
+  "source_dataset": "finqa",
+  "source_id": "finqa_train_4867",
+  "tags": [
+    "numerical-reasoning",
+    "financial-reports"
+  ],
+  "context": "**Context:**\nmanagement 2019s discussion and analysis institutional client services our institutional client services segment is comprised of : fixed income , currency and commodities client execution .\nincludes client execution activities related to making markets in interest rate products , credit products , mortgages , currencies and commodities .\n2030 interest rate products .\ngovernment bonds , money market instruments such as commercial paper , treasury bills , repurchase agreements and other highly liquid securities and instruments , as well as interest rate swaps , options and other derivatives .\n2030 credit products .\ninvestment-grade corporate securities , high-yield securities , credit derivatives , bank and bridge loans , municipal securities , emerging market and distressed debt , and trade claims .\n2030 mortgages .\ncommercial mortgage-related securities , loans and derivatives , residential mortgage-related securities , loans and derivatives ( including u.s .\ngovernment agency-issued collateralized mortgage obligations , other prime , subprime and alt-a securities and loans ) , and other asset-backed securities , loans and derivatives .\n2030 currencies .\nmost currencies , including growth-market currencies .\n2030 commodities .\ncrude oil and petroleum products , natural gas , base , precious and other metals , electricity , coal , agricultural and other commodity products .\nequities .\nincludes client execution activities related to making markets in equity products and commissions and fees from executing and clearing institutional client transactions on major stock , options and futures exchanges worldwide , as well as otc transactions .\nequities also includes our securities services business , which provides financing , securities lending and other prime brokerage services to institutional clients , including hedge funds , mutual funds , pension funds and foundations , and generates revenues primarily in the form of interest rate spreads or fees .\nthe table below presents the operating results of our institutional client services segment. .\n\n**Table:**\n| $ in millions | year ended december 2014 | year ended december 2013 | year ended december 2012 |\n| --- | --- | --- | --- |\n| fixed income currency and commodities client execution | $ 8461 | $ 8651 | $ 9914 |\n| equities client execution1 | 2079 | 2594 | 3171 |\n| commissions and fees | 3153 | 3103 | 3053 |\n| securities services | 1504 | 1373 | 1986 |\n| total equities | 6736 | 7070 | 8210 |\n| total net revenues | 15197 | 15721 | 18124 |\n| operating expenses | 10880 | 11792 | 12490 |\n| pre-tax earnings | $ 4317 | $ 3929 | $ 5634 |\n\n1 .\nnet revenues related to the americas reinsurance business were $ 317 million for 2013 and $ 1.08 billion for 2012 .\nin april 2013 , we completed the sale of a majority stake in our americas reinsurance business and no longer consolidate this business .\n42 goldman sachs 2014 annual report ."
+}

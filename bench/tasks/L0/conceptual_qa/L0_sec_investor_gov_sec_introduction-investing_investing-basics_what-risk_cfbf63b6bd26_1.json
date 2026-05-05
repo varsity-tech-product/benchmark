@@ -1,0 +1,17 @@
+{
+  "task_id": "L0_sec_investor_gov_sec_introduction-investing_investing-basics_what-risk_cfbf63b6bd26_1",
+  "version": "3.0",
+  "layer": "L0",
+  "category": "conceptual_qa",
+  "task_type": "single_turn",
+  "requires_tool": false,
+  "question": "What is volatility risk, and why do stock prices fluctuate even when companies aren't failing?",
+  "reference_answer": "Even when companies aren’t in danger of failing, their stock price may fluctuate up or down.  Large company stocks as a group, for example, have lost money on average about one out of every three years.  Market fluctuations can be unnerving to some investors.  A stock’s price can be affected by factors inside the company, such as a faulty product, or by events the company has no control over, such as political or market events.",
+  "source_dataset": "sec_investor_gov",
+  "source_id": "sec_introduction-investing_investing-basics_what-risk_cfbf63b6bd26_1",
+  "tags": [
+    "regulatory",
+    "investor-education"
+  ],
+  "title": "What is Risk? | Investor.gov"
+}

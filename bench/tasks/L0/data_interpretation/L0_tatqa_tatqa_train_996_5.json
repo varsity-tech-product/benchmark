@@ -1,0 +1,17 @@
+{
+  "task_id": "L0_tatqa_tatqa_train_996_5",
+  "version": "3.0",
+  "layer": "L0",
+  "category": "data_interpretation",
+  "task_type": "single_turn",
+  "requires_tool": false,
+  "question": "Between 2018 and 2019 year end, which year had more total property and equipment?",
+  "reference_answer": "**Answer:** 2019\n\n**Type:** span\n\n**Derivation:** 770.3>739.9",
+  "source_dataset": "tatqa",
+  "source_id": "tatqa_train_996_5",
+  "tags": [
+    "tabular-reasoning",
+    "financial-documents"
+  ],
+  "context": "**Table:**\n|  | Estimated Useful Lives | December 31, |  |\n| --- | --- | --- | --- |\n|  |  | 2019 | 2018 |\n| Computer equipment | 3 years | $ 434.8 | $ 417.6 |\n| Software | 3 years | 55.9 | 40.5 |\n| Land | Indefinite | 9.0 | 9.0 |\n| Buildings, including improvements | 5-40 years | 145.5 | 175.0 |\n| Leasehold improvements | Lesser of useful life or remaining lease term | 99.4 | 70.8 |\n| Other | 1-20 years | 25.7 | 27.0 |\n| Total property and equipment |  | 770.3 | 739.9 |\n| Less: accumulated depreciation and amortization |  | (511.7) | (440.9) |\n| Property and equipment, net |  | $ 258.6 | $ 299.0 |\n\nProperty and equipment consisted of the following:\n\nDepreciation and amortization expense related to property and equipment was $86.5 million, $97.4 million and $88.8 million during 2019, 2018 and 2017, respectively.\n\nProperty and Equipment\n\nProperty and equipment is stated at cost. Depreciation is recorded over the shorter of the estimated useful life or the lease term of the applicable assets using the straight-line method beginning on the date an asset is placed in service. We regularly evaluate the estimated remaining useful lives of our property and equipment to determine whether events or changes in circumstances warrant a revision to the remaining period of depreciation. Maintenance and repairs are charged to expense as incurred."
+}

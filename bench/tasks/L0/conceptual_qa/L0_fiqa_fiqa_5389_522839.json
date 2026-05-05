@@ -1,0 +1,15 @@
+{
+  "task_id": "L0_fiqa_fiqa_5389_522839",
+  "version": "3.0",
+  "layer": "L0",
+  "category": "conceptual_qa",
+  "task_type": "single_turn",
+  "requires_tool": false,
+  "question": "What is the Average Yield on High-Grade Corporate Bonds as of Now?",
+  "reference_answer": "Yahoo! Finance would list it as 3.30 for the 20 year corporate AAA bonds. This is using the criteria from the Wikipedia link you stated in the initial question.",
+  "source_dataset": "fiqa",
+  "source_id": "fiqa_5389_522839",
+  "tags": [
+    "financial-qa"
+  ]
+}

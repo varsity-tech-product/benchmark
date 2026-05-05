@@ -1,0 +1,15 @@
+{
+  "task_id": "L0_fiqa_fiqa_7026_412951",
+  "version": "3.0",
+  "layer": "L0",
+  "category": "conceptual_qa",
+  "task_type": "single_turn",
+  "requires_tool": false,
+  "question": "Why call option price increases with higher volatility",
+  "reference_answer": "Let's say a stock trades at $100 right now, and you can buy a $100 call option. When you buy the call option (and the money you paid is gone), one of two things can happen: The share price goes up, or the share price goes down.  If the share price goes up, you profit. If the share price goes down, you don't lose! Because once the shares are below $100, you don't exercise the call option, and you don't lose any money.  So if you have a share that is rock solid at $100, you don't make money. If you have a share where the company owner took some ridiculous risk, and the shares could go to $200 or the company could go bankrupt, then you have a 50% chance to make $100 and a 50% chance to not lose anything. That's much more preferable.",
+  "source_dataset": "fiqa",
+  "source_id": "fiqa_7026_412951",
+  "tags": [
+    "financial-qa"
+  ]
+}

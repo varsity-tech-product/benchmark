@@ -1,0 +1,28 @@
+{
+  "task_id": "L0_convfinqa_convfinqa_train_2962",
+  "version": "3.0",
+  "layer": "L0",
+  "category": "multi_step_reasoning",
+  "task_type": "single_turn",
+  "requires_tool": false,
+  "question": "what was the average 2010 and 2009 total liability for the mrrp , in millions?",
+  "reference_answer": "**Answer:** 20.6\n\n**Reasoning:** add(20.5, 20.7), divide(#0, const_2)",
+  "source_dataset": "convfinqa",
+  "source_id": "convfinqa_train_2962",
+  "tags": [
+    "conversational",
+    "numerical-reasoning",
+    "financial-reports"
+  ],
+  "context": "**Context:**\nthe company expects to amortize $ 1.7 million of actuarial loss from accumulated other comprehensive income ( loss ) into net periodic benefit costs in 2011 .\nat december 31 , 2010 , anticipated benefit payments from the plan in future years are as follows: .\n\n**Table:**\n| ( in millions ) | year |\n| --- | --- |\n| 2011 | $ 7.2 |\n| 2012 | 8.2 |\n| 2013 | 8.6 |\n| 2014 | 9.5 |\n| 2015 | 10.0 |\n| 2016-2020 | 62.8 |\n\nsavings plans .\ncme maintains a defined contribution savings plan pursuant to section 401 ( k ) of the internal revenue code , whereby all u.s .\nemployees are participants and have the option to contribute to this plan .\ncme matches employee contributions up to 3% ( 3 % ) of the employee 2019s base salary and may make additional discretionary contributions of up to 2% ( 2 % ) of base salary .\nin addition , certain cme london-based employees are eligible to participate in a defined contribution plan .\nfor cme london-based employees , the plan provides for company contributions of 10% ( 10 % ) of earnings and does not have any vesting requirements .\nsalary and cash bonuses paid are included in the definition of earnings .\naggregate expense for all of the defined contribution savings plans amounted to $ 6.3 million , $ 5.2 million and $ 5.8 million in 2010 , 2009 and 2008 , respectively .\ncme non-qualified plans .\ncme maintains non-qualified plans , under which participants may make assumed investment choices with respect to amounts contributed on their behalf .\nalthough not required to do so , cme invests such contributions in assets that mirror the assumed investment choices .\nthe balances in these plans are subject to the claims of general creditors of the exchange and totaled $ 28.8 million and $ 23.4 million at december 31 , 2010 and 2009 , respectively .\nalthough the value of the plans is recorded as an asset in the consolidated balance sheets , there is an equal and offsetting liability .\nthe investment results of these plans have no impact on net income as the investment results are recorded in equal amounts to both investment income and compensation and benefits expense .\nsupplemental savings plan 2014cme maintains a supplemental plan to provide benefits for employees who have been impacted by statutory limits under the provisions of the qualified pension and savings plan .\nall cme employees hired prior to january 1 , 2007 are immediately vested in their supplemental plan benefits .\nall cme employees hired on or after january 1 , 2007 are subject to the vesting requirements of the underlying qualified plans .\ntotal expense for the supplemental plan was $ 0.9 million , $ 0.7 million and $ 1.3 million for 2010 , 2009 and 2008 , respectively .\ndeferred compensation plan 2014a deferred compensation plan is maintained by cme , under which eligible officers and members of the board of directors may contribute a percentage of their compensation and defer income taxes thereon until the time of distribution .\nnymexmembers 2019 retirement plan and benefits .\nnymex maintained a retirement and benefit plan under the commodities exchange , inc .\n( comex ) members 2019 recognition and retention plan ( mrrp ) .\nthis plan provides benefits to certain members of the comex division based on long-term membership , and participation is limited to individuals who were comex division members prior to nymex 2019s acquisition of comex in 1994 .\nno new participants were permitted into the plan after the date of this acquisition .\nunder the terms of the mrrp , the company is required to fund the plan with a minimum annual contribution of $ 0.4 million until it is fully funded .\nall benefits to be paid under the mrrp are based on reasonable actuarial assumptions which are based upon the amounts that are available and are expected to be available to pay benefits .\ntotal contributions to the plan were $ 0.8 million for each of 2010 , 2009 and for the period august 23 through december 31 , 2008 .\nat december 31 , 2010 and 2009 , the total obligation for the mrrp totaled $ 20.7 million and $ 20.5 million .",
+  "conversation_history": [
+    {
+      "question": "combined, what was the total obligation for the mrrp in 2009 and 2010?",
+      "answer": ""
+    },
+    {
+      "question": "and the average for this vaue?",
+      "answer": ""
+    }
+  ]
+}

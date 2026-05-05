@@ -1,0 +1,17 @@
+{
+  "task_id": "L0_finra_finra_investors_learn-to-invest_types-investments_bonds_033aac083457_1",
+  "version": "3.0",
+  "layer": "L0",
+  "category": "conceptual_qa",
+  "task_type": "single_turn",
+  "requires_tool": false,
+  "question": "Are bonds a good addition to a diversified investment portfolio?",
+  "reference_answer": "Bonds and bond funds can be an important component of a diversified investment portfolio. They can be helpful for anyone concerned about capital preservation and income generation and can help partially offset the risks that come with equity investing. But like all investments, they also carry an element ofrisk.\n\nPerformingdue diligencecan help you assess the many characteristics that are associated with these fixed-income securities and evaluate overall suitability with your investing needs.",
+  "source_dataset": "finra",
+  "source_id": "finra_investors_learn-to-invest_types-investments_bonds_033aac083457_1",
+  "tags": [
+    "investor-education",
+    "regulatory"
+  ],
+  "title": "Bonds | FINRA.org"
+}

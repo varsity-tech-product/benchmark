@@ -1,0 +1,15 @@
+{
+  "task_id": "L0_fiqa_fiqa_9271_399367",
+  "version": "3.0",
+  "layer": "L0",
+  "category": "conceptual_qa",
+  "task_type": "single_turn",
+  "requires_tool": false,
+  "question": "What is the maximum number of options I can buy if the price is $0.01?",
+  "reference_answer": "Options trading at $.01 have the same position limits as other options. Self regulatory organizations set the position limits for options which can be 250,000 contracts on one side of the book, as an example. Weeklies that are expiring soon have lots of liquidity while trading at $0.01, you can see this in Bank of America stock if interested",
+  "source_dataset": "fiqa",
+  "source_id": "fiqa_9271_399367",
+  "tags": [
+    "financial-qa"
+  ]
+}

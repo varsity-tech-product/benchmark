@@ -1,0 +1,17 @@
+{
+  "task_id": "L0_tatqa_tatqa_train_1675_4",
+  "version": "3.0",
+  "layer": "L0",
+  "category": "data_interpretation",
+  "task_type": "single_turn",
+  "requires_tool": false,
+  "question": "What was the change in the balance at 31st December in 2019 from 2018?",
+  "reference_answer": "**Answer:** 5\n\n**Type:** arithmetic\n\n**Derivation:** 14.8-9.8",
+  "source_dataset": "tatqa",
+  "source_id": "tatqa_train_1675_4",
+  "tags": [
+    "tabular-reasoning",
+    "financial-documents"
+  ],
+  "context": "**Table:**\n|  | 2019 | 2018 |\n| --- | --- | --- |\n|  | £m | £m |\n| Balance at 1st January | 9.8 | 9.6 |\n| Additional impairment | 8.6 | 2.8 |\n| Amounts written off as uncollectable | (1.2) | (0.7) |\n| Amounts recovered | (0.6) | (0.5) |\n| Impairment losses reversed | (1.1) | (1.4) |\n| Exchange differences | (0.7) | – |\n| Balance at 31st December | 14.8 | 9.8 |\n\nThe credit risk profile of trade receivables\n\nOther than those disclosed above no other impairment losses on receivables and contract assets arising from contracts with customers have been recognised. Other than trade receivables there are no financial assets that are past their due date at 31st December 2019.\n\nPayment terms across the Group vary dependent on the geographic location of each operating company. Payment is typically due between 20 and 90 days after the invoice is issued.\n\nAll contracts with customers do not contain a significant financing component.\n\nThe movement in the allowance for impairment in respect of trade receivables during the year was as follows:"
+}

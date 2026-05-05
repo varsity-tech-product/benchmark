@@ -1,0 +1,14 @@
+{
+  "task_id": "L0_money.stackexchange_8474",
+  "version": "3.0",
+  "layer": "L0",
+  "category": "conceptual_qa",
+  "task_type": "single_turn",
+  "requires_tool": false,
+  "question": "I have some gold (GLD), but not much - a little over 1% of my net worth, and about 2% of my non-retirement investments. I'd like to increase this position as an inflation hedge and to have something that is less correlated with the market as a whole, but I'm not sure how much I should have.\n\nMy initial gut feel was to get up to somewhere between 5 and 10% of my net worth, but that's not really based on anything. Is there any general rule?",
+  "reference_answer": "I think most financial planners or advisors would allocate zero to a gold-only fund. That's probably the mainstream view. Metals investments have a lot of issues, more elaboration here: [What would be the signs of a bubble in silver?](https://money.stackexchange.com/questions/7938/what-would-be-the-signs-of-a-bubble-in-silver/7940#7940)\n\nAlso consider that metals (and commodities, despite a recent drop) are on a big run-up and lots of random people are saying they're the thing to get in on. Usually this is a sign that you might want to wait a bit or at least buy gradually.\n\nThe more mainstream way to go might be a commodities fund or all-asset fund. Some funds you could look at (just examples, not recommendations) might include several PIMCO funds including their commodity real return and all-asset; Hussman Strategic Total Return; diversified commodities index ETFs; stuff like that has a lot of the theoretical benefits of gold but isn't as dependent on gold specifically. Another idea for you might be international bonds (or stocks), if you feel US currency in particular is at risk. Oh, and REITs often come up as an inflation-resistant asset class.\n\nI personally use diversified funds rather than gold specifically, fwiw, mostly for the same reason I'd buy a fund instead of individual stocks.\n\n10%-ish is probably about right to put into this kind of stuff, depending on your overall portfolio and goals. Pure commodities should probably be less than funds with some bonds, stocks, or REITs, because in principle commodities only track inflation over time, they don't make money. The only way you make money on them is rebalancing out of them some when there's a run up and back in when they're down. So a portfolio with mostly commodities would suck long term.\n\nSome people feel gold's virtue is tangibility rather than being a piece of paper, in an apocalypse-ish scenario, but if making that argument I think you need physical gold in your basement, not an ETF. Plus I'd argue for guns, ammo, and food over gold in that scenario. :-)",
+  "source_dataset": "money.stackexchange",
+  "source_id": "8474",
+  "tags": [],
+  "title": "Is there a general guideline for what percentage of a portfolio should be in gold?"
+}

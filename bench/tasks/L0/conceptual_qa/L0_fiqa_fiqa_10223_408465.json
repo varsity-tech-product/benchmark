@@ -1,0 +1,15 @@
+{
+  "task_id": "L0_fiqa_fiqa_10223_408465",
+  "version": "3.0",
+  "layer": "L0",
+  "category": "conceptual_qa",
+  "task_type": "single_turn",
+  "requires_tool": false,
+  "question": "What is the valuation of a company based on?",
+  "reference_answer": "\"There is no such thing as a correct value. There are different ways to calculate (read: guess) an anticipated value, but neither of them is the \"\"correct\"\" one. Last not least this depends on your interpretation of the term \"\"correct\"\" in that context.  Why do you think paid Facebook such a huge amount for WhatsApp? Surely not, because it was the \"\"correct\"\" value.\"",
+  "source_dataset": "fiqa",
+  "source_id": "fiqa_10223_408465",
+  "tags": [
+    "financial-qa"
+  ]
+}

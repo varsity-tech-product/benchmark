@@ -1,0 +1,17 @@
+{
+  "task_id": "L0_tatqa_tatqa_train_2106_4",
+  "version": "3.0",
+  "layer": "L0",
+  "category": "data_interpretation",
+  "task_type": "single_turn",
+  "requires_tool": false,
+  "question": "What is the percentage change in the company's cost of sales between the fiscal years ended September 2018 and 2019?",
+  "reference_answer": "**Answer:** 5.06\n\n**Type:** arithmetic\n\n**Derivation:** (1,308,364,726 - 1,245,375,460)/1,245,375,460",
+  "source_dataset": "tatqa",
+  "source_id": "tatqa_train_2106_4",
+  "tags": [
+    "tabular-reasoning",
+    "financial-documents"
+  ],
+  "context": "**Table:**\n|  | Fiscal Years Ended September |  |\n| --- | --- | --- |\n|  | 2019 | 2018 |\n| Sales (including excise taxes of $370.2 million and $368.4 million, | $1,392,388,157 | $1,322,306,658 |\n| Cost of sales | 1,308,364,726 | 1,245,375,460 |\n| Gross profit | 84,023,431 | 76,931,198 |\n| Selling, general and administrative expenses | 72,182,883 | 66,781,234 |\n| Depreciation and amortization | 2,617,591 | 2,318,146 |\n| Impairment charges | 2,873,269 | 1,912,877 |\n|  | 77,673,743 | 71,012,257 |\n| Operating income | 6,349,688 | 5,918,941 |\n| Other expense (income): |  |  |\n| Interest expense | 1,598,864 | 1,194,373 |\n| Other (income), net | (61,119) | (54,042) |\n|  | 1,537,745 | 1,140,331 |\n| Income from operations before income taxes | 4,811,943 | 4,778,610 |\n| Income tax expense | 1,609,000 | 1,164,000 |\n| Net income available to common shareholders | $ 3,202,943 | $  3,614,610 |\n| Basic earnings per share available to common shareholders | $ 5.36 | $  5.47 |\n| Diluted earnings per share available to common shareholders | $ 5.25 | $  5.38 |\n| Basic weighted average shares outstanding | 597,961 | 660,925 |\n| Diluted weighted average shares outstanding | 609,836 | 672,449 |\n| Dividends declared and paid per common share | $ 1.00 | $  1.00 |\n\nCONSOLIDATED STATEMENTS OF OPERATIONS\n\nThe accompanying notes are an integral part of these consolidated financial statements."
+}

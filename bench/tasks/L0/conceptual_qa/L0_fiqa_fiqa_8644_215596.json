@@ -1,0 +1,15 @@
+{
+  "task_id": "L0_fiqa_fiqa_8644_215596",
+  "version": "3.0",
+  "layer": "L0",
+  "category": "conceptual_qa",
+  "task_type": "single_turn",
+  "requires_tool": false,
+  "question": "Options price vs implied volatility - who drives who?",
+  "reference_answer": "\"Currently, when \"\"implied volatility\"\" is spoken, the Black-Scholes-Merton model is implied.  This model has been shown to be deficient, thus the Variance Gamma Model should be used. However, as nearly no one uses VG, it can be assumed that BS is still being implied. The BS formula has multiple variables.  Some are external to the underlying in question.  The rest are internal. When all but one variable is known or assumed, the last variable can be calculated, so if one has the price of the underlying and all else except the volatility, the volatility can be calculated thus implied. If one selects an implied volatility, and all variables except the underlying price is known, the underlying price can be calculated. For the present, one uses the current price of the underlying to calculate the implied volatility.  For future option prices, one assumes an implied volatility at a later date to calculate a possible price. For prices not at the money, the BS model is extremely imprecise.  The VG model can better determine a potential future price.\"",
+  "source_dataset": "fiqa",
+  "source_id": "fiqa_8644_215596",
+  "tags": [
+    "financial-qa"
+  ]
+}

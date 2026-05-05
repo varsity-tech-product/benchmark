@@ -1,0 +1,17 @@
+{
+  "task_id": "L0_tatqa_tatqa_train_1885_4",
+  "version": "3.0",
+  "layer": "L0",
+  "category": "data_interpretation",
+  "task_type": "single_turn",
+  "requires_tool": false,
+  "question": "What was the change in Unearned software maintenance revenue between 2019 and 2020?",
+  "reference_answer": "**Answer:** 959\n\n**Type:** arithmetic\n\n**Derivation:** 6,700-5,741",
+  "source_dataset": "tatqa",
+  "source_id": "tatqa_train_1885_4",
+  "tags": [
+    "tabular-reasoning",
+    "financial-documents"
+  ],
+  "context": "**Table:**\n|  | January 31, 2020 | February 1, 2019 |\n| --- | --- | --- |\n| Unearned license revenue | $19 | $15 |\n| Unearned subscription and SaaS revenue | 1,534 | 916 |\n| Unearned software maintenance revenue | 6,700 | 5,741 |\n| Unearned professional services revenue | 1,015 | 767 |\n| Total unearned revenue | $9,268 | $7,439 |\n\nUnearned Revenue\n\nUnearned revenue as of the periods presented consisted of the following (table in millions):\n\nUnearned subscription and SaaS revenue is generally recognized over time as customers consume the services or ratably over the term of the subscription, commencing upon provisioning of the service. Previously, unearned subscription and SaaS revenue was allocated between unearned license revenue and unearned software maintenance revenue in prior periods and has been reclassified to conform with current period presentation.\n\nUnearned software maintenance revenue is attributable to VMware’s maintenance contracts and is generally recognized over time on a ratable basis over the contract duration. The weighted-average remaining contractual term as of January 31, 2020 was approximately two years. Unearned professional services revenue results primarily from prepaid professional services and is generally recognized as the services are performed.\n\nTotal billings and revenue recognized during the year ended January 31, 2020, were $8.1 billion and $6.4 billion, respectively, and did not include amounts for performance obligations that were fully satisfied upon delivery, such as on-premise licenses. During the year ended January 31, 2020, VMware assumed $154 million in unearned revenue in the acquisition of Carbon Black, Inc. (“Carbon Black”).\n\nTotal billings and revenue recognized during the year ended February 1, 2019, were $6.9 billion and $5.5 billion, respectively, and did not include amounts for performance obligations that were fully satisfied upon delivery, such as on-premise licenses.\n\nRevenue recognized during the year ended February 2, 2018 was $4.8 billion and did not include amounts for performance obligations that were fully satisfied upon delivery, such as on-premise licenses."
+}

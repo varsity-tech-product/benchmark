@@ -1,0 +1,14 @@
+{
+  "task_id": "L0_money.stackexchange_6606",
+  "version": "3.0",
+  "layer": "L0",
+  "category": "conceptual_qa",
+  "task_type": "single_turn",
+  "requires_tool": false,
+  "question": "I.e., $100 decreased by 20% requires an increase of (1/(1-0.2))-1) to return to $100. Is there a simple name that refers to this?",
+  "reference_answer": "Well, in math terms, it's the reciprocal. A 20% drop (80% of original value) needs a 25% increase to break even. .8 and 1.25 are reciprocals.",
+  "source_dataset": "money.stackexchange",
+  "source_id": "6606",
+  "tags": [],
+  "title": "Is there a simple term to describe the non commutative property of decreasing and increasing a value by some X percentage?"
+}

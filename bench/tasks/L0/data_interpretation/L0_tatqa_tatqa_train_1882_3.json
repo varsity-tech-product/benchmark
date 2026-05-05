@@ -1,0 +1,17 @@
+{
+  "task_id": "L0_tatqa_tatqa_train_1882_3",
+  "version": "3.0",
+  "layer": "L0",
+  "category": "data_interpretation",
+  "task_type": "single_turn",
+  "requires_tool": false,
+  "question": "What is the percentage change in the acquisitions value from 2018 to 2019?",
+  "reference_answer": "**Answer:** -88.89\n\n**Type:** arithmetic\n\n**Derivation:** (0.1-0.9)/0.9",
+  "source_dataset": "tatqa",
+  "source_id": "tatqa_train_1882_3",
+  "tags": [
+    "tabular-reasoning",
+    "financial-documents"
+  ],
+  "context": "**Table:**\n|  |  | 2019 |  | 2018 |\n| --- | --- | --- | --- | --- |\n|  | Shares million | £m | Shares million | £m |\n| At 1 January | 11.2 | 37.0 | 11.6 | 39.1 |\n| Acquisitions | 0.2 | 0.1 | 0.6 | 0.9 |\n| Disposals | (1.1) | (3.5) | (1.0) | (3.0) |\n| At 31 December | 10.3 | 33.6 | 11.2 | 37.0 |\n\n29 Employee Share Ownership Plan (ESOP)\n\nThe cost of shares in intu properties plc held by the Trustee of the ESOP operated by the Company is accounted for as a deduction from equity.\n\nThe purpose of the ESOP is to acquire and hold shares which will be transferred to employees in the future under the Group’s employee incentive arrangements as described in note 7 including joint ownership of shares in its role as Trustee of the Joint Share Ownership Plan. During 2019, no dividends in respect of these shares have been waived by agreement (2018: £1.6 million)."
+}

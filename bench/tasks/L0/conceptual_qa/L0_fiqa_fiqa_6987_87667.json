@@ -1,0 +1,15 @@
+{
+  "task_id": "L0_fiqa_fiqa_6987_87667",
+  "version": "3.0",
+  "layer": "L0",
+  "category": "conceptual_qa",
+  "task_type": "single_turn",
+  "requires_tool": false,
+  "question": "Which set of earnings is used to work out the P/E of a stock",
+  "reference_answer": "This is a note from my broker, CMC Markets, who use Morningstar: Morningstar calculate the P/E Ratio using a weighted average of the most recent earnings and the projected earnings for the next year. This may result in a different P/E Ratio to those based solely on past earnings as reported on some sites and other publications. They show the P/E as being 9.93. So obviously past earnings would usually be used but you would need to check with your source which numbers they are using. Also, as BHP's results just came out yesterday it may take a while for the most recent financial details to be updated.",
+  "source_dataset": "fiqa",
+  "source_id": "fiqa_6987_87667",
+  "tags": [
+    "financial-qa"
+  ]
+}

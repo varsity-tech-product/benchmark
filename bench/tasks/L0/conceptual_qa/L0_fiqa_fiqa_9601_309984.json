@@ -1,0 +1,15 @@
+{
+  "task_id": "L0_fiqa_fiqa_9601_309984",
+  "version": "3.0",
+  "layer": "L0",
+  "category": "conceptual_qa",
+  "task_type": "single_turn",
+  "requires_tool": false,
+  "question": "Do stock splits make one's shares double in voting power?",
+  "reference_answer": "\"Ordinarily a stock split increases all shareholders' share counts, so that there is no change in anybody's voting power.  For example, if you owned 1% of the company before the split, after the split you now have twice as many shares, but there are now twice as many shares outstanding, so you still own 1% of the company.  Also, stock splits are not ordinarily \"\"triggered\"\".  Usually they happen when the board decides that for one reason or another it's desirable to increase the number of shares in circulation, which causes the price of each share to decrease proportionally.   I'm not familiar with the show, and in particular I don't know what the action is that the character being addressed is thinking of taking, but it sounds like they are describing something akin to a \"\"poison pill\"\".  In these arrangements, the \"\"pill\"\" is triggered by some predefined condition, say a party acquiring shares in excess of a defined threshold.  What typically happens is that shareholders other than the ones who triggered the pill get a chance to buy shares at a substantial discount, thereby diluting the shares of the party that triggered it.  Because the other shareholders have to buy their additional shares, albeit at a discount, and because it applies only to certain shares, it's not really a split, but it's close enough that the writers of the show may have felt it was worth using the term that is more familiar to the public.\"",
+  "source_dataset": "fiqa",
+  "source_id": "fiqa_9601_309984",
+  "tags": [
+    "financial-qa"
+  ]
+}
