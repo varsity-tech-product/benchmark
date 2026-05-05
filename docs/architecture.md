@@ -17,6 +17,7 @@ backward compatibility.
 
 ```text
 bench/
+  platform_api/         Internal RFC-A v0 plugin contracts + sandbox API
   eval/                Standalone scoring package (no server runtime deps)
   server/              HTTP/MCP service, run control, session storage, UI
   client/              External client adapters for MCP and REST
@@ -45,6 +46,39 @@ current UI shell from `bench/server/web/templates/index.html` and static assets
 from `bench/server/web/static/` into `vercel-frontend/public/`, so Vercel branch
 deployments serve branch-local HTML/CSS/JS while backend API routes still proxy
 to the production service.
+
+## Platform API v0
+
+`bench/platform_api/` is the internal RFC-A v0 surface introduced by #152 for
+plugin-based Stage 1 work. Its import path is `platform_api.*`; this package
+name preserves the Python stdlib `platform` module while tests place `bench/`
+first on `sys.path`.
+
+- `contracts/` defines the three plugin ABCs: `TaskSuite`, `NPCProvider`, and
+  `Evaluator`. Shared dataclasses include `EvalItem`, `EvalSample`,
+  `TranscriptMessage`, `ToolLog`, `FileArtifact`, `NPCReply`, `Score`, and
+  `EvaluatorMetadata`.
+- `runtime/` defines `SandboxRuntime`, `SandboxCreateRequest`, `SandboxMount`,
+  `SandboxHandle`, `ExecResult`, `ToolRequest`, `ToolResult`, and `ToolRouter`.
+  `DockerSandboxRuntime` owns image pulls, container creation with volume,
+  CPU/memory, and network flags, process execution through `docker exec`, and
+  routed tool calls. `LocalSandboxRuntime` covers unit tests and local
+  development flows.
+- `plugins/loader.py` loads implementation triples from explicit
+  `PluginSpec`s, JSON/TOML config files, and Python entry points under
+  `quantagentbench.plugins`.
+- `telemetry.py` exposes a push hook: `TelemetryRecord`,
+  `NullTelemetryHook`, `InMemoryTelemetryHook`, and `TelemetryTimer`. Records
+  carry token counts, cost, latency, success, error, and plugin/runtime
+  attributes.
+- `naming.py` records the current canonical naming table: `NPCProvider` for the
+  platform abstract user/NPC boundary, `Session` for platform session runtime,
+  `Persona` for reference business payloads, `payload.student_opening` for the
+  reference opening field, and `TUTOR_SYSTEM_PROMPT` as reference-internal
+  prompt configuration.
+
+This v0 surface is internal and source-level. Stage 2 owns public SDK/docs,
+multi-tenant BYO image security, and formal schema/deprecation policy.
 
 ## Server Entrypoint
 
