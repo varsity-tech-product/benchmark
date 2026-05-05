@@ -104,7 +104,7 @@
   "expected_recovery_style": "Recovers when code is mapped to Excel formulas, tables, or familiar market-analysis workflows.",
   "expected_confidence_pattern": "High confidence in finance reasoning, lower confidence when asked to implement or debug code directly.",
   "failure_modes": [
-    "Writes or debugs Python fluently without tutor support.",
+    "Writes or debugs Python fluently without visible agent support.",
     "Acts uncertain about core finance and risk concepts listed as familiar.",
     "Stops relating code back to Excel, tables, or finance intuition."
   ]

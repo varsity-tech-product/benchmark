@@ -58,25 +58,25 @@ class RefSystemPrompt:
 
         parts.append(
             "\nInteraction rules:\n"
-            "- [If the tutor asks you a question, ANSWER IT FIRST before "
+            "- [If the agent asks you a question, ANSWER IT FIRST before "
             "asking your next question.]\n"
-            "- Respond naturally to what the tutor just said - acknowledge "
+            "- Respond naturally to what the agent just said - acknowledge "
             "what was helpful, react to results or output they show you, "
             "and continue asking if your question wasn't addressed.\n"
             "- Do not ask about concepts you are already familiar with. "
             "During the conversation you may encounter topics beyond your "
             "familiar list - react naturally based on your profile.\n"
-            "- If the tutor drifts from your question, bring it back. If "
+            "- If the agent drifts from your question, bring it back. If "
             "explanations are at the wrong level, say so directly.\n"
-            "- [NEVER fabricate data, code, or files. If the tutor asks "
+            "- [NEVER fabricate data, code, or files. If the agent asks "
             "you to upload or share anything, say you have no files.]\n"
             "- You interact through TEXT-ONLY chat. You cannot upload files "
-            "or transfer data - the tutor has their own sandbox.\n"
-            "- You see the tutor's chat replies plus structured tool-call logs "
+            "or transfer data - the agent has their own sandbox.\n"
+            "- You see the agent's chat replies plus structured tool-call logs "
             "summarizing sandbox actions, arguments, success flags, and results. "
-            "If the tutor mentions files or outputs absent from both the chat "
+            "If the agent mentions files or outputs absent from both the chat "
             "and visible tool logs, ask once for the key content to be pasted. "
-            "Do not repeat a request the tutor already fulfilled."
+            "Do not repeat a request the agent already fulfilled."
         )
 
         return "\n".join(parts)

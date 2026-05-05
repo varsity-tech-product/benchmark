@@ -4,9 +4,9 @@
   "difficulty": "easy",
   "category": "backtest",
   "task_type": "multi_turn",
-  "description": "Guide a student to compute basic backtest performance metrics such as Sharpe ratio, total return, and maximum drawdown from OHLCV price data, interpret what each metric means, and assess whether a strategy is promising or problematic.",
+  "description": "The user asks the agent to compute basic backtest performance metrics such as Sharpe ratio, total return, and maximum drawdown from OHLCV price data, interpret what each metric means, and assess whether a strategy is promising or problematic.",
   "persona_id": "double_novice",
-  "user_opening": "I want to learn how to compute and interpret basic backtest metrics in Python. I'm new to both coding and finance — can you walk me through it from the very beginning?",
+  "user_opening": "I want to compute and interpret basic backtest metrics in Python. I'm new to both coding and finance — can you walk me through it from the very beginning?",
   "environment": {
     "data_files": [
       "AAPL_2018_2024.csv",
@@ -27,7 +27,7 @@
     "network_enabled": false
   },
   "ground_truth": {
-    "expected_outcome": "Tutor guides the student to write and run a small Python script that loads OHLCV price data and computes Sharpe ratio, total return or cumulative return, and maximum drawdown with specific numerical values. The tutor explains what at least two metrics mean, how to judge whether their values are good or bad, and warns about at least one common interpretation pitfall such as overfitting, survivorship bias, or benchmark mismatch. The run should leave a concrete Python script and metrics artifact rather than only a verbal explanation of what each number means.",
+    "expected_outcome": "Agent helps the user write and run a small Python script that loads OHLCV price data and computes Sharpe ratio, total return or cumulative return, and maximum drawdown with specific numerical values. The agent explains what at least two metrics mean, how to judge whether their values are good or bad, and warns about at least one common interpretation pitfall such as overfitting, survivorship bias, or benchmark mismatch. The run should leave a concrete Python script and metrics artifact rather than only a verbal explanation of what each number means.",
     "required_capabilities": [
       "Write a Python script that loads OHLCV price data and prepares return series",
       "Compute total return or cumulative return, Sharpe ratio, and maximum drawdown",
@@ -47,7 +47,7 @@
     "quant_validation": {
       "eval_script": "tasks/test_scripts/backtest/B01_interpret_metrics.py"
     },
-    "termination_criteria": "The tutor has completed the following steps with computational evidence (not just verbal discussion): (1) Created a Python code artifact that loads price data, computes at least Sharpe ratio, total return or cumulative return, and maximum drawdown, and saved the results to a reusable artifact. (2) Executed the code and presented the computed metrics with specific numerical values. (3) Explained what at least two of these metrics mean and how to judge their values using benchmarks or rules of thumb, and discussed at least one common pitfall such as overfitting, survivorship bias, benchmark mismatch, or in-sample versus out-of-sample issues. Once all three steps have been computationally demonstrated, the session is complete."
+    "termination_criteria": "The agent has completed the following steps with computational evidence (not just verbal discussion): (1) Created a Python code artifact that loads price data, computes at least Sharpe ratio, total return or cumulative return, and maximum drawdown, and saved the results to a reusable artifact. (2) Executed the code and presented the computed metrics with specific numerical values. (3) Explained what at least two of these metrics mean and how to judge their values using benchmarks or rules of thumb, and discussed at least one common pitfall such as overfitting, survivorship bias, benchmark mismatch, or in-sample versus out-of-sample issues. Once all three steps have been computationally demonstrated, the session is complete."
   },
   "requires_code": true,
   "sample_code": null,

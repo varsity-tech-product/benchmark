@@ -4,7 +4,7 @@
   "difficulty": "hard",
   "category": "strategy",
   "task_type": "multi_turn",
-  "description": "Guide a student to research alpha signals derived from non-price data in BTCUSDT futures: volume patterns, taker buy and sell imbalance, trade count, and cross-timeframe features.",
+  "description": "The user asks the agent to research alpha signals derived from non-price data in BTCUSDT futures: volume patterns, taker buy and sell imbalance, trade count, and cross-timeframe features.",
   "persona_id": "finance_veteran",
   "user_opening": "I want to research alpha signals derived from non-price data in BTCUSDT futures. I understand the strategy logic from my trading experience — but I need help coding and backtesting it.",
   "environment": {
@@ -29,7 +29,7 @@
     "network_enabled": false
   },
   "ground_truth": {
-    "expected_outcome": "Tutor guides the student to explore non-price features such as volume profiles and taker imbalance, engineer at least one derived signal with a clear mathematical definition, evaluate it with multiple quantitative metrics, analyze signal robustness across horizons or subperiods, and identify practical deployment constraints. The run should leave concrete artifacts showing the engineered signal and a structured evaluation output.",
+    "expected_outcome": "Agent helps the user explore non-price features such as volume profiles and taker imbalance, engineer at least one derived signal with a clear mathematical definition, evaluate it with multiple quantitative metrics, analyze signal robustness across horizons or subperiods, and identify practical deployment constraints. The run should leave concrete artifacts showing the engineered signal and a structured evaluation output.",
     "required_capabilities": [
       "Explore non-price data fields and engineer derived features from microstructure data",
       "Evaluate signal quality using multiple quantitative metrics",
@@ -51,7 +51,7 @@
     "quant_validation": {
       "eval_script": "tasks/test_scripts/strategy/S04_volume_microstructure_alpha.py"
     },
-    "termination_criteria": "The tutor has completed the following research steps with computational evidence (not just verbal discussion): (1) Explained the economic meaning of at least one non-price data field such as taker buy volume or trade count, and engineered at least one derived feature from raw microstructure data (e.g., a volume ratio, flow imbalance, or taker intensity measure) with a clear mathematical definition. (2) Evaluated the signal quantitatively using at least two metrics such as IC, quantile return spread, or hit rate. (3) Analyzed signal robustness by examining either decay across multiple time horizons or stability across different subperiods or regimes. (4) Identified at least one factor limiting practical deployment of the signal, supported by evidence: execution costs, signal decay speed, statistical fragility (e.g., out-of-sample failure), or capacity constraints. Once all four steps have been computationally demonstrated, the research session is complete."
+    "termination_criteria": "The agent has completed the following research steps with computational evidence (not just verbal discussion): (1) Explained the economic meaning of at least one non-price data field such as taker buy volume or trade count, and engineered at least one derived feature from raw microstructure data (e.g., a volume ratio, flow imbalance, or taker intensity measure) with a clear mathematical definition. (2) Evaluated the signal quantitatively using at least two metrics such as IC, quantile return spread, or hit rate. (3) Analyzed signal robustness by examining either decay across multiple time horizons or stability across different subperiods or regimes. (4) Identified at least one factor limiting practical deployment of the signal, supported by evidence: execution costs, signal decay speed, statistical fragility (e.g., out-of-sample failure), or capacity constraints. Once all four steps have been computationally demonstrated, the research session is complete."
   },
   "requires_code": true,
   "sample_code": null,

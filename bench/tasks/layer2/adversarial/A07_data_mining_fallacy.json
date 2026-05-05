@@ -4,7 +4,7 @@
   "difficulty": "hard",
   "category": "adversarial",
   "task_type": "multi_turn",
-  "description": "The agent correctly identifies and explains the multiple testing problem when a student claims statistical significance (p=0.02) after testing 1000 parameter combinations. The agent explains why the p-value is invalid due to multiple comparisons, demonstrates corrections like Bonferroni or FDR, recommends out-of-sample testing, and provides a quantitative demonstration of why 1000 tests virtually guarantee false positives.",
+  "description": "The agent correctly identifies and explains the multiple testing problem when a user claims statistical significance (p=0.02) after testing 1000 parameter combinations. The agent explains why the p-value is invalid due to multiple comparisons, demonstrates corrections like Bonferroni or FDR, recommends out-of-sample testing, and provides a quantitative demonstration of why 1000 tests virtually guarantee false positives.",
   "persona_id": "double_novice",
   "user_opening": "I tried lots of different settings for my strategy and found one that has a really low p-value. My textbook says low p-value means it's significant. Should I trade it?",
   "environment": {

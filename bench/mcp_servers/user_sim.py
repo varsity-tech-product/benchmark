@@ -135,7 +135,7 @@ _NEXT_MESSAGE_PROMPT = textwrap.dedent(
     {tool_context}
 
     When tool logs show failures or repeated tool calls without progress, \
-    you may ask the tutor to summarize what they know, try a different \
+    you may ask the agent to summarize what they know, try a different \
     concrete action, or wrap up once continuing would waste turns.
 
     JSON Output:
@@ -143,10 +143,10 @@ _NEXT_MESSAGE_PROMPT = textwrap.dedent(
 )
 
 _CLOSING_PROMPT = (
-    "You are the user in the conversation below. The tutor just "
+    "You are the user in the conversation below. The agent just "
     "finished answering your last question. Write a brief closing "
-    "message (1-2 sentences) that thanks the tutor and mentions one "
-    "specific thing you learned or plan to try. Stay in character.\n\n"
+    "message (1-2 sentences) that thanks the agent and mentions one "
+    "specific thing that was resolved or that you plan to try. Stay in character.\n\n"
     "Scenario: {scenario}\n\n"
     "{transcript}\n"
     "Reply with ONLY the closing message."
@@ -458,7 +458,7 @@ class UserSimulator:
 
         Args:
             conversation: [{"role": "user"|"assistant", "content": "..."}]
-                "user" = user, "assistant" = tutor.
+                "user" = user, "assistant" = agent.
 
         Returns:
             The user's next message as a string.

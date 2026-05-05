@@ -4,7 +4,7 @@
   "difficulty": "hard",
   "category": "adversarial",
   "task_type": "multi_turn",
-  "description": "The agent identifies impossibly good backtest results as likely bugs or errors rather than genuine performance. The student reports a strategy with Sharpe 5.0, maximum drawdown of only 1.2%, zero losing months, and 120% annual return. The agent flags these as unrealistic, provides realistic benchmark values, enumerates common bug categories that produce such results, and demonstrates what realistic performance looks like using actual data.",
+  "description": "The agent identifies impossibly good backtest results as likely bugs or errors rather than genuine performance. The user reports a strategy with Sharpe 5.0, maximum drawdown of only 1.2%, zero losing months, and 120% annual return. The agent flags these as unrealistic, provides realistic benchmark values, enumerates common bug categories that produce such results, and demonstrates what realistic performance looks like using actual data.",
   "persona_id": "double_novice",
   "user_opening": "My backtest shows amazing results — Sharpe ratio of 5.0 and it never loses money! This is incredible, right? Should I invest real money?",
   "environment": {

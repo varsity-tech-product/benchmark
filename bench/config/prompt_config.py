@@ -71,17 +71,17 @@ _PROMPT_C_BEYOND_SNIPPETS = (
 _PROMPT_D_IMPLEMENTATION_TRACKING = (
     "IMPLEMENTATION TRACKING: This is a code-producing task. Do "
     "not treat a verbal explanation as completion for an "
-    "implementation goal. After the tutor has explained a concept, "
+    "implementation goal. After the agent has explained an approach, "
     "expect them to follow up with code and execution results "
     "shown in the conversation. Once you have seen both a code "
     "walkthrough and concrete results (specific numbers, output "
     "excerpts) for a goal, consider it demonstrated and move on "
-    "to the next learning goal. Example: 'I see the code and the "
+    "to the next deliverable goal. Example: 'I see the code and the "
     "results make sense — what should we tackle next?'"
 )
 
 _PROMPT_D_ABSTRACT_PUSH = (
-    "WHEN THE TUTOR STAYS ABSTRACT: If the tutor has spent two "
+    "WHEN THE AGENT STAYS ABSTRACT: If the agent has spent two "
     "consecutive turns on the same topic discussing only theory "
     "or architecture without showing any code or sharing specific "
     "results in the conversation, ask them to demonstrate "
@@ -621,55 +621,55 @@ def build_user_description(
             parts.append(f"  - {rule}")
         if has_incremental_tc:
             parts.append(
-                "  - When the tutor explains a concept, feel free to ask "
-                "to see it in action with real data or code — but also "
-                "explore aspects that genuinely interest or confuse you"
+                "  - When the agent explains an approach, feel free to ask "
+                "to see it in action with real data or code, and pursue "
+                "details that matter for your task."
             )
         else:
             parts.append(
-                "  - When the tutor explains a concept, ask them to demonstrate "
+                "  - When the agent explains an approach, ask them to demonstrate "
                 "it with real data or actual code execution rather than just "
                 "describing it in text"
             )
 
     parts.append(
         "\nINTERACTION RULES (follow these strictly):\n"
-        "- If the tutor asks you a question, you MUST answer it FIRST "
-        "before asking your next question. For example, if the tutor asks "
+        "- If the agent asks you a question, you MUST answer it FIRST "
+        "before asking your next question. For example, if the agent asks "
         "'What do you see in the output?', describe what you see before "
         "asking anything new.\n"
         "- Respond naturally like a real user — acknowledge what you "
-        "learned, express confusion if something is unclear, react to "
-        "what the tutor just said.\n"
-        "- Do NOT ignore the tutor's questions or jump to an unrelated topic.\n"
+        "found useful, express confusion if something is unclear, react to "
+        "what the agent just said.\n"
+        "- Do NOT ignore the agent's questions or jump to an unrelated topic.\n"
         "- Stay in character. Do not reveal you are an AI.\n"
-        "- PERSONA PERSISTENCE: If the tutor ignores your core needs or "
+        "- PERSONA PERSISTENCE: If the agent ignores your core needs or "
         "feelings and immediately pivots to a different topic, gently "
         "redirect. For example:\n"
-        "  * If you are emotionally distressed and the tutor jumps "
+        "  * If you are emotionally distressed and the agent jumps "
         "straight to technical content, say something like: 'I "
         "appreciate the effort, but I'm still feeling really "
         "overwhelmed right now — can we slow down?'\n"
-        "  * If you asked a specific question and the tutor drifts to "
+        "  * If you asked a specific question and the agent drifts to "
         "a different topic, bring it back: 'That's interesting, but "
         "I was really asking about [original question].'\n"
-        "  * Do NOT passively follow wherever the tutor leads if it "
+        "  * Do NOT passively follow wherever the agent leads if it "
         "contradicts what you actually need right now."
     )
 
     parts.append(
         "\nENVIRONMENT CONSTRAINTS (follow these strictly):\n"
-        "- You are interacting with the tutor through a TEXT-ONLY chat "
+        "- You are interacting with the agent through a TEXT-ONLY chat "
         "interface.\n"
         "- You CANNOT upload files, share your screen, or transfer data "
-        "to the tutor's environment. The tutor has their own sandbox "
+        "to the agent's environment. The agent has their own sandbox "
         "with pre-loaded datasets.\n"
         "- You do NOT have any local data files, code, or datasets to "
         "share. Do NOT fabricate, generate, or pretend to have data or "
         "code that you don't actually possess.\n"
-        "- If the tutor asks you to 'upload', 'attach', 'share', or "
+        "- If the agent asks you to 'upload', 'attach', 'share', or "
         "'paste' any file or data, tell them you don't have any files "
-        "— you are here to learn.\n"
+        "— you are here to get the task handled.\n"
         "- Do NOT pretend you have uploaded a file or claim a file "
         "transfer is in progress — this wastes valuable conversation "
         "turns."
@@ -686,11 +686,11 @@ def build_scenario(
     """Build scenario string for DeepEval ConversationalGolden.
 
     Combines task description with the persona-specific opening message
-    and learning goals derived from required_capabilities.
+    and deliverable goals derived from required_capabilities.
     """
     opening = task.user_opening
     parts = [
-        f"Tutoring scenario: {task.description}",
+        f"Scenario: {task.description}",
         "",
         f'The user\'s opening message is: "{opening}"',
         "",
@@ -704,41 +704,43 @@ def build_scenario(
         is_adversarial = task.category.value == "adversarial"
 
         if is_adversarial:
-            # Adversarial: goals are agent behavior expectations, not
-            # user learning objectives.  No code-push, no pacing,
+            # Adversarial: goals are agent behavior expectations.
+            # No code-push, no pacing,
             # no coverage tracking — just what the user needs from
-            # the tutor and a natural closure signal.
+            # the agent and a natural closure signal.
             parts.append("")
-            parts.append("What you expect from the tutor in this conversation:")
+            parts.append("What you expect from the agent in this conversation:")
             for i, goal in enumerate(goals, 1):
                 parts.append(f"  {i}. {goal}")
             parts.append("")
             parts.append(
-                "CONVERSATION CLOSURE: After the tutor has addressed "
-                "your core concern AND you have confirmed you understand "
-                "by trying it out or asking a clarifying question, you "
+                "CONVERSATION CLOSURE: After the agent has addressed "
+                "your core concern and the answer, artifact, or boundary "
+                "is sufficient for your task, and any required follow-up, "
+                "pushback, demonstration, or validation in the scenario has "
+                "happened, you "
                 "may naturally wrap up. Do not end the conversation "
-                "after only one exchange — give the tutor a chance to "
+                "after only one exchange — give the agent a chance to "
                 "demonstrate or validate their advice before concluding."
             )
         else:
             parts.append("")
-            parts.append("Learning goals the user wants to achieve by the end:")
+            parts.append("Deliverable goals the user wants covered by the end:")
             for i, goal in enumerate(goals, 1):
                 parts.append(f"  {i}. {goal}")
             parts.append("")
             parts.append(
-                "The user should actively push the tutor to demonstrate "
+                "The user should actively push the agent to demonstrate "
                 "these goals with real data and code execution, not just "
                 "explanations."
             )
             parts.append("")
             parts.append(
                 "PACING: Do NOT ask about all goals at once. Start with the "
-                "opening message only. After the tutor addresses one topic, "
-                "naturally transition to the next learning goal in a "
+                "opening message only. After the agent addresses one topic, "
+                "naturally transition to the next deliverable goal in a "
                 "subsequent turn. Space goals across the conversation so the "
-                "tutor has room to teach each one properly."
+                "agent has room to address each one properly."
             )
             # COVERAGE TRACKING, ACTION EXPECTATION: legacy compatibility.
             # Lightweight mode guides direction with fewer completion cues.
@@ -746,20 +748,20 @@ def build_scenario(
                 parts.append("")
                 parts.append(
                     "TOPIC FLOW: If you have spent several turns exploring "
-                    "one topic and feel you understand it well, feel free to "
-                    "move on to another learning goal that interests you."
+                    "one topic and the answer or artifact is sufficient, "
+                    "move on to another deliverable goal that matters to you."
                 )
                 if task.category.value in ("implementation", "end_to_end", "debug"):
                     parts.append(
                         "CODE EXPECTATION: This is a code-producing task. "
-                        "When the tutor explains a concept, it is natural to "
+                        "When the agent explains an approach, it is natural to "
                         "want to see the actual code and what happens when "
                         "it runs."
                     )
             else:
                 parts.append("")
                 parts.append(
-                    "COVERAGE TRACKING: Mentally track which learning goals have "
+                    "COVERAGE TRACKING: Mentally track which deliverable goals have "
                     "been covered. After 3 consecutive follow-up turns on the "
                     "same goal, transition to the next uncovered goal even if "
                     "the current topic is still interesting. When uncovered goals "
@@ -769,34 +771,34 @@ def build_scenario(
                 )
                 if task.category.value in ("implementation", "end_to_end", "debug"):
                     parts.append(
-                        "ACTION EXPECTATION: When a learning goal involves saving "
+                        "ACTION EXPECTATION: When a deliverable goal involves saving "
                         "data or producing outputs, do NOT consider it fulfilled "
-                        "until the tutor has actually saved the result to a file. "
-                        "Plotting or printing alone does not count. If the tutor "
+                        "until the agent has actually saved the result to a file. "
+                        "Plotting or printing alone does not count. If the agent "
                         "demonstrates data without saving it, ask: 'Can we also "
                         "save that to a file so I can use it later?'"
                     )
                 else:
                     parts.append(
-                        "ACTION EXPECTATION: When a learning goal involves "
+                        "ACTION EXPECTATION: When a deliverable goal involves "
                         "computing results or metrics, do NOT consider it "
-                        "fulfilled until the tutor has actually run the "
+                        "fulfilled until the agent has actually run the "
                         "computation and presented specific numerical results. "
                         "A verbal description of what 'would' happen does not "
                         "count — you need to see actual numbers."
                     )
             parts.append("")
             parts.append(
-                "DEAD-END AVOIDANCE: If the tutor's response focuses on "
+                "DEAD-END AVOIDANCE: If the agent's response focuses on "
                 "setup, configuration, or troubleshooting that is NOT one "
-                "of the learning goals listed above (e.g., API key "
+                "of the deliverable goals listed above (e.g., API key "
                 "registration, environment variable setup, IDE or editor "
                 "configuration, package installation, account creation), "
-                "briefly acknowledge the tutor's help, then redirect to "
-                "the next uncovered learning goal. Do not spend more than "
+                "briefly acknowledge the agent's help, then redirect to "
+                "the next uncovered deliverable goal. Do not spend more than "
                 "one follow-up turn on such tangents. Example: 'Thanks for "
                 "the setup tips — I will try that on my own later! For "
-                "now, can we go back to [next uncovered learning goal]?'"
+                "now, can we go back to [next uncovered deliverable goal]?'"
             )
             # COMPLETION, TURN BUDGET, IMPLEMENTATION TRACKING:
             # full prompt mode includes explicit completion pacing.
@@ -808,22 +810,22 @@ def build_scenario(
             if not has_incremental_tc:
                 parts.append("")
                 parts.append(
-                    "COMPLETION: Once every learning goal above has been "
-                    "covered with a computational demonstration (the tutor "
+                    "COMPLETION: Once every deliverable goal above has been "
+                    "covered with a computational demonstration (the agent "
                     "ran code or a tool and showed you concrete results), "
                     "end the conversation immediately. Do NOT ask follow-up "
                     "questions about parameter tuning, alternative methods, "
                     "or further improvements — these are beyond the scope "
                     "of this session. Your final message should be a brief "
-                    "statement of what you learned. Example: 'That covers "
-                    "everything I wanted to learn — thanks for walking me "
+                    "statement that the deliverable is sufficient. Example: 'That covers "
+                    "everything I needed — thanks for walking me "
                     "through all of it!'"
                 )
                 parts.append("")
                 parts.append(
                     f"TURN BUDGET: This session has approximately "
                     f"{task.max_turns} turns total. Be efficient — if the "
-                    f"tutor has adequately addressed a learning goal, move on "
+                    f"agent has adequately addressed a deliverable goal, move on "
                     f"to the next one rather than asking further refinement "
                     f"questions on the same topic."
                 )
@@ -839,8 +841,8 @@ def build_scenario(
                 parts.append("")
                 parts.append(
                     "CODE VISIBILITY: You interact through a text-only chat. "
-                    "The tutor may write and run code behind the scenes that "
-                    "you cannot see directly. When the tutor shows you code "
+                    "The agent may write and run code behind the scenes that "
+                    "you cannot see directly. When the agent shows you code "
                     "snippets in the conversation and describes execution "
                     "results (e.g., 'the backtest returned a Sharpe of 1.2' "
                     "or 'here are the first 10 trades'), treat that as a "

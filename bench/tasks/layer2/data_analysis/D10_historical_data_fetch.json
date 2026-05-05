@@ -4,7 +4,7 @@
   "difficulty": "easy",
   "category": "data_analysis",
   "task_type": "multi_turn",
-  "description": "Guide the student to fetch historical market price and macroeconomic data from public APIs, validate and save both datasets as CSV files, and teach quant data-ingestion caveats including adjusted prices, macro release lag, and point-in-time leakage risk.",
+  "description": "The user asks the agent to fetch historical market price and macroeconomic data from public APIs, validate and save both datasets as CSV files, and explain quant data-ingestion caveats including adjusted prices, macro release lag, and point-in-time leakage risk.",
   "persona_id": "double_novice",
   "user_opening": "My professor asked us to fetch historical market price and macroeconomic data from public APIs. I'm new to both Python and finance — can you start from the basics?",
   "environment": {
@@ -23,7 +23,7 @@
     "network_enabled": true
   },
   "ground_truth": {
-    "expected_outcome": "Tutor guides the student to write and run Python code that: (1) fetches historical market price data (e.g. stock OHLCV) from a public API and saves it as a CSV file in the workspace, (2) fetches macroeconomic indicator data (e.g. GDP, interest rates, unemployment) from a public API and saves it as a separate CSV file in the workspace, (3) performs basic data validation (shape, dtypes, missing values, date range checks) on the fetched data. The tutor also explains: adjusted vs unadjusted prices and corporate-action effects (splits, dividends), macro data release lag and revision risk, and point-in-time leakage discipline.",
+    "expected_outcome": "Agent helps the user write and run Python code that: (1) fetches historical market price data (e.g. stock OHLCV) from a public API and saves it as a CSV file in the workspace, (2) fetches macroeconomic indicator data (e.g. GDP, interest rates, unemployment) from a public API and saves it as a separate CSV file in the workspace, (3) performs basic data validation (shape, dtypes, missing values, date range checks) on the fetched data. The agent also explains: adjusted vs unadjusted prices and corporate-action effects (splits, dividends), macro data release lag and revision risk, and point-in-time leakage discipline.",
     "required_capabilities": [
       "Fetch historical market price data and macroeconomic indicator data from public APIs using Python",
       "Explain adjusted vs unadjusted prices and corporate-action effects",
@@ -43,7 +43,7 @@
     "quant_validation": {
       "eval_script": "tasks/test_scripts/data_analysis/D10_historical_data_fetch.py"
     },
-    "termination_criteria": "(1) Showed actual code that fetches historical market price data from a public API or data source and saves it as a CSV file in the workspace, with concrete output confirming the saved file. (2) Performed concrete data validation on the fetched data, such as shape, dtypes, date range, or missing-value checks, and explained at least one quant caveat such as adjusted vs unadjusted prices or corporate-action effects. (3) Responded to a student follow-up with one additional concrete fetch, validation, or explanation, such as fetching macroeconomic data, demonstrating a point-in-time leakage check, or showing the impact of adjustments on a specific price series. Once all 3 steps have been computationally demonstrated, the session is complete."
+    "termination_criteria": "(1) Showed actual code that fetches historical market price data from a public API or data source and saves it as a CSV file in the workspace, with concrete output confirming the saved file. (2) Performed concrete data validation on the fetched data, such as shape, dtypes, date range, or missing-value checks, and explained at least one quant caveat such as adjusted vs unadjusted prices or corporate-action effects. (3) Responded to a user follow-up with one additional concrete fetch, validation, or explanation, such as fetching macroeconomic data, demonstrating a point-in-time leakage check, or showing the impact of adjustments on a specific price series. Once all 3 steps have been computationally demonstrated, the session is complete."
   },
   "requires_code": true,
   "sample_code": null,
