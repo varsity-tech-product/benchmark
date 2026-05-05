@@ -166,7 +166,8 @@ class ReferenceTaskSuite(TaskSuite):
             data_root / "hf_cache",
             data_root,
         ]
-        if "lean" in self._sandbox_spec_for_task(task).image_uri:
+        sandbox_spec = self._sandbox_spec_for_task(task)
+        if sandbox_spec is not None and "lean" in sandbox_spec.image_uri:
             lean_root = self.bench_root / "runtime_assets" / "lean" / "data"
             roots = [lean_root, *[root for root in roots if root != lean_root]]
         return tuple(dict.fromkeys(root for root in roots))
@@ -214,13 +215,16 @@ class ReferenceTaskSuite(TaskSuite):
             "?repo_type=dataset"
         )
 
-    def _sandbox_spec_for_task(self, task: QuantTutorTask) -> SandboxSpec:
+    def _sandbox_spec_for_task(self, task: QuantTutorTask) -> SandboxSpec | None:
         env = task.environment
         if env is not None:
             return SandboxSpec(
                 image_uri=env.sandbox_image_uri,
                 resource_limits=env.sandbox_resource_limits,
             )
+
+        if _enum_value(getattr(task, "layer", "")) == "L0":
+            return None
 
         category = _enum_value(task.category)
         if _enum_value(getattr(task, "layer", "")) in {"L1", "L2"}:
