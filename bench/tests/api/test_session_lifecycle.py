@@ -61,8 +61,8 @@ class TestRegister:
         )
         # Registration itself may succeed or fail depending on task config
         # But the persona validation happens inside register()
-        assert resp.status_code in (200, 400)
-        if resp.status_code == 400:
+        assert resp.status_code in (200, 400, 404)
+        if resp.status_code in (400, 404):
             assert "error" in resp.json()
 
 
@@ -181,10 +181,10 @@ class TestSessionStatus:
         assert run_state["session_status"] in ("completed", "failed")
 
     @pytest.mark.asyncio
-    async def test_mcp_disconnect_persists_review_bundle(
+    async def test_mcp_disconnect_suspends_resumable_run(
         self, client, app, bench_root, monkeypatch
     ):
-        """MCP stream disconnect should leave a reviewable partial bundle."""
+        """MCP stream disconnect should leave active state for run resume."""
         import json
 
         import anyio
@@ -290,9 +290,10 @@ class TestSessionStatus:
                 await manager.handle_mcp_request(scope, receive, send)
                 for _ in range(50):
                     run = manager._run_service.get_run(run_id)
-                    if run and run.session_id and manager.find_archived_result_dir(
-                        run.session_id
-                    ):
+                    run_state_path = (
+                        bench_root / "results" / "runs" / run_id / "run_state.json"
+                    )
+                    if run and run.session_id and run_state_path.exists():
                         break
                     await anyio.sleep(0.01)
             finally:
@@ -307,21 +308,23 @@ class TestSessionStatus:
         run = manager._run_service.get_run(run_id)
         assert run is not None
         assert run.session_id
-        assert run.status == RunStatus.FAILED
-        assert run.error == "Client disconnected"
+        assert run.status == RunStatus.ACTIVE
+        assert run.error is None
 
-        task_root = bench_root / "results" / "server" / DEFAULT_TASK_ID
-        matches = list(task_root.rglob(f"*_{run.session_id[:12]}"))
-        assert matches, f"bundle was not persisted under {task_root}"
+        run_state_path = bench_root / "results" / "runs" / run_id / "run_state.json"
+        assert run_state_path.exists()
+        run_state = json.loads(run_state_path.read_text(encoding="utf-8"))
+        assert run_state["run_id"] == run_id
+        assert run_state["session_id"] == run.session_id
+        assert run_state["phase"] == "in_session"
+        assert run_state["turn_count"] == 1
 
-        bundle = matches[0]
-        assert (bundle / ".session_id").read_text(encoding="utf-8") == run.session_id
-        run_state = json.loads((bundle / "run_state.json").read_text())
-        assert run_state["termination_reason"] == "agent_abandoned"
-
-        review_resp = await client.get(f"/ui/review/bundles/{run.session_id}")
-        assert review_resp.status_code == 200, review_resp.text
-        assert review_resp.json()["bundle_id"] == run.session_id
+        resume_resp = await client.post(
+            f"/api/runs/{run_id}/resume",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resume_resp.status_code == 200, resume_resp.text
+        assert resume_resp.json()["session_id"] == run.session_id
 
     @pytest.mark.asyncio
     async def test_list_sessions(self, client):

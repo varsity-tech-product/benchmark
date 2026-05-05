@@ -53,6 +53,7 @@ to the production service.
 
 - MCP at `/mcp`
 - client REST under `/session/*`
+- run resume/replay REST under `/api/runs/*`
 - operator REST under `/ops/*`
 - UI/client run routes from `bench/server/web/ui_app.py`
 
@@ -119,17 +120,35 @@ the client catalog.
 1. `register_session` loads task/persona and prepares runtime state.
 2. `start_session` returns the user opening and enters `in_session`.
 3. `send_message` advances the user simulator and tool trace.
-4. Terminal status persists a result bundle, enters `completed`, and
+4. Active sessions persist incremental `run_state.json` checkpoints under
+   `results/runs/{run_id}/run_state.json`. In Docker mode the server commits
+   resumable image layers as `bench-resume:{run_id}-{turn}` every
+   `QTB_RESUME_SNAPSHOT_INTERVAL` turns (default 5) and keeps
+   `QTB_RESUME_SNAPSHOT_KEEP` recent layers (default 3). The commit path copies
+   `/workspace` into a container-internal resume directory before `docker commit`
+   because `/workspace` is a bind mount. Suspend also writes a host-side
+   `workspace_snapshot/` beside the active checkpoint so local mode and failed
+   Docker snapshots still preserve workspace files.
+5. Terminal status persists a result bundle, enters `completed`, and
    `_trigger_auto_eval()` enqueues a server-internal eval keyed
    `auto:{session_id}`. The same trigger fires from the idle-timeout sweep
    when a session crosses its deadline. The judge runs in a background
    thread; clients poll `GET /session/{sid}/scores` for the result.
-5. `completed` is terminal for MCP/client tools.
+6. `completed` is terminal for MCP/client tools.
 
 `restore_from_storage()` reconstructs enough completed-session state from
 `run_state.json` to read results, read scores, or run operator scoring without
 restarting the tutoring runtime. Restore does not re-trigger auto-eval; the
 score store is the source of truth for whether an eval has run.
+
+`restore_active_from_storage()` reconstructs an active session from the
+run-scoped checkpoint. `POST /api/runs/{run_id}/resume` authorizes with the
+same run token, starts a new container from the latest resume layer when one is
+available, overlays any host-side workspace snapshot, restores conversation/tool
+history into `SessionState`, and returns the reattached `session_id` plus
+REST/MCP endpoints. `GET /api/runs/{run_id}/replay`
+returns read-only conversation and tool logs, and `GET /api/runs/{run_id}/state`
+returns `phase`, `turn_count`, and the latest layer tag.
 
 `POST /session/{sid}/retry` (run-token gated) lets the owning agent retry
 a session whose `termination_reason` classifies as
@@ -159,6 +178,21 @@ bench/results/server/{task_id}/{persona_id}/{YYYYMMDD_HHMMSS}_{session_id[:12]}/
 `run_state.json` is the only required machine-readable run artifact. The server
 does not write or require `run_state.md`, bundle manifests, or a sibling
 evaluation tree.
+
+Active run checkpoints live beside run assignments:
+
+```text
+bench/results/runs/{run_id}/
+  run.json
+  run_state.json
+  workspace_snapshot/
+```
+
+The active `run_state.json` contains replay fields (`conversation`, `tool_logs`),
+resume metadata (`phase`, `turn_count`, `latest_layer_tag`, `snapshot_tags`),
+workspace snapshot metadata, and ownership fields used by run-token
+authorization. Completion removes the active checkpoint and workspace snapshot
+after the final result bundle is written and deletes the run's resume layers.
 
 Each `score_n/score.json` export carries `judge_reliability` metadata linking
 the evaluation report to the selected validated judge-validation run, its

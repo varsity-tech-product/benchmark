@@ -630,6 +630,43 @@ class TutoringSession:
     def artifact_debug_history(self) -> list[dict]:
         return list(self._artifact_debug_history)
 
+    def restore_runtime_state(
+        self,
+        *,
+        conversation: list[dict],
+        turn_count: int,
+        session_status: str = "active",
+        completion_reason: str | None = None,
+        file_ledger: dict | None = None,
+        artifact_debug_history: list[dict] | None = None,
+    ) -> None:
+        """Restore in-memory turn state from an active run_state snapshot."""
+        self._conversation = [
+            dict(item) for item in conversation if isinstance(item, dict)
+        ]
+        self._turn = max(0, int(turn_count or 0))
+        self._session_info_called = bool(self._conversation)
+        self._done = session_status in ("completed", "failed")
+        self._completion_reason = completion_reason
+        self._file_ledger = dict(file_ledger or {})
+        self._artifact_debug_history = list(artifact_debug_history or [])
+
+        assistant_messages = [
+            str(item.get("content") or "")
+            for item in self._conversation
+            if item.get("role") == "assistant"
+        ]
+        self._last_agent_msg = assistant_messages[-1] if assistant_messages else ""
+        self._repeat_count = 0
+        if self._last_agent_msg:
+            for content in reversed(assistant_messages[:-1]):
+                if content != self._last_agent_msg:
+                    break
+                self._repeat_count += 1
+
+        if self._proxy is not None:
+            self._proxy.set_turn(self._turn)
+
     def force_complete(
         self,
         reason: str,

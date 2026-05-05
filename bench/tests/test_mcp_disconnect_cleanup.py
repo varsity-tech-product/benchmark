@@ -62,8 +62,10 @@ async def test_mcp_http_disconnect_persists_partial_cleanup(tmp_path):
     manager._sessions["session-1"] = object()
     calls = []
 
-    async def fake_cleanup(session_id, *, persist_partial=False):
-        calls.append((session_id, persist_partial))
+    async def fake_cleanup(
+        session_id, *, persist_partial=False, suspend_active=False
+    ):
+        calls.append((session_id, persist_partial, suspend_active))
         manager._sessions.pop(session_id, None)
 
     manager._cleanup_session = fake_cleanup
@@ -82,7 +84,7 @@ async def test_mcp_http_disconnect_persists_partial_cleanup(tmp_path):
         send,
     )
 
-    assert calls == [("session-1", True)]
+    assert calls == [("session-1", True, True)]
 
 
 @pytest.mark.asyncio
@@ -91,8 +93,10 @@ async def test_mcp_get_disconnect_keeps_session_open(tmp_path):
     manager._sessions["session-1"] = object()
     calls = []
 
-    async def fake_cleanup(session_id, *, persist_partial=False):
-        calls.append((session_id, persist_partial))
+    async def fake_cleanup(
+        session_id, *, persist_partial=False, suspend_active=False
+    ):
+        calls.append((session_id, persist_partial, suspend_active))
 
     manager._cleanup_session = fake_cleanup
 
@@ -120,8 +124,10 @@ async def test_mcp_http_disconnect_cleanup_runs_when_transport_raises(tmp_path):
     manager._sessions["session-1"] = object()
     calls = []
 
-    async def fake_cleanup(session_id, *, persist_partial=False):
-        calls.append((session_id, persist_partial))
+    async def fake_cleanup(
+        session_id, *, persist_partial=False, suspend_active=False
+    ):
+        calls.append((session_id, persist_partial, suspend_active))
         manager._sessions.pop(session_id, None)
 
     manager._cleanup_session = fake_cleanup
@@ -141,7 +147,7 @@ async def test_mcp_http_disconnect_cleanup_runs_when_transport_raises(tmp_path):
             send,
         )
 
-    assert calls == [("session-1", True)]
+    assert calls == [("session-1", True, True)]
 
 
 @pytest.mark.asyncio
@@ -150,8 +156,10 @@ async def test_mcp_regular_request_keeps_session_open(tmp_path):
     manager._sessions["session-1"] = object()
     calls = []
 
-    async def fake_cleanup(session_id, *, persist_partial=False):
-        calls.append((session_id, persist_partial))
+    async def fake_cleanup(
+        session_id, *, persist_partial=False, suspend_active=False
+    ):
+        calls.append((session_id, persist_partial, suspend_active))
 
     manager._cleanup_session = fake_cleanup
 
