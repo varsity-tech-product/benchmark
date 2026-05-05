@@ -5,6 +5,7 @@ split into platform-owned runtime pieces and reference-owned business logic.
 """
 
 from platform_api.contracts import (
+    DataMount,
     EvalItem,
     EvalSample,
     Evaluator,
@@ -12,6 +13,7 @@ from platform_api.contracts import (
     FileArtifact,
     NPCProvider,
     NPCReply,
+    SandboxSpec,
     Score,
     TaskSuite,
     ToolLog,
@@ -19,6 +21,7 @@ from platform_api.contracts import (
 )
 from platform_api.plugins import PluginBundle, PluginLoader, PluginLoadError, PluginSpec
 from platform_api.runtime import (
+    DataMountResolver,
     DockerSandboxRuntime,
     ExecResult,
     LocalSandboxRuntime,
@@ -30,6 +33,7 @@ from platform_api.runtime import (
     ToolRequest,
     ToolResult,
     ToolRouter,
+    build_sandbox_digest,
 )
 from platform_api.telemetry import (
     InMemoryTelemetryHook,
@@ -39,6 +43,8 @@ from platform_api.telemetry import (
 )
 
 __all__ = [
+    "DataMount",
+    "DataMountResolver",
     "DockerSandboxRuntime",
     "EvalItem",
     "EvalSample",
@@ -56,6 +62,7 @@ __all__ = [
     "PluginLoader",
     "PluginSpec",
     "SandboxCreateRequest",
+    "SandboxSpec",
     "SandboxHandle",
     "SandboxMount",
     "SandboxRuntime",
@@ -69,4 +76,5 @@ __all__ = [
     "ToolResult",
     "ToolRouter",
     "TranscriptMessage",
+    "build_sandbox_digest",
 ]

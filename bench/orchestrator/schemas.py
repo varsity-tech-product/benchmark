@@ -2,10 +2,25 @@
 
 from __future__ import annotations
 
+import re
 from enum import Enum
-from typing import Optional, Union
+from typing import Any, Optional, Union
+from urllib.parse import parse_qs, urlparse
 
 from pydantic import BaseModel, Field, model_validator
+
+
+SUPPORTED_DATA_URI_SCHEMES = frozenset({"hf", "s3", "file"})
+HF_COMMIT_RE = re.compile(r"^[0-9a-f]{40}$", re.IGNORECASE)
+
+
+def _hf_commit_from_uri(uri: str) -> str:
+    parsed = urlparse(uri)
+    ref = f"{parsed.netloc}{parsed.path}".strip("/")
+    if "@" not in ref:
+        return ""
+    revision = ref.rsplit("@", 1)[1]
+    return revision.split("/", 1)[0]
 
 
 class Difficulty(str, Enum):
@@ -41,6 +56,49 @@ class QuantValidation(BaseModel):
     eval_script: str
 
 
+class DataMount(BaseModel):
+    uri: str
+    target_path: str
+    read_only: bool = True
+
+    @model_validator(mode="after")
+    def _validate_mount(self):
+        self.uri = self.uri.strip()
+        self.target_path = self.target_path.strip()
+        if not self.uri:
+            raise ValueError("data_mount.uri is required")
+        if not self.target_path.startswith("/"):
+            raise ValueError("data_mount.target_path must be an absolute sandbox path")
+
+        parsed = urlparse(self.uri)
+        scheme = parsed.scheme.lower()
+        if scheme not in SUPPORTED_DATA_URI_SCHEMES:
+            supported = ", ".join(sorted(SUPPORTED_DATA_URI_SCHEMES))
+            raise ValueError(f"unsupported data URI scheme {scheme!r}; expected {supported}")
+        if scheme == "hf":
+            commit = _hf_commit_from_uri(self.uri)
+            if not commit or not HF_COMMIT_RE.fullmatch(commit):
+                raise ValueError(
+                    "hf:// data mounts require an explicit @commit SHA "
+                    "(40 hex characters)"
+                )
+        if scheme == "s3" and not parse_qs(parsed.query).get("versionId"):
+            raise ValueError("s3:// data mounts require a versionId query parameter")
+        return self
+
+
+class SandboxSpec(BaseModel):
+    image_uri: str
+    resource_limits: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _validate_spec(self):
+        self.image_uri = self.image_uri.strip()
+        if not self.image_uri:
+            raise ValueError("sandbox_spec.image_uri is required")
+        return self
+
+
 class GroundTruth(BaseModel):
     termination_criteria: Union[str, dict[str, str]] = ""
     required_capabilities: list[str] = Field(default_factory=list)
@@ -51,14 +109,33 @@ class GroundTruth(BaseModel):
 
 class EnvironmentConfig(BaseModel):
     data_files: list[str] = Field(default_factory=list)
+    data_mounts: list[DataMount] = Field(default_factory=list)
     core_mcp_tools: list[str] = Field(default_factory=list)
     docs_available: list[str] = Field(default_factory=list)
     sandbox_image: str = "quant-tutor-env:v2.2"
+    sandbox_spec: Optional[SandboxSpec] = None
     # Maximum backtest trials for I-series tasks (0 = no trial system).
     max_backtest_trials: int = 0
     # Whether this task requires outbound internet access inside the sandbox.
     # Default is False for reproducibility/safety.
     network_enabled: bool = False
+
+    @property
+    def sandbox_image_uri(self) -> str:
+        if self.sandbox_spec is not None:
+            return self.sandbox_spec.image_uri
+        return self.sandbox_image
+
+    @property
+    def sandbox_resource_limits(self) -> dict[str, Any]:
+        limits = (
+            dict(self.sandbox_spec.resource_limits)
+            if self.sandbox_spec is not None
+            else {}
+        )
+        if "network_enabled" not in limits and self.network_enabled:
+            limits["network_enabled"] = True
+        return limits
 
 
 class QuantTutorTask(BaseModel):

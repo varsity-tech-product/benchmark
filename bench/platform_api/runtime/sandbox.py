@@ -9,14 +9,174 @@ import tempfile
 import time
 import uuid
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field, replace
+from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
+from urllib.parse import parse_qs, quote, unquote, urlparse
 
+from platform_api.contracts.models import DataMount, SandboxSpec
 from platform_api.telemetry import TelemetryHook, emit_telemetry
 
 
 class SandboxRuntimeError(RuntimeError):
     """Raised when sandbox lifecycle operations fail."""
+
+
+DataMountFetcher = Callable[[DataMount, Path], str | Path]
+_DEFAULT_REMOTE_FETCHER = object()
+
+
+def _image_digest(image_uri: str) -> str:
+    marker = "@sha256:"
+    if marker in image_uri:
+        return "sha256:" + image_uri.split(marker, 1)[1]
+    return ""
+
+
+def build_sandbox_digest(
+    image_uri: str,
+    *,
+    resource_limits: Mapping[str, Any] | None = None,
+    data_mounts: Sequence[DataMount] = (),
+) -> dict[str, Any]:
+    """Build the bundle-ready sandbox digest metadata."""
+    return {
+        "sandbox_image": image_uri,
+        "image_uri": image_uri,
+        "digest": _image_digest(image_uri),
+        "resource_limits": dict(resource_limits or {}),
+        "data_mounts": [asdict(mount) for mount in data_mounts],
+        "sandbox_policy": {
+            "stage": "1",
+            "image_policy": "reference_base_image",
+            "data_fetch": "materialize_then_bind_mount",
+        },
+        "source": "SandboxSpec",
+    }
+
+
+def _limit_str(
+    limits: Mapping[str, Any], primary: str, aliases: Sequence[str], default: str
+) -> str:
+    for key in (primary, *aliases):
+        value = limits.get(key)
+        if value not in (None, ""):
+            return str(value)
+    return default
+
+
+def _memory_limit(limits: Mapping[str, Any], default: str) -> str:
+    if limits.get("memory"):
+        return str(limits["memory"])
+    if limits.get("memory_mb"):
+        return f"{int(limits['memory_mb'])}m"
+    return default
+
+
+def _bool_limit(limits: Mapping[str, Any], key: str, default: bool) -> bool:
+    value = limits.get(key)
+    if value is None:
+        return default
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+    return bool(value)
+
+
+def _parse_hf_data_uri(uri: str) -> tuple[str, str, str, str]:
+    parsed = urlparse(uri)
+    ref = f"{parsed.netloc}{parsed.path}".strip("/")
+    repo_ref, _, revision_and_path = ref.rpartition("@")
+    revision, _, subpath = revision_and_path.partition("/")
+    query = parse_qs(parsed.query)
+    repo_type = (query.get("repo_type") or query.get("type") or ["dataset"])[0]
+    if repo_ref.startswith("datasets/"):
+        repo_ref = repo_ref.removeprefix("datasets/")
+        repo_type = "dataset"
+    elif repo_ref.startswith("models/"):
+        repo_ref = repo_ref.removeprefix("models/")
+        repo_type = "model"
+    if not repo_ref or not revision:
+        raise SandboxRuntimeError(f"Invalid hf data mount URI: {uri}")
+    return repo_ref, revision, unquote(subpath), repo_type
+
+
+def _fetch_hf_data_mount(mount: DataMount, cache_path: Path) -> Path:
+    try:
+        from huggingface_hub import snapshot_download
+    except ImportError as exc:
+        raise SandboxRuntimeError(
+            "huggingface_hub is required to materialize hf:// data mounts"
+        ) from exc
+
+    repo_id, revision, subpath, repo_type = _parse_hf_data_uri(mount.uri)
+    try:
+        local_path = Path(
+            snapshot_download(
+                repo_id=repo_id,
+                revision=revision,
+                repo_type=repo_type or None,
+                local_dir=str(cache_path),
+            )
+        ).resolve()
+    except Exception as exc:
+        raise SandboxRuntimeError(
+            f"hf data mount fetch failed for {mount.uri}: {exc}"
+        ) from exc
+    return local_path / subpath if subpath else local_path
+
+
+def _fetch_s3_data_mount(mount: DataMount, cache_path: Path) -> Path:
+    parsed = urlparse(mount.uri)
+    bucket = parsed.netloc
+    key = unquote(parsed.path.lstrip("/"))
+    version_id = (parse_qs(parsed.query).get("versionId") or [""])[0]
+    if not bucket or not key or not version_id:
+        raise SandboxRuntimeError(f"Invalid s3 data mount URI: {mount.uri}")
+
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        import boto3
+    except ImportError:
+        aws = shutil.which("aws")
+        if not aws:
+            raise SandboxRuntimeError(
+                "boto3 or the aws CLI is required to materialize s3:// data mounts"
+            )
+        result = subprocess.run(
+            [
+                aws,
+                "s3api",
+                "get-object",
+                "--bucket",
+                bucket,
+                "--key",
+                key,
+                "--version-id",
+                version_id,
+                str(cache_path),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode != 0:
+            error = result.stderr.strip() or result.stdout.strip()
+            raise SandboxRuntimeError(f"aws s3api get-object failed: {error}")
+        return cache_path.resolve()
+
+    try:
+        client = boto3.client("s3")
+        client.download_file(
+            bucket,
+            key,
+            str(cache_path),
+            ExtraArgs={"VersionId": version_id},
+        )
+    except Exception as exc:
+        raise SandboxRuntimeError(
+            f"s3 data mount fetch failed for {mount.uri}: {exc}"
+        ) from exc
+    return cache_path.resolve()
 
 
 @dataclass(frozen=True)
@@ -32,6 +192,100 @@ class SandboxMount:
         return f"{self.host_path}:{self.container_path}:{mode}"
 
 
+class DataMountResolver:
+    """Materialize Stage 1 data URIs to host paths for bind mounts."""
+
+    def __init__(
+        self,
+        *,
+        cache_root: str | Path | None = None,
+        base_dir: str | Path | None = None,
+        hf_fetcher: DataMountFetcher | None | object = _DEFAULT_REMOTE_FETCHER,
+        s3_fetcher: DataMountFetcher | None | object = _DEFAULT_REMOTE_FETCHER,
+    ) -> None:
+        default_cache = Path.home() / ".cache" / "quantagentbench" / "data"
+        self.cache_root = Path(cache_root or default_cache).expanduser()
+        self.base_dir = Path(base_dir or os.getcwd()).expanduser()
+        self.hf_fetcher = (
+            _fetch_hf_data_mount
+            if hf_fetcher is _DEFAULT_REMOTE_FETCHER
+            else hf_fetcher
+        )
+        self.s3_fetcher = (
+            _fetch_s3_data_mount
+            if s3_fetcher is _DEFAULT_REMOTE_FETCHER
+            else s3_fetcher
+        )
+
+    def resolve(self, mount: DataMount) -> SandboxMount:
+        parsed = urlparse(mount.uri)
+        scheme = parsed.scheme.lower()
+        if scheme == "file":
+            host_path = self._resolve_file(mount.uri)
+        elif scheme == "hf":
+            host_path = self._resolve_cached("hf", mount, self.hf_fetcher)
+        elif scheme == "s3":
+            host_path = self._resolve_cached("s3", mount, self.s3_fetcher)
+        else:
+            raise SandboxRuntimeError(f"Unsupported data URI scheme: {scheme}")
+
+        return SandboxMount(
+            host_path=str(host_path),
+            container_path=mount.target_path,
+            read_only=mount.read_only,
+        )
+
+    def resolve_all(self, mounts: Sequence[DataMount]) -> tuple[SandboxMount, ...]:
+        return tuple(self.resolve(mount) for mount in mounts)
+
+    def _resolve_file(self, uri: str) -> Path:
+        raw = uri.removeprefix("file://")
+        if raw.startswith("localhost/"):
+            raw = raw.removeprefix("localhost")
+        path = Path(unquote(raw)).expanduser()
+        if not path.is_absolute():
+            path = self.base_dir / path
+        path = path.resolve()
+        if not path.exists():
+            raise SandboxRuntimeError(f"file data mount does not exist: {path}")
+        return path
+
+    def _resolve_cached(
+        self,
+        scheme: str,
+        mount: DataMount,
+        fetcher: DataMountFetcher | None,
+    ) -> Path:
+        cache_path = self.cache_root / scheme / quote(mount.uri, safe="")
+        hf_subpath = ""
+        if scheme == "hf":
+            _, _, hf_subpath, _ = _parse_hf_data_uri(mount.uri)
+        if cache_path.exists():
+            if hf_subpath:
+                subpath_cache = cache_path / hf_subpath
+                if subpath_cache.exists():
+                    return subpath_cache.resolve()
+            elif not hf_subpath:
+                return cache_path.resolve()
+        if fetcher is not None:
+            cache_path.parent.mkdir(parents=True, exist_ok=True)
+            fetched_path = Path(fetcher(mount, cache_path)).expanduser().resolve()
+            if not fetched_path.exists():
+                raise SandboxRuntimeError(
+                    f"{scheme} fetcher returned missing path: {fetched_path}"
+                )
+            return fetched_path
+        if not cache_path.exists():
+            raise SandboxRuntimeError(
+                f"{scheme} data mount is not materialized in cache: {mount.uri}"
+            )
+        if hf_subpath:
+            raise SandboxRuntimeError(
+                f"hf data mount subpath is not materialized in cache: {mount.uri}"
+            )
+        return cache_path.resolve()
+
+
 @dataclass(frozen=True)
 class SandboxCreateRequest:
     """Request to create an isolated sandbox process."""
@@ -39,14 +293,69 @@ class SandboxCreateRequest:
     image_uri: str
     sandbox_id: str | None = None
     mounts: tuple[SandboxMount, ...] = ()
+    data_mounts: tuple[DataMount, ...] = ()
     env: Mapping[str, str] = field(default_factory=dict)
     network_enabled: bool = False
     cpus: str = "1"
     memory: str = "768m"
+    resource_limits: Mapping[str, Any] = field(default_factory=dict)
     workdir: str = "/workspace"
     command: tuple[str, ...] = ("sleep", "infinity")
     pull_policy: str = "missing"
     metadata: Mapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "mounts", tuple(self.mounts))
+        object.__setattr__(self, "data_mounts", tuple(self.data_mounts))
+        object.__setattr__(self, "command", tuple(self.command))
+
+    @classmethod
+    def from_spec(
+        cls,
+        spec: SandboxSpec,
+        *,
+        sandbox_id: str | None = None,
+        mounts: Sequence[SandboxMount] = (),
+        data_mounts: Sequence[DataMount] = (),
+        env: Mapping[str, str] | None = None,
+        network_enabled: bool | None = None,
+        workdir: str = "/workspace",
+        command: Sequence[str] = ("sleep", "infinity"),
+        pull_policy: str = "missing",
+        metadata: Mapping[str, Any] | None = None,
+    ) -> "SandboxCreateRequest":
+        limits = dict(spec.resource_limits)
+        effective_network = _bool_limit(
+            limits,
+            "network_enabled",
+            False if network_enabled is None else network_enabled,
+        )
+        request_metadata = dict(metadata or {})
+        if "wall_timeout_seconds" in limits:
+            request_metadata["wall_timeout_seconds"] = limits["wall_timeout_seconds"]
+        request_metadata.setdefault(
+            "sandbox_digest",
+            build_sandbox_digest(
+                spec.image_uri,
+                resource_limits=limits,
+                data_mounts=data_mounts,
+            ),
+        )
+        return cls(
+            image_uri=spec.image_uri,
+            sandbox_id=sandbox_id,
+            mounts=tuple(mounts),
+            data_mounts=tuple(data_mounts),
+            env=dict(env or {}),
+            network_enabled=effective_network,
+            cpus=_limit_str(limits, "cpus", ("cpu_count",), "1"),
+            memory=_memory_limit(limits, "768m"),
+            resource_limits=limits,
+            workdir=workdir,
+            command=tuple(command),
+            pull_policy=pull_policy,
+            metadata=request_metadata,
+        )
 
 
 @dataclass(frozen=True)
@@ -212,10 +521,12 @@ class DockerSandboxRuntime(SandboxRuntime):
         telemetry: TelemetryHook | None = None,
         router: ToolRouter | None = None,
         runner: CommandRunner | None = None,
+        data_mount_resolver: DataMountResolver | None = None,
     ) -> None:
         self.telemetry = telemetry
         self.router = router or ToolRouter()
         self._runner = runner
+        self.data_mount_resolver = data_mount_resolver or DataMountResolver()
         self._handles: dict[str, SandboxHandle] = {}
 
     def pull_image(self, image_uri: str) -> None:
@@ -229,6 +540,7 @@ class DockerSandboxRuntime(SandboxRuntime):
         self._emit("image_pull", start, True, None, {"image_uri": image_uri})
 
     def create(self, request: SandboxCreateRequest) -> SandboxHandle:
+        request = self._prepare_request(request)
         if request.pull_policy == "always":
             self.pull_image(request.image_uri)
 
@@ -271,7 +583,11 @@ class DockerSandboxRuntime(SandboxRuntime):
             start,
             True,
             None,
-            {"sandbox_id": sandbox_id, "image_uri": request.image_uri},
+            {
+                "sandbox_id": sandbox_id,
+                "image_uri": request.image_uri,
+                "data_mount_count": len(request.data_mounts),
+            },
         )
         return handle
 
@@ -390,6 +706,42 @@ class DockerSandboxRuntime(SandboxRuntime):
         args.extend(request.command)
         return args
 
+    def _prepare_request(
+        self, request: SandboxCreateRequest
+    ) -> SandboxCreateRequest:
+        metadata = dict(request.metadata)
+        metadata.setdefault(
+            "sandbox_digest",
+            build_sandbox_digest(
+                request.image_uri,
+                resource_limits=request.resource_limits,
+                data_mounts=request.data_mounts,
+            ),
+        )
+        if not request.data_mounts:
+            return replace(request, metadata=metadata)
+
+        resolved_mounts = self.data_mount_resolver.resolve_all(request.data_mounts)
+        metadata["resolved_data_mounts"] = [
+            {
+                "uri": data_mount.uri,
+                "host_path": sandbox_mount.host_path,
+                "target_path": sandbox_mount.container_path,
+                "read_only": sandbox_mount.read_only,
+            }
+            for data_mount, sandbox_mount in zip(
+                request.data_mounts, resolved_mounts, strict=True
+            )
+        ]
+        digest = dict(metadata["sandbox_digest"])
+        digest["data_mounts"] = [asdict(mount) for mount in request.data_mounts]
+        metadata["sandbox_digest"] = digest
+        return replace(
+            request,
+            mounts=(*request.mounts, *resolved_mounts),
+            metadata=metadata,
+        )
+
     def _run(
         self, args: Sequence[str], *, timeout: float | None
     ) -> subprocess.CompletedProcess[str]:
@@ -424,9 +776,11 @@ class LocalSandboxRuntime(SandboxRuntime):
         *,
         telemetry: TelemetryHook | None = None,
         router: ToolRouter | None = None,
+        data_mount_resolver: DataMountResolver | None = None,
     ) -> None:
         self.telemetry = telemetry
         self.router = router or ToolRouter()
+        self.data_mount_resolver = data_mount_resolver or DataMountResolver()
         self._owned_workspaces: set[str] = set()
         self._env_by_sandbox_id: dict[str, dict[str, str]] = {}
 
@@ -439,6 +793,7 @@ class LocalSandboxRuntime(SandboxRuntime):
         )
 
     def create(self, request: SandboxCreateRequest) -> SandboxHandle:
+        request = self._prepare_request(request)
         start = time.perf_counter()
         workspace = self._resolve_workspace(request)
         sandbox_id = request.sandbox_id or f"local_{uuid.uuid4().hex[:12]}"
@@ -455,7 +810,11 @@ class LocalSandboxRuntime(SandboxRuntime):
             start,
             True,
             None,
-            {"sandbox_id": sandbox_id, "runtime": "local"},
+            {
+                "sandbox_id": sandbox_id,
+                "runtime": "local",
+                "data_mount_count": len(request.data_mounts),
+            },
         )
         return handle
 
@@ -549,6 +908,42 @@ class LocalSandboxRuntime(SandboxRuntime):
         workspace = tempfile.mkdtemp(prefix="qab_local_")
         self._owned_workspaces.add(workspace)
         return workspace
+
+    def _prepare_request(
+        self, request: SandboxCreateRequest
+    ) -> SandboxCreateRequest:
+        metadata = dict(request.metadata)
+        metadata.setdefault(
+            "sandbox_digest",
+            build_sandbox_digest(
+                request.image_uri,
+                resource_limits=request.resource_limits,
+                data_mounts=request.data_mounts,
+            ),
+        )
+        if not request.data_mounts:
+            return replace(request, metadata=metadata)
+
+        resolved_mounts = self.data_mount_resolver.resolve_all(request.data_mounts)
+        metadata["resolved_data_mounts"] = [
+            {
+                "uri": data_mount.uri,
+                "host_path": sandbox_mount.host_path,
+                "target_path": sandbox_mount.container_path,
+                "read_only": sandbox_mount.read_only,
+            }
+            for data_mount, sandbox_mount in zip(
+                request.data_mounts, resolved_mounts, strict=True
+            )
+        ]
+        digest = dict(metadata["sandbox_digest"])
+        digest["data_mounts"] = [asdict(mount) for mount in request.data_mounts]
+        metadata["sandbox_digest"] = digest
+        return replace(
+            request,
+            mounts=(*request.mounts, *resolved_mounts),
+            metadata=metadata,
+        )
 
     def _emit(
         self,

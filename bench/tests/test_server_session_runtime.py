@@ -30,6 +30,7 @@ if "mcp" not in sys.modules:
 
 from server.api.session_api import (
     SessionState,
+    _environment_sandbox_digest,
     _resolve_persona_pin,
     _session_random_seed,
 )
@@ -93,6 +94,85 @@ class SessionContextTests(unittest.TestCase):
         )
         self.assertNotIn("task_id", context)
         self.assertNotIn("sample_code", context)
+
+    def test_session_context_uses_sandbox_spec_image(self):
+        state = SessionState(session_id="sess-123", use_docker=False)
+        state.task = SimpleNamespace(
+            category=SimpleNamespace(value="implementation"),
+            requires_code=True,
+            sample_code=None,
+            environment=SimpleNamespace(
+                sandbox_image="legacy:image",
+                sandbox_spec=SimpleNamespace(image_uri="spec:image-lean"),
+                max_backtest_trials=3,
+            ),
+        )
+
+        context = state._build_session_context(
+            docs_available=[],
+            user_code_dir=None,
+        )
+
+        self.assertEqual(context["sandbox_image"], "spec:image-lean")
+
+    def test_build_background_uses_sandbox_spec_and_data_mounts(self):
+        from server.core.session import build_background
+
+        task = SimpleNamespace(
+            sample_code=None,
+            series=None,
+            custom_data_key=None,
+            environment=SimpleNamespace(
+                sandbox_image="legacy:image",
+                sandbox_image_uri="spec:image-lean",
+                docs_available=[],
+                data_files=[],
+                data_mounts=[{"target_path": "/data/lean"}],
+            ),
+        )
+
+        background = build_background(task)
+
+        self.assertIn("algorithmic trading engine", background)
+        self.assertIn("Market data files are pre-loaded", background)
+
+    def test_sandbox_digest_preserves_legacy_network_flag(self):
+        digest = _environment_sandbox_digest(
+            SimpleNamespace(
+                sandbox_image="legacy:image",
+                sandbox_spec=None,
+                network_enabled=True,
+                data_mounts=[],
+            )
+        )
+
+        self.assertTrue(digest["resource_limits"]["network_enabled"])
+
+
+class ContainerManagerMountTests(unittest.TestCase):
+    def test_prepare_nested_data_mount_targets_creates_staged_paths(self):
+        from platform_api.runtime import SandboxMount
+        from server.core.container import ContainerManager
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            data_dir = root / "staged_data"
+            data_dir.mkdir()
+            mounted_dir = root / "lean_data"
+            mounted_dir.mkdir()
+            mounted_file = root / "universe.json"
+            mounted_file.write_text("{}", encoding="utf-8")
+
+            ContainerManager._prepare_nested_mount_targets(
+                (
+                    SandboxMount(str(mounted_dir), "/data/lean"),
+                    SandboxMount(str(mounted_file), "/data/meta/universe.json"),
+                ),
+                ((str(data_dir), "/data"),),
+            )
+
+            self.assertTrue((data_dir / "lean").is_dir())
+            self.assertTrue((data_dir / "meta" / "universe.json").is_file())
 
 
 class PersonaPinTests(unittest.TestCase):

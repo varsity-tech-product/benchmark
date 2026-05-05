@@ -61,7 +61,36 @@ class EvalAbortError(RuntimeError):
     only.  Other parallel tasks are not affected.
     """
 
-    pass
+
+def _environment_sandbox_image(environment) -> str:
+    if environment is None:
+        return ""
+    spec = getattr(environment, "sandbox_spec", None)
+    image_uri = str(getattr(spec, "image_uri", "") or "").strip()
+    if image_uri:
+        return image_uri
+    return str(getattr(environment, "sandbox_image", "") or "")
+
+
+def _environment_resource_limits(environment) -> dict:
+    spec = getattr(environment, "sandbox_spec", None)
+    limits = getattr(spec, "resource_limits", None)
+    resolved = dict(limits or {})
+    if "network_enabled" not in resolved and bool(
+        getattr(environment, "network_enabled", False)
+    ):
+        resolved["network_enabled"] = True
+    return resolved
+
+
+def _environment_network_enabled(environment) -> bool:
+    limits = _environment_resource_limits(environment)
+    value = limits.get("network_enabled")
+    if value is None:
+        return bool(getattr(environment, "network_enabled", False))
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+    return bool(value)
 
 
 # ──────────────────────────────────────────────────────────────
@@ -198,7 +227,7 @@ class BenchmarkOrchestrator:
 
         from scripts.data_manager import ensure_data
 
-        sandbox_img = task.environment.sandbox_image if task.environment else ""
+        sandbox_img = _environment_sandbox_image(task.environment)
         if sandbox_img and "lean" in sandbox_img:
             if self._paths_i is None:
                 self._paths_i = ensure_data(series="lean", revision=DATASET_REVISION)
@@ -286,13 +315,23 @@ class BenchmarkOrchestrator:
                 docs_dir=staged_docs_dir,
                 user_code_dir=user_code_dir,
                 sandbox_image=(
-                    task.environment.sandbox_image if task.environment else None
+                    _environment_sandbox_image(task.environment)
+                    if task.environment
+                    else None
                 ),
                 network_enabled=(
-                    task.environment.network_enabled if task.environment else False
+                    _environment_network_enabled(task.environment)
+                    if task.environment
+                    else False
                 ),
                 lean_data_dir=lean_data_dir,
                 custom_data_dir=custom_data_dir,
+                data_mounts=task.environment.data_mounts if task.environment else [],
+                resource_limits=(
+                    _environment_resource_limits(task.environment)
+                    if task.environment
+                    else None
+                ),
             )
 
             # 1b.5. Start tool executor daemon inside the container (Docker only).
@@ -500,9 +539,7 @@ class BenchmarkOrchestrator:
                 "network_enabled": container.network_enabled,
                 "network_mode": container.network_mode,
                 "use_docker": self.container_manager.use_docker,
-                "sandbox_image": (
-                    task.environment.sandbox_image if task.environment else "N/A"
-                ),
+                "sandbox_image": _environment_sandbox_image(task.environment) or "N/A",
             }
 
             # === PHASE 3.25: TRIAL FINALIZATION ===

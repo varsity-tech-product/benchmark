@@ -71,7 +71,7 @@ def backfill(
         task_id=str(state.get("task_id", "")),
         timestamps=_build_timestamps(state),
         agent_id=_agent_id(state),
-        sandbox_digest=_build_sandbox_digest(task_json),
+        sandbox_digest=_build_sandbox_digest(task_json, state),
         telemetry=_build_telemetry(state, messages=messages),
         messages=messages,
         tool_calls=_build_tool_calls(state),
@@ -167,14 +167,55 @@ def _agent_id(state: dict) -> str:
     )
 
 
-def _build_sandbox_digest(task_json: dict) -> dict[str, Any]:
+def _image_digest(image_uri: str) -> str:
+    marker = "@sha256:"
+    if marker in image_uri:
+        return "sha256:" + image_uri.split(marker, 1)[1]
+    return ""
+
+
+def _build_sandbox_digest(task_json: dict, state: dict | None = None) -> dict[str, Any]:
+    state_digest = state.get("sandbox_digest") if isinstance(state, dict) else None
+    if isinstance(state_digest, dict) and state_digest:
+        return dict(state_digest)
+
     environment = task_json.get("environment") if isinstance(task_json, dict) else {}
     if not isinstance(environment, dict):
         environment = {}
+    sandbox_spec = environment.get("sandbox_spec")
+    if not isinstance(sandbox_spec, dict):
+        sandbox_spec = {}
+    image_uri = str(
+        sandbox_spec.get("image_uri") or environment.get("sandbox_image") or ""
+    )
+    resource_limits = sandbox_spec.get("resource_limits")
+    if not isinstance(resource_limits, dict):
+        resource_limits = {}
+    else:
+        resource_limits = dict(resource_limits)
+    if "network_enabled" not in resource_limits and bool(
+        environment.get("network_enabled")
+    ):
+        resource_limits["network_enabled"] = True
+    data_mounts = environment.get("data_mounts")
+    if not isinstance(data_mounts, list):
+        data_mounts = []
     return {
-        "sandbox_image": str(environment.get("sandbox_image") or ""),
-        "digest": "",
-        "source": "task.environment.sandbox_image",
+        "sandbox_image": image_uri,
+        "image_uri": image_uri,
+        "digest": _image_digest(image_uri),
+        "resource_limits": resource_limits,
+        "data_mounts": data_mounts,
+        "sandbox_policy": {
+            "stage": "1",
+            "image_policy": "reference_base_image",
+            "data_fetch": "materialize_then_bind_mount",
+        },
+        "source": (
+            "task.environment.sandbox_spec"
+            if sandbox_spec
+            else "task.environment.sandbox_image"
+        ),
     }
 
 

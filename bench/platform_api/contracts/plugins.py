@@ -6,11 +6,13 @@ from abc import ABC, abstractmethod
 from typing import Mapping, Sequence
 
 from platform_api.contracts.models import (
+    DataMount,
     EvalItem,
     EvalSample,
     EvaluatorMetadata,
     FileArtifact,
     NPCReply,
+    SandboxSpec,
     Score,
     ToolLog,
     TranscriptMessage,
@@ -31,6 +33,18 @@ class TaskSuite(ABC):
     @abstractmethod
     def required_bundle_fields(self) -> set[str]:
         """Return bundle fields required by this suite."""
+
+    def data_mounts(self, task_id: str | None = None) -> tuple[DataMount, ...]:
+        """Return data dependencies declared for a task or suite."""
+        if task_id is None:
+            return ()
+        return self.get_task(task_id).data_mounts
+
+    def sandbox_spec(self, task_id: str | None = None) -> SandboxSpec | None:
+        """Return the sandbox image and resource limits for a task or suite."""
+        if task_id is None:
+            return None
+        return self.get_task(task_id).sandbox_spec
 
 
 class NPCProvider(ABC):

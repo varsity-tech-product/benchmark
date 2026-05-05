@@ -5,6 +5,8 @@ from types import SimpleNamespace
 import pytest
 
 from platform_api import (
+    DataMount,
+    DataMountResolver,
     DockerSandboxRuntime,
     EvalItem,
     EvalSample,
@@ -19,6 +21,7 @@ from platform_api import (
     PluginLoader,
     SandboxCreateRequest,
     SandboxMount,
+    SandboxSpec,
     Score,
     TaskSuite,
     TelemetryRecord,
@@ -26,6 +29,7 @@ from platform_api import (
     ToolRequest,
     ToolRouter,
     TranscriptMessage,
+    build_sandbox_digest,
 )
 
 
@@ -78,6 +82,47 @@ def test_contract_abcs_and_models_round_trip():
     assert npc.respond(sample.transcript, (), {}, {}).terminate is True
     assert evaluator.evaluate(item, sample).value == 1.0
     assert evaluator.metadata().required_bundle_fields == frozenset({"conversation"})
+
+
+def test_task_suite_declares_data_mounts_and_sandbox_spec():
+    data_mount = DataMount(
+        uri="hf://Varsity-Tech/quant-tutor-bench-data@" + "a" * 40,
+        target_path="/data/lean",
+    )
+    spec = SandboxSpec(
+        image_uri="quanttutor/quant-tutor-lean@sha256:" + "a" * 64,
+        resource_limits={"cpu_count": 2, "memory_mb": 1024},
+    )
+
+    class Suite(StubTaskSuite):
+        def get_task(self, task_id: str) -> EvalItem:
+            return EvalItem(
+                task_id=task_id,
+                data_mounts=(data_mount,),
+                sandbox_spec=spec,
+            )
+
+    suite = Suite()
+
+    assert suite.data_mounts("T1") == (data_mount,)
+    assert suite.sandbox_spec("T1") == spec
+
+
+def test_data_mount_validates_stage_one_uri_policy():
+    DataMount(uri="file://./local-data", target_path="/data/local")
+    DataMount(uri="s3://bucket/key?versionId=abc", target_path="/data/s3")
+    DataMount(uri="hf://owner/dataset@" + "a" * 40, target_path="/data/hf")
+
+    with pytest.raises(ValueError, match="Unsupported data URI scheme"):
+        DataMount(uri="http://example.com/data.zip", target_path="/data/http")
+    with pytest.raises(ValueError, match="@commit"):
+        DataMount(uri="hf://owner/dataset", target_path="/data/hf")
+    with pytest.raises(ValueError, match="commit SHA"):
+        DataMount(uri="hf://owner/dataset@main", target_path="/data/hf")
+    with pytest.raises(ValueError, match="versionId"):
+        DataMount(uri="s3://bucket/key", target_path="/data/s3")
+    with pytest.raises(ValueError, match="absolute"):
+        DataMount(uri="file://./local-data", target_path="data/local")
 
 
 def test_plugin_loader_loads_json_config(tmp_path, monkeypatch):
@@ -244,6 +289,65 @@ def test_local_sandbox_exec_uses_request_env_and_counts_failed_records():
     assert telemetry.totals()["errors"] == 1
 
 
+def test_sandbox_create_request_from_spec_maps_limits_and_digest():
+    spec = SandboxSpec(
+        image_uri="example/image@sha256:" + "b" * 64,
+        resource_limits={
+            "cpu_count": 2,
+            "memory_mb": 1536,
+            "wall_timeout_seconds": 45,
+            "network_enabled": True,
+        },
+    )
+    mount = DataMount(uri="file://./data", target_path="/data/local")
+
+    request = SandboxCreateRequest.from_spec(spec, data_mounts=(mount,))
+
+    assert request.image_uri == spec.image_uri
+    assert request.cpus == "2"
+    assert request.memory == "1536m"
+    assert request.network_enabled is True
+    assert request.metadata["wall_timeout_seconds"] == 45
+    assert request.metadata["sandbox_digest"]["digest"] == "sha256:" + "b" * 64
+    assert request.metadata["sandbox_digest"]["data_mounts"] == [
+        {"uri": "file://./data", "target_path": "/data/local", "read_only": True}
+    ]
+
+
+def test_data_mount_resolver_materializes_file_mounts(tmp_path):
+    data_dir = tmp_path / "local-data"
+    data_dir.mkdir()
+    mount = DataMount(uri="file://./local-data", target_path="/data/local")
+    resolver = DataMountResolver(base_dir=tmp_path)
+
+    sandbox_mount = resolver.resolve(mount)
+
+    assert sandbox_mount.host_path == str(data_dir.resolve())
+    assert sandbox_mount.container_path == "/data/local"
+    assert sandbox_mount.to_docker_volume().endswith(":/data/local:ro")
+
+
+def test_data_mount_resolver_materializes_remote_mounts_with_fetcher(tmp_path):
+    fetched_dir = tmp_path / "fetched"
+    fetched_dir.mkdir()
+    mount = DataMount(
+        uri="hf://owner/dataset@" + "a" * 40,
+        target_path="/data/hf",
+    )
+
+    def fetcher(data_mount, cache_path):
+        assert data_mount == mount
+        assert cache_path.parent == tmp_path / "cache" / "hf"
+        return fetched_dir
+
+    resolver = DataMountResolver(cache_root=tmp_path / "cache", hf_fetcher=fetcher)
+
+    sandbox_mount = resolver.resolve(mount)
+
+    assert sandbox_mount.host_path == str(fetched_dir.resolve())
+    assert sandbox_mount.container_path == "/data/hf"
+
+
 def test_docker_runtime_builds_isolated_run_command():
     calls = []
 
@@ -288,6 +392,51 @@ def test_docker_runtime_builds_isolated_run_command():
     assert "A=B" in run_args
     assert handle.container_id == "container123"
     assert calls[-1] == ["docker", "rm", "-f", "container123"]
+
+
+def test_docker_runtime_resolves_data_mounts_and_records_digest(tmp_path):
+    data_dir = tmp_path / "data"
+    data_dir.mkdir(exist_ok=True)
+    calls = []
+
+    def runner(args, timeout=None):
+        calls.append(list(args))
+        if args[:3] == ["docker", "run", "-d"]:
+            return subprocess.CompletedProcess(
+                args,
+                0,
+                stdout="container456\n",
+                stderr="",
+            )
+        return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
+
+    runtime = DockerSandboxRuntime(
+        runner=runner,
+        data_mount_resolver=DataMountResolver(base_dir=tmp_path),
+    )
+    handle = runtime.create(
+        SandboxCreateRequest.from_spec(
+            SandboxSpec(
+                image_uri="example/image:v1",
+                resource_limits={"cpu_count": 2, "memory_mb": 1024},
+            ),
+            sandbox_id="case2",
+            data_mounts=(
+                DataMount(uri="file://./data", target_path="/data/custom"),
+            ),
+        )
+    )
+
+    run_args = calls[0]
+    assert f"{data_dir.resolve()}:/data/custom:ro" in run_args
+    assert handle.metadata["sandbox_digest"]["sandbox_image"] == "example/image:v1"
+    assert handle.metadata["resolved_data_mounts"][0]["target_path"] == "/data/custom"
+
+
+def test_build_sandbox_digest_extracts_image_digest():
+    digest = build_sandbox_digest("repo/image@sha256:" + "c" * 64)
+    assert digest["digest"] == "sha256:" + "c" * 64
+    assert digest["sandbox_policy"]["stage"] == "1"
 
 
 def test_telemetry_timer_records_errors_and_token_counts():
