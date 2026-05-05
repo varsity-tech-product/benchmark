@@ -28,6 +28,7 @@ import time
 from collections.abc import Mapping, Sequence
 from typing import Any, Optional
 
+from platform_api.contracts import EvalItem, NPCProvider, ToolLog, TranscriptMessage
 from server.core.artifact_digest import build_visible_artifact_digest
 from server.core.workspace_delta import scan_workspace_snapshot
 
@@ -354,11 +355,11 @@ def _resolve_attachments(
 
 
 # ---------------------------------------------------------------------------
-# TutoringSession
+# Session
 # ---------------------------------------------------------------------------
 
 
-class TutoringSession:
+class Session:
     """Manages a single tutoring session.
 
     The agent interacts with the user exclusively through
@@ -379,6 +380,8 @@ class TutoringSession:
         deadline: Optional[float] = None,
         proxy=None,
         workspace_path: Optional[str] = None,
+        npc_provider: NPCProvider | None = None,
+        eval_item: EvalItem | None = None,
     ):
         self._task = task
         self._persona = persona
@@ -387,6 +390,8 @@ class TutoringSession:
         self._deadline = deadline
         self._proxy = proxy  # For set_turn() calls
         self._workspace_path = workspace_path
+        self._npc_provider = npc_provider
+        self._eval_item = eval_item
 
         self._conversation: list[dict[str, str]] = []
         self._turn: int = 0
@@ -608,15 +613,9 @@ class TutoringSession:
 
         # ── Generate user reply ──  (aligned: generate_next_user_input)
         try:
-            reply, task_end = self._user_sim.generate_message(
-                self._conversation,
-                runtime_guidance=self._build_user_runtime_guidance(
-                    text,
-                    artifact_digest,
-                ),
-                file_ledger=self._file_ledger,
-                tool_logs=(self._proxy.get_logs() if self._proxy is not None else []),
-                workspace_path=self._workspace_path,
+            reply, task_end = self._generate_user_reply(
+                latest_agent_text=text,
+                artifact_digest=artifact_digest,
             )
         except Exception as exc:
             from server.core.user_sim import UserSimError
@@ -944,8 +943,92 @@ class TutoringSession:
             ]
         )
 
+    def _generate_user_reply(
+        self,
+        *,
+        latest_agent_text: str,
+        artifact_digest: Optional[dict] = None,
+    ) -> tuple[str, bool]:
+        runtime_guidance = self._build_user_runtime_guidance(
+            latest_agent_text,
+            artifact_digest,
+        )
+        tool_logs = self._proxy.get_logs() if self._proxy is not None else []
+        if self._npc_provider is None:
+            return self._user_sim.generate_message(
+                self._conversation,
+                runtime_guidance=runtime_guidance,
+                file_ledger=self._file_ledger,
+                tool_logs=tool_logs,
+                workspace_path=self._workspace_path,
+            )
+
+        payload = {
+            "task": self._task,
+            "persona": self._persona,
+            "user_sim": self._user_sim,
+            "runtime_guidance": runtime_guidance,
+            "file_ledger": self._file_ledger,
+            "workspace_path": self._workspace_path,
+        }
+        if self._eval_item is not None:
+            payload.update(self._eval_item.payload)
+        npc_reply = self._npc_provider.respond(
+            self._transcript_messages(),
+            self._contract_tool_logs(tool_logs),
+            {},
+            payload,
+        )
+        return npc_reply.message, bool(npc_reply.terminate)
+
+    def _transcript_messages(self) -> tuple[TranscriptMessage, ...]:
+        return tuple(
+            TranscriptMessage(
+                role=str(entry.get("role") or ""),
+                content=str(entry.get("content") or ""),
+                ts=(
+                    entry.get("ts")
+                    if isinstance(entry.get("ts"), (int, float))
+                    else None
+                ),
+                metadata={
+                    key: value
+                    for key, value in entry.items()
+                    if key not in {"role", "content", "ts"}
+                },
+            )
+            for entry in self._conversation
+        )
+
+    def _contract_tool_logs(self, logs: Sequence[Any]) -> tuple[ToolLog, ...]:
+        converted: list[ToolLog] = []
+        for log in logs or []:
+            name = str(_field(log, "name") or _field(log, "tool_name") or "")
+            if not name:
+                continue
+            args = _field(log, "args", {})
+            if not isinstance(args, Mapping):
+                args = {"value": args}
+            metadata = _field(log, "metadata", {})
+            if not isinstance(metadata, Mapping):
+                metadata = {}
+            converted.append(
+                ToolLog(
+                    name=name,
+                    args=dict(args),
+                    result=str(_field(log, "result", "") or ""),
+                    success=bool(_field(log, "success", True)),
+                    duration_ms=float(_field(log, "duration_ms", 0.0) or 0.0),
+                    turn_index=int(_field(log, "turn_index", 0) or 0),
+                    metadata=dict(metadata),
+                )
+            )
+        return tuple(converted)
+
     def _safe_closing(self) -> str:
         """Select a pre-written user closing message."""
+        if self._user_sim is None:
+            return "Thanks, I have what I need now."
         return self._user_sim.generate_closing(self._conversation)
 
     def inject_user_opening(self, opening: str) -> None:
@@ -962,5 +1045,10 @@ class TutoringSession:
 
     def _get_user_opening(self) -> str:
         """Get the opening message for this task."""
+        if self._npc_provider is not None and self._eval_item is not None:
+            return self._npc_provider.initial_message(self._eval_item)
         opening = getattr(self._task, "user_opening", "")
         return opening or "Hi, I need help with this topic."
+
+
+TutoringSession = Session

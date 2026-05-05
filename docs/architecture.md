@@ -89,10 +89,19 @@ first on `sys.path`.
 
 ## Reference Prompt Boundary
 
-`bench/server/reference/` owns reference NPC/user-simulator prompt behavior.
+`bench/server/reference/` owns the first concrete platform plugin bundle.
+`bundle.json` is loaded through `PluginLoader.load_config(...)` and points to
+`ReferenceTaskSuite`, `ReferenceNPCProvider`, and `ReferenceEvaluator`.
+`ReferenceTaskSuite` keeps `QuantTutorTask` as the reference business schema
+and maps it into `EvalItem` envelopes at the boundary, including `data_files`
+to `DataMount` translation and sandbox declarations.
+
 `RefSystemPrompt` builds persona, interaction, and visible tool-log behavior
-text for the reference simulator. `server.config.prompt_config` keeps existing
-server call sites stable through compatibility wrappers.
+text for the reference simulator. `ReferenceNPCProvider` delegates runtime user
+turns to `UserSimulator` and propagates the persona-emitted `task_end` flag.
+`ReferenceEvaluator` handles deterministic L0/L1 scoring and delegates Layer 2
+QR/QP scoring to the existing coordinator path. `server.config.prompt_config`
+keeps existing server call sites stable through compatibility wrappers.
 
 `server.core.session.build_background()` returns a JSON-able
 `platform_background.v1` fact object for sandbox image, resource limits,
