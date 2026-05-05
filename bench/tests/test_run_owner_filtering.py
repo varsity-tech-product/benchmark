@@ -18,13 +18,16 @@ from server.run.store import RunStore
 from server.web.ui_app import ui_routes
 
 
+TASK_ID = "L2_DAT_01_demo"
+
+
 def _write_task(root: Path) -> None:
-    task_path = root / "tasks" / "layer2" / "data" / "D01_demo.json"
+    task_path = root / "tasks" / "L2" / "data" / f"{TASK_ID}.json"
     task_path.parent.mkdir(parents=True, exist_ok=True)
     task_path.write_text(
         json.dumps(
             {
-                "task_id": "D01_demo",
+                "task_id": TASK_ID,
                 "category": "data",
                 "difficulty": "easy",
                 "description": "demo",
@@ -80,17 +83,17 @@ class RunOwnerFilteringTests(unittest.TestCase):
                 )
 
                 client.cookies.set(SESSION_COOKIE, _session_cookie(root, alice))
-                alice_run = client.post("/ui/runs", json={"task": "D01"}).json()
+                alice_run = client.post("/ui/runs", json={"task": TASK_ID}).json()
 
                 client.cookies.set(SESSION_COOKIE, _session_cookie(root, bob))
-                bob_run = client.post("/ui/runs", json={"task": "D01"}).json()
+                bob_run = client.post("/ui/runs", json={"task": TASK_ID}).json()
 
                 client.cookies.set(SESSION_COOKIE, _session_cookie(root, alice))
                 owned = client.get("/ui/runs").json()["runs"]
                 owned_mine = client.get("/ui/runs?mine=true").json()["runs"]
                 self.assertEqual([run["run_id"] for run in owned], [alice_run["run_id"]])
                 self.assertNotIn("task_id", owned[0])
-                self.assertEqual(owned_mine[0]["task_id"], "D01_demo")
+                self.assertEqual(owned_mine[0]["task_id"], TASK_ID)
                 self.assertNotIn("owner_email", owned[0])
 
                 denied = client.get(f"/ui/runs/{bob_run['run_id']}")
@@ -120,7 +123,7 @@ class RunOwnerFilteringTests(unittest.TestCase):
                 client = TestClient(Starlette(routes=ui_routes(manager)))
                 alice = UserContext("github:alice", "alice", "a@example.com", "Alice", "")
                 client.cookies.set(SESSION_COOKIE, _session_cookie(root, alice))
-                body = client.post("/ui/runs", json={"task": "D01"}).json()
+                body = client.post("/ui/runs", json={"task": TASK_ID}).json()
                 client.cookies.clear()
 
                 response = client.get(

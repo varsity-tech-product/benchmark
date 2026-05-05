@@ -47,7 +47,7 @@ def test_eval_package_has_no_server_imports():
 
 def _write_minimal_task(tmp_path: Path, task_id: str) -> Path:
     """Build a minimal task JSON the coordinator can ingest via SimpleNamespace."""
-    task_dir = tmp_path / "tasks" / "layer2" / "strategy"
+    task_dir = tmp_path / "tasks" / "L1" / "alpha_research"
     task_dir.mkdir(parents=True)
     task_path = task_dir / f"{task_id}.json"
     task_path.write_text(
@@ -56,7 +56,7 @@ def _write_minimal_task(tmp_path: Path, task_id: str) -> Path:
                 "task_id": task_id,
                 "version": "1.0",
                 "description": "smoke task",
-                "category": "strategy",
+                "category": "alpha_research",
                 "difficulty": "easy",
                 "task_type": "multi_turn",
                 "requires_code": False,

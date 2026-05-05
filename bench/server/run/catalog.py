@@ -1,29 +1,26 @@
 """TaskCatalog — public label to internal task_id resolution.
 
-Scans bench/tasks/ at startup, builds a cached mapping from public labels
-(e.g. 'D01') to full task_ids (e.g. 'D01_load_inspect_ohlcv').
-
-Extraction rule: ``re.match(r'^([A-Z]\\d{2})_', task_id)``
-Duplicate labels cause a startup-time error (fail fast).
+Scans the active Impl A multi-turn task layer at startup and builds a cached
+mapping from public labels to full task_ids. v3 labels use the full task_id.
 """
 
 import json
 import logging
-import re
 from dataclasses import dataclass
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-_LABEL_RE = re.compile(r"^([A-Z]\d{2})_")
+_ACTIVE_TASK_LAYERS = ("L2",)
+_ACTIVE_TASK_PREFIXES = tuple(f"{layer}_" for layer in _ACTIVE_TASK_LAYERS)
 
 
 @dataclass
 class TaskEntry:
     """Cached metadata for one task."""
 
-    public_label: str  # "D01"
-    task_id: str  # "D01_load_inspect_ohlcv"
+    public_label: str  # "L2_ADV_01_investment_advice"
+    task_id: str  # "L2_ADV_01_investment_advice"
     category: str  # "data_analysis"
     difficulty: str  # "medium"
     persona_id: str
@@ -53,7 +50,13 @@ class TaskCatalog:
             logger.warning("TaskCatalog: tasks directory not found: %s", tasks_dir)
             return
 
-        for json_path in sorted(tasks_dir.rglob("*.json")):
+        task_paths: list[Path] = []
+        for layer in _ACTIVE_TASK_LAYERS:
+            layer_dir = tasks_dir / layer
+            if layer_dir.is_dir():
+                task_paths.extend(layer_dir.rglob("*.json"))
+
+        for json_path in sorted(task_paths):
             try:
                 data = json.loads(json_path.read_text(encoding="utf-8"))
             except (json.JSONDecodeError, OSError) as exc:
@@ -64,12 +67,10 @@ class TaskCatalog:
             if not task_id:
                 continue
 
-            m = _LABEL_RE.match(task_id)
-            if not m:
+            label = _public_label(task_id)
+            if label is None:
                 logger.debug("TaskCatalog: no label pattern in %s", task_id)
                 continue
-
-            label = m.group(1)
 
             if label in self._entries:
                 existing = self._entries[label]
@@ -93,7 +94,7 @@ class TaskCatalog:
             self._by_id[task_id] = entry
 
     def resolve(self, label_or_id: str) -> TaskEntry | None:
-        """Accept both 'D01' and 'D01_load_inspect_ohlcv'."""
+        """Accept both public labels and full task_ids."""
         return self._entries.get(label_or_id) or self._by_id.get(label_or_id)
 
     def list_public(self) -> list[dict]:
@@ -123,3 +124,9 @@ class TaskCatalog:
 
     def __contains__(self, label_or_id: str) -> bool:
         return self.resolve(label_or_id) is not None
+
+
+def _public_label(task_id: str) -> str | None:
+    if task_id.startswith(_ACTIVE_TASK_PREFIXES):
+        return task_id
+    return None

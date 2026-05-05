@@ -15,12 +15,15 @@ from server.run.service import RunService
 from server.run.store import RunStore
 
 
+TASK_ID = "L2_DAT_01_demo"
+
+
 def _make_service(tmp: Path) -> RunService:
-    (tmp / "tasks" / "layer2" / "data").mkdir(parents=True, exist_ok=True)
-    (tmp / "tasks" / "layer2" / "data" / "D01_demo.json").write_text(
+    (tmp / "tasks" / "L2" / "data").mkdir(parents=True, exist_ok=True)
+    (tmp / "tasks" / "L2" / "data" / f"{TASK_ID}.json").write_text(
         json.dumps(
             {
-                "task_id": "D01_demo",
+                "task_id": TASK_ID,
                 "category": "data",
                 "difficulty": "easy",
                 "description": "d",
@@ -37,7 +40,7 @@ class MarkCompletedGuardTests(unittest.TestCase):
     def test_rejects_cancelled_run(self):
         with tempfile.TemporaryDirectory() as tmp:
             svc = _make_service(Path(tmp))
-            a, _, _ = svc.create_and_claim("D01")
+            a, _, _ = svc.create_and_claim(TASK_ID)
             svc.bind_session(a.run_id, "sess")
             svc.cancel_run(a.run_id)
             with self.assertRaises(ValueError):
@@ -46,7 +49,7 @@ class MarkCompletedGuardTests(unittest.TestCase):
     def test_rejects_failed_run(self):
         with tempfile.TemporaryDirectory() as tmp:
             svc = _make_service(Path(tmp))
-            a, _, _ = svc.create_and_claim("D01")
+            a, _, _ = svc.create_and_claim(TASK_ID)
             svc.bind_session(a.run_id, "sess")
             svc.mark_failed(a.run_id, "boom")
             with self.assertRaises(ValueError):
@@ -55,14 +58,14 @@ class MarkCompletedGuardTests(unittest.TestCase):
     def test_rejects_non_active_state(self):
         with tempfile.TemporaryDirectory() as tmp:
             svc = _make_service(Path(tmp))
-            a, _, _ = svc.create_and_claim("D01")  # CLAIMED, not ACTIVE
+            a, _, _ = svc.create_and_claim(TASK_ID)  # CLAIMED, inactive
             with self.assertRaises(ValueError):
                 svc.mark_completed(a.run_id, "/tmp/r")
 
     def test_idempotent_same_result_dir(self):
         with tempfile.TemporaryDirectory() as tmp:
             svc = _make_service(Path(tmp))
-            a, _, _ = svc.create_and_claim("D01")
+            a, _, _ = svc.create_and_claim(TASK_ID)
             svc.bind_session(a.run_id, "sess")
             svc.mark_completed(a.run_id, "/tmp/r")
             again = svc.mark_completed(a.run_id, "/tmp/r")
@@ -71,7 +74,7 @@ class MarkCompletedGuardTests(unittest.TestCase):
     def test_idempotent_rejects_different_result_dir(self):
         with tempfile.TemporaryDirectory() as tmp:
             svc = _make_service(Path(tmp))
-            a, _, _ = svc.create_and_claim("D01")
+            a, _, _ = svc.create_and_claim(TASK_ID)
             svc.bind_session(a.run_id, "sess")
             svc.mark_completed(a.run_id, "/tmp/r1")
             with self.assertRaises(ValueError):
@@ -82,7 +85,7 @@ class CancelGuardTests(unittest.TestCase):
     def test_cancel_rejects_completed(self):
         with tempfile.TemporaryDirectory() as tmp:
             svc = _make_service(Path(tmp))
-            a, _, _ = svc.create_and_claim("D01")
+            a, _, _ = svc.create_and_claim(TASK_ID)
             svc.bind_session(a.run_id, "sess")
             svc.mark_completed(a.run_id, "/tmp/r")
             with self.assertRaises(ValueError):
@@ -91,7 +94,7 @@ class CancelGuardTests(unittest.TestCase):
     def test_cancel_rejects_failed(self):
         with tempfile.TemporaryDirectory() as tmp:
             svc = _make_service(Path(tmp))
-            a, _, _ = svc.create_and_claim("D01")
+            a, _, _ = svc.create_and_claim(TASK_ID)
             svc.bind_session(a.run_id, "sess")
             svc.mark_failed(a.run_id, "x")
             with self.assertRaises(ValueError):
@@ -102,7 +105,7 @@ class ResetForRetryTests(unittest.TestCase):
     def test_reset_completed_clears_binding(self):
         with tempfile.TemporaryDirectory() as tmp:
             svc = _make_service(Path(tmp))
-            a, _, _ = svc.create_and_claim("D01")
+            a, _, _ = svc.create_and_claim(TASK_ID)
             svc.bind_session(a.run_id, "sess")
             svc.mark_completed(a.run_id, "/tmp/r")
             after = svc.reset_for_retry(a.run_id)
@@ -116,7 +119,7 @@ class ResetForRetryTests(unittest.TestCase):
     def test_reset_active_run_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:
             svc = _make_service(Path(tmp))
-            a, _, _ = svc.create_and_claim("D01")
+            a, _, _ = svc.create_and_claim(TASK_ID)
             svc.bind_session(a.run_id, "sess")  # ACTIVE
             with self.assertRaises(ValueError):
                 svc.reset_for_retry(a.run_id)
@@ -130,7 +133,7 @@ class ResetForRetryTests(unittest.TestCase):
     def test_reset_then_rebind_succeeds(self):
         with tempfile.TemporaryDirectory() as tmp:
             svc = _make_service(Path(tmp))
-            a, _, _ = svc.create_and_claim("D01")
+            a, _, _ = svc.create_and_claim(TASK_ID)
             svc.bind_session(a.run_id, "sess1")
             svc.mark_completed(a.run_id, "/tmp/r1")
             svc.reset_for_retry(a.run_id)
@@ -141,7 +144,7 @@ class ResetForRetryTests(unittest.TestCase):
     def test_reset_refreshes_claimed_at(self):
         with tempfile.TemporaryDirectory() as tmp:
             svc = _make_service(Path(tmp))
-            a, _, _ = svc.create_and_claim("D01")
+            a, _, _ = svc.create_and_claim(TASK_ID)
             svc.bind_session(a.run_id, "sess")
             svc.mark_completed(a.run_id, "/tmp/r")
             stale = svc.get_run(a.run_id).claimed_at
@@ -156,7 +159,7 @@ class RestoreAfterFailedRetryTests(unittest.TestCase):
     def test_restore_reattaches_completed_state(self):
         with tempfile.TemporaryDirectory() as tmp:
             svc = _make_service(Path(tmp))
-            a, _, _ = svc.create_and_claim("D01")
+            a, _, _ = svc.create_and_claim(TASK_ID)
             svc.bind_session(a.run_id, "sess1")
             svc.mark_completed(a.run_id, "/tmp/r1")
             snapshot = svc.get_run(a.run_id)
@@ -177,7 +180,7 @@ class RestoreAfterFailedRetryTests(unittest.TestCase):
     def test_restore_then_retry_again(self):
         with tempfile.TemporaryDirectory() as tmp:
             svc = _make_service(Path(tmp))
-            a, _, _ = svc.create_and_claim("D01")
+            a, _, _ = svc.create_and_claim(TASK_ID)
             svc.bind_session(a.run_id, "sess1")
             svc.mark_completed(a.run_id, "/tmp/r1")
             snap = svc.get_run(a.run_id)
@@ -199,8 +202,8 @@ class RestoreAfterFailedRetryTests(unittest.TestCase):
     def test_restore_rejects_non_claimed(self):
         with tempfile.TemporaryDirectory() as tmp:
             svc = _make_service(Path(tmp))
-            a, _, _ = svc.create_and_claim("D01")
-            svc.bind_session(a.run_id, "sess1")  # ACTIVE, not CLAIMED
+            a, _, _ = svc.create_and_claim(TASK_ID)
+            svc.bind_session(a.run_id, "sess1")  # ACTIVE
             with self.assertRaises(ValueError):
                 svc.restore_after_failed_retry(
                     a.run_id,
@@ -216,7 +219,7 @@ class BindSessionRollbackTests(unittest.TestCase):
     def test_rollback_on_store_error_leaves_run_claimed(self):
         with tempfile.TemporaryDirectory() as tmp:
             svc = _make_service(Path(tmp))
-            a, _, _ = svc.create_and_claim("D01")
+            a, _, _ = svc.create_and_claim(TASK_ID)
 
             original_save = svc._store.save
             calls = {"n": 0}

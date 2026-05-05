@@ -22,7 +22,7 @@ bench/
   server/              HTTP/MCP service, run control, session storage, UI
   client/              External client adapters for MCP and REST
   orchestrator/        Legacy pre-server batch scaffolding
-  tasks/               Task definitions + per-task eval scripts (test_scripts/)
+  tasks/               Active task definitions in L0/, L1/, and L2/
   personas/            User persona profiles
   data/                Market/reference data
   experiments/         Validation experiments and generated report pipelines
@@ -95,6 +95,9 @@ first on `sys.path`.
 `ReferenceTaskSuite` keeps `QuantTutorTask` as the reference business schema
 and maps it into `EvalItem` envelopes at the boundary, including `data_files`
 to `DataMount` translation and sandbox declarations.
+The reference task corpus is indexed only from `bench/tasks/L0/`,
+`bench/tasks/L1/`, and `bench/tasks/L2/`; the v2.2 legacy task tree has been
+removed from Impl A discovery.
 
 `RefSystemPrompt` builds persona, interaction, and visible tool-log behavior
 text for the reference simulator. `ReferenceNPCProvider` delegates runtime user
@@ -175,9 +178,9 @@ The `/ops/*` surface is gated by the admin-token mechanism in
 auth is enabled, require the owning run token.
 
 `GET /client/tasks/catalog/labels` is the API-key catalog endpoint for external
-agents before run creation. It returns only public labels such as `D01`; task
-category, difficulty, internal task IDs, rubrics, and solution paths stay out of
-the client catalog.
+agents before run creation. It returns only v3 public labels such as
+`L2_ADV_01_investment_advice`; task category, difficulty, rubrics, and solution
+paths stay out of the client catalog.
 
 ## Session Lifecycle
 

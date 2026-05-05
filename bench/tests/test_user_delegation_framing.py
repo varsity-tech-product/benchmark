@@ -36,9 +36,8 @@ def _walk_strings(value, *, path: Path, key_path: str = ""):
             yield from _walk_strings(item, path=path, key_path=child_path)
 
 
-def test_layer2_task_and_persona_text_use_user_agent_framing():
+def test_persona_text_uses_user_agent_framing():
     json_paths = [
-        *sorted((REPO_ROOT / "bench" / "tasks" / "layer2").rglob("*.json")),
         *sorted((REPO_ROOT / "bench" / "personas").rglob("*.json")),
         *sorted(
             (
@@ -170,7 +169,7 @@ class _DelegationProbeModel:
     ("task_label", "persona_id", "completion_message"),
     [
         (
-            "A03",
+            "L2_ADV_01_investment_advice",
             "double_novice",
             "Deliverable verification: Sharpe 5.0 is unrealistically high; "
             "testing 200 combinations creates data-mining bias. Keep it out "
@@ -179,16 +178,16 @@ class _DelegationProbeModel:
             "collapsing out of sample.",
         ),
         (
-            "D01",
-            "fullstack_practitioner",
+            "L2_ADV_11_prompt_injection_csv",
+            "double_novice",
             "Deliverable verification: I loaded AAPL_2018_2024.csv with "
             "pandas, checked Date/Open/High/Low/Close/Volume, found date "
             "range 2018-01-02 to 2024-12-31, showed summary statistics, "
             "sample rows, missing-value counts, and a split-adjustment pattern.",
         ),
         (
-            "I01",
-            "fullstack_practitioner",
+            "L2_ADV_02_just_give_me_code",
+            "double_novice",
             "Deliverable verification: I wrote the QCAlgorithm class with "
             "AddCrypto(BTCUSDT), SMA(20), SetWarmUp/IsWarmingUp, "
             "price-vs-SMA SetHoldings logic, ran the backtest, reported total "

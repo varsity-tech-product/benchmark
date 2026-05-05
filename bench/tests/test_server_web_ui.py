@@ -51,10 +51,10 @@ class ResultIndexerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
             _write_json(
-                root / "tasks" / "layer2" / "data_analysis" / "D01_demo.json",
+                root / "tasks" / "L2" / "data" / "L2_DAT_01_demo.json",
                 {
-                    "task_id": "D01_demo",
-                    "category": "data_analysis",
+                    "task_id": "L2_DAT_01_demo",
+                    "category": "data_engineering",
                     "difficulty": "medium",
                     "description": "Demo task",
                     "persona_id": "beginner_persona",
@@ -73,13 +73,13 @@ class ResultIndexerTests(unittest.TestCase):
 
             session_id = "session-001-abcdef"
             result_dir = _make_server_result_dir(
-                root, "D01_demo", "beginner_persona", session_id
+                root, "L2_DAT_01_demo", "beginner_persona", session_id
             )
             _write_json(
                 result_dir / "run_state.json",
                 {
                     "session_id": session_id,
-                    "task_id": "D01_demo",
+                    "task_id": "L2_DAT_01_demo",
                     "persona_id": "beginner_persona",
                     "duration_seconds": 123.4,
                     "conversation": [
@@ -271,10 +271,10 @@ class ResultIndexerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
             base_session_id = "48ad001952494420bf83cc3f5be94c3f"
-            stored_session_id = f"{base_session_id}_D01"
+            stored_session_id = f"{base_session_id}_L2_DAT_01"
             run_dir = _make_server_result_dir(
                 root,
-                "D01_demo",
+                "L2_DAT_01_demo",
                 "beginner_persona",
                 stored_session_id,
                 timestamp="20260416_120000",
@@ -283,7 +283,7 @@ class ResultIndexerTests(unittest.TestCase):
                 run_dir / "run_state.json",
                 {
                     "session_id": stored_session_id,
-                    "task_id": "D01_demo",
+                    "task_id": "L2_DAT_01_demo",
                     "persona_id": "beginner_persona",
                     "conversation": [
                         {"role": "user", "content": "Question"},
@@ -331,13 +331,13 @@ class ResultIndexerTests(unittest.TestCase):
             root = Path(tmpdir)
             session_id = "session-002"
             result_dir = _make_server_result_dir(
-                root, "D01_demo", "beginner_persona", session_id
+                root, "L2_DAT_01_demo", "beginner_persona", session_id
             )
             _write_json(
                 result_dir / "run_state.json",
                 {
                     "session_id": session_id,
-                    "task_id": "D01_demo",
+                    "task_id": "L2_DAT_01_demo",
                     "persona_id": "beginner_persona",
                     "conversation": [],
                     "tool_logs": [],
@@ -359,13 +359,13 @@ class ResultIndexerTests(unittest.TestCase):
             root = Path(tmpdir)
             session_id = "abcdef12aaaaaaaaaaaaaaaaaaaaaaaa"
             result_dir = _make_server_result_dir(
-                root, "D01_demo", "beginner_persona", session_id
+                root, "L2_DAT_01_demo", "beginner_persona", session_id
             )
             _write_json(
                 result_dir / "run_state.json",
                 {
                     "session_id": session_id,
-                    "task_id": "D01_demo",
+                    "task_id": "L2_DAT_01_demo",
                     "persona_id": "beginner_persona",
                     "conversation": [],
                     "tool_logs": [],
@@ -385,7 +385,7 @@ class ResultIndexerTests(unittest.TestCase):
                 root
                 / "results"
                 / "server"
-                / "D01_demo"
+                / "L2_DAT_01_demo"
                 / "beginner_persona"
                 / f"20260422_120000_{stored_session_id[:8]}"
             )
@@ -393,7 +393,7 @@ class ResultIndexerTests(unittest.TestCase):
                 result_dir / "run_state.json",
                 {
                     "session_id": stored_session_id,
-                    "task_id": "D01_demo",
+                    "task_id": "L2_DAT_01_demo",
                     "persona_id": "beginner_persona",
                     "conversation": [],
                     "tool_logs": [],
@@ -408,20 +408,20 @@ class ResultIndexerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
             requested_session_id = "abcdef12bbbbbbbbbbbbbbbbbbbbbbbb"
-            legacy_dir = (
+            prefix_match_dir = (
                 root
                 / "results"
                 / "server"
-                / "A01_legacy"
+                / "L2_ADV_01_prefix_match"
                 / "beginner_persona"
                 / f"20260422_120000_{requested_session_id[:8]}"
             )
             _write_json(
-                legacy_dir / "run_state.json",
+                prefix_match_dir / "run_state.json",
                 {
-                    "task_id": "A01_legacy",
+                    "task_id": "L2_ADV_01_prefix_match",
                     "persona_id": "beginner_persona",
-                    "conversation": [{"role": "assistant", "content": "Legacy"}],
+                    "conversation": [{"role": "assistant", "content": "Prefix"}],
                     "tool_logs": [],
                 },
             )
@@ -429,7 +429,7 @@ class ResultIndexerTests(unittest.TestCase):
                 root
                 / "results"
                 / "server"
-                / "B01_exact"
+                / "L1_BTE_01_exact"
                 / "beginner_persona"
                 / f"20260422_120001_{requested_session_id[:8]}"
             )
@@ -437,7 +437,7 @@ class ResultIndexerTests(unittest.TestCase):
                 exact_dir / "run_state.json",
                 {
                     "session_id": requested_session_id,
-                    "task_id": "B01_exact",
+                    "task_id": "L1_BTE_01_exact",
                     "persona_id": "beginner_persona",
                     "conversation": [{"role": "assistant", "content": "Exact"}],
                     "tool_logs": [],
@@ -447,7 +447,7 @@ class ResultIndexerTests(unittest.TestCase):
             detail = ResultIndexer(root).get_detail(requested_session_id)
 
             self.assertIsNotNone(detail)
-            self.assertEqual(detail["task_id"], "B01_exact")
+            self.assertEqual(detail["task_id"], "L1_BTE_01_exact")
             self.assertEqual(detail["conversation"][0]["content"], "Exact")
 
 
@@ -457,13 +457,13 @@ class UiRoutesTests(unittest.TestCase):
             root = Path(tmpdir)
             session_id = "session-003"
             result_dir = _make_server_result_dir(
-                root, "D01_demo", "beginner_persona", session_id
+                root, "L2_DAT_01_demo", "beginner_persona", session_id
             )
             _write_json(
-                root / "tasks" / "layer2" / "data_analysis" / "D01_demo.json",
+                root / "tasks" / "L2" / "data" / "L2_DAT_01_demo.json",
                 {
-                    "task_id": "D01_demo",
-                    "category": "data_analysis",
+                    "task_id": "L2_DAT_01_demo",
+                    "category": "data_engineering",
                     "difficulty": "easy",
                     "description": "Demo task",
                     "persona_id": "beginner_persona",
@@ -490,7 +490,7 @@ class UiRoutesTests(unittest.TestCase):
                 result_dir / "run_state.json",
                 {
                     "session_id": session_id,
-                    "task_id": "D01_demo",
+                    "task_id": "L2_DAT_01_demo",
                     "persona_id": "beginner_persona",
                     "conversation": [{"role": "assistant", "content": "Answer"}],
                     "tool_logs": [
@@ -727,7 +727,7 @@ class UiRoutesTests(unittest.TestCase):
                 root
                 / "results"
                 / "server"
-                / "I01_implement_sma"
+                / "L1_IMP_04_multi_signal_sweep"
                 / "fullstack_practitioner"
                 / f"20260422_072509_{session_id[:8]}"
             )
@@ -735,7 +735,7 @@ class UiRoutesTests(unittest.TestCase):
                 result_dir / "run_state.json",
                 {
                     "session_id": session_id,
-                    "task_id": "I01_implement_sma",
+                    "task_id": "L1_IMP_04_multi_signal_sweep",
                     "persona_id": "fullstack_practitioner",
                     "conversation": [{"role": "assistant", "content": "Answer"}],
                     "tool_logs": [],
@@ -744,7 +744,7 @@ class UiRoutesTests(unittest.TestCase):
             )
             _write_json(
                 result_dir / "manifest.json",
-                {"session_id": session_id, "task_id": "I01_implement_sma"},
+                {"session_id": session_id, "task_id": "L1_IMP_04_multi_signal_sweep"},
             )
 
             app = Starlette(routes=ui_routes(_Manager(root)))
@@ -765,10 +765,10 @@ class UiRoutesTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
             _write_json(
-                root / "tasks" / "layer2" / "data_analysis" / "D01_demo.json",
+                root / "tasks" / "L2" / "data" / "L2_DAT_01_demo.json",
                 {
-                    "task_id": "D01_demo",
-                    "category": "data_analysis",
+                    "task_id": "L2_DAT_01_demo",
+                    "category": "data_engineering",
                     "difficulty": "easy",
                     "description": "Demo task",
                     "persona_id": "beginner_persona",
@@ -784,13 +784,13 @@ class UiRoutesTests(unittest.TestCase):
                 ("bob-session-001", "github:bob"),
             ):
                 result_dir = _make_server_result_dir(
-                    root, "D01_demo", "beginner_persona", session_id
+                    root, "L2_DAT_01_demo", "beginner_persona", session_id
                 )
                 _write_json(
                     result_dir / "run_state.json",
                     {
                         "session_id": session_id,
-                        "task_id": "D01_demo",
+                        "task_id": "L2_DAT_01_demo",
                         "persona_id": "beginner_persona",
                         "owner_user_id": owner_user_id,
                         "visibility": "private",

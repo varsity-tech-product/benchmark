@@ -21,11 +21,14 @@ from eval.contracts.bundle import (
 from eval.contracts.bundle_schema import BundleValidationError, validate_bundle_dict
 
 
+TASK_ID = "L1_ALR_01_volume_microstructure_alpha"
+
+
 def _make_bundle() -> Bundle:
     return Bundle(
         bundle_id="sess-1",
         schema_version=SCHEMA_VERSION,
-        task_id="S01_ma_crossover",
+        task_id=TASK_ID,
         timestamps=BundleTimestamps(
             created_at="2026-05-02T10:00:00Z",
             started_at="2026-05-02T10:00:00Z",
@@ -137,7 +140,7 @@ def test_reader_fills_missing_optional_fields_with_defaults():
     minimal = {
         "bundle_id": "b",
         "schema_version": SCHEMA_VERSION,
-        "task_id": "S01",
+        "task_id": TASK_ID,
         "timestamps": {"created_at": "2026-05-02T10:00:00Z"},
         "agent_id": "agent",
         "sandbox_digest": {},

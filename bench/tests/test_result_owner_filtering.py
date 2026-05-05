@@ -9,6 +9,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from server.auth import UserContext
 from server.web.ui_indexer import ResultIndexer
 
+TASK_ID = "L2_DAT_01_demo"
+
 
 def _write_json(path: Path, payload: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -20,7 +22,7 @@ def _write_result(root: Path, session_id: str, owner_user_id: str = "") -> None:
         root
         / "results"
         / "server"
-        / "D01_demo"
+        / TASK_ID
         / "p"
         / f"20260422_120000_{session_id[:12]}"
     )
@@ -30,7 +32,7 @@ def _write_result(root: Path, session_id: str, owner_user_id: str = "") -> None:
         result_dir / "run_state.json",
         {
             "session_id": session_id,
-            "task_id": "D01_demo",
+            "task_id": TASK_ID,
             "persona_id": "p",
             "owner_user_id": owner_user_id,
             "owner_github_login": (
@@ -53,10 +55,10 @@ class ResultOwnerFilteringTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             _write_json(
-                root / "tasks" / "layer2" / "data" / "D01_demo.json",
+                root / "tasks" / "L2" / "data" / f"{TASK_ID}.json",
                 {
-                    "task_id": "D01_demo",
-                    "category": "data",
+                    "task_id": TASK_ID,
+                    "category": "data_engineering",
                     "difficulty": "easy",
                     "description": "demo",
                 },
@@ -91,8 +93,8 @@ class ResultOwnerFilteringTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             _write_json(
-                root / "tasks" / "layer2" / "data" / "D01_demo.json",
-                {"task_id": "D01_demo", "category": "data"},
+                root / "tasks" / "L2" / "data" / f"{TASK_ID}.json",
+                {"task_id": TASK_ID, "category": "data_engineering"},
             )
             _write_result(root, "sess-b", "github:bob")
             indexer = ResultIndexer(root)
@@ -109,8 +111,8 @@ class ResultOwnerFilteringTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             _write_json(
-                root / "tasks" / "layer2" / "data" / "D01_demo.json",
-                {"task_id": "D01_demo", "category": "data"},
+                root / "tasks" / "L2" / "data" / f"{TASK_ID}.json",
+                {"task_id": TASK_ID, "category": "data_engineering"},
             )
             _write_result(root, "sess-a", "github:alice")
             indexer = ResultIndexer(root)
@@ -124,8 +126,8 @@ class ResultOwnerFilteringTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             _write_json(
-                root / "tasks" / "layer2" / "data" / "D01_demo.json",
-                {"task_id": "D01_demo", "category": "data"},
+                root / "tasks" / "L2" / "data" / f"{TASK_ID}.json",
+                {"task_id": TASK_ID, "category": "data_engineering"},
             )
             _write_result(root, "sess-a", "github:alice")
             indexer = ResultIndexer(root)

@@ -11,8 +11,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from server.run.catalog import TaskCatalog
 
 
-def _write_task(root: Path, task_id: str, category: str, difficulty: str) -> None:
-    path = root / "tasks" / "layer2" / category / f"{task_id}.json"
+def _write_task(
+    root: Path, task_id: str, category: str, difficulty: str, layer: str = "L2"
+) -> None:
+    path = root / "tasks" / layer / category / f"{task_id}.json"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         json.dumps(
@@ -33,8 +35,8 @@ class TaskCatalogTests(unittest.TestCase):
     def test_labels_only_hides_category_and_difficulty(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            _write_task(root, "D01_demo_one", "data_analysis", "easy")
-            _write_task(root, "I02_demo_two", "implementation", "hard")
+            _write_task(root, "L2_DAT_01_demo_one", "data_analysis", "easy")
+            _write_task(root, "L2_IMP_02_demo_two", "implementation", "hard")
 
             cat = TaskCatalog(root)
 
@@ -44,9 +46,42 @@ class TaskCatalogTests(unittest.TestCase):
             )
 
             labels = cat.list_labels_only()
-            self.assertEqual([{"label": "D01"}, {"label": "I02"}], labels)
+            self.assertEqual(
+                [
+                    {"label": "L2_DAT_01_demo_one"},
+                    {"label": "L2_IMP_02_demo_two"},
+                ],
+                labels,
+            )
             for row in labels:
                 self.assertEqual({"label"}, set(row.keys()))
+
+    def test_legacy_shaped_ids_inside_active_layers_are_ignored(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _write_task(root, "A01_demo", "adversarial", "easy")
+
+            cat = TaskCatalog(root)
+
+            self.assertEqual([], cat.list_labels_only())
+            self.assertIsNone(cat.resolve("A01_demo"))
+
+    def test_persona_less_l1_tasks_are_ignored_for_run_creation(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _write_task(
+                root,
+                "L1_DAT_01_demo",
+                "data_engineering",
+                "easy",
+                layer="L1",
+            )
+            _write_task(root, "L2_ADV_01_demo", "adversarial", "easy")
+
+            cat = TaskCatalog(root)
+
+            self.assertEqual([{"label": "L2_ADV_01_demo"}], cat.list_labels_only())
+            self.assertIsNone(cat.resolve("L1_DAT_01_demo"))
 
 
 if __name__ == "__main__":

@@ -28,8 +28,8 @@ class RunAssignment:
 
     run_id: str  # "run_{uuid4().hex}"
     mode: str  # "agent"
-    public_task_label: str  # "D01"
-    task_id: str  # "D01_load_inspect_ohlcv" (internal)
+    public_task_label: str  # "L1_DAT_01_ohlcv_health_check"
+    task_id: str  # full v3 task id
     status: RunStatus
 
     # Run token (for the external agent / client)

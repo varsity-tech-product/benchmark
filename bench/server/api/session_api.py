@@ -222,13 +222,14 @@ def _effective_core_tool_names(task) -> list[str]:
 def _lean_template_type(task) -> str:
     task_id = str(getattr(task, "task_id", "") or "").upper()
     category = str(getattr(getattr(task, "category", None), "value", "") or "").lower()
+    subcategory = str(getattr(task, "subcategory", "") or "").lower()
     if category == "debug" or getattr(task, "sample_code", None):
         return "debug"
-    if task_id.startswith("I01"):
-        return "single_symbol"
-    if task_id.startswith(("I07", "I08", "I09", "I10")):
+    if "composite" in subcategory or "sweep" in subcategory:
         return "framework"
-    if task_id.startswith(("I02", "I03", "I04", "I05", "I06")):
+    if task_id.startswith(("L1_IMP_01", "L1_IMP_02", "L1_IMP_03")):
+        return "multi_symbol"
+    if any(token in subcategory for token in ("universe", "multi", "pairs")):
         return "multi_symbol"
     return "generic"
 
@@ -1537,7 +1538,7 @@ class SessionState:
         return {
             "active_state_version": 1,
             "run_id": self.run_id or "",
-            "public_task_label": self.task_id.split("_")[0] if self.task_id else "",
+            "public_task_label": self.task_id or "",
             "owner_user_id": self.owner_user_id,
             "owner_github_login": self.owner_github_login,
             "owner_email": self.owner_email,
@@ -1653,7 +1654,7 @@ class SessionState:
                 self.session.artifact_debug_history if self.session else None
             ),
             run_id=self.run_id or "",
-            public_task_label=(self.task_id.split("_")[0] if self.task_id else ""),
+            public_task_label=self.task_id or "",
             owner_user_id=self.owner_user_id,
             owner_github_login=self.owner_github_login,
             owner_email=self.owner_email,
@@ -1886,14 +1887,7 @@ class SessionState:
                 self.plugin_bundle.task_suite.get_task(task_id)
             )
         except Exception:
-            pass
-
-        from eval.contracts.schemas import QuantTutorTask
-
-        tasks_dir = self.bench_root / "tasks"
-        for json_path in tasks_dir.rglob(f"{task_id}.json"):
-            return QuantTutorTask(**json.loads(json_path.read_text()))
-        return None
+            return None
 
     def _task_from_eval_item(self, eval_item: EvalItem):
         """Extract the reference business task from an EvalItem envelope."""
