@@ -334,8 +334,8 @@ Reference impls (Impl A's master cleanup, #145) consume this registry to keep mi
 
 | Impl | Stage | Status | Code path |
 |---|---|---|---|
-| **Impl A** — v3 Reference (L0-L3 + 4-persona NPC + QR/QP unified judge) | Stage 1 | In progress (ewan, 6-8 wk) | `bench/server/reference/` (started; full extraction pending) |
-| **Impl B** — Programmatic-only (no NPC, no LLM judge) | Stage 1 (after A) | Pending | TBD |
+| **Impl A** — v3 Reference (L0-L2 + 4-persona NPC + QR/QP unified judge) | Stage 1 | Complete — bundle path live in prod since #170; long-tail parity in #175; #168 closed | `bench/server/reference/` |
+| **Impl B** — Programmatic-only (no NPC, no LLM judge) | Stage 2 | Pending — no issue filed yet | TBD |
 | **Impl C** — FinanceBench replication | Stage 2 | Filed (#156) | Pending |
 | **Impl D** — Factor mining (additive validation) | Stage 2 | Filed (#157) | Pending |
 
@@ -343,17 +343,73 @@ See #150 for the validation strategy and #156 / #157 / #160 for Stage 2 trackers
 
 ## 12. Contract gaps observed in Impl A
 
-The first reference bundle integration surfaced Stage 2 freeze decisions:
+The first reference bundle integration (#168 → #170 / #175 / #178 / #181) exposed several Stage 2 freeze decisions. Each gap below is recorded with severity (P1 = real contract bypass, P2 = leaky abstraction, P3 = ergonomics) and disposition (where the decision lands).
 
-- `SessionState` uses an optional `build_user_simulator` hook on the reference NPC provider. The platform contract needs an explicit session-start hook when NPC implementations need in-process state.
-- `SessionState` can ask a reference `TaskSuite` for `get_business_task`. Legacy compatibility currently uses this helper; Stage 2 should decide whether business-schema extraction remains part of the platform extension surface.
-- `Session` passes a stateful `UserSimulator` object through `NPCProvider.respond(..., payload=...)`. Durable or out-of-process orchestration needs a formal state channel or a JSON-only payload rule.
-- `Session` now passes shared attachments as `FileArtifact` objects through the `files` argument. Stage 2 should define which artifact fields are required for replay and remote execution.
-- `ReferenceEvaluator` persists detailed score output under `Score.metrics["summary"]`. Bundle v1 should define whether common raw, normalized, and threshold fields get top-level metric keys.
-- `bundle.json` metadata fields such as `business_schema` and `version` are currently documentation metadata. Stage 2 should decide whether `PluginLoader` validates plugin schema compatibility.
+### 12.1 NPCProvider session-start lifecycle
+
+- **Symptom**: `SessionState.register_session` reflectively calls `build_user_simulator(task, persona, model)` on the reference NPC provider — a method not present on the `NPCProvider` ABC. A non-reference NPC provider that does not expose this method silently runs without a configured `UserSimulator`.
+- **Severity**: P2.
+- **Why it surfaced**: `NPCProvider` only declares `initial_message(item)` and `respond(transcript, tool_logs, files, payload)`. There is no contract-level "construct per-session state at registration time" hook, so the reference impl invented one.
+- **Disposition**: Stage 2 freeze (#160). Either add a `start_session(item) -> SessionStateHandle` method to the ABC, or document that sessions must be stateless and any per-session state must travel through `respond`'s `payload`.
+
+### 12.2 Stateful objects in payload across `respond` calls
+
+- **Symptom**: `Session._generate_user_reply` sets `payload["user_sim"] = self._user_sim` so the live `UserSimulator` instance is carried across turns through `NPCProvider.respond`'s `payload` parameter.
+- **Severity**: P2.
+- **Why it surfaced**: The `EvalItem.payload` and `NPCReply.payload` dataclass docstrings describe payloads as JSON-shaped envelopes. Passing a Python object works in-process but breaks bundle export, RPC orchestration, and replay-from-bundle.
+- **Disposition**: Stage 2 freeze (#160). Tied to 12.1 — once a formal session-state channel exists, payloads can be JSON-restricted by contract.
+
+### 12.3 Reference-only TaskSuite extension methods
+
+- **Symptom**: `SessionState._task_from_eval_item` reflectively calls `task_suite.get_business_task(task_id)` — a `ReferenceTaskSuite`-only method — to extract the underlying `QuantTutorTask`. A non-reference `TaskSuite` would not provide this.
+- **Severity**: P2.
+- **Why it surfaced**: The bridge stores the business schema under `EvalItem.payload["quant_tutor_task"]`; `SessionState` could read it from there, but the reflective shortcut was simpler. Indicates the contract surface for "reach the underlying business task" has no first-class method.
+- **Disposition**: Stage 2. Either standardize `EvalItem.payload[<canonical key>]` as the documented extraction path, or add an optional `TaskSuite.get_business_task` to the ABC with a clear extension-surface annotation.
+
+### 12.4 FileArtifact required-field shape for replay
+
+- **Symptom**: After PR #170, `Session.respond` passes a real `dict[str, FileArtifact]` to NPC providers and `EvalSample.files` carries them to evaluators. The dataclass currently has `path` / `content` / `sha256` / `size` / `media_type` / `metadata`, all optional.
+- **Severity**: P2.
+- **Why it surfaced**: In-process reference orchestration only uses `path` and `content`. Out-of-process orchestration (RPC, bundle replay) needs a stricter contract — at minimum `sha256` for content addressing, possibly `pre_signed_url` for large blobs.
+- **Disposition**: Stage 2 freeze (#160). Define which `FileArtifact` fields are required for round-trip replay; consider whether `content: bytes | str | None` should split into inline-vs-reference variants.
+
+### 12.5 `Score.metrics["summary"]` flatten loses structure
+
+- **Symptom**: `ReferenceEvaluator` returns `Score(value=..., metrics={"summary": <full eval output dict>})`. Per-track results, raw/normalized values, and pass thresholds are nested two levels deep under one synthetic key.
+- **Severity**: P3.
+- **Why it surfaced**: `Score` envelope has `value` + `metrics` + `evidence` but no first-class fields for raw / normalized / pass_threshold (#105 R3). Reference impl took the path of least resistance.
+- **Disposition**: Stage 2 freeze (#160). #160 done-criteria already tracks the R3 decision: promote `raw_value` / `normalized_value` / `pass_threshold` to `Score`, or document a canonical key naming convention for `metrics`.
+
+### 12.6 PluginLoader does not validate `bundle.json` metadata
+
+- **Symptom**: `bundle.json` ships `metadata.business_schema` and `metadata.version` fields. `PluginLoader.load_config` does not validate or surface these — they are documentation-only.
+- **Severity**: P3.
+- **Why it surfaced**: Loader is permissive by design (forward-compat). But this means a plugin can ship incompatible business schema without surfacing the mismatch.
+- **Disposition**: Stage 2 freeze (#160). Decide whether `PluginLoader` should enforce a `metadata.platform_api_version` compatibility check; if so, what the matrix is.
+
+### 12.7 TaskSuite has no contract-level task ID surface declaration
+
+- **Symptom**: PR #167 renamed `bench/tasks/layer2/` → `_legacy_v22_layer2/` without deleting. PR #170's `ReferenceTaskSuite._index_task_paths` used `tasks_dir.rglob("*.json")` and silently picked up legacy task IDs alongside v3 task IDs. PR #178 hardcoded `_TASK_LAYERS = ("L0", "L1", "L2")` in the reference suite to fix the leak.
+- **Severity**: P2 (process trap; the leak surfaced in production live test).
+- **Why it surfaced**: `TaskSuite.supported_tasks()` is the only declarative contract for which task IDs exist. There is no platform-level mechanism for the reference suite to declare "these are my valid task ID prefixes" beyond returning the full set. Two well-scoped PRs (rename in #167, broad rglob in #170) compounded into a real bug.
+- **Disposition**: Stage 2. Consider whether `TaskSuite` should declare a `task_id_pattern: str` (regex or glob) on the ABC so the platform can warn when discovered IDs do not match. Alternative: keep the contract as-is and require reference impls to be explicit in their indexing logic (the current approach after #178).
+
+### 12.8 Bundle export / re-import round-trip not exercised in Stage 1
+
+- **Symptom**: No code path in Stage 1 tests `EvalItem` + `EvalSample` → bundle JSON → reimport → re-evaluate → identical `Score`. The platform contract was exercised in-process only.
+- **Severity**: P1 — the platform's offline-evaluation claim is not verified end-to-end.
+- **Why it surfaced**: Stage 1 acceptance was wired up to live HTTP server health, not to bundle round-trip. Bundle v1 alpha schema (#161) has fixtures but no full round-trip test against Impl A.
+- **Disposition**: Stage 2 freeze (#160) done-criteria explicitly adds bundle round-trip parity. The same harness covers Impl C / Impl D once those land.
+
+### 12.9 Score parity coverage methodology
+
+- **Symptom**: PR #170's first parity test pass had three of four evaluator dispatch tests using `monkeypatch.setattr` to replace `run_evaluation` / `evaluate_tracks`. The actual eval tree was never executed. Surfaced during PR #170 review; addressed by PR #170 continuation + PR #175.
+- **Severity**: Process / methodology, not a contract gap.
+- **Lesson**: Test count is not test efficacy. For platform contracts, parity tests must traverse the real code path on both sides (legacy + bundle) — mocking the underlying scorer makes parity tautological.
 
 ---
 
 ## 13. Change log
 
 - **2026-05-05**: Initial RFC-A v0 doc — extracted from delivered code in #152 / #153 / #154 / #155.
+- **2026-05-05** (Stage 1 closure): Expanded §12 Contract gaps with severity / disposition structure; added gaps 12.7 (`TaskSuite` ID surface), 12.8 (bundle round-trip), 12.9 (parity methodology). Updated §11 Impl A status to complete (bundle path live in prod via #170 / #175 / #178 / #181; gates 1.2 + 1.4 flipped in #150). Documents Stage 1 → Stage 2 transition.
