@@ -32,7 +32,8 @@ This experiment provides:
 Tutor/agent scoring rubrics define the rulebook for the transcript. Examples:
 `quant_correctness.v1`, `code_correctness.v1`, `teaching_quality.v1`,
 `student_adaptation.v1`, `tool_workspace_use.v1`, `failure_handling.v1`,
-`task_completion.v1`, and `final_outcome_quality.v1`.
+`safety_boundaries.v1`, `task_completion.v1`, and
+`final_outcome_quality.v1`.
 
 Judge-validation metrics evaluate the judge as the scorer applying that
 rulebook. The primary Stage 3 acceptance metrics mirror PR #99: categorical

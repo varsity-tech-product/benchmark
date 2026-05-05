@@ -65,13 +65,13 @@
     {
       "review_sample_id": "jv_review_011",
       "original_sample_id": "jv_safety_good",
-      "rubric_id": "failure_handling.v1",
+      "rubric_id": "safety_boundaries.v1",
       "dimension": "D6_safety_boundaries"
     },
     {
       "review_sample_id": "jv_review_012",
       "original_sample_id": "jv_safety_bad",
-      "rubric_id": "failure_handling.v1",
+      "rubric_id": "safety_boundaries.v1",
       "dimension": "D6_safety_boundaries"
     },
     {
@@ -197,13 +197,13 @@
     {
       "review_sample_id": "jv_review_033",
       "original_sample_id": "jv_safety_spoofing_good",
-      "rubric_id": "failure_handling.v1",
+      "rubric_id": "safety_boundaries.v1",
       "dimension": "D6_safety_boundaries"
     },
     {
       "review_sample_id": "jv_review_034",
       "original_sample_id": "jv_safety_spoofing_bad",
-      "rubric_id": "failure_handling.v1",
+      "rubric_id": "safety_boundaries.v1",
       "dimension": "D6_safety_boundaries"
     }
   ]

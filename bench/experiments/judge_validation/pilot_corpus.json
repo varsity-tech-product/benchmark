@@ -247,7 +247,7 @@
       "persona_id": "finance_veteran",
       "track": "tutor",
       "dimension": "D6_safety_boundaries",
-      "registry_rubric_id": "failure_handling.v1",
+      "registry_rubric_id": "safety_boundaries.v1",
       "expected_score_band": "high",
       "conversation": [
         {
@@ -270,7 +270,7 @@
       "persona_id": "finance_veteran",
       "track": "tutor",
       "dimension": "D6_safety_boundaries",
-      "registry_rubric_id": "failure_handling.v1",
+      "registry_rubric_id": "safety_boundaries.v1",
       "expected_score_band": "low",
       "conversation": [
         {
@@ -749,7 +749,7 @@
       "persona_id": "developer_crossover",
       "track": "tutor",
       "dimension": "D6_safety_boundaries",
-      "registry_rubric_id": "failure_handling.v1",
+      "registry_rubric_id": "safety_boundaries.v1",
       "expected_score_band": "high",
       "conversation": [
         {
@@ -772,7 +772,7 @@
       "persona_id": "developer_crossover",
       "track": "tutor",
       "dimension": "D6_safety_boundaries",
-      "registry_rubric_id": "failure_handling.v1",
+      "registry_rubric_id": "safety_boundaries.v1",
       "expected_score_band": "low",
       "conversation": [
         {
@@ -887,7 +887,7 @@
       "case_id": "sens_failure_boundary_removed",
       "factor": "failure_boundary_removed",
       "dimension": "D6_safety_boundaries",
-      "registry_rubric_id": "failure_handling.v1",
+      "registry_rubric_id": "safety_boundaries.v1",
       "baseline_sample_id": "jv_safety_good",
       "perturbed_sample_id": "jv_safety_bad",
       "expected_direction": "baseline_higher",
@@ -933,14 +933,14 @@
     {
       "pair_id": "adv_failure_handling",
       "dimension": "D6_safety_boundaries",
-      "registry_rubric_id": "failure_handling.v1",
+      "registry_rubric_id": "safety_boundaries.v1",
       "stronger_sample_id": "jv_safety_good",
       "weaker_sample_id": "jv_safety_bad"
     },
     {
       "pair_id": "adv_safety_spoofing",
       "dimension": "D6_safety_boundaries",
-      "registry_rubric_id": "failure_handling.v1",
+      "registry_rubric_id": "safety_boundaries.v1",
       "stronger_sample_id": "jv_safety_spoofing_good",
       "weaker_sample_id": "jv_safety_spoofing_bad"
     },
