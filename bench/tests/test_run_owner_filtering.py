@@ -87,7 +87,10 @@ class RunOwnerFilteringTests(unittest.TestCase):
 
                 client.cookies.set(SESSION_COOKIE, _session_cookie(root, alice))
                 owned = client.get("/ui/runs").json()["runs"]
+                owned_mine = client.get("/ui/runs?mine=true").json()["runs"]
                 self.assertEqual([run["run_id"] for run in owned], [alice_run["run_id"]])
+                self.assertNotIn("task_id", owned[0])
+                self.assertEqual(owned_mine[0]["task_id"], "D01_demo")
                 self.assertNotIn("owner_email", owned[0])
 
                 denied = client.get(f"/ui/runs/{bob_run['run_id']}")
@@ -95,10 +98,13 @@ class RunOwnerFilteringTests(unittest.TestCase):
 
                 client.cookies.set(SESSION_COOKIE, _session_cookie(root, admin))
                 all_runs = client.get("/ui/runs?scope=all").json()["runs"]
+                admin_mine = client.get("/ui/runs?mine=true").json()["runs"]
                 self.assertEqual(
                     {run["run_id"] for run in all_runs},
                     {alice_run["run_id"], bob_run["run_id"]},
                 )
+                self.assertTrue(all("task_id" not in run for run in all_runs))
+                self.assertEqual(admin_mine, [])
                 self.assertTrue(all("owner_email" not in run for run in all_runs))
 
     def test_control_token_still_authorizes_owner_monitor_endpoint(self):

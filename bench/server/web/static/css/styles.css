@@ -1259,6 +1259,123 @@ h1 {
 
 /* ── Run list page (Runs history) ── */
 
+.my-run-header {
+  align-items: flex-start;
+}
+
+.my-run-summary .my-run-metric strong {
+  color: var(--text);
+  font-size: 14px;
+}
+
+.my-run-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin: -4px 0 18px;
+}
+
+.my-run-refresh-status {
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.my-run-state-card {
+  max-width: 760px;
+}
+
+.my-run-empty {
+  display: grid;
+  gap: 12px;
+  justify-items: start;
+}
+
+.my-run-task-list {
+  display: grid;
+  gap: 14px;
+}
+
+.my-run-task-card {
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.my-run-task-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.my-run-task-title {
+  min-width: 0;
+}
+
+.my-run-task-title h2 {
+  margin: 0;
+  font-size: 22px;
+  line-height: 1.18;
+  overflow-wrap: anywhere;
+}
+
+.my-run-task-meta,
+.my-run-row-detail {
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.my-run-task-meta {
+  margin-top: 6px;
+}
+
+.my-run-row-list {
+  display: grid;
+  gap: 8px;
+}
+
+.my-run-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.54);
+  color: var(--text);
+  text-decoration: none;
+  transition: border-color var(--duration-fast) var(--ease), background var(--duration-fast) var(--ease);
+}
+
+.my-run-row:hover {
+  border-color: var(--accent);
+  background: rgba(255, 255, 255, 0.82);
+}
+
+.my-run-row-main {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.my-run-row-title {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.my-run-status {
+  flex: 0 0 auto;
+}
+
 .runs-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
@@ -2951,6 +3068,25 @@ h1 {
 
   .run-agent-prompt-head {
     flex-direction: column;
+  }
+
+  .my-run-toolbar,
+  .my-run-task-head,
+  .my-run-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .my-run-toolbar .run-actions {
+    width: 100%;
+  }
+
+  .my-run-toolbar .btn {
+    flex: 1 1 auto;
+  }
+
+  .my-run-status {
+    align-self: flex-start;
   }
 
   .run-conversation {

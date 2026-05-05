@@ -1,10 +1,10 @@
 /**
- * run-agent.js — "My Agent" flow for the Run page.
+ * run-agent.js — "My Run" progress and run monitor flow.
  *
- * 1. Generate a REST API key for the current reviewer.
- * 2. Render a copyable prompt with the raw skill URL and key.
- * 3. Poll active runs when this module receives one from a server response.
- * 4. On completed → show link to Human Review.
+ * 1. Render the current user's run history grouped by public task label.
+ * 2. Keep the run history refreshed while the page is open.
+ * 3. Monitor an individual run when opened from the history.
+ * 4. Share the agent prompt builder with the API key modal.
  */
 (function () {
   'use strict';
@@ -15,6 +15,8 @@
   var _runId = null;
   var _pollTimer = null;
   var _livePollTimer = null;
+  var _runListTimer = null;
+  var _myRunGeneration = 0;
 
   // ── Owner-token store ──
   // Keyed by run_id so multiple tabs/runs can coexist. Persisted in
@@ -78,17 +80,13 @@
 
   window.QTB.renderMyAgentPage = function (app, state, payload) {
     _cleanup();
+    var generation = ++_myRunGeneration;
 
-    _renderPromptPage(app, {loading: true});
-    _loadApiKeyStatus()
-      .then(function (status) {
-        _renderPromptPage(app, {status: status});
-      })
-      .catch(function (error) {
-        _renderPromptPage(app, {
-          error: error && error.message ? error.message : String(error || 'Unable to load API key status.')
-        });
-      });
+    _renderMyRunPage(app, {loading: true, runs: []});
+    _refreshMyRunPage(app, false, generation);
+    _runListTimer = setInterval(function () {
+      _refreshMyRunPage(app, true, generation);
+    }, 5000);
   };
 
   window.QTB.renderRunMonitorPage = function (app, runId) {
@@ -107,7 +105,12 @@
   };
 
   window.addEventListener('hashchange', function () {
-    if (location.hash.indexOf('#/run/') !== 0) _cleanup();
+    if (
+      location.hash.indexOf('#/my-run/') !== 0 &&
+      location.hash.indexOf('#/run/') !== 0
+    ) {
+      _cleanup();
+    }
   });
 
   function _absoluteUrl(path) {
@@ -130,18 +133,38 @@
     });
   }
 
-  function _loadApiKeyStatus() {
-    return _authFetch('/ui/api-key').then(_jsonResponse);
+  function _loadMyRuns() {
+    return _authFetch('/ui/runs?mine=true').then(_jsonResponse)
+      .then(function (payload) {
+        return payload.runs || [];
+      });
   }
 
-  function _generateApiKey() {
-    return _authFetch('/ui/api-key', {method: 'POST'}).then(_jsonResponse)
-      .then(function (payload) {
-        if (!payload.api_key) {
-          throw new Error('API key was not returned.');
+  function _refreshMyRunPage(app, quiet, generation) {
+    return _loadMyRuns()
+      .then(function (runs) {
+        if (!_isCurrentMyRunPage(generation)) return runs;
+        _renderMyRunPage(app, {runs: runs});
+        return runs;
+      })
+      .catch(function (error) {
+        if (!_isCurrentMyRunPage(generation)) return;
+        var message = error && error.message ? error.message : String(error || 'Unable to load runs.');
+        if (quiet) {
+          _markMyRunRefreshError(message);
+        } else {
+          _renderMyRunPage(app, {error: message, runs: []});
         }
-        return payload;
       });
+  }
+
+  function _isCurrentMyRunPage(generation) {
+    return generation === _myRunGeneration && location.hash === '#/my-run';
+  }
+
+  function _markMyRunRefreshError(message) {
+    var target = document.getElementById('my-run-refresh-status');
+    if (target) target.textContent = 'Refresh failed: ' + message;
   }
 
   function _buildAgentPrompt(apiKey) {
@@ -158,140 +181,251 @@
     ].join('\n');
   }
 
-  function _buildPromptPlaceholder(status, loading, error) {
-    var rawSkillUrl = _skillRawUrl();
-    if (loading) {
-      return [
-        'Loading API key status...',
-        '',
-        'Read ' + rawSkillUrl + ' and follow the instructions to join QuantTutorBench.'
-      ].join('\n');
-    }
-    if (error) {
-      return [
-        'Unable to load API key status.',
-        error,
-        '',
-        'Read ' + rawSkillUrl + ' and follow the instructions to join QuantTutorBench.'
-      ].join('\n');
-    }
-    return [
-      status && status.has_key
-        ? 'Generate a fresh agent prompt to reveal a full REST API key in this text box.'
-        : 'Generate an agent prompt to create a REST API key and place it in this text box.',
-      '',
-      'Read ' + rawSkillUrl + ' and follow the instructions to join QuantTutorBench.'
-    ].join('\n');
-  }
+  window.QTB.agentSkillRawUrl = _skillRawUrl;
+  window.QTB.buildAgentPrompt = _buildAgentPrompt;
 
-  function _apiKeyStatusText(status, apiKey, loading, error) {
-    if (loading) return 'Loading key status';
-    if (apiKey) return 'Fresh API key embedded';
-    if (error) return 'Key status unavailable';
-    if (status && status.has_key) {
-      return 'Active key: ' + (status.key_hint ? status.key_hint + '...' : 'available');
-    }
-    return 'Ready to generate';
-  }
-
-  function _renderPromptPage(app, options) {
+  function _renderMyRunPage(app, options) {
     options = options || {};
-    var status = options.status || {};
-    var apiKey = options.apiKey || '';
+    var runs = _sortRuns(options.runs || []);
     var loading = !!options.loading;
     var error = options.error || '';
-    var rawSkillUrl = _skillRawUrl();
-    var prompt = apiKey
-      ? _buildAgentPrompt(apiKey)
-      : _buildPromptPlaceholder(status, loading, error);
-    var copyDisabled = apiKey ? '' : ' disabled';
-    var generateDisabled = loading ? ' disabled' : '';
-    var generateText = status && status.has_key ? 'Generate Fresh Prompt' : 'Generate Prompt';
+    var stats = _summarizeRuns(runs);
 
     app.innerHTML =
-      '<section class="page run-page">' +
-        '<header class="page-header run-sticky-header">' +
+      '<section class="page run-page my-run-page">' +
+        '<header class="page-header run-sticky-header my-run-header">' +
           '<div class="page-title-wrap">' +
-            '<p class="eyebrow">Run · My Agent</p>' +
-            '<h1>Connect your agent to the benchmark.</h1>' +
-            '<p class="subtitle">Generate a copyable prompt with the raw skill URL and your API key.</p>' +
+            '<p class="eyebrow">Run · My Run</p>' +
+            '<h1>My Run</h1>' +
+            '<p class="subtitle">Current benchmark task progress and recent run activity.</p>' +
           '</div>' +
+          _myRunSummaryHtml(stats) +
         '</header>' +
-        '<div class="run-agent-prompt-panel">' +
-          '<section class="panel run-agent-prompt-card">' +
-            '<div class="run-agent-prompt-head">' +
-              '<div>' +
-                '<h2>Agent Prompt</h2>' +
-                '<p class="detail-empty-note">Copy this text into your agent after generation. It includes the REST API key.</p>' +
-              '</div>' +
-              '<span class="run-selected-badge">' + escapeHtml(_apiKeyStatusText(status, apiKey, loading, error)) + '</span>' +
-            '</div>' +
-            '<textarea id="myagent-prompt-text" class="run-agent-prompt-text" readonly spellcheck="false">' + escapeHtml(prompt) + '</textarea>' +
-            '<div class="run-agent-skill-url">' +
-              '<span>Raw Skill URL</span>' +
-              '<code>' + escapeHtml(rawSkillUrl) + '</code>' +
-            '</div>' +
-            '<div class="run-agent-api-actions">' +
-              '<button class="btn btn-primary" id="myagent-generate-prompt-btn" type="button"' + generateDisabled + '>' + escapeHtml(generateText) + '</button>' +
-              '<button class="btn btn-secondary" id="myagent-copy-prompt-btn" type="button"' + copyDisabled + '>Copy Prompt</button>' +
-            '</div>' +
-            '<div id="myagent-error" class="run-error"' + (error ? '' : ' style="display:none;"') + '>' + escapeHtml(error) + '</div>' +
-          '</section>' +
+        '<div class="my-run-toolbar">' +
+          '<span id="my-run-refresh-status" class="my-run-refresh-status">' +
+            (loading ? 'Loading runs...' : 'Updated ' + escapeHtml(_formatTimestamp(new Date()))) +
+          '</span>' +
+          '<div class="run-actions">' +
+            '<button class="btn btn-secondary" id="my-run-refresh-btn" type="button">Refresh</button>' +
+            '<button class="btn btn-primary" id="my-run-api-key-btn" type="button">API Key</button>' +
+          '</div>' +
         '</div>' +
+        _myRunBodyHtml(runs, loading, error) +
       '</section>';
 
-    var generateBtn = document.getElementById('myagent-generate-prompt-btn');
-    var copyBtn = document.getElementById('myagent-copy-prompt-btn');
-    var promptText = document.getElementById('myagent-prompt-text');
-    var errorDiv = document.getElementById('myagent-error');
-
-    if (generateBtn) {
-      generateBtn.addEventListener('click', function () {
-        generateBtn.disabled = true;
-        generateBtn.textContent = 'Generating...';
-        if (errorDiv) errorDiv.style.display = 'none';
-        _generateApiKey()
-          .then(function (payload) {
-            _renderPromptPage(app, {status: payload, apiKey: payload.api_key});
-          })
-          .catch(function (err) {
-            if (errorDiv) {
-              errorDiv.textContent = err && err.message ? err.message : String(err || 'Unable to generate prompt.');
-              errorDiv.style.display = 'block';
-            }
-            generateBtn.disabled = false;
-            generateBtn.textContent = generateText;
-          });
-      });
-    }
-    if (copyBtn) {
-      copyBtn.addEventListener('click', function () {
-        var value = promptText ? promptText.value : '';
-        if (!value) return;
-        if (navigator.clipboard) {
-          navigator.clipboard.writeText(value).then(function () {
-            copyBtn.textContent = 'Copied';
-          }).catch(function () {
-            _fallbackCopy(promptText);
-            copyBtn.textContent = 'Copied';
-          });
-        } else {
-          _fallbackCopy(promptText);
-          copyBtn.textContent = 'Copied';
-        }
-      });
-    }
+    _bindMyRunActions(app);
   }
 
-  function _fallbackCopy(textarea) {
-    if (!textarea) return;
-    textarea.focus();
-    textarea.select();
-    try {
-      document.execCommand('copy');
-    } catch (e) {
-      // Browser copy fallback failed; selected text is still ready for manual copy.
+  function _bindMyRunActions(app) {
+    var refreshBtn = document.getElementById('my-run-refresh-btn');
+    if (refreshBtn) {
+      refreshBtn.addEventListener('click', function () {
+        refreshBtn.disabled = true;
+        var status = document.getElementById('my-run-refresh-status');
+        if (status) status.textContent = 'Refreshing...';
+        _refreshMyRunPage(app, false, _myRunGeneration);
+      });
     }
+    var apiKeyButtons = [
+      document.getElementById('my-run-api-key-btn'),
+      document.getElementById('my-run-empty-api-key-btn')
+    ];
+    apiKeyButtons.forEach(function (apiKeyBtn) {
+      if (!apiKeyBtn) return;
+      apiKeyBtn.addEventListener('click', function () {
+        if (window.QTB && typeof window.QTB.openApiKeyModal === 'function') {
+          window.QTB.openApiKeyModal();
+        }
+      });
+    });
+  }
+
+  function _myRunSummaryHtml(stats) {
+    return '' +
+      '<div class="summary-strip my-run-summary">' +
+        _myRunMetric('Completed', stats.completed) +
+        _myRunMetric('In Progress', stats.in_progress) +
+        _myRunMetric('Failed', stats.failed) +
+        _myRunMetric('Not Started', stats.not_started) +
+      '</div>';
+  }
+
+  function _myRunMetric(label, value) {
+    return '<span class="summary-pill my-run-metric"><strong>' + escapeHtml(value) + '</strong> ' + escapeHtml(label) + '</span>';
+  }
+
+  function _myRunBodyHtml(runs, loading, error) {
+    if (error) {
+      return '' +
+        '<section class="error-state my-run-state-card">' +
+          '<p class="eyebrow">Error</p>' +
+          '<h1>Run list unavailable</h1>' +
+          '<p>' + escapeHtml(error) + '</p>' +
+        '</section>';
+    }
+    if (loading) {
+      return '' +
+        '<section class="loading-state my-run-state-card">' +
+          '<p class="eyebrow">Loading</p>' +
+          '<h1>Loading runs</h1>' +
+          '<p>Fetching current progress.</p>' +
+        '</section>';
+    }
+    if (!runs.length) {
+      return '' +
+        '<section class="empty-state my-run-state-card my-run-empty">' +
+          '<p class="eyebrow">Empty</p>' +
+          '<h1>No runs yet.</h1>' +
+          '<p>Generate an agent prompt from API Key, then run your agent.</p>' +
+          '<button class="btn btn-primary" id="my-run-empty-api-key-btn" type="button">API Key</button>' +
+        '</section>';
+    }
+    var groups = _groupRunsByTask(runs);
+    return '<div class="my-run-task-list">' + groups.map(_taskGroupHtml).join('') + '</div>';
+  }
+
+  function _groupRunsByTask(runs) {
+    var byTask = {};
+    runs.forEach(function (run) {
+      var key = run.task_id || run.public_task_label || 'Unknown Task';
+      if (!byTask[key]) {
+        byTask[key] = {
+          key: key,
+          publicLabel: run.public_task_label || '',
+          runs: []
+        };
+      }
+      byTask[key].runs.push(run);
+    });
+    return Object.keys(byTask).map(function (key) {
+      var group = byTask[key];
+      group.runs = _sortRuns(group.runs);
+      group.latest = group.runs[0] || {};
+      group.recentAt = _activityTimestamp(group.latest);
+      return group;
+    }).sort(function (a, b) {
+      return _activityValue(b.latest) - _activityValue(a.latest);
+    });
+  }
+
+  function _taskGroupHtml(group) {
+    var latest = group.latest || {};
+    var subtitle = [];
+    subtitle.push(group.runs.length + (group.runs.length === 1 ? ' run' : ' runs'));
+    subtitle.push('Recent ' + _formatTimestamp(group.recentAt));
+    if (group.publicLabel && group.publicLabel !== group.key) {
+      subtitle.push('Label ' + group.publicLabel);
+    }
+    return '' +
+      '<article class="my-run-task-card">' +
+        '<div class="my-run-task-head">' +
+          '<div class="my-run-task-title">' +
+            '<h2>' + escapeHtml(group.key) + '</h2>' +
+            '<div class="my-run-task-meta">' + escapeHtml(subtitle.join(' · ')) + '</div>' +
+          '</div>' +
+          _statusPillHtml(latest.status) +
+        '</div>' +
+        '<div class="my-run-row-list">' +
+          group.runs.map(_runRowHtml).join('') +
+        '</div>' +
+      '</article>';
+  }
+
+  function _runRowHtml(run) {
+    var href = '#/my-run/' + encodeURIComponent(run.run_id || '');
+    var details = [];
+    if (run.mode) details.push(_titleCase(run.mode));
+    if (run.persona_id) details.push('Persona ' + run.persona_id);
+    if (run.session_id) details.push('Session ' + _shortId(run.session_id));
+    details.push(_formatTimestamp(_activityTimestamp(run)));
+    return '' +
+      '<a class="my-run-row" href="' + escapeHtml(href) + '">' +
+        '<div class="my-run-row-main">' +
+          '<span class="my-run-row-title">' + escapeHtml(_shortId(run.run_id)) + '</span>' +
+          '<span class="my-run-row-detail">' + escapeHtml(details.join(' · ')) + '</span>' +
+        '</div>' +
+        _statusPillHtml(run.status) +
+      '</a>';
+  }
+
+  function _summarizeRuns(runs) {
+    var stats = {
+      completed: 0,
+      in_progress: 0,
+      failed: 0,
+      not_started: 0
+    };
+    runs.forEach(function (run) {
+      var bucket = _statusBucket(run.status);
+      stats[bucket] += 1;
+    });
+    return stats;
+  }
+
+  function _statusBucket(status) {
+    if (status === 'completed') return 'completed';
+    if (status === 'active' || status === 'claimed') return 'in_progress';
+    if (status === 'failed' || status === 'cancelled') return 'failed';
+    return 'not_started';
+  }
+
+  function _statusPillHtml(status) {
+    var clean = String(status || 'waiting');
+    return '<span class="status-pill ' + escapeHtml(_statusTone(clean)) + ' my-run-status run-status-' + escapeHtml(clean) + '">' + escapeHtml(_statusLabel(clean)) + '</span>';
+  }
+
+  function _statusTone(status) {
+    if (status === 'completed') return 'completed';
+    if (status === 'active' || status === 'claimed') return 'running';
+    if (status === 'failed') return 'failed';
+    if (status === 'cancelled') return 'cancelled';
+    return 'pending';
+  }
+
+  function _statusLabel(status) {
+    var labels = {
+      waiting: 'Not Started',
+      claimed: 'In Progress',
+      active: 'In Progress',
+      completed: 'Completed',
+      failed: 'Failed',
+      cancelled: 'Cancelled'
+    };
+    return labels[status] || _titleCase(status);
+  }
+
+  function _sortRuns(runs) {
+    return runs.slice().sort(function (a, b) {
+      return _activityValue(b) - _activityValue(a);
+    });
+  }
+
+  function _activityTimestamp(run) {
+    return (run && (run.completed_at || run.updated_at || run.claimed_at || run.created_at)) || '';
+  }
+
+  function _activityValue(run) {
+    var value = _activityTimestamp(run);
+    var date = value ? new Date(value) : null;
+    var time = date && !isNaN(date.getTime()) ? date.getTime() : 0;
+    return time;
+  }
+
+  function _formatTimestamp(value) {
+    if (!value) return 'Unknown time';
+    var date = value instanceof Date ? value : new Date(value);
+    if (isNaN(date.getTime())) return String(value);
+    return date.toLocaleString();
+  }
+
+  function _titleCase(value) {
+    return String(value || '')
+      .split(/[_\s-]+/)
+      .filter(Boolean)
+      .map(function (part) {
+        return part.charAt(0).toUpperCase() + part.slice(1);
+      })
+      .join(' ');
   }
 
   // ── Monitor page (connection info + live data) ──
@@ -654,6 +788,8 @@
 
   function _cleanup() {
     _stopPolling();
+    if (_runListTimer) { clearInterval(_runListTimer); _runListTimer = null; }
+    _myRunGeneration += 1;
     _runId = null;
     _lastConvLen = 0;
     _lastToolLen = 0;

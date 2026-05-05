@@ -100,7 +100,9 @@ class ControlTokenTests(unittest.TestCase):
                     headers={"Authorization": f"Bearer {control_token}"},
                 )
             self.assertEqual(r.status_code, 200)
-            self.assertEqual(r.json()["run_id"], assignment.run_id)
+            body = r.json()
+            self.assertEqual(body["run_id"], assignment.run_id)
+            self.assertNotIn("task_id", body)
 
     def test_run_token_does_not_authorize_control_endpoint(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -154,6 +156,7 @@ class ControlTokenTests(unittest.TestCase):
             r = client.get("/ui/runs/live")
             self.assertEqual(r.status_code, 200)
             body = r.json()
+            self.assertNotIn("task_id", body["runs"][0])
             self.assertEqual(body["runs"][0]["run_id"], assignment.run_id)
             self.assertTrue(body["runs"][0]["is_live"])
             self.assertEqual(body["runs"][0]["observer_status"], "active")
@@ -229,6 +232,7 @@ class ControlTokenTests(unittest.TestCase):
                     headers={"Authorization": f"Bearer {control_token}"},
                 )
             self.assertEqual(r.status_code, 200)
+            self.assertNotIn("task_id", r.json())
 
     def test_store_find_by_token_hash_distinguishes_types(self):
         import hashlib
