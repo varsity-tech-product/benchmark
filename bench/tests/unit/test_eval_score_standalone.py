@@ -18,14 +18,11 @@ import subprocess
 from pathlib import Path
 
 from eval.contracts.bundle import (
+    REFERENCE_ARTIFACT_KEY,
     SCHEMA_VERSION,
-    AgentMessage,
-    AgentMetadata,
     Bundle,
-    ConversationTurn,
-    RuntimeInfo,
-    SessionInfo,
-    StudentMessage,
+    BundleTimestamps,
+    Message,
 )
 from eval.contracts.output import EvalOutput
 from eval.score import score
@@ -101,25 +98,39 @@ def _write_minimal_persona(tmp_path: Path, persona_id: str) -> Path:
 
 def _make_bundle(task_id: str, persona_id: str) -> Bundle:
     return Bundle(
+        bundle_id="smoke-sess",
         schema_version=SCHEMA_VERSION,
         task_id=task_id,
-        task_version="1.0",
-        task_spec_hash="smoke",
-        persona_id=persona_id,
-        session=SessionInfo(
-            session_id="smoke-sess",
-            termination_reason="max_turns",
-            turn_count=1,
+        timestamps=BundleTimestamps(
+            created_at="2026-05-02T10:00:00Z",
+            completed_at="2026-05-02T10:01:00Z",
         ),
-        runtime=RuntimeInfo(),
-        agent_metadata=AgentMetadata(harness="smoke"),
-        conversation=[
-            ConversationTurn(
-                turn=1,
-                agent=AgentMessage(text="Here's a brief plan."),
-                student=StudentMessage(text="Walk me through the strategy."),
+        agent_id="smoke",
+        sandbox_digest={},
+        telemetry={},
+        messages=[
+            Message(
+                message_id="msg_1",
+                role="user",
+                content="Walk me through the strategy.",
+                turn_index=0,
+            ),
+            Message(
+                message_id="msg_2",
+                role="assistant",
+                content="Here's a brief plan.",
+                turn_index=0,
             ),
         ],
+        artifacts={
+            REFERENCE_ARTIFACT_KEY: {
+                "persona_id": persona_id,
+                "session_id": "smoke-sess",
+                "termination_reason": "max_turns",
+                "task_version": "1.0",
+                "task_spec_hash": "smoke",
+            }
+        },
     )
 
 

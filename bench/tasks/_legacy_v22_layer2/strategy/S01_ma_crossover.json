@@ -4,9 +4,9 @@
   "difficulty": "easy",
   "category": "strategy",
   "task_type": "multi_turn",
-  "description": "Guide a student to build and test a moving average crossover strategy on equity data.",
+  "description": "The user asks the agent to build and test a moving average crossover strategy on equity data.",
   "persona_id": "fullstack_practitioner",
-  "student_opening": "I want to benchmark a basic SMA crossover before building something more complex. Let's set up the backtest properly — walk-forward friendly, with transaction cost assumptions. What parameters do you recommend as a starting point?",
+  "user_opening": "I want to benchmark a basic SMA crossover before building something more complex. Let's set up the backtest properly — walk-forward friendly, with transaction cost assumptions. What parameters do you recommend as a starting point?",
   "environment": {
     "data_files": [
       "AAPL_2018_2024.csv",
@@ -28,7 +28,7 @@
     "network_enabled": false
   },
   "ground_truth": {
-    "expected_outcome": "Tutor guides the student to build a working MA crossover strategy, run a backtest that produces Sharpe ratio and total return, and visualize the strategy results. The run should leave concrete outputs such as backtest metrics and a visualization rather than only conversational discussion.",
+    "expected_outcome": "Agent helps the user build a working MA crossover strategy, run a backtest that produces Sharpe ratio and total return, and visualize the strategy results. The run should leave concrete outputs such as backtest metrics and a visualization rather than only conversational discussion.",
     "required_capabilities": [
       "Load market data for the strategy",
       "Compute dual moving average indicators",
@@ -50,7 +50,7 @@
     "quant_validation": {
       "eval_script": "tasks/test_scripts/strategy/S01_ma_crossover.py"
     },
-    "termination_criteria": "The tutor has completed the following steps with computational evidence (not just verbal discussion): (1) Computed moving averages on the provided price data, identified crossover points, and explained how crossover signals generate buy or sell decisions. (2) Presented backtest results for the MA crossover strategy, including at least one performance metric such as total return or Sharpe ratio with a specific numerical value. (3) Discussed at least one limitation or condition under which the MA crossover strategy performs poorly, such as lag, whipsaw risk, or sideways markets. Once all three steps have been computationally demonstrated, the session is complete."
+    "termination_criteria": "The agent has completed the following steps with computational evidence (not just verbal discussion): (1) Computed moving averages on the provided price data, identified crossover points, and explained how crossover signals generate buy or sell decisions. (2) Presented backtest results for the MA crossover strategy, including at least one performance metric such as total return or Sharpe ratio with a specific numerical value. (3) Discussed at least one limitation or condition under which the MA crossover strategy performs poorly, such as lag, whipsaw risk, or sideways markets. Once all three steps have been computationally demonstrated, the session is complete."
   },
   "requires_code": true,
   "sample_code": null,

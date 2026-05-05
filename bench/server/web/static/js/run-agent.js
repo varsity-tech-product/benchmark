@@ -579,7 +579,7 @@
       name: 'send_message',
       request_text: args.text || '',
       attachments: args.attachments || [],
-      student_message: parsed.student_message || '',
+      user_message: parsed.user_message || '',
       status: parsed.status || 'active',
       reason: parsed.reason || '',
       error: parsed.error || '',
@@ -616,7 +616,7 @@
     } else {
       // Fallback: simple text display
       el.innerHTML = conversation.map(function (msg) {
-        var role = msg.role === 'user' ? 'Student' : 'Tutor';
+        var role = msg.role === 'user' ? 'User' : 'Tutor';
         return '<div class="chat-msg chat-' + escapeHtml(msg.role) + '">' +
           '<strong>' + role + ':</strong> ' + escapeHtml((msg.content || '').substring(0, 500)) +
           '</div>';

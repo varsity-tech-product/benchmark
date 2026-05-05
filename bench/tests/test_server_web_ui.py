@@ -108,7 +108,7 @@ class ResultIndexerTests(unittest.TestCase):
                             },
                             "result": json.dumps(
                                 {
-                                    "student_message": "Thanks, that helps.",
+                                    "user_message": "Thanks, that helps.",
                                     "status": "active",
                                 }
                             ),
@@ -234,10 +234,10 @@ class ResultIndexerTests(unittest.TestCase):
             self.assertEqual(summary["step_count"], 5)
 
             self.assertEqual(detail["score_json"]["score_id"], "score_2")
-            self.assertEqual(detail["cost_json"]["eval_cost_usd"], 0.03)
+            self.assertEqual(detail["cost_json"]["eval_cost_usd"], 0.02)
             self.assertEqual(detail["eval_history"][0]["score_id"], "score_2")
-            self.assertAlmostEqual(detail["evaluation_cost"], 0.03)
-            self.assertAlmostEqual(detail["total_cost"], 0.05)
+            self.assertAlmostEqual(detail["evaluation_cost"], 0.02)
+            self.assertAlmostEqual(detail["total_cost"], 0.04)
             self.assertEqual(
                 detail["workspace_files"], ["reports/chart.png", "notes.md"]
             )
@@ -248,7 +248,7 @@ class ResultIndexerTests(unittest.TestCase):
                 detail["send_message_events"][0]["request_text"], "Rendered answer"
             )
             self.assertEqual(
-                detail["send_message_events"][0]["student_message"],
+                detail["send_message_events"][0]["user_message"],
                 "Thanks, that helps.",
             )
             self.assertEqual(detail["send_message_events"][0]["status"], "active")
@@ -499,9 +499,9 @@ class UiRoutesTests(unittest.TestCase):
                             "args": {"text": "Answer"},
                             "result": json.dumps(
                                 {
-                                    "student_message": "Got it",
+                                    "user_message": "Got it",
                                     "status": "completed",
-                                    "reason": "objectives_met",
+                                    "reason": "user_satisfied",
                                 }
                             ),
                             "turn_index": 0,
@@ -562,7 +562,7 @@ class UiRoutesTests(unittest.TestCase):
                         "section": "conversation",
                         "target": {"turn_index": 0},
                         "severity": "concern",
-                        "comment": "Student acknowledgement is terse.",
+                        "comment": "User acknowledgement is terse.",
                         "tags": ["persona_signal"],
                     }
                 },
@@ -632,7 +632,7 @@ class UiRoutesTests(unittest.TestCase):
             self.assertEqual(payload["send_message_count"], 1)
             self.assertEqual(payload["send_message_events"][0]["status"], "completed")
             self.assertEqual(
-                payload["send_message_events"][0]["reason"], "objectives_met"
+                payload["send_message_events"][0]["reason"], "user_satisfied"
             )
 
             workspace_payload = workspace_response.json()
@@ -686,7 +686,7 @@ class UiRoutesTests(unittest.TestCase):
             self.assertEqual(saved["github_user_id"], "local-dev")
             self.assertEqual(
                 review_reload_response.json()["review"]["opinions"][0]["comment"],
-                "Student acknowledgement is terse.",
+                "User acknowledgement is terse.",
             )
             prefix_payload = review_prefix_post_response.json()
             self.assertEqual(prefix_payload["bundle_id"], session_id)

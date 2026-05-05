@@ -8,7 +8,7 @@
   "difficulty": "hard",
   "description": "Guide a student to diagnose and fix conflicting alpha model insights in a LEAN Algorithm Framework strategy where trend and mean-reversion alphas net each other out under AccumulativeInsightPortfolioConstructionModel, producing near-zero trades. On the standalone 12-col pipeline, the alpha models should manage their state from subscribed symbols or data.Keys and update indicators manually instead of relying on OnSecuritiesChanged auto-registration.",
   "persona_id": "developer_crossover",
-  "student_opening": "I'm looking at code that combines multiple alpha models in a LEAN framework strategy, but trades are near zero. The code reads fine to me, but I'm not sure the financial logic is correct. What should it be doing?",
+  "user_opening": "I'm looking at code that combines multiple alpha models in a LEAN framework strategy, but trades are near zero. The code reads fine to me, but I'm not sure the financial logic is correct. What should it be doing?",
   "environment": {
     "data_files": [
       "universe.json"

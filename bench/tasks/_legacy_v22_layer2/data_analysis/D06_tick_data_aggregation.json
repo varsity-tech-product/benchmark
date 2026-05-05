@@ -4,9 +4,9 @@
   "difficulty": "medium",
   "category": "data_analysis",
   "task_type": "multi_turn",
-  "description": "Guide the student to aggregate tick-level data into OHLCV bars, save the result as a CSV file, and apply proper timestamp handling and microstructure quality checks.",
+  "description": "The user asks the agent to aggregate tick-level data into OHLCV bars, save the result as a CSV file, and apply proper timestamp handling and microstructure quality checks.",
   "persona_id": "double_novice",
-  "student_opening": "My professor asked us to aggregate tick-level data into OHLCV bars, save the result. I'm new to both Python and finance — can you start from the basics?",
+  "user_opening": "My professor asked us to aggregate tick-level data into OHLCV bars, save the result. I'm new to both Python and finance — can you start from the basics?",
   "environment": {
     "data_files": [
       "tick_data_sample.csv"
@@ -26,7 +26,7 @@
     "network_enabled": false
   },
   "ground_truth": {
-    "expected_outcome": "Tutor guides the student to resample tick-level data into OHLCV bars and save the aggregated bars as a CSV file, handle timestamp quality issues, and validate bar quality with microstructure awareness.",
+    "expected_outcome": "Agent helps the user resample tick-level data into OHLCV bars and save the aggregated bars as a CSV file, handle timestamp quality issues, and validate bar quality with microstructure awareness.",
     "required_capabilities": [
       "Resample tick-level data into OHLCV bars and save the result",
       "Handle timestamp quality issues such as ordering and duplicates",
@@ -43,7 +43,7 @@
     "quant_validation": {
       "eval_script": "tasks/test_scripts/data_analysis/D06_tick_data_aggregation.py"
     },
-    "termination_criteria": "(1) Showed actual resampling or aggregation output converting tick-level data into OHLCV bars using pandas resample, groupby, or equivalent code, and saved the result as a CSV file in the workspace. (2) Demonstrated concrete timestamp handling such as sorting, deduplication, or timezone normalization on the tick data, with before-and-after output showing the fix. (3) Responded to a student follow-up with one additional quality check or microstructure caveat on the aggregated bars, such as checking for empty bars, volume consistency, or session boundary alignment. Once all 3 steps have been computationally demonstrated, the session is complete."
+    "termination_criteria": "(1) Showed actual resampling or aggregation output converting tick-level data into OHLCV bars using pandas resample, groupby, or equivalent code, and saved the result as a CSV file in the workspace. (2) Demonstrated concrete timestamp handling such as sorting, deduplication, or timezone normalization on the tick data, with before-and-after output showing the fix. (3) Responded to a user follow-up with one additional quality check or microstructure caveat on the aggregated bars, such as checking for empty bars, volume consistency, or session boundary alignment. Once all 3 steps have been computationally demonstrated, the session is complete."
   },
   "requires_code": true,
   "sample_code": null,

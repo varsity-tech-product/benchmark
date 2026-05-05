@@ -17,12 +17,13 @@ backward compatibility.
 
 ```text
 bench/
+  platform_api/         Internal RFC-A v0 plugin contracts + sandbox API
   eval/                Standalone scoring package (no server runtime deps)
   server/              HTTP/MCP service, run control, session storage, UI
   client/              External client adapters for MCP and REST
   orchestrator/        Legacy pre-server batch scaffolding
   tasks/               Task definitions + per-task eval scripts (test_scripts/)
-  personas/            Student persona profiles
+  personas/            User persona profiles
   data/                Market/reference data
   experiments/         Validation experiments and generated report pipelines
   layer1/              Layer 1 (single-turn knowledge) runner + GEval config
@@ -46,6 +47,62 @@ from `bench/server/web/static/` into `vercel-frontend/public/`, so Vercel branch
 deployments serve branch-local HTML/CSS/JS while backend API routes still proxy
 to the production service.
 
+## Platform API v0
+
+`bench/platform_api/` is the internal RFC-A v0 surface introduced by #152 for
+plugin-based Stage 1 work. Its import path is `platform_api.*`; this package
+name preserves the Python stdlib `platform` module while tests place `bench/`
+first on `sys.path`.
+
+- `contracts/` defines the three plugin ABCs: `TaskSuite`, `NPCProvider`, and
+  `Evaluator`. Shared dataclasses include `EvalItem`, `EvalSample`,
+  `TranscriptMessage`, `ToolLog`, `FileArtifact`, `NPCReply`, `Score`,
+  `EvaluatorMetadata`, `DataMount`, and `SandboxSpec`.
+- `runtime/` defines `SandboxRuntime`, `SandboxCreateRequest`, `SandboxMount`,
+  `SandboxHandle`, `ExecResult`, `ToolRequest`, `ToolResult`, and `ToolRouter`.
+  `DockerSandboxRuntime` owns image pulls, container creation with volume,
+  CPU/memory, and network flags, process execution through `docker exec`, and
+  routed tool calls. `LocalSandboxRuntime` covers unit tests and local
+  development flows.
+- Stage 1 data-plane declarations use
+  `DataMount(uri, target_path, read_only=True)` with
+  `hf://owner/dataset@<40-char-commit-sha>`,
+  `s3://bucket/key?versionId=...`, and `file://...` URIs. `http://` and
+  `https://` sources stay outside Stage 1. Data mounts materialize to a local
+  cache or existing file path before bind mounting into the sandbox.
+- `SandboxSpec(image_uri, resource_limits)` is the TaskSuite-owned sandbox
+  declaration. Stage 1 records `cpu_count` or `cpus`, `memory_mb` or `memory`,
+  `wall_timeout_seconds`, and `network_enabled`. Reference base images are the
+  supported Stage 1 image policy; forked or untrusted images belong to Stage 2.
+- `plugins/loader.py` loads implementation triples from explicit
+  `PluginSpec`s, JSON/TOML config files, and Python entry points under
+  `quantagentbench.plugins`.
+- `telemetry.py` exposes a push hook: `TelemetryRecord`,
+  `NullTelemetryHook`, `InMemoryTelemetryHook`, and `TelemetryTimer`. Records
+  carry token counts, cost, latency, success, error, and plugin/runtime
+  attributes.
+- `naming.py` records the current canonical naming table: `NPCProvider` for the
+  platform abstract user/NPC boundary, `Session` for platform session runtime,
+  `Persona` for reference business payloads, `payload.student_opening` for the
+  reference opening field, and `TUTOR_SYSTEM_PROMPT` as reference-internal
+  prompt configuration.
+
+## Reference Prompt Boundary
+
+`bench/server/reference/` owns reference NPC/user-simulator prompt behavior.
+`RefSystemPrompt` builds persona, interaction, and visible tool-log behavior
+text for the reference simulator. `server.config.prompt_config` keeps existing
+server call sites stable through compatibility wrappers.
+
+`server.core.session.build_background()` returns a JSON-able
+`platform_background.v1` fact object for sandbox image, resource limits,
+systems, mounts, and MCP tool discovery metadata. Agent communication rules
+live in MCP tool descriptions such as `send_message`; reference persona
+behavior lives in `bench/server/reference/`.
+
+This v0 surface is internal and source-level. Stage 2 owns public SDK/docs,
+multi-tenant BYO image security, and formal schema/deprecation policy.
+
 ## Server Entrypoint
 
 `bench/server/__main__.py` parses server flags and calls
@@ -53,11 +110,33 @@ to the production service.
 
 - MCP at `/mcp`
 - client REST under `/session/*`
+- run resume/replay REST under `/api/runs/*`
 - operator REST under `/ops/*`
 - UI/client run routes from `bench/server/web/ui_app.py`
 
 The `BenchSessionManager` in `http_app.py` owns live sessions, the run store,
 quota checks, background tool jobs, cleanup, and restore-from-storage.
+
+## Production Deployment
+
+Production runs on the VPS under Linux user `bench` from
+`/home/bench/benchmark`. The systemd unit lives at
+`deploy/quanttutor.service` and starts:
+
+```bash
+cd /home/bench/benchmark/bench
+/home/bench/benchmark/.venv/bin/python -m server --host 127.0.0.1 --port 8000 --docker
+```
+
+GitHub Actions deploys through a self-hosted runner installed on the VPS with
+labels `production,bench-vps`. The workflow in `.github/workflows/deploy.yml`
+syncs the checkout into `/home/bench/benchmark`, maintains the virtualenv,
+rebuilds sandbox Docker images when Dockerfiles change, restarts `quanttutor`,
+and verifies `/health`.
+
+The `bench` SSH IP allowlist stays in `/etc/security/access.conf`. The
+self-hosted runner keeps deployment local to the VPS and preserves that SSH
+policy.
 
 ## Permission Boundary
 
@@ -96,23 +175,41 @@ the client catalog.
 `server.api.session_api.SessionState` owns one tutoring session:
 
 1. `register_session` loads task/persona and prepares runtime state.
-2. `start_session` returns the student opening and enters `in_session`.
-3. `send_message` advances the student simulator and tool trace.
-4. Terminal status persists a result bundle, enters `completed`, and
+2. `start_session` returns the user opening and enters `in_session`.
+3. `send_message` advances the user simulator and tool trace.
+4. Active sessions persist incremental `run_state.json` checkpoints under
+   `results/runs/{run_id}/run_state.json`. In Docker mode the server commits
+   resumable image layers as `bench-resume:{run_id}-{turn}` every
+   `QTB_RESUME_SNAPSHOT_INTERVAL` turns (default 5) and keeps
+   `QTB_RESUME_SNAPSHOT_KEEP` recent layers (default 3). The commit path copies
+   `/workspace` into a container-internal resume directory before `docker commit`
+   because `/workspace` is a bind mount. Suspend also writes a host-side
+   `workspace_snapshot/` beside the active checkpoint so local mode and failed
+   Docker snapshots still preserve workspace files.
+5. Terminal status persists a result bundle, enters `completed`, and
    `_trigger_auto_eval()` enqueues a server-internal eval keyed
    `auto:{session_id}`. The same trigger fires from the idle-timeout sweep
    when a session crosses its deadline. The judge runs in a background
    thread; clients poll `GET /session/{sid}/scores` for the result.
-5. `completed` is terminal for MCP/client tools.
+6. `completed` is terminal for MCP/client tools.
 
 `restore_from_storage()` reconstructs enough completed-session state from
 `run_state.json` to read results, read scores, or run operator scoring without
 restarting the tutoring runtime. Restore does not re-trigger auto-eval; the
 score store is the source of truth for whether an eval has run.
 
+`restore_active_from_storage()` reconstructs an active session from the
+run-scoped checkpoint. `POST /api/runs/{run_id}/resume` authorizes with the
+same run token, starts a new container from the latest resume layer when one is
+available, overlays any host-side workspace snapshot, restores conversation/tool
+history into `SessionState`, and returns the reattached `session_id` plus
+REST/MCP endpoints. `GET /api/runs/{run_id}/replay`
+returns read-only conversation and tool logs, and `GET /api/runs/{run_id}/state`
+returns `phase`, `turn_count`, and the latest layer tag.
+
 `POST /session/{sid}/retry` (run-token gated) lets the owning agent retry
 a session whose `termination_reason` classifies as
-`infrastructure_failure` (currently `student_sim_error:*`). The retry calls
+`infrastructure_failure` (currently `user_sim_error:*`). The retry calls
 `RunService.reset_for_retry()` to rebind the same RunAssignment back to
 `claimed`, allocates a fresh session_id, and returns it. Other categories
 (`agent_gave_up`, `max_turns_reached`, `terminal_success`, `unknown`) are
@@ -139,6 +236,21 @@ bench/results/server/{task_id}/{persona_id}/{YYYYMMDD_HHMMSS}_{session_id[:12]}/
 does not write or require `run_state.md`, bundle manifests, or a sibling
 evaluation tree.
 
+Active run checkpoints live beside run assignments:
+
+```text
+bench/results/runs/{run_id}/
+  run.json
+  run_state.json
+  workspace_snapshot/
+```
+
+The active `run_state.json` contains replay fields (`conversation`, `tool_logs`),
+resume metadata (`phase`, `turn_count`, `latest_layer_tag`, `snapshot_tags`),
+workspace snapshot metadata, and ownership fields used by run-token
+authorization. Completion removes the active checkpoint and workspace snapshot
+after the final result bundle is written and deletes the run's resume layers.
+
 Each `score_n/score.json` export carries `judge_reliability` metadata linking
 the evaluation report to the selected validated judge-validation run, its
 report paths, and the current-model match flag.
@@ -150,17 +262,18 @@ of server in #123 since score persistence is a scoring concern).
 
 ### Bundle v1
 
-`bench/eval/contracts/bundle.py` defines the immutable per-session artifact
-that the scoring path reads from. A `bundle.json` carries `task_id`,
-`task_version`, `task_spec_hash` (sha256 of the canonical task JSON),
-`persona_id`, session metadata, runtime metadata (sandbox image, NPC
-model, `bench_eval_version`, seed), agent self-report metadata,
-turn-keyed `conversation` with nested `tool_calls`, and a
-`workspace_manifest` (path + sha256 + size for every file under
-`agent_files/`). `contracts/bundle_io.py` is the JSON serializer; the
-reader is forward-compatible within the v1 major (unknown fields drop
-silently, missing optional fields fall back to dataclass defaults). See
-`bench/eval/contracts/schema_evolution.md` for the rules.
+`bench/eval/contracts/bundle.py` defines the generic Bundle v1 alpha artifact
+that the scoring path reads from. A `bundle.json` carries `bundle_id`,
+`schema_version = "1.0.0-alpha"`, `task_id`, `timestamps`, `agent_id`,
+`sandbox_digest`, `telemetry`, flat `messages`, flat `tool_calls`,
+namespaced `artifacts`, and a `workspace` file snapshot (path + sha256 +
+size for every file under `agent_files/`). Reference-harness fields such
+as `persona_id`, `session_id`, `termination_reason`, task version/hash, TC
+debug data, and scores live under `artifacts.quanttutor`. `contracts/bundle_io.py`
+is the JSON serializer; `contracts/bundle_schema.py` validates against
+`contracts/bundle_v1_alpha.schema.json`. See
+`docs/bundle_v1_schema.md` and `bench/eval/contracts/schema_evolution.md`
+for the rules.
 
 `bench/eval/backfill/run_state_to_bundle.py` converts legacy
 `run_state.json` artifacts to v1 bundles in place; pass `--recursive` to
@@ -215,10 +328,10 @@ judge model, judge temperature, transcript source, dimension, output
 schema, context fields, and run timestamp metadata.
 
 Per #122 the scoring path has **two LLM dependencies** (QR judge, QP
-judge). The TC checker (`server/core/tc_checker.py`) is purely
-programmatic — TC is met when the agent invokes every tool listed in
-`expected_mcp_tools`. The NPC student simulator remains the only LLM in
-the conversation runtime; its replies do not enter scoring.
+judge). Required-tool coverage is computed post-hoc in
+`eval/judges/process_metrics.py` from `expected_mcp_tools` and recorded
+tool names. The NPC user simulator remains the only LLM in the
+conversation runtime; its replies do not enter scoring.
 
 The headline KPI is `pass_rate`: per-task `task_score = 0.60 * QR +
 0.40 * QP`, then `task_pass = task_score >= PASS_THRESHOLD`
@@ -263,7 +376,7 @@ and the LLM provider. Within `bench/eval/`,
 `chat.completions.create()` appears only at `runner.py:140`; everything
 else goes through `LLMRunner.call(call_id, model_id, messages,
 prompt_id, prompt_version, ...)`. After #123 there are three call
-sites — NPC student simulator, QR judge, QP judge — and all three
+sites — NPC user simulator, QR judge, QP judge — and all three
 emit attributable audit rows.
 
 Each call writes one `LLMCallRecord` to a pluggable `AuditSink`.
@@ -278,7 +391,7 @@ environment variable: set it to a file path to capture every call,
 unset to silence. One JSONL line carries
 `call_id, model_id, prompt_id, prompt_version, prompt_hash, tokens_in,
 tokens_out, cost_usd, latency_ms, ts, success, error`. `prompt_id` is
-the rubric ID for judges and `"npc.student"` for the NPC; `prompt_version`
+the rubric ID for judges and `"npc.user"` for the NPC; `prompt_version`
 tracks the rendered prompt template version (rubric content version
 lives in `prompt_id` + `prompt_hash`).
 

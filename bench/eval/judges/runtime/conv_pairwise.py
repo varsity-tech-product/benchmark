@@ -53,7 +53,7 @@ VALID_MARGIN = {"slight", "clear", "strong"}
 class PairwiseTestCase:
     """Two candidate responses on the same shared context.
 
-    For the tutor track, ``shared_context`` is the student opening
+    For the tutor track, ``shared_context`` is the user opening
     message; for the QR/QP tracks, it is the structured task + required
     capabilities block. ``response_a`` and ``response_b`` hold the two
     candidate outputs to be compared.

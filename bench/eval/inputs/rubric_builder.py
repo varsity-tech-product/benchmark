@@ -247,27 +247,27 @@ _DIM_LABELS = {
 # need separate gates:
 #   - "Lectures on known material" fires on a persona-KNOWN concept.
 #     Keep the penalty, but only when the response restates the concept at
-#     the level the student already knows, not when the response builds
+#     the level the user already knows, not when the response builds
 #     higher-level scaffolding on top of it.
 #   - "Dense jargon to a beginner" fires on a persona-UNKNOWN concept.
-#     Keep the penalty, but only when the student has not themselves
+#     Keep the penalty, but only when the user has not themselves
 #     introduced the concept in the transcript.
 _ADAPTATION_CLARIFIER = (
-    "## Student knowledge inference\n"
+    "## User knowledge inference\n"
     "Persona known/unknown lists are priors, not ground truth. Apply the "
     "two failure anchors separately:\n"
     "- \"Lectures on known material\" (Score 1/2): fires only when the "
-    "response restates a persona-known concept at the level the student "
+    "response restates a persona-known concept at the level the user "
     "already knows. Do not apply it to higher-level scaffolding built on "
     "top of a known concept (e.g., architecture, timezone pitfalls, or "
-    "module organisation for a student who already uses pandas is new "
+    "module organisation for a user who already uses pandas is new "
     "material at a new level, not a lecture on what pandas is).\n"
     "- \"Dense jargon to a beginner\" (Score 1/2): fires only when the "
-    "concept is persona-unknown AND the student does NOT demonstrate "
-    "understanding of it in their own messages. A student USING the "
+    "concept is persona-unknown AND the user does NOT demonstrate "
+    "understanding of it in their own messages. A user USING the "
     "concept in context (writing pandas idioms, invoking `AddAlpha` in "
     "code they wrote, or applying `Sharpe` in their own reasoning) "
-    "demonstrates understanding — skip the penalty. A student ASKING "
+    "demonstrates understanding — skip the penalty. A user ASKING "
     "ABOUT the concept (\"what is Sharpe?\", \"how does AddAlpha "
     "work?\") does NOT demonstrate understanding — the penalty still "
     "applies if the tutor's response uses the term as jargon without "
@@ -276,10 +276,10 @@ _ADAPTATION_CLARIFIER = (
 
 _PEDAGOGY_CLARIFIER = (
     "## Requested depth\n"
-    "Reward responses that match the depth the student asked for. An "
+    "Reward responses that match the depth the user asked for. An "
     "architecture or concept overview in response to an architecture or "
     "concept question is not an answer dump. An answer dump is code with "
-    "no scaffolding when the student asked for concepts or explanation."
+    "no scaffolding when the user asked for concepts or explanation."
 )
 
 _DIM_CLARIFIERS = {

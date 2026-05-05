@@ -212,7 +212,7 @@ def _execute_run(
     try:
         from config.model_resolver import get_model_for_agent
         from orchestrator.runners.job_runner import JobSpec, run_single_job
-        from orchestrator.schemas import QuantTutorTask, StudentPersona
+        from orchestrator.schemas import QuantTutorTask, UserPersona
 
         # Load task
         for category_dir in (_BENCH_ROOT / "tasks" / "layer2").iterdir():
@@ -231,7 +231,7 @@ def _execute_run(
         # Load persona
         persona_path = _BENCH_ROOT / "personas" / f"{req.persona_id}.json"
         with open(persona_path) as f:
-            persona = StudentPersona(**json.load(f))
+            persona = UserPersona(**json.load(f))
 
         # Build result dir
         model = req.model or get_model_for_agent(req.agent)
@@ -352,7 +352,7 @@ def _execute_group_run(
         from config.model_resolver import get_model_for_agent
         from orchestrator.runners.job_runner import JobResult, JobSpec, run_single_job
         from orchestrator.runners.parallel_runner import run_jobs_parallel
-        from orchestrator.schemas import QuantTutorTask, StudentPersona
+        from orchestrator.schemas import QuantTutorTask, UserPersona
 
         group_dir = _BENCH_ROOT / "tasks" / "layer2" / req.group
         if not group_dir.is_dir():
@@ -377,7 +377,7 @@ def _execute_group_run(
             pid = req.persona or task.persona_id
             persona_path = _BENCH_ROOT / "personas" / f"{pid}.json"
             with open(persona_path) as f:
-                persona = StudentPersona(**json.load(f))
+                persona = UserPersona(**json.load(f))
             jobs.append(
                 JobSpec(
                     task=task,
@@ -646,7 +646,7 @@ def _execute_eval(req: EvalRequest, cancel_event: threading.Event | None = None)
         _check_cancel()
 
         from orchestrator.runners.job_runner import JobSpec, eval_single_job
-        from orchestrator.schemas import QuantTutorTask, StudentPersona
+        from orchestrator.schemas import QuantTutorTask, UserPersona
 
         # Load task
         task = None
@@ -668,7 +668,7 @@ def _execute_eval(req: EvalRequest, cancel_event: threading.Event | None = None)
         # Load persona
         persona_path = _BENCH_ROOT / "personas" / f"{req.persona_id}.json"
         with open(persona_path) as f:
-            persona = StudentPersona(**json.load(f))
+            persona = UserPersona(**json.load(f))
 
         job = JobSpec(
             task=task,

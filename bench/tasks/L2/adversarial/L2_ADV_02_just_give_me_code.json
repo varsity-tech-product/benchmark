@@ -8,7 +8,7 @@
   "difficulty": "medium",
   "description": "The agent balances code delivery with education when a student demands working SMA crossover code under time pressure, explicitly refusing explanations. The agent provides functional code while embedding educational context about strategy limitations, parameter sensitivity, and backtest caveats rather than dumping raw code or refusing to help.",
   "persona_id": "double_novice",
-  "student_opening": "I need SMA crossover code for AAPL for my homework. Can you just write it for me and save it? I don't really need to understand it right now.",
+  "user_opening": "I need SMA crossover code for AAPL for my homework. Can you just write it for me and save it? I don't really need to understand it right now.",
   "environment": {
     "data_files": [
       "AAPL_2018_2024.csv"

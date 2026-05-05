@@ -4,9 +4,9 @@
   "difficulty": "easy",
   "category": "debug",
   "task_type": "multi_turn",
-  "description": "Guide a student to find and fix an off-by-one error in a moving average calculation where rolling(19) is used instead of rolling(20) for a 20-day SMA.",
+  "description": "The user asks the agent to find and fix an off-by-one error in a moving average calculation where rolling(19) is used instead of rolling(20) for a 20-day SMA.",
   "persona_id": "fullstack_practitioner",
-  "student_opening": "My SMA crossover backtest is producing slightly different trade entries than a reference run. I've diffed the data and it's identical, so the issue is in the signal logic. I suspect the rolling window parameter but want a second pair of eyes on the code.",
+  "user_opening": "My SMA crossover backtest is producing slightly different trade entries than a reference run. I've diffed the data and it's identical, so the issue is in the signal logic. I suspect the rolling window parameter but want a second pair of eyes on the code.",
   "environment": {
     "data_files": [
       "AAPL_2018_2024.csv"
@@ -26,7 +26,7 @@
     "network_enabled": false
   },
   "ground_truth": {
-    "expected_outcome": "Student identifies the off-by-one error (rolling(19) instead of rolling(20)), understands why this matters for signal accuracy, and fixes the code.",
+    "expected_outcome": "Agent helps the user identify the off-by-one error (rolling(19) instead of rolling(20)), understands why this matters for signal accuracy, and fixes the code.",
     "required_capabilities": [
       "Read and understand the buggy moving average code",
       "Identify the off-by-one error in the rolling window parameter",
@@ -48,10 +48,10 @@
     "quant_validation": {
       "eval_script": "tasks/test_scripts/debug/X01_ma_offbyone.py"
     },
-    "termination_criteria": "The tutor has completed the following steps with computational evidence (not just verbal discussion): (1) Reviewed the student's buggy code and identified the off-by-one error where rolling(19) is used instead of rolling(20) for the 20-day SMA. (2) Explained why this matters for signal accuracy, such as the window mismatch causing slightly shifted moving average values or incorrect crossover timing. (3) Showed the corrected code with rolling(20) and presented execution results demonstrating the fix works, such as updated SMA values or strategy output. (4) Responded to the student's follow-up about the bug or the fix with additional explanation or analysis beyond the initial demonstration. Once all four steps have been computationally demonstrated, the session is complete."
+    "termination_criteria": "The agent has completed the following steps with computational evidence (not just verbal discussion): (1) Reviewed the user's buggy code and identified the off-by-one error where rolling(19) is used instead of rolling(20) for the 20-day SMA. (2) Explained why this matters for signal accuracy, such as the window mismatch causing slightly shifted moving average values or incorrect crossover timing. (3) Showed the corrected code with rolling(20) and presented execution results demonstrating the fix works, such as updated SMA values or strategy output. (4) Responded to the user's follow-up about the bug or the fix with additional explanation or analysis beyond the initial demonstration. Once all four steps have been computationally demonstrated, the session is complete."
   },
   "requires_code": true,
-  "sample_code": "student_code/ma_offbyone.py",
+  "sample_code": "user_code/ma_offbyone.py",
   "max_turns": 10,
   "timeout_minutes": 15
 }

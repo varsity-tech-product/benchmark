@@ -157,7 +157,7 @@ class BaseAgentAdapter(ABC):
                           Signature: tool_callback(tool_name, **kwargs) -> str
 
         Returns:
-            The agent's text response to the student.
+            The agent's text response to the user.
         """
         pass
 

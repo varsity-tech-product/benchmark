@@ -4,9 +4,9 @@
   "difficulty": "easy",
   "category": "implementation",
   "task_type": "multi_turn",
-  "description": "Guide a student to implement a Simple Moving Average (SMA) trend-following strategy as a LEAN C# algorithm on a single crypto symbol (BTCUSDT). The student must subscribe to one symbol, create an SMA indicator, implement a price-vs-SMA entry/exit rule, handle warm-up correctly, and produce a trade log. This is the simplest possible LEAN strategy — the 'hello world' of algorithmic trading on QuantConnect.",
+  "description": "The user asks the agent to implement a Simple Moving Average (SMA) trend-following strategy as a LEAN C# algorithm on a single crypto symbol (BTCUSDT). The agent must help the user subscribe to one symbol, create an SMA indicator, implement a price-vs-SMA entry/exit rule, handle warm-up correctly, and produce a trade log. This is the simplest possible LEAN strategy — the 'hello world' of algorithmic trading on QuantConnect.",
   "persona_id": "fullstack_practitioner",
-  "student_opening": "I've backtested SMA strategies in Python before but need to port one to LEAN C# for production. SMA(20) on BTCUSDT daily as a smoke test. I understand the trading logic — just need help with the LEAN API specifics: AddCrypto, indicator registration, SetHoldings.",
+  "user_opening": "I've backtested SMA strategies in Python before but need to port one to LEAN C# for production. SMA(20) on BTCUSDT daily as a smoke test. I understand the trading logic — just need help with the LEAN API specifics: AddCrypto, indicator registration, SetHoldings.",
   "environment": {
     "data_files": [
       "universe.json"
@@ -31,7 +31,7 @@
     "max_backtest_trials": 5
   },
   "ground_truth": {
-    "expected_outcome": "Student produces a working LEAN C# algorithm that (1) subscribes to BTCUSDT daily crypto data via AddCrypto, (2) creates an SMA(20) indicator, (3) goes long when price > SMA and flattens when price < SMA, (4) handles warm-up correctly with SetWarmUp, (5) runs to completion, and (6) produces a trade log with entry/exit records.",
+    "expected_outcome": "User receives a working LEAN C# algorithm that (1) subscribes to BTCUSDT daily crypto data via AddCrypto, (2) creates an SMA(20) indicator, (3) goes long when price > SMA and flattens when price < SMA, (4) handles warm-up correctly with SetWarmUp, (5) runs to completion, and (6) produces a trade log with entry/exit records.",
     "required_capabilities": [
       "Write a LEAN C# algorithm inheriting QCAlgorithm",
       "Subscribe to a single crypto symbol with AddCrypto",
@@ -53,7 +53,7 @@
     "quant_validation": {
       "eval_script": "tasks/test_scripts/I01_implement_sma.py"
     },
-    "termination_criteria": "The tutor has completed the following steps with computational evidence (not just verbal discussion): (1) Showed C# code for the SMA(20) strategy on BTCUSDT and explained key components such as data subscription, indicator setup, or entry/exit logic. (2) Presented backtest results with specific numerical values such as total return, Sharpe ratio, or number of trades. (3) Showed trade log entries with actual entry and exit records including dates and prices. (4) Responded to the student's follow-up about the implementation or results with additional explanation, code refinement, or analysis beyond the initial demonstration. Once all four steps have been computationally demonstrated, the session is complete."
+    "termination_criteria": "The agent has completed the following steps with computational evidence (not just verbal discussion): (1) Showed C# code for the SMA(20) strategy on BTCUSDT and explained key components such as data subscription, indicator setup, or entry/exit logic. (2) Presented backtest results with specific numerical values such as total return, Sharpe ratio, or number of trades. (3) Showed trade log entries with actual entry and exit records including dates and prices. (4) Responded to the user's follow-up about the implementation or results with additional explanation, code refinement, or analysis beyond the initial demonstration. Once all four steps have been computationally demonstrated, the session is complete."
   },
   "requires_code": true,
   "sample_code": null,

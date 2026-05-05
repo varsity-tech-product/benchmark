@@ -178,6 +178,44 @@ def test_qp_model_unavailable_preserves_programmatic_dimensions(monkeypatch):
     assert result.detail["_weights_effective"] == {}
 
 
+def test_required_tool_coverage_is_post_hoc_programmatic():
+    from eval.judges.process_metrics import compute_required_tool_coverage
+
+    logs = [
+        SimpleNamespace(name="file_read"),
+        SimpleNamespace(name="shell_exec"),
+        {"name": "file_read"},
+    ]
+
+    result = compute_required_tool_coverage(
+        proxy_logs=logs,
+        required_tools=["file_read", "shell_exec", "run_backtest"],
+    )
+
+    assert result["coverage_ratio"] == 0.6667
+    assert result["covered_tools"] == ["file_read", "shell_exec"]
+    assert result["missing_tools"] == ["run_backtest"]
+
+
+def test_required_tool_coverage_exposes_failed_attempts():
+    from eval.judges.process_metrics import compute_required_tool_coverage
+
+    logs = [
+        SimpleNamespace(name="run_backtest", success=False),
+        SimpleNamespace(name="file_read", success=True),
+    ]
+
+    result = compute_required_tool_coverage(
+        proxy_logs=logs,
+        required_tools=["run_backtest", "file_read"],
+    )
+
+    assert result["coverage_ratio"] == 1.0
+    assert result["covered_tools"] == ["file_read", "run_backtest"]
+    assert result["failed_required_tools"] == ["run_backtest"]
+    assert result["required_tools_only_failed"] == ["run_backtest"]
+
+
 def test_multi_score_read_reports_running_entry(tmp_path):
     allocate_score_run(
         tmp_path,

@@ -35,12 +35,12 @@
   }
 
   function normalizeRole(role) {
-    if (role === 'user' || role === 'student') return 'student';
+    if (role === 'user') return 'user';
     return 'tutor';
   }
 
   function roleLabel(normalizedRole) {
-    return normalizedRole === 'student' ? 'Student' : 'Tutor';
+    return normalizedRole === 'user' ? 'User' : 'Tutor';
   }
 
   function truncate(value, length) {
@@ -353,9 +353,9 @@
       '</div>';
     }
 
-    // Result — show raw result JSON (student_message, status, reason, etc.)
+    // Result — show raw result JSON (user_message, status, reason, etc.)
     var result = {};
-    if (event.student_message) result.student_message = event.student_message;
+    if (event.user_message) result.user_message = event.user_message;
     if (event.status) result.status = event.status;
     if (event.reason) result.reason = event.reason;
     if (event.error) result.error = event.error;
@@ -381,7 +381,7 @@
     var el = document.createElement('button');
     var status = String(event.status || 'active').toLowerCase();
     var reason = event.reason ? titleCaseToken(event.reason) : '';
-    var replyState = event.student_message ? 'student reply received' : 'no student reply';
+    var replyState = event.user_message ? 'user reply received' : 'no user reply';
     var attachmentCount = event.attachments && event.attachments.length ? event.attachments.length : 0;
 
     el.type = 'button';
@@ -489,10 +489,10 @@
     hideResponding(container);
 
     var msg = document.createElement('div');
-    msg.className = 'msg student ' + RESPONDING_CLASS;
+    msg.className = 'msg user ' + RESPONDING_CLASS;
 
     var avatar = document.createElement('div');
-    avatar.className = 'avatar avatar-student';
+    avatar.className = 'avatar avatar-user';
     avatar.innerHTML = avatarStudent();
 
     var col = document.createElement('div');
@@ -500,7 +500,7 @@
 
     var label = document.createElement('div');
     label.className = 'msg-label';
-    label.textContent = 'Student';
+    label.textContent = 'User';
 
     var bubble = document.createElement('div');
     bubble.className = 'bubble thinking-bubble responding-bubble';

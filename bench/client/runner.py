@@ -25,6 +25,12 @@ from .transports.rest_transport import RESTTransport
 logger = logging.getLogger(__name__)
 
 
+def _format_background_for_agent(background) -> str:
+    if isinstance(background, (dict, list)):
+        return json.dumps(background, indent=2, sort_keys=True)
+    return str(background)
+
+
 # ---------------------------------------------------------------------------
 # Run flow: create run → claim/start → connect → session
 # ---------------------------------------------------------------------------
@@ -89,7 +95,7 @@ async def run_via_attach(
         # 4. Start session
         start = await transport.start_session()
         background = start.get("background", "")
-        opening = start.get("student_message", "")
+        opening = start.get("user_message", "")
         logger.info("[%s] Session started: %s...", task_label, opening[:80])
 
         # 5. List tools
@@ -99,8 +105,12 @@ async def run_via_attach(
         # 6. Build initial conversation
         conversation = []
         if background:
+            background_content = _format_background_for_agent(background)
             conversation.append(
-                {"role": "user", "content": f"[Session Background]\n{background}"}
+                {
+                    "role": "user",
+                    "content": f"[Session Background]\n{background_content}",
+                }
             )
             conversation.append({"role": "assistant", "content": "Understood."})
         conversation.append({"role": "user", "content": opening})
@@ -307,7 +317,7 @@ async def run_single_task(
                 start_result = await mcp.call_tool("start_session", {})
                 start = _parse_tool_result(start_result)
                 background = start.get("background", "")
-                opening = start.get("student_message", "")
+                opening = start.get("user_message", "")
 
                 tools_result = await mcp.list_tools()
                 all_tools = convert_mcp_tools(tools_result)
@@ -317,10 +327,11 @@ async def run_single_task(
 
                 conversation = []
                 if background:
+                    background_content = _format_background_for_agent(background)
                     conversation.append(
                         {
                             "role": "user",
-                            "content": f"[Session Background]\n{background}",
+                            "content": f"[Session Background]\n{background_content}",
                         }
                     )
                     conversation.append({"role": "assistant", "content": "Understood."})

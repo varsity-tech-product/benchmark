@@ -31,7 +31,6 @@ def save_run_state(
     tool_logs: list,
     workspace_path: Optional[str] = None,
     simulator_cost: float = 0.0,
-    tc_checker_cost: float = 0.0,
     duration_seconds: float = 0.0,
     distractor_names: Optional[list[str]] = None,
     task_id: str = "",
@@ -39,8 +38,6 @@ def save_run_state(
     persona_id: str = "",
     session_status: str = "",
     termination_reason: Optional[str] = None,
-    tc_coverage: Optional[dict] = None,
-    tc_debug_history: Optional[list[dict]] = None,
     artifact_debug_history: Optional[list[dict]] = None,
     run_id: str = "",
     public_task_label: str = "",
@@ -48,6 +45,7 @@ def save_run_state(
     owner_github_login: str = "",
     owner_email: str = "",
     visibility: str = "private",
+    sandbox_digest: Optional[dict] = None,
 ) -> Path:
     """Save ``run_state.json`` and ``.session_id``."""
     result_dir = Path(result_dir)
@@ -112,11 +110,9 @@ def save_run_state(
         "distractor_names": distractor_names or [],
         "workspace_files": workspace_files,
         "simulator_cost": simulator_cost,
-        "tc_checker_cost": tc_checker_cost,
-        "tc_coverage": tc_coverage,
-        "tc_debug_history": tc_debug_history or [],
         "artifact_debug_history": artifact_debug_history or [],
         "duration_seconds": duration_seconds,
+        "sandbox_digest": sandbox_digest or {},
         "key_results": key_results,
         "trace_summary": trace_summary,
         "step_count": step_count,

@@ -26,15 +26,15 @@ from orchestrator.schemas import (
     EnvironmentConfig,
     GroundTruth,
     QuantTutorTask,
-    StudentPersona,
+    UserPersona,
     TaskCategory,
 )
 from pydantic import BaseModel
 from run_benchmark import _collect_remote_endpoints
 
 
-def _make_persona() -> StudentPersona:
-    return StudentPersona(
+def _make_persona() -> UserPersona:
+    return UserPersona(
         persona_id="developer_crossover",
         knowledge_level="proficient_code",
         description="Comfortable with Python and basic quant workflows.",
@@ -48,7 +48,7 @@ def _make_task(*, requires_code: bool) -> QuantTutorTask:
         category=TaskCategory.IMPLEMENTATION,
         description="Implement and verify a parameter optimization workflow.",
         persona_id="developer_crossover",
-        student_opening="How should I implement the optimization workflow?",
+        user_opening="How should I implement the optimization workflow?",
         environment=EnvironmentConfig(
             data_files=["universe.json"],
             core_mcp_tools=[
@@ -191,7 +191,7 @@ class PromptRegressionTests(unittest.TestCase):
         self.assertNotIn("CODE TASK EXECUTION REQUIREMENT", context)
         self.assertNotIn("usable workspace artifacts", context)
 
-    def test_code_tasks_push_student_back_to_implementation(self):
+    def test_code_tasks_push_user_back_to_implementation(self):
         scenario = build_scenario(_make_task(requires_code=True), "developer_crossover")
         self.assertIn("IMPLEMENTATION TRACKING", scenario)
         self.assertIn("WHEN THE TUTOR STAYS ABSTRACT", scenario)

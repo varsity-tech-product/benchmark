@@ -16,7 +16,7 @@ from typing import Any
 
 from eval.contracts.output import EvalOutput, TrackResult
 from eval.contracts.request import EvalRequest, resolve_result_dir
-from eval.contracts.schemas import QuantTutorTask, StudentPersona
+from eval.contracts.schemas import QuantTutorTask, UserPersona
 from eval.core.preflight import PreflightReport, run_preflight
 from eval.judge_reliability import build_judge_reliability_metadata
 from eval.inputs.enrichment import enrich_conversation_with_tools
@@ -47,7 +47,7 @@ def load_persona_by_id(bench_root: Path, persona_id: str | None):
     if not persona_id:
         return None
     for json_path in (Path(bench_root) / "personas").rglob(f"{persona_id}.json"):
-        return StudentPersona(**json.loads(json_path.read_text(encoding="utf-8")))
+        return UserPersona(**json.loads(json_path.read_text(encoding="utf-8")))
     return None
 
 

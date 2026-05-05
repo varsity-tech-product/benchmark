@@ -63,7 +63,7 @@ REST: POST /session/register  {"task_id": "X01_ma_offbyone"}
 
 ### 2.2 start_session
 
-Start the tutoring session. Returns the student's first message plus the
+Start the tutoring session. Returns the user's first message plus the
 task-specific tool catalogue. Can only be called once.
 
 ```
@@ -73,7 +73,7 @@ REST: POST /session/{sid}/start
 
 | Response | Body |
 |----------|------|
-| Success  | `{"student_message": "...", "tools": [...], "current_phase": "in_session", "next_allowed": ["send_message"]}` |
+| Success  | `{"user_message": "...", "tools": [...], "current_phase": "in_session", "next_allowed": ["send_message"]}` |
 | Wrong phase (403) | `{"error": "...", "allowed": ["start_session"], "current_phase": "..."}` |
 
 ### 2.3 list_tools / tools
@@ -119,7 +119,7 @@ catalogue in issue #46 — scoring lives on the operator surface (§2.6).
 
 ### 2.5 send_message
 
-Send a message to the student. Returns reply and session status.
+Send a message to the user. Returns reply and session status.
 
 ```
 MCP:  send_message({text: "Let me help you debug this...",
@@ -129,15 +129,15 @@ REST: POST /session/{sid}/send  {"text": "Let me help you debug this...",
 ```
 
 **Arguments:**
-- `text` *(required, string)* — message delivered to the student.
-- `attachments` *(optional, array of ≤3 workspace paths)* — files/images shared with the student.
-- `reasoning` *(optional, string)* — private rationale for this turn (why this wording, what hypothesis you are testing). Recorded in `tool_logs[].args` for post-hoc trace analysis. **Not delivered to the student** — the student simulator only reads `text` + attachments.
+- `text` *(required, string)* — message delivered to the user.
+- `attachments` *(optional, array of ≤3 workspace paths)* — files/images shared with the user.
+- `reasoning` *(optional, string)* — private rationale for this turn (why this wording, what hypothesis you are testing). Recorded in `tool_logs[].args` for post-hoc trace analysis. **Not delivered to the user** — the user simulator only reads `text` + attachments.
 
 | Response | Body |
 |----------|------|
-| Active   | `{"student_message": "Oh I see...", "status": "active", "current_phase": "in_session", "next_allowed": ["send_message"]}` |
-| Completed | `{"student_message": "Thanks!", "status": "completed", "reason": "objectives_met", "current_phase": "completed", "next_allowed": []}` |
-| Empty text (400) | `{"error": "Empty message. Provide text to send to the student."}` |
+| Active   | `{"user_message": "Oh I see...", "status": "active", "current_phase": "in_session", "next_allowed": ["send_message"]}` |
+| Completed | `{"user_message": "Thanks!", "status": "completed", "reason": "user_satisfied", "current_phase": "completed", "next_allowed": []}` |
+| Empty text (400) | `{"error": "Empty message. Provide text to send to the user."}` |
 | Bad reasoning type (400) | `{"error": "reasoning must be a string"}` |
 
 When `status == "completed"`, the session has ended. The agent's lifecycle is
@@ -214,18 +214,18 @@ GET /session/abc123/tools
 
 # 3. Start
 POST /session/abc123/start
--> {"student_message": "I wrote a moving average crossover strategy but..."}
+-> {"user_message": "I wrote a moving average crossover strategy but..."}
 
 # 4. Agent works: call tools + send messages
 POST /session/abc123/tool/shell_exec  {"command": "cat /workspace/strategy.py"}
 -> {"result": "import pandas as pd\n..."}
 
 POST /session/abc123/send  {"text": "I see the issue. The window calculation..."}
--> {"student_message": "Oh, so the offset...", "status": "active"}
+-> {"user_message": "Oh, so the offset...", "status": "active"}
 
 # 5. Repeat until completed
 POST /session/abc123/send  {"text": "Exactly. Here's the corrected version..."}
--> {"student_message": "Thanks!", "status": "completed", "reason": "objectives_met"}
+-> {"user_message": "Thanks!", "status": "completed", "reason": "user_satisfied"}
 
 # 6. Agent's lifecycle is over. Operator scores the bundle out-of-band.
 GET /ops/session/abc123/results              # Authorization: Bearer <admin_token>

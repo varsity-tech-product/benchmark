@@ -1,15 +1,14 @@
 """Tutoring session state manager for QuantTutorBench.
 
-Manages the conversation between agent and simulated student.
+Manages the conversation between agent and simulated user.
 Backs the ``send_message`` and ``get_session_info`` MCP tools.
 
 Defense layers aligned with Legacy path (simulation.py create_model_callback):
-- TC checker exception isolation
-- Student simulator fallback on failure
+- User simulator fallback on failure
 - Closing generation fallback (hardcoded text)
 - Timeout graceful wrap-up with closing
 - Agent repeat detection (force-stop after consecutive identical messages)
-- Max-turns student closing (aligned with _append_student_closing)
+- Max-turns user closing (aligned with _append_user_closing)
 """
 
 import json
@@ -23,17 +22,16 @@ from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 
-# Hardcoded closing fallback — aligned with _EfficientSimulator._generate_closing
-# (simulation.py:401-405) and StudentSimulator._CLOSING_FALLBACK.
+# Hardcoded closing fallback aligned with UserSimulator._CLOSING_FALLBACK.
 _CLOSING_FALLBACK = (
     "Thanks for walking me through all of this — "
     "I have a much clearer picture now. "
     "I'll try applying these techniques to my own data."
 )
 
-# Fallback student message when generate_message() fails — aligned with
+# Fallback user message when generate_message() fails — aligned with
 # model_callback exception handler (simulation.py:586).
-_STUDENT_FALLBACK = "Could you explain that in a bit more detail?"
+_USER_FALLBACK = "Could you explain that in a bit more detail?"
 
 # Repeat detection threshold — aligned with model_callback _MAX_REPEATS
 # (simulation.py:493).
@@ -41,7 +39,7 @@ _MAX_REPEATS = 2
 
 
 # ---------------------------------------------------------------------------
-# GoalChecker — for non-TC categories (data_analysis, end_to_end, adversarial)
+# GoalChecker — goal-based completion fallback
 # ---------------------------------------------------------------------------
 
 
@@ -53,7 +51,7 @@ class ConversationCompletion(BaseModel):
 
 
 class GoalChecker:
-    """Goal-based termination for non-incremental-TC categories.
+    """Goal-based termination.
 
     Replicates DeepEval's ``stop_conversation()`` behavior: each turn,
     sends the full conversation + expected_outcome to an LLM that judges
@@ -130,13 +128,12 @@ class GoalChecker:
 class TutoringSession:
     """Manages a single tutoring session.
 
-    The agent interacts with the student exclusively through
+    The agent interacts with the user exclusively through
     ``send_message`` tool calls.  This class:
 
     - Maintains the conversation history
-    - Generates student replies via StudentSimulator
-    - Checks termination criteria via TCChecker (incremental TC categories)
-    - Checks goal achievement via GoalChecker (non-TC categories)
+    - Generates user replies via UserSimulator
+    - Checks goal achievement via GoalChecker
     - Tracks turn count and enforces limits
     - Detects stuck agents (repeat detection)
     """
@@ -145,8 +142,7 @@ class TutoringSession:
         self,
         task,
         persona,
-        student_sim,
-        tc_checker,
+        user_sim,
         max_turns: int,
         deadline: Optional[float] = None,
         proxy=None,
@@ -155,9 +151,8 @@ class TutoringSession:
     ):
         self._task = task
         self._persona = persona
-        self._student_sim = student_sim
-        self._tc_checker = tc_checker  # None if category doesn't use incremental TC
-        self._goal_checker = goal_checker  # None if category uses incremental TC
+        self._user_sim = user_sim
+        self._goal_checker = goal_checker
         self._max_turns = max_turns
         self._deadline = deadline
         self._proxy = proxy  # For set_turn() calls
@@ -181,8 +176,8 @@ class TutoringSession:
     # ------------------------------------------------------------------
 
     def handle_get_session_info(self) -> str:
-        """Return task description + student opening. Idempotent."""
-        opening = self._get_student_opening()
+        """Return task description + user opening. Idempotent."""
+        opening = self._get_user_opening()
 
         # Append opening to conversation only on first call
         if not self._session_info_called:
@@ -194,8 +189,8 @@ class TutoringSession:
                 "task_description": self._task.description,
                 "category": self._task.category.value,
                 "difficulty": self._task.difficulty.value,
-                "student_level": self._persona.knowledge_level,
-                "student_opening": opening,
+                "user_level": self._persona.knowledge_level,
+                "user_opening": opening,
                 "max_turns": self._max_turns,
             }
         )
@@ -203,11 +198,11 @@ class TutoringSession:
     def handle_send_message(
         self, text: str, reasoning: str | None = None
     ) -> str:
-        """Process agent message, generate student reply.
+        """Process agent message, generate user reply.
 
         ``reasoning`` is the agent's private rationale for this turn.
         It is stored as metadata on the conversation entry for trace
-        analysis but is NEVER passed to the student simulator (which
+        analysis but is NEVER passed to the user simulator (which
         only reads ``entry["content"]``).
 
         Execution order aligned with Legacy model_callback
@@ -218,12 +213,11 @@ class TutoringSession:
         2. Repeat detection (model_callback:606-624)
         3. Record + advance turn
         4. Deadline check (model_callback:517-537)
-        5. TC check (_EfficientSimulator.stop_conversation)
-        6. Goal check (DeepEval stop_conversation + stop_simulation)
-        7. Max turns (_append_student_closing:642-678)
-        8. Generate student reply (generate_next_user_input)
+        5. Goal check (DeepEval stop_conversation + stop_simulation)
+        6. Max turns (_append_user_closing:642-678)
+        7. Generate user reply (generate_next_user_input)
 
-        Returns JSON: {student_reply, status, turn, max_turns[, reason]}
+        Returns JSON: {user_reply, status, turn, max_turns[, reason]}
         """
         # ── Pre-checks ──
         if self._done:
@@ -232,7 +226,7 @@ class TutoringSession:
         if not text or not text.strip():
             return json.dumps(
                 {
-                    "error": "Empty message. Provide text to send to the student.",
+                    "error": "Empty message. Provide text to send to the user.",
                     "status": "active",
                     "turn": self._turn,
                     "max_turns": self._max_turns,
@@ -255,7 +249,7 @@ class TutoringSession:
 
         # ── Record agent message + advance turn ──
         msg_entry: dict = {"role": "assistant", "content": text}
-        # Stash private rationale on the entry for trace analysis. Student
+        # Stash private rationale on the entry for trace analysis. User
         # simulator reads only ``content``, so this never leaks.
         if reasoning and reasoning.strip():
             msg_entry["reasoning"] = reasoning.strip()
@@ -276,23 +270,6 @@ class TutoringSession:
                 self._conversation.append({"role": "user", "content": closing})
             return self._result(closing, "completed", reason="timeout")
 
-        # ── TC check ──  (aligned: _EfficientSimulator.stop_conversation)
-        try:
-            tc_met = self._tc_checker is not None and self._tc_checker.check(
-                self._conversation
-            )
-        except Exception as exc:
-            logger.warning("TC check failed: %s", exc)
-            tc_met = False
-
-        if tc_met:
-            closing = self._safe_closing()
-            if closing:
-                self._conversation.append({"role": "user", "content": closing})
-            self._done = True
-            logger.info("TC fully covered at turn %d.", self._turn)
-            return self._result(closing, "completed", reason="objectives_met")
-
         # ── Goal check ──  (aligned: DeepEval stop_conversation + stop_simulation)
         try:
             goals_met = self._goal_checker is not None and self._goal_checker.check(
@@ -310,7 +287,7 @@ class TutoringSession:
             logger.info("Goals met at turn %d.", self._turn)
             return self._result(closing, "completed", reason="goals_met")
 
-        # ── Max turns check ──  (aligned: _append_student_closing:642-678)
+        # ── Max turns check ──  (aligned: _append_user_closing:642-678)
         if self._turn >= self._max_turns:
             self._done = True
             logger.info("Max turns (%d) reached.", self._max_turns)
@@ -319,12 +296,15 @@ class TutoringSession:
                 self._conversation.append({"role": "user", "content": closing})
             return self._result(closing, "completed", reason="max_turns")
 
-        # ── Generate student reply ──  (aligned: generate_next_user_input)
+        # ── Generate user reply ──  (aligned: generate_next_user_input)
         try:
-            reply = self._student_sim.generate_message(self._conversation)
+            reply = self._user_sim.generate_message(
+                self._conversation,
+                tool_logs=(self._proxy.get_logs() if self._proxy is not None else []),
+            )
         except Exception as exc:
-            logger.warning("StudentSimulator.generate_message failed: %s", exc)
-            reply = _STUDENT_FALLBACK
+            logger.warning("UserSimulator.generate_message failed: %s", exc)
+            reply = _USER_FALLBACK
         self._conversation.append({"role": "user", "content": reply})
 
         return self._result(reply, "active")
@@ -335,7 +315,7 @@ class TutoringSession:
 
     @property
     def conversation(self) -> list[dict[str, str]]:
-        """Full conversation history (student=user, tutor=assistant)."""
+        """Full conversation history (user=user, tutor=assistant)."""
         return list(self._conversation)
 
     @property
@@ -385,13 +365,13 @@ class TutoringSession:
 
     def _result(
         self,
-        student_reply: str,
+        user_reply: str,
         status: str,
         reason: str | None = None,
     ) -> str:
         """Build JSON result dict."""
         d: dict = {
-            "student_reply": student_reply or "",
+            "user_reply": user_reply or "",
             "status": status,
             "turn": self._turn,
             "max_turns": self._max_turns,
@@ -401,20 +381,20 @@ class TutoringSession:
         return json.dumps(d)
 
     def _safe_closing(self) -> str:
-        """Generate student closing with fallback on failure.
+        """Generate user closing with fallback on failure.
 
-        Aligned with _EfficientSimulator._generate_closing (simulation.py:372-405).
+        Uses the user simulator closing prompt, with a fixed fallback.
         """
         try:
-            closing = self._student_sim.generate_closing(self._conversation)
+            closing = self._user_sim.generate_closing(self._conversation)
             if closing and closing.strip():
                 return closing.strip()
         except Exception as exc:
             logger.warning("Failed to generate closing: %s", exc)
         return _CLOSING_FALLBACK
 
-    def inject_student_opening(self, opening: str) -> None:
-        """Inject the student opening into conversation without get_session_info.
+    def inject_user_opening(self, opening: str) -> None:
+        """Inject the user opening into conversation without get_session_info.
 
         Used by the reference harness when the opening is already in the
         agent's bootstrap prompt.
@@ -423,7 +403,7 @@ class TutoringSession:
             self._conversation.append({"role": "user", "content": opening})
             self._session_info_called = True
 
-    def _get_student_opening(self) -> str:
+    def _get_user_opening(self) -> str:
         """Get the opening message for this task."""
-        opening = getattr(self._task, "student_opening", "")
+        opening = getattr(self._task, "user_opening", "")
         return opening or "Hi, I need help with this topic."

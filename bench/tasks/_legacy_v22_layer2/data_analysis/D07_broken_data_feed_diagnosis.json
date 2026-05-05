@@ -4,9 +4,9 @@
   "difficulty": "hard",
   "category": "data_analysis",
   "task_type": "multi_turn",
-  "description": "Guide the student through diagnosing multiple simultaneous data-feed issues in OHLCV data and building a systematic remediation checklist.",
+  "description": "The user asks the agent to diagnose multiple simultaneous data-feed issues in OHLCV data and building a systematic remediation checklist.",
   "persona_id": "double_novice",
-  "student_opening": "My professor asked us to diagnose multiple simultaneous data-feed issues in OHLCV data. I'm new to both Python and finance — can you start from the basics?",
+  "user_opening": "My professor asked us to diagnose multiple simultaneous data-feed issues in OHLCV data. I'm new to both Python and finance — can you start from the basics?",
   "environment": {
     "data_files": [
       "AAPL_dirty.csv"
@@ -26,7 +26,7 @@
     "network_enabled": false
   },
   "ground_truth": {
-    "expected_outcome": "Tutor guides the student to identify anomalies in a broken data feed, map symptoms to plausible root causes, and produce a remediation and validation checklist for downstream use.",
+    "expected_outcome": "Agent helps the user identify anomalies in a broken data feed, map symptoms to plausible root causes, and produce a remediation and validation checklist for downstream use.",
     "required_capabilities": [
       "Identify multiple classes of data-feed issues such as missing rows, duplicates, and outliers",
       "Map symptoms to plausible root causes such as corporate actions, timezone drift, or feed errors",
@@ -44,7 +44,7 @@
     "quant_validation": {
       "eval_script": "tasks/test_scripts/data_analysis/D07_broken_data_feed_diagnosis.py"
     },
-    "termination_criteria": "(1) Showed actual diagnostic output identifying at least two distinct data-feed issues in the OHLCV dataset, such as missing rows, duplicate timestamps, price outliers, or volume spikes. (2) Mapped at least one concrete anomaly to a plausible root cause using evidence from the data, such as distinguishing a corporate action from a feed error or a timezone shift from a gap. (3) Responded to a student follow-up by producing a concrete remediation step or validation check on the diagnosed issue, such as a corrected output, a filter rule, or a before-and-after comparison. Once all 3 steps have been computationally demonstrated, the session is complete."
+    "termination_criteria": "(1) Showed actual diagnostic output identifying at least two distinct data-feed issues in the OHLCV dataset, such as missing rows, duplicate timestamps, price outliers, or volume spikes. (2) Mapped at least one concrete anomaly to a plausible root cause using evidence from the data, such as distinguishing a corporate action from a feed error or a timezone shift from a gap. (3) Responded to a user follow-up by producing a concrete remediation step or validation check on the diagnosed issue, such as a corrected output, a filter rule, or a before-and-after comparison. Once all 3 steps have been computationally demonstrated, the session is complete."
   },
   "requires_code": true,
   "sample_code": null,

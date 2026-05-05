@@ -25,7 +25,7 @@ def test_get_lean_template_uses_session_context(monkeypatch):
                 "template_type": "multi_symbol",
                 "expects_universe": True,
                 "sandbox_image": "quant-tutor-env:v2.2-lean",
-                "student_code_available": False,
+                "user_code_available": False,
             }
         ),
     )

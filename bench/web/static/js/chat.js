@@ -47,14 +47,14 @@
 
   // ── Role normalization ────────────────────────────────────
 
-  // run_state.json uses "user"/"assistant"; live SSE uses "student"/"tutor"
+  // run_state.json uses "user"/"assistant"; live SSE uses "user"/"tutor"
   function normalizeRole(role) {
-    if (role === 'user' || role === 'student') return 'student';
+    if (role === 'user' || role === 'user') return 'user';
     return 'tutor';
   }
 
   function roleLabel(normalized) {
-    return normalized === 'student' ? 'Student' : 'Tutor';
+    return normalized === 'user' ? 'User' : 'Tutor';
   }
 
   // ── Utility ───────────────────────────────────────────────
@@ -386,7 +386,7 @@
     if (el) el.remove();
   }
 
-  // ── Responding indicator (student typing) ──────────────────
+  // ── Responding indicator (user typing) ──────────────────
 
   var RESPONDING_CLS = 'qtb-responding';
 
@@ -394,10 +394,10 @@
     hideResponding(container);
 
     var msg = document.createElement('div');
-    msg.className = 'msg student ' + RESPONDING_CLS;
+    msg.className = 'msg user ' + RESPONDING_CLS;
 
     var avatar = document.createElement('div');
-    avatar.className = 'avatar avatar-student';
+    avatar.className = 'avatar avatar-user';
     avatar.innerHTML = avatarStudent();
 
     var col = document.createElement('div');
@@ -405,7 +405,7 @@
 
     var label = document.createElement('div');
     label.className = 'msg-label';
-    label.textContent = 'Student';
+    label.textContent = 'User';
 
     var bubble = document.createElement('div');
     bubble.className = 'bubble thinking-bubble responding-bubble';

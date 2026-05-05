@@ -189,7 +189,7 @@ class MCPProxy:
             log.result = (
                 "Error: Session time limit reached. "
                 "No further tool calls can be executed. "
-                "Please summarize your findings for the student."
+                "Please summarize your findings for the user."
             )
             log.success = False
             log.duration_ms = 0.0
@@ -304,6 +304,20 @@ class MCPProxy:
     def get_logs(self) -> list[ToolCallLog]:
         """Get all recorded tool call logs."""
         return list(self._logs)
+
+    def restore_logs(self, logs: list[dict]) -> None:
+        """Restore proxy logs from a persisted run_state snapshot."""
+        restored: list[ToolCallLog] = []
+        fields = set(ToolCallLog.__dataclass_fields__)
+        for item in logs:
+            if isinstance(item, ToolCallLog):
+                restored.append(item)
+            elif isinstance(item, dict):
+                payload = {key: item.get(key) for key in fields if key in item}
+                restored.append(ToolCallLog(**payload))
+        self._logs = restored
+        if restored:
+            self._current_turn = max(int(log.turn_index or 0) for log in restored)
 
     def get_distractor_names(self) -> list[str]:
         """Get names of all registered distractor tools."""

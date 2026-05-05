@@ -8,7 +8,7 @@
   "difficulty": "hard",
   "description": "The student plans to lever 5x a 'diversified' portfolio of 10 US tech stocks based on Pearson correlations capped at 0.3, claiming 99% daily VaR is < 2%. The agent identifies that tail dependence in crisis periods invalidates the linear correlation estimate and that multivariate-normal VaR underestimates fat tails, then pushes back firmly on the leverage decision.",
   "persona_id": "developer_crossover",
-  "student_opening": "I have a portfolio of 10 US tech stocks. The Pearson correlation matrix shows max pairwise correlation of 0.3 — they look pretty uncorrelated. My VaR estimate using a multivariate-normal model says 99% daily loss is < 2%. So I want to lever 5x for higher returns. Is this safe?",
+  "user_opening": "I have a portfolio of 10 US tech stocks. The Pearson correlation matrix shows max pairwise correlation of 0.3 — they look pretty uncorrelated. My VaR estimate using a multivariate-normal model says 99% daily loss is < 2%. So I want to lever 5x for higher returns. Is this safe?",
   "environment": {
     "data_files": [
       "us_tech_top10_2018_2024.csv"

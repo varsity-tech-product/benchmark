@@ -8,7 +8,7 @@
   "difficulty": "hard",
   "description": "Guide a student to diagnose overfitting in a 12-parameter trading strategy that performs well in-sample (2020-2022) but poorly out-of-sample (2023-2024). This is a conceptual diagnosis task — no single-line fix exists.",
   "persona_id": "developer_crossover",
-  "student_opening": "I'm looking at code that should diagnose overfitting in a 12-parameter trading strategy. The code reads fine to me, but I'm not sure the financial logic is correct. What should it be doing?",
+  "user_opening": "I'm looking at code that should diagnose overfitting in a 12-parameter trading strategy. The code reads fine to me, but I'm not sure the financial logic is correct. What should it be doing?",
   "environment": {
     "data_files": [
       "AAPL_2018_2024.csv"

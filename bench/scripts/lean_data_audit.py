@@ -88,7 +88,7 @@ def _read_text(path: Path | None) -> str:
 
 
 def _resolve_source_path(
-    task: dict[str, Any], student_code_dir: Path | None
+    task: dict[str, Any], user_code_dir: Path | None
 ) -> Path | None:
     task_id = task["task_id"]
     series = _series_key(task_id)
@@ -98,9 +98,9 @@ def _resolve_source_path(
             return path
 
     sample_code = task.get("sample_code")
-    if sample_code and student_code_dir:
-        relative = sample_code.removeprefix("student_code/").lstrip("/")
-        candidate = student_code_dir / relative
+    if sample_code and user_code_dir:
+        relative = sample_code.removeprefix("user_code/").lstrip("/")
+        candidate = user_code_dir / relative
         if candidate.exists():
             return candidate
 
@@ -110,9 +110,9 @@ def _resolve_source_path(
 def _build_runtime_profile(
     task: dict[str, Any],
     universe_order: list[str],
-    student_code_dir: Path | None,
+    user_code_dir: Path | None,
 ) -> dict[str, Any]:
-    source_path = _resolve_source_path(task, student_code_dir)
+    source_path = _resolve_source_path(task, user_code_dir)
     source_text = _read_text(source_path)
     resolutions = _ordered_unique(
         re.findall(r"Resolution\.(Daily|Hour|Minute|Second)", source_text)
@@ -172,22 +172,22 @@ def _resolve_doc(file_name: str, docs_dir: Path | None) -> str | None:
 
 def _resolve_sample_code(
     sample_code: str,
-    student_code_dir: Path | None,
+    user_code_dir: Path | None,
     data_search_dirs: list[Path],
 ) -> str | None:
     if not sample_code:
         return None
 
-    if sample_code.startswith("student_code/") and student_code_dir:
-        relative = sample_code.removeprefix("student_code/").lstrip("/")
-        candidate = student_code_dir / relative
+    if sample_code.startswith("user_code/") and user_code_dir:
+        relative = sample_code.removeprefix("user_code/").lstrip("/")
+        candidate = user_code_dir / relative
         if candidate.is_file():
             return str(candidate)
 
     relative_candidates = [
         sample_code,
         sample_code.removeprefix("data/"),
-        sample_code.removeprefix("student_code/"),
+        sample_code.removeprefix("user_code/"),
         Path(sample_code).name,
     ]
     for relative in _ordered_unique([c for c in relative_candidates if c]):
@@ -263,7 +263,7 @@ def audit_lean_data(
         Path(paths.custom_data or "") / "binance" if paths.custom_data else Path()
     )
     docs_dir = Path(paths.docs or "") if paths.docs else None
-    student_code_dir = Path(paths.student_code or "") if paths.student_code else None
+    user_code_dir = Path(paths.user_code or "") if paths.user_code else None
     data_search_dirs = [Path(p) for p in paths.data_search_dirs]
     tasks = _load_tasks()
 
@@ -301,7 +301,7 @@ def audit_lean_data(
     for task in tasks:
         task_id = task["task_id"]
         env = task.get("environment") or {}
-        profile = _build_runtime_profile(task, universe_order, student_code_dir)
+        profile = _build_runtime_profile(task, universe_order, user_code_dir)
 
         declared = {
             "data_files": [],
@@ -338,7 +338,7 @@ def audit_lean_data(
         sample_code = task.get("sample_code")
         if sample_code:
             resolved = _resolve_sample_code(
-                sample_code, student_code_dir, data_search_dirs
+                sample_code, user_code_dir, data_search_dirs
             )
             item = {"name": sample_code, "resolved_path": resolved}
             declared["sample_code"].append(item)
@@ -347,8 +347,8 @@ def audit_lean_data(
                     {
                         "task_id": task_id,
                         "name": sample_code,
-                        "student_code_dir": (
-                            str(student_code_dir) if student_code_dir else None
+                        "user_code_dir": (
+                            str(user_code_dir) if user_code_dir else None
                         ),
                     }
                 )
@@ -435,7 +435,7 @@ def audit_lean_data(
             "lean_metadata_dir": str(lean_data_dir),
             "custom_data_dir": str(custom_data_dir),
             "docs_dir": str(docs_dir) if docs_dir else None,
-            "student_code_dir": str(student_code_dir) if student_code_dir else None,
+            "user_code_dir": str(user_code_dir) if user_code_dir else None,
             "data_search_dirs": [str(p) for p in data_search_dirs],
         },
         "summary": {

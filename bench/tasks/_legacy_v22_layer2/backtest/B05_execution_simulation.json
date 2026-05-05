@@ -4,9 +4,9 @@
   "difficulty": "hard",
   "category": "backtest",
   "task_type": "multi_turn",
-  "description": "Guide a student to build a futures backtest engine with realistic execution simulation for a BTCUSDT breakout strategy, report gross versus net performance showing each cost component separately, and explain why execution simulation matters for strategy viability.",
+  "description": "The user asks the agent to build a futures backtest engine with realistic execution simulation for a BTCUSDT breakout strategy, report gross versus net performance showing each cost component separately, and explain why execution simulation matters for strategy viability.",
   "persona_id": "finance_veteran",
-  "student_opening": "I need to build a futures backtest engine with realistic execution. I know what good backtesting looks like from experience — can you help me implement it in code?",
+  "user_opening": "I need to build a futures backtest engine with realistic execution. I know what good backtesting looks like from experience — can you help me implement it in code?",
   "environment": {
     "data_files": [
       "BTCUSDT_1d_2021_2024.csv",
@@ -30,7 +30,7 @@
     "network_enabled": false
   },
   "ground_truth": {
-    "expected_outcome": "Tutor guides the student to build a backtest system with a configurable fill model including slippage, separate maker and taker fee modeling, 8-hour funding-rate payments for open positions, and a breakout strategy. The tutor explains why execution simulation matters for strategy viability. The system reports gross versus net performance showing the impact of each cost component separately. The run should leave concrete execution and cost-accounting artifacts such as trade logs or structured cost breakdowns.",
+    "expected_outcome": "Agent helps the user build a backtest system with a configurable fill model including slippage, separate maker and taker fee modeling, 8-hour funding-rate payments for open positions, and a breakout strategy. The agent explains why execution simulation matters for strategy viability. The system reports gross versus net performance showing the impact of each cost component separately. The run should leave concrete execution and cost-accounting artifacts such as trade logs or structured cost breakdowns.",
     "required_capabilities": [
       "Build a fill or execution simulator with configurable slippage",
       "Model maker and taker fee differentiation",
@@ -52,7 +52,7 @@
     "quant_validation": {
       "eval_script": "tasks/test_scripts/backtest/B05_execution_simulation.py"
     },
-    "termination_criteria": "The tutor has completed the following steps with computational evidence (not just verbal discussion): (1) Built an execution simulator with slippage modeling and separate maker and taker fee handling, and explained why execution simulation matters for strategy viability. (2) Accounted for funding-rate payments on open futures positions in the cost model. (3) Presented a performance breakdown showing gross versus net results with specific numerical values, showing the impact of each cost component separately. Once all three steps have been computationally demonstrated, the session is complete."
+    "termination_criteria": "The agent has completed the following steps with computational evidence (not just verbal discussion): (1) Built an execution simulator with slippage modeling and separate maker and taker fee handling, and explained why execution simulation matters for strategy viability. (2) Accounted for funding-rate payments on open futures positions in the cost model. (3) Presented a performance breakdown showing gross versus net results with specific numerical values, showing the impact of each cost component separately. Once all three steps have been computationally demonstrated, the session is complete."
   },
   "requires_code": true,
   "sample_code": null,

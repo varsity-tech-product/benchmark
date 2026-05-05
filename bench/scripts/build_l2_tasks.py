@@ -171,7 +171,7 @@ def transform(
         "difficulty",
         "description",
         "persona_id",
-        "student_opening",
+        "user_opening",
         "environment",
         "ground_truth",
         "requires_code",

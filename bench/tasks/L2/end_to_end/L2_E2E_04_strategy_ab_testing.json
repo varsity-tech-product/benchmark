@@ -8,7 +8,7 @@
   "difficulty": "medium",
   "description": "The student wants to choose between two strategies based on last quarter's returns (12% vs 9%). The agent guides them through fair comparison: paired same-period evaluation, bootstrap on the daily return difference, sample size and minimum detectable effect, transaction cost normalization, and avoiding p-hacking through repeated comparisons.",
   "persona_id": "developer_crossover",
-  "student_opening": "I have two trading strategies running on the same data. Strategy A made 12% last quarter, Strategy B made 9%. So A is better, right? I'll allocate everything to A.",
+  "user_opening": "I have two trading strategies running on the same data. Strategy A made 12% last quarter, Strategy B made 9%. So A is better, right? I'll allocate everything to A.",
   "environment": {
     "data_files": [
       "strategy_A_returns_2024.csv",

@@ -92,11 +92,11 @@ class TestMCPRegister:
 
 class TestMCPStart:
     @pytest.mark.asyncio
-    async def test_start_returns_student_message(self, session_state):
+    async def test_start_returns_user_message(self, session_state):
         await _register(session_state)
         result = await _start(session_state)
-        assert "student_message" in result
-        assert len(result["student_message"]) > 0
+        assert "user_message" in result
+        assert len(result["user_message"]) > 0
 
     @pytest.mark.asyncio
     async def test_start_before_register_denied(self, session_state):
@@ -118,11 +118,11 @@ class TestMCPStart:
 
 class TestMCPSendMessage:
     @pytest.mark.asyncio
-    async def test_send_returns_student_reply(self, session_state):
+    async def test_send_returns_user_reply(self, session_state):
         await _register(session_state)
         await _start(session_state)
         result = await _send(session_state)
-        assert "student_message" in result
+        assert "user_message" in result
         assert result["status"] in ("active", "completed")
 
     @pytest.mark.asyncio
@@ -180,8 +180,9 @@ class TestMCPGetBackground:
         await _register(session_state)
         await _start(session_state)
         results = await session_state.handle_tool_call("get_background", {})
-        text = results[0].text
-        assert "tutoring environment" in text.lower() or "send_message" in text
+        background = json.loads(results[0].text)
+        assert background["schema_version"] == "platform_background.v1"
+        assert background["mounts"]["workspace"]["path"] == "/workspace"
 
     @pytest.mark.asyncio
     async def test_get_background_before_start_denied(self, session_state):

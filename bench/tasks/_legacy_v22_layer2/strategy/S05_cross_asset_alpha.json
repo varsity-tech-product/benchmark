@@ -4,9 +4,9 @@
   "difficulty": "hard",
   "category": "strategy",
   "task_type": "multi_turn",
-  "description": "Guide a student to research alpha from cross-asset dynamics between BTC and ETH.",
+  "description": "The user asks the agent to research alpha from cross-asset dynamics between BTC and ETH.",
   "persona_id": "finance_veteran",
-  "student_opening": "I want to research alpha from cross-asset dynamics between BTC and ETH. I understand the strategy logic from my trading experience — but I need help coding and backtesting it.",
+  "user_opening": "I want to research alpha from cross-asset dynamics between BTC and ETH. I understand the strategy logic from my trading experience — but I need help coding and backtesting it.",
   "environment": {
     "data_files": [
       "BTCUSDT_1d_2021_2024.csv",
@@ -30,7 +30,7 @@
     "network_enabled": false
   },
   "ground_truth": {
-    "expected_outcome": "Tutor guides the student to analyze the BTC-ETH relationship, construct a cross-asset signal, evaluate it on a dollar-neutral basis with quantitative metrics, examine robustness across windows or frequencies, and discuss risks specific to cross-asset strategies with supporting evidence.",
+    "expected_outcome": "Agent helps the user analyze the BTC-ETH relationship, construct a cross-asset signal, evaluate it on a dollar-neutral basis with quantitative metrics, examine robustness across windows or frequencies, and discuss risks specific to cross-asset strategies with supporting evidence.",
     "required_capabilities": [
       "Analyze the BTC-ETH relationship and construct a cross-asset signal",
       "Evaluate the signal on a dollar-neutral or hedged basis with quantitative metrics",
@@ -51,7 +51,7 @@
     "quant_validation": {
       "eval_script": "tasks/test_scripts/strategy/S05_cross_asset_alpha.py"
     },
-    "termination_criteria": "The tutor has completed the following research steps with computational evidence (not just verbal discussion): (1) Analyzed the statistical relationship between BTC and ETH using at least one method such as rolling correlation, cointegration, or lead-lag analysis, and constructed a specific cross-asset trading signal such as a spread z-score, relative-value measure, or lead-lag predictor, with a clear mathematical definition. (2) Evaluated the signal on a dollar-neutral or hedged basis, presenting specific performance metrics such as IC, Sharpe ratio, or cumulative return for the long-short portfolio. (3) Examined signal robustness by testing across at least two lookback windows, frequencies, or subperiods, and reporting how performance varies. (4) Identified at least one risk specific to cross-asset strategies, supported by evidence: relationship breakdown during a specific period, structural regime change, divergence under stress, or statistical fragility such as out-of-sample degradation. Once all four steps have been computationally demonstrated, the research session is complete."
+    "termination_criteria": "The agent has completed the following research steps with computational evidence (not just verbal discussion): (1) Analyzed the statistical relationship between BTC and ETH using at least one method such as rolling correlation, cointegration, or lead-lag analysis, and constructed a specific cross-asset trading signal such as a spread z-score, relative-value measure, or lead-lag predictor, with a clear mathematical definition. (2) Evaluated the signal on a dollar-neutral or hedged basis, presenting specific performance metrics such as IC, Sharpe ratio, or cumulative return for the long-short portfolio. (3) Examined signal robustness by testing across at least two lookback windows, frequencies, or subperiods, and reporting how performance varies. (4) Identified at least one risk specific to cross-asset strategies, supported by evidence: relationship breakdown during a specific period, structural regime change, divergence under stress, or statistical fragility such as out-of-sample degradation. Once all four steps have been computationally demonstrated, the research session is complete."
   },
   "requires_code": true,
   "sample_code": null,

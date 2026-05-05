@@ -9,8 +9,8 @@ import tempfile
 import threading
 import time
 from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Optional
+from pathlib import Path, PurePosixPath
+from typing import Optional, Sequence
 
 
 @dataclass
@@ -60,6 +60,7 @@ class ContainerManager:
         "lean": ("1g", "2"),
         "_default": ("768m", "1"),
     }
+    _RESUME_WORKSPACE_DIR = "/opt/bench/resume_workspace"
 
     def __init__(
         self, docker_image: str = "quant-tutor-env:v2.2", use_docker: bool = True
@@ -87,16 +88,92 @@ class ContainerManager:
                 return preset
         return cls._RESOURCE_PRESETS["_default"]
 
+    @staticmethod
+    def _apply_resource_limits(
+        mem_limit: str,
+        cpu_limit: str,
+        resource_limits: dict | None,
+    ) -> tuple[str, str]:
+        if not resource_limits:
+            return mem_limit, cpu_limit
+        if resource_limits.get("memory"):
+            mem_limit = str(resource_limits["memory"])
+        elif resource_limits.get("memory_mb"):
+            mem_limit = f"{int(resource_limits['memory_mb'])}m"
+        cpu_value = resource_limits.get("cpus", resource_limits.get("cpu_count"))
+        if cpu_value not in (None, ""):
+            cpu_limit = str(cpu_value)
+        return mem_limit, cpu_limit
+
+    @staticmethod
+    def _normalize_data_mounts(data_mounts: Sequence[object] | None):
+        if not data_mounts:
+            return ()
+        from platform_api.contracts import DataMount
+
+        normalized = []
+        for item in data_mounts:
+            if isinstance(item, DataMount):
+                normalized.append(item)
+                continue
+            if hasattr(item, "model_dump"):
+                payload = item.model_dump()
+            elif isinstance(item, dict):
+                payload = dict(item)
+            else:
+                payload = {
+                    "uri": getattr(item, "uri"),
+                    "target_path": getattr(item, "target_path"),
+                    "read_only": getattr(item, "read_only", True),
+                }
+            normalized.append(
+                DataMount(
+                    uri=str(payload["uri"]),
+                    target_path=str(payload["target_path"]),
+                    read_only=bool(payload.get("read_only", True)),
+                )
+            )
+        return tuple(normalized)
+
+    @staticmethod
+    def _prepare_nested_mount_targets(
+        mounts: Sequence[object],
+        parent_mounts: Sequence[tuple[str | None, str]],
+    ) -> None:
+        for mount in mounts:
+            container_path = PurePosixPath(getattr(mount, "container_path"))
+            host_path = Path(str(getattr(mount, "host_path")))
+            for parent_host, parent_container in parent_mounts:
+                if not parent_host:
+                    continue
+                parent_path = PurePosixPath(parent_container)
+                try:
+                    relative_target = container_path.relative_to(parent_path)
+                except ValueError:
+                    continue
+                if not relative_target.parts:
+                    continue
+                staged_target = Path(parent_host, *relative_target.parts)
+                if host_path.is_dir():
+                    staged_target.mkdir(parents=True, exist_ok=True)
+                else:
+                    staged_target.parent.mkdir(parents=True, exist_ok=True)
+                    staged_target.touch(exist_ok=True)
+
     def create_container(
         self,
         task_id: str,
         data_dir: str,
         docs_dir: str,
-        student_code_dir: Optional[str] = None,
+        user_code_dir: Optional[str] = None,
         sandbox_image: Optional[str] = None,
         network_enabled: bool = False,
         lean_data_dir: Optional[str] = None,
         custom_data_dir: Optional[str] = None,
+        restore_workspace_snapshot: bool = False,
+        resource_image: Optional[str] = None,
+        data_mounts: Sequence[object] | None = None,
+        resource_limits: dict | None = None,
     ) -> ContainerInfo:
         """Create a sandboxed Docker container (or local workspace fallback).
 
@@ -106,12 +183,13 @@ class ContainerManager:
                       May be a staged/filtered directory.
             docs_dir: Host-side directory to mount as /docs (read-only).
                       May be a staged/filtered directory.
-            student_code_dir: If provided, mounted as /student_code (read-only).
+            user_code_dir: If provided, mounted as /user_code (read-only).
             lean_data_dir: If provided, mounted as /lean/Data (LEAN metadata only).
             sandbox_image: Docker image override (default: self.docker_image).
         """
         image = sandbox_image or self.docker_image
         workspace = tempfile.mkdtemp(prefix=f"qtb_{task_id}_")
+        normalized_data_mounts = self._normalize_data_mounts(data_mounts)
 
         if self.use_docker:
             if custom_data_dir and data_dir and os.path.isdir(data_dir):
@@ -122,16 +200,39 @@ class ContainerManager:
                 f"-v {data_dir}:/data:ro",
                 f"-v {docs_dir}:/docs:ro",
             ]
-            if student_code_dir:
-                mounts.append(f"-v {student_code_dir}:/student_code:ro")
+            if user_code_dir:
+                mounts.append(f"-v {user_code_dir}:/user_code:ro")
             if lean_data_dir:
                 mounts.append(f"-v {lean_data_dir}:/lean/Data:ro")
             if custom_data_dir:
                 mounts.append(f"-v {custom_data_dir}:/data/custom:ro")
+            if normalized_data_mounts:
+                from platform_api.runtime import DataMountResolver
+
+                resolver = DataMountResolver(base_dir=Path.cwd())
+                resolved_data_mounts = resolver.resolve_all(normalized_data_mounts)
+                self._prepare_nested_mount_targets(
+                    resolved_data_mounts,
+                    (
+                        (data_dir, "/data"),
+                        (docs_dir, "/docs"),
+                        (user_code_dir, "/user_code"),
+                        (lean_data_dir, "/lean/Data"),
+                        (custom_data_dir, "/data/custom"),
+                    ),
+                )
+                mounts.extend(
+                    f"-v {mount.to_docker_volume()}" for mount in resolved_data_mounts
+                )
 
             network_flag = "--network bridge" if network_enabled else "--network none"
             network_mode = "bridge" if network_enabled else "none"
-            mem_limit, cpu_limit = self._resolve_resources(image)
+            mem_limit, cpu_limit = self._resolve_resources(resource_image or image)
+            mem_limit, cpu_limit = self._apply_resource_limits(
+                mem_limit,
+                cpu_limit,
+                resource_limits,
+            )
             cmd = (
                 f"docker run -d --name qtb_{task_id}_{int(time.time())} "
                 f"{network_flag} --cpus {cpu_limit} --memory {mem_limit} "
@@ -266,6 +367,34 @@ class ContainerManager:
                     ],
                     capture_output=True,
                 )
+
+            if restore_workspace_snapshot:
+                restored = subprocess.run(
+                    [
+                        "docker",
+                        "exec",
+                        "--user",
+                        "root",
+                        container_id,
+                        "bash",
+                        "-lc",
+                        (
+                            "set -e; "
+                            f"test -d {self._RESUME_WORKSPACE_DIR}; "
+                            "find /workspace -mindepth 1 -maxdepth 1 "
+                            "-exec rm -rf {} +; "
+                            f"cp -a {self._RESUME_WORKSPACE_DIR}/. /workspace/; "
+                            "chown -R sandbox:sandbox /workspace 2>/dev/null || true"
+                        ),
+                    ],
+                    capture_output=True,
+                    text=True,
+                )
+                if restored.returncode != 0:
+                    raise RuntimeError(
+                        "docker workspace restore failed: "
+                        f"{restored.stderr.strip() or restored.stdout.strip()}"
+                    )
         else:
             container_id = f"local_{task_id}_{int(time.time())}"
             # Local fallback cannot enforce isolation; use host networking semantics.
@@ -276,7 +405,11 @@ class ContainerManager:
         # run_backtest call only does an incremental build (~13s vs ~190s).
         # Write a dummy Algorithm.cs to trigger a real recompile of the
         # Algorithm.CSharp project; without this the warmup is a no-op.
-        if self.use_docker and "lean" in image.lower():
+        if (
+            self.use_docker
+            and "lean" in (resource_image or image).lower()
+            and not restore_workspace_snapshot
+        ):
             subprocess.run(
                 [
                     "docker",
@@ -510,3 +643,52 @@ class ContainerManager:
         if workspace and os.path.exists(workspace):
             shutil.rmtree(workspace, ignore_errors=True)
         self._containers.pop(container_id, None)
+
+    def commit_resume_snapshot(
+        self,
+        container_id: str,
+        *,
+        run_id: str,
+        turn_count: int,
+    ) -> str | None:
+        """Commit a resumable image layer containing a copy of /workspace."""
+        if not self.use_docker or container_id.startswith("local_"):
+            return None
+        safe_run_id = "".join(
+            ch if ch.isalnum() or ch in ("_", "-") else "-" for ch in run_id.lower()
+        )
+        tag = f"bench-resume:{safe_run_id}-{int(turn_count or 0)}"
+        copy_cmd = (
+            f"rm -rf {self._RESUME_WORKSPACE_DIR} && "
+            f"mkdir -p {self._RESUME_WORKSPACE_DIR} && "
+            f"cp -a /workspace/. {self._RESUME_WORKSPACE_DIR}/"
+        )
+        copied = subprocess.run(
+            ["docker", "exec", "--user", "root", container_id, "bash", "-lc", copy_cmd],
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        if copied.returncode != 0:
+            raise RuntimeError(
+                "docker exec workspace snapshot failed: "
+                f"{copied.stderr.strip() or copied.stdout.strip()}"
+            )
+        committed = subprocess.run(
+            ["docker", "commit", container_id, tag],
+            capture_output=True,
+            text=True,
+            timeout=180,
+        )
+        if committed.returncode != 0:
+            raise RuntimeError(
+                "docker commit failed: "
+                f"{committed.stderr.strip() or committed.stdout.strip()}"
+            )
+        return tag
+
+    def remove_image(self, image_tag: str) -> None:
+        """Remove a Docker image tag created for active-run resume."""
+        if not self.use_docker or not image_tag:
+            return
+        subprocess.run(["docker", "rmi", "-f", image_tag], capture_output=True)

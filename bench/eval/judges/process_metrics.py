@@ -16,28 +16,16 @@ import threading
 import time as _time
 from typing import Optional
 
-from eval.inputs.context_builder import (
-    build_problem_solving_context,
-    build_task_planning_context,
-    has_explicit_errors,
-)
-from eval.inputs.rubric_builder import build_eval_params, load_rubric
-from eval.judges.runtime.async_utils import (
-    ABORT_SENTINEL,
-    get_eval_concurrency,
-    guarded_gather,
-    run_async,
-    set_eval_concurrency,  # noqa: F401 — re-export for callers
-)
-from eval.judges.runtime.call_policy import llm_call_with_retry
-from eval.judges.runtime.conv_geval import EvalTestCase, EwanConvGEval
-from eval.judges.runtime.model_resolver import (
-    model_display_name,
-    resolve_eval_model_list,
-    resolve_ewan_model,
-    short_model_name,
-)
 from eval.tool_filters import NON_SUBSTANTIVE_TOOLS
+
+
+# Re-exported lazily for callers that tune QP concurrency through this module.
+def set_eval_concurrency(*args, **kwargs):  # noqa: D401
+    """Delegate to eval.judges.runtime.async_utils.set_eval_concurrency."""
+    from eval.judges.runtime.async_utils import set_eval_concurrency as _set
+
+    return _set(*args, **kwargs)
+
 
 # ──────────────────────────────────────────────────────────────
 # QP Dimension Weights (5 dimensions)
@@ -64,6 +52,84 @@ def _count_substantive_steps(proxy_logs: list) -> int:
         for log in proxy_logs
         if getattr(log, "name", None) not in NON_SUBSTANTIVE_TOOLS
     )
+
+
+def _log_name(log) -> str:
+    if isinstance(log, dict):
+        return str(log.get("name") or log.get("tool_name") or log.get("tool") or "")
+    return str(
+        getattr(log, "name", None)
+        or getattr(log, "tool_name", None)
+        or getattr(log, "tool", "")
+    )
+
+
+def _log_success(log) -> bool:
+    if isinstance(log, dict):
+        value = log.get("success", True)
+    else:
+        value = getattr(log, "success", True)
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return True
+    if isinstance(value, (int, float)):
+        return bool(value)
+    return str(value).strip().lower() not in {"false", "0", "no", "failed"}
+
+
+def compute_required_tool_coverage(
+    *,
+    proxy_logs: list,
+    required_tools: Optional[list[str]] = None,
+) -> dict:
+    """Compute post-hoc required-tool coverage from recorded tool logs."""
+    required = {
+        str(tool).strip() for tool in (required_tools or []) if str(tool).strip()
+    }
+    invoked = {_log_name(log).strip() for log in proxy_logs if _log_name(log).strip()}
+    successful_invoked = {
+        _log_name(log).strip()
+        for log in proxy_logs
+        if _log_name(log).strip() and _log_success(log)
+    }
+    failed_invoked = {
+        _log_name(log).strip()
+        for log in proxy_logs
+        if _log_name(log).strip() and not _log_success(log)
+    }
+
+    if not required:
+        return {
+            "coverage_ratio": None,
+            "status": "skipped",
+            "skip_reason": "no_required_tools",
+            "required_tools": [],
+            "invoked_tool_names": sorted(invoked),
+            "successful_invoked_tool_names": sorted(successful_invoked),
+            "failed_invoked_tool_names": sorted(failed_invoked),
+            "covered_tools": [],
+            "missing_tools": [],
+            "failed_required_tools": [],
+            "required_tools_only_failed": [],
+        }
+
+    covered = required & invoked
+    missing = required - invoked
+    failed_required = required & failed_invoked
+    only_failed = failed_required - (required & successful_invoked)
+    return {
+        "coverage_ratio": round(len(covered) / len(required), 4),
+        "status": "success",
+        "required_tools": sorted(required),
+        "invoked_tool_names": sorted(invoked),
+        "successful_invoked_tool_names": sorted(successful_invoked),
+        "failed_invoked_tool_names": sorted(failed_invoked),
+        "covered_tools": sorted(covered),
+        "missing_tools": sorted(missing),
+        "failed_required_tools": sorted(failed_required),
+        "required_tools_only_failed": sorted(only_failed),
+    }
 
 
 def _compute_action_economy(agent_steps: int, reference_steps: int) -> float:
@@ -150,6 +216,19 @@ def _build_qp_llm_tasks(
 
     Returns: list of (model_name, metric_name, coroutine).
     """
+    from eval.inputs.context_builder import (
+        build_problem_solving_context,
+        build_task_planning_context,
+        has_explicit_errors,
+    )
+    from eval.inputs.rubric_builder import build_eval_params, load_rubric
+    from eval.judges.runtime.call_policy import llm_call_with_retry
+    from eval.judges.runtime.conv_geval import EvalTestCase, EwanConvGEval
+    from eval.judges.runtime.model_resolver import (
+        model_display_name,
+        resolve_ewan_model,
+    )
+
     rubric = load_rubric("qp")
     tp_params = build_eval_params(
         rubric,
@@ -194,12 +273,17 @@ def _build_qp_llm_tasks(
     for m in eval_models:
         mname = model_display_name(m)
 
+        def _resolve_metric_model(model=m):
+            if model is not None and not isinstance(model, (str, list)):
+                return model
+            return resolve_ewan_model(model)
+
         # task_planning — always evaluated
         async def _eval_tp(model=m):
             return await llm_call_with_retry(
                 lambda: EwanConvGEval(
                     name="task_planning",
-                    model=resolve_ewan_model(model),
+                    model=_resolve_metric_model(model),
                     **tp_params,
                 ),
                 tp_test_case,
@@ -215,7 +299,7 @@ def _build_qp_llm_tasks(
                 return await llm_call_with_retry(
                     lambda: EwanConvGEval(
                         name="problem_solving",
-                        model=resolve_ewan_model(model),
+                        model=_resolve_metric_model(model),
                         **ps_params,
                     ),
                     ps_test_case,
@@ -245,10 +329,18 @@ def evaluate_programmatic_process_metrics(
     is_adversarial: bool = False,
     tool_usage_result: Optional[dict] = None,
     task_requires_code: bool = False,
+    required_tools: Optional[list[str]] = None,
 ) -> dict:
     """Run QP dimensions that do not require an LLM judge."""
 
     results: dict = {}
+
+    coverage = compute_required_tool_coverage(
+        proxy_logs=proxy_logs,
+        required_tools=required_tools,
+    )
+    results["required_tool_coverage"] = coverage
+    print(f"      required_tool_coverage: {coverage.get('coverage_ratio')}")
 
     ae_result = evaluate_action_economy(proxy_logs, reference_trace)
     results["action_economy"] = ae_result
@@ -385,6 +477,7 @@ def evaluate_all_process_metrics(
     abort_event: Optional[threading.Event] = None,
     enriched_conversation: Optional[list[dict]] = None,
     required_capabilities: Optional[list[str]] = None,
+    required_tools: Optional[list[str]] = None,
 ) -> dict:
     """Run all process-level metrics and return consolidated results.
 
@@ -406,6 +499,18 @@ def evaluate_all_process_metrics(
     Returns:
         Dict with per-metric scores, aggregate process score, and _per_model breakdown.
     """
+    from eval.judges.runtime.async_utils import (
+        ABORT_SENTINEL,
+        get_eval_concurrency,
+        guarded_gather,
+        run_async,
+    )
+    from eval.judges.runtime.model_resolver import (
+        model_display_name,
+        resolve_eval_model_list,
+        short_model_name,
+    )
+
     # ── Resolve model list ──
     eval_models, multi_model = resolve_eval_model_list(model)
     model_names = [model_display_name(m) for m in eval_models]
@@ -417,6 +522,7 @@ def evaluate_all_process_metrics(
         is_adversarial=is_adversarial,
         tool_usage_result=tool_usage_result,
         task_requires_code=task_requires_code,
+        required_tools=required_tools,
     )
 
     # ── LLM: task_planning + problem_solving ──

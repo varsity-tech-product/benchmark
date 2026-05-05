@@ -3,9 +3,9 @@ on the fields that must be identical.
 
 Two sources exist:
   1. bench/personas/*.json            — canonical, consumed by the main server
-  2. bench/experiments/student_sim_stability/resources/contracts/personas/*.json
+  2. bench/experiments/user_sim_stability/resources/contracts/personas/*.json
      — experiment-private copy, extended with contract_version and expected_*
-     fields for the student-sim-stability acceptance contract.
+     fields for the user-sim-stability acceptance contract.
 
 The shared fields must match byte-for-byte so that any persona change lands in
 both places. Experiment-only fields (contract_version, expected_*, failure_modes)
@@ -23,7 +23,7 @@ EXPERIMENT_CONTRACTS_DIR = (
     REPO_ROOT
     / "bench"
     / "experiments"
-    / "student_sim_stability"
+    / "user_sim_stability"
     / "resources"
     / "contracts"
 )
@@ -74,7 +74,7 @@ def test_no_legacy_concept_keys(persona_id: str) -> None:
 def test_emotional_profiles_match_byte_identical() -> None:
     """The experiment reads its private ``resources/contracts/emotional_profiles.json``
     (see ``core/contracts.py::resolve_emotional_profile``) while the server
-    REST path reads ``bench/personas/emotional_profiles.json``. The student
+    REST path reads ``bench/personas/emotional_profiles.json``. The user
     prompt (built through server) and the judge prompts (built through the
     experiment-private copy) must see identical emotional-profile text, so the
     two files must stay byte-identical. This test locks that invariant."""
@@ -83,7 +83,7 @@ def test_emotional_profiles_match_byte_identical() -> None:
     assert canonical == experiment, (
         "emotional_profiles.json differs between "
         f"{CANONICAL_DIR} and {EXPERIMENT_CONTRACTS_DIR}; the two files must "
-        "stay byte-identical so student and judge prompts align."
+        "stay byte-identical so user and judge prompts align."
     )
 
 
@@ -152,18 +152,18 @@ def test_persona_vocabulary_is_closed_world() -> None:
 # ---------------------------------------------------------------------------
 
 
-def _import_student_persona_classes():
-    """Import both StudentPersona copies (server + orchestrator)."""
+def _import_user_persona_classes():
+    """Import both UserPersona copies (server + orchestrator)."""
     import sys
 
     bench_dir = str(REPO_ROOT / "bench")
     if bench_dir not in sys.path:
         sys.path.insert(0, bench_dir)
 
-    from orchestrator.schemas import StudentPersona as OrchestratorStudentPersona
-    from eval.contracts.schemas import StudentPersona as ServerStudentPersona
+    from orchestrator.schemas import UserPersona as OrchestratorUserPersona
+    from eval.contracts.schemas import UserPersona as ServerUserPersona
 
-    return [ServerStudentPersona, OrchestratorStudentPersona]
+    return [ServerUserPersona, OrchestratorUserPersona]
 
 
 @pytest.mark.parametrize(
@@ -173,13 +173,13 @@ def _import_student_persona_classes():
         ("unknown_concepts", "unfamiliar_concepts"),
     ],
 )
-def test_student_persona_rejects_legacy_concept_keys(
+def test_user_persona_rejects_legacy_concept_keys(
     legacy_key: str, current_key: str
 ) -> None:
     """Without this guard, Pydantic would silently drop legacy keys (extra='ignore')
-    and produce a student with empty knowledge boundaries — a silent evaluation
+    and produce a user with empty knowledge boundaries — a silent evaluation
     corruption. See 2026-04-24 persona schema migration."""
-    for cls in _import_student_persona_classes():
+    for cls in _import_user_persona_classes():
         with pytest.raises(Exception) as exc_info:
             cls(
                 persona_id="x",
@@ -200,9 +200,9 @@ def test_student_persona_rejects_legacy_concept_keys(
         )
 
 
-def test_student_persona_accepts_current_keys() -> None:
+def test_user_persona_accepts_current_keys() -> None:
     """Sanity: the validator must not block legitimate current-schema payloads."""
-    for cls in _import_student_persona_classes():
+    for cls in _import_user_persona_classes():
         p = cls(
             persona_id="x",
             knowledge_level="y",

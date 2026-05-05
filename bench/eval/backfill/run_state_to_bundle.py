@@ -28,22 +28,20 @@ from typing import Any
 
 from eval.contracts import bundle_io
 from eval.contracts.bundle import (
+    BENCH_EVAL_VERSION,
+    REFERENCE_ARTIFACT_KEY,
     SCHEMA_VERSION,
-    AgentMessage,
-    AgentMetadata,
     Bundle,
-    ConversationTurn,
-    RuntimeInfo,
-    SessionInfo,
-    StudentMessage,
+    BundleTimestamps,
+    Message,
     ToolCall,
     WorkspaceFile,
+    WorkspaceSnapshot,
 )
 
 logger = logging.getLogger(__name__)
 
 _BENCH_ROOT_DEFAULT = Path(__file__).resolve().parents[2]
-_TOOL_RESULT_PREVIEW_LIMIT = 4096
 _NPC_TOOL_NAME = "send_message"
 
 
@@ -62,19 +60,29 @@ def backfill(
     if task_json_path:
         task_json = json.loads(task_json_path.read_text(encoding="utf-8"))
 
-    conversation = _build_conversation(state)
+    messages = _build_messages(state)
     bundle = Bundle(
+        bundle_id=_bundle_id(
+            state,
+            run_state_path=run_state_path,
+            bench_root=bench_root,
+        ),
         schema_version=SCHEMA_VERSION,
         task_id=str(state.get("task_id", "")),
-        task_version=str(task_json.get("version", "")),
-        task_spec_hash=_hash_task_json(task_json) if task_json else "",
-        persona_id=str(state.get("persona_id", "")),
-        session=_build_session(state, turn_count=len(conversation)),
-        runtime=RuntimeInfo(),
-        agent_metadata=AgentMetadata(harness="ref_harness"),
-        conversation=conversation,
-        workspace_manifest=_build_workspace_manifest(
-            run_state_path.parent / "agent_files"
+        timestamps=_build_timestamps(state),
+        agent_id=_agent_id(state),
+        sandbox_digest=_build_sandbox_digest(task_json, state),
+        telemetry=_build_telemetry(state, messages=messages),
+        messages=messages,
+        tool_calls=_build_tool_calls(state),
+        artifacts=_build_artifacts(
+            state,
+            task_json=task_json,
+            task_spec_hash=_hash_task_json(task_json) if task_json else "",
+        ),
+        workspace=WorkspaceSnapshot(
+            root="agent_files",
+            files=_build_workspace_manifest(run_state_path.parent / "agent_files"),
         ),
     )
 
@@ -98,7 +106,39 @@ def _hash_task_json(task_json: dict) -> str:
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
-def _build_session(state: dict, *, turn_count: int) -> SessionInfo:
+def _bundle_id(state: dict, *, run_state_path: Path, bench_root: Path) -> str:
+    for key in ("session_id", "run_id"):
+        value = str(state.get(key) or "").strip()
+        if value:
+            return value
+
+    source_path = _stable_source_path(run_state_path, bench_root=bench_root)
+    canonical = json.dumps(
+        {
+            "task_id": state.get("task_id"),
+            "persona_id": state.get("persona_id"),
+            "source_path": source_path,
+            "run_state": state,
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+        default=str,
+    )
+    digest = hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:12]
+    task_id = str(state.get("task_id") or "bundle")
+    slug = "".join(ch if ch.isalnum() or ch in "._-" else "_" for ch in task_id)
+    return f"legacy-{slug}-{digest}"
+
+
+def _stable_source_path(run_state_path: Path, *, bench_root: Path) -> str:
+    try:
+        return run_state_path.parent.relative_to(bench_root.parent).as_posix()
+    except ValueError:
+        return run_state_path.parent.as_posix()
+
+
+def _build_timestamps(state: dict) -> BundleTimestamps:
     conv = state.get("conversation") or []
     start_ts = ""
     end_ts = ""
@@ -108,87 +148,120 @@ def _build_session(state: dict, *, turn_count: int) -> SessionInfo:
     if not end_ts:
         end_ts = str(state.get("timestamp") or "")
 
-    return SessionInfo(
-        session_id=str(state.get("session_id", "")),
-        start_ts=start_ts,
-        end_ts=end_ts,
-        termination_reason=str(state.get("termination_reason") or ""),
-        turn_count=turn_count,
+    return BundleTimestamps(
+        created_at=str(state.get("timestamp") or start_ts or end_ts),
+        started_at=start_ts,
+        completed_at=end_ts,
+        duration_seconds=_float_or_none(state.get("duration_seconds")),
     )
 
 
-def _build_conversation(state: dict) -> list[ConversationTurn]:
-    """Pair conversation entries by alternating user/assistant role.
+def _agent_id(state: dict) -> str:
+    agent_cost = _get(state, "agent_cost") or {}
+    return str(
+        state.get("agent_id")
+        or _get(agent_cost, "model")
+        or state.get("agent")
+        or state.get("run_id")
+        or "ref_harness"
+    )
 
-    The persisted conversation is the source of truth for turn structure
-    and message text (it omits synthetic auto-completion send_message
-    logs added by the runtime when an agent gets stuck). tool_logs
-    supply per-turn tool invocations matched by ``turn_index``; the
-    synthetic ``send_message`` NPC tool is excluded as a tool call since
-    its text is already in the conversation, but its ``args.attachments``
-    are pulled forward into the agent message.
-    """
+
+def _image_digest(image_uri: str) -> str:
+    marker = "@sha256:"
+    if marker in image_uri:
+        return "sha256:" + image_uri.split(marker, 1)[1]
+    return ""
+
+
+def _build_sandbox_digest(task_json: dict, state: dict | None = None) -> dict[str, Any]:
+    state_digest = state.get("sandbox_digest") if isinstance(state, dict) else None
+    if isinstance(state_digest, dict) and state_digest:
+        return dict(state_digest)
+
+    environment = task_json.get("environment") if isinstance(task_json, dict) else {}
+    if not isinstance(environment, dict):
+        environment = {}
+    sandbox_spec = environment.get("sandbox_spec")
+    if not isinstance(sandbox_spec, dict):
+        sandbox_spec = {}
+    image_uri = str(
+        sandbox_spec.get("image_uri") or environment.get("sandbox_image") or ""
+    )
+    resource_limits = sandbox_spec.get("resource_limits")
+    if not isinstance(resource_limits, dict):
+        resource_limits = {}
+    else:
+        resource_limits = dict(resource_limits)
+    if "network_enabled" not in resource_limits and bool(
+        environment.get("network_enabled")
+    ):
+        resource_limits["network_enabled"] = True
+    data_mounts = environment.get("data_mounts")
+    if not isinstance(data_mounts, list):
+        data_mounts = []
+    return {
+        "sandbox_image": image_uri,
+        "image_uri": image_uri,
+        "digest": _image_digest(image_uri),
+        "resource_limits": resource_limits,
+        "data_mounts": data_mounts,
+        "sandbox_policy": {
+            "stage": "1",
+            "image_policy": "reference_base_image",
+            "data_fetch": "materialize_then_bind_mount",
+        },
+        "source": (
+            "task.environment.sandbox_spec"
+            if sandbox_spec
+            else "task.environment.sandbox_image"
+        ),
+    }
+
+
+def _build_telemetry(state: dict, *, messages: list[Message]) -> dict[str, Any]:
+    return {
+        "bench_eval_version": BENCH_EVAL_VERSION,
+        "agent_cost": _get(state, "agent_cost") or {},
+        "simulator_cost": state.get("simulator_cost"),
+        "tc_checker_cost": state.get("tc_checker_cost"),
+        "duration_seconds": state.get("duration_seconds"),
+        "step_count": state.get("step_count"),
+        "message_count": len(messages),
+        "tool_call_count": len(state.get("tool_logs") or []),
+    }
+
+
+def _build_messages(state: dict) -> list[Message]:
     conv = state.get("conversation") or []
-    tool_logs = state.get("tool_logs") or []
-
-    tools_by_turn: dict[int, list[dict]] = {}
     npc_logs_by_turn: dict[int, dict] = {}
-    for log in tool_logs:
+    for log in state.get("tool_logs") or []:
         idx = int(_get(log, "turn_index") or 0)
         if _get(log, "name") == _NPC_TOOL_NAME:
             npc_logs_by_turn.setdefault(idx, log)
-        else:
-            tools_by_turn.setdefault(idx, []).append(log)
 
-    turns: list[ConversationTurn] = []
-    i = 0
+    messages: list[Message] = []
     turn_idx = 0
-    while i < len(conv):
-        entry = conv[i]
-        role = _get(entry, "role")
-        if role == "user":
-            student = StudentMessage(text=str(_get(entry, "content") or ""))
-            agent_text = ""
-            if i + 1 < len(conv) and _get(conv[i + 1], "role") == "assistant":
-                agent_text = str(_get(conv[i + 1], "content") or "")
-                i += 2
-            else:
-                i += 1
-            turns.append(
-                ConversationTurn(
-                    turn=turn_idx + 1,
-                    agent=AgentMessage(
-                        text=agent_text,
-                        attachments=_attachments_for_turn(npc_logs_by_turn, turn_idx),
-                    ),
-                    student=student,
-                    tool_calls=[
-                        _tool_call_from_log(log)
-                        for log in tools_by_turn.get(turn_idx, [])
-                    ],
-                )
+    for idx, entry in enumerate(conv):
+        role = str(_get(entry, "role") or "")
+        if idx > 0:
+            prev_role = _get(conv[idx - 1], "role")
+            if prev_role == "assistant":
+                turn_idx += 1
+        attachments: list[dict[str, Any]] = []
+        if role == "assistant":
+            attachments = _attachments_for_turn(npc_logs_by_turn, turn_idx)
+        messages.append(
+            Message(
+                message_id=f"msg_{idx + 1}",
+                role=role,
+                content=_get(entry, "content") or "",
+                created_at=_coerce_iso(_get(entry, "ts")),
+                turn_index=turn_idx,
+                attachments=attachments,
             )
-            turn_idx += 1
-        elif role == "assistant":
-            turns.append(
-                ConversationTurn(
-                    turn=turn_idx + 1,
-                    agent=AgentMessage(
-                        text=str(_get(entry, "content") or ""),
-                        attachments=_attachments_for_turn(npc_logs_by_turn, turn_idx),
-                    ),
-                    student=None,
-                    tool_calls=[
-                        _tool_call_from_log(log)
-                        for log in tools_by_turn.get(turn_idx, [])
-                    ],
-                )
-            )
-            turn_idx += 1
-            i += 1
-        else:
-            i += 1
-    return turns
+        )
+    return messages
 
 
 def _attachments_for_turn(
@@ -204,24 +277,64 @@ def _attachments_for_turn(
     return [a for a in raw if isinstance(a, dict)]
 
 
-def _tool_call_from_log(log: dict) -> ToolCall:
-    args = _get(log, "args")
-    raw_result = _get(log, "result")
-    result_str = "" if raw_result is None else str(raw_result)
-    truncated = len(result_str) > _TOOL_RESULT_PREVIEW_LIMIT
-    preview = (
-        result_str[:_TOOL_RESULT_PREVIEW_LIMIT] + "..." if truncated else result_str
-    )
+def _build_tool_calls(state: dict) -> list[ToolCall]:
+    calls: list[ToolCall] = []
+    for idx, log in enumerate(state.get("tool_logs") or []):
+        if not isinstance(log, dict):
+            continue
+        calls.append(_tool_call_from_log(log, index=idx))
+    return calls
+
+
+def _tool_call_from_log(log: dict, *, index: int) -> ToolCall:
+    metadata: dict[str, Any] = {}
+    if _get(log, "name") == _NPC_TOOL_NAME:
+        metadata["conversation_transport"] = True
     return ToolCall(
-        call_id=str(_get(log, "call_id") or ""),
-        tool=str(_get(log, "name") or ""),
-        args=args if isinstance(args, dict) else {},
-        result_preview=preview,
-        result_truncated=truncated,
-        ts=_epoch_to_iso(_get(log, "timestamp")),
-        duration_ms=float(_get(log, "duration_ms") or 0.0),
-        success=bool(_get(log, "success", True)),
+        tool_call_id=str(_get(log, "call_id") or f"tool_{index + 1}"),
+        tool_name=str(_get(log, "name") or ""),
+        args=_get(log, "args") if _get(log, "args") is not None else {},
+        result=_get(log, "result"),
+        created_at=_epoch_to_iso(_get(log, "timestamp")),
+        duration_ms=_float_or_none(_get(log, "duration_ms")),
+        success=_bool_or_none(_get(log, "success")),
+        turn_index=_int_or_none(_get(log, "turn_index")),
+        metadata=metadata,
     )
+
+
+def _build_artifacts(
+    state: dict,
+    *,
+    task_json: dict,
+    task_spec_hash: str,
+) -> dict[str, Any]:
+    keys = (
+        "public_task_label",
+        "key_results",
+        "workspace_files",
+        "distractor_names",
+        "trace_summary",
+        "thinking_trace",
+        "format_validation",
+        "tc_coverage",
+        "tc_debug_history",
+        "artifact_debug_history",
+        "evaluation_status",
+    )
+    reference: dict[str, Any] = {
+        "run_id": state.get("run_id"),
+        "session_id": state.get("session_id"),
+        "persona_id": state.get("persona_id"),
+        "session_status": state.get("session_status"),
+        "termination_reason": state.get("termination_reason"),
+        "task_version": task_json.get("version", "") if task_json else "",
+        "task_spec_hash": task_spec_hash,
+    }
+    for key in keys:
+        if key in state:
+            reference[key] = state[key]
+    return {REFERENCE_ARTIFACT_KEY: reference}
 
 
 def _build_workspace_manifest(workspace_dir: Path) -> list[WorkspaceFile]:
@@ -241,7 +354,7 @@ def _build_workspace_manifest(workspace_dir: Path) -> list[WorkspaceFile]:
                 WorkspaceFile(
                     path=rel,
                     sha256=hashlib.sha256(data).hexdigest(),
-                    size=len(data),
+                    size_bytes=len(data),
                 )
             )
     return sorted(entries, key=lambda e: e.path)
@@ -272,6 +385,30 @@ def _get(obj: Any, key: str, default: Any = None) -> Any:
     if isinstance(obj, dict):
         return obj.get(key, default)
     return default
+
+
+def _float_or_none(value: Any) -> float | None:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _int_or_none(value: Any) -> int | None:
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _bool_or_none(value: Any) -> bool | None:
+    if value is None:
+        return None
+    return bool(value)
 
 
 def _resolve_targets(target: Path, recursive: bool) -> list[Path]:

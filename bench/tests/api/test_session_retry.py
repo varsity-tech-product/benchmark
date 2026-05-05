@@ -41,13 +41,13 @@ def _force_termination_reason(state, reason: str) -> None:
 
 
 class TestClassifySessionFailure:
-    def test_student_sim_error_is_infrastructure(self):
+    def test_user_sim_error_is_infrastructure(self):
         assert (
-            _classify_session_failure("student_sim_error:network")
+            _classify_session_failure("user_sim_error:network")
             == "infrastructure_failure"
         )
         assert (
-            _classify_session_failure("student_sim_error:parse")
+            _classify_session_failure("user_sim_error:parse")
             == "infrastructure_failure"
         )
 
@@ -56,14 +56,14 @@ class TestClassifySessionFailure:
         assert _classify_session_failure("agent_abandoned") == "agent_gave_up"
 
     def test_terminal_categories(self):
-        assert _classify_session_failure("objectives_met") == "terminal_success"
-        assert _classify_session_failure("student_satisfied") == "terminal_success"
+        assert _classify_session_failure("user_satisfied") == "terminal_success"
         assert _classify_session_failure("max_turns") == "max_turns_reached"
         assert _classify_session_failure("timeout") == "max_turns_reached"
 
     def test_unknown_categories(self):
         assert _classify_session_failure(None) == "unknown"
         assert _classify_session_failure("") == "unknown"
+        assert _classify_session_failure("objectives_met") == "unknown"
         assert _classify_session_failure("something_else") == "unknown"
 
 
@@ -106,8 +106,8 @@ class TestRetryEndpoint:
         assert body["category"] == "max_turns_reached"
 
     @pytest.mark.asyncio
-    async def test_objectives_met_not_retryable(self, app, client):
-        # Synthesize objectives_met by patching the persisted reason.
+    async def test_deprecated_objectives_met_is_unknown(self, app, client):
+        # Synthesize a deprecated reason by patching the persisted result.
         sid, _ = await register_and_start(client)
         state = _get_state(app, sid)
         state.session._max_turns = 1
@@ -116,7 +116,7 @@ class TestRetryEndpoint:
         resp = await client.post(f"/session/{sid}/retry")
         assert resp.status_code == 409
         body = resp.json()
-        assert body["category"] == "terminal_success"
+        assert body["category"] == "unknown"
 
     @pytest.mark.asyncio
     async def test_infrastructure_failure_creates_new_session(self, app, client):
@@ -128,7 +128,7 @@ class TestRetryEndpoint:
         state.session._max_turns = 1
         await send_message(client, sid, "Done.")
         # Patch persisted reason to simulate an NPC/sandbox crash.
-        _force_termination_reason(state, "student_sim_error:network")
+        _force_termination_reason(state, "user_sim_error:network")
 
         resp = await client.post(f"/session/{sid}/retry")
         assert resp.status_code == 200
@@ -159,7 +159,7 @@ class TestRetryEndpoint:
 
         state.session._max_turns = 1
         await send_message(client, sid, "Done.")
-        _force_termination_reason(state, "student_sim_error:network")
+        _force_termination_reason(state, "user_sim_error:network")
 
         resp = await client.post(f"/session/{sid}/retry")
         assert resp.status_code == 200
@@ -180,7 +180,7 @@ class TestRetryEndpoint:
         state.session._max_turns = 1
         await send_message(client, sid, "Done.")
         original_result_dir = str(state._result_dir)
-        _force_termination_reason(state, "student_sim_error:network")
+        _force_termination_reason(state, "user_sim_error:network")
 
         # Force the next register() to fail so the rollback path runs.
         def _fail_register(self, task_id, persona_id=None):
@@ -209,7 +209,7 @@ class TestRetryEndpoint:
         state = _get_state(app, sid)
         state.session._max_turns = 1
         await send_message(client, sid, "Done.")
-        _force_termination_reason(state, "student_sim_error:network")
+        _force_termination_reason(state, "user_sim_error:network")
 
         resp = await client.post(f"/session/{sid}/retry")
         assert resp.status_code == 200

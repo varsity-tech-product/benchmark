@@ -1,0 +1,22 @@
+[Unit]
+Description=QuantTutorBench HTTP Server
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=simple
+User=bench
+Group=bench
+SupplementaryGroups=docker
+WorkingDirectory=/home/bench/benchmark/bench
+EnvironmentFile=-/home/bench/benchmark/.env
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/home/bench/benchmark/.venv/bin/python -m server --host 127.0.0.1 --port 8000 --docker
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

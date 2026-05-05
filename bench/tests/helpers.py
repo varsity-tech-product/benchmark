@@ -75,7 +75,7 @@ async def register_session(
 
 
 async def start_session(client: httpx.AsyncClient, sid: str) -> dict:
-    """Start a session and return the response body (student_message, etc.)."""
+    """Start a session and return the response body (user_message, etc.)."""
     resp = await client.post(f"/session/{sid}/start", json={})
     assert resp.status_code == 200, f"Start failed: {resp.text}"
     return resp.json()

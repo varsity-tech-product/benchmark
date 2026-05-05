@@ -1,71 +1,61 @@
 # Bundle Schema Evolution
 
-The Bundle schema is the contract between session capture and scoring.
-Old bundles must remain readable indefinitely so historical sessions can
-be re-scored with newer evaluators. The rules below balance immutability
-of past data with room for legitimate future evolution.
+The Bundle schema is the contract between session capture, scoring, and
+research consumers. The current release is Stage 1 v0: a v1-family alpha
+baseline that fixes the generic envelope while implementation pressure tests
+continue.
 
 ## Versioning
 
-Top-level `schema_version` is mandatory and uses `MAJOR.MINOR` semver:
+Top-level `schema_version` is mandatory and uses semantic version strings.
 
-- `MAJOR` bumps signal incompatible changes (field rename, semantic
-  change, deletion). They require an explicit migration plan reviewed
-  before merge.
-- `MINOR` bumps are additive only. New optional fields are allowed; no
-  rename, no deletion, no semantic change.
+- Current version: `1.0.0-alpha`
+- The `1.x` family is the Bundle v1 family.
+- Alpha versions can grow through additive fields and fixture-driven schema
+  pressure tests during Stage 1.
+- The Stage 2 freeze issue will define the stable `1.0.0` release and the
+  compatibility window for historical bundles.
 
-Current version: **`1.0`** (constant `SCHEMA_VERSION` in `bundle.py`).
+## Reader Compatibility
 
-## Reader compatibility
+A reader declares the major versions it handles. The current reader handles
+the `1.x` family.
 
-A reader declares the `MAJOR` versions it handles. The current reader
-handles `1.x` only. Within a major version, reads are forward-compatible:
-
-- Unknown top-level keys are ignored.
-- Unknown keys in nested objects (`session`, `runtime`,
-  `agent_metadata`, each conversation turn's nested objects, each tool
-  call, each workspace manifest entry) are ignored.
+- Unknown top-level keys are ignored by the dataclass reader.
+- Unknown keys in nested objects are ignored by the dataclass reader.
 - Missing optional fields fall back to dataclass defaults.
-- `schema_version` is the only field that may abort the read; a v2.x
-  bundle opened by the v1 reader raises `BundleError`.
+- `schema_version` gates the major-family dispatch.
 
-This means a v1.0 reader correctly opens a future v1.5 bundle: the v1.0
-fields populate, the v1.5 additions silently disappear. A v1.5 reader
-opens both v1.0 and v1.5 bundles.
+JSON Schema validation is stricter than the dataclass reader. Use it for
+producer tests and public fixtures:
 
-## Adding a field (MINOR bump)
+```bash
+python -m eval.contracts.bundle_schema bench/eval/contracts/fixtures/bundle_v1_alpha/impl_a_ref_harness.json
+```
 
-1. Add the field to the dataclass in `bundle.py` with a sensible default
-   (so older bundles that lack it deserialize cleanly).
-2. Pull it from `from_dict()` in `bundle_io.py` with `dict.get()` and the
-   same default.
-3. Bump `SCHEMA_VERSION` from `1.N` to `1.N+1` in `bundle.py`. Any newly
-   written bundle stamps the new version; old bundles keep their old
-   stamp.
-4. Update the writer (or backfill script) to populate the field.
+## Additive Changes During Alpha
 
-No reader code changes are needed for older callers — they keep dropping
-the unknown field.
+1. Add the field to `bundle.py` with a default.
+2. Pull it from `from_dict()` in `bundle_io.py`.
+3. Update `bundle_v1_alpha.schema.json`.
+4. Add or update a fixture that demonstrates the field.
+5. Update `docs/bundle_v1_schema.md`.
 
-## Renaming, removing, or changing semantics (MAJOR bump)
+## Stage 2 Placeholder
 
-Forbidden in MINOR. To do any of these:
+Stage 2 will fill in the migration policy after Impl A, Impl C, and Impl D
+exercise the alpha schema end to end. The freeze issue should define:
 
-1. File an issue describing the migration.
-2. Bump `SCHEMA_VERSION` to `2.0`.
-3. Either ship a one-shot migration script that rewrites historical
-   bundles, or extend the reader to handle both majors via a version
-   dispatch.
-4. Update consumers.
+- supported backward-compatibility window;
+- conversion path for `1.0.0-alpha` fixtures;
+- public deprecation policy;
+- score artifact compatibility rules;
+- workspace content reference rules for hashes, external paths, and inline
+  payloads.
 
-## Bundle immutability
+## Bundle Immutability
 
-A `bundle.json` is immutable once written. Re-evaluation produces new
-files under `scores/score_v*_<judge_model>_<ts>.json`; the bundle itself
-is never rewritten. This keeps `task_spec_hash` meaningful as an audit
-anchor.
-
-If the underlying conversation truly needs amendment (a privacy redaction,
-a corrupted ts), write a new bundle directory rather than mutating the
-existing file.
+A `bundle.json` is immutable once written. Re-evaluation produces score
+artifacts under the result directory or under `artifacts` in research exports.
+Historical bundle data stays tied to its original `task_id`, transcript, tool
+calls, and workspace file hashes.

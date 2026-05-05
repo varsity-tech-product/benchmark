@@ -4,9 +4,9 @@
   "difficulty": "hard",
   "category": "data_analysis",
   "task_type": "multi_turn",
-  "description": "Guide the student to align irregular alternative data with price data, normalize and handle missing values, construct lag-safe merged features, and evaluate information content for predictive signal quality.",
+  "description": "The user asks the agent to align irregular alternative data with price data, normalize and handle missing values, construct lag-safe merged features, and evaluate information content for predictive signal quality.",
   "persona_id": "double_novice",
-  "student_opening": "My professor asked us to align irregular alternative data with price data and build merged features. I'm new to both Python and finance — can you start from the basics?",
+  "user_opening": "My professor asked us to align irregular alternative data with price data and build merged features. I'm new to both Python and finance — can you start from the basics?",
   "environment": {
     "data_files": [
       "AAPL_2018_2024.csv",
@@ -27,7 +27,7 @@
     "network_enabled": false
   },
   "ground_truth": {
-    "expected_outcome": "Tutor guides the student to merge alternative data with price data using frequency alignment and lag safeguards, normalize and clean the merged dataset, and test information content using correlation-based methods before claiming predictive value.",
+    "expected_outcome": "Agent helps the user merge alternative data with price data using frequency alignment and lag safeguards, normalize and clean the merged dataset, and test information content using correlation-based methods before claiming predictive value.",
     "required_capabilities": [
       "Align and lag irregular alternative data with price data",
       "Normalize and handle missing values in alternative datasets",
@@ -45,7 +45,7 @@
     "quant_validation": {
       "eval_script": "tasks/test_scripts/data_analysis/D08_alternative_data_integration.py"
     },
-    "termination_criteria": "(1) Showed actual code output merging alternative data with price data, demonstrating frequency alignment and proper join logic with concrete before-and-after shape or sample rows. (2) Applied lag safeguards or point-in-time discipline to the merge and showed concrete evidence that the merged features do not leak future information, such as shift validation or date alignment checks. (3) Responded to a student follow-up with one additional concrete test of information content or data quality on the merged dataset, such as a correlation check, missing-value profile, or normalization comparison. Once all 3 steps have been computationally demonstrated, the session is complete."
+    "termination_criteria": "(1) Showed actual code output merging alternative data with price data, demonstrating frequency alignment and proper join logic with concrete before-and-after shape or sample rows. (2) Applied lag safeguards or point-in-time discipline to the merge and showed concrete evidence that the merged features do not leak future information, such as shift validation or date alignment checks. (3) Responded to a user follow-up with one additional concrete test of information content or data quality on the merged dataset, such as a correlation check, missing-value profile, or normalization comparison. Once all 3 steps have been computationally demonstrated, the session is complete."
   },
   "requires_code": true,
   "sample_code": null,

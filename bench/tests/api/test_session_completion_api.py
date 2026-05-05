@@ -99,35 +99,35 @@ class TestRepeatDetectionViaAPI:
 
 
 # ---------------------------------------------------------------------------
-# Student-satisfied termination (issue #132)
+# User-satisfied termination (issue #132)
 # ---------------------------------------------------------------------------
 
 
-class TestStudentSatisfiedViaAPI:
+class TestUserSatisfiedViaAPI:
     @pytest.mark.asyncio
-    async def test_student_goodbye_terminates_session(self, app, client, monkeypatch):
+    async def test_user_goodbye_terminates_session(self, app, client, monkeypatch):
         sid, _ = await register_and_start(client)
         state = _get_session_state(app, sid)
-        # Force the next student reply to be the canonical D02 goodbye.
+        # Force the next user reply to be the canonical D02 goodbye.
         # task_end=False here exercises the regex fallback path.
         monkeypatch.setattr(
-            state.session._student_sim,
+            state.session._user_sim,
             "generate_message",
             lambda *a, **kw: ("Got it, I'm good to stop here for now.", False),
         )
 
         body = await send_message(client, sid, "Anything else I can help with?")
         assert body["status"] == "completed"
-        assert body["reason"] == "student_satisfied"
+        assert body["reason"] == "user_satisfied"
 
     @pytest.mark.asyncio
-    async def test_subsequent_send_after_student_satisfied_denied(
+    async def test_subsequent_send_after_user_satisfied_denied(
         self, app, client, monkeypatch
     ):
         sid, _ = await register_and_start(client)
         state = _get_session_state(app, sid)
         monkeypatch.setattr(
-            state.session._student_sim,
+            state.session._user_sim,
             "generate_message",
             lambda *a, **kw: ("Thanks, that's all I needed!", False),
         )
@@ -139,12 +139,12 @@ class TestStudentSatisfiedViaAPI:
         assert resp.json().get("allowed") == []
 
     @pytest.mark.asyncio
-    async def test_student_question_does_not_terminate(self, app, client, monkeypatch):
+    async def test_user_question_does_not_terminate(self, app, client, monkeypatch):
         sid, _ = await register_and_start(client)
         state = _get_session_state(app, sid)
         # Mentions "stop" but is asking a question — must NOT terminate.
         monkeypatch.setattr(
-            state.session._student_sim,
+            state.session._user_sim,
             "generate_message",
             lambda *a, **kw: (
                 "Before we stop, one quick question: what about edges?",
@@ -164,7 +164,7 @@ class TestStudentSatisfiedViaAPI:
         sid, _ = await register_and_start(client)
         state = _get_session_state(app, sid)
         monkeypatch.setattr(
-            state.session._student_sim,
+            state.session._user_sim,
             "generate_message",
             lambda *a, **kw: (
                 "Perfect — that feels like the right stopping point for now. "
@@ -175,7 +175,7 @@ class TestStudentSatisfiedViaAPI:
 
         body = await send_message(client, sid, "Sounds good?")
         assert body["status"] == "completed"
-        assert body["reason"] == "student_satisfied"
+        assert body["reason"] == "user_satisfied"
 
 
 # ---------------------------------------------------------------------------

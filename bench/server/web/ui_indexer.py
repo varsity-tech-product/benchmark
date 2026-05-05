@@ -233,9 +233,6 @@ class ResultIndexer:
             "simulator_cost": self._coerce_float(
                 run_state.get("simulator_cost"), default=None
             ),
-            "tc_checker_cost": self._coerce_float(
-                run_state.get("tc_checker_cost"), default=None
-            ),
             "evaluation_cost": self._coerce_float(
                 (latest_cost or {}).get("eval_cost_usd"), default=None
             ),
@@ -759,7 +756,7 @@ class ResultIndexer:
             "name": "send_message",
             "turn_index": self._coerce_int(log.get("turn_index"), default=0),
             "request_text": str(args.get("text") or ""),
-            "student_message": str(parsed_result.get("student_message") or ""),
+            "user_message": str(parsed_result.get("user_message") or ""),
             "attachments": attachments,
             "status": status,
             "reason": str(reason) if reason is not None else None,

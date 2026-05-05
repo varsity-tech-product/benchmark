@@ -178,8 +178,7 @@ def resolve_deepeval_model(
 
     Args:
         skip_oauth: When True, bypass OAuth resolution even if enabled.
-            Used by the TC checker model which needs reliable JSON calls
-            via OpenRouter rather than OAuth.
+            Used by callers that need reliable JSON calls via OpenRouter.
         temperature: Sampling temperature for the resolved model.
             Defaults to EVAL_JUDGE_TEMPERATURE (0.0) for deterministic
             scoring.  Explicitly passed to GPTModel to avoid relying on

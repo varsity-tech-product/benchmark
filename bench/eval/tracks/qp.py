@@ -81,6 +81,9 @@ def evaluate(
             is_adversarial=(_category_value(task) == "adversarial"),
             tool_usage_result=tool_usage_result,
             task_requires_code=task.requires_code,
+            required_tools=(
+                task.ground_truth.expected_mcp_tools if task.ground_truth else []
+            ),
         )
         process["task_planning"] = {
             "score": None,
@@ -129,6 +132,11 @@ def evaluate(
                 enriched_conversation=enriched_conversation,
                 required_capabilities=(
                     task.ground_truth.required_capabilities
+                    if task.ground_truth
+                    else None
+                ),
+                required_tools=(
+                    task.ground_truth.expected_mcp_tools
                     if task.ground_truth
                     else None
                 ),

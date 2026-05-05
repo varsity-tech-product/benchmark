@@ -4,9 +4,9 @@
   "difficulty": "medium",
   "category": "backtest",
   "task_type": "multi_turn",
-  "description": "Guide a student to build a basic backtest system with proper architecture: a data replay module that feeds BTCUSDT daily bars sequentially, a backtest engine that handles position tracking and PnL accounting, and a strategy module that implements a dual moving average crossover as cleanly separated components.",
+  "description": "The user asks the agent to build a basic backtest system with proper architecture: a data replay module that feeds BTCUSDT daily bars sequentially, a backtest engine that handles position tracking and PnL accounting, and a strategy module that implements a dual moving average crossover as cleanly separated components.",
   "persona_id": "double_novice",
-  "student_opening": "I want to learn about how to build a basic backtest system with separate data replay, engine, and strategy parts. I'm new to both Python and finance — can you walk me through it from the beginning?",
+  "user_opening": "I want to build a basic backtest system with separate data replay, engine, and strategy parts. I'm new to both Python and finance — can you walk me through it from the beginning?",
   "environment": {
     "data_files": [
       "BTCUSDT_1d_2021_2024.csv"
@@ -25,7 +25,7 @@
     "network_enabled": false
   },
   "ground_truth": {
-    "expected_outcome": "Tutor guides the student to build a working backtest system with three distinct components: a data handler that replays BTCUSDT daily bars without exposing future data, an engine that manages positions, tracks PnL and computes performance metrics, and an MA crossover strategy that only accesses current and past bars. The tutor explains why the three-layer separation matters for data integrity and look-ahead prevention. The system runs end-to-end and produces a performance summary, leaving concrete code artifacts rather than only architectural discussion.",
+    "expected_outcome": "Agent helps the user build a working backtest system with three distinct components: a data handler that replays BTCUSDT daily bars without exposing future data, an engine that manages positions, tracks PnL and computes performance metrics, and an MA crossover strategy that only accesses current and past bars. The agent explains why the three-layer separation matters for data integrity and look-ahead prevention. The system runs end-to-end and produces a performance summary, leaving concrete code artifacts rather than only architectural discussion.",
     "required_capabilities": [
       "Design a data handler that loads CSV data and provides a sequential bar replay interface",
       "Build a backtest engine with position tracking and PnL computation",
@@ -46,7 +46,7 @@
     "quant_validation": {
       "eval_script": "tasks/test_scripts/backtest/B02_basic_sequential_engine.py"
     },
-    "termination_criteria": "The tutor has completed the following steps with computational evidence (not just verbal discussion): (1) Built a data handler that loads price data and replays bars sequentially, and explained why separating data replay from strategy logic matters for preventing look-ahead bias. (2) Implemented a backtest engine with position tracking and PnL computation, and a decoupled strategy component that only accesses current and past bars. (3) Ran the complete system end-to-end and presented a performance summary with specific numerical values such as total return, Sharpe ratio, or maximum drawdown. Once all three steps have been computationally demonstrated, the session is complete."
+    "termination_criteria": "The agent has completed the following steps with computational evidence (not just verbal discussion): (1) Built a data handler that loads price data and replays bars sequentially, and explained why separating data replay from strategy logic matters for preventing look-ahead bias. (2) Implemented a backtest engine with position tracking and PnL computation, and a decoupled strategy component that only accesses current and past bars. (3) Ran the complete system end-to-end and presented a performance summary with specific numerical values such as total return, Sharpe ratio, or maximum drawdown. Once all three steps have been computationally demonstrated, the session is complete."
   },
   "requires_code": true,
   "sample_code": null,

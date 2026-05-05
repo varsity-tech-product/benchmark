@@ -4,9 +4,9 @@
   "difficulty": "medium",
   "category": "data_analysis",
   "task_type": "multi_turn",
-  "description": "Guide the student to collect realtime market updates from a streaming or polling endpoint, store timestamped updates as a CSV file, and teach quant microstructure and data-quality concepts.",
+  "description": "The user asks the agent to collect realtime market updates from a streaming or polling endpoint, store timestamped updates as a CSV file, and explain quant microstructure and data-quality concepts.",
   "persona_id": "double_novice",
-  "student_opening": "My professor asked us to collect realtime market updates from a streaming or polling endpoint. I'm new to both Python and finance — can you start from the basics?",
+  "user_opening": "My professor asked us to collect realtime market updates from a streaming or polling endpoint. I'm new to both Python and finance — can you start from the basics?",
   "environment": {
     "data_files": [],
     "core_mcp_tools": [
@@ -23,7 +23,7 @@
     "network_enabled": true
   },
   "ground_truth": {
-    "expected_outcome": "Tutor guides the student to build a realtime data capture pipeline, save timestamped market updates to CSV, explain trade-vs-quote semantics and bid-ask spread context, and address latency, out-of-order tick, and timezone/session handling risks.",
+    "expected_outcome": "Agent helps the user build a realtime data capture pipeline, save timestamped market updates to CSV, explain trade-vs-quote semantics and bid-ask spread context, and address latency, out-of-order tick, and timezone/session handling risks.",
     "required_capabilities": [
       "Capture realtime market updates and store them as timestamped CSV",
       "Explain quote vs trade semantics and bid-ask spread context",
@@ -42,7 +42,7 @@
     "quant_validation": {
       "eval_script": "tasks/test_scripts/data_analysis/D11_realtime_data_fetch.py"
     },
-    "termination_criteria": "(1) Showed actual code that captures realtime or simulated market updates from a streaming or polling endpoint and saves timestamped records as a CSV file in the workspace. (2) Explained concrete microstructure concepts using evidence from the captured data, such as trade-vs-quote semantics, bid-ask spread interpretation, or timestamp ordering issues. (3) Responded to a student follow-up with one additional concrete quality check or latency diagnostic on the captured stream, such as out-of-order detection, gap analysis, or session boundary handling. Once all 3 steps have been computationally demonstrated, the session is complete."
+    "termination_criteria": "(1) Showed actual code that captures realtime or simulated market updates from a streaming or polling endpoint and saves timestamped records as a CSV file in the workspace. (2) Explained concrete microstructure concepts using evidence from the captured data, such as trade-vs-quote semantics, bid-ask spread interpretation, or timestamp ordering issues. (3) Responded to a user follow-up with one additional concrete quality check or latency diagnostic on the captured stream, such as out-of-order detection, gap analysis, or session boundary handling. Once all 3 steps have been computationally demonstrated, the session is complete."
   },
   "requires_code": true,
   "sample_code": null,

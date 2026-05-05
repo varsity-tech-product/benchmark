@@ -13,8 +13,8 @@
   --accent-hover: #b45309;
   --accent-light: #fef3c7;
   --accent-subtle: #fdf6e3;
-  --student-bubble: #78350f;
-  --student-text: #ffffff;
+  --user-bubble: #78350f;
+  --user-text: #ffffff;
   --tutor-bubble: #faf8f5;
   --tutor-text: #2d2b28;
   --tool-accent: #d97706;
@@ -58,7 +58,7 @@
     --text-muted: #78716c;
     --accent-light: #422006;
     --accent-subtle: #2a1a08;
-    --student-bubble: #92400e;
+    --user-bubble: #92400e;
     --tutor-bubble: #302b28;
     --tutor-text: #e7e5e4;
     --success-bg: #064e3b;
@@ -710,7 +710,7 @@ body {
   display: flex; align-items: flex-start; gap: 10px; max-width: 85%;
   animation: msg-slide-in var(--duration-slow) var(--ease) both;
 }
-.msg.student { align-self: flex-end; flex-direction: row-reverse; }
+.msg.user { align-self: flex-end; flex-direction: row-reverse; }
 .msg.tutor { align-self: flex-start; }
 
 @keyframes msg-slide-in {
@@ -719,7 +719,7 @@ body {
 }
 
 .msg-col { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
-.msg.student .msg-col { align-items: flex-end; }
+.msg.user .msg-col { align-items: flex-end; }
 .msg.tutor .msg-col { align-items: flex-start; }
 
 .msg-label {
@@ -765,9 +765,9 @@ body {
   box-shadow: var(--shadow);
 }
 
-.msg.student .bubble {
-  background: linear-gradient(135deg, var(--student-bubble) 0%, #5b2c0e 100%);
-  color: var(--student-text);
+.msg.user .bubble {
+  background: linear-gradient(135deg, var(--user-bubble) 0%, #5b2c0e 100%);
+  color: var(--user-text);
   border-top-right-radius: 4px;
   box-shadow: 0 2px 8px rgba(120, 53, 15, 0.25);
 }
@@ -816,8 +816,8 @@ body {
 
 .bubble img { max-width: 100%; border-radius: var(--radius); margin: 8px 0; }
 
-.msg.student .bubble code { background: rgba(255,255,255,0.12); border-color: rgba(255,255,255,0.15); color: #fef3c7; }
-.msg.student .bubble pre { background: rgba(0,0,0,0.15); border-color: rgba(255,255,255,0.1); color: #fef3c7; }
+.msg.user .bubble code { background: rgba(255,255,255,0.12); border-color: rgba(255,255,255,0.15); color: #fef3c7; }
+.msg.user .bubble pre { background: rgba(0,0,0,0.15); border-color: rgba(255,255,255,0.1); color: #fef3c7; }
 
 /* ── Thinking indicator ─────────────────────────────────── */
 
@@ -842,7 +842,7 @@ body {
 
 .thinking-text { font-size: 13px; color: var(--text-muted); font-style: italic; }
 
-.responding-dots span { background: var(--student-bubble, #78350f) !important; }
+.responding-dots span { background: var(--user-bubble, #78350f) !important; }
 
 /* ── Tool calls ──────────────────────────────────────────── */
 

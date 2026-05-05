@@ -1306,7 +1306,6 @@
 
     var serverCost = [
       metaItem('Simulator Cost', detail.simulator_cost != null ? formatCost(detail.simulator_cost) : '—'),
-      metaItem('TC Checker Cost', detail.tc_checker_cost != null ? formatCost(detail.tc_checker_cost) : '—'),
       metaItem('Duration', formatDuration(detail.duration_seconds))
     ].join('');
 
@@ -2164,7 +2163,7 @@
     Array.prototype.forEach.call(container.querySelectorAll('.msg.tutor .msg-label'), function (label) {
       label.textContent = 'Assistant';
     });
-    Array.prototype.forEach.call(container.querySelectorAll('.msg.student .msg-label'), function (label) {
+    Array.prototype.forEach.call(container.querySelectorAll('.msg.user .msg-label'), function (label) {
       label.textContent = 'Student';
     });
   }
@@ -2251,7 +2250,7 @@
     return {
       none: [{value: '', label: 'Section-level'}],
       turn_index: conversation.map(function (turn, index) {
-        var role = turn.role === 'user' || turn.role === 'student' ? 'Student' : 'Assistant';
+        var role = turn.role === 'user' ? 'User' : 'Assistant';
         return {
           value: String(index),
           label: 'Turn ' + index + ' - ' + role + ' - ' + truncateReviewOption(turn.content || turn.message || '', 72)

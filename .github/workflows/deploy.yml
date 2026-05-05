@@ -5,18 +5,43 @@ on:
     branches: [master]
     paths:
       - 'bench/**'
+      - 'bench/requirements.txt'
       - 'requirements.txt'
       - 'pyproject.toml'
+      - 'deploy/**'
       - '.github/workflows/deploy.yml'
       - '!bench/data/**'
       - '!bench/reference/**'
       - '!bench/*MD/**'
       - '!bench/**.md'
   workflow_dispatch:
+    inputs:
+      rebuild_docker:
+        description: Rebuild Docker sandbox images
+        required: false
+        default: false
+        type: boolean
+      reinstall_deps:
+        description: Reinstall Python dependencies
+        required: false
+        default: false
+        type: boolean
+      reinstall_service:
+        description: Reinstall the systemd service file
+        required: false
+        default: false
+        type: boolean
 
 concurrency:
   group: vps-deploy
   cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  DEPLOY_PATH: /home/bench/benchmark
+  SERVICE_NAME: quanttutor
 
 jobs:
   test:
@@ -27,39 +52,40 @@ jobs:
         with:
           python-version: '3.12'
           cache: pip
-      - run: pip install -r requirements.txt pytest-timeout
+      - run: pip install -r requirements.txt -r bench/requirements.txt pytest-timeout
       - run: pytest bench/tests/ -x --timeout=60
         continue-on-error: true
 
   deploy:
     needs: test
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, production, bench-vps]
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 2
+          fetch-depth: 0
 
       - name: Detect changed paths
         id: changes
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "docker=true" >> $GITHUB_OUTPUT
-            echo "deps=true" >> $GITHUB_OUTPUT
+            echo "docker=${{ inputs.rebuild_docker }}" >> $GITHUB_OUTPUT
+            echo "deps=${{ inputs.reinstall_deps }}" >> $GITHUB_OUTPUT
+            echo "service=${{ inputs.reinstall_service }}" >> $GITHUB_OUTPUT
           else
-            FILES=$(git diff --name-only HEAD^ HEAD)
-            echo "$FILES" | grep -qE '^bench/docker/Dockerfile' && echo "docker=true" >> $GITHUB_OUTPUT || echo "docker=false" >> $GITHUB_OUTPUT
-            echo "$FILES" | grep -qE '^(requirements\.txt|pyproject\.toml)$' && echo "deps=true" >> $GITHUB_OUTPUT || echo "deps=false" >> $GITHUB_OUTPUT
+            BEFORE="${{ github.event.before }}"
+            if [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
+              FILES=$(git diff-tree --no-commit-id --name-only -r "$GITHUB_SHA")
+            else
+              FILES=$(git diff --name-only "$BEFORE" "$GITHUB_SHA")
+            fi
+            echo "$FILES" | grep -qE '^bench/docker/Dockerfile(\.lean)?$' && echo "docker=true" >> $GITHUB_OUTPUT || echo "docker=false" >> $GITHUB_OUTPUT
+            echo "$FILES" | grep -qE '^(requirements\.txt|bench/requirements\.txt|pyproject\.toml)$' && echo "deps=true" >> $GITHUB_OUTPUT || echo "deps=false" >> $GITHUB_OUTPUT
+            echo "$FILES" | grep -qE '^deploy/quanttutor\.service$' && echo "service=true" >> $GITHUB_OUTPUT || echo "service=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Setup SSH
+      - name: Sync code to deploy path
         run: |
-          mkdir -p ~/.ssh && chmod 700 ~/.ssh
-          echo "${{ secrets.VPS_SSH_KEY }}" > ~/.ssh/deploy_key
-          chmod 600 ~/.ssh/deploy_key
-          ssh-keyscan -H ${{ secrets.VPS_HOST }} >> ~/.ssh/known_hosts 2>/dev/null
-
-      - name: Rsync code to VPS
-        run: |
+          mkdir -p "$DEPLOY_PATH"
           rsync -az --delete \
             --exclude='.git' \
             --exclude='.env' \
@@ -76,55 +102,62 @@ jobs:
             --exclude='node_modules' \
             --exclude='vercel-frontend/.vercel' \
             --exclude='vercel-frontend/dist' \
-            -e "ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -o ServerAliveCountMax=120" \
-            ./ ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:~/benchmark/
+            ./ "$DEPLOY_PATH/"
+
+      - name: Ensure Python runtime
+        id: runtime
+        run: |
+          if [ -x "$DEPLOY_PATH/.venv/bin/python" ]; then
+            echo "venv_created=false" >> "$GITHUB_OUTPUT"
+          else
+            python3 -m venv "$DEPLOY_PATH/.venv"
+            echo "venv_created=true" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Rebuild Docker images (if Dockerfile changed)
         if: steps.changes.outputs.docker == 'true'
         run: |
-          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -o ServerAliveCountMax=120 \
-            ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} << 'EOF'
-            set -e
-            cd ~/benchmark/bench
-            sudo docker build -t quant-tutor-env:v2.2 -f docker/Dockerfile docker/
-            sudo docker build -t quant-tutor-env:v2.2-lean -f docker/Dockerfile.lean .
-            sudo docker image prune -f
-            sudo docker builder prune -f
-          EOF
+          cd "$DEPLOY_PATH/bench"
+          docker build -t quant-tutor-env:v2.2 -f docker/Dockerfile docker/
+          docker build -t quant-tutor-env:v2.2-lean -f docker/Dockerfile.lean .
+          docker image prune -f
+          docker builder prune -f
 
       - name: Install Python deps (if requirements changed)
-        if: steps.changes.outputs.deps == 'true'
+        if: steps.changes.outputs.deps == 'true' || steps.runtime.outputs.venv_created == 'true'
         run: |
-          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -o ServerAliveCountMax=120 \
-            ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} \
-            '~/benchmark/.venv/bin/pip install -r ~/benchmark/requirements.txt'
+          "$DEPLOY_PATH/.venv/bin/pip" install --upgrade pip
+          "$DEPLOY_PATH/.venv/bin/pip" install \
+            -r "$DEPLOY_PATH/requirements.txt" \
+            -r "$DEPLOY_PATH/bench/requirements.txt"
+
+      - name: Install systemd unit (if service changed)
+        if: steps.changes.outputs.service == 'true'
+        run: |
+          sudo -n install -m 0644 "$DEPLOY_PATH/deploy/quanttutor.service" /etc/systemd/system/quanttutor.service
+          sudo -n systemctl daemon-reload
 
       - name: Restart service + smoke test
         run: |
-          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no -o ServerAliveInterval=30 -o ServerAliveCountMax=120 \
-            ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} << 'EOF'
-            set -e
-            sudo systemctl restart quanttutor
-            # Poll /health for up to 60s; new code's cold start can exceed 6s
-            # after Bundle v1 + audit sink + run service initialization (#122/#123).
-            for i in $(seq 1 30); do
-              if curl -sf -m 3 http://127.0.0.1:8000/health >/dev/null 2>&1; then
-                echo "health ok after ${i}*2s"
-                break
-              fi
-              if [ $i -eq 30 ]; then
-                echo "health probe timed out after 60s"
-                sudo systemctl status quanttutor --no-pager | head -20
-                tail -50 /var/log/quanttutor.log
-                exit 1
-              fi
-              sleep 2
-            done
-            sudo systemctl is-active quanttutor
-            # /health deep probe: docker daemon + LEAN image + disk (returns 503 on any failure)
-            curl -sf http://127.0.0.1:8000/health >/dev/null
-            echo "--- disk ---"
-            df -h /home | tail -1
-            echo "--- tail log ---"
-            tail -5 /var/log/quanttutor.log
-          EOF
+          sudo -n systemctl restart "$SERVICE_NAME"
+          # Poll /health for up to 60s; cold starts can exceed 6s after
+          # Bundle v1 + audit sink + run service initialization (#122/#123).
+          for i in $(seq 1 30); do
+            if curl -sf -m 3 http://127.0.0.1:8000/health >/dev/null 2>&1; then
+              echo "health ok after ${i}*2s"
+              break
+            fi
+            if [ "$i" -eq 30 ]; then
+              echo "health probe timed out after 60s"
+              sudo -n systemctl status "$SERVICE_NAME" --no-pager | head -20
+              sudo -n journalctl -u "$SERVICE_NAME" --no-pager -n 50
+              exit 1
+            fi
+            sleep 2
+          done
+          sudo -n systemctl is-active "$SERVICE_NAME"
+          curl -sf http://127.0.0.1:8000/health >/dev/null
+          echo "--- disk ---"
+          df -h /home | tail -1
+          echo "--- tail log ---"
+          sudo -n journalctl -u "$SERVICE_NAME" --no-pager -n 5

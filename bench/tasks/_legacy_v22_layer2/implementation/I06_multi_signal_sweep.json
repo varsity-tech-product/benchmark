@@ -4,9 +4,9 @@
   "difficulty": "hard",
   "category": "implementation",
   "task_type": "multi_turn",
-  "description": "Guide a student to implement a composite multi-signal strategy across the full Binance futures universe on LEAN, then run a systematic parameter sweep over signal weights. The student must implement three signal components per symbol (trend via SMA crossover, mean-reversion via RSI, and carry via 1-day momentum proxy), implement cross-sectional position sizing (not per-symbol independent sizing), and structure a sweep workflow that runs 19 backtests over weight combinations. This is the most complex I-series task, testing everything: multi-signal construction, universe-scale, portfolio construction, and systematic optimization.",
+  "description": "The user asks the agent to implement a composite multi-signal strategy across the full Binance futures universe on LEAN, then run a systematic parameter sweep over signal weights. The agent must help the user implement three signal components per symbol (trend via SMA crossover, mean-reversion via RSI, and carry via 1-day momentum proxy), implement cross-sectional position sizing (not per-symbol independent sizing), and structure a sweep workflow that runs 19 backtests over weight combinations. This is the most complex I-series task, testing everything: multi-signal construction, universe-scale, portfolio construction, and systematic optimization.",
   "persona_id": "developer_crossover",
-  "student_opening": "I need to implement a composite multi-signal strategy across the full Binance futures universe. I can handle the code, but I don't understand the financial logic behind it. What should this do and why?",
+  "user_opening": "I need to implement a composite multi-signal strategy across the full Binance futures universe. I can handle the code, but I don't understand the financial logic behind it. What should this do and why?",
   "environment": {
     "data_files": [
       "universe.json"
@@ -32,7 +32,7 @@
     "max_backtest_trials": 5
   },
   "ground_truth": {
-    "expected_outcome": "Student produces (1) a LEAN C# algorithm that computes all three signals per symbol (trend via SMA crossover, reversion via RSI deviation, carry via 1-day momentum proxy) and implements cross-sectional position sizing, (2) a parameter sweep mechanism running 19 weight combinations (trend/reversion/carry weights summing to 1.0, each in [0.1, 0.5]), (3) a sweep results table with Sharpe/drawdown/return/turnover per combination, and (4) detailed results for the best configuration. The equal-weight (0.33/0.33/0.33) trade log for 10 reference symbols should match the ground-truth.",
+    "expected_outcome": "User receives (1) a LEAN C# algorithm that computes all three signals per symbol (trend via SMA crossover, reversion via RSI deviation, carry via 1-day momentum proxy) and implements cross-sectional position sizing, (2) a parameter sweep mechanism running 19 weight combinations (trend/reversion/carry weights summing to 1.0, each in [0.1, 0.5]), (3) a sweep results table with Sharpe/drawdown/return/turnover per combination, and (4) detailed results for the best configuration. The equal-weight (0.33/0.33/0.33) trade log for 10 reference symbols should match the ground-truth.",
     "required_capabilities": [
       "Implement three signal components per symbol (trend, reversion, carry proxy) with proper normalization at universe scale",
       "Implement cross-sectional position sizing (signal strength relative to universe, not independent)",
@@ -55,7 +55,7 @@
     "quant_validation": {
       "eval_script": "tasks/test_scripts/I06_multi_signal_sweep.py"
     },
-    "termination_criteria": "The tutor has completed the following steps with computational evidence (not just verbal discussion): (1) Showed C# code for a composite signal strategy that combines trend, reversion, and carry signals with configurable weights. (2) Presented backtest results for at least one weight configuration with specific numerical values such as Sharpe ratio or total return. (3) Showed sweep results or a comparison table with metrics across multiple weight combinations. (4) Responded to the student's follow-up about the implementation or results with additional explanation, code refinement, or analysis beyond the initial demonstration. Once all four steps have been computationally demonstrated, the session is complete."
+    "termination_criteria": "The agent has completed the following steps with computational evidence (not just verbal discussion): (1) Showed C# code for a composite signal strategy that combines trend, reversion, and carry signals with configurable weights. (2) Presented backtest results for at least one weight configuration with specific numerical values such as Sharpe ratio or total return. (3) Showed sweep results or a comparison table with metrics across multiple weight combinations. (4) Responded to the user's follow-up about the implementation or results with additional explanation, code refinement, or analysis beyond the initial demonstration. Once all four steps have been computationally demonstrated, the session is complete."
   },
   "requires_code": true,
   "sample_code": null,

@@ -8,7 +8,7 @@
   "difficulty": "hard",
   "description": "The student wants to deploy a fresh research backtest live tomorrow with $50k. The agent pushes back on the rushed deployment and walks them through a production readiness checklist (paper trading period, position limits, slippage budget, monitoring, kill switch, drift detection, capacity).",
   "persona_id": "developer_crossover",
-  "student_opening": "My backtest looks great — Sharpe 2.1, max drawdown 8% over 4 years on AAPL. I want to deploy it live tomorrow with $50k. What do I need to set up?",
+  "user_opening": "My backtest looks great — Sharpe 2.1, max drawdown 8% over 4 years on AAPL. I want to deploy it live tomorrow with $50k. What do I need to set up?",
   "environment": {
     "data_files": [
       "AAPL_2018_2024.csv"

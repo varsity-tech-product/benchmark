@@ -1,0 +1,204 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://quanttutorbench.dev/schemas/bundle-v1-alpha.schema.json",
+  "title": "QuantTutorBench Bundle v1 alpha",
+  "type": "object",
+  "required": [
+    "bundle_id",
+    "schema_version",
+    "task_id",
+    "timestamps",
+    "agent_id",
+    "sandbox_digest",
+    "telemetry",
+    "messages",
+    "tool_calls",
+    "artifacts",
+    "workspace"
+  ],
+  "properties": {
+    "bundle_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "schema_version": {
+      "const": "1.0.0-alpha"
+    },
+    "task_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "timestamps": {
+      "type": "object",
+      "required": ["created_at"],
+      "properties": {
+        "created_at": {
+          "type": "string"
+        },
+        "started_at": {
+          "type": "string"
+        },
+        "completed_at": {
+          "type": "string"
+        },
+        "duration_seconds": {
+          "type": ["number", "null"],
+          "minimum": 0
+        }
+      },
+      "additionalProperties": true
+    },
+    "agent_id": {
+      "type": "string"
+    },
+    "sandbox_digest": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "telemetry": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "messages": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/message"
+      }
+    },
+    "tool_calls": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/tool_call"
+      }
+    },
+    "artifacts": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "workspace": {
+      "$ref": "#/$defs/workspace"
+    }
+  },
+  "additionalProperties": true,
+  "$defs": {
+    "message": {
+      "type": "object",
+      "required": ["message_id", "role", "content"],
+      "properties": {
+        "message_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "role": {
+          "type": "string",
+          "minLength": 1
+        },
+        "content": true,
+        "created_at": {
+          "type": "string"
+        },
+        "turn_index": {
+          "type": ["integer", "null"],
+          "minimum": 0
+        },
+        "attachments": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        },
+        "metadata": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": true
+    },
+    "tool_call": {
+      "type": "object",
+      "required": ["tool_call_id", "tool_name"],
+      "properties": {
+        "tool_call_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "tool_name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "args": true,
+        "result": true,
+        "created_at": {
+          "type": "string"
+        },
+        "duration_ms": {
+          "type": ["number", "null"],
+          "minimum": 0
+        },
+        "success": {
+          "type": ["boolean", "null"]
+        },
+        "turn_index": {
+          "type": ["integer", "null"],
+          "minimum": 0
+        },
+        "metadata": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": true
+    },
+    "workspace": {
+      "type": "object",
+      "required": ["files"],
+      "properties": {
+        "root": {
+          "type": "string"
+        },
+        "files": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/workspace_file"
+          }
+        },
+        "metadata": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": true
+    },
+    "workspace_file": {
+      "type": "object",
+      "required": ["path", "sha256", "size_bytes"],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "entry_type": {
+          "type": "string",
+          "enum": ["file", "directory"]
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[a-fA-F0-9]{64}$"
+        },
+        "size_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "content_ref": {
+          "type": "string"
+        },
+        "metadata": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": true
+    }
+  }
+}

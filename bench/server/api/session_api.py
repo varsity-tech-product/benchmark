@@ -3,7 +3,7 @@
 Each MCP HTTP session maps to one ``SessionState`` instance that manages:
 - Task + persona loading (random persona selection)
 - Container + tool setup
-- TutoringSession lifecycle (student simulation, termination checking)
+- TutoringSession lifecycle (user simulation, termination checking)
 - Result saving (run_state.json + agent_files/)
 - Internal evaluation triggering (background thread; server/operator only)
 
@@ -23,11 +23,14 @@ import json
 import logging
 import os
 import random
+import shutil
 import threading
 import time
+from dataclasses import asdict, is_dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
+import anyio
 from mcp.types import TextContent, Tool
 
 from server.config.llm_config import EVAL_DEFAULT_MODEL
@@ -49,6 +52,36 @@ from .protocol import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+async def _run_state_sync(use_docker: bool, func, *args, **kwargs):
+    if not use_docker:
+        return await _run_sync_worker(func, *args, **kwargs)
+    if kwargs:
+        return await anyio.to_thread.run_sync(lambda: func(*args, **kwargs))
+    return await anyio.to_thread.run_sync(func, *args)
+
+
+async def _run_sync_worker(func, *args, **kwargs):
+    done = threading.Event()
+    outcome: dict[str, object] = {}
+
+    def runner() -> None:
+        try:
+            outcome["value"] = func(*args, **kwargs)
+        except BaseException as exc:
+            outcome["error"] = exc
+        finally:
+            done.set()
+
+    thread = threading.Thread(target=runner, name="qtb-session-worker", daemon=True)
+    thread.start()
+    while not done.is_set():
+        await anyio.sleep(0.01)
+    thread.join()
+    if "error" in outcome:
+        raise outcome["error"]  # type: ignore[misc]
+    return outcome.get("value")
 
 
 def _stable_int_seed(*parts: object) -> int:
@@ -76,8 +109,17 @@ def _session_random_seed(
     return _stable_int_seed(task_id, session_id)
 
 
-def _resolve_persona_pin(task_id: str) -> Optional[str]:
+def _resolve_persona_pin(
+    task_id: str, persona_ids: Optional[list[str]] = None
+) -> Optional[str]:
     """Return an internal-only pinned persona override, if configured."""
+    allowed = set(persona_ids or [])
+
+    def _allowed(value: str) -> Optional[str]:
+        if allowed and value not in allowed:
+            return None
+        return value
+
     raw_json = os.environ.get("QTB_TEST_PERSONA_PIN_JSON", "").strip()
     if raw_json:
         try:
@@ -88,19 +130,82 @@ def _resolve_persona_pin(task_id: str) -> Optional[str]:
             if isinstance(mapping, dict):
                 desired = mapping.get(task_id) or mapping.get("*")
                 if desired:
-                    return str(desired)
+                    return _allowed(str(desired))
 
     desired = os.environ.get("QTB_TEST_PERSONA_PIN", "").strip()
-    return desired or None
+    return _allowed(desired) if desired else None
 
 
 def _task_is_lean(task) -> bool:
     environment = getattr(task, "environment", None)
     if environment is None:
         return False
-    sandbox_image = str(getattr(environment, "sandbox_image", "") or "").lower()
+    sandbox_image = _environment_sandbox_image(environment).lower()
     core_tools = list(getattr(environment, "core_mcp_tools", []) or [])
     return "lean" in sandbox_image or "run_lean_backtest" in core_tools
+
+
+def _environment_sandbox_image(environment) -> str:
+    if environment is None:
+        return ""
+    spec = getattr(environment, "sandbox_spec", None)
+    image_uri = str(getattr(spec, "image_uri", "") or "").strip()
+    if image_uri:
+        return image_uri
+    return str(getattr(environment, "sandbox_image", "") or "")
+
+
+def _environment_resource_limits(environment) -> dict:
+    spec = getattr(environment, "sandbox_spec", None)
+    limits = getattr(spec, "resource_limits", None)
+    resolved = dict(limits or {})
+    if "network_enabled" not in resolved and bool(
+        getattr(environment, "network_enabled", False)
+    ):
+        resolved["network_enabled"] = True
+    return resolved
+
+
+def _environment_network_enabled(environment) -> bool:
+    limits = _environment_resource_limits(environment)
+    value = limits.get("network_enabled")
+    if value is None:
+        return bool(getattr(environment, "network_enabled", False))
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+    return bool(value)
+
+
+def _environment_sandbox_digest(environment) -> dict:
+    if environment is None:
+        return {}
+    from platform_api.contracts import DataMount
+    from platform_api.runtime import build_sandbox_digest
+
+    data_mounts = []
+    for item in getattr(environment, "data_mounts", []) or []:
+        if hasattr(item, "model_dump"):
+            payload = item.model_dump()
+        elif isinstance(item, dict):
+            payload = dict(item)
+        else:
+            payload = {
+                "uri": getattr(item, "uri"),
+                "target_path": getattr(item, "target_path"),
+                "read_only": getattr(item, "read_only", True),
+            }
+        data_mounts.append(
+            DataMount(
+                uri=str(payload["uri"]),
+                target_path=str(payload["target_path"]),
+                read_only=bool(payload.get("read_only", True)),
+            )
+        )
+    return build_sandbox_digest(
+        _environment_sandbox_image(environment),
+        resource_limits=_environment_resource_limits(environment),
+        data_mounts=tuple(data_mounts),
+    )
 
 
 def _effective_core_tool_names(task) -> list[str]:
@@ -125,7 +230,7 @@ def _lean_template_type(task) -> str:
     return "generic"
 
 
-def _lean_template_context(task, *, student_code_dir: Optional[str | Path]) -> dict:
+def _lean_template_context(task, *, user_code_dir: Optional[str | Path]) -> dict:
     environment = getattr(task, "environment", None)
     template_type = _lean_template_type(task)
     return {
@@ -133,9 +238,30 @@ def _lean_template_context(task, *, student_code_dir: Optional[str | Path]) -> d
         "requires_code": bool(task.requires_code),
         "template_type": template_type,
         "expects_universe": template_type == "multi_symbol",
-        "sandbox_image": environment.sandbox_image if environment else "",
-        "student_code_available": bool(student_code_dir),
+        "sandbox_image": _environment_sandbox_image(environment),
+        "user_code_available": bool(user_code_dir),
     }
+
+
+def _int_env(name: str, default: int, *, minimum: int = 0) -> int:
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        return default
+    return max(minimum, value)
+
+
+def _safe_tool_log_dict(log) -> dict:
+    if isinstance(log, dict):
+        return dict(log)
+    if is_dataclass(log):
+        return asdict(log)
+    if hasattr(log, "__dict__"):
+        return dict(log.__dict__)
+    return {"raw": str(log)}
 
 
 class SessionState:
@@ -144,7 +270,7 @@ class SessionState:
     Lifecycle:
         1. Created by BenchSessionManager when a new MCP connection arrives.
         2. ``register(task_id)`` — loads task, picks persona, creates container.
-        3. ``start()`` — returns student opening, enters IN_SESSION.
+        3. ``start()`` — returns user opening, enters IN_SESSION.
         4. ``handle_send_message(text)`` — routes through proxy, may complete.
         5. Server/operator evaluation may run after results are saved.
         6. ``cleanup()`` — destroys container and temp dirs.
@@ -176,7 +302,7 @@ class SessionState:
         self.session = None  # TutoringSession
         self.container_manager = None
         self.container = None
-        self.student_sim = None
+        self.user_sim = None
         self.staged_temp_dirs: list = []
 
         # Timing
@@ -197,6 +323,16 @@ class SessionState:
         self.owner_github_login: str = ""
         self.owner_email: str = ""
         self.visibility: str = "private"
+        self._latest_layer_tag: str = ""
+        self._snapshot_tags: list[str] = []
+        self._snapshot_interval: int = _int_env(
+            "QTB_RESUME_SNAPSHOT_INTERVAL", 5, minimum=1
+        )
+        self._snapshot_keep: int = _int_env(
+            "QTB_RESUME_SNAPSHOT_KEEP", 3, minimum=1
+        )
+        self._resume_layer_tag: str = ""
+        self._suppress_active_persist: bool = False
         # Callback invoked after successful register(). Used by http_app to
         # bind the session to a RunAssignment without injecting RunService
         # into SessionState.
@@ -236,7 +372,7 @@ class SessionState:
         reconstructs enough state to service any API call: evaluate, get
         results, get scores.
 
-        No container, proxy, or student simulator is needed — only the
+        No container, proxy, or user simulator is needed — only the
         persisted conversation, tool logs, and task/persona metadata.
         """
         from types import SimpleNamespace
@@ -311,11 +447,102 @@ class SessionState:
         )
         return state
 
+    @classmethod
+    def restore_active_from_storage(
+        cls,
+        *,
+        state_path: Path,
+        bench_root: Path,
+        use_docker: bool,
+        eval_model: str = EVAL_DEFAULT_MODEL,
+    ) -> "SessionState":
+        """Restore an ACTIVE session from results/runs/{run_id}/run_state.json."""
+        run_state = json.loads(Path(state_path).read_text(encoding="utf-8"))
+        session_id = str(run_state["session_id"])
+        task_id = str(run_state["task_id"])
+        persona_id = str(run_state["persona_id"])
+
+        state = cls(
+            session_id=session_id,
+            use_docker=use_docker,
+            bench_root=bench_root,
+            eval_model=eval_model,
+        )
+        state.run_id = str(run_state.get("run_id") or "")
+        state._run_task_id = task_id
+        state.owner_user_id = str(run_state.get("owner_user_id") or "")
+        state.owner_github_login = str(run_state.get("owner_github_login") or "")
+        state.owner_email = str(run_state.get("owner_email") or "")
+        state.visibility = str(run_state.get("visibility") or "private")
+        state._latest_layer_tag = str(run_state.get("latest_layer_tag") or "")
+        state._resume_layer_tag = state._latest_layer_tag
+        state._snapshot_tags = [
+            str(tag) for tag in run_state.get("snapshot_tags", []) if tag
+        ]
+        state._snapshot_interval = max(
+            1,
+            int(run_state.get("snapshot_interval") or state._snapshot_interval),
+        )
+        state._snapshot_keep = max(
+            1,
+            int(run_state.get("snapshot_keep") or state._snapshot_keep),
+        )
+
+        state._suppress_active_persist = True
+        try:
+            registered = state.register(task_id, persona_id)
+            if "error" in registered:
+                raise RuntimeError(str(registered.get("error")))
+        finally:
+            state._suppress_active_persist = False
+
+        snapshot_dir = Path(
+            run_state.get("workspace_snapshot_path")
+            or state_path.parent / "workspace_snapshot"
+        )
+        state._restore_active_workspace_snapshot(snapshot_dir)
+        if state.user_sim is not None:
+            state.user_sim.total_cost = float(run_state.get("simulator_cost") or 0.0)
+
+        if state.proxy is not None and hasattr(state.proxy, "restore_logs"):
+            state.proxy.restore_logs(run_state.get("tool_logs", []))
+
+        turn_count = int(run_state.get("turn_count") or 0)
+        if state.session is not None and hasattr(
+            state.session, "restore_runtime_state"
+        ):
+            state.session.restore_runtime_state(
+                conversation=run_state.get("conversation", []),
+                turn_count=turn_count,
+                session_status=str(run_state.get("session_status") or "active"),
+                completion_reason=run_state.get("termination_reason"),
+                file_ledger=run_state.get("file_ledger") or {},
+                artifact_debug_history=run_state.get("artifact_debug_history") or [],
+            )
+        if state.proxy is not None and hasattr(state.proxy, "set_turn"):
+            state.proxy.set_turn(turn_count)
+
+        phase = str(run_state.get("phase") or SessionPhase.IN_SESSION.value)
+        try:
+            state.phase = SessionPhase(phase)
+        except ValueError:
+            state.phase = SessionPhase.IN_SESSION
+        state._start_time = time.time() - float(run_state.get("duration_seconds") or 0)
+        state._closed = False
+        state._persist_active_state()
+        logger.info(
+            "Restored active session %s from %s using layer=%s",
+            session_id[:8],
+            state_path,
+            state._latest_layer_tag or "none",
+        )
+        return state
+
     def _build_session_context(
         self,
         *,
         docs_available: list[str],
-        student_code_dir: Optional[Path | str],
+        user_code_dir: Optional[Path | str],
     ) -> dict:
         """Build the truthful runtime context exposed to tools."""
         environment = self.task.environment if self.task else None
@@ -325,8 +552,8 @@ class SessionState:
             "requires_code": bool(self.task.requires_code) if self.task else False,
             "docs_available": list(docs_available or []),
             "max_backtest_trials": max_backtest_trials,
-            "sandbox_image": environment.sandbox_image if environment else "",
-            "student_code_available": bool(student_code_dir),
+            "sandbox_image": _environment_sandbox_image(environment),
+            "user_code_available": bool(user_code_dir),
         }
 
     def _build_tool_env(
@@ -335,13 +562,13 @@ class SessionState:
         data_dir: str | Path,
         docs_dir: str | Path,
         workspace_dir: str | Path,
-        student_code_dir: Optional[str | Path],
+        user_code_dir: Optional[str | Path],
         docs_available: list[str],
     ) -> dict[str, str]:
         """Build per-session tool environment variables."""
         context = self._build_session_context(
             docs_available=docs_available,
-            student_code_dir=student_code_dir,
+            user_code_dir=user_code_dir,
         )
         env = {
             "QTB_DATA_DIR": str(data_dir),
@@ -351,11 +578,11 @@ class SessionState:
             "LEAN_RUN_TIMEOUT": "300",
             "QTB_SESSION_CONTEXT_JSON": json.dumps(context),
         }
-        if student_code_dir:
-            env["QTB_STUDENT_CODE_DIR"] = str(student_code_dir)
+        if user_code_dir:
+            env["QTB_USER_CODE_DIR"] = str(user_code_dir)
         if self.task and _task_is_lean(self.task):
             env["QTB_LEAN_TEMPLATE_CONTEXT_JSON"] = json.dumps(
-                _lean_template_context(self.task, student_code_dir=student_code_dir)
+                _lean_template_context(self.task, user_code_dir=user_code_dir)
             )
         return env
 
@@ -380,8 +607,7 @@ class SessionState:
         from server.core.registry import populate_proxy_for_task
         from server.core.session import TutoringSession
         from server.core.staging import create_staged_dirs, create_staged_sample_code
-        from server.core.student_sim import StudentSimulator, require_student_model
-        from server.core.tc_checker import TCChecker, parse_tc_items
+        from server.core.user_sim import UserSimulator, require_user_model
         from server.data_manager import ensure_data
 
         self._closed = False
@@ -435,13 +661,13 @@ class SessionState:
 
             load_server_env(self.bench_root)
             try:
-                resolved_sim_model = require_student_model(
+                resolved_sim_model = require_user_model(
                     SIMULATOR_DEFAULT_MODEL,
                 )
             except RuntimeError as exc:
                 return {"error": str(exc)}
 
-            sandbox_img = task.environment.sandbox_image if task.environment else ""
+            sandbox_img = _environment_sandbox_image(task.environment)
             series = "lean" if sandbox_img and "lean" in sandbox_img else "normal"
             paths = ensure_data(
                 series=series,
@@ -463,42 +689,55 @@ class SessionState:
                 )
             )
 
-            student_code_dir = None
+            user_code_dir = None
             if task.sample_code:
-                student_code_dir, sample_temp_dirs = create_staged_sample_code(
+                user_code_dir, sample_temp_dirs = create_staged_sample_code(
                     task.sample_code,
                     data_search_dirs=paths.data_search_dirs,
-                    student_code_dir=paths.student_code,
+                    user_code_dir=paths.user_code,
                 )
                 self.staged_temp_dirs.extend(sample_temp_dirs)
 
+            base_sandbox_img = (
+                _environment_sandbox_image(task.environment)
+                if task.environment
+                else None
+            )
             self.container = self.container_manager.create_container(
                 task_id=f"{task_id}_{self.session_id[:8]}",
                 data_dir=staged_data_dir,
                 docs_dir=staged_docs_dir,
-                student_code_dir=student_code_dir,
-                sandbox_image=(
-                    task.environment.sandbox_image if task.environment else None
-                ),
+                user_code_dir=user_code_dir,
+                sandbox_image=(self._resume_layer_tag or base_sandbox_img),
                 network_enabled=(
-                    task.environment.network_enabled if task.environment else False
+                    _environment_network_enabled(task.environment)
+                    if task.environment
+                    else False
                 ),
                 lean_data_dir=paths.lean_data,
                 custom_data_dir=paths.custom_data,
+                data_mounts=task.environment.data_mounts if task.environment else [],
+                restore_workspace_snapshot=bool(self._resume_layer_tag),
+                resource_image=base_sandbox_img,
+                resource_limits=(
+                    _environment_resource_limits(task.environment)
+                    if task.environment
+                    else None
+                ),
             )
 
             local_tool_env = self._build_tool_env(
                 data_dir=staged_data_dir,
                 docs_dir=staged_docs_dir,
                 workspace_dir=self.container.workspace_path,
-                student_code_dir=student_code_dir,
+                user_code_dir=user_code_dir,
                 docs_available=docs_available,
             )
             container_tool_env = self._build_tool_env(
                 data_dir="/data",
                 docs_dir="/docs",
                 workspace_dir="/workspace",
-                student_code_dir="/student_code" if student_code_dir else None,
+                user_code_dir="/user_code" if user_code_dir else None,
                 docs_available=docs_available,
             )
 
@@ -523,36 +762,15 @@ class SessionState:
                 env_overrides=local_tool_env,
             )
 
-            tc_text = (
-                task.ground_truth.termination_criteria if task.ground_truth else None
-            )
-            tc_items = parse_tc_items(
-                tc_text,
-                task.category.value,
-                persona_id=self.persona_id,
-            )
-            has_tc = tc_items is not None
-
-            self.student_sim = StudentSimulator(
+            self.user_sim = UserSimulator(
                 scenario=build_scenario(
-                    task, self.persona_id, has_incremental_tc=has_tc
+                    task, self.persona_id, has_incremental_tc=False
                 ),
                 user_description=build_user_description(
                     self.persona,
-                    has_incremental_tc=has_tc,
+                    has_incremental_tc=False,
                 ),
                 model=resolved_sim_model,
-            )
-
-            required_tools = (
-                list(task.ground_truth.expected_mcp_tools)
-                if task.ground_truth and task.ground_truth.expected_mcp_tools
-                else []
-            )
-            tc_checker = (
-                TCChecker(tc_items or [], required_tools=required_tools)
-                if (tc_items or required_tools)
-                else None
             )
 
             effective_timeout = task.timeout_minutes
@@ -564,8 +782,7 @@ class SessionState:
             self.session = TutoringSession(
                 task=task,
                 persona=persona,
-                student_sim=self.student_sim,
-                tc_checker=tc_checker,
+                user_sim=self.user_sim,
                 max_turns=task.max_turns,
                 deadline=deadline,
                 proxy=self.proxy,
@@ -605,6 +822,7 @@ class SessionState:
                         exc,
                     )
 
+            self._persist_active_state()
             return {
                 "session_id": self.session_id,
                 "current_phase": self.phase.value,
@@ -620,7 +838,7 @@ class SessionState:
     # ------------------------------------------------------------------
 
     def start(self) -> dict:
-        """Handle ``start_session()`` — return student opening + available tools.
+        """Handle ``start_session()`` — return user opening + available tools.
 
         After phase transitions to IN_SESSION, the full tool list is
         included so the agent can start working without an extra
@@ -642,6 +860,7 @@ class SessionState:
         ]
         data["current_phase"] = self.phase.value
         data["next_allowed"] = next_allowed_for_phase(self.phase)
+        self._persist_active_state()
         return data
 
     # ------------------------------------------------------------------
@@ -661,7 +880,7 @@ class SessionState:
 
         ``reasoning`` is forwarded to the proxy (which records it in the
         tool log ``args``) and to the underlying session. It is never
-        delivered to the student.
+        delivered to the user.
 
         Returns:
             Raw JSON string from TutoringSession (via proxy).
@@ -684,6 +903,8 @@ class SessionState:
         if session_status in ("completed", "failed"):
             self.phase = SessionPhase.COMPLETED
             self._save_results()
+            self._cleanup_resume_layers()
+            self._remove_active_state()
             self._destroy_container()
             if session_status == "failed":
                 logger.error(
@@ -712,6 +933,8 @@ class SessionState:
                     )
         data.setdefault("current_phase", self.phase.value)
         data.setdefault("next_allowed", next_allowed_for_phase(self.phase))
+        if self.phase != SessionPhase.COMPLETED:
+            self._persist_active_state()
         return json.dumps(data)
 
     # ------------------------------------------------------------------
@@ -869,7 +1092,9 @@ class SessionState:
         """Route a domain tool call through the proxy."""
         if self._closed:
             return json.dumps({"success": False, "output": "Error: Session is closed"})
-        return self.proxy.call_tool(name, **kwargs)
+        result = self.proxy.call_tool(name, **kwargs)
+        self._persist_active_state()
+        return result
 
     # ------------------------------------------------------------------
     # Tool visibility per phase (for MCP list_tools)
@@ -1048,13 +1273,15 @@ class SessionState:
                         ),
                     )
                 ]
-            result = await asyncio.to_thread(self.register, task_id, persona_id)
+            result = await _run_state_sync(
+                self.use_docker, self.register, task_id, persona_id
+            )
             if "session_id" in result:
                 await self._notify_tools_changed()
             return [TextContent(type="text", text=json.dumps(result))]
 
         if name == "start_session":
-            result = await asyncio.to_thread(self.start)
+            result = await _run_state_sync(self.use_docker, self.start)
             await self._notify_tools_changed()
             return [TextContent(type="text", text=json.dumps(result))]
 
@@ -1062,7 +1289,7 @@ class SessionState:
             from server.core.session import build_background
 
             bg = build_background(self.task) if self.task else ""
-            return [TextContent(type="text", text=bg)]
+            return [TextContent(type="text", text=json.dumps(bg))]
 
         if name == "send_message":
             text = arguments.get("text", "")
@@ -1092,20 +1319,22 @@ class SessionState:
                 "yes" if reasoning else "no",
                 text[:100],
             )
-            result = await asyncio.to_thread(
-                self.handle_send_message,
-                text,
-                attachments=attachments,
-                reasoning=reasoning,
+            result = await _run_state_sync(
+                self.use_docker,
+                lambda: self.handle_send_message(
+                    text,
+                    attachments=attachments,
+                    reasoning=reasoning,
+                )
             )
-            # Log student reply
+            # Log user reply
             try:
                 data = json.loads(result)
                 logger.info(
-                    "[%s] student reply (status=%s): %s...",
+                    "[%s] user reply (status=%s): %s...",
                     self.session_id[:8],
                     data.get("status", "?"),
-                    data.get("student_message", "")[:100],
+                    data.get("user_message", "")[:100],
                 )
             except Exception:
                 pass
@@ -1116,11 +1345,15 @@ class SessionState:
         # Domain tool — route through proxy
         if name in HEAVY_TOOLS:
             async with backtest_sem():
-                result = await asyncio.to_thread(
-                    self.call_domain_tool, name, **arguments
+                result = await _run_state_sync(
+                    self.use_docker,
+                    lambda: self.call_domain_tool(name, **arguments)
                 )
         else:
-            result = await asyncio.to_thread(self.call_domain_tool, name, **arguments)
+            result = await _run_state_sync(
+                self.use_docker,
+                lambda: self.call_domain_tool(name, **arguments)
+            )
         result_preview = str(result)[:150]
         logger.debug("[%s] %s -> %s...", self.session_id[:8], name, result_preview)
         return [TextContent(type="text", text=str(result))]
@@ -1128,6 +1361,217 @@ class SessionState:
     # ------------------------------------------------------------------
     # Result saving
     # ------------------------------------------------------------------
+
+    def _active_run_state_path(self) -> Path | None:
+        if not self.run_id:
+            return None
+        return self.bench_root / "results" / "runs" / self.run_id / "run_state.json"
+
+    def _active_workspace_snapshot_path(self) -> Path | None:
+        state_path = self._active_run_state_path()
+        if state_path is None:
+            return None
+        return state_path.parent / "workspace_snapshot"
+
+    def _turn_count(self) -> int:
+        return int(getattr(self.session, "turn", 0) or 0) if self.session else 0
+
+    def _copy_active_workspace_snapshot(self) -> Path | None:
+        if self.container is None:
+            return None
+        source = Path(self.container.workspace_path)
+        if not source.is_dir():
+            return None
+        dest = self._active_workspace_snapshot_path()
+        if dest is None:
+            return None
+        tmp = dest.with_name(f".{dest.name}.tmp")
+        shutil.rmtree(tmp, ignore_errors=True)
+        shutil.copytree(source, tmp, symlinks=True)
+        shutil.rmtree(dest, ignore_errors=True)
+        os.replace(tmp, dest)
+        return dest
+
+    def _restore_active_workspace_snapshot(self, snapshot_dir: Path) -> None:
+        if self.container is None or not snapshot_dir.is_dir():
+            return
+        dest = Path(self.container.workspace_path)
+        dest.mkdir(parents=True, exist_ok=True)
+        for child in dest.iterdir():
+            if child.is_dir() and not child.is_symlink():
+                shutil.rmtree(child)
+            else:
+                child.unlink()
+        for child in snapshot_dir.iterdir():
+            target = dest / child.name
+            if child.is_dir() and not child.is_symlink():
+                shutil.copytree(child, target, symlinks=True)
+            else:
+                shutil.copy2(child, target, follow_symlinks=False)
+
+    def _maybe_commit_resume_snapshot(self, *, force: bool = False) -> None:
+        if not self.run_id or not self.container_manager or not self.container:
+            return
+        turn_count = self._turn_count()
+        if not force and (turn_count <= 0 or turn_count % self._snapshot_interval != 0):
+            return
+        if not force and self._latest_layer_tag.endswith(f"-{turn_count}"):
+            return
+        if not hasattr(self.container_manager, "commit_resume_snapshot"):
+            return
+        try:
+            tag = self.container_manager.commit_resume_snapshot(
+                self.container.container_id,
+                run_id=self.run_id,
+                turn_count=turn_count,
+            )
+        except Exception as exc:
+            logger.warning(
+                "Session %s resume snapshot failed at turn %s: %s",
+                self.session_id,
+                turn_count,
+                exc,
+            )
+            return
+        if not tag:
+            return
+        self._latest_layer_tag = tag
+        if tag in self._snapshot_tags:
+            self._snapshot_tags.remove(tag)
+        self._snapshot_tags.append(tag)
+        while len(self._snapshot_tags) > self._snapshot_keep:
+            old = self._snapshot_tags.pop(0)
+            try:
+                self.container_manager.remove_image(old)
+            except Exception as exc:
+                logger.debug("Could not remove old resume layer %s: %s", old, exc)
+
+    def _cleanup_resume_layers(self) -> None:
+        tags = list(
+            dict.fromkeys([*self._snapshot_tags, self._latest_layer_tag])
+        )
+        tags = [tag for tag in tags if tag]
+        if not tags:
+            self._latest_layer_tag = ""
+            return
+        manager = self.container_manager
+        if manager is None:
+            try:
+                from server.core.container import ContainerManager
+
+                manager = ContainerManager(use_docker=self.use_docker)
+            except Exception:
+                manager = None
+        if manager is None or not hasattr(manager, "remove_image"):
+            return
+        for tag in tags:
+            try:
+                manager.remove_image(tag)
+            except Exception as exc:
+                logger.debug("Could not remove resume layer %s: %s", tag, exc)
+        self._snapshot_tags = []
+        self._latest_layer_tag = ""
+
+    def _remove_active_state(self) -> None:
+        state_path = self._active_run_state_path()
+        if state_path is None:
+            return
+        try:
+            state_path.unlink(missing_ok=True)
+        except OSError as exc:
+            logger.debug("Could not remove active run_state %s: %s", state_path, exc)
+        snapshot_path = self._active_workspace_snapshot_path()
+        if snapshot_path is not None:
+            shutil.rmtree(snapshot_path, ignore_errors=True)
+
+    def _active_run_payload(self) -> dict:
+        conversation = self.session.conversation if self.session else []
+        tool_logs = (
+            [_safe_tool_log_dict(log) for log in self.proxy.get_logs()]
+            if self.proxy
+            else []
+        )
+        distractor_names = (
+            self.proxy.get_distractor_names() if self.proxy is not None else []
+        )
+        try:
+            from eval.tool_filters import NON_SUBSTANTIVE_TOOLS
+
+            step_count = sum(
+                1 for log in tool_logs if log.get("name") not in NON_SUBSTANTIVE_TOOLS
+            )
+        except Exception:
+            step_count = len(tool_logs)
+        duration = time.time() - self._start_time if self._start_time else 0.0
+        session_status = (
+            self.session.session_status if self.session else self.phase.value
+        )
+        termination_reason = self.session.completion_reason if self.session else None
+        return {
+            "active_state_version": 1,
+            "run_id": self.run_id or "",
+            "public_task_label": self.task_id.split("_")[0] if self.task_id else "",
+            "owner_user_id": self.owner_user_id,
+            "owner_github_login": self.owner_github_login,
+            "owner_email": self.owner_email,
+            "visibility": self.visibility,
+            "task_id": self.task_id,
+            "session_id": self._storage_session_id(),
+            "persona_id": self.persona_id,
+            "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+            "phase": self.phase.value,
+            "session_status": session_status,
+            "termination_reason": termination_reason,
+            "turn_count": self._turn_count(),
+            "conversation": conversation,
+            "tool_logs": tool_logs,
+            "distractor_names": distractor_names,
+            "file_ledger": self.session.file_ledger if self.session else {},
+            "artifact_debug_history": (
+                self.session.artifact_debug_history if self.session else []
+            ),
+            "simulator_cost": self.user_sim.total_cost if self.user_sim else 0.0,
+            "duration_seconds": duration,
+            "step_count": step_count,
+            "sandbox_digest": _environment_sandbox_digest(
+                self.task.environment if self.task else None
+            ),
+            "latest_layer_tag": self._latest_layer_tag,
+            "snapshot_tags": list(self._snapshot_tags),
+            "snapshot_interval": self._snapshot_interval,
+            "snapshot_keep": self._snapshot_keep,
+            "workspace_snapshot_path": (
+                str(path)
+                if (path := self._active_workspace_snapshot_path()) and path.exists()
+                else ""
+            ),
+        }
+
+    def _persist_active_state(self, *, force_snapshot: bool = False) -> Path | None:
+        if self._suppress_active_persist:
+            return None
+        state_path = self._active_run_state_path()
+        if state_path is None:
+            return None
+        if force_snapshot:
+            self._maybe_commit_resume_snapshot(force=True)
+            self._copy_active_workspace_snapshot()
+        else:
+            self._maybe_commit_resume_snapshot(force=False)
+        state_path.parent.mkdir(parents=True, exist_ok=True)
+        tmp_path = state_path.with_name(f".{state_path.name}.tmp")
+        tmp_path.write_text(
+            json.dumps(self._active_run_payload(), indent=2, default=str),
+            encoding="utf-8",
+        )
+        os.replace(tmp_path, state_path)
+        return state_path
+
+    def suspend_for_resume(self) -> None:
+        """Persist an active checkpoint, snapshot the container, and release it."""
+        self._persist_active_state(force_snapshot=True)
+        self._destroy_container()
+        self._closed = True
 
     def _storage_session_id(self) -> str:
         """Session ID for result storage.
@@ -1162,18 +1606,12 @@ class SessionState:
         distractor_names = self.proxy.get_distractor_names()
         duration = time.time() - self._start_time if self._start_time else 0.0
 
-        # TC checker cost (if incremental TC was used)
-        tc_cost = 0.0
-        if self.session and self.session._tc_checker:
-            tc_cost = getattr(self.session._tc_checker, "total_cost", 0.0)
-
         save_run_state(
             result_dir=result_dir,
             conversation=conversation,
             tool_logs=tool_logs,
             workspace_path=(self.container.workspace_path if self.container else None),
-            simulator_cost=(self.student_sim.total_cost if self.student_sim else 0.0),
-            tc_checker_cost=tc_cost,
+            simulator_cost=(self.user_sim.total_cost if self.user_sim else 0.0),
             duration_seconds=duration,
             distractor_names=distractor_names,
             task_id=self.task_id,
@@ -1183,8 +1621,6 @@ class SessionState:
             termination_reason=(
                 self.session.completion_reason if self.session else None
             ),
-            tc_coverage=(self.session.tc_coverage_summary if self.session else None),
-            tc_debug_history=(self.session.tc_debug_history if self.session else None),
             artifact_debug_history=(
                 self.session.artifact_debug_history if self.session else None
             ),
@@ -1194,6 +1630,9 @@ class SessionState:
             owner_github_login=self.owner_github_login,
             owner_email=self.owner_email,
             visibility=self.visibility,
+            sandbox_digest=_environment_sandbox_digest(
+                self.task.environment if self.task else None
+            ),
         )
         logger.info("Results saved: %s", result_dir)
 
@@ -1370,6 +1809,8 @@ class SessionState:
                     self.session_id,
                 )
                 self._save_results()
+                self._cleanup_resume_layers()
+                self._remove_active_state()
             except Exception as exc:
                 logger.warning(
                     "Session %s: save before cleanup failed: %s",
@@ -1398,7 +1839,7 @@ class SessionState:
         self.session = None
         self.container_manager = None
         self.container = None
-        self.student_sim = None
+        self.user_sim = None
         self._start_time = None
         self._result_dir = None
         self.phase = SessionPhase.UNREGISTERED
@@ -1418,11 +1859,11 @@ class SessionState:
 
     def _load_persona(self, persona_id: str):
         """Load persona JSON by ID."""
-        from eval.contracts.schemas import StudentPersona
+        from eval.contracts.schemas import UserPersona
 
         personas_dir = self.bench_root / "personas"
         for json_path in personas_dir.rglob(f"{persona_id}.json"):
-            return StudentPersona(**json.loads(json_path.read_text()))
+            return UserPersona(**json.loads(json_path.read_text()))
         return None
 
     def _get_domain_tools(self) -> list[Tool]:

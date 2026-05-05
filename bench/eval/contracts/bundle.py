@@ -1,13 +1,9 @@
-"""Bundle v1 dataclass: the immutable session artifact scoring reads from.
+"""Generic Bundle v1 alpha dataclasses.
 
-A Bundle captures everything a scorer needs to evaluate a finished session
-without depending on the server runtime: task identity, session metadata,
-turn-by-turn conversation with nested tool calls, and a workspace manifest.
-The on-disk layout is one ``bundle.json`` per session; raw workspace files
-live alongside as ordinary files (referenced by ``workspace_manifest``);
-multiple ``score_v*`` files are written into a sibling ``scores/`` directory.
-
-Forward-compat rules live in ``schema_evolution.md``.
+The bundle is the public artifact contract between capture, scoring, and
+downstream research consumers. The v1 alpha shape keeps the envelope generic:
+messages, tool calls, arbitrary artifacts, and a workspace file snapshot.
+Reference-harness fields live under ``artifacts["quanttutor"]``.
 """
 
 from __future__ import annotations
@@ -15,82 +11,95 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-SCHEMA_VERSION = "1.0"
+SCHEMA_VERSION = "1.0.0-alpha"
 BENCH_EVAL_VERSION = "1.0.0"
+REFERENCE_ARTIFACT_KEY = "quanttutor"
+
+
+@dataclass
+class BundleTimestamps:
+    created_at: str = ""
+    started_at: str = ""
+    completed_at: str = ""
+    duration_seconds: float | None = None
+
+
+@dataclass
+class Message:
+    message_id: str
+    role: str
+    content: Any = ""
+    created_at: str = ""
+    turn_index: int | None = None
+    attachments: list[dict[str, Any]] = field(default_factory=list)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
 class ToolCall:
-    call_id: str
-    tool: str
-    args: dict[str, Any] = field(default_factory=dict)
-    result_preview: str = ""
-    result_truncated: bool = False
-    ts: str = ""
-    duration_ms: float = 0.0
-    success: bool = True
-
-
-@dataclass
-class AgentMessage:
-    text: str
-    reasoning: str | None = None
-    attachments: list[dict[str, Any]] = field(default_factory=list)
-
-
-@dataclass
-class StudentMessage:
-    text: str
-
-
-@dataclass
-class ConversationTurn:
-    turn: int
-    agent: AgentMessage
-    student: StudentMessage | None = None
-    tool_calls: list[ToolCall] = field(default_factory=list)
+    tool_call_id: str
+    tool_name: str
+    args: Any = field(default_factory=dict)
+    result: Any = None
+    created_at: str = ""
+    duration_ms: float | None = None
+    success: bool | None = None
+    turn_index: int | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
 class WorkspaceFile:
     path: str
     sha256: str
-    size: int
+    size_bytes: int
+    entry_type: str = "file"
+    content_ref: str = ""
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def size(self) -> int:
+        return self.size_bytes
 
 
 @dataclass
-class SessionInfo:
-    session_id: str
-    start_ts: str = ""
-    end_ts: str = ""
-    termination_reason: str = ""
-    turn_count: int = 0
-
-
-@dataclass
-class RuntimeInfo:
-    sandbox_image: str = ""
-    npc_model: str = ""
-    bench_eval_version: str = BENCH_EVAL_VERSION
-    seed: int | None = None
-
-
-@dataclass
-class AgentMetadata:
-    self_reported_name: str = ""
-    self_reported_version: str = ""
-    harness: str = ""
+class WorkspaceSnapshot:
+    root: str = ""
+    files: list[WorkspaceFile] = field(default_factory=list)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
 class Bundle:
+    bundle_id: str
     schema_version: str
     task_id: str
-    task_version: str
-    task_spec_hash: str
-    persona_id: str
-    session: SessionInfo
-    runtime: RuntimeInfo
-    agent_metadata: AgentMetadata
-    conversation: list[ConversationTurn] = field(default_factory=list)
-    workspace_manifest: list[WorkspaceFile] = field(default_factory=list)
+    timestamps: BundleTimestamps
+    agent_id: str
+    sandbox_digest: dict[str, Any] = field(default_factory=dict)
+    telemetry: dict[str, Any] = field(default_factory=dict)
+    messages: list[Message] = field(default_factory=list)
+    tool_calls: list[ToolCall] = field(default_factory=list)
+    artifacts: dict[str, Any] = field(default_factory=dict)
+    workspace: WorkspaceSnapshot = field(default_factory=WorkspaceSnapshot)
+
+    @property
+    def reference_artifact(self) -> dict[str, Any]:
+        value = self.artifacts.get(REFERENCE_ARTIFACT_KEY)
+        return value if isinstance(value, dict) else {}
+
+    @property
+    def session_id(self) -> str:
+        return str(self.reference_artifact.get("session_id") or self.bundle_id)
+
+    @property
+    def persona_id(self) -> str:
+        return str(self.reference_artifact.get("persona_id") or "")
+
+    @property
+    def termination_reason(self) -> str:
+        return str(self.reference_artifact.get("termination_reason") or "")
+
+    @property
+    def workspace_manifest(self) -> list[WorkspaceFile]:
+        return self.workspace.files

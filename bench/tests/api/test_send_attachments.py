@@ -1,7 +1,7 @@
 """API tests for send_message attachments feature.
 
 Tests the full REST flow: write file → send with attachments → verify
-student sees content and conversation records metadata.
+user sees content and conversation records metadata.
 """
 
 import pytest
@@ -48,7 +48,7 @@ class TestAttachmentsHappyPath:
             attachments=["strategy.py"],
         )
         assert body["status"] in ("active", "completed")
-        assert "student_message" in body
+        assert "user_message" in body
 
     @pytest.mark.asyncio
     async def test_send_without_attachment(self, client, session_with_file):

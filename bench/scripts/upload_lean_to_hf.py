@@ -14,7 +14,7 @@ HF repo layout produced::
     reference.tar.gz                            # eval reference results
     docs/                                       # shared reference docs
     BDS/                                        # normal CSV data
-    X/                                          # student code / debug data
+    X/                                          # user code / debug data
     A/                                          # adversarial data
     raw/i-series/universe.json
     raw/i-series/universe_structured.json

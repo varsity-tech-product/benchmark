@@ -286,7 +286,7 @@ def _is_successful_send_message_result(block: dict) -> bool:
     if payload.get("error"):
         return False
     return bool(
-        payload.get("student_message") is not None
+        payload.get("user_message") is not None
         or payload.get("status") in {"active", "completed"}
         or payload.get("reason")
     )

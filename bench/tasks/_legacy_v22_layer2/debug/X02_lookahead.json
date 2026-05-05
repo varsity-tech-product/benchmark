@@ -4,9 +4,9 @@
   "difficulty": "easy",
   "category": "debug",
   "task_type": "multi_turn",
-  "description": "Guide a student to find and fix a look-ahead bias in an SMA crossover strategy where positions use today's signal without shifting, causing the strategy to 'see' future prices.",
+  "description": "The user asks the agent to find and fix a look-ahead bias in an SMA crossover strategy where positions use today's signal without shifting, causing the strategy to 'see' future prices.",
   "persona_id": "developer_crossover",
-  "student_opening": "I'm looking at code that should find and fix a look-ahead bias in an SMA crossover strategy. The code reads fine to me, but I'm not sure the financial logic is correct. What should it be doing?",
+  "user_opening": "I'm looking at code that should find and fix a look-ahead bias in an SMA crossover strategy. The code reads fine to me, but I'm not sure the financial logic is correct. What should it be doing?",
   "environment": {
     "data_files": [
       "AAPL_2018_2024.csv"
@@ -26,7 +26,7 @@
     "network_enabled": false
   },
   "ground_truth": {
-    "expected_outcome": "Student identifies the look-ahead bias (Position = Signal without shift(1)), understands why using today's signal for today's trade is invalid, and fixes by shifting the position by 1 day.",
+    "expected_outcome": "Agent helps the user identify the look-ahead bias (Position = Signal without shift(1)), understands why using today's signal for today's trade is invalid, and fixes by shifting the position by 1 day.",
     "required_capabilities": [
       "Read and understand the signal generation code",
       "Identify the temporal alignment issue (no shift on position)",
@@ -49,10 +49,10 @@
     "quant_validation": {
       "eval_script": "tasks/test_scripts/debug/X02_lookahead.py"
     },
-    "termination_criteria": "The tutor has completed the following steps with computational evidence (not just verbal discussion): (1) Reviewed the student's code and identified the look-ahead bias where Position = Signal without shift(1), meaning today's trade uses today's signal which includes information from the current bar's close. (2) Explained why this constitutes look-ahead bias, such as how using the current bar's signal to trade at the current bar's close gives the strategy impossible foreknowledge of the price it trades at. (3) Showed the corrected code with shift(1) applied to the position assignment and presented execution results demonstrating the fix, such as returns decreasing (expected behavior when look-ahead is removed). (4) Responded to the student's follow-up about the look-ahead bias or the fix with additional explanation or analysis beyond the initial demonstration. Once all four steps have been computationally demonstrated, the session is complete."
+    "termination_criteria": "The agent has completed the following steps with computational evidence (not just verbal discussion): (1) Reviewed the user's code and identified the look-ahead bias where Position = Signal without shift(1), meaning today's trade uses today's signal which includes information from the current bar's close. (2) Explained why this constitutes look-ahead bias, such as how using the current bar's signal to trade at the current bar's close gives the strategy impossible foreknowledge of the price it trades at. (3) Showed the corrected code with shift(1) applied to the position assignment and presented execution results demonstrating the fix, such as returns decreasing (expected behavior when look-ahead is removed). (4) Responded to the user's follow-up about the look-ahead bias or the fix with additional explanation or analysis beyond the initial demonstration. Once all four steps have been computationally demonstrated, the session is complete."
   },
   "requires_code": true,
-  "sample_code": "student_code/lookahead.py",
+  "sample_code": "user_code/lookahead.py",
   "max_turns": 10,
   "timeout_minutes": 15
 }

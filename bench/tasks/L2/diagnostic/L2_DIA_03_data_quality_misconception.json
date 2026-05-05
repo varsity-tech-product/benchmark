@@ -8,7 +8,7 @@
   "difficulty": "medium",
   "description": "The student presents a momentum strategy on QQQ with Sharpe 3.5 in 2019-2021 that 'crashed' afterwards. The agent diagnoses the issue as upstream data corruption (split-adjusted prices applied inconsistently across the sample) rather than a model problem, and pushes the student back to data validation rather than letting them tweak model parameters.",
   "persona_id": "developer_crossover",
-  "student_opening": "I built a momentum strategy on QQQ daily and it shows Sharpe 3.5 in 2019-2021! But it only worked then — afterwards returns crashed to 0. I think my model is missing a regime filter or the lookback is wrong. Should I add a volatility filter or try shorter windows?",
+  "user_opening": "I built a momentum strategy on QQQ daily and it shows Sharpe 3.5 in 2019-2021! But it only worked then — afterwards returns crashed to 0. I think my model is missing a regime filter or the lookback is wrong. Should I add a volatility filter or try shorter windows?",
   "environment": {
     "data_files": [
       "QQQ_corrupted_2018_2024.csv",

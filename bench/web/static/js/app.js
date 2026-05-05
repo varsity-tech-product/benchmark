@@ -281,7 +281,7 @@
         }
         return;
       }
-      if (t === 'student_message' || t === 'tutor_response' || t === 'tool_start' || t === 'tool_result') {
+      if (t === 'user_message' || t === 'tutor_response' || t === 'tool_start' || t === 'tool_result') {
         // Buffer conversation/tool events
         if (_groupState.jobs[jk]) {
           _bufferGroupEvent(jk, data);
@@ -322,7 +322,7 @@
         if (data.mode === 'eval') onEvalStart(data);
         // Non-keyed session_start for single runs shouldn't happen anymore, ignore
         break;
-      case 'student_message': break; // should have job_key
+      case 'user_message': break; // should have job_key
       case 'tutor_response':  break;
       case 'tool_start':      break;
       case 'tool_result':     break;
@@ -729,11 +729,11 @@
 
     buffer.forEach(function (evt) {
       switch (evt.type) {
-        case 'student_message':
+        case 'user_message':
           msgCount++;
           if (chatEl) {
             QTB.hideResponding(chatEl);
-            QTB.addChatMessage(chatEl, 'student', evt.content || '', null, null);
+            QTB.addChatMessage(chatEl, 'user', evt.content || '', null, null);
             QTB.showThinking(chatEl, 'Thinking...');
           }
           break;
@@ -760,7 +760,7 @@
     if (jobInfo.status === 'running' && msgCount > 0 && chatEl) {
       var lastEvt = buffer[buffer.length - 1];
       if (lastEvt) {
-        if (lastEvt.type === 'student_message') QTB.showThinking(chatEl, 'Thinking...');
+        if (lastEvt.type === 'user_message') QTB.showThinking(chatEl, 'Thinking...');
         else if (lastEvt.type === 'tool_start') QTB.showThinking(chatEl, 'Using ' + (lastEvt.name || 'tool') + '...');
         else if (lastEvt.type === 'tool_result') QTB.showThinking(chatEl, 'Thinking...');
         else if (lastEvt.type === 'tutor_response') QTB.showResponding(chatEl);
@@ -798,10 +798,10 @@
     var turnCountEl = scope.querySelector('#rsd-turn-count');
 
     switch (data.type) {
-      case 'student_message':
+      case 'user_message':
         if (chatEl) {
           QTB.hideResponding(chatEl);
-          QTB.addChatMessage(chatEl, 'student', data.content || '', null, null);
+          QTB.addChatMessage(chatEl, 'user', data.content || '', null, null);
           QTB.showThinking(chatEl, 'Thinking...');
         }
         break;
@@ -852,7 +852,7 @@
       var buf = _singleJobBuffers[_singleDetailKey] || [];
       var mc = 0, tc = 0;
       buf.forEach(function (e) {
-        if (e.type === 'student_message' || e.type === 'tutor_response') mc++;
+        if (e.type === 'user_message' || e.type === 'tutor_response') mc++;
         if (e.type === 'tool_start') tc++;
       });
       if (msgCountEl) msgCountEl.textContent = 'Messages: ' + mc;
@@ -2826,11 +2826,11 @@
 
     buffer.forEach(function (evt) {
       switch (evt.type) {
-        case 'student_message':
+        case 'user_message':
           msgCount++;
           if (chatEl) {
             QTB.hideResponding(chatEl);
-            QTB.addChatMessage(chatEl, 'student', evt.content || '', null, null);
+            QTB.addChatMessage(chatEl, 'user', evt.content || '', null, null);
             QTB.showThinking(chatEl, 'Thinking...');
           }
           break;
@@ -2857,7 +2857,7 @@
     if (jobInfo.status === 'running' && msgCount > 0 && chatEl) {
       var lastEvt = buffer[buffer.length - 1];
       if (lastEvt) {
-        if (lastEvt.type === 'student_message') {
+        if (lastEvt.type === 'user_message') {
           QTB.showThinking(chatEl, 'Thinking...');
         } else if (lastEvt.type === 'tool_start') {
           QTB.showThinking(chatEl, 'Using ' + (lastEvt.name || 'tool') + '...');
@@ -2901,10 +2901,10 @@
     var turnCountEl = scope.querySelector('#rgd-turn-count');
 
     switch (data.type) {
-      case 'student_message':
+      case 'user_message':
         if (chatEl) {
           QTB.hideResponding(chatEl);
-          QTB.addChatMessage(chatEl, 'student', data.content || '', null, null);
+          QTB.addChatMessage(chatEl, 'user', data.content || '', null, null);
           QTB.showThinking(chatEl, 'Thinking...');
         }
         break;
@@ -2955,7 +2955,7 @@
       var buf = _groupJobBuffers[_groupDetailKey] || [];
       var mc = 0, tc = 0;
       buf.forEach(function (e) {
-        if (e.type === 'student_message' || e.type === 'tutor_response') mc++;
+        if (e.type === 'user_message' || e.type === 'tutor_response') mc++;
         if (e.type === 'tool_start') tc++;
       });
       if (msgCountEl) msgCountEl.textContent = 'Messages: ' + mc;

@@ -8,7 +8,7 @@
   "difficulty": "hard",
   "description": "Guide a student through systematically debugging a LEAN C# EMA crossover algorithm with three interacting bugs: inverted signal logic, missing warm-up, and excessive leverage. The agent must diagnose each bug, explain root causes, apply fixes, and verify improved performance.",
   "persona_id": "developer_crossover",
-  "student_opening": "I need to systematically debug a LEAN C# EMA crossover algorithm. I can handle the code, but I don't understand the financial logic behind it. What should this do and why?",
+  "user_opening": "I need to systematically debug a LEAN C# EMA crossover algorithm. I can handle the code, but I don't understand the financial logic behind it. What should this do and why?",
   "environment": {
     "data_files": [
       "E04_compound_bug.cs",

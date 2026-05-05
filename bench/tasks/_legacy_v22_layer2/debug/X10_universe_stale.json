@@ -4,9 +4,9 @@
   "difficulty": "hard",
   "category": "debug",
   "task_type": "multi_turn",
-  "description": "Guide a student to diagnose and fix survivorship bias and stale universe issues in a LEAN multi-symbol momentum strategy that subscribes all symbols statically without listing-date checks and uses end-of-period volume averages.",
+  "description": "The user asks the agent to diagnose and fix survivorship bias and stale universe issues in a LEAN multi-symbol momentum strategy that subscribes all symbols statically without listing-date checks and uses end-of-period volume averages.",
   "persona_id": "developer_crossover",
-  "student_opening": "I'm looking at code for a LEAN multi-symbol momentum strategy, but the backtest results seem too good to be true. The code reads fine to me, but I'm not sure the financial logic is correct. What should it be doing?",
+  "user_opening": "I'm looking at code for a LEAN multi-symbol momentum strategy, but the backtest results seem too good to be true. The code reads fine to me, but I'm not sure the financial logic is correct. What should it be doing?",
   "environment": {
     "data_files": [
       "universe.json"
@@ -31,7 +31,7 @@
     "max_backtest_trials": 5
   },
   "ground_truth": {
-    "expected_outcome": "Student adds listing-date checks before subscribing symbols and switches from end-of-period to trailing volume averages, eliminating both forms of look-ahead bias. The fix is verified by running a backtest that shows reduced and more realistic returns.",
+    "expected_outcome": "User adds listing-date checks before subscribing symbols and switches from end-of-period to trailing volume averages, eliminating both forms of look-ahead bias. The fix is verified by running a backtest that shows reduced and more realistic returns.",
     "required_capabilities": [
       "Read the LEAN C# code and identify static universe subscription",
       "Understand survivorship bias from including future-listed symbols",
@@ -54,10 +54,10 @@
     "quant_validation": {
       "eval_script": "tasks/test_scripts/debug/X10_universe_stale.py"
     },
-    "termination_criteria": "The tutor has completed the following steps with computational evidence (not just verbal discussion): (1) Reviewed the student's LEAN C# code and identified the two look-ahead bias issues: static universe subscription without listing-date checks, and full-period volume averages instead of trailing. (2) Explained why these cause inflated backtest results, such as describing how trading symbols before their listing date or using future volume data produces unrealistic performance. (3) Showed corrected C# code with listing-date guards and trailing volume, and presented backtest results demonstrating more realistic performance after the fix, with specific numerical evidence such as reduced returns or Sharpe ratio. (4) Responded to the student's follow-up about survivorship bias or the fix with additional explanation or analysis beyond the initial demonstration. Once all four steps have been computationally demonstrated, the session is complete."
+    "termination_criteria": "The agent has completed the following steps with computational evidence (not just verbal discussion): (1) Reviewed the user's LEAN C# code and identified the two look-ahead bias issues: static universe subscription without listing-date checks, and full-period volume averages instead of trailing. (2) Explained why these cause inflated backtest results, such as describing how trading symbols before their listing date or using future volume data produces unrealistic performance. (3) Showed corrected C# code with listing-date guards and trailing volume, and presented backtest results demonstrating more realistic performance after the fix, with specific numerical evidence such as reduced returns or Sharpe ratio. (4) Responded to the user's follow-up about survivorship bias or the fix with additional explanation or analysis beyond the initial demonstration. Once all four steps have been computationally demonstrated, the session is complete."
   },
   "requires_code": true,
-  "sample_code": "student_code/universe_stale.cs",
+  "sample_code": "user_code/universe_stale.cs",
   "max_turns": 15,
   "timeout_minutes": 25
 }

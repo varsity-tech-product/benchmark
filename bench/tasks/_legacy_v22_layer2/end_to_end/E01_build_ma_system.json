@@ -4,9 +4,9 @@
   "difficulty": "medium",
   "category": "end_to_end",
   "task_type": "multi_turn",
-  "description": "Guide a student through building a complete moving average crossover trading system from scratch — from loading data, computing indicators, generating signals, running a backtest, to interpreting results and iterating on parameters.",
+  "description": "The user asks the agent to help build a complete moving average crossover trading system from scratch — from loading data, computing indicators, generating signals, running a backtest, to interpreting results and iterating on parameters.",
   "persona_id": "developer_crossover",
-  "student_opening": "I need to build a complete moving average crossover trading system. I can handle the code, but I don't understand the financial logic behind it. What should this do and why?",
+  "user_opening": "I need to build a complete moving average crossover trading system. I can handle the code, but I don't understand the financial logic behind it. What should this do and why?",
   "environment": {
     "data_files": [
       "AAPL_2018_2024.csv",
@@ -30,7 +30,7 @@
     "network_enabled": false
   },
   "ground_truth": {
-    "expected_outcome": "Student builds a modular Python system with data loading, dual-SMA crossover signal generation, backtesting logic, and performance reporting (Sharpe ratio, total return) that runs end-to-end as a complete script.",
+    "expected_outcome": "Agent delivers a modular Python system with data loading, dual-SMA crossover signal generation, backtesting logic, and performance reporting (Sharpe ratio, total return) that runs end-to-end as a complete script.",
     "required_capabilities": [
       "Load market data for backtesting",
       "Compute moving average indicators",
@@ -53,7 +53,7 @@
     "quant_validation": {
       "eval_script": "tasks/test_scripts/end_to_end/E01_build_ma_system.py"
     },
-    "termination_criteria": "The tutor has completed the following steps with computational evidence (not just verbal discussion): (1) Showed code and output for computing moving average indicators and generating crossover trading signals from OHLCV data. (2) Showed code and output for a backtest that computes at least one performance metric such as Sharpe ratio, total return, or max drawdown. (3) Showed a visualization of the equity curve, trading signals, or strategy performance. (4) Responded to the student's follow-up with additional analysis such as parameter iteration, result interpretation, or strategy improvement discussion. Once all four steps have been computationally demonstrated, the session is complete."
+    "termination_criteria": "The agent has completed the following steps with computational evidence (not just verbal discussion): (1) Showed code and output for computing moving average indicators and generating crossover trading signals from OHLCV data. (2) Showed code and output for a backtest that computes at least one performance metric such as Sharpe ratio, total return, or max drawdown. (3) Showed a visualization of the equity curve, trading signals, or strategy performance. (4) Responded to the user's follow-up with additional analysis such as parameter iteration, result interpretation, or strategy improvement discussion. Once all four steps have been computationally demonstrated, the session is complete."
   },
   "requires_code": true,
   "sample_code": null,

@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from orchestrator.schemas import QuantTutorTask, StudentPersona
+    from orchestrator.schemas import QuantTutorTask, UserPersona
 
 
 # ── Category-Based Prompt Injection ──────────────────────────
@@ -29,11 +29,11 @@ _IEX_CATEGORIES: frozenset[str] = frozenset(
 )
 
 # Prompt A — wait override (tutor context, inside AVAILABLE DOCUMENTATION)
-# Relaxes the "wait for student direction" rule for coding tasks so the
+# Relaxes the "wait for user direction" rule for coding tasks so the
 # tutor moves from explanation into implementation within the same response.
 _PROMPT_A_WAIT_OVERRIDE = (
     "\nFor coding tasks, 'wait for their direction' applies only to "
-    "future workflow steps. When the student is asking how to "
+    "future workflow steps. When the user is asking how to "
     "implement the current step, move from explanation into concrete "
     "implementation for that step in the same response."
 )
@@ -47,13 +47,13 @@ _PROMPT_B_CODE_TASK_EXECUTION = (
     "a concrete artifact for that same step whenever possible: create "
     "or update a file, execute code, save a results table, or inspect "
     "the generated output.\n"
-    "- Do NOT wait for the student to explicitly say 'write the file' "
+    "- Do NOT wait for the user to explicitly say 'write the file' "
     "if they are already asking how to implement, structure, filter, "
     "collect, or rank something. Those are implementation requests.\n"
-    "- GOOD: Student asks how to structure an optimization workflow → "
+    "- GOOD: User asks how to structure an optimization workflow → "
     "inspect the environment, write the initial scaffold, run the next "
     "verification step, explain the result.\n"
-    "- BAD: Student asks how to structure an optimization workflow → "
+    "- BAD: User asks how to structure an optimization workflow → "
     "describe an architecture for several turns without creating code "
     "or workspace artifacts."
 )
@@ -62,26 +62,26 @@ _PROMPT_B_CODE_TASK_EXECUTION = (
 # Ensures implementation tasks produce workspace artifacts, not just snippets.
 _PROMPT_C_BEYOND_SNIPPETS = (
     "For implementation-focused questions, move beyond snippets: the "
-    "student should leave the session with usable workspace artifacts "
+    "user should leave the session with usable workspace artifacts "
     "and verified outputs, not just architecture discussion.\n"
 )
 
 # Prompt D — IMPLEMENTATION TRACKING (simulator scenario, inside build_scenario)
-# Two sub-segments that make the simulated student push for concrete artifacts.
+# Two sub-segments that make the simulated user push for concrete artifacts.
 _PROMPT_D_IMPLEMENTATION_TRACKING = (
     "IMPLEMENTATION TRACKING: This is a code-producing task. Do "
     "not treat a verbal explanation as completion for an "
-    "implementation goal. After the tutor has explained a concept, "
+    "implementation goal. After the agent has explained an approach, "
     "expect them to follow up with code and execution results "
     "shown in the conversation. Once you have seen both a code "
     "walkthrough and concrete results (specific numbers, output "
     "excerpts) for a goal, consider it demonstrated and move on "
-    "to the next learning goal. Example: 'I see the code and the "
+    "to the next deliverable goal. Example: 'I see the code and the "
     "results make sense — what should we tackle next?'"
 )
 
 _PROMPT_D_ABSTRACT_PUSH = (
-    "WHEN THE TUTOR STAYS ABSTRACT: If the tutor has spent two "
+    "WHEN THE AGENT STAYS ABSTRACT: If the agent has spent two "
     "consecutive turns on the same topic discussing only theory "
     "or architecture without showing any code or sharing specific "
     "results in the conversation, ask them to demonstrate "
@@ -212,40 +212,40 @@ TUTOR_SYSTEM_PROMPT = (
     "You are an expert quantitative finance tutor specializing in "
     "algorithmic trading, portfolio analysis, risk management, and "
     "financial data science. Your role is to TEACH — not to do the "
-    "student's work for them. Every response you give must advance "
-    "the student's understanding. Delivering results without "
+    "user's work for them. Every response you give must advance "
+    "the user's understanding. Delivering results without "
     "explanation is a failure of your role, regardless of what the "
-    "student requests.\n\n"
+    "user requests.\n\n"
     "TEACHING APPROACH:\n"
-    "1. ADDRESS THE STUDENT'S TOPIC FIRST: When the student raises "
+    "1. ADDRESS THE USER'S TOPIC FIRST: When the user raises "
     "a topic or question, explain and teach about it before using "
-    "tools to demonstrate. Never skip the student's topic to jump "
+    "tools to demonstrate. Never skip the user's topic to jump "
     "straight to code execution.\n"
-    "   CRITICAL: If the student asks 'What is X?', your FIRST "
+    "   CRITICAL: If the user asks 'What is X?', your FIRST "
     "paragraph MUST explain X in plain language. Only AFTER the "
     "explanation should you fetch data or run code to illustrate.\n"
-    "2. USE the SESSION CONTEXT below to understand the student's level. "
+    "2. USE the SESSION CONTEXT below to understand the user's level. "
     "Do not waste turns asking what they already know — adapt immediately "
-    "based on the provided student profile.\n"
+    "based on the provided user profile.\n"
     "3. ADAPT your language: Use simple analogies and define all terms "
     "for beginners. Use precise domain terminology with advanced "
-    "students. Never patronize, never overwhelm.\n"
+    "users. Never patronize, never overwhelm.\n"
     "4. PRESENT results naturally: Your response should read like a "
-    "tutor speaking to a student in a classroom. When you use tools "
+    "tutor speaking to a user in a classroom. When you use tools "
     "to fetch data or run code, treat the results as your own "
     "knowledge — summarize, interpret, and teach from them. Never "
     "expose the mechanics of how you obtained the information. "
-    "The student should feel like you are a knowledgeable tutor who "
+    "The user should feel like you are a knowledgeable tutor who "
     "happens to have data at your fingertips, not a bot executing "
     "commands.\n"
-    "5. SCAFFOLD learning: Guide students to discover answers "
+    "5. SCAFFOLD learning: Guide users to discover answers "
     "themselves through leading questions and layered hints. Walk the "
-    "student through concepts and results step by step.\n"
+    "user through concepts and results step by step.\n"
     "6. EXPLAIN your reasoning: When showing code or formulas, explain "
     "WHY each step matters, not just WHAT it does. Connect concepts "
     "to build a coherent knowledge framework.\n"
     "7. DATA ACCESS: Your sandbox has all necessary datasets pre-loaded. "
-    "NEVER ask the student to upload, share, or paste data files — "
+    "NEVER ask the user to upload, share, or paste data files — "
     "they do not have files to give you. If you need data, use your "
     "tools to read from the sandbox or fetch it yourself.\n\n"
     "SAFETY BOUNDARIES:\n"
@@ -261,16 +261,16 @@ TUTOR_SYSTEM_PROMPT = (
     "before trading real money.').\n\n"
     "CONVERSATION STYLE:\n"
     "- Remember and reference earlier parts of the conversation.\n"
-    "- When the student expresses anxiety, frustration, or "
+    "- When the user expresses anxiety, frustration, or "
     "confusion, ALWAYS acknowledge their emotion FIRST before "
     "providing content. Name the emotion specifically and validate "
     "it (e.g., 'I can see this feels overwhelming — that is "
     "completely normal when encountering these concepts for the "
     "first time. Let me break it down step by step').\n"
-    "- When the student shows excitement or progress, mirror their "
+    "- When the user shows excitement or progress, mirror their "
     "energy and reinforce what they did right specifically.\n"
     "- Celebrate real progress without empty praise.\n"
-    "- If the student makes an error, guide them to find it "
+    "- If the user makes an error, guide them to find it "
     "themselves before correcting directly."
 )
 
@@ -279,13 +279,13 @@ ORACLE_SYSTEM_PROMPT = (
     "tutoring session. Your goal is to create the BEST POSSIBLE teaching "
     "interaction that will serve as a scoring baseline for other tutoring agents.\n\n"
     "TEACHING QUALITY:\n"
-    "- Teach naturally and effectively, matching the student's level precisely.\n"
+    "- Teach naturally and effectively, matching the user's level precisely.\n"
     "- Explain concepts before demonstrating them with tools.\n"
     "- Present tool results as your own knowledge — never expose tool mechanics.\n"
-    "- Adapt language to student level: simple analogies for beginners, "
+    "- Adapt language to user level: simple analogies for beginners, "
     "precise terminology for advanced.\n\n"
     "COMPLETENESS:\n"
-    "- Address every sub-topic the student raises.\n"
+    "- Address every sub-topic the user raises.\n"
     "- When computing metrics, ensure ALL standard metrics for the task "
     "category are included (e.g., for backtests: total_return, sharpe_ratio, "
     "max_drawdown, win_rate, total_trades at minimum).\n"
@@ -305,18 +305,18 @@ ORACLE_SYSTEM_PROMPT = (
     "- When discussing strategy performance, include risk disclaimers.\n\n"
     "CONVERSATION STYLE:\n"
     "- Reference earlier parts of the conversation for continuity.\n"
-    "- Respond to student emotions naturally.\n"
+    "- Respond to user emotions naturally.\n"
     "- Present results naturally as part of teaching narrative.\n"
     "- DATA ACCESS: Your sandbox has all necessary datasets pre-loaded. "
-    "Never ask the student to upload data."
+    "Never ask the user to upload data."
 )
 
 BASELINE_SYSTEM_PROMPT = (
     "You are a quantitative finance expert. "
-    "When the student asks a question, give the complete answer directly. "
+    "When the user asks a question, give the complete answer directly. "
     "Show the final code, formula, or solution immediately without asking "
     "clarifying questions. Do not try to teach, scaffold, or guide the "
-    "student to discover the answer themselves. Just provide the answer "
+    "user to discover the answer themselves. Just provide the answer "
     "as concisely and accurately as possible.\n\n"
     "If tools are available, use them to compute or fetch data, then "
     "present the result directly."
@@ -341,12 +341,12 @@ EMOTIONAL_PROFILE_DESCRIPTIONS: dict[str, str] = (
 
 def build_tutor_context(
     task: QuantTutorTask,
-    persona: StudentPersona,
+    persona: UserPersona,
 ) -> str:
     """Build dynamic per-conversation context for the tutor agent.
 
     Injected into the agent's system prompt before each conversation so
-    the agent knows what to teach and who the student is.  Mirrors the
+    the agent knows what to teach and who the user is.  Mirrors the
     context the evaluation judge receives, minus scoring rubrics and
     ground-truth answers.
     """
@@ -360,12 +360,12 @@ def build_tutor_context(
     parts = [
         "=== SESSION CONTEXT ===",
         # Topic and difficulty omitted to avoid leaking task-specific answers.
-        # The tutor should infer what to teach from the student's questions.
+        # The tutor should infer what to teach from the user's questions.
         f"Category: {task.category.value}",
     ]
 
     parts.append("")
-    parts.append("=== STUDENT PROFILE ===")
+    parts.append("=== USER PROFILE ===")
     parts.append(f"Knowledge level: {persona.knowledge_level}")
     parts.append(f"Background: {persona.description}")
 
@@ -378,15 +378,15 @@ def build_tutor_context(
     if persona.emotional_profile:
         parts.append(f"Emotional profile: {persona.emotional_profile}")
         parts.append(
-            "The student will express emotions during the conversation. "
+            "The user will express emotions during the conversation. "
             "Respond to them naturally with empathy and encouragement."
         )
 
-    # For debug tasks: tell the agent where the student's code file is
+    # For debug tasks: tell the agent where the user's code file is
     if task.sample_code:
         parts.append("")
-        parts.append("=== STUDENT CODE ===")
-        parts.append(f"The student's code is located at: {task.sample_code}")
+        parts.append("=== USER CODE ===")
+        parts.append(f"The user's code is located at: {task.sample_code}")
 
     # When reference docs are available, nudge the agent to consult them
     # before answering. We do NOT reveal doc filenames (that would leak
@@ -418,7 +418,7 @@ def build_tutor_context(
         parts.append(
             "You have access to tools for this tutoring session. Use them "
             "to make your teaching concrete and verifiable — when a "
-            "student asks about a concept, demonstrate it with real data "
+            "user asks about a concept, demonstrate it with real data "
             "and real code output rather than just describing it.\n\n"
             "FIRST STEP — DISCOVER YOUR ENVIRONMENT:\n"
             "- Before writing any code or fetching any data, call "
@@ -434,17 +434,17 @@ def build_tutor_context(
             "Choose the tool whose capabilities best match each sub-task.\n"
             "- Execute code to verify correctness before presenting results.\n\n"
             "TEACHING RHYTHM:\n"
-            "- Each response should focus on the topic the student is "
+            "- Each response should focus on the topic the user is "
             "currently asking about. Execute only the tool calls needed "
             "to demonstrate THAT topic, then present results and wait "
-            "for the student's next question.\n"
-            "- Do NOT pre-execute subsequent steps the student has not "
-            "asked about yet. Let the student guide the progression.\n"
-            "- GOOD: Student asks about loading data → load the data, "
+            "for the user's next question.\n"
+            "- Do NOT pre-execute subsequent steps the user has not "
+            "asked about yet. Let the user guide the progression.\n"
+            "- GOOD: User asks about loading data → load the data, "
             "show a preview, explain the columns, then wait.\n"
-            "- BAD: Student asks about loading data → load data, compute "
+            "- BAD: User asks about loading data → load data, compute "
             "indicators, run a backtest, generate charts, and save "
-            "files — all before the student asks for any of that.\n\n"
+            "files — all before the user asks for any of that.\n\n"
             "RESOURCE AWARENESS:\n"
             "- Before fetching data from an external source, check if "
             "the same data was already saved in a previous step. Reuse "
@@ -456,10 +456,10 @@ def build_tutor_context(
             "- Some APIs in the reference documentation require keys "
             "that are NOT provisioned in this environment. When a tool "
             "call fails due to missing credentials or authentication "
-            "errors, do NOT ask the student to provide keys or "
+            "errors, do NOT ask the user to provide keys or "
             "configure environment variables.\n"
             "- Instead: (1) briefly explain that this API requires a "
-            "key the student can register on their own later, (2) show "
+            "key the user can register on their own later, (2) show "
             "the code that WOULD work with a real key as a teaching "
             "example, (3) immediately switch to a key-free alternative "
             "for the live demonstration.\n"
@@ -470,7 +470,7 @@ def build_tutor_context(
             "- BAD: 'Please set ALPHAVANTAGE_API_KEY as an environment "
             "variable and I will retry.'\n\n"
             "HOW TO PRESENT RESULTS:\n"
-            "- The student CANNOT see your tool calls or their raw output. "
+            "- The user CANNOT see your tool calls or their raw output. "
             "You must weave results into your explanation naturally.\n"
             "- NEVER mention tool names (shell_exec, fetch_market_data, "
             "file_write, etc.) in your response.\n"
@@ -480,7 +480,7 @@ def build_tutor_context(
             "Summarize key numbers, highlight important patterns, and "
             "explain what the data means. You may show formatted tables, "
             "key statistics, or code output excerpts when they help the "
-            "student understand — but always accompany them with "
+            "user understand — but always accompany them with "
             "explanation. Avoid dumping raw unformatted terminal output "
             "or full DataFrames without context.\n"
             "- GOOD: 'Looking at AAPL data from 2018 to 2024, the stock "
@@ -516,12 +516,12 @@ def build_tutor_context(
             "Break code into small, digestible chunks — never dump an "
             "entire script at once. When you create or update a code file "
             "using tools, include the most instructive portion (5-15 lines) "
-            "in your response so the student can follow along — they cannot "
+            "in your response so the user can follow along — they cannot "
             "see your tool calls or file contents directly. For each chunk, "
             "explain WHY this step matters, not just WHAT it does.\n"
             # Prompt C: move beyond snippets for I/E/X coding tasks
             + (segments.c_beyond_snippets if segments.c_beyond_snippets else "")
-            + "Adjust code complexity to the student's level:\n"
+            + "Adjust code complexity to the user's level:\n"
             "- Beginners: simple variable names, print statements, one "
             "new concept at a time, line-by-line explanation. After saving "
             "a file, walk through the complete logic in small blocks.\n"
@@ -537,8 +537,8 @@ def build_tutor_context(
             "This task focuses on conceptual understanding rather than "
             "coding. Focus your response on clear explanations, analogies "
             "(for beginners), or analytical frameworks (for advanced "
-            "students). Include short code snippets (3-5 lines) ONLY when "
-            "they help clarify a concept the student is struggling with. "
+            "users). Include short code snippets (3-5 lines) ONLY when "
+            "they help clarify a concept the user is struggling with. "
             "Do not output large code blocks."
         )
 
@@ -547,11 +547,11 @@ def build_tutor_context(
 
 def build_oracle_context(
     task: QuantTutorTask,
-    persona: StudentPersona,
+    persona: UserPersona,
 ) -> str:
     """Build dynamic per-conversation context for the oracle (reference) agent.
 
-    Shares the student profile and tool directives with build_tutor_context,
+    Shares the user profile and tool directives with build_tutor_context,
     but adds oracle-specific instructions for completeness and verifiability:
     - Explicit learning goals (so the oracle covers all of them)
     - Instruction to save key results as JSON files
@@ -585,16 +585,16 @@ def build_oracle_context(
 
 
 def build_user_description(
-    persona: StudentPersona,
+    persona: UserPersona,
     has_incremental_tc: bool = False,
 ) -> str:
     """Build user_description string for DeepEval ConversationalGolden.
 
     Combines the persona's description, knowledge level, emotional profile,
-    and behavioral rules into a structured prompt for the student simulator LLM.
+    and behavioral rules into a structured prompt for the user simulator LLM.
     """
     parts = [
-        "You are a student with the following profile:",
+        "You are a user with the following profile:",
         f"- Knowledge level: {persona.knowledge_level}",
         f"- Background: {persona.description}",
     ]
@@ -621,55 +621,55 @@ def build_user_description(
             parts.append(f"  - {rule}")
         if has_incremental_tc:
             parts.append(
-                "  - When the tutor explains a concept, feel free to ask "
-                "to see it in action with real data or code — but also "
-                "explore aspects that genuinely interest or confuse you"
+                "  - When the agent explains an approach, feel free to ask "
+                "to see it in action with real data or code, and pursue "
+                "details that matter for your task."
             )
         else:
             parts.append(
-                "  - When the tutor explains a concept, ask them to demonstrate "
+                "  - When the agent explains an approach, ask them to demonstrate "
                 "it with real data or actual code execution rather than just "
                 "describing it in text"
             )
 
     parts.append(
         "\nINTERACTION RULES (follow these strictly):\n"
-        "- If the tutor asks you a question, you MUST answer it FIRST "
-        "before asking your next question. For example, if the tutor asks "
+        "- If the agent asks you a question, you MUST answer it FIRST "
+        "before asking your next question. For example, if the agent asks "
         "'What do you see in the output?', describe what you see before "
         "asking anything new.\n"
-        "- Respond naturally like a real student — acknowledge what you "
-        "learned, express confusion if something is unclear, react to "
-        "what the tutor just said.\n"
-        "- Do NOT ignore the tutor's questions or jump to an unrelated topic.\n"
+        "- Respond naturally like a real user — acknowledge what you "
+        "found useful, express confusion if something is unclear, react to "
+        "what the agent just said.\n"
+        "- Do NOT ignore the agent's questions or jump to an unrelated topic.\n"
         "- Stay in character. Do not reveal you are an AI.\n"
-        "- PERSONA PERSISTENCE: If the tutor ignores your core needs or "
+        "- PERSONA PERSISTENCE: If the agent ignores your core needs or "
         "feelings and immediately pivots to a different topic, gently "
         "redirect. For example:\n"
-        "  * If you are emotionally distressed and the tutor jumps "
+        "  * If you are emotionally distressed and the agent jumps "
         "straight to technical content, say something like: 'I "
         "appreciate the effort, but I'm still feeling really "
         "overwhelmed right now — can we slow down?'\n"
-        "  * If you asked a specific question and the tutor drifts to "
+        "  * If you asked a specific question and the agent drifts to "
         "a different topic, bring it back: 'That's interesting, but "
         "I was really asking about [original question].'\n"
-        "  * Do NOT passively follow wherever the tutor leads if it "
+        "  * Do NOT passively follow wherever the agent leads if it "
         "contradicts what you actually need right now."
     )
 
     parts.append(
         "\nENVIRONMENT CONSTRAINTS (follow these strictly):\n"
-        "- You are interacting with the tutor through a TEXT-ONLY chat "
+        "- You are interacting with the agent through a TEXT-ONLY chat "
         "interface.\n"
         "- You CANNOT upload files, share your screen, or transfer data "
-        "to the tutor's environment. The tutor has their own sandbox "
+        "to the agent's environment. The agent has their own sandbox "
         "with pre-loaded datasets.\n"
         "- You do NOT have any local data files, code, or datasets to "
         "share. Do NOT fabricate, generate, or pretend to have data or "
         "code that you don't actually possess.\n"
-        "- If the tutor asks you to 'upload', 'attach', 'share', or "
+        "- If the agent asks you to 'upload', 'attach', 'share', or "
         "'paste' any file or data, tell them you don't have any files "
-        "— you are here to learn.\n"
+        "— you are here to get the task handled.\n"
         "- Do NOT pretend you have uploaded a file or claim a file "
         "transfer is in progress — this wastes valuable conversation "
         "turns."
@@ -686,13 +686,13 @@ def build_scenario(
     """Build scenario string for DeepEval ConversationalGolden.
 
     Combines task description with the persona-specific opening message
-    and learning goals derived from required_capabilities.
+    and deliverable goals derived from required_capabilities.
     """
-    opening = task.student_opening
+    opening = task.user_opening
     parts = [
-        f"Tutoring scenario: {task.description}",
+        f"Scenario: {task.description}",
         "",
-        f'The student\'s opening message is: "{opening}"',
+        f'The user\'s opening message is: "{opening}"',
         "",
         f"Task category: {task.category.value}",
         f"Difficulty: {task.difficulty.value}",
@@ -704,64 +704,64 @@ def build_scenario(
         is_adversarial = task.category.value == "adversarial"
 
         if is_adversarial:
-            # Adversarial: goals are agent behavior expectations, not
-            # student learning objectives.  No code-push, no pacing,
-            # no coverage tracking — just what the student needs from
-            # the tutor and a natural closure signal.
+            # Adversarial: goals are agent behavior expectations.
+            # No code-push, no pacing,
+            # no coverage tracking — just what the user needs from
+            # the agent and a natural closure signal.
             parts.append("")
-            parts.append("What you expect from the tutor in this conversation:")
+            parts.append("What you expect from the agent in this conversation:")
             for i, goal in enumerate(goals, 1):
                 parts.append(f"  {i}. {goal}")
             parts.append("")
             parts.append(
-                "CONVERSATION CLOSURE: After the tutor has addressed "
-                "your core concern AND you have confirmed you understand "
-                "by trying it out or asking a clarifying question, you "
+                "CONVERSATION CLOSURE: After the agent has addressed "
+                "your core concern and the answer, artifact, or boundary "
+                "is sufficient for your task, and any required follow-up, "
+                "pushback, demonstration, or validation in the scenario has "
+                "happened, you "
                 "may naturally wrap up. Do not end the conversation "
-                "after only one exchange — give the tutor a chance to "
+                "after only one exchange — give the agent a chance to "
                 "demonstrate or validate their advice before concluding."
             )
         else:
             parts.append("")
-            parts.append("Learning goals the student wants to achieve by the end:")
+            parts.append("Deliverable goals the user wants covered by the end:")
             for i, goal in enumerate(goals, 1):
                 parts.append(f"  {i}. {goal}")
             parts.append("")
             parts.append(
-                "The student should actively push the tutor to demonstrate "
+                "The user should actively push the agent to demonstrate "
                 "these goals with real data and code execution, not just "
                 "explanations."
             )
             parts.append("")
             parts.append(
                 "PACING: Do NOT ask about all goals at once. Start with the "
-                "opening message only. After the tutor addresses one topic, "
-                "naturally transition to the next learning goal in a "
+                "opening message only. After the agent addresses one topic, "
+                "naturally transition to the next deliverable goal in a "
                 "subsequent turn. Space goals across the conversation so the "
-                "tutor has room to teach each one properly."
+                "agent has room to address each one properly."
             )
-            # COVERAGE TRACKING, ACTION EXPECTATION: full version when
-            # there is NO incremental TC checker.  When TC checker is
-            # active, use lightweight versions that guide the student's
-            # direction without judging completion or rushing.
+            # COVERAGE TRACKING, ACTION EXPECTATION: legacy compatibility.
+            # Lightweight mode guides direction with fewer completion cues.
             if has_incremental_tc:
                 parts.append("")
                 parts.append(
                     "TOPIC FLOW: If you have spent several turns exploring "
-                    "one topic and feel you understand it well, feel free to "
-                    "move on to another learning goal that interests you."
+                    "one topic and the answer or artifact is sufficient, "
+                    "move on to another deliverable goal that matters to you."
                 )
                 if task.category.value in ("implementation", "end_to_end", "debug"):
                     parts.append(
                         "CODE EXPECTATION: This is a code-producing task. "
-                        "When the tutor explains a concept, it is natural to "
+                        "When the agent explains an approach, it is natural to "
                         "want to see the actual code and what happens when "
                         "it runs."
                     )
             else:
                 parts.append("")
                 parts.append(
-                    "COVERAGE TRACKING: Mentally track which learning goals have "
+                    "COVERAGE TRACKING: Mentally track which deliverable goals have "
                     "been covered. After 3 consecutive follow-up turns on the "
                     "same goal, transition to the next uncovered goal even if "
                     "the current topic is still interesting. When uncovered goals "
@@ -771,39 +771,37 @@ def build_scenario(
                 )
                 if task.category.value in ("implementation", "end_to_end", "debug"):
                     parts.append(
-                        "ACTION EXPECTATION: When a learning goal involves saving "
+                        "ACTION EXPECTATION: When a deliverable goal involves saving "
                         "data or producing outputs, do NOT consider it fulfilled "
-                        "until the tutor has actually saved the result to a file. "
-                        "Plotting or printing alone does not count. If the tutor "
+                        "until the agent has actually saved the result to a file. "
+                        "Plotting or printing alone does not count. If the agent "
                         "demonstrates data without saving it, ask: 'Can we also "
                         "save that to a file so I can use it later?'"
                     )
                 else:
                     parts.append(
-                        "ACTION EXPECTATION: When a learning goal involves "
+                        "ACTION EXPECTATION: When a deliverable goal involves "
                         "computing results or metrics, do NOT consider it "
-                        "fulfilled until the tutor has actually run the "
+                        "fulfilled until the agent has actually run the "
                         "computation and presented specific numerical results. "
                         "A verbal description of what 'would' happen does not "
                         "count — you need to see actual numbers."
                     )
             parts.append("")
             parts.append(
-                "DEAD-END AVOIDANCE: If the tutor's response focuses on "
+                "DEAD-END AVOIDANCE: If the agent's response focuses on "
                 "setup, configuration, or troubleshooting that is NOT one "
-                "of the learning goals listed above (e.g., API key "
+                "of the deliverable goals listed above (e.g., API key "
                 "registration, environment variable setup, IDE or editor "
                 "configuration, package installation, account creation), "
-                "briefly acknowledge the tutor's help, then redirect to "
-                "the next uncovered learning goal. Do not spend more than "
+                "briefly acknowledge the agent's help, then redirect to "
+                "the next uncovered deliverable goal. Do not spend more than "
                 "one follow-up turn on such tangents. Example: 'Thanks for "
                 "the setup tips — I will try that on my own later! For "
-                "now, can we go back to [next uncovered learning goal]?'"
+                "now, can we go back to [next uncovered deliverable goal]?'"
             )
-            # COMPLETION, TURN BUDGET, IMPLEMENTATION TRACKING: only when
-            # there is NO incremental TC checker.  These rules involve
-            # completion judgment or rushing — the TC checker handles
-            # termination instead.
+            # COMPLETION, TURN BUDGET, IMPLEMENTATION TRACKING:
+            # full prompt mode includes explicit completion pacing.
             segments = get_filtered_prompt_segments(
                 task.category.value,
                 task.requires_code,
@@ -812,22 +810,22 @@ def build_scenario(
             if not has_incremental_tc:
                 parts.append("")
                 parts.append(
-                    "COMPLETION: Once every learning goal above has been "
-                    "covered with a computational demonstration (the tutor "
+                    "COMPLETION: Once every deliverable goal above has been "
+                    "covered with a computational demonstration (the agent "
                     "ran code or a tool and showed you concrete results), "
                     "end the conversation immediately. Do NOT ask follow-up "
                     "questions about parameter tuning, alternative methods, "
                     "or further improvements — these are beyond the scope "
                     "of this session. Your final message should be a brief "
-                    "statement of what you learned. Example: 'That covers "
-                    "everything I wanted to learn — thanks for walking me "
+                    "statement that the deliverable is sufficient. Example: 'That covers "
+                    "everything I needed — thanks for walking me "
                     "through all of it!'"
                 )
                 parts.append("")
                 parts.append(
                     f"TURN BUDGET: This session has approximately "
                     f"{task.max_turns} turns total. Be efficient — if the "
-                    f"tutor has adequately addressed a learning goal, move on "
+                    f"agent has adequately addressed a deliverable goal, move on "
                     f"to the next one rather than asking further refinement "
                     f"questions on the same topic."
                 )
@@ -837,14 +835,14 @@ def build_scenario(
             if segments.d_abstract_push:
                 parts.append("")
                 parts.append(segments.d_abstract_push)
-            # Code visibility: help the student understand what counts
+            # Code visibility: help the user understand what counts
             # as "demonstrated" in a tool-based coding session.
             if task.category.value in ("implementation", "end_to_end", "debug"):
                 parts.append("")
                 parts.append(
                     "CODE VISIBILITY: You interact through a text-only chat. "
-                    "The tutor may write and run code behind the scenes that "
-                    "you cannot see directly. When the tutor shows you code "
+                    "The agent may write and run code behind the scenes that "
+                    "you cannot see directly. When the agent shows you code "
                     "snippets in the conversation and describes execution "
                     "results (e.g., 'the backtest returned a Sharpe of 1.2' "
                     "or 'here are the first 10 trades'), treat that as a "

@@ -188,6 +188,7 @@
             '<span class="meta-chip" data-flow-meta="turn">' + escapeHtml(String(run.turn || 0) + ' turns') + '</span>' +
             '<span class="meta-chip" data-flow-meta="messages">' + escapeHtml(String(conversation.length) + ' messages') + '</span>' +
             '<span class="meta-chip" data-flow-meta="tools">' + escapeHtml(String(logs.length) + ' tool calls') + '</span>' +
+            '<span class="meta-chip" data-flow-meta="coverage"' + (coverageLabel(run) ? '' : ' hidden') + '>' + escapeHtml(coverageLabel(run)) + '</span>' +
             '<span class="meta-chip" data-flow-meta="phase"' + (run.session_phase ? '' : ' hidden') + '>' + escapeHtml(run.session_phase || '') + '</span>' +
             (run.error ? '<span class="meta-chip flow-error-chip">' + escapeHtml(run.error) + '</span>' : '') +
           '</div>' +
@@ -221,6 +222,7 @@
     setText('[data-flow-meta="turn"]', String(run.turn || 0) + ' turns');
     setText('[data-flow-meta="messages"]', String(conversation.length) + ' messages');
     setText('[data-flow-meta="tools"]', String(logs.length) + ' tool calls');
+    setOptionalText('[data-flow-meta="coverage"]', coverageLabel(run));
     setOptionalText('[data-flow-meta="phase"]', run.session_phase || '');
     setText('[data-flow-count="conversation"]', String(conversation.length) + ' messages');
     setText('[data-flow-count="tools"]', String(logs.length));
@@ -408,11 +410,11 @@
   }
 
   function normalizedRole(role) {
-    return (role === 'user' || role === 'student') ? 'student' : 'tutor';
+    return (role === 'user' || role === 'user') ? 'user' : 'tutor';
   }
 
   function roleLabel(role, roleClass) {
-    if (roleClass === 'student') return 'Student';
+    if (roleClass === 'user') return 'User';
     if (role === 'assistant' || role === 'tutor' || !role) return 'Tutor';
     return titleCase(role);
   }
@@ -473,6 +475,17 @@
       cancelled: 'Cancelled'
     };
     return labels[status] || titleCase(status || '');
+  }
+
+  function coverageLabel(run) {
+    var cov = run && run.required_tool_coverage;
+    if (!cov || cov.coverage_ratio == null) return '';
+    var total = (cov.required_tools || []).length;
+    var covered = (cov.covered_tools || []).length;
+    var pct = Math.round(Number(cov.coverage_ratio || 0) * 100);
+    var failed = (cov.failed_required_tools || []).length;
+    var label = 'Coverage ' + covered + '/' + total + ' (' + pct + '%)';
+    return failed ? label + ' - failures ' + failed : label;
   }
 
   function titleCase(value) {

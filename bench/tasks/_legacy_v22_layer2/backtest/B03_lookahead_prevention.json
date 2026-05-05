@@ -4,9 +4,9 @@
   "difficulty": "medium",
   "category": "backtest",
   "task_type": "multi_turn",
-  "description": "Guide a student to build a backtest engine that architecturally prevents look-ahead bias and includes a verification test that proves future data cannot leak to an RSI mean-reversion strategy running on BTCUSDT hourly data.",
+  "description": "The user asks the agent to build a backtest engine that architecturally prevents look-ahead bias and includes a verification test that proves future data cannot leak to an RSI mean-reversion strategy running on BTCUSDT hourly data.",
   "persona_id": "double_novice",
-  "student_opening": "I want to learn about how to build a backtest engine that prevents look-ahead bias. I'm new to both Python and finance — can you walk me through it from the beginning?",
+  "user_opening": "I want to build a backtest engine that prevents look-ahead bias. I'm new to both Python and finance — can you walk me through it from the beginning?",
   "environment": {
     "data_files": [
       "BTCUSDT_1h_2023_2024.csv"
@@ -25,7 +25,7 @@
     "network_enabled": false
   },
   "ground_truth": {
-    "expected_outcome": "Tutor guides the student to identify common sources of look-ahead bias, build a backtest system that feeds bars one at a time through a controlled interface, compute RSI incrementally on available-so-far data only, and include a verification test proving no future data leaks. The tutor demonstrates the impact of look-ahead bias by comparing biased and unbiased backtest results. The system runs on BTCUSDT hourly data with an RSI strategy and produces results, leaving code and verification artifacts rather than only a verbal warning about look-ahead bias.",
+    "expected_outcome": "Agent helps the user identify common sources of look-ahead bias, build a backtest system that feeds bars one at a time through a controlled interface, compute RSI incrementally on available-so-far data only, and include a verification test proving no future data leaks. The agent demonstrates the impact of look-ahead bias by comparing biased and unbiased backtest results. The system runs on BTCUSDT hourly data with an RSI strategy and produces results, leaving code and verification artifacts rather than only a verbal warning about look-ahead bias.",
     "required_capabilities": [
       "Identify common sources of look-ahead bias",
       "Build a data replay interface that prevents strategies from accessing future bars",
@@ -47,7 +47,7 @@
     "quant_validation": {
       "eval_script": "tasks/test_scripts/backtest/B03_lookahead_prevention.py"
     },
-    "termination_criteria": "The tutor has completed the following steps with computational evidence (not just verbal discussion): (1) Identified common sources of look-ahead bias and built a data replay interface that prevents strategies from accessing future bars. (2) Computed RSI incrementally on available-so-far data only, and included a verification test or check proving no future data leaks into the signal computation. (3) Demonstrated the impact of look-ahead bias by comparing biased versus unbiased backtest results with specific numerical differences. Once all three steps have been computationally demonstrated, the session is complete."
+    "termination_criteria": "The agent has completed the following steps with computational evidence (not just verbal discussion): (1) Identified common sources of look-ahead bias and built a data replay interface that prevents strategies from accessing future bars. (2) Computed RSI incrementally on available-so-far data only, and included a verification test or check proving no future data leaks into the signal computation. (3) Demonstrated the impact of look-ahead bias by comparing biased versus unbiased backtest results with specific numerical differences. Once all three steps have been computationally demonstrated, the session is complete."
   },
   "requires_code": true,
   "sample_code": null,

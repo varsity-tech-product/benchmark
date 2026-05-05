@@ -38,8 +38,8 @@ def _workspace_dir() -> str:
     return os.environ.get("QTB_WORKSPACE_DIR", "/workspace")
 
 
-def _student_code_dir() -> str:
-    return os.environ.get("QTB_STUDENT_CODE_DIR", "/student_code")
+def _user_code_dir() -> str:
+    return os.environ.get("QTB_USER_CODE_DIR", "/user_code")
 
 
 def _session_context() -> dict:
@@ -294,16 +294,16 @@ def _resolve_path(path: str) -> Optional[str]:
     """Resolve a relative path across all search directories.
 
     Handles the common case where the caller includes a known directory
-    prefix (e.g. ``student_code/foo.py``) — we strip the prefix so that
+    prefix (e.g. ``user_code/foo.py``) — we strip the prefix so that
     the search against the matching base directory doesn't double up.
 
     Security: absolute paths and path traversal (../) are restricted to
     the allowed base directories to prevent access to reference answers
     or other host files in local (non-Docker) mode.
     """
-    bases = [_workspace_dir(), _data_dir(), _docs_dir(), _student_code_dir()]
+    bases = [_workspace_dir(), _data_dir(), _docs_dir(), _user_code_dir()]
     # Known directory name prefixes that callers might include
-    _KNOWN_PREFIXES = ("workspace/", "data/", "docs/", "student_code/")
+    _KNOWN_PREFIXES = ("workspace/", "data/", "docs/", "user_code/")
 
     def _is_within_bases(resolved: str) -> bool:
         """Check that resolved path is under one of the allowed base dirs."""
@@ -338,14 +338,14 @@ def _resolve_path(path: str) -> Optional[str]:
 
 
 def file_read(path: str, offset: int = 0, max_lines: int = 0) -> str:
-    """Read a file from workspace, data, docs, or student_code.
+    """Read a file from workspace, data, docs, or user_code.
 
     For large CSV files (>50 rows), returns a smart preview (header +
     first 5 + last 5 rows) by default.  Use ``offset`` and ``max_lines``
     to read specific sections.
 
     Args:
-        path: File path (resolved across workspace/data/docs/student_code).
+        path: File path (resolved across workspace/data/docs/user_code).
         offset: Start reading from this line number (0-based). Default 0.
         max_lines: Maximum lines to return. 0 means auto (preview for
                    large CSV, full content for everything else).
@@ -2268,7 +2268,7 @@ def get_environment_info() -> str:
     data_dir = _data_dir()
     docs_dir = _docs_dir()
     workspace = _workspace_dir()
-    student_code_dir = _student_code_dir()
+    user_code_dir = _user_code_dir()
     session_context = _session_context()
 
     info = {
@@ -2282,9 +2282,9 @@ def get_environment_info() -> str:
         "workspace": [],
         "installed_packages": [],
     }
-    if os.path.isdir(student_code_dir):
-        info["directories"]["student_code"] = student_code_dir
-        info["student_code_files"] = sorted(os.listdir(student_code_dir))
+    if os.path.isdir(user_code_dir):
+        info["directories"]["user_code"] = user_code_dir
+        info["user_code_files"] = sorted(os.listdir(user_code_dir))
     for d, key in [
         (data_dir, "data_files"),
         (docs_dir, "docs"),
@@ -2382,7 +2382,7 @@ def get_environment_info() -> str:
         note_parts = [
             f"Data files are in {data_dir}.",
             f"This environment has LEAN Engine (QuantConnect) with .NET {lean_info.get('dotnet_version', 'unknown')}.",
-            f"Tracked LEAN runs should generally use run_lean_backtest; source files may come from {workspace} and, when mounted, {student_code_dir}.",
+            f"Tracked LEAN runs should generally use run_lean_backtest; source files may come from {workspace} and, when mounted, {user_code_dir}.",
             "run_lean_backtest can infer a C# entrypoint from the source file and also accepts explicit class_name or full_type_name overrides.",
             "12-col custom market data is pre-loaded at /data/custom/binance and required LEAN metadata is mounted at /lean/Data.",
             f"Detailed run artifacts are written under {workspace}/results/ and can be inspected with file_read().",
@@ -2608,7 +2608,7 @@ namespace QuantConnect.Algorithm.CSharp
 
 def _debug_lean_template() -> str:
     return """Debug-session template:
-1. Inspect the mounted code first with file_list(directory="student_code") and file_read(path="student_code/<file>.cs").
+1. Inspect the mounted code first with file_list(directory="user_code") and file_read(path="user_code/<file>.cs").
 2. Copy the code into the workspace, apply the smallest fix, and keep the namespace/class entrypoint production-safe.
 3. Use SetWarmUp(...) and if (IsWarmingUp) return; when the bug involves indicator readiness.
 4. Run run_lean_backtest on the workspace copy, then inspect results with analyze_lean_results."""
@@ -2622,7 +2622,7 @@ def get_lean_template() -> str:
     category = str(context.get("category", "")).lower()
     data_files = {str(item).lower() for item in context.get("data_files", [])}
 
-    if category == "debug" or context.get("student_code_available"):
+    if category == "debug" or context.get("user_code_available"):
         template_name = "debug-fix workflow"
         template = _debug_lean_template()
     elif template_type == "single_symbol" or task_id.startswith("I01"):
@@ -2648,7 +2648,7 @@ def get_lean_template() -> str:
             "category": context.get("category", ""),
             "sandbox_image": context.get("sandbox_image", ""),
             "template_type": context.get("template_type", ""),
-            "student_code_available": bool(context.get("student_code_available")),
+            "user_code_available": bool(context.get("user_code_available")),
         },
         "rules": _lean_common_rules(),
         "code": template,
@@ -3541,11 +3541,11 @@ CORE_TOOLS = {
     },
     "file_read": {
         "func": file_read,
-        "description": "Read a file from workspace, data, docs, or student_code directories. Large CSV files (>50 rows) return a smart preview (header + first 5 + last 5 rows) by default. Use offset/max_lines for specific sections.",
+        "description": "Read a file from workspace, data, docs, or user_code directories. Large CSV files (>50 rows) return a smart preview (header + first 5 + last 5 rows) by default. Use offset/max_lines for specific sections.",
         "params": {
             "path": {
                 "type": "string",
-                "description": "File path to read. Searches workspace/, data/, docs/, student_code/ directories.",
+                "description": "File path to read. Searches workspace/, data/, docs/, user_code/ directories.",
                 "required": True,
             },
             "offset": {
@@ -3784,7 +3784,7 @@ CORE_TOOLS = {
     },
     "get_environment_info": {
         "func": get_environment_info,
-        "description": "Return directory paths, mounted files, installed packages, and truthful session runtime context such as student_code availability or tracked trial budget when present.",
+        "description": "Return directory paths, mounted files, installed packages, and truthful session runtime context such as user_code availability or tracked trial budget when present.",
         "params": {},
     },
     "get_lean_template": {
@@ -4651,12 +4651,12 @@ CORE_TOOLS["run_lean_backtest"] = {
         "Each call uses one trial from the budget (default 5). Returns trial status, "
         "trade count, Sharpe ratio, and remaining budget. Use this instead of "
         "shell_exec('run_backtest ...') for tracked iteration. The source file may live "
-        "in the workspace or in a mounted student_code directory."
+        "in the workspace or in a mounted user_code directory."
     ),
     "params": {
         "algorithm_path": {
             "type": "string",
-            "description": "Path to the .cs algorithm file relative to the workspace or mounted student_code directory, e.g. 'Algorithm.cs' or 'student_code/alpha_conflict.cs'.",
+            "description": "Path to the .cs algorithm file relative to the workspace or mounted user_code directory, e.g. 'Algorithm.cs' or 'user_code/alpha_conflict.cs'.",
             "required": True,
         },
         "params_json": {

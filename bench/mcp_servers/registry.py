@@ -213,8 +213,8 @@ def register_session_tools(
         name="get_session_info",
         func=session.handle_get_session_info,
         description=(
-            "Get the tutoring task description, student profile, and the "
-            "student's opening message. Call this first to understand what "
+            "Get the tutoring task description, user profile, and the "
+            "user's opening message. Call this first to understand what "
             "you need to teach."
         ),
         params={"type": "object", "properties": {}, "required": []},
@@ -223,19 +223,19 @@ def register_session_tools(
         name="send_message",
         func=session.handle_send_message,
         description=(
-            "Send a message to the student. Returns the student's reply "
-            "and session status. Use this to communicate with the student "
+            "Send a message to the user. Returns the user's reply "
+            "and session status. Use this to communicate with the user "
             "during the tutoring session. "
             "Optionally include 'reasoning' to record your private rationale "
             "for this turn — it is logged for analysis and is NOT shown to "
-            "the student."
+            "the user."
         ),
         params={
             "type": "object",
             "properties": {
                 "text": {
                     "type": "string",
-                    "description": "Your message to the student.",
+                    "description": "Your message to the user.",
                 },
                 "reasoning": {
                     "type": "string",
@@ -243,7 +243,7 @@ def register_session_tools(
                         "Private rationale for this turn — why you chose this "
                         "wording, what you expect to learn from the reply, or "
                         "what hypothesis you are testing. Recorded in tool logs "
-                        "for post-hoc analysis. Not delivered to the student."
+                        "for post-hoc analysis. Not delivered to the user."
                     ),
                 },
             },
