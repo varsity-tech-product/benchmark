@@ -25,6 +25,7 @@ import pandas as pd
 
 BENCH_ROOT = Path(__file__).resolve().parents[1]
 BDEX = BENCH_ROOT / "data" / "hf_cache" / "normal" / "BDEX"
+NORMAL_X = BENCH_ROOT / "data" / "hf_cache" / "normal" / "X"
 FROZEN_MARKET = BENCH_ROOT / "data" / "frozen" / "market"
 FROZEN_STUDENT = BENCH_ROOT / "data" / "frozen" / "student_code"
 BTC_REF = FROZEN_MARKET / "BTCUSDT_1d_2021_2024.csv"
@@ -233,6 +234,7 @@ def gen_strategy_ab_returns() -> None:
 def write_buggy_code() -> None:
     """Write the two buggy student-code samples into frozen/student_code/."""
     FROZEN_STUDENT.mkdir(parents=True, exist_ok=True)
+    NORMAL_X.mkdir(parents=True, exist_ok=True)
 
     multi_bug = '''"""Long-only SMA-crossover backtest on BTCUSDT daily.
 
@@ -287,6 +289,7 @@ if __name__ == "__main__":
     print(run(path))
 '''
     (FROZEN_STUDENT / "multi_bug_strategy.py").write_text(multi_bug)
+    (NORMAL_X / "multi_bug_strategy.py").write_text(multi_bug)
 
     stats_misuse = '''"""Statistical-test misuse demo: 100 momentum signals scanned, t-test
 applied to the best-performing one with no multiple-testing correction
@@ -365,6 +368,7 @@ if __name__ == "__main__":
     main(sys.argv[1] if len(sys.argv) > 1 else "/workspace/data/AAPL_2018_2024.csv")
 '''
     (FROZEN_STUDENT / "stats_misuse.py").write_text(stats_misuse)
+    (NORMAL_X / "stats_misuse.py").write_text(stats_misuse)
 
 
 def main() -> None:

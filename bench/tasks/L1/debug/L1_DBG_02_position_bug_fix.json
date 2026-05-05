@@ -8,7 +8,7 @@
   "difficulty": "medium",
   "description": "Find and fix a missing short position in a Bollinger Band mean-reversion strategy where the short signal is coded as flat (0 instead of -1), so the strategy never takes shorts.",
   "agent_prompt": "Read the buggy strategy at /workspace/student_code/position_bug.py running a Bollinger Band mean-reversion on /workspace/data/AAPL_2018_2024.csv. Bug: when price crosses above the upper band, the position is set to 0 (flat) instead of -1 (short), so the strategy misses half of the mean-reversion signal space. (1) Diagnose at /workspace/output/diagnosis.md: identify the line, explain the three-state model (1 long / 0 flat / -1 short) and why coding shorts as 0 silently degrades returns. (2) Produce /workspace/output/position_fixed.py with the corrected position assignment. (3) Run both versions and write /workspace/output/comparison.json with keys: buggy_long_days, buggy_short_days, buggy_flat_days, fixed_long_days, fixed_short_days, fixed_flat_days, buggy_total_return, fixed_total_return. The fix must produce fixed_short_days > 0.",
-  "sample_code": "student_code/position_bug.py",
+  "sample_code": "user_code/position_bug.py",
   "environment": {
     "data_files": [
       "AAPL_2018_2024.csv"

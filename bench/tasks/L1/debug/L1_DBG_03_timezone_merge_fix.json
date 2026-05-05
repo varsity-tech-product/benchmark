@@ -8,7 +8,7 @@
   "difficulty": "hard",
   "description": "Find and fix a timezone misalignment in a crypto-equity correlation analysis where BTC (UTC) and AAPL (Eastern Time) timestamps are merged on calendar date without conversion, producing a 1-day shift.",
   "agent_prompt": "Read /workspace/student_code/timezone_merge.py which computes daily correlation between BTC (UTC timestamps in /workspace/data/BTC_UTC.csv) and AAPL (Eastern Time in /workspace/data/AAPL_2018_2024.csv). Bug: the merge key is .dt.date taken on UTC timestamps for BTC and on Eastern timestamps for AAPL with no tz_convert, so 00:00 UTC ends up matching the previous Eastern trading day. (1) Diagnose at /workspace/output/diagnosis.md: explain why 00:00 UTC maps to the previous date in US/Eastern and how this corrupts the merge key. (2) Produce /workspace/output/timezone_fixed.py applying tz_convert('US/Eastern') to BTC before extracting .dt.date. (3) Run both versions on overlapping dates and write /workspace/output/comparison.json with keys: buggy_corr, fixed_corr, n_dates_merged_buggy, n_dates_merged_fixed, n_misaligned_pairs (rows where the buggy version paired BTC[t] with AAPL[t-1]).",
-  "sample_code": "student_code/timezone_merge.py",
+  "sample_code": "user_code/timezone_merge.py",
   "environment": {
     "data_files": [
       "AAPL_2018_2024.csv",
