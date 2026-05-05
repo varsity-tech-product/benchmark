@@ -23,7 +23,7 @@ BENCH_IMAGE_V3_LEAN = "quant-bench-env:v3.0-lean"
 # HuggingFace dataset repo and pinned commit hash.
 # To update: push new data, then update this hash.
 DATASET_REPO_ID = "Varsity-Tech/quant-tutor-bench-data"
-DATASET_REVISION = "793bca3f8dc70d379d423358f4159eca2d8be83f"
+DATASET_REVISION = "719c01e3bd5c303bc947fac1d1adadb8f7ad1e39"
 
 # ── Benchmark Window ──
 # Re-exported from benchmark_dates.py for convenience.

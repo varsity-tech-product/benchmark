@@ -262,6 +262,9 @@ def ensure_data(
         normal_dir = cache_dir / "normal"
         bdex_dir = normal_dir / "BDEX"
 
+        if normal_dir.exists() and not _revision_matches(normal_dir, revision):
+            shutil.rmtree(normal_dir, ignore_errors=True)
+
         if not bdex_dir.exists():
             snapshot_download(
                 repo_id=hf_repo,
@@ -274,6 +277,7 @@ def ensure_data(
             bds_downloaded = normal_dir / "BDS"
             if bds_downloaded.exists():
                 bds_downloaded.rename(bdex_dir)
+            _write_revision_marker(normal_dir, revision)
 
         return DataPaths(
             docs=docs_path,
