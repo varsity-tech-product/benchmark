@@ -28,7 +28,13 @@ import time
 from collections.abc import Mapping, Sequence
 from typing import Any, Optional
 
-from platform_api.contracts import EvalItem, NPCProvider, ToolLog, TranscriptMessage
+from platform_api.contracts import (
+    EvalItem,
+    FileArtifact,
+    NPCProvider,
+    ToolLog,
+    TranscriptMessage,
+)
 from server.core.artifact_digest import build_visible_artifact_digest
 from server.core.workspace_delta import scan_workspace_snapshot
 
@@ -968,7 +974,6 @@ class Session:
             "persona": self._persona,
             "user_sim": self._user_sim,
             "runtime_guidance": runtime_guidance,
-            "file_ledger": self._file_ledger,
             "workspace_path": self._workspace_path,
         }
         if self._eval_item is not None:
@@ -976,10 +981,28 @@ class Session:
         npc_reply = self._npc_provider.respond(
             self._transcript_messages(),
             self._contract_tool_logs(tool_logs),
-            {},
+            self._file_artifacts(),
             payload,
         )
         return npc_reply.message, bool(npc_reply.terminate)
+
+    def _file_artifacts(self) -> dict[str, FileArtifact]:
+        artifacts: dict[str, FileArtifact] = {}
+        for name, entry in self._file_ledger.items():
+            content = entry.get("current_content")
+            artifacts[name] = FileArtifact(
+                path=str(entry.get("path") or name),
+                content=content,
+                size=len(content) if isinstance(content, (str, bytes)) else None,
+                media_type=str(entry.get("media_type") or ""),
+                metadata={
+                    "prev_content": entry.get("prev_content"),
+                    "prev_turn": entry.get("prev_turn"),
+                    "current_turn": entry.get("current_turn"),
+                    "is_image": bool(entry.get("is_image")),
+                },
+            )
+        return artifacts
 
     def _transcript_messages(self) -> tuple[TranscriptMessage, ...]:
         return tuple(

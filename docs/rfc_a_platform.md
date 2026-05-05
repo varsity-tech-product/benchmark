@@ -341,8 +341,19 @@ Reference impls (Impl A's master cleanup, #145) consume this registry to keep mi
 
 See #150 for the validation strategy and #156 / #157 / #160 for Stage 2 trackers.
 
+## 12. Contract gaps observed in Impl A
+
+The first reference bundle integration surfaced Stage 2 freeze decisions:
+
+- `SessionState` uses an optional `build_user_simulator` hook on the reference NPC provider. The platform contract needs an explicit session-start hook when NPC implementations need in-process state.
+- `SessionState` can ask a reference `TaskSuite` for `get_business_task`. Legacy compatibility currently uses this helper; Stage 2 should decide whether business-schema extraction remains part of the platform extension surface.
+- `Session` passes a stateful `UserSimulator` object through `NPCProvider.respond(..., payload=...)`. Durable or out-of-process orchestration needs a formal state channel or a JSON-only payload rule.
+- `Session` now passes shared attachments as `FileArtifact` objects through the `files` argument. Stage 2 should define which artifact fields are required for replay and remote execution.
+- `ReferenceEvaluator` persists detailed score output under `Score.metrics["summary"]`. Bundle v1 should define whether common raw, normalized, and threshold fields get top-level metric keys.
+- `bundle.json` metadata fields such as `business_schema` and `version` are currently documentation metadata. Stage 2 should decide whether `PluginLoader` validates plugin schema compatibility.
+
 ---
 
-## 12. Change log
+## 13. Change log
 
 - **2026-05-05**: Initial RFC-A v0 doc — extracted from delivered code in #152 / #153 / #154 / #155.

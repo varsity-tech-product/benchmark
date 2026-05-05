@@ -43,6 +43,24 @@ def _conversation_from_transcript(
     return conversation
 
 
+def _file_ledger_from_artifacts(
+    files: Mapping[str, FileArtifact],
+) -> dict[str, dict[str, Any]]:
+    ledger: dict[str, dict[str, Any]] = {}
+    for name, artifact in files.items():
+        metadata = dict(artifact.metadata or {})
+        ledger[str(name)] = {
+            "prev_content": metadata.get("prev_content"),
+            "prev_turn": metadata.get("prev_turn"),
+            "current_content": artifact.content,
+            "current_turn": metadata.get("current_turn"),
+            "is_image": bool(metadata.get("is_image")),
+            "media_type": artifact.media_type,
+            "path": artifact.path,
+        }
+    return ledger
+
+
 class ReferenceNPCProvider(NPCProvider):
     """Thin NPCProvider wrapper around UserSimulator and reference prompts."""
 
@@ -90,9 +108,7 @@ class ReferenceNPCProvider(NPCProvider):
         reply, task_end = user_sim.generate_message(
             _conversation_from_transcript(transcript),
             runtime_guidance=str(payload.get("runtime_guidance") or ""),
-            file_ledger=payload.get("file_ledger")
-            if isinstance(payload, Mapping)
-            else None,
+            file_ledger=_file_ledger_from_artifacts(files),
             tool_logs=list(tool_logs),
             workspace_path=str(payload.get("workspace_path") or "") or None,
         )

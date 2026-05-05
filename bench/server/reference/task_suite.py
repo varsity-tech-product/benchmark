@@ -7,6 +7,7 @@ import os
 from pathlib import Path, PurePosixPath
 from typing import Any
 
+from config.benchmark_config import BENCH_IMAGE_V3, BENCH_IMAGE_V3_LEAN
 from eval.contracts.schemas import QuantTutorTask
 from platform_api.contracts import DataMount, EvalItem, SandboxSpec, TaskSuite
 from server.config.benchmark_config import DATASET_REPO_ID, DATASET_REVISION
@@ -17,7 +18,13 @@ _CODE_CATEGORIES = {
     "code_debugging",
     "implementation",
     "end_to_end",
+    "alpha_research",
+    "backtest_engine",
+    "data_engineering",
+    "debug",
+    "diagnostic",
 }
+_V3_LEAN_CATEGORIES = {"implementation"}
 
 
 def _default_bench_root() -> Path:
@@ -216,9 +223,14 @@ class ReferenceTaskSuite(TaskSuite):
             )
 
         category = _enum_value(task.category)
-        image = (
-            "quant-tutor-env:v2.2-lean"
-            if category in _CODE_CATEGORIES or task.requires_code
-            else "quant-tutor-env:v2.2"
-        )
+        if _enum_value(getattr(task, "layer", "")) in {"L1", "L2"}:
+            image = (
+                BENCH_IMAGE_V3_LEAN
+                if category in _V3_LEAN_CATEGORIES
+                else BENCH_IMAGE_V3
+            )
+        elif category in _CODE_CATEGORIES or task.requires_code:
+            image = BENCH_IMAGE_V3_LEAN
+        else:
+            image = BENCH_IMAGE_V3
         return SandboxSpec(image_uri=image, resource_limits={})

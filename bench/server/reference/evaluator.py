@@ -96,6 +96,14 @@ def _score_status(value: float | None) -> str:
     return "completed_scored" if value is not None else "completed_not_computable"
 
 
+def _enum_value(value: Any) -> str:
+    return str(getattr(value, "value", value) or "")
+
+
+def _task_layer(task: QuantTutorTask) -> str:
+    return _enum_value(getattr(task, "layer", ""))
+
+
 class ReferenceEvaluator(Evaluator):
     """Composite reference evaluator for platform plugin execution."""
 
@@ -120,14 +128,13 @@ class ReferenceEvaluator(Evaluator):
 
     def evaluate(self, item: EvalItem, sample: EvalSample) -> Score:
         task = _task_from_item(item)
-        task_type = str(
-            item.task_type or getattr(task.task_type, "value", task.task_type) or ""
-        )
+        task_type = str(item.task_type or _enum_value(task.task_type))
+        layer = _task_layer(task)
         eval_model = str(sample.payload.get("eval_model") or self.eval_model or "")
 
-        if task_type in {"knowledge_qa", "l0"}:
+        if layer == "L0" or task_type in {"knowledge_qa", "l0"}:
             result = knowledge_qa.evaluate(
-                question=task.description,
+                question=task.question or task.description,
                 reference_answer=task.reference_answer or "",
                 actual_output=_latest_assistant_output(sample),
                 context=task.context,
@@ -139,10 +146,11 @@ class ReferenceEvaluator(Evaluator):
                 eval_model=eval_model,
             )
 
-        if task_type == "single_turn":
+        if layer == "L1" or task_type in {"agent_execution", "single_turn"}:
             result = l1_verifier.evaluate(
                 task=task,
                 actual_output=_latest_assistant_output(sample),
+                workspace_path=str(sample.payload.get("workspace_path") or ""),
                 eval_model=eval_model,
             )
             return self._score_single_track(
