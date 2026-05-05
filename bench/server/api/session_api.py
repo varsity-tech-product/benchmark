@@ -1289,7 +1289,7 @@ class SessionState:
             from server.core.session import build_background
 
             bg = build_background(self.task) if self.task else ""
-            return [TextContent(type="text", text=bg)]
+            return [TextContent(type="text", text=json.dumps(bg))]
 
         if name == "send_message":
             text = arguments.get("text", "")

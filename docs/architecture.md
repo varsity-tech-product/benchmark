@@ -87,6 +87,19 @@ first on `sys.path`.
   reference opening field, and `TUTOR_SYSTEM_PROMPT` as reference-internal
   prompt configuration.
 
+## Reference Prompt Boundary
+
+`bench/server/reference/` owns reference NPC/user-simulator prompt behavior.
+`RefSystemPrompt` builds persona, interaction, and visible tool-log behavior
+text for the reference simulator. `server.config.prompt_config` keeps existing
+server call sites stable through compatibility wrappers.
+
+`server.core.session.build_background()` returns a JSON-able
+`platform_background.v1` fact object for sandbox image, resource limits,
+systems, mounts, and MCP tool discovery metadata. Agent communication rules
+live in MCP tool descriptions such as `send_message`; reference persona
+behavior lives in `bench/server/reference/`.
+
 This v0 surface is internal and source-level. Stage 2 owns public SDK/docs,
 multi-tenant BYO image security, and formal schema/deprecation policy.
 

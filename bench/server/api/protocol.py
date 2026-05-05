@@ -70,7 +70,7 @@ REGISTER_SESSION_TOOL = Tool(
 START_SESSION_TOOL = Tool(
     name="start_session",
     description=(
-        "Start the tutoring session. Returns the session background, "
+        "Start the tutoring session. Returns structured session background, "
         "the user's first message, and the list of available tools. "
         "Precondition: register_session must have succeeded. "
         "Called out of order, returns "
@@ -134,9 +134,8 @@ GET_BACKGROUND_TOOL = Tool(
     name="get_background",
     description=(
         "Re-read the session background returned by start_session. "
-        "Contains the sandbox environment description, communication "
-        "constraints, and available systems (data directories, runtime "
-        "engines, mounted code). Returns a plain text string."
+        "Contains sandbox environment facts, available systems, mounted "
+        "paths, and tool discovery metadata. Returns a JSON object string."
     ),
     inputSchema={"type": "object", "properties": {}, "required": []},
 )
