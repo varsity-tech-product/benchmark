@@ -123,6 +123,13 @@ jobs:
           docker image prune -f
           docker builder prune -f
 
+      - name: Ensure v3 Docker image aliases
+        run: |
+          docker image inspect quant-tutor-env:v2.2 >/dev/null
+          docker tag quant-tutor-env:v2.2 quant-bench-env:v3.0
+          docker image inspect quant-tutor-env:v2.2-lean >/dev/null
+          docker tag quant-tutor-env:v2.2-lean quant-bench-env:v3.0-lean
+
       - name: Install Python deps (if requirements changed)
         if: steps.changes.outputs.deps == 'true' || steps.runtime.outputs.venv_created == 'true'
         run: |

@@ -1068,16 +1068,7 @@ _HEALTH_DISK_MIN_GB = 5.0
 _HEALTH_LEAN_IMAGE_DEFAULT = "quant-tutor-env:v2.2-lean"
 
 
-def _health_check_docker() -> dict:
-    try:
-        proc = subprocess.run(["docker", "info"], capture_output=True, timeout=3)
-        return {"ok": proc.returncode == 0}
-    except (FileNotFoundError, subprocess.TimeoutExpired, OSError) as exc:
-        return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
-
-
-def _health_check_lean_image() -> dict:
-    image = os.environ.get("QTB_LEAN_IMAGE", _HEALTH_LEAN_IMAGE_DEFAULT)
+def _health_check_image(image: str) -> dict:
     try:
         proc = subprocess.run(
             ["docker", "image", "inspect", image],
@@ -1091,6 +1082,32 @@ def _health_check_lean_image() -> dict:
             "image": image,
             "error": f"{type(exc).__name__}: {exc}",
         }
+
+
+def _health_check_docker() -> dict:
+    try:
+        proc = subprocess.run(["docker", "info"], capture_output=True, timeout=3)
+        return {"ok": proc.returncode == 0}
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError) as exc:
+        return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+
+
+def _health_check_lean_image() -> dict:
+    return _health_check_image(
+        os.environ.get("QTB_LEAN_IMAGE", _HEALTH_LEAN_IMAGE_DEFAULT)
+    )
+
+
+def _health_check_bench_images() -> dict:
+    from config.benchmark_config import BENCH_IMAGE_V3, BENCH_IMAGE_V3_LEAN
+
+    full = _health_check_image(BENCH_IMAGE_V3)
+    lean = _health_check_image(BENCH_IMAGE_V3_LEAN)
+    return {
+        "ok": full.get("ok") is True and lean.get("ok") is True,
+        "full": full,
+        "lean": lean,
+    }
 
 
 def _health_check_disk() -> dict:
@@ -1114,7 +1131,7 @@ def _health_check_disk() -> dict:
 async def rest_health(request: Request) -> JSONResponse:
     """``GET /health`` — deep liveness probe.
 
-    In Docker mode validates Docker daemon, LEAN backtest image, and disk
+    In Docker mode validates Docker daemon, sandbox images, and disk
     headroom. In no-docker mode only disk is checked so a supported local
     deployment is not reported unhealthy for a missing Docker daemon.
     Returns 200 when all applicable checks pass, 503 otherwise so uptime
@@ -1123,13 +1140,15 @@ async def rest_health(request: Request) -> JSONResponse:
     manager: BenchSessionManager = request.app.state.manager
     checks: dict[str, dict] = {}
     if manager.use_docker:
-        docker, image, disk = await asyncio.gather(
+        docker, image, bench_images, disk = await asyncio.gather(
             anyio.to_thread.run_sync(_health_check_docker),
             anyio.to_thread.run_sync(_health_check_lean_image),
+            anyio.to_thread.run_sync(_health_check_bench_images),
             anyio.to_thread.run_sync(_health_check_disk),
         )
         checks["docker"] = docker
         checks["lean_image"] = image
+        checks["bench_images"] = bench_images
         checks["disk"] = disk
     else:
         checks["mode"] = {"ok": True, "docker": False}

@@ -62,6 +62,7 @@ class TestHealth:
         assert body["status"] == "ok"
         assert body["checks"]["docker"]["ok"] is True
         assert body["checks"]["lean_image"]["ok"] is True
+        assert body["checks"]["bench_images"]["ok"] is True
         assert body["checks"]["disk"]["ok"] is True
 
     @pytest.mark.asyncio
@@ -104,6 +105,7 @@ class TestHealth:
         body = resp.json()
         assert body["checks"]["docker"]["ok"] is True
         assert body["checks"]["lean_image"]["ok"] is False
+        assert body["checks"]["bench_images"]["ok"] is False
 
     @pytest.mark.asyncio
     async def test_down_when_disk_low(self, client):
@@ -153,6 +155,7 @@ class TestHealth:
         assert body["status"] == "ok"
         assert "docker" not in body["checks"]
         assert "lean_image" not in body["checks"]
+        assert "bench_images" not in body["checks"]
         assert body["checks"]["disk"]["ok"] is True
 
 
