@@ -15,6 +15,9 @@ from dotenv import load_dotenv
 load_dotenv(Path(__file__).parent.parent.parent / ".env")
 
 
+ACTIVE_TASK_DIRS = ("tasks/L0", "tasks/L1", "tasks/L2")
+
+
 def _find_run_states():
     """Find 3 diverse run_state.json files for testing."""
     base = Path("results/run-single/anthropic/claude-sonnet-4-6")
@@ -59,11 +62,14 @@ def check_determinism(task_name, state_path, n_repeats=5, truncate_after_turn=2)
 
     # Find and load task JSON
     task = None
-    for task_path in Path("tasks/layer2").rglob("*.json"):
-        with open(task_path) as f:
-            d = json.load(f)
-        if d.get("task_id") == task_id:
-            task = QuantTutorTask(**d)
+    for task_dir in ACTIVE_TASK_DIRS:
+        for task_path in Path(task_dir).rglob("*.json"):
+            with open(task_path) as f:
+                d = json.load(f)
+            if d.get("task_id") == task_id:
+                task = QuantTutorTask(**d)
+                break
+        if task:
             break
 
     if not task:

@@ -18,13 +18,16 @@ from server.run.service import RunService
 from server.run.store import RunStore
 
 
+TASK_ID = "L2_DAT_01_demo"
+
+
 def _write_task(root: Path) -> None:
-    path = root / "tasks" / "layer2" / "data" / "D01_demo.json"
+    path = root / "tasks" / "L2" / "data" / f"{TASK_ID}.json"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         json.dumps(
             {
-                "task_id": "D01_demo",
+                "task_id": TASK_ID,
                 "category": "data",
                 "difficulty": "easy",
                 "description": "demo",
@@ -45,10 +48,10 @@ class UserQuotaTests(unittest.TestCase):
                 {"QTB_MAX_ACTIVE_RUNS_PER_USER": "1"},
                 clear=False,
             ):
-                service.create_run("D01", owner_user_id="github:alice")
+                service.create_run(TASK_ID, owner_user_id="github:alice")
                 with self.assertRaises(QuotaExceeded):
-                    service.create_run("D01", owner_user_id="github:alice")
-                service.create_run("D01", owner_user_id="github:bob")
+                    service.create_run(TASK_ID, owner_user_id="github:alice")
+                service.create_run(TASK_ID, owner_user_id="github:bob")
 
     def test_heavy_job_running_limit_releases_on_finish(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -116,7 +119,7 @@ class UserQuotaTests(unittest.TestCase):
         class _State:
             session_id = "sess-a"
             run_id = "run-a"
-            task_id = "D01_demo"
+            task_id = TASK_ID
             owner_user_id = "github:alice"
             owner_github_login = "alice"
             owner_email = "alice@example.com"
@@ -164,7 +167,7 @@ class UserQuotaTests(unittest.TestCase):
         class _State:
             session_id = "sess-a"
             run_id = "run-a"
-            task_id = "D01_demo"
+            task_id = TASK_ID
             owner_user_id = "github:alice"
             owner_github_login = "alice"
             owner_email = "alice@example.com"

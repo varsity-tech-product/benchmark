@@ -21,6 +21,7 @@ from dotenv import load_dotenv
 load_dotenv(Path(__file__).parent.parent.parent / ".env")
 
 N_REPEATS = 3
+ACTIVE_TASK_DIRS = ("tasks/L0", "tasks/L1", "tasks/L2")
 
 
 def _find_test_cases():
@@ -35,36 +36,66 @@ def _find_test_cases():
     # Target: pick specific run_states that give us persona diversity
     targets = [
         # (category, task_id, persona, source, min_turns)
-        ("backtest", "B01_interpret_metrics", "intermediate_developer", "sonnet", 4),
-        ("backtest", "B01_interpret_metrics", "beginner_no_finance", "sonnet_orig", 4),
-        ("backtest", "B01_interpret_metrics", "advanced_quant", "sonnet_orig", 4),
         (
-            "data_analysis",
-            "D01_load_inspect_ohlcv",
+            "backtest_engine",
+            "L1_BTE_01_lookahead_safe_engine",
             "intermediate_developer",
             "sonnet",
             4,
         ),
         (
-            "data_analysis",
-            "D01_load_inspect_ohlcv",
+            "backtest_engine",
+            "L1_BTE_01_lookahead_safe_engine",
             "beginner_no_finance",
             "sonnet_orig",
             4,
         ),
-        ("debug", "X01_ma_offbyone", "intermediate_developer", "sonnet", 4),
-        ("debug", "X01_ma_offbyone", "beginner_no_finance", "sonnet_orig", 4),
-        ("implementation", "I01_implement_sma", "intermediate_developer", "sonnet", 4),
+        (
+            "backtest_engine",
+            "L1_BTE_01_lookahead_safe_engine",
+            "advanced_quant",
+            "sonnet_orig",
+            4,
+        ),
+        (
+            "data_engineering",
+            "L1_DAT_01_ohlcv_health_check",
+            "intermediate_developer",
+            "sonnet",
+            4,
+        ),
+        (
+            "data_engineering",
+            "L1_DAT_01_ohlcv_health_check",
+            "beginner_no_finance",
+            "sonnet_orig",
+            4,
+        ),
+        ("debug", "L1_DBG_01_lookahead_bias_fix", "intermediate_developer", "sonnet", 4),
+        ("debug", "L1_DBG_01_lookahead_bias_fix", "beginner_no_finance", "sonnet_orig", 4),
         (
             "implementation",
-            "I01_implement_sma",
+            "L1_IMP_04_multi_signal_sweep",
+            "intermediate_developer",
+            "sonnet",
+            4,
+        ),
+        (
+            "implementation",
+            "L1_IMP_04_multi_signal_sweep",
             "beginner_no_finance",
             "sonnet_orig",
             4,
         ),
-        ("implementation", "I01_implement_sma", "advanced_quant", "sonnet_orig", 4),
-        ("strategy", "S01_ma_crossover", "intermediate_developer", "sonnet", 4),
-        ("strategy", "S01_ma_crossover", "advanced_quant", "sonnet_orig", 4),
+        (
+            "implementation",
+            "L1_IMP_04_multi_signal_sweep",
+            "advanced_quant",
+            "sonnet_orig",
+            4,
+        ),
+        ("alpha_research", "L1_ALR_01_volume_microstructure_alpha", "intermediate_developer", "sonnet", 4),
+        ("alpha_research", "L1_ALR_01_volume_microstructure_alpha", "advanced_quant", "sonnet_orig", 4),
     ]
 
     for cat, task_id, persona, source, min_turns in targets:
@@ -129,11 +160,14 @@ def run_test(case, truncate_after_turn):
 
     # Load task
     task = None
-    for task_path in Path("tasks/layer2").rglob("*.json"):
-        with open(task_path) as f:
-            d = json.load(f)
-        if d.get("task_id") == task_id:
-            task = QuantTutorTask(**d)
+    for task_dir in ACTIVE_TASK_DIRS:
+        for task_path in Path(task_dir).rglob("*.json"):
+            with open(task_path) as f:
+                d = json.load(f)
+            if d.get("task_id") == task_id:
+                task = QuantTutorTask(**d)
+                break
+        if task:
             break
     if not task:
         return None

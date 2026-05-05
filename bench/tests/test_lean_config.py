@@ -81,14 +81,13 @@ class TestApplySessionOverrides:
         ref_fees = {"maker-fee-rate": "0.0005", "taker-fee-rate": "0.0005"}
         lean_config.apply_session_overrides(
             cfg,
-            full_type_name="QuantTutorBench.I01ImplementSma",
+            full_type_name="QuantTutorBench.MultiSignalSweep",
             dll_path="/CustomAlgo/bin/Debug/net10.0/CustomAlgo.dll",
             parameters=ref_fees,
         )
 
-        # The reference FQN passes through unchanged — no default namespace
-        # re-prefix.
-        assert cfg["algorithm-type-name"] == "QuantTutorBench.I01ImplementSma"
+        # The reference FQN passes through unchanged.
+        assert cfg["algorithm-type-name"] == "QuantTutorBench.MultiSignalSweep"
         assert cfg["algorithm-location"] == "/CustomAlgo/bin/Debug/net10.0/CustomAlgo.dll"
 
         # Reference overrides win over session defaults.

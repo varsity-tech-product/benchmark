@@ -14,6 +14,10 @@ from eval.contracts.bundle import REFERENCE_ARTIFACT_KEY, SCHEMA_VERSION
 from eval.contracts.bundle_schema import validate_bundle_path
 
 
+DEFAULT_TASK_ID = "L1_ALR_01_volume_microstructure_alpha"
+SECOND_TASK_ID = "L1_BTE_01_lookahead_safe_engine"
+
+
 def _write_run_state(result_dir: Path, payload: dict) -> Path:
     result_dir.mkdir(parents=True, exist_ok=True)
     p = result_dir / "run_state.json"
@@ -43,7 +47,7 @@ def _tool_log(name: str, *, turn_index: int, args=None, result="", ms=1.0) -> di
 
 def _minimal_run_state(**overrides) -> dict:
     base = {
-        "task_id": "S01_ma_crossover",
+        "task_id": DEFAULT_TASK_ID,
         "persona_id": "double_novice",
         "session_id": "sess-abc",
         "timestamp": "2026-05-02T10:14:32",
@@ -57,15 +61,15 @@ def _minimal_run_state(**overrides) -> dict:
 
 def _bench_root_with_task(tmp_path: Path, task_id: str) -> Path:
     bench = tmp_path / "bench"
-    task_dir = bench / "tasks" / "layer2" / "strategy"
+    task_dir = bench / "tasks" / "L1" / "alpha_research"
     task_dir.mkdir(parents=True)
     (task_dir / f"{task_id}.json").write_text(
         json.dumps(
             {
                 "task_id": task_id,
-                "version": "2.2",
-                "category": "strategy",
-                "environment": {"sandbox_image": "quant-tutor-env:v2.2"},
+                "version": "3.0",
+                "category": "alpha_research",
+                "environment": {"sandbox_image": "quant-bench-env:v3.0"},
             }
         ),
         encoding="utf-8",
@@ -89,8 +93,8 @@ def test_backfill_populates_top_level_fields(tmp_path):
     assert bundle.bundle_id == state["session_id"]
     assert bundle.task_id == state["task_id"]
     assert bundle.agent_id == "ref_harness"
-    assert bundle.sandbox_digest["sandbox_image"] == "quant-tutor-env:v2.2"
-    assert _qtb(bundle)["task_version"] == "2.2"
+    assert bundle.sandbox_digest["sandbox_image"] == "quant-bench-env:v3.0"
+    assert _qtb(bundle)["task_version"] == "3.0"
     assert _qtb(bundle)["task_spec_hash"]
     assert bundle.persona_id == state["persona_id"]
     assert bundle.session_id == state["session_id"]
@@ -99,10 +103,10 @@ def test_backfill_populates_top_level_fields(tmp_path):
 
 
 def test_backfill_prefers_sandbox_spec_digest_and_data_mounts(tmp_path):
-    task_id = "S01_ma_crossover"
+    task_id = DEFAULT_TASK_ID
     run_state = _write_run_state(tmp_path / "result", _minimal_run_state(task_id=task_id))
     bench = tmp_path / "bench"
-    task_dir = bench / "tasks" / "layer2" / "strategy"
+    task_dir = bench / "tasks" / "L1" / "alpha_research"
     task_dir.mkdir(parents=True)
     image = "quanttutor/lean@sha256:" + "d" * 64
     (task_dir / f"{task_id}.json").write_text(
@@ -141,15 +145,15 @@ def test_backfill_prefers_sandbox_spec_digest_and_data_mounts(tmp_path):
 
 def test_backfill_writes_bundle_next_to_run_state_by_default(tmp_path):
     run_state = _write_run_state(tmp_path / "result", _minimal_run_state())
-    out = backfill(run_state, bench_root=_bench_root_with_task(tmp_path, "S01_ma_crossover"))
+    out = backfill(run_state, bench_root=_bench_root_with_task(tmp_path, DEFAULT_TASK_ID))
     assert out == run_state.parent / "bundle.json"
     assert out.exists()
 
 
 def test_backfill_legacy_bundle_id_is_unique_without_session_or_run_id(tmp_path):
-    bench_root = _bench_root_with_task(tmp_path, "B01_interpret_metrics")
+    bench_root = _bench_root_with_task(tmp_path, SECOND_TASK_ID)
     state = _minimal_run_state(
-        task_id="B01_interpret_metrics",
+        task_id=SECOND_TASK_ID,
         conversation=_conv_pair("u", "a"),
     )
     del state["session_id"]
@@ -159,8 +163,8 @@ def test_backfill_legacy_bundle_id_is_unique_without_session_or_run_id(tmp_path)
     left_bundle = bundle_io.read(backfill(left, bench_root=bench_root))
     right_bundle = bundle_io.read(backfill(right, bench_root=bench_root))
 
-    assert left_bundle.bundle_id.startswith("legacy-B01_interpret_metrics-")
-    assert right_bundle.bundle_id.startswith("legacy-B01_interpret_metrics-")
+    assert left_bundle.bundle_id.startswith(f"legacy-{SECOND_TASK_ID}-")
+    assert right_bundle.bundle_id.startswith(f"legacy-{SECOND_TASK_ID}-")
     assert left_bundle.bundle_id != right_bundle.bundle_id
 
 
@@ -171,7 +175,7 @@ def test_conversation_messages_preserve_order_and_turn_index(tmp_path):
     )
     run_state = _write_run_state(tmp_path / "result", state)
     bundle = bundle_io.read(
-        backfill(run_state, bench_root=_bench_root_with_task(tmp_path, "S01_ma_crossover"))
+        backfill(run_state, bench_root=_bench_root_with_task(tmp_path, DEFAULT_TASK_ID))
     )
     assert [m.role for m in bundle.messages] == ["user", "assistant", "user", "assistant"]
     assert [m.content for m in bundle.messages] == ["u0", "a0", "u1", "a1"]
@@ -197,7 +201,7 @@ def test_trailing_lone_user_is_preserved_without_synthetic_agent_text(tmp_path):
     )
     run_state = _write_run_state(tmp_path / "result", state)
     bundle = bundle_io.read(
-        backfill(run_state, bench_root=_bench_root_with_task(tmp_path, "S01_ma_crossover"))
+        backfill(run_state, bench_root=_bench_root_with_task(tmp_path, DEFAULT_TASK_ID))
     )
     assert [m.content for m in bundle.messages if m.role == "user"] == [
         "u0",
@@ -221,7 +225,7 @@ def test_domain_tool_logs_are_flat_generic_tool_calls(tmp_path):
     )
     run_state = _write_run_state(tmp_path / "result", state)
     bundle = bundle_io.read(
-        backfill(run_state, bench_root=_bench_root_with_task(tmp_path, "S01_ma_crossover"))
+        backfill(run_state, bench_root=_bench_root_with_task(tmp_path, DEFAULT_TASK_ID))
     )
     assert [tc.tool_name for tc in bundle.tool_calls] == [
         "file_read",
@@ -241,7 +245,7 @@ def test_send_message_logs_are_marked_as_conversation_transport(tmp_path):
     )
     run_state = _write_run_state(tmp_path / "result", state)
     bundle = bundle_io.read(
-        backfill(run_state, bench_root=_bench_root_with_task(tmp_path, "S01_ma_crossover"))
+        backfill(run_state, bench_root=_bench_root_with_task(tmp_path, DEFAULT_TASK_ID))
     )
     assert [tc.tool_name for tc in bundle.tool_calls] == ["send_message", "file_read"]
     assert bundle.tool_calls[0].metadata["conversation_transport"] is True
@@ -256,7 +260,7 @@ def test_send_message_attachments_carry_into_assistant_message(tmp_path):
     )
     run_state = _write_run_state(tmp_path / "result", state)
     bundle = bundle_io.read(
-        backfill(run_state, bench_root=_bench_root_with_task(tmp_path, "S01_ma_crossover"))
+        backfill(run_state, bench_root=_bench_root_with_task(tmp_path, DEFAULT_TASK_ID))
     )
     assistant = next(m for m in bundle.messages if m.role == "assistant")
     assert assistant.attachments == attachments
@@ -283,7 +287,7 @@ def test_consecutive_assistant_attachments_match_send_message_turn(tmp_path):
     )
     run_state = _write_run_state(tmp_path / "result", state)
     bundle = bundle_io.read(
-        backfill(run_state, bench_root=_bench_root_with_task(tmp_path, "S01_ma_crossover"))
+        backfill(run_state, bench_root=_bench_root_with_task(tmp_path, DEFAULT_TASK_ID))
     )
 
     assert [message.turn_index for message in bundle.messages] == [0, 1]
@@ -300,7 +304,7 @@ def test_preserves_long_tool_results_as_artifact_json(tmp_path):
     )
     run_state = _write_run_state(tmp_path / "result", state)
     bundle = bundle_io.read(
-        backfill(run_state, bench_root=_bench_root_with_task(tmp_path, "S01_ma_crossover"))
+        backfill(run_state, bench_root=_bench_root_with_task(tmp_path, DEFAULT_TASK_ID))
     )
     assert bundle.tool_calls[0].result == long_blob
 
@@ -315,7 +319,7 @@ def test_workspace_manifest_hashes_files(tmp_path):
     (workspace / "subdir" / "data.csv").write_text("a,b\n1,2", encoding="utf-8")
 
     bundle = bundle_io.read(
-        backfill(run_state, bench_root=_bench_root_with_task(tmp_path, "S01_ma_crossover"))
+        backfill(run_state, bench_root=_bench_root_with_task(tmp_path, DEFAULT_TASK_ID))
     )
 
     paths = [w.path for w in bundle.workspace.files]
@@ -333,7 +337,7 @@ def test_handles_missing_task_json(tmp_path):
     state = _minimal_run_state(task_id="UNKNOWN_TASK_99")
     run_state = _write_run_state(tmp_path / "result", state)
     bench_root = tmp_path / "bench"
-    (bench_root / "tasks" / "layer2").mkdir(parents=True)
+    (bench_root / "tasks" / "L1").mkdir(parents=True)
 
     bundle = bundle_io.read(backfill(run_state, bench_root=bench_root))
     assert _qtb(bundle)["task_version"] == ""
@@ -344,17 +348,20 @@ def test_handles_empty_conversation(tmp_path):
     state = _minimal_run_state(conversation=[], tool_logs=[])
     run_state = _write_run_state(tmp_path / "result", state)
     bundle = bundle_io.read(
-        backfill(run_state, bench_root=_bench_root_with_task(tmp_path, "S01_ma_crossover"))
+        backfill(run_state, bench_root=_bench_root_with_task(tmp_path, DEFAULT_TASK_ID))
     )
     assert bundle.messages == []
     assert bundle.telemetry["message_count"] == 0
 
 
 def test_main_recursive_walks_results_tree(tmp_path):
-    bench_root = _bench_root_with_task(tmp_path, "S01_ma_crossover")
+    bench_root = _bench_root_with_task(tmp_path, DEFAULT_TASK_ID)
     results = tmp_path / "results"
     for sid in ("a", "b", "c"):
-        _write_run_state(results / "S01" / "p" / f"20260502_{sid}", _minimal_run_state())
+        _write_run_state(
+            results / DEFAULT_TASK_ID / "p" / f"20260502_{sid}",
+            _minimal_run_state(),
+        )
 
     rc = main(["--recursive", "--bench-root", str(bench_root), str(results)])
     assert rc == 0
@@ -364,7 +371,7 @@ def test_main_recursive_walks_results_tree(tmp_path):
 
 
 def test_main_skips_existing_bundle_unless_force(tmp_path):
-    bench_root = _bench_root_with_task(tmp_path, "S01_ma_crossover")
+    bench_root = _bench_root_with_task(tmp_path, DEFAULT_TASK_ID)
     result_dir = tmp_path / "result"
     run_state = _write_run_state(result_dir, _minimal_run_state())
 

@@ -54,6 +54,8 @@ _TEXT_EXTENSIONS = _CODE_EXTENSIONS | {".txt", ".log", ".rst"}
 _PREVIEW_TEXT_LIMIT_BYTES = 64 * 1024
 _PREVIEW_TABLE_ROW_LIMIT = 100
 _PREVIEW_TABLE_COLUMN_LIMIT = 24
+_ACTIVE_TASK_LAYERS = ("L0", "L1", "L2")
+_ACTIVE_TASK_PREFIXES = tuple(f"{layer}_" for layer in _ACTIVE_TASK_LAYERS)
 
 
 class ResultIndexer:
@@ -63,7 +65,7 @@ class ResultIndexer:
         self.bench_root = Path(bench_root)
         self.server_results_dir = self.bench_root / "results" / "server"
         self.client_results_dir = self.bench_root / "results" / "client"
-        self.tasks_dir = self.bench_root / "tasks" / "layer2"
+        self.tasks_dir = self.bench_root / "tasks"
         self.personas_dir = self.bench_root / "personas"
 
         # Task and persona metadata is stable across requests, so we cache it.
@@ -386,12 +388,20 @@ class ResultIndexer:
         if not self.tasks_dir.is_dir():
             return task_meta
 
-        for task_path in sorted(self.tasks_dir.rglob("*.json")):
+        task_paths: list[Path] = []
+        for layer in _ACTIVE_TASK_LAYERS:
+            layer_dir = self.tasks_dir / layer
+            if layer_dir.is_dir():
+                task_paths.extend(layer_dir.rglob("*.json"))
+
+        for task_path in sorted(task_paths):
             payload = self._load_json(task_path)
             if not isinstance(payload, dict):
                 continue
 
             task_id = str(payload.get("task_id") or task_path.stem)
+            if not task_id.startswith(_ACTIVE_TASK_PREFIXES):
+                continue
             task_meta[task_id] = {
                 "task_id": task_id,
                 "category": str(
@@ -652,6 +662,10 @@ class ResultIndexer:
         match = re.match(r"^(.+)_([A-Z]\d{2})$", raw)
         if match:
             add(match.group(1))
+        for marker in ("_L0_", "_L1_", "_L2_"):
+            marker_index = raw.find(marker)
+            if marker_index > 0:
+                add(raw[:marker_index])
 
         return candidates
 

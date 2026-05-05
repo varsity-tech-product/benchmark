@@ -221,7 +221,7 @@ def _mock_ensure_data(tmp_path):
         "# Pandas Time Series\nBasic guide.\n", encoding="utf-8"
     )
 
-    # Create user code files referenced by debug tasks (X01, etc.)
+    # Create user code files referenced by debug tasks.
     (user_code_dir / "ma_offbyone.py").write_text(
         "import pandas as pd\n"
         "df = pd.read_csv('AAPL_2018_2024.csv')\n"

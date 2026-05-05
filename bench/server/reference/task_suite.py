@@ -25,6 +25,8 @@ _CODE_CATEGORIES = {
     "diagnostic",
 }
 _V3_LEAN_CATEGORIES = {"implementation"}
+_TASK_LAYERS = ("L0", "L1", "L2")
+_TASK_PREFIXES = tuple(f"{layer}_" for layer in _TASK_LAYERS)
 
 
 def _default_bench_root() -> Path:
@@ -107,8 +109,15 @@ class ReferenceTaskSuite(TaskSuite):
     def _index_task_paths(self) -> dict[str, Path]:
         if self._task_paths is None:
             tasks_dir = self.bench_root / "tasks"
+            task_paths: list[Path] = []
+            for layer in _TASK_LAYERS:
+                layer_dir = tasks_dir / layer
+                if layer_dir.is_dir():
+                    task_paths.extend(layer_dir.rglob("*.json"))
             self._task_paths = {
-                path.stem: path for path in sorted(tasks_dir.rglob("*.json"))
+                path.stem: path
+                for path in sorted(task_paths)
+                if path.stem.startswith(_TASK_PREFIXES)
             }
         return self._task_paths
 

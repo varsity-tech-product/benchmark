@@ -19,13 +19,15 @@ from server.run.service import RunService
 from server.run.store import RunStore
 from server.web.ui_app import ui_routes
 
+TASK_ID = "L2_DAT_01_demo"
+
 
 def _write_task(root: Path) -> None:
-    (root / "tasks" / "layer2" / "data").mkdir(parents=True, exist_ok=True)
-    (root / "tasks" / "layer2" / "data" / "D01_demo.json").write_text(
+    (root / "tasks" / "L2" / "data").mkdir(parents=True, exist_ok=True)
+    (root / "tasks" / "L2" / "data" / f"{TASK_ID}.json").write_text(
         json.dumps(
             {
-                "task_id": "D01_demo",
+                "task_id": TASK_ID,
                 "category": "data",
                 "difficulty": "easy",
                 "description": "d",
@@ -61,7 +63,7 @@ class ControlTokenTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             _write_task(Path(tmp))
             client, _ = _build_client(Path(tmp))
-            r = client.post("/ui/runs", json={"task": "D01"})
+            r = client.post("/ui/runs", json={"task": TASK_ID})
             self.assertEqual(r.status_code, 200)
             body = r.json()
             self.assertIn("control_token", body)
@@ -72,7 +74,7 @@ class ControlTokenTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             _write_task(Path(tmp))
             client, manager = _build_client(Path(tmp))
-            assignment, _, _ = manager._run_service.create_run("D01")
+            assignment, _, _ = manager._run_service.create_run(TASK_ID)
             with patch.dict(os.environ, {"QTB_AUTH_MODE": "github"}):
                 r = client.get(f"/ui/runs/{assignment.run_id}")
             self.assertEqual(r.status_code, 401)
@@ -81,7 +83,7 @@ class ControlTokenTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             _write_task(Path(tmp))
             client, manager = _build_client(Path(tmp))
-            assignment, _, _ = manager._run_service.create_run("D01")
+            assignment, _, _ = manager._run_service.create_run(TASK_ID)
             with patch.dict(os.environ, {"QTB_AUTH_MODE": "github"}):
                 r = client.get(
                     f"/ui/runs/{assignment.run_id}",
@@ -93,7 +95,7 @@ class ControlTokenTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             _write_task(Path(tmp))
             client, manager = _build_client(Path(tmp))
-            assignment, _, control_token = manager._run_service.create_run("D01")
+            assignment, _, control_token = manager._run_service.create_run(TASK_ID)
             with patch.dict(os.environ, {"QTB_AUTH_MODE": "github"}):
                 r = client.get(
                     f"/ui/runs/{assignment.run_id}",
@@ -108,7 +110,7 @@ class ControlTokenTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             _write_task(Path(tmp))
             client, manager = _build_client(Path(tmp))
-            assignment, run_token, _ = manager._run_service.create_run("D01")
+            assignment, run_token, _ = manager._run_service.create_run(TASK_ID)
             # Use the run_token (qtb_) against a control endpoint — must fail.
             with patch.dict(os.environ, {"QTB_AUTH_MODE": "github"}):
                 r = client.get(
@@ -121,7 +123,7 @@ class ControlTokenTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             _write_task(Path(tmp))
             client, manager = _build_client(Path(tmp))
-            assignment, _, _ = manager._run_service.create_and_claim("D01")
+            assignment, _, _ = manager._run_service.create_and_claim(TASK_ID)
             manager._run_service.bind_session(assignment.run_id, "session-1")
             conversation = [
                 {"role": "user", "content": f"message {index}"}
@@ -175,7 +177,7 @@ class ControlTokenTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             _write_task(Path(tmp))
             client, manager = _build_client(Path(tmp))
-            assignment, _, _ = manager._run_service.create_and_claim("D01")
+            assignment, _, _ = manager._run_service.create_and_claim(TASK_ID)
             manager._run_service.bind_session(assignment.run_id, "session-1")
             manager._sessions["session-1"] = SimpleNamespace(
                 phase=SimpleNamespace(value="in_session"),
@@ -209,7 +211,7 @@ class ControlTokenTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             _write_task(Path(tmp))
             client, manager = _build_client(Path(tmp))
-            assignment, _, _ = manager._run_service.create_and_claim("D01")
+            assignment, _, _ = manager._run_service.create_and_claim(TASK_ID)
             manager._run_service.bind_session(assignment.run_id, "missing-session")
 
             r = client.get("/ui/runs/live")
@@ -222,7 +224,7 @@ class ControlTokenTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             _write_task(Path(tmp))
             client, manager = _build_client(Path(tmp))
-            assignment, _, control_token = manager._run_service.create_run("D01")
+            assignment, _, control_token = manager._run_service.create_run(TASK_ID)
             with patch.dict(os.environ, {"QTB_AUTH_MODE": "github"}):
                 r = client.post(f"/ui/runs/{assignment.run_id}/cancel")
             self.assertEqual(r.status_code, 401)
@@ -241,7 +243,7 @@ class ControlTokenTests(unittest.TestCase):
             _write_task(Path(tmp))
             _, manager = _build_client(Path(tmp))
             svc = manager._run_service
-            a, run_tok, ctrl_tok = svc.create_run("D01")
+            a, run_tok, ctrl_tok = svc.create_run(TASK_ID)
 
             h_run = hashlib.sha256(run_tok.encode()).hexdigest()
             h_ctrl = hashlib.sha256(ctrl_tok.encode()).hexdigest()

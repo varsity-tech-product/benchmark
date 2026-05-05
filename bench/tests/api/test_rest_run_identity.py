@@ -3,6 +3,9 @@ import json
 import httpx
 import pytest
 
+TASK_A = "L2_ADV_11_prompt_injection_csv"
+TASK_B = "L2_ADV_01_investment_advice"
+
 
 def _make_app(bench_root):
     from server.api.http_app import create_app
@@ -34,7 +37,7 @@ async def test_client_start_requires_api_key_when_auth_enabled(bench_root, monke
     monkeypatch.delenv("QTB_CLIENT_API_KEYS", raising=False)
     app = _make_app(bench_root)
 
-    resp = await _post_json(app, "/client/runs/start", {"task": "D01"})
+    resp = await _post_json(app, "/client/runs/start", {"task": TASK_A})
 
     assert resp.status_code == 401
     assert "client_api_key" in resp.json()["error"]
@@ -73,7 +76,7 @@ async def test_client_task_catalog_returns_labels_with_api_key(
 
     assert resp.status_code == 200
     tasks = resp.json()["tasks"]
-    assert {"label": "D01"} in tasks
+    assert {"label": TASK_A} in tasks
     assert all(set(item) == {"label"} for item in tasks)
 
 
@@ -89,7 +92,7 @@ async def test_client_start_api_key_persists_run_owner(bench_root, monkeypatch):
     resp = await _post_json(
         app,
         "/client/runs/start",
-        {"task": "D01", "client": {"name": "alice-agent"}},
+        {"task": TASK_A, "client": {"name": "alice-agent"}},
         headers={"Authorization": "Bearer secret-alice"},
     )
 
@@ -125,7 +128,7 @@ async def test_github_user_can_generate_ui_api_key_for_client_start(
         client.cookies.clear()
         run = await client.post(
             "/client/runs/start",
-            json={"task": "D01"},
+            json={"task": TASK_A},
             headers={"Authorization": f"Bearer {api_key}"},
         )
 
@@ -152,8 +155,8 @@ async def test_client_start_api_key_subject_to_user_quota(bench_root, monkeypatc
     app = _make_app(bench_root)
     headers = {"Authorization": "Bearer secret-alice"}
 
-    first = await _post_json(app, "/client/runs/start", {"task": "D01"}, headers)
-    second = await _post_json(app, "/client/runs/start", {"task": "D02"}, headers)
+    first = await _post_json(app, "/client/runs/start", {"task": TASK_A}, headers)
+    second = await _post_json(app, "/client/runs/start", {"task": TASK_B}, headers)
 
     assert first.status_code == 200
     assert second.status_code == 429
@@ -188,9 +191,9 @@ async def test_client_active_runs_are_owner_scoped_and_token_safe(
     bob_headers = {"Authorization": "Bearer secret-bob"}
 
     alice_run = await _post_json(
-        app, "/client/runs/start", {"task": "D01"}, alice_headers
+        app, "/client/runs/start", {"task": TASK_A}, alice_headers
     )
-    bob_run = await _post_json(app, "/client/runs/start", {"task": "D02"}, bob_headers)
+    bob_run = await _post_json(app, "/client/runs/start", {"task": TASK_B}, bob_headers)
     active = await _get_json(app, "/client/runs/active", alice_headers)
 
     assert alice_run.status_code == 200
@@ -218,9 +221,9 @@ async def test_client_cancel_run_is_owner_scoped_and_unblocks_quota(
     alice_headers = {"Authorization": "Bearer secret-alice"}
     bob_headers = {"Authorization": "Bearer secret-bob"}
 
-    first = await _post_json(app, "/client/runs/start", {"task": "D01"}, alice_headers)
+    first = await _post_json(app, "/client/runs/start", {"task": TASK_A}, alice_headers)
     blocked = await _post_json(
-        app, "/client/runs/start", {"task": "D02"}, alice_headers
+        app, "/client/runs/start", {"task": TASK_B}, alice_headers
     )
     run_id = first.json()["run_id"]
     denied = await _post_json(app, f"/client/runs/{run_id}/cancel", {}, bob_headers)
@@ -229,7 +232,7 @@ async def test_client_cancel_run_is_owner_scoped_and_unblocks_quota(
     )
     active = await _get_json(app, "/client/runs/active", alice_headers)
     recovered = await _post_json(
-        app, "/client/runs/start", {"task": "D02"}, alice_headers
+        app, "/client/runs/start", {"task": TASK_B}, alice_headers
     )
 
     assert first.status_code == 200
@@ -269,10 +272,10 @@ async def test_rest_session_endpoints_require_matching_run_token(bench_root, mon
         transport=httpx.ASGITransport(app=app), base_url="http://test"
     ) as client:
         run_a = (
-            await client.post("/client/runs/start", json={"task": "D01"}, headers=headers)
+            await client.post("/client/runs/start", json={"task": TASK_A}, headers=headers)
         ).json()
         run_b = (
-            await client.post("/client/runs/start", json={"task": "D02"}, headers=headers)
+            await client.post("/client/runs/start", json={"task": TASK_B}, headers=headers)
         ).json()
 
         reg = await client.post(
@@ -318,10 +321,10 @@ async def test_session_list_is_scoped_by_run_token_when_auth_enabled(
         transport=httpx.ASGITransport(app=app), base_url="http://test"
     ) as client:
         run_a = (
-            await client.post("/client/runs/start", json={"task": "D01"}, headers=headers)
+            await client.post("/client/runs/start", json={"task": TASK_A}, headers=headers)
         ).json()
         run_b = (
-            await client.post("/client/runs/start", json={"task": "D02"}, headers=headers)
+            await client.post("/client/runs/start", json={"task": TASK_B}, headers=headers)
         ).json()
         reg_a = await client.post(
             "/session/register",
@@ -365,7 +368,7 @@ async def test_require_client_auth_also_requires_session_run_token(
         run = (
             await client.post(
                 "/client/runs/start",
-                json={"task": "D01"},
+                json={"task": TASK_A},
                 headers={"Authorization": "Bearer secret-alice"},
             )
         ).json()

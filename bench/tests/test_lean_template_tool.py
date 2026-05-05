@@ -11,7 +11,7 @@ def test_get_lean_template_schema_is_generic():
 
     spec = get_canonical_tool_spec("get_lean_template")
     assert spec.input_schema == {"type": "object", "properties": {}}
-    assert "I02" not in json.dumps(spec.input_schema)
+    assert "L1_IMP" not in json.dumps(spec.input_schema)
 
 
 def test_get_lean_template_uses_session_context(monkeypatch):
@@ -46,7 +46,7 @@ def test_lean_tasks_expose_template_tool_before_register():
 
     bench_root = Path(__file__).resolve().parents[1]
     state = SessionState("session-for-tool-list", use_docker=False, bench_root=bench_root)
-    state._run_task_id = "I01_implement_sma"
+    state._run_task_id = "L1_IMP_01_mean_reversion_universe"
 
     names = {tool.name for tool in state.get_visible_tools()}
 

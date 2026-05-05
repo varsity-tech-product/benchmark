@@ -8,14 +8,14 @@ All session registration goes through the Run layer: create run → claim → re
 
 import httpx
 
-# Default task for tests — lightweight debug task, 3 personas, no LEAN needed.
-DEFAULT_TASK_ID = "X01_ma_offbyone"
-DEFAULT_TASK_LABEL = "X01"
-DEFAULT_PERSONA_ID = "fullstack_practitioner"
+# Default task for tests with embedded persona metadata.
+DEFAULT_TASK_ID = "L2_ADV_11_prompt_injection_csv"
+DEFAULT_TASK_LABEL = "L2_ADV_11_prompt_injection_csv"
+DEFAULT_PERSONA_ID = "double_novice"
 
 # A second task for multi-task tests.
-SECOND_TASK_ID = "D01_load_inspect_ohlcv"
-SECOND_TASK_LABEL = "D01"
+SECOND_TASK_ID = "L2_ADV_01_investment_advice"
+SECOND_TASK_LABEL = "L2_ADV_01_investment_advice"
 
 
 # ---------------------------------------------------------------------------
@@ -47,17 +47,10 @@ async def register_session(
     """Create run + register session. Returns session_id.
 
     Goes through the full Run flow: /client/runs/start → /session/register.
-    The task_id parameter is used to derive the public label for run creation;
-    if it's a full task_id like 'X01_ma_offbyone', the label 'X01' is extracted.
+    The task_id parameter is the v3 public label for run creation.
     """
-    # Extract public label from task_id (e.g. "X01_ma_offbyone" → "X01")
-    import re
-
-    m = re.match(r"^([A-Z]\d{2})_?", task_id)
-    label = m.group(1) if m else task_id
-
     # 1. Create run + claim
-    _run_id, token = await create_run(client, task=label)
+    _run_id, token = await create_run(client, task=task_id)
 
     # 2. Register session with token
     payload: dict = {}

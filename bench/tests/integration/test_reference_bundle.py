@@ -1,6 +1,8 @@
 import json
 from pathlib import Path
 
+import pytest
+
 from eval.contracts.schemas import QuantTutorTask, UserPersona
 from platform_api.contracts import (
     EvalItem,
@@ -12,12 +14,12 @@ from platform_api.contracts import (
     TranscriptMessage,
 )
 from platform_api.plugins import PluginBundle
-from platform_api.runtime import DataMountResolver
 from server.api.session_api import SessionState
 from server.reference import load_reference_bundle
 
-LEGACY_L2_TASK = "D01_load_inspect_ohlcv"
+LEGACY_TASK = "A01_investment_advice"
 V3_L0_TASK = "L0_money.stackexchange_8474"
+V3_SESSION_TASK = "L2_ADV_11_prompt_injection_csv"
 V3_L1_TASK = "L1_DAT_01_ohlcv_health_check"
 V3_L2_TASK = "L2_ADV_11_prompt_injection_csv"
 
@@ -81,28 +83,17 @@ def _write_run_state(
     )
 
 
-def test_reference_task_suite_bridges_quant_tutor_task(bench_root):
-    data_dir = bench_root / "data" / "hf_cache" / "normal" / "BDEX"
-    data_dir.mkdir(parents=True)
-    (data_dir / "AAPL_2018_2024.csv").write_text("Date,Close\n", encoding="utf-8")
-    (data_dir / "SPY_2018_2024.csv").write_text("Date,Close\n", encoding="utf-8")
+def test_reference_task_suite_indexes_active_layers_only(bench_root):
     bundle = load_reference_bundle(bench_root=bench_root, eval_model="fake-model")
 
-    item = bundle.task_suite.get_task(LEGACY_L2_TASK)
+    supported = bundle.task_suite.supported_tasks()
 
-    assert item.task_type == "multi_turn"
-    assert item.version == "2.2"
-    assert item.payload["quant_tutor_task"]["task_id"] == LEGACY_L2_TASK
-    assert {mount.target_path for mount in item.data_mounts} == {
-        "/data/AAPL_2018_2024.csv",
-        "/data/SPY_2018_2024.csv",
-    }
-    resolved = DataMountResolver().resolve_all(item.data_mounts)
-    assert {mount.container_path for mount in resolved} == {
-        "/data/AAPL_2018_2024.csv",
-        "/data/SPY_2018_2024.csv",
-    }
-    assert item.sandbox_spec.image_uri == "quant-tutor-env:v2.2"
+    assert len(supported) == 142
+    assert all(task_id.startswith(("L0_", "L1_", "L2_")) for task_id in supported)
+    assert LEGACY_TASK not in supported
+    with pytest.raises(KeyError):
+        bundle.task_suite.get_task(LEGACY_TASK)
+    assert bundle.task_suite.get_task(V3_L2_TASK).task_id == V3_L2_TASK
 
 
 def test_reference_task_suite_bridges_v3_task(bench_root):
@@ -123,7 +114,7 @@ def test_reference_task_suite_bridges_v3_task(bench_root):
 def test_reference_task_suite_emits_hf_uri_without_local_cache(bench_root):
     bundle = load_reference_bundle(bench_root=bench_root, eval_model="fake-model")
 
-    item = bundle.task_suite.get_task(LEGACY_L2_TASK)
+    item = bundle.task_suite.get_task(V3_L1_TASK)
 
     uris = {mount.target_path: mount.uri for mount in item.data_mounts}
     assert (
@@ -136,7 +127,7 @@ def test_reference_task_suite_emits_hf_uri_without_local_cache(bench_root):
 
 def test_reference_npc_provider_propagates_task_end(bench_root):
     bundle = load_reference_bundle(bench_root=bench_root, eval_model="fake-model")
-    item = bundle.task_suite.get_task(LEGACY_L2_TASK)
+    item = bundle.task_suite.get_task(V3_L2_TASK)
     task = _task_from_item(item)
     persona = _load_persona(bench_root, task.persona_id)
 
@@ -167,7 +158,7 @@ def test_reference_npc_provider_propagates_task_end(bench_root):
 
 def test_reference_npc_provider_preserves_attachment_metadata(bench_root):
     bundle = load_reference_bundle(bench_root=bench_root, eval_model="fake-model")
-    item = bundle.task_suite.get_task(LEGACY_L2_TASK)
+    item = bundle.task_suite.get_task(V3_L2_TASK)
     task = _task_from_item(item)
     persona = _load_persona(bench_root, task.persona_id)
     seen = {}
@@ -240,7 +231,7 @@ def test_session_state_accepts_contract_only_npc_provider(bench_root):
         plugin_bundle=bundle,
     )
     try:
-        result = state.register(LEGACY_L2_TASK)
+        result = state.register(V3_SESSION_TASK)
         assert result["session_id"] == "contract-only-session"
         assert state.user_sim is None
         started = state.start()
@@ -284,7 +275,7 @@ def test_session_state_resolves_simulator_before_container(
         create_container,
     )
 
-    result = state.register(LEGACY_L2_TASK)
+    result = state.register(V3_L2_TASK)
 
     assert result == {"error": "missing simulator model"}
     assert created["container"] is False
@@ -303,7 +294,7 @@ def test_restore_from_storage_reuses_configured_bundle(bench_root, tmp_path):
     (result_dir / "run_state.json").write_text(
         json.dumps(
             {
-                "task_id": LEGACY_L2_TASK,
+                "task_id": V3_L2_TASK,
                 "persona_id": "double_novice",
                 "conversation": [],
                 "tool_logs": [],
@@ -460,7 +451,7 @@ def test_reference_evaluator_layer2_uses_coordinator(
     monkeypatch,
 ):
     bundle = load_reference_bundle(bench_root=bench_root, eval_model="fake-model")
-    item = bundle.task_suite.get_task(LEGACY_L2_TASK)
+    item = bundle.task_suite.get_task(V3_L2_TASK)
     task = _task_from_item(item)
     persona = _load_persona(bench_root, task.persona_id)
     result_dir = tmp_path / "result"
@@ -509,7 +500,7 @@ def test_reference_evaluator_layer2_uses_coordinator(
     )
 
     assert seen["eval_mode"] == "full"
-    assert seen["task_id"] == LEGACY_L2_TASK
+    assert seen["task_id"] == V3_L2_TASK
     assert score.value == 0.75
     assert score.metrics["summary"]["overall_score"] == 0.75
 
@@ -519,7 +510,7 @@ def test_reference_evaluator_layer2_direct_computes_full_overall(
     monkeypatch,
 ):
     bundle = load_reference_bundle(bench_root=bench_root, eval_model="fake-model")
-    item = bundle.task_suite.get_task(LEGACY_L2_TASK)
+    item = bundle.task_suite.get_task(V3_L2_TASK)
     task = _task_from_item(item)
     persona = _load_persona(bench_root, task.persona_id)
 

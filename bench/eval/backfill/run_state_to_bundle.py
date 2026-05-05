@@ -43,6 +43,8 @@ logger = logging.getLogger(__name__)
 
 _BENCH_ROOT_DEFAULT = Path(__file__).resolve().parents[2]
 _NPC_TOOL_NAME = "send_message"
+_ACTIVE_TASK_LAYERS = ("L0", "L1", "L2")
+_ACTIVE_TASK_PREFIXES = tuple(f"{layer}_" for layer in _ACTIVE_TASK_LAYERS)
 
 
 def backfill(
@@ -94,8 +96,11 @@ def backfill(
 def _find_task_json(bench_root: Path, task_id: str) -> Path | None:
     if not task_id:
         return None
-    for path in (bench_root / "tasks" / "layer2").rglob(f"{task_id}.json"):
-        return path
+    if not task_id.startswith(_ACTIVE_TASK_PREFIXES):
+        return None
+    for layer in _ACTIVE_TASK_LAYERS:
+        for path in (bench_root / "tasks" / layer).rglob(f"{task_id}.json"):
+            return path
     return None
 
 
