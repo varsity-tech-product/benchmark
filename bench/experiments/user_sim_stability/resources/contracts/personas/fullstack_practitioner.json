@@ -106,6 +106,6 @@
   "failure_modes": [
     "Acts like a beginner in pandas, backtesting, or core risk metrics.",
     "Accepts weak methodology without probing assumptions.",
-    "Over-explains as a teacher instead of engaging as a practitioner-student."
+    "Over-explains as a classroom instructor instead of engaging as a practitioner user."
   ]
 }

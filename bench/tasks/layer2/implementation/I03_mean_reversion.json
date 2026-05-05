@@ -4,7 +4,7 @@
   "difficulty": "medium",
   "category": "implementation",
   "task_type": "multi_turn",
-  "description": "Guide a student to implement an RSI mean-reversion strategy with asymmetric entry/exit thresholds and stop-loss across the full Binance futures universe on LEAN. Unlike I02's simple crossover, this task requires per-symbol entry price tracking, long/short state machines, stop-loss logic, and risk-based position sizing that limits exposure per symbol. At universe scale, the student must manage ~100 independent position state machines concurrently.",
+  "description": "The user asks the agent to implement an RSI mean-reversion strategy with asymmetric entry/exit thresholds and stop-loss across the full Binance futures universe on LEAN. Unlike I02's simple crossover, this task requires per-symbol entry price tracking, long/short state machines, stop-loss logic, and risk-based position sizing that limits exposure per symbol. At universe scale, the agent must help the user manage ~100 independent position state machines concurrently.",
   "persona_id": "developer_crossover",
   "user_opening": "I need to implement an RSI mean-reversion strategy with asymmetric thresholds. I can handle the code, but I don't understand the financial logic behind it. What should this do and why?",
   "environment": {
@@ -31,7 +31,7 @@
     "max_backtest_trials": 5
   },
   "ground_truth": {
-    "expected_outcome": "Student produces a LEAN C# algorithm that (1) subscribes to ~100 symbols and creates per-symbol RSI indicators, (2) implements RSI entry/exit and fixed stop-loss logic independently per symbol, (3) manages per-symbol position state (flat/long/short) with entry price tracking, (4) implements risk-based position sizing (5% per position, capped total — 5% avoids LEAN's MinimumOrderMarginPortfolioPercentage silent rejection at smaller sizes), (5) tags exit reasons (RSI signal vs stop-loss) in the trade log, and (6) produces universe-level aggregated statistics. Per-symbol trades for 10 reference symbols should match the ground-truth.",
+    "expected_outcome": "User receives a LEAN C# algorithm that (1) subscribes to ~100 symbols and creates per-symbol RSI indicators, (2) implements RSI entry/exit and fixed stop-loss logic independently per symbol, (3) manages per-symbol position state (flat/long/short) with entry price tracking, (4) implements risk-based position sizing (5% per position, capped total — 5% avoids LEAN's MinimumOrderMarginPortfolioPercentage silent rejection at smaller sizes), (5) tags exit reasons (RSI signal vs stop-loss) in the trade log, and (6) produces universe-level aggregated statistics. Per-symbol trades for 10 reference symbols should match the ground-truth.",
     "required_capabilities": [
       "Manage per-symbol RSI indicators and position state at scale (~100 symbols)",
       "Implement asymmetric entry/exit logic with per-symbol state machine",
@@ -54,7 +54,7 @@
     "quant_validation": {
       "eval_script": "tasks/test_scripts/I03_mean_reversion.py"
     },
-    "termination_criteria": "The tutor has completed the following steps with computational evidence (not just verbal discussion): (1) Showed C# code for a universe-wide RSI mean-reversion strategy with per-symbol entry/exit logic and stop-loss handling. (2) Presented backtest results with specific numerical values such as total return, Sharpe ratio, or number of trades. (3) Showed trade log output with entry/exit records that include exit reason tagging such as signal exit versus stop-loss. (4) Responded to the student's follow-up about the implementation or results with additional explanation, code refinement, or analysis beyond the initial demonstration. Once all four steps have been computationally demonstrated, the session is complete."
+    "termination_criteria": "The agent has completed the following steps with computational evidence (not just verbal discussion): (1) Showed C# code for a universe-wide RSI mean-reversion strategy with per-symbol entry/exit logic and stop-loss handling. (2) Presented backtest results with specific numerical values such as total return, Sharpe ratio, or number of trades. (3) Showed trade log output with entry/exit records that include exit reason tagging such as signal exit versus stop-loss. (4) Responded to the user's follow-up about the implementation or results with additional explanation, code refinement, or analysis beyond the initial demonstration. Once all four steps have been computationally demonstrated, the session is complete."
   },
   "requires_code": true,
   "sample_code": null,

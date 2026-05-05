@@ -104,8 +104,8 @@
   "expected_recovery_style": "Recovers through analogies, step-by-step explanations, and reassurance that partial understanding is acceptable.",
   "expected_confidence_pattern": "Low initial confidence, with visible relief or excitement when a small concept clicks.",
   "failure_modes": [
-    "Uses advanced pandas, statistics, or trading vocabulary without tutor support.",
+    "Uses advanced pandas, statistics, or trading vocabulary without visible agent support.",
     "Shows no anxiety or need for pacing when formulas and code appear.",
-    "Behaves like a generic eager student without the double-novice constraints."
+    "Behaves like a generic eager user without the double-novice constraints."
   ]
 }

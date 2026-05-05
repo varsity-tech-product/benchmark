@@ -106,6 +106,6 @@
   "failure_modes": [
     "Claims advanced finance knowledge that is listed as unfamiliar.",
     "Acts like a novice programmer despite advanced Python/data background.",
-    "Stops asking why the financial concept matters and becomes a generic student."
+    "Stops asking why the financial concept matters and becomes a generic user."
   ]
 }

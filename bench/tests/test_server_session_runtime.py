@@ -160,7 +160,7 @@ class SessionContextTests(unittest.TestCase):
 
         raw = json.dumps(background)
         for phrase in (
-            "If the tutor asks",
+            "If the agent asks",
             "send_message",
             "MUST",
             "Call get_environment_info",
@@ -186,7 +186,7 @@ class SessionContextTests(unittest.TestCase):
         prompt = build_user_description(persona)
 
         self.assertEqual(prompt, RefSystemPrompt.build_user_description(persona))
-        self.assertIn("[If the tutor asks you a question", prompt)
+        self.assertIn("[If the agent asks you a question", prompt)
         self.assertIn("Ask for clarification when confused.", prompt)
 
     def test_sandbox_digest_preserves_legacy_network_flag(self):

@@ -4,7 +4,7 @@
   "difficulty": "hard",
   "category": "end_to_end",
   "task_type": "multi_turn",
-  "description": "Guide a student through a complete quant research cycle on crypto momentum — from data exploration, through signal formalization and Python prototyping, to LEAN C# implementation, performance evaluation, and risk discussion. This is the hardest task in the benchmark.",
+  "description": "The user asks the agent to run a complete quant research cycle on crypto momentum — from data exploration, through signal formalization and Python prototyping, to LEAN C# implementation, performance evaluation, and risk discussion. This is the hardest task in the benchmark.",
   "persona_id": "developer_crossover",
   "user_opening": "I need to run a complete quant research cycle on crypto momentum. I can handle the code, but I don't understand the financial logic behind it. What should this do and why?",
   "environment": {
@@ -31,7 +31,7 @@
     "network_enabled": false
   },
   "ground_truth": {
-    "expected_outcome": "Student explores BTC data, formalizes a momentum/ROCP signal, prototypes and validates in Python with IS/OOS metrics, implements in LEAN C# on ~20 symbols producing a successful backtest, compares Python and LEAN results, and discusses risks.",
+    "expected_outcome": "User explores BTC data, formalizes a momentum/ROCP signal, prototypes and validates in Python with IS/OOS metrics, implements in LEAN C# on ~20 symbols producing a successful backtest, compares Python and LEAN results, and discusses risks.",
     "required_capabilities": [
       "Explore market data with descriptive statistics",
       "Formalize a momentum signal definition",
@@ -57,7 +57,7 @@
     "quant_validation": {
       "eval_script": "tasks/test_scripts/end_to_end/E05_full_quant_workflow.py"
     },
-    "termination_criteria": "The tutor has completed the following steps with computational evidence (not just verbal discussion): (1) Showed code and output for data exploration and a formalized momentum or ROCP signal definition. (2) Showed code and output for a Python prototype backtest with train/test validation reporting IS and OOS metrics. (3) Showed LEAN C# implementation code for the strategy or discussed the cross-platform implementation approach. (4) Responded to the student's follow-up with discussion of risks, limitations, or result comparison. Once all four steps have been computationally demonstrated, the session is complete."
+    "termination_criteria": "The agent has completed the following steps with computational evidence (not just verbal discussion): (1) Showed code and output for data exploration and a formalized momentum or ROCP signal definition. (2) Showed code and output for a Python prototype backtest with train/test validation reporting IS and OOS metrics. (3) Showed LEAN C# implementation code for the strategy or discussed the cross-platform implementation approach. (4) Responded to the user's follow-up with discussion of risks, limitations, or result comparison. Once all four steps have been computationally demonstrated, the session is complete."
   },
   "requires_code": true,
   "sample_code": null,

@@ -103,7 +103,7 @@ class TestRepeatDetectionViaAPI:
 # ---------------------------------------------------------------------------
 
 
-class TestStudentSatisfiedViaAPI:
+class TestUserSatisfiedViaAPI:
     @pytest.mark.asyncio
     async def test_user_goodbye_terminates_session(self, app, client, monkeypatch):
         sid, _ = await register_and_start(client)

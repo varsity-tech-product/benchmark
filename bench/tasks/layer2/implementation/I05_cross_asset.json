@@ -4,7 +4,7 @@
   "difficulty": "hard",
   "category": "implementation",
   "task_type": "multi_turn",
-  "description": "Guide a student to implement a pairs trading strategy on LEAN that (1) uses a pre-computed candidate pairs file (I05_candidate_pairs.json) listing top-10 correlated pairs from the 20-symbol universe, (2) implements spread mean-reversion trading on the selected pairs with z-score entry/exit rules, and (3) manages multi-leg positions with proper exposure caps. The student should understand pair selection concepts but does not need to compute pairwise statistics from scratch. This is how institutional stat-arb strategies work — the pair discovery phase is provided so the task focuses on implementation of spread trading and multi-pair portfolio management.",
+  "description": "The user asks the agent to implement a pairs trading strategy on LEAN that (1) uses a pre-computed candidate pairs file (I05_candidate_pairs.json) listing top-10 correlated pairs from the 20-symbol universe, (2) implements spread mean-reversion trading on the selected pairs with z-score entry/exit rules, and (3) manages multi-leg positions with proper exposure caps. The agent can assume the user knows pair selection concepts but does not need to compute pairwise statistics from scratch. This is how institutional stat-arb strategies work — the pair discovery phase is provided so the task focuses on implementation of spread trading and multi-pair portfolio management.",
   "persona_id": "developer_crossover",
   "user_opening": "I need to implement a pairs trading strategy on LEAN with pre-computed candidate pairs. I can handle the code, but I don't understand the financial logic behind it. What should this do and why?",
   "environment": {
@@ -32,7 +32,7 @@
     "max_backtest_trials": 5
   },
   "ground_truth": {
-    "expected_outcome": "Student produces a LEAN C# algorithm that (1) loads candidate pairs from I05_candidate_pairs.json, (2) subscribes to the relevant symbols, (3) tracks per-pair ratio z-scores, (4) enters/exits spread positions atomically per pair, (5) manages portfolio exposure across up to 10 active pairs, and (6) produces per-pair trade logs and a portfolio-level summary. Trade logs for 3 reference pairs should match the ground-truth.",
+    "expected_outcome": "User receives a LEAN C# algorithm that (1) loads candidate pairs from I05_candidate_pairs.json, (2) subscribes to the relevant symbols, (3) tracks per-pair ratio z-scores, (4) enters/exits spread positions atomically per pair, (5) manages portfolio exposure across up to 10 active pairs, and (6) produces per-pair trade logs and a portfolio-level summary. Trade logs for 3 reference pairs should match the ground-truth.",
     "required_capabilities": [
       "Load and parse pre-computed candidate pairs from I05_candidate_pairs.json",
       "Subscribe to symbols from the candidate pairs and understand pair selection concepts",
@@ -55,7 +55,7 @@
     "quant_validation": {
       "eval_script": "tasks/test_scripts/I05_cross_asset.py"
     },
-    "termination_criteria": "The tutor has completed the following steps with computational evidence (not just verbal discussion): (1) Showed C# code for a pairs trading strategy that loads candidate pairs, computes per-pair ratio z-scores, and manages spread positions. (2) Presented backtest results with specific numerical values such as total return, Sharpe ratio, or number of trades. (3) Showed trade log or order output with per-pair entry/exit records. (4) Responded to the student's follow-up about the implementation or results with additional explanation, code refinement, or analysis beyond the initial demonstration. Once all four steps have been computationally demonstrated, the session is complete."
+    "termination_criteria": "The agent has completed the following steps with computational evidence (not just verbal discussion): (1) Showed C# code for a pairs trading strategy that loads candidate pairs, computes per-pair ratio z-scores, and manages spread positions. (2) Presented backtest results with specific numerical values such as total return, Sharpe ratio, or number of trades. (3) Showed trade log or order output with per-pair entry/exit records. (4) Responded to the user's follow-up about the implementation or results with additional explanation, code refinement, or analysis beyond the initial demonstration. Once all four steps have been computationally demonstrated, the session is complete."
   },
   "requires_code": true,
   "sample_code": null,

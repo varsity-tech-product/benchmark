@@ -4,7 +4,7 @@
   "difficulty": "hard",
   "category": "backtest",
   "task_type": "multi_turn",
-  "description": "Guide a student to extend a backtest engine to support synchronized multi-asset replay for BTCUSDT and ETHUSDT daily data, then implement a BTC/ETH ratio mean-reversion strategy with per-asset accounting.",
+  "description": "The user asks the agent to extend a backtest engine to support synchronized multi-asset replay for BTCUSDT and ETHUSDT daily data, then implement a BTC/ETH ratio mean-reversion strategy with per-asset accounting.",
   "persona_id": "finance_veteran",
   "user_opening": "I need to extend a backtest engine to support synchronized multi-asset replay and per-asset accounting. I know what good backtesting looks like from experience — can you help me implement it in code?",
   "environment": {
@@ -27,7 +27,7 @@
     "network_enabled": false
   },
   "ground_truth": {
-    "expected_outcome": "Tutor guides the student to build a multi-asset backtest system that loads and time-aligns BTCUSDT and ETHUSDT daily data, replays synchronized bar tuples, computes a ratio-based signal from both assets simultaneously, and tracks positions with separate per-asset PnL accounting. The system runs end-to-end and reports per-asset and combined performance, leaving concrete multi-asset replay and accounting artifacts.",
+    "expected_outcome": "Agent helps the user build a multi-asset backtest system that loads and time-aligns BTCUSDT and ETHUSDT daily data, replays synchronized bar tuples, computes a ratio-based signal from both assets simultaneously, and tracks positions with separate per-asset PnL accounting. The system runs end-to-end and reports per-asset and combined performance, leaving concrete multi-asset replay and accounting artifacts.",
     "required_capabilities": [
       "Load and time-align multiple asset data series",
       "Build a synchronized multi-asset replay mechanism",
@@ -49,7 +49,7 @@
     "quant_validation": {
       "eval_script": "tasks/test_scripts/backtest/B04_multi_asset_sync.py"
     },
-    "termination_criteria": "The tutor has completed the following steps with computational evidence (not just verbal discussion): (1) Loaded and time-aligned BTCUSDT and ETHUSDT data, and built a synchronized replay mechanism that processes both assets together. (2) Implemented a ratio-based signal from both assets and tracked positions with separate per-asset PnL accounting. (3) Presented per-asset and combined portfolio performance metrics with specific numerical values such as total return, Sharpe ratio, or maximum drawdown. Once all three steps have been computationally demonstrated, the session is complete."
+    "termination_criteria": "The agent has completed the following steps with computational evidence (not just verbal discussion): (1) Loaded and time-aligned BTCUSDT and ETHUSDT data, and built a synchronized replay mechanism that processes both assets together. (2) Implemented a ratio-based signal from both assets and tracked positions with separate per-asset PnL accounting. (3) Presented per-asset and combined portfolio performance metrics with specific numerical values such as total return, Sharpe ratio, or maximum drawdown. Once all three steps have been computationally demonstrated, the session is complete."
   },
   "requires_code": true,
   "sample_code": null,

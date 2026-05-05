@@ -4,7 +4,7 @@
   "difficulty": "easy",
   "category": "data_analysis",
   "task_type": "multi_turn",
-  "description": "Guide the student to load and inspect OHLCV stock data, explain what each column represents, and perform basic data exploration including date range and pattern identification.",
+  "description": "The user asks the agent to load and inspect OHLCV stock data, explain what each column represents, and perform basic data exploration including date range and pattern identification.",
   "persona_id": "fullstack_practitioner",
   "user_opening": "I'm starting a new alpha research project and need to validate the data quality first. Can you walk me through a systematic OHLCV inspection — gaps, outliers, corporate action artifacts?",
   "environment": {
@@ -27,7 +27,7 @@
     "network_enabled": false
   },
   "ground_truth": {
-    "expected_outcome": "Tutor guides the student to load OHLCV data with pandas, explore the data structure and summary statistics, explain what each OHLCV column represents, and identify the date range and basic data patterns.",
+    "expected_outcome": "Agent helps the user load OHLCV data with pandas, explore the data structure and summary statistics, explain what each OHLCV column represents, and identify the date range and basic data patterns.",
     "required_capabilities": [
       "Load OHLCV market data into pandas and explore data structure",
       "Explain what Open, High, Low, Close, and Volume columns represent",
@@ -45,7 +45,7 @@
     "quant_validation": {
       "eval_script": "tasks/test_scripts/data_analysis/D01_load_inspect_ohlcv.py"
     },
-    "termination_criteria": "(1) Showed actual pandas-based inspection output from loading at least one OHLCV file and explained what the core OHLCV columns or date field mean in plain language. (2) Presented concrete inspection results such as a real date range, sample rows, summary statistics, or a specific data pattern or anomaly discovered from the dataset. (3) Responded to a student follow-up with additional concrete analysis, output, or visualization beyond the initial inspection. Once all 3 steps have been computationally demonstrated, the session is complete."
+    "termination_criteria": "(1) Showed actual pandas-based inspection output from loading at least one OHLCV file and explained what the core OHLCV columns or date field mean in plain language. (2) Presented concrete inspection results such as a real date range, sample rows, summary statistics, or a specific data pattern or anomaly discovered from the dataset. (3) Responded to a user follow-up with additional concrete analysis, output, or visualization beyond the initial inspection. Once all 3 steps have been computationally demonstrated, the session is complete."
   },
   "requires_code": true,
   "sample_code": null,

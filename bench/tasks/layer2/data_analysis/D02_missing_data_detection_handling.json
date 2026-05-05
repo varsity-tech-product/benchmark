@@ -4,7 +4,7 @@
   "difficulty": "easy",
   "category": "data_analysis",
   "task_type": "multi_turn",
-  "description": "Guide the student to detect and handle missing values in OHLCV data while distinguishing expected market-closure gaps from true data-feed issues.",
+  "description": "The user asks the agent to detect and handle missing values in OHLCV data while distinguishing expected market-closure gaps from true data-feed issues.",
   "persona_id": "double_novice",
   "user_opening": "My professor asked us to detect and handle missing values in OHLCV data while distinguishing market-closure gaps from real issues. I'm new to both Python and finance — can you start from the basics?",
   "environment": {
@@ -26,7 +26,7 @@
     "network_enabled": false
   },
   "ground_truth": {
-    "expected_outcome": "Tutor guides the student to profile missing values in OHLCV data, distinguish market-closure gaps from true data-feed issues, and choose appropriate handling methods with awareness of trade-offs and potential biases.",
+    "expected_outcome": "Agent helps the user profile missing values in OHLCV data, distinguish market-closure gaps from true data-feed issues, and choose appropriate handling methods with awareness of trade-offs and potential biases.",
     "required_capabilities": [
       "Profile and detect missing values in OHLCV data",
       "Distinguish expected market-closure gaps from true data-feed issues",
@@ -44,7 +44,7 @@
     "quant_validation": {
       "eval_script": "tasks/test_scripts/data_analysis/D02_missing_data_detection_handling.py"
     },
-    "termination_criteria": "(1) Showed actual missing-value or date-gap inspection output from the OHLCV dataset, such as null counts, affected rows, or missing-date checks. (2) Used concrete evidence from the displayed results to distinguish expected market-closure gaps from suspicious data-feed issues, and explained at least one handling choice or trade-off. (3) Responded to a student follow-up by comparing at least two concrete handling choices on the same missing-data example, showing additional output or downstream differences and explaining the trade-off. Once all 3 steps have been computationally demonstrated, the session is complete."
+    "termination_criteria": "(1) Showed actual missing-value or date-gap inspection output from the OHLCV dataset, such as null counts, affected rows, or missing-date checks. (2) Used concrete evidence from the displayed results to distinguish expected market-closure gaps from suspicious data-feed issues, and explained at least one handling choice or trade-off. (3) Responded to a user follow-up by comparing at least two concrete handling choices on the same missing-data example, showing additional output or downstream differences and explaining the trade-off. Once all 3 steps have been computationally demonstrated, the session is complete."
   },
   "requires_code": true,
   "sample_code": null,

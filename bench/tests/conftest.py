@@ -337,7 +337,7 @@ def make_session(_mock_llm_resolution):
         )
         persona = types.SimpleNamespace(
             persona_id="fullstack_practitioner",
-            description="A developer learning quantitative finance.",
+            description="A developer working through quantitative finance.",
         )
         user_sim = UserSimulator(
             scenario="Debug a moving average bug",

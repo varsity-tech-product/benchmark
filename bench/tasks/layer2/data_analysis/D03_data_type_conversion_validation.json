@@ -4,7 +4,7 @@
   "difficulty": "easy",
   "category": "data_analysis",
   "task_type": "multi_turn",
-  "description": "Guide the student to convert raw OHLCV columns into proper data types, handle timezone normalization, and validate schema integrity.",
+  "description": "The user asks the agent to convert raw OHLCV columns into proper data types, handle timezone normalization, and validate schema integrity.",
   "persona_id": "double_novice",
   "user_opening": "My professor asked us to convert raw OHLCV columns into proper data types and handle timezone normalization. I'm new to both Python and finance — can you start from the basics?",
   "environment": {
@@ -26,7 +26,7 @@
     "network_enabled": false
   },
   "ground_truth": {
-    "expected_outcome": "Tutor guides the student to parse and normalize datetime columns, coerce OHLCV columns to proper numeric types, handle timezone considerations, and validate data schema integrity after conversion.",
+    "expected_outcome": "Agent helps the user parse and normalize datetime columns, coerce OHLCV columns to proper numeric types, handle timezone considerations, and validate data schema integrity after conversion.",
     "required_capabilities": [
       "Parse and normalize datetime columns correctly",
       "Coerce OHLCV columns to proper numeric types",
@@ -42,7 +42,7 @@
     "quant_validation": {
       "eval_script": "tasks/test_scripts/data_analysis/D03_data_type_conversion_validation.py"
     },
-    "termination_criteria": "(1) Showed actual parsing or coercion output for datetime or numeric OHLCV columns, such as dtypes before and after conversion, invalid rows, or normalized timestamps. (2) Presented concrete validation results demonstrating schema integrity after conversion, such as dtype checks, timezone normalization results, or examples of failed coercions. (3) Responded to a student follow-up with one additional concrete validation pass on a focused example, such as a literal failed coercion, schema violation, or structured validation report beyond the initial conversion pass. Once all 3 steps have been computationally demonstrated, the session is complete."
+    "termination_criteria": "(1) Showed actual parsing or coercion output for datetime or numeric OHLCV columns, such as dtypes before and after conversion, invalid rows, or normalized timestamps. (2) Presented concrete validation results demonstrating schema integrity after conversion, such as dtype checks, timezone normalization results, or examples of failed coercions. (3) Responded to a user follow-up with one additional concrete validation pass on a focused example, such as a literal failed coercion, schema violation, or structured validation report beyond the initial conversion pass. Once all 3 steps have been computationally demonstrated, the session is complete."
   },
   "requires_code": true,
   "sample_code": null,
