@@ -1,0 +1,98 @@
+{
+  "bundle_id": "impl-d-factor-001",
+  "schema_version": "1.0.0-alpha",
+  "task_id": "factor_mining_001",
+  "timestamps": {
+    "created_at": "2026-05-02T12:00:00Z",
+    "started_at": "2026-05-02T12:00:00Z",
+    "completed_at": "2026-05-02T12:09:10Z",
+    "duration_seconds": 550.0
+  },
+  "agent_id": "factor-mining-baseline",
+  "sandbox_digest": {
+    "sandbox_image": "factor-lab:v0",
+    "digest": ""
+  },
+  "telemetry": {
+    "message_count": 1,
+    "tool_call_count": 1
+  },
+  "messages": [
+    {
+      "message_id": "msg_1",
+      "role": "assistant",
+      "content": "Generated a mean-reversion factor and IC matrix outputs.",
+      "created_at": "2026-05-02T12:09:10Z",
+      "turn_index": 0,
+      "attachments": [
+        {
+          "path": "signals/mr_signal.parquet",
+          "kind": "parquet"
+        },
+        {
+          "path": "ic/ic_matrix.csv",
+          "kind": "csv"
+        }
+      ],
+      "metadata": {}
+    }
+  ],
+  "tool_calls": [
+    {
+      "tool_call_id": "factor_eval_0",
+      "tool_name": "evaluate_factor",
+      "args": {
+        "formula": "rank(-1 * returns_5d)",
+        "horizons": [1, 5, 10]
+      },
+      "result": {
+        "mean_ic": 0.041,
+        "icir": 0.72
+      },
+      "created_at": "2026-05-02T12:08:00Z",
+      "duration_ms": 1842.0,
+      "success": true,
+      "turn_index": 0,
+      "metadata": {}
+    }
+  ],
+  "artifacts": {
+    "factor_mining": {
+      "factor_formula": "rank(-1 * returns_5d)",
+      "signal_series": {
+        "path": "signals/mr_signal.parquet",
+        "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+      },
+      "ic_matrices": {
+        "path": "ic/ic_matrix.csv",
+        "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+      }
+    }
+  },
+  "workspace": {
+    "root": "outputs",
+    "files": [
+      {
+        "path": "signals/mr_signal.parquet",
+        "entry_type": "file",
+        "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "size_bytes": 4096,
+        "content_ref": "",
+        "metadata": {
+          "media_type": "application/vnd.apache.parquet"
+        }
+      },
+      {
+        "path": "ic/ic_matrix.csv",
+        "entry_type": "file",
+        "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "size_bytes": 1024,
+        "content_ref": "",
+        "metadata": {
+          "media_type": "text/csv"
+        }
+      }
+    ],
+    "metadata": {}
+  }
+}

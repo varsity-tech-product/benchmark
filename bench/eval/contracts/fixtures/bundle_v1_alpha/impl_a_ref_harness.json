@@ -1,0 +1,122 @@
+{
+  "bundle_id": "impl-a-smoke-001",
+  "schema_version": "1.0.0-alpha",
+  "task_id": "I01_implement_sma",
+  "timestamps": {
+    "created_at": "2026-05-02T10:00:00Z",
+    "started_at": "2026-05-02T10:00:00Z",
+    "completed_at": "2026-05-02T10:14:32Z",
+    "duration_seconds": 872.0
+  },
+  "agent_id": "ref_harness:gpt-5.2",
+  "sandbox_digest": {
+    "sandbox_image": "quant-tutor-env:v2.2",
+    "digest": ""
+  },
+  "telemetry": {
+    "bench_eval_version": "1.0.0",
+    "agent_cost": {
+      "input_tokens": 1200,
+      "output_tokens": 600,
+      "cost_usd": 0.42
+    },
+    "message_count": 2,
+    "tool_call_count": 2
+  },
+  "messages": [
+    {
+      "message_id": "msg_1",
+      "role": "user",
+      "content": "Implement a single-SMA Lean strategy.",
+      "created_at": "2026-05-02T10:00:00Z",
+      "turn_index": 0,
+      "attachments": [],
+      "metadata": {}
+    },
+    {
+      "message_id": "msg_2",
+      "role": "assistant",
+      "content": "Created Algorithm.cs and ran a smoke backtest.",
+      "created_at": "2026-05-02T10:14:32Z",
+      "turn_index": 0,
+      "attachments": [
+        {
+          "path": "trade_log.csv",
+          "kind": "csv"
+        }
+      ],
+      "metadata": {}
+    }
+  ],
+  "tool_calls": [
+    {
+      "tool_call_id": "file_write_0",
+      "tool_name": "file_write",
+      "args": {
+        "path": "Algorithm.cs"
+      },
+      "result": "wrote Algorithm.cs",
+      "created_at": "2026-05-02T10:05:00Z",
+      "duration_ms": 28.0,
+      "success": true,
+      "turn_index": 0,
+      "metadata": {}
+    },
+    {
+      "tool_call_id": "run_lean_backtest_0",
+      "tool_name": "run_lean_backtest",
+      "args": {
+        "algorithm_path": "Algorithm.cs",
+        "run_id": "sma_smoke"
+      },
+      "result": {
+        "status": "completed",
+        "total_return": 0.012
+      },
+      "created_at": "2026-05-02T10:12:00Z",
+      "duration_ms": 5400.0,
+      "success": true,
+      "turn_index": 0,
+      "metadata": {}
+    }
+  ],
+  "artifacts": {
+    "quanttutor": {
+      "persona_id": "intermediate_developer",
+      "session_id": "impl-a-smoke-001",
+      "termination_reason": "tc_pass",
+      "task_version": "2.2",
+      "task_spec_hash": "abc123",
+      "scores": {
+        "task_score": 0.91,
+        "score_status": "completed_scored"
+      }
+    }
+  },
+  "workspace": {
+    "root": "agent_files",
+    "files": [
+      {
+        "path": "Algorithm.cs",
+        "entry_type": "file",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "size_bytes": 2048,
+        "content_ref": "",
+        "metadata": {
+          "language": "csharp"
+        }
+      },
+      {
+        "path": "trade_log.csv",
+        "entry_type": "file",
+        "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "size_bytes": 512,
+        "content_ref": "",
+        "metadata": {
+          "media_type": "text/csv"
+        }
+      }
+    ],
+    "metadata": {}
+  }
+}

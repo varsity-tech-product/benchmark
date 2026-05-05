@@ -1,0 +1,65 @@
+{
+  "bundle_id": "impl-c-financebench-001",
+  "schema_version": "1.0.0-alpha",
+  "task_id": "financebench_qa_001",
+  "timestamps": {
+    "created_at": "2026-05-02T11:00:00Z",
+    "started_at": "2026-05-02T11:00:00Z",
+    "completed_at": "2026-05-02T11:01:30Z",
+    "duration_seconds": 90.0
+  },
+  "agent_id": "financebench-baseline",
+  "sandbox_digest": {
+    "sandbox_image": "",
+    "digest": ""
+  },
+  "telemetry": {
+    "message_count": 2,
+    "tool_call_count": 0
+  },
+  "messages": [
+    {
+      "message_id": "msg_1",
+      "role": "user",
+      "content": {
+        "question": "What was the reported revenue?",
+        "context_ref": "filing_excerpt_001"
+      },
+      "created_at": "2026-05-02T11:00:00Z",
+      "turn_index": 0,
+      "attachments": [],
+      "metadata": {}
+    },
+    {
+      "message_id": "msg_2",
+      "role": "assistant",
+      "content": {
+        "answer": "$12.4 billion",
+        "evidence": ["filing_excerpt_001"]
+      },
+      "created_at": "2026-05-02T11:01:30Z",
+      "turn_index": 0,
+      "attachments": [],
+      "metadata": {}
+    }
+  ],
+  "tool_calls": [],
+  "artifacts": {
+    "financebench": {
+      "qa_pair": {
+        "question_id": "qa_001",
+        "question": "What was the reported revenue?",
+        "answer": "$12.4 billion"
+      },
+      "score": {
+        "exact_match": true,
+        "confidence": 0.98
+      }
+    }
+  },
+  "workspace": {
+    "root": "",
+    "files": [],
+    "metadata": {}
+  }
+}
