@@ -314,10 +314,11 @@ The scoring engine lives at `bench/eval/`:
   / comparison) are gated on
   `bench/data/reference/<task_id>/distribution.json`.
 - `inputs/` — task/persona/conversation/reference context builders.
-- `rubrics/` — judge rubrics + `rubric_registry.json`. Per #122
-  teaching_quality and student_adaptation rubrics have been deleted;
-  tutor-track mappings on quant_correctness and failure_handling are
-  removed.
+- `rubrics/` — judge rubrics + `rubric_registry.json`. Production scoring
+  consumes QR/QP rubrics. Judge-validation experiments consume the frozen
+  legacy `rubric_6d.json` for historical tutor transcript scoring. The
+  registry carries active QR/QP mappings plus validation mappings for
+  historical tutor dimensions.
 - `storage/score_store.py` — append-only `evaluations/index.json` plus
   `score_n/score.json` and `cost.json` (moved from `bench/server/` in
   #123).

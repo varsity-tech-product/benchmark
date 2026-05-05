@@ -8,7 +8,7 @@
     "role_blocks",
     "markdown_transcript"
   ],
-  "rubric_registry_version": "judge_rubric_registry_v1",
+  "rubric_registry_version": "judge_rubric_registry_v3",
   "judge_prompt_template_version": "conv_geval_score_prompt_v1",
   "judge_output_schema_version": "conv_geval_score_json_v1",
   "artifacts": {
