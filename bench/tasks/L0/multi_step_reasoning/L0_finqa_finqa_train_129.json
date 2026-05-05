@@ -1,0 +1,17 @@
+{
+  "task_id": "L0_finqa_finqa_train_129",
+  "version": "3.0",
+  "layer": "L0",
+  "category": "multi_step_reasoning",
+  "task_type": "single_turn",
+  "requires_tool": false,
+  "question": "how is the cash flow statement from financing activities affected by the sales of commons stock during the 4th quarter of 2013?",
+  "reference_answer": "**Answer:** 531600\n\n**Reasoning:** multiply(5000, 106.32)",
+  "source_dataset": "finqa",
+  "source_id": "finqa_train_129",
+  "tags": [
+    "numerical-reasoning",
+    "financial-reports"
+  ],
+  "context": "**Context:**\nother purchases or sales of equity securities the following chart discloses information regarding shares of snap-on 2019s common stock that were sold by citibank , n.a .\n( 201ccitibank 201d ) during the fourth quarter of 2013 pursuant to a prepaid equity forward transaction agreement ( the 201cagreement 201d ) with citibank that is intended to reduce the impact of market risk associated with the stock-based portion of the company 2019s deferred compensation plans .\nthe company 2019s stock-based deferred compensation liabilities , which are impacted by changes in the company 2019s stock price , increase as the company 2019s stock price rises and decrease as the company 2019s stock price declines .\npursuant to the agreement , citibank may purchase or sell shares of the company 2019s common stock ( for citibank 2019s account ) in the market or in privately negotiated transactions .\nthe agreement has no stated expiration date , but the parties expect that each transaction under the agreement will have a term of approximately one year .\nthe agreement does not provide for snap-on to purchase or repurchase shares .\nthe following chart discloses information regarding citibank 2019s sales of snap-on common stock during the fourth quarter of 2013 pursuant to the agreement : period shares sold average per share .\n\n**Table:**\n| period | shares sold | averagepriceper share |\n| --- | --- | --- |\n| 09/29/13 to 10/26/13 | 2013 | 2013 |\n| 10/27/13 to 11/23/13 | 2013 | 2013 |\n| 11/24/13 to 12/28/13 | 5000 | $ 106.32 |\n| total/average | 5000 | $ 106.32 |\n\n2013 annual report 23 ."
+}

@@ -1,0 +1,17 @@
+{
+  "task_id": "L0_finra_finra_investors_learn-to-invest_types-investments_bonds_033aac083457_6",
+  "version": "3.0",
+  "layer": "L0",
+  "category": "conceptual_qa",
+  "task_type": "single_turn",
+  "requires_tool": false,
+  "question": "What are U.S. Treasury securities, and why are they considered some of the safest investments?",
+  "reference_answer": "U.S. Treasury securities (\"Treasurys\") are issued by the federal government and, because they’re backed by the \"full faith and credit\" of the U.S. government, are considered to be among the safest investments you can make. This means that, come what may (e.g., recession, inflation, war), the U.S. government is expected to repay its bondholders. They’re also among the most liquid—or actively traded—investments in the world.\n\nTreasury securitiesinclude:\n\nTreasury Bills (T-bills):non-interest-bearing (zero coupon) securities with maturities that range from only a few days to 52 weeks.Treasury Notes (T-notes):fixed principal securities issued with maturities of two, three, five, seven or 10 years.Treasury Bonds:long-term, fixed principal securities issued with a 30-year maturity. Outstanding fixed principal bonds have terms from 10 to 30 years.Treasury Inflation-Protected Securities (TIPS):fixed interest securities issued with maturities of five, 10 and 30 years. TIPS shelter you from inflation risk because their principal is adjusted semiannually for inflation based on changes in theConsumer Price Index-Urban Consumers.At maturity, if the adjusted principal is greater than the face or par value, you’ll receive the greater value.",
+  "source_dataset": "finra",
+  "source_id": "finra_investors_learn-to-invest_types-investments_bonds_033aac083457_6",
+  "tags": [
+    "investor-education",
+    "regulatory"
+  ],
+  "title": "Bonds | FINRA.org"
+}

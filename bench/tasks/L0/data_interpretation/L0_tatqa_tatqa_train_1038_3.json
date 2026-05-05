@@ -1,0 +1,17 @@
+{
+  "task_id": "L0_tatqa_tatqa_train_1038_3",
+  "version": "3.0",
+  "layer": "L0",
+  "category": "data_interpretation",
+  "task_type": "single_turn",
+  "requires_tool": false,
+  "question": "What is the difference between EBU operating income in 2017 and 2018?",
+  "reference_answer": "**Answer:** 498\n\n**Type:** arithmetic\n\n**Derivation:** 1,473 - 975",
+  "source_dataset": "tatqa",
+  "source_id": "tatqa_train_1038_3",
+  "tags": [
+    "tabular-reasoning",
+    "financial-documents"
+  ],
+  "context": "**Table:**\n| For the year ended | 2019 | 2019 | 2018 | 2018 | 2017 | 2017 |\n| --- | --- | --- | --- | --- | --- | --- |\n| CNBU | $4,645 | 47% | $9,773 | 64% | $3,755 | 44% |\n| MBU | 2,606 | 41% | 3,033 | 46% | 927 | 21% |\n| SBU | (386) | (10)% | 964 | 19% | 552 | 12% |\n| EBU | 923 | 29% | 1,473 | 42% | 975 | 36% |\n| All Other | 13 | 18% | — | —% | 23 | 35% |\n|  | $7,801 |  | $15,243 |  | $6,232 |  |\n\nOperating Income (Loss) by Business Unit\n\nPercentages reflect operating income (loss) as a percentage of revenue for each business unit.\n\nCNBU operating income for 2019 decreased from 2018 primarily due to declines in pricing and higher R&D costs, partially offset by cost reductions. MBU operating income for 2019 decreased from 2018 primarily due to declines in pricing partially offset by increases in sales of high-value managed NAND products and manufacturing cost reductions. SBU operating margin for 2019 declined from 2018 primarily due to declines in pricing, which were partially offset by manufacturing cost reductions and increases in sales volumes. SBU operating results for 2019 and 2018 were adversely impacted by the underutilization charges at IMFT. EBU operating income for 2019 decreased from 2018 as a result of declines in pricing and higher R&D costs partially offset by manufacturing cost reductions and increases in sales volumes.\n\nCNBU operating income for 2018 improved from 2017 primarily due to improved pricing and higher sales volumes resulting from strong demand for our products combined with manufacturing cost reductions. MBU operating income for 2018 improved from 2017 primarily due to increases in pricing and sales volumes for LPDRAM products, higher sales of high-value managed NAND products, and manufacturing cost reductions. SBU operating income for 2018 improved from 2017 primarily due to manufacturing cost reductions enabled by our execution in transitioning to 64-layer TLC 3D NAND products and improvements in product mix. SBU operating income for 2018 was adversely impacted by higher costs associated with IMFT's production of 3D XPoint memory products at less than full capacity. EBU operating income for 2018 increased as compared to 2017 as a result of increases in average selling prices, manufacturing cost reductions, and increases in sales volumes, partially offset by higher R&D costs."
+}

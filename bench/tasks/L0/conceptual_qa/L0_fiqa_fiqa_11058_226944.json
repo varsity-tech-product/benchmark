@@ -1,0 +1,15 @@
+{
+  "task_id": "L0_fiqa_fiqa_11058_226944",
+  "version": "3.0",
+  "layer": "L0",
+  "category": "conceptual_qa",
+  "task_type": "single_turn",
+  "requires_tool": false,
+  "question": "Is the Yale/Swenson Asset Allocation Too Conservative for a 20 Something?",
+  "reference_answer": "That looks like a portfolio designed to protect against inflation, given the big international presence, the REIT presence and TIPS bonds. Not a bad strategy, but there are a few things that I'd want to look at closely before pulling the trigger.",
+  "source_dataset": "fiqa",
+  "source_id": "fiqa_11058_226944",
+  "tags": [
+    "financial-qa"
+  ]
+}

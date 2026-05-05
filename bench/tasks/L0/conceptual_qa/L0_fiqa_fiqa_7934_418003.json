@@ -1,0 +1,15 @@
+{
+  "task_id": "L0_fiqa_fiqa_7934_418003",
+  "version": "3.0",
+  "layer": "L0",
+  "category": "conceptual_qa",
+  "task_type": "single_turn",
+  "requires_tool": false,
+  "question": "Why might it be a bad idea to invest 100% of your 401(k) into a stock index fund?",
+  "reference_answer": "I've read a nice rule of thumb somewhere that you should consider: You should invest (100-YOURAGE)% of your money in stock The rest should be something less volatile and more liquid, so you have some money when the stock market goes down and you need some money nevertheless. So you would start with buying about 75% stock and balance your stock percentage over time by buing more secure assets to keep the stock percentage at the desired level. At some time you might need to  sell stock to rebalance and invest in more secure assets.",
+  "source_dataset": "fiqa",
+  "source_id": "fiqa_7934_418003",
+  "tags": [
+    "financial-qa"
+  ]
+}

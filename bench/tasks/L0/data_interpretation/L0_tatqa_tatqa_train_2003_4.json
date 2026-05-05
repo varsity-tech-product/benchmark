@@ -1,0 +1,17 @@
+{
+  "task_id": "L0_tatqa_tatqa_train_2003_4",
+  "version": "3.0",
+  "layer": "L0",
+  "category": "data_interpretation",
+  "task_type": "single_turn",
+  "requires_tool": false,
+  "question": "What was the change in Net deferred tax assets from 2018 to 2019?",
+  "reference_answer": "**Answer:** 20707\n\n**Type:** arithmetic\n\n**Derivation:** 59,226-38,519",
+  "source_dataset": "tatqa",
+  "source_id": "tatqa_train_2003_4",
+  "tags": [
+    "tabular-reasoning",
+    "financial-documents"
+  ],
+  "context": "**Table:**\n|  | Fiscal year-end |  |\n| --- | --- | --- |\n|  | 2019 | 2018 |\n| Non-current deferred income tax assets | $87,011 | $64,858 |\n| Non-current deferred income tax liabilities | (27,785) | (26,339) |\n| Net deferred tax assets | $59,226 | $38,519 |\n\nThe net deferred tax asset is classified on the consolidated balance sheets as follows (in thousands):\n\nWe have various tax attribute carryforwards which include the following:\n\n• Foreign federal and local gross net operating loss carryforwards are $61.6 million, of which $47.0 million have no expiration date and $14.6 million have various expiration dates beginning in fiscal 2020. Among the total of $61.6 million foreign net operating loss carryforwards, a valuation allowance of $31.7 million has been provided for certain jurisdictions since the recovery of the carryforwards is uncertain. U.S. federal and certain state gross net operating loss carryforwards are $14.0 million and $30.7 million, respectively, which were acquired from our acquisitions. A full valuation allowance against certain other state net operating losses of $30.7 million has been recorded. California gross net operating loss carryforwards are $2.8 million and are scheduled to expire beginning in fiscal 2032.\n\n• U.S. federal R&D credit carryforwards of $35.4 million are scheduled to expire beginning in fiscal 2025. California R&D credit carryforwards of $32.2 million have no expiration date. A total of $27.1 million valuation allowance, before U.S. federal benefit, has been recorded against California R&D credit carryforwards of $32.2 million since the recovery of the carryforwards is uncertain. Other states R&D credit carryforwards of $3.9 million are scheduled to expire beginning in fiscal 2020. A valuation allowance totaling $2.7 million, before U.S. federal benefit, has been recorded against certain state R&D credit carryforwards of $3.9 million since the recovery of the carryforwards is uncertain.\n\n• U.S. federal foreign tax credit carryforwards of $51.9 million are scheduled to expire beginning in fiscal 2022."
+}

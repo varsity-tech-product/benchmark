@@ -1,0 +1,55 @@
+{
+  "task_id": "L2_E2E_03_alpha_to_deployment_readiness",
+  "version": "3.0",
+  "layer": "L2",
+  "category": "end_to_end",
+  "subcategory": "production_readiness",
+  "task_type": "multi_turn_dialog",
+  "difficulty": "hard",
+  "description": "The student wants to deploy a fresh research backtest live tomorrow with $50k. The agent pushes back on the rushed deployment and walks them through a production readiness checklist (paper trading period, position limits, slippage budget, monitoring, kill switch, drift detection, capacity).",
+  "persona_id": "developer_crossover",
+  "user_opening": "My backtest looks great — Sharpe 2.1, max drawdown 8% over 4 years on AAPL. I want to deploy it live tomorrow with $50k. What do I need to set up?",
+  "environment": {
+    "data_files": [
+      "AAPL_2018_2024.csv"
+    ],
+    "core_mcp_tools": [
+      "shell_exec",
+      "file_write",
+      "file_read",
+      "file_list",
+      "get_environment_info"
+    ],
+    "docs_available": [
+      "backtesting_101.md",
+      "risk_metrics.md"
+    ],
+    "sandbox_image": "quant-bench-env:v3.0",
+    "network_enabled": false
+  },
+  "ground_truth": {
+    "expected_outcome": "Agent does NOT just answer 'set up a broker connection and run the bot'. Instead pushes back on the rushed deployment and walks the student through a production readiness checklist: (1) paper trading for at least 1-3 months to detect implementation bugs and slippage realism gap; (2) position limits and max-drawdown kill switch with explicit thresholds; (3) slippage and execution cost budget consistent with backtest assumptions; (4) latency and connectivity monitoring; (5) data-feed integrity monitoring (live data must match backtest data semantics: adjusted vs raw, timestamp conventions); (6) drift detection comparing live PnL vs paper PnL; (7) capacity check (does $50k matter? what about $5M?). Helps the student see that 'deploy tomorrow' skips essential checks and provides a phased deployment plan (paper -> small live -> scale up).",
+    "termination_criteria": "Agent has pushed back on the immediate deployment, walked through at least 4 production readiness items, and proposed a phased deployment plan. The student has had at least one follow-up exchange and the agent maintained the position that 'deploy tomorrow' is not realistic.",
+    "required_capabilities": [
+      "Recognize the gap between research backtest and production deployment",
+      "Walk through a production readiness checklist",
+      "Explain paper trading period and what kinds of issues it catches",
+      "Cover monitoring, kill switch, drift detection, and capacity considerations",
+      "Propose a phased deployment plan rather than going straight to live"
+    ],
+    "expected_mcp_tools": [
+      "shell_exec",
+      "file_read",
+      "get_environment_info"
+    ],
+    "convenient_tools": [
+      "plot_chart"
+    ],
+    "quant_validation": {
+      "eval_script": "tasks/test_scripts/L2/L2_E2E_03_alpha_to_deployment_readiness.py"
+    }
+  },
+  "requires_code": false,
+  "sample_code": null,
+  "timeout_minutes": 20
+}

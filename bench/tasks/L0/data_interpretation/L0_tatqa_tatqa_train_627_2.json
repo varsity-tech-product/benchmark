@@ -1,0 +1,17 @@
+{
+  "task_id": "L0_tatqa_tatqa_train_627_2",
+  "version": "3.0",
+  "layer": "L0",
+  "category": "data_interpretation",
+  "task_type": "single_turn",
+  "requires_tool": false,
+  "question": "How much was the net foreign exchange gains in 2019?",
+  "reference_answer": "**Answer:** $79 million in net foreign exchange gains in 2019\n\n**Type:** span",
+  "source_dataset": "tatqa",
+  "source_id": "tatqa_train_627_2",
+  "tags": [
+    "tabular-reasoning",
+    "financial-documents"
+  ],
+  "context": "**Table:**\n|  | Years ended December 31 | Years ended December 31 | Years ended December 31 |\n| --- | --- | --- | --- |\n| (In millions of dollars) | Note | 2019 | 2018 |\n| Interest on borrowings 1 |  | 746 | 709 |\n| Interest on post-employment benefits liability | 23 | 11 | 14 |\n| Loss on repayment of long-term debt | 21 | 19 | 28 |\n| (Gain) loss on foreign exchange |  | (79) | 136 |\n| Change in fair value of derivative instruments |  | 80 | (95) |\n| Capitalized interest |  | (19) | (20) |\n| Other |  | 21 | 21 |\n| Finance costs before interest on lease liabilities |  | 779 | 793 |\n| Interest expense on lease liabilities | 8 | 61 | - |\n| Total finance costs |  | 840 | 793 |\n\n1 Interest on borrowings includes interest on short-term borrowings and on long-term debt.\n\nFOREIGN EXCHANGE AND CHANGE IN FAIR VALUE OF DERIVATIVE INSTRUMENTS We recognized $79 million in net foreign exchange gains in 2019 (2018 – $136 million in net losses). These gains and losses were primarily attributed to our US dollar-denominated commercial paper (US CP) program borrowings (see note 17).\n\nThese foreign exchange gains (2018 – losses) were partially offset by the $80 million loss related to the change in fair value of derivatives (2018 – $95 million gain) that was primarily attributed to the debt derivatives, which were not designated as hedges for accounting purposes, we used to substantially offset the foreign exchange risk related to these US dollar-denominated borrowings.\n\nDuring the year ended December 31, 2018, after determining we would not be able to exercise our outstanding bond forward derivatives (bond forwards) within the designated time frame, we discontinued hedge accounting and reclassified a $21 million loss from the hedging reserve within shareholders’ equity to “change in fair value of derivative instruments” within finance costs.\n\nWe subsequently extended the bond forwards and redesignated them as effective hedges. During the year ended December 31, 2019, we exercised these bond forwards. See note 17 for more information on our bond forwards.\n\nNOTE 11: FINANCE COSTS"
+}

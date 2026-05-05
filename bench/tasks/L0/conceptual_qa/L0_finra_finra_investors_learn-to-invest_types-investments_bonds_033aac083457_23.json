@@ -1,0 +1,17 @@
+{
+  "task_id": "L0_finra_finra_investors_learn-to-invest_types-investments_bonds_033aac083457_23",
+  "version": "3.0",
+  "layer": "L0",
+  "category": "conceptual_qa",
+  "task_type": "single_turn",
+  "requires_tool": false,
+  "question": "What is currency risk when investing in foreign bonds, and how can it affect my returns in U.S. dollars?",
+  "reference_answer": "This is the risk that a change in the exchange rate between the currency in which your bond is issued—euros, say—and the U.S. dollar can increase or decrease your investment return. The impact ofcurrency riskcan be dramatic. It can turn a gain in local currency into a loss in U.S. dollars, or it can change a loss in local currency into a gain in U.S. dollars.",
+  "source_dataset": "finra",
+  "source_id": "finra_investors_learn-to-invest_types-investments_bonds_033aac083457_23",
+  "tags": [
+    "investor-education",
+    "regulatory"
+  ],
+  "title": "Bonds | FINRA.org"
+}

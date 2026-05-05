@@ -1,0 +1,17 @@
+{
+  "task_id": "L0_finqa_finqa_train_3144",
+  "version": "3.0",
+  "layer": "L0",
+  "category": "multi_step_reasoning",
+  "task_type": "single_turn",
+  "requires_tool": false,
+  "question": "what was the percentage change in rental expense from 2005 to 2006?",
+  "reference_answer": "**Answer:** 52%\n\n**Reasoning:** subtract(18.6, 12.2), divide(#0, 12.2)",
+  "source_dataset": "finqa",
+  "source_id": "finqa_train_3144",
+  "tags": [
+    "numerical-reasoning",
+    "financial-reports"
+  ],
+  "context": "**Context:**\nlkq corporation and subsidiaries notes to consolidated financial statements ( continued ) note 5 .\nlong-term obligations ( continued ) as part of the consideration for business acquisitions completed during 2007 , 2006 and 2005 , we issued promissory notes totaling approximately $ 1.7 million , $ 7.2 million and $ 6.4 million , respectively .\nthe notes bear interest at annual rates of 3.0% ( 3.0 % ) to 6.0% ( 6.0 % ) , and interest is payable at maturity or in monthly installments .\nwe also assumed certain liabilities in connection with a business acquisition during the second quarter of 2005 , including a promissory note with a remaining principle balance of approximately $ 0.2 million .\nthe annual interest rate on the note , which was retired during 2006 , was note 6 .\ncommitments and contingencies operating leases we are obligated under noncancelable operating leases for corporate office space , warehouse and distribution facilities , trucks and certain equipment .\nthe future minimum lease commitments under these leases at december 31 , 2007 are as follows ( in thousands ) : years ending december 31: .\n\n**Table:**\n| 2008 | $ 42335 |\n| --- | --- |\n| 2009 | 33249 |\n| 2010 | 25149 |\n| 2011 | 17425 |\n| 2012 | 11750 |\n| thereafter | 28581 |\n| future minimum lease payments | $ 158489 |\n\nrental expense for operating leases was approximately $ 27.4 million , $ 18.6 million and $ 12.2 million during the years ended december 31 , 2007 , 2006 and 2005 , respectively .\nwe guaranty the residual values of the majority of our truck and equipment operating leases .\nthe residual values decline over the lease terms to a defined percentage of original cost .\nin the event the lessor does not realize the residual value when a piece of equipment is sold , we would be responsible for a portion of the shortfall .\nsimilarly , if the lessor realizes more than the residual value when a piece of equipment is sold , we would be paid the amount realized over the residual value .\nhad we terminated all of our operating leases subject to these guaranties at december 31 , 2007 , the guarantied residual value would have totaled approximately $ 24.0 million .\nlitigation and related contingencies on december 2 , 2005 , ford global technologies , llc ( 2018 2018ford 2019 2019 ) filed a complaint with the united states international trade commission ( 2018 2018usitc 2019 2019 ) against keystone and five other named respondents , including four taiwan-based manufacturers .\non december 12 , 2005 , ford filed an amended complaint .\nboth the complaint and the amended complaint contended that keystone and the other respondents infringed 14 design patents that ford alleges cover eight parts on the 2004-2005 ."
+}

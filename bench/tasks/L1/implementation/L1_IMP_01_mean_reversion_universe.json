@@ -1,0 +1,62 @@
+{
+  "task_id": "L1_IMP_01_mean_reversion_universe",
+  "version": "3.0",
+  "layer": "L1",
+  "category": "implementation",
+  "subcategory": "lean_universe_strategy",
+  "task_type": "agent_execution",
+  "difficulty": "medium",
+  "description": "Implement an RSI mean-reversion LEAN C# algorithm with asymmetric entry/exit thresholds and stop-loss across the full Binance futures universe (~100 symbols), with per-symbol state machines and risk-based sizing.",
+  "agent_prompt": "Implement a LEAN C# algorithm in /workspace/src/MeanReversion.cs that runs an RSI mean-reversion strategy on the full crypto futures universe defined by /workspace/data/universe.json (~100 symbols). Requirements: (1) per-symbol RSI(14) indicator on daily bars; (2) asymmetric entry/exit thresholds (e.g. enter long when RSI < 25, exit when RSI > 50; enter short when RSI > 75, exit when RSI < 50); (3) per-symbol position state (flat/long/short) with entry-price tracking; (4) fixed percent stop-loss (e.g. 5% adverse move) per open position; (5) risk-based sizing using SetHoldings at 5% per active position (5% avoids LEAN's MinimumOrderMarginPortfolioPercentage silent rejection); (6) tag exit reasons (signal vs stop-loss) in the trade log. Run the backtest via run_lean_backtest. Outputs at /workspace/output/: backtest_summary.json (total_return, sharpe, max_drawdown, n_trades, win_rate), trade_log.csv (timestamp, symbol, side, qty, price, exit_reason), per_symbol_metrics.csv (one row per symbol with n_trades, total_return, win_rate).",
+  "environment": {
+    "data_files": [
+      "universe.json"
+    ],
+    "core_mcp_tools": [
+      "shell_exec",
+      "file_write",
+      "file_read",
+      "file_list",
+      "get_environment_info",
+      "run_lean_backtest",
+      "submit_trial",
+      "select_submission",
+      "get_trial_status"
+    ],
+    "docs_available": [
+      "lean_algorithm_guide.md",
+      "moving_averages.md"
+    ],
+    "sandbox_image": "quant-bench-env:v3.0-lean",
+    "network_enabled": false,
+    "max_backtest_trials": 5
+  },
+  "ground_truth": {
+    "required_capabilities": [
+      "Manage per-symbol RSI indicators and position state at universe scale (~100 symbols)",
+      "Implement asymmetric entry/exit logic with per-symbol state machine",
+      "Track entry prices and apply per-symbol stop-loss",
+      "Apply risk-based position sizing via SetHoldings (5% per symbol)",
+      "Tag exit reasons in trade log and produce per-symbol and universe-level results"
+    ],
+    "expected_outputs": [
+      {
+        "path": "output/backtest_summary.json",
+        "type": "json",
+        "required_keys": ["total_return", "sharpe", "max_drawdown", "n_trades", "win_rate"]
+      },
+      {
+        "path": "output/trade_log.csv",
+        "type": "csv",
+        "required_columns": ["timestamp", "symbol", "side", "qty", "price", "exit_reason"]
+      },
+      {
+        "path": "output/per_symbol_metrics.csv",
+        "type": "csv",
+        "required_columns": ["n_trades", "total_return", "win_rate"]
+      }
+    ],
+    "verification_script": "tasks/test_scripts/L1/L1_IMP_01_mean_reversion_universe.py"
+  },
+  "timeout_minutes": 35
+}

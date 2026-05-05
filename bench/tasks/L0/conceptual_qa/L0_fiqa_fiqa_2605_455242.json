@@ -1,0 +1,15 @@
+{
+  "task_id": "L0_fiqa_fiqa_2605_455242",
+  "version": "3.0",
+  "layer": "L0",
+  "category": "conceptual_qa",
+  "task_type": "single_turn",
+  "requires_tool": false,
+  "question": "When are stock trade fees deducted?",
+  "reference_answer": "Typically the fees are charged when the order is executed.  The only catch I have ever ran into is when an order is partially executed. A good-till-cancel order that gets executed in several blocks over multiple days may get charged a separate commission for each day (but typically not each block).  If this is a simple brokerage account, you could avoid the whole question by using robinhood.com, which charges no commissions or maintenance fees.",
+  "source_dataset": "fiqa",
+  "source_id": "fiqa_2605_455242",
+  "tags": [
+    "financial-qa"
+  ]
+}

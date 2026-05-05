@@ -1,0 +1,15 @@
+{
+  "task_id": "L0_fiqa_fiqa_5264_431814",
+  "version": "3.0",
+  "layer": "L0",
+  "category": "conceptual_qa",
+  "task_type": "single_turn",
+  "requires_tool": false,
+  "question": "Does a company's stock price give any indication to or affect their revenue?",
+  "reference_answer": "If the company reported a loss at the previous quarter when the stock what at say $20/share, and now just before the company's next quarterly report, the stock trades around $10/share. There is a misunderstanding here, the company doesn't sell stock, they sell products (or services). Stock/share traded at equity market. Here is the illustration/chronology to give you better insight:   Now addressing the question What if the stock's price change? Let say, Its drop from $10 to $1 Is it affect XYZ revenue ? No why? because XYZ selling ads not their stocks the formula for revenue revenue = products (in this case: ads) * quantity the equation doesn't involve capital (stock's purchasing)",
+  "source_dataset": "fiqa",
+  "source_id": "fiqa_5264_431814",
+  "tags": [
+    "financial-qa"
+  ]
+}

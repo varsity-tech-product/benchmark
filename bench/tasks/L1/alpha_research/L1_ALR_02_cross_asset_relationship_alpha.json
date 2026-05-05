@@ -1,0 +1,60 @@
+{
+  "task_id": "L1_ALR_02_cross_asset_relationship_alpha",
+  "version": "3.0",
+  "layer": "L1",
+  "category": "alpha_research",
+  "subcategory": "cross_asset",
+  "task_type": "agent_execution",
+  "difficulty": "hard",
+  "description": "Identify cointegrating crypto pairs from a 5-symbol candidate pool, evaluate spread mean-reversion signal quality, and assess regime change / structural break risk.",
+  "agent_prompt": "Research cross-asset alpha from cointegrating pairs in a 5-symbol crypto futures pool. Inputs at /workspace/data/: BTCUSDT_1d_2021_2024.csv, ETHUSDT_1d_2021_2024.csv, SOLUSDT_1d_2021_2024.csv, AVAXUSDT_1d_2021_2024.csv, MATICUSDT_1d_2021_2024.csv. Tasks: (1) for all 10 unordered pairs run Engle-Granger cointegration test (ADF p-value of OLS residuals) and Johansen test (trace statistic vs 95% critical value) on log prices; write /workspace/output/pair_selection.csv with columns pair, eg_pvalue, johansen_trace_stat, johansen_passes_95, half_life_days. (2) For each cointegrating pair (eg_pvalue < 0.05 OR johansen passes), build a rolling 60-day z-score on the spread, define a mean-reversion strategy (enter when |z|>2, exit when |z|<0.5), and compute IC of z-score vs forward 5d spread reversion plus Sharpe of the strategy net of 5bps round-trip cost; write /workspace/output/signal_evaluation.csv with columns pair, ic_mean, ic_tstat, strategy_sharpe, strategy_max_dd. (3) For the top-2 strongest pairs, run a structural break test (Chow test or rolling-window ADF p-value) and document any regime shift; write /workspace/output/regime_analysis.md describing detected breaks, the period they occurred, and implications for live deployment.",
+  "environment": {
+    "data_files": [
+      "BTCUSDT_1d_2021_2024.csv",
+      "ETHUSDT_1d_2021_2024.csv",
+      "SOLUSDT_1d_2021_2024.csv",
+      "AVAXUSDT_1d_2021_2024.csv",
+      "MATICUSDT_1d_2021_2024.csv"
+    ],
+    "core_mcp_tools": [
+      "shell_exec",
+      "file_write",
+      "file_read",
+      "file_list",
+      "get_environment_info"
+    ],
+    "docs_available": [
+      "alpha_research_methodology.md",
+      "signal_evaluation.md",
+      "statistical_tests.md"
+    ],
+    "sandbox_image": "quant-bench-env:v3.0",
+    "network_enabled": false
+  },
+  "ground_truth": {
+    "required_capabilities": [
+      "Run Engle-Granger and Johansen cointegration tests on price pairs",
+      "Compute spread half-life and rolling z-score signal",
+      "Evaluate signal IC and strategy performance metrics",
+      "Detect structural breaks or regime changes in cointegrating relationships",
+      "Reason about implications of regime change for live deployment"
+    ],
+    "expected_outputs": [
+      {
+        "path": "output/pair_selection.csv",
+        "type": "csv",
+        "required_columns": ["pair", "eg_pvalue", "johansen_trace_stat", "johansen_passes_95", "half_life_days"],
+        "min_rows": 10
+      },
+      {
+        "path": "output/signal_evaluation.csv",
+        "type": "csv",
+        "required_columns": ["pair", "ic_mean", "ic_tstat", "strategy_sharpe", "strategy_max_dd"],
+        "min_rows": 1
+      },
+      {"path": "output/regime_analysis.md", "type": "markdown"}
+    ],
+    "verification_script": "tasks/test_scripts/L1/L1_ALR_02_cross_asset_relationship_alpha.py"
+  },
+  "timeout_minutes": 40
+}

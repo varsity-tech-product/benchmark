@@ -1,5 +1,23 @@
 #!/usr/bin/env python3
 """
+DEPRECATED — superseded by ``extract_l0_tasks.py`` for v3 L0 generation.
+
+This script attaches v1 tutoring metadata (``learner_profile`` /
+``tutoring_strategy`` / ``synthetic_response``) which v3 (NPC = user, no
+tutoring framing) does not consume. Kept as a historical artifact for
+reproducing v1/v2 layer1 task JSONs only.
+
+For v3 L0 task generation use:
+
+    python bench/scripts/extract_l0_tasks.py
+
+That script does direct extraction from ``data/01_structured/classified/``
+with quality + domain filters, no LLM calls, and produces v3 single-turn
+task JSONs at ``bench/tasks/L0/{category}/``.
+
+────────────────────────────────────────────────────────────────────────────
+Original docstring (preserved for reference):
+
 Synthesis pipeline: raw JSONL → QuantTutorTask JSON files.
 
 For each raw JSONL record in bench/data/raw/:
@@ -15,19 +33,6 @@ For each raw JSONL record in bench/data/raw/:
 
 Uses the same OpenRouter / llm_utils infrastructure as the upstream
 synthesis pipeline (scripts/03_synthesize/synthesize_tsr.py).
-
-Usage:
-    # Convert all raw data to Layer 1 tasks (use existing synthesized fields)
-    python synthesize_tasks.py
-
-    # Force LLM re-synthesis even for records that already have fields
-    python synthesize_tasks.py --force-llm
-
-    # Limit to specific categories
-    python synthesize_tasks.py --categories conceptual_qa code_generation
-
-    # Use a specific model
-    python synthesize_tasks.py --force-llm --model google/gemini-3-flash-preview
 """
 
 import argparse

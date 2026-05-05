@@ -1,0 +1,59 @@
+{
+  "task_id": "L1_DBG_04_multi_bug_interaction",
+  "version": "3.0",
+  "layer": "L1",
+  "category": "debug",
+  "subcategory": "multi_bug",
+  "task_type": "agent_execution",
+  "difficulty": "hard",
+  "description": "Diagnose three interacting bugs in a strategy that mutually mask each other in the aggregate report: an over-applied fee model, missing signal shift, and incorrect Sharpe annualization.",
+  "sample_code": "user_code/multi_bug_strategy.py",
+  "agent_prompt": "Read the buggy strategy at /workspace/student_code/multi_bug_strategy.py running on /workspace/data/BTCUSDT_1d_2021_2024.csv. The reported metrics (Sharpe ~0.5, total return ~60% over 4 years on BTC's bull-then-bear regime) look like a believable trend strategy result, but the script contains THREE interacting bugs that mutually mask each other: (B1) the fee model uses 5 bps round-trip cost but applies the 5 bps to each leg of a round-trip (entry + exit), double-charging fees and silently dragging returns down — this masks the gain from B2; (B2) the signal is consumed at the same bar without shift(1), giving look-ahead inflation that boosts returns; (B3) Sharpe is annualized by multiplying daily Sharpe by sqrt(365) instead of sqrt(252), inflating Sharpe by ~20%. The combined report looks reasonable because B2 and B3 inflate metrics while B1 partially deflates returns. Tasks: (1) identify all three bugs and write /workspace/output/diagnosis.md explaining each bug, why it is wrong, and how the three bugs interact to produce a plausible-looking aggregate; (2) produce /workspace/output/bugs_fixed.py with all three corrections applied; (3) run buggy and fully fixed versions PLUS three intermediate variants (fix only one bug at a time), and write /workspace/output/before_after_comparison.json with keys: buggy_sharpe, buggy_total_return, fixed_sharpe, fixed_total_return, only_B1_fixed_sharpe, only_B2_fixed_sharpe, only_B3_fixed_sharpe to demonstrate the masking dynamic empirically.",
+  "environment": {
+    "data_files": [
+      "BTCUSDT_1d_2021_2024.csv"
+    ],
+    "core_mcp_tools": [
+      "shell_exec",
+      "file_write",
+      "file_read",
+      "file_list",
+      "get_environment_info"
+    ],
+    "docs_available": [
+      "moving_averages.md",
+      "risk_metrics.md",
+      "backtesting_101.md"
+    ],
+    "sandbox_image": "quant-bench-env:v3.0",
+    "network_enabled": false
+  },
+  "ground_truth": {
+    "required_capabilities": [
+      "Identify multiple interacting bugs from a single composite symptom",
+      "Diagnose double-charged fee model error",
+      "Diagnose lookahead bias from missing signal shift",
+      "Diagnose incorrect Sharpe annualization factor",
+      "Produce per-bug intermediate metrics demonstrating the masking interaction"
+    ],
+    "expected_outputs": [
+      {"path": "output/diagnosis.md", "type": "markdown"},
+      {"path": "output/bugs_fixed.py", "type": "python"},
+      {
+        "path": "output/before_after_comparison.json",
+        "type": "json",
+        "required_keys": [
+          "buggy_sharpe",
+          "buggy_total_return",
+          "fixed_sharpe",
+          "fixed_total_return",
+          "only_B1_fixed_sharpe",
+          "only_B2_fixed_sharpe",
+          "only_B3_fixed_sharpe"
+        ]
+      }
+    ],
+    "verification_script": "tasks/test_scripts/L1/L1_DBG_04_multi_bug_interaction.py"
+  },
+  "timeout_minutes": 25
+}

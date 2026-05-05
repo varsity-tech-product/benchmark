@@ -1,0 +1,17 @@
+{
+  "task_id": "L0_tatqa_tatqa_train_1223_2",
+  "version": "3.0",
+  "layer": "L0",
+  "category": "data_interpretation",
+  "task_type": "single_turn",
+  "requires_tool": false,
+  "question": "In the table of aggregate changes in the total gross amount of unrecognized tax benefits, which items concern Additions?",
+  "reference_answer": "**Answer:** Additions (reductions) for tax positions taken in prior years, Additions for tax positions related to the current year\n\n**Type:** multi-span",
+  "source_dataset": "tatqa",
+  "source_id": "tatqa_train_1223_2",
+  "tags": [
+    "tabular-reasoning",
+    "financial-documents"
+  ],
+  "context": "**Table:**\n|  |  | September 30, |\n| --- | --- | --- |\n|  | 2019 | 2018 |\n|  |  | (in thousands) |\n| Balance at beginning of year | $ 9,942 | $ 13,248 |\n| Additions (reductions) for tax positions taken in prior years | 8,458 | (80) |\n| Recognition of benefits from expiration of statutes | (776) | (1,770) |\n| Additions for tax positions related to the current year | 951 | 713 |\n| Reductions for tax positions related to acquisitions | — | (2,169) |\n| Balance at end of year | $18,575 | $9,942 |\n\nAccounting for Uncertainty in Income Taxes\n\nDuring fiscal 2019 and 2018, the aggregate changes in our total gross amount of unrecognized tax benefits are summarized as follows:\n\nAt September 30, 2019 and 2018, the amount of unrecognized tax benefits that, if recognized, would affect the effective tax rate was $0.7 million and $1.8 million, respectively. During fiscal year 2020, it is reasonably possible that resolution of reviews by taxing authorities, both domestic and foreign, could be reached with respect to an immaterial amount of net unrecognized tax benefits depending on the timing of examinations or expiration of statutes of limitations, either because our tax positions are sustained or because we agree to the disallowance and pay the related income tax. We recognize interest and/or penalties related to income tax matters in income tax expense. The amount of net interest and penalties recognized as a component of income tax expense during fiscal 2019 and 2018 were not material.\n\nWe are subject to ongoing audits from various taxing authorities in the jurisdictions in which we do business. As of September 30, 2019, the fiscal years open under the statute of limitations in significant jurisdictions include 2016 through 2019 in the U.S. We believe we have adequately provided for uncertain tax issues we have not yet resolved with federal, state and foreign tax authorities. Although not more likely than not, the most adverse resolution of these issues could result in additional charges to earnings in future periods. Based upon a consideration of all relevant facts and circumstances, we do not believe the ultimate resolution of uncertain tax issues for all open tax periods will have a material adverse effect upon our financial condition or results of operations.\n\nCash amounts paid for income taxes, net of refunds received, were $28.7 million, $15.7 million and $1.6 million in 2019, 2018 and 2017, respectively."
+}

@@ -1,0 +1,65 @@
+{
+  "task_id": "L1_DAT_02_tick_data_aggregation",
+  "version": "3.0",
+  "layer": "L1",
+  "category": "data_engineering",
+  "subcategory": "microstructure",
+  "task_type": "agent_execution",
+  "difficulty": "medium",
+  "description": "Aggregate tick-level data into OHLCV bars with proper timestamp handling (sorting, dedup, timezone) and microstructure quality checks.",
+  "agent_prompt": "You are given a tick-level data file at /workspace/data/tick_data_sample.csv with columns timestamp, price, size. Produce two aggregated bar files at /workspace/output/: bars_1m.csv and bars_5m.csv. Each output must have columns timestamp (UTC, bar-open), open, high, low, close, volume, n_ticks. Before aggregation: (1) detect and report out-of-order ticks (timestamp regressions in the original sequence) and document; (2) coerce timestamps to UTC and sort ascending; (3) detect and drop exact duplicates and report the dedup count. After aggregation, perform quality checks and write /workspace/output/quality_report.json with: empty_bar_count_per_freq (bars with n_ticks=0), volume_zero_bar_count, max_gap_seconds_between_ticks, n_duplicates_removed, n_out_of_order. Also produce one chart /workspace/output/bars_overview.png showing 1m close prices with volume bar subplot.",
+  "environment": {
+    "data_files": [
+      "tick_data_sample.csv"
+    ],
+    "core_mcp_tools": [
+      "shell_exec",
+      "file_write",
+      "file_read",
+      "file_list",
+      "get_environment_info"
+    ],
+    "docs_available": [
+      "pandas_data_loading.md",
+      "pandas_timeseries.md"
+    ],
+    "sandbox_image": "quant-bench-env:v3.0",
+    "network_enabled": false
+  },
+  "ground_truth": {
+    "required_capabilities": [
+      "Resample tick-level data into OHLCV bars at multiple frequencies",
+      "Handle timestamp quality issues such as ordering and duplicates",
+      "Validate bar quality with microstructure-aware checks",
+      "Document aggregation diagnostics in a structured report"
+    ],
+    "expected_outputs": [
+      {
+        "path": "output/bars_1m.csv",
+        "type": "csv",
+        "required_columns": ["timestamp", "open", "high", "low", "close", "volume", "n_ticks"],
+        "min_rows": 1
+      },
+      {
+        "path": "output/bars_5m.csv",
+        "type": "csv",
+        "required_columns": ["timestamp", "open", "high", "low", "close", "volume", "n_ticks"],
+        "min_rows": 1
+      },
+      {
+        "path": "output/quality_report.json",
+        "type": "json",
+        "required_keys": [
+          "empty_bar_count_per_freq",
+          "volume_zero_bar_count",
+          "max_gap_seconds_between_ticks",
+          "n_duplicates_removed",
+          "n_out_of_order"
+        ]
+      },
+      {"path": "output/bars_overview.png", "type": "image"}
+    ],
+    "verification_script": "tasks/test_scripts/L1/L1_DAT_02_tick_data_aggregation.py"
+  },
+  "timeout_minutes": 15
+}

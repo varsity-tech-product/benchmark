@@ -1,0 +1,58 @@
+{
+  "task_id": "L1_BTE_02_multi_asset_sync",
+  "version": "3.0",
+  "layer": "L1",
+  "category": "backtest_engine",
+  "subcategory": "multi_asset",
+  "task_type": "agent_execution",
+  "difficulty": "hard",
+  "description": "Extend a backtest engine to support synchronized multi-asset replay for BTCUSDT and ETHUSDT, then implement a BTC/ETH ratio mean-reversion strategy with per-asset accounting.",
+  "agent_prompt": "You are given two daily-bar CSVs at /workspace/data/BTCUSDT_1d_2021_2024.csv and /workspace/data/ETHUSDT_1d_2021_2024.csv. Build a backtest engine in /workspace/src/ that (1) loads and time-aligns both series, (2) replays synchronized bar tuples each step, (3) computes a BTC/ETH ratio signal and trades a mean-reversion rule, and (4) tracks positions and PnL separately per asset. Run the backtest end-to-end and write outputs to /workspace/output/: per_asset_metrics.json (keys: BTCUSDT, ETHUSDT — each with total_return, sharpe, max_drawdown), portfolio_metrics.json (combined total_return, sharpe, max_drawdown), and equity_curve.csv. The reference docs in /workspace/docs/ describe accepted accounting conventions.",
+  "environment": {
+    "data_files": [
+      "BTCUSDT_1d_2021_2024.csv",
+      "ETHUSDT_1d_2021_2024.csv"
+    ],
+    "core_mcp_tools": [
+      "shell_exec",
+      "file_write",
+      "file_read",
+      "file_list",
+      "get_environment_info"
+    ],
+    "docs_available": [
+      "backtesting_101.md",
+      "statistical_tests.md"
+    ],
+    "sandbox_image": "quant-bench-env:v3.0",
+    "network_enabled": false
+  },
+  "ground_truth": {
+    "required_capabilities": [
+      "Load and time-align multiple asset data series",
+      "Build a synchronized multi-asset replay mechanism",
+      "Track positions and PnL separately per asset",
+      "Implement a ratio-based mean-reversion strategy that operates on synchronized data",
+      "Produce per-asset and portfolio-level performance metrics"
+    ],
+    "expected_outputs": [
+      {
+        "path": "output/per_asset_metrics.json",
+        "type": "json",
+        "required_keys": ["BTCUSDT", "ETHUSDT"]
+      },
+      {
+        "path": "output/portfolio_metrics.json",
+        "type": "json",
+        "required_keys": ["total_return", "sharpe", "max_drawdown"]
+      },
+      {
+        "path": "output/equity_curve.csv",
+        "type": "csv",
+        "min_rows": 100
+      }
+    ],
+    "verification_script": "tasks/test_scripts/L1/L1_BTE_02_multi_asset_sync.py"
+  },
+  "timeout_minutes": 30
+}

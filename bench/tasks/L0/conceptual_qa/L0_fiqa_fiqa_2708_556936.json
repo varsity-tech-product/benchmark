@@ -1,0 +1,15 @@
+{
+  "task_id": "L0_fiqa_fiqa_2708_556936",
+  "version": "3.0",
+  "layer": "L0",
+  "category": "conceptual_qa",
+  "task_type": "single_turn",
+  "requires_tool": false,
+  "question": "Is gold really an investment or just a hedge against inflation?",
+  "reference_answer": "\"Over on Quantitative Finance Stack Exchange, I asked and answered a more technical and broader version of this question, Should the average investor hold commodities as part of a broadly diversified portfolio?  In short, I believe the answer to your question is that gold is neither an investment nor a hedge against inflation. Although many studies claim that commodities (such as gold) do offer some diversification benefit, the most credible academic study I have seen to date, Should Investors Include Commodities in Their Portfolios After All? New Evidence, shows that a mean-variance investor would not want to allocate any of their portfolio to commodities (this would include gold, presumably). Nevertheless, many asset managers, such as PIMCO, offer funds that are marketed as \"\"real return\"\" or \"\"inflation-managed\"\" and include commodities (including gold) in their portfolios.  PIMCO has also commissioned some research, Strategic Asset Allocation and Commodities, claiming that holding some commodities offers both diversification and inflation hedging benefits.\"",
+  "source_dataset": "fiqa",
+  "source_id": "fiqa_2708_556936",
+  "tags": [
+    "financial-qa"
+  ]
+}

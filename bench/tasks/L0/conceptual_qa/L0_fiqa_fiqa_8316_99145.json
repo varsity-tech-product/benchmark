@@ -1,0 +1,15 @@
+{
+  "task_id": "L0_fiqa_fiqa_8316_99145",
+  "version": "3.0",
+  "layer": "L0",
+  "category": "conceptual_qa",
+  "task_type": "single_turn",
+  "requires_tool": false,
+  "question": "where to get stock price forecast",
+  "reference_answer": "\"I believe you are looking for price forecasts from analysts. Yahoo provides info in the analyst opinions section: here is an example for Apple the price targets are located in the \"\"Price Target Summary\"\" section.\"",
+  "source_dataset": "fiqa",
+  "source_id": "fiqa_8316_99145",
+  "tags": [
+    "financial-qa"
+  ]
+}

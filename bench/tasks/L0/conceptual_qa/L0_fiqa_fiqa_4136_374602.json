@@ -1,0 +1,15 @@
+{
+  "task_id": "L0_fiqa_fiqa_4136_374602",
+  "version": "3.0",
+  "layer": "L0",
+  "category": "conceptual_qa",
+  "task_type": "single_turn",
+  "requires_tool": false,
+  "question": "company market capitalization to total (annual) stock market capitalization",
+  "reference_answer": "This depends. Quite a few stock exchanges / country report total capitalisation in terms of free float. I.E total shares that can be traded, ignoring the promoters shares. The market cap reported by company takes all shares.",
+  "source_dataset": "fiqa",
+  "source_id": "fiqa_4136_374602",
+  "tags": [
+    "financial-qa"
+  ]
+}

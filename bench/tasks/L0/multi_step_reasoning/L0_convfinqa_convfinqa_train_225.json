@@ -1,0 +1,40 @@
+{
+  "task_id": "L0_convfinqa_convfinqa_train_225",
+  "version": "3.0",
+  "layer": "L0",
+  "category": "multi_step_reasoning",
+  "task_type": "single_turn",
+  "requires_tool": false,
+  "question": "considering the years 2005-2007 , what is the average fair value of shares vested , in millions?",
+  "reference_answer": "**Answer:** 2.1\n\n**Reasoning:** add(3.4, 0.6), add(#0, 2.3), divide(#1, const_3)",
+  "source_dataset": "convfinqa",
+  "source_id": "convfinqa_train_225",
+  "tags": [
+    "conversational",
+    "numerical-reasoning",
+    "financial-reports"
+  ],
+  "context": "**Context:**\nhumana inc .\nnotes to consolidated financial statements 2014 ( continued ) the total intrinsic value of stock options exercised during 2007 was $ 133.9 million , compared with $ 133.7 million during 2006 and $ 57.8 million during 2005 .\ncash received from stock option exercises for the years ended december 31 , 2007 , 2006 , and 2005 totaled $ 62.7 million , $ 49.2 million , and $ 36.4 million , respectively .\ntotal compensation expense related to nonvested options not yet recognized was $ 23.6 million at december 31 , 2007 .\nwe expect to recognize this compensation expense over a weighted average period of approximately 1.6 years .\nrestricted stock awards restricted stock awards are granted with a fair value equal to the market price of our common stock on the date of grant .\ncompensation expense is recorded straight-line over the vesting period , generally three years from the date of grant .\nthe weighted average grant date fair value of our restricted stock awards was $ 63.59 , $ 54.36 , and $ 32.81 for the years ended december 31 , 2007 , 2006 , and 2005 , respectively .\nactivity for our restricted stock awards was as follows for the year ended december 31 , 2007 : shares weighted average grant-date fair value .\n\n**Table:**\n|  | shares | weighted average grant-date fair value |\n| --- | --- | --- |\n| nonvested restricted stock at december 31 2006 | 1107455 | $ 45.86 |\n| granted | 852353 | 63.59 |\n| vested | -51206 ( 51206 ) | 56.93 |\n| forfeited | -63624 ( 63624 ) | 49.65 |\n| nonvested restricted stock at december 31 2007 | 1844978 | $ 53.61 |\n\nthe fair value of shares vested during the years ended december 31 , 2007 , 2006 , and 2005 was $ 3.4 million , $ 2.3 million , and $ 0.6 million , respectively .\ntotal compensation expense related to nonvested restricted stock awards not yet recognized was $ 44.7 million at december 31 , 2007 .\nwe expect to recognize this compensation expense over a weighted average period of approximately 1.4 years .\nthere are no other contractual terms covering restricted stock awards once vested. .",
+  "conversation_history": [
+    {
+      "question": "what was the fair value of shares vested during 2007?",
+      "answer": ""
+    },
+    {
+      "question": "what was the value of shares vested in 2005?",
+      "answer": ""
+    },
+    {
+      "question": "what is the sum?",
+      "answer": ""
+    },
+    {
+      "question": "what is the total sum including shares vested in 2004?",
+      "answer": ""
+    },
+    {
+      "question": "what is the total sum divided by 3?",
+      "answer": ""
+    }
+  ]
+}

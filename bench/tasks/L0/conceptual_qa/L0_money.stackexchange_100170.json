@@ -1,0 +1,14 @@
+{
+  "task_id": "L0_money.stackexchange_100170",
+  "version": "3.0",
+  "layer": "L0",
+  "category": "conceptual_qa",
+  "task_type": "single_turn",
+  "requires_tool": false,
+  "question": "One day my lawyer told me to pay a big attention to the legal form of the company I invest.\n\nGenerally, there are *limited* and *unlimited* liability companies. In *limited* one, in case of bankruptcy I can lose 100% of my investment. In *unlimited* one it can be much more than 100% as responsibility is not limited.\n\nI suppose that the things mentioned above are related to the investing to private companies only. I'm wondering if somebody have ever seen *unlimited* liabilities at the stock exchange where investor can lose much more than the price paid for the actions?\n\nThe stock is listed on an EU country stock exchange, not a US exchange.",
+  "reference_answer": "> I'm wondering if somebody have ever seen unlimited liabilities at the stock exchange where investor can lose much more than the price paid for the actions?\n\nMost countries / exchanges don't allow trading / listing on unlimited companies. So if you are trading in shares on stock markets, using cash/delivery to buying / selling shares, there is nothing to worry.\n\n- Most Banks also allow private equity placement into companies. If you invest by this route; you may invest in unlimited liabilities company that if things go for worse, loose you money.\n- On stock exchanges as pointed out by Peter; if you get into derivatives and options; there is no limit to loosing in some kinds of trades.\n- These are not limited to stock markets, but can also be for commodities and Fx markets where the stakes are quite high and trading in on margin.",
+  "source_dataset": "money.stackexchange",
+  "source_id": "100170",
+  "tags": [],
+  "title": "Can unlimited liability companies be listed on stock exchanges?"
+}

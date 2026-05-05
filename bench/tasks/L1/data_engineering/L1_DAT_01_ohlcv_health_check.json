@@ -1,0 +1,57 @@
+{
+  "task_id": "L1_DAT_01_ohlcv_health_check",
+  "version": "3.0",
+  "layer": "L1",
+  "category": "data_engineering",
+  "subcategory": "ohlcv_quality",
+  "task_type": "agent_execution",
+  "difficulty": "medium",
+  "description": "Comprehensive OHLCV data health check: load, type-cast, detect missing/duplicates, compute summary statistics, and produce simple/log returns with proper compounding semantics.",
+  "agent_prompt": "You are given two OHLCV CSVs at /workspace/data/AAPL_2018_2024.csv and /workspace/data/SPY_2018_2024.csv. Produce a complete data-health report at /workspace/output/. Your script in /workspace/src/health_check.py must (1) load both files into pandas DataFrames with proper dtype coercion (date as DatetimeIndex with UTC timezone, prices as float, volume as int64); (2) detect and report missing rows distinguishing market-closure gaps from anomalous gaps; (3) detect duplicate timestamps and price/volume outliers (>5σ on log returns); (4) compute summary statistics (mean, std, skew, kurtosis, percentiles for returns; min/max for OHLC; non-zero ratio for volume); (5) compute both simple returns and log returns and verify the relation log_ret ≈ simple_ret for small values; (6) write outputs: health_report.json (per-symbol section with row_count, date_range, missing_count, duplicate_count, outlier_count, dtype_issues), summary_stats.csv (per-symbol stats), returns.csv (date, AAPL_simple, AAPL_log, SPY_simple, SPY_log), and one comparison plot equity_curves.png.",
+  "environment": {
+    "data_files": [
+      "AAPL_2018_2024.csv",
+      "SPY_2018_2024.csv"
+    ],
+    "core_mcp_tools": [
+      "shell_exec",
+      "file_write",
+      "file_read",
+      "file_list",
+      "get_environment_info"
+    ],
+    "docs_available": [
+      "pandas_data_loading.md",
+      "pandas_timeseries.md"
+    ],
+    "sandbox_image": "quant-bench-env:v3.0",
+    "network_enabled": false
+  },
+  "ground_truth": {
+    "required_capabilities": [
+      "Load OHLCV CSV with correct dtypes and timezone-aware DatetimeIndex",
+      "Detect missing rows distinguishing market-closure gaps from anomalies",
+      "Detect duplicates and outliers",
+      "Compute return distribution summary statistics",
+      "Compute simple and log returns and verify their relation",
+      "Produce a structured health report"
+    ],
+    "expected_outputs": [
+      {
+        "path": "output/health_report.json",
+        "type": "json",
+        "required_keys": ["AAPL", "SPY"]
+      },
+      {"path": "output/summary_stats.csv", "type": "csv", "min_rows": 1},
+      {
+        "path": "output/returns.csv",
+        "type": "csv",
+        "required_columns": ["date", "AAPL_simple", "AAPL_log", "SPY_simple", "SPY_log"],
+        "min_rows": 100
+      },
+      {"path": "output/equity_curves.png", "type": "image"}
+    ],
+    "verification_script": "tasks/test_scripts/L1/L1_DAT_01_ohlcv_health_check.py"
+  },
+  "timeout_minutes": 20
+}

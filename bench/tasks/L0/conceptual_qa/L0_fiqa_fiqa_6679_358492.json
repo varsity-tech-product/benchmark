@@ -1,0 +1,15 @@
+{
+  "task_id": "L0_fiqa_fiqa_6679_358492",
+  "version": "3.0",
+  "layer": "L0",
+  "category": "conceptual_qa",
+  "task_type": "single_turn",
+  "requires_tool": false,
+  "question": "Specifically when do options expire?",
+  "reference_answer": "Equity options, at least those traded in the American exchanges, actually expire the Saturday after the 3rd Friday of the month.  However, the choice to trade or exercise the options must be specified by the 3rd Friday. This is outlined by the CBOE, who oversees the exchange of equity options.  Their FAQ regarding option expiration can be found at http://www.cboe.com/LearnCenter/Concepts/Beyond/expiration.aspx.",
+  "source_dataset": "fiqa",
+  "source_id": "fiqa_6679_358492",
+  "tags": [
+    "financial-qa"
+  ]
+}

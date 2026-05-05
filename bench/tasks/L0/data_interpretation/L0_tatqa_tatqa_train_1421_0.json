@@ -1,0 +1,17 @@
+{
+  "task_id": "L0_tatqa_tatqa_train_1421_0",
+  "version": "3.0",
+  "layer": "L0",
+  "category": "data_interpretation",
+  "task_type": "single_turn",
+  "requires_tool": false,
+  "question": "What can delays in delivery schedules or cancellations of backlog result in?",
+  "reference_answer": "**Answer:** could have a material adverse effect on our business, financial condition or results of operations\n\n**Type:** span",
+  "source_dataset": "tatqa",
+  "source_id": "tatqa_train_1421_0",
+  "tags": [
+    "tabular-reasoning",
+    "financial-documents"
+  ],
+  "context": "**Table:**\n|  | 2019 | 2018 |\n| --- | --- | --- |\n|  | (in millions) |  |\n| Semiconductor Test | $543.2 | $367.5 |\n| System Test | 206.0 | 149.5 |\n| Wireless Test | 42.9 | 32.0 |\n| Industrial Automation | 17.9 | 19.7 |\n|  | $810.0 | $568.7 |\n\nBacklog\n\nAt December 31, 2019 and 2018, our backlog of unfilled orders in our four reportable segments was as follows:\n\nCustomers may delay delivery of products or cancel orders suddenly and without advanced notice, subject to possible cancellation penalties. Due to possible customer changes in delivery schedules and cancellation of orders, our backlog at any particular date is not necessarily indicative of the actual sales for any succeeding period. Delays in delivery schedules or cancellations of backlog during any particular period could have a material adverse effect on our business, financial condition or results of operations."
+}

@@ -1,0 +1,17 @@
+{
+  "task_id": "L0_tatqa_tatqa_train_1268_4",
+  "version": "3.0",
+  "layer": "L0",
+  "category": "data_interpretation",
+  "task_type": "single_turn",
+  "requires_tool": false,
+  "question": "What would be the percentage change in General and administrative expense between 2018 and 2019?",
+  "reference_answer": "**Answer:** -6.45\n\n**Type:** arithmetic\n\n**Derivation:** (29-31)/31",
+  "source_dataset": "tatqa",
+  "source_id": "tatqa_train_1268_4",
+  "tags": [
+    "tabular-reasoning",
+    "financial-documents"
+  ],
+  "context": "**Table:**\n|  |  | Year Ended |  |\n| --- | --- | --- | --- |\n|  | April 26, 2019 | April 27, 2018 | April 28, 2017 |\n| Cost of product revenues | $ 4 | $ 3 | $ 4 |\n| Cost of hardware maintenance and other services revenues | 10 | 10 | 13 |\n| Sales and marketing | 67 | 68 | 84 |\n| Research and development | 48 | 49 | 59 |\n| General and administrative | 29 | 31 | 35 |\n| Total stock-based compensation expense | $ 158 | $ 161 | $ 195 |\n| Income tax benefit for stock-based compensation | $ 15 | $ 29 | $ 41 |\n\nStock-Based Compensation Expense\n\nStock-based compensation expense is included in the consolidated statements of operations as follows (in millions):\n\nAs of April 26, 2019, total unrecognized compensation expense related to our equity awards was $285 million, which is expected to be recognized on a straight-line basis over a weighted-average remaining service period of 2.1 years."
+}

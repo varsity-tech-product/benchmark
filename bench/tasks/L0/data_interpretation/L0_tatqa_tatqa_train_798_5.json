@@ -1,0 +1,17 @@
+{
+  "task_id": "L0_tatqa_tatqa_train_798_5",
+  "version": "3.0",
+  "layer": "L0",
+  "category": "data_interpretation",
+  "task_type": "single_turn",
+  "requires_tool": false,
+  "question": "What was the percentage change in the Remaining authorization at end of period between 2018 and 2019?",
+  "reference_answer": "**Answer:** -52.78\n\n**Type:** arithmetic\n\n**Derivation:** (1,889-4,000)/4,000",
+  "source_dataset": "tatqa",
+  "source_id": "tatqa_train_798_5",
+  "tags": [
+    "tabular-reasoning",
+    "financial-documents"
+  ],
+  "context": "**Table:**\n|  |  | Year Ended |  |\n| --- | --- | --- | --- |\n|  | April 26, 2019 | April 27, 2018 | April 28, 2017 |\n| Number of shares repurchased | 29 | 15 | 22 |\n| Average price per share | $ 72.87 | $ 51.57 | $ 32.72 |\n| Aggregate purchase price | $ 2,111 | $ 794 | $ 705 |\n| Remaining authorization at end of period | $ 1,889 | $ 4,000 | $ 794 |\n\nStock Repurchase Program\n\nAs of April 26, 2019, our Board of Directors has authorized the repurchase of up to $13.6 billion of our common stock under our stock repurchase program . Under this program, which we may suspend or discontinue at any time, we may purchase shares of our outstanding common stock through solicited or unsolicited transactions in the open market, in privately negotiated transactions, through accelerated share repurchase programs, pursuant to a Rule 10b5-1 plan or in such other manner as deemed appropriate by our management.\n\nThe following table summarizes activity related to this program (in millions, except per share amounts):\n\nThe aggregate purchase price of our stock repurchases for fiscal 2019 consisted of $2.1 billion of open market purchases of which $1.0 billion and $1.1 billion were allocated to additional paid-in capital and retained earnings (accumulated deficit), respectively.\n\nSince the May 13, 2003 inception of our stock repurchase program through April 26, 2019, we repurchased a total of 313 million shares of our common stock at an average price of $37.46 per share, for an aggregate purchase price of $11.7 billion."
+}

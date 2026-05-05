@@ -1,0 +1,64 @@
+{
+  "task_id": "L1_BTE_01_lookahead_safe_engine",
+  "version": "3.0",
+  "layer": "L1",
+  "category": "backtest_engine",
+  "subcategory": "core_engine",
+  "task_type": "agent_execution",
+  "difficulty": "medium",
+  "description": "Build a sequential backtest system with three cleanly separated components (data handler, engine, strategy) that architecturally prevents look-ahead bias, and include a verification test that proves no future data leaks.",
+  "agent_prompt": "Build a backtest system in /workspace/src/ for BTCUSDT hourly data at /workspace/data/BTCUSDT_1h_2023_2024.csv. The system must have three cleanly separated components: (1) a data handler that loads the CSV and replays bars sequentially through a controlled interface that does not expose future bars; (2) an engine that manages positions, tracks PnL, and computes performance metrics; (3) a dual-MA crossover strategy module (fast=20, slow=50) that consumes only the current and prior bars exposed by the data handler. Implement an RSI(14) mean-reversion variant of the strategy as well. Write a verification test at /workspace/tests/test_no_lookahead.py that programmatically proves the strategy cannot access bars beyond the current replay index (e.g. by feeding a corrupted future window and asserting the signal is unchanged). Run both strategies end-to-end and write outputs to /workspace/output/: ma_crossover_metrics.json and rsi_meanrev_metrics.json (each with total_return, sharpe, max_drawdown, n_trades), trade_log_ma.csv, trade_log_rsi.csv, and verification_report.json describing the lookahead check result.",
+  "environment": {
+    "data_files": [
+      "BTCUSDT_1h_2023_2024.csv"
+    ],
+    "core_mcp_tools": [
+      "shell_exec",
+      "file_write",
+      "file_read",
+      "file_list",
+      "get_environment_info"
+    ],
+    "docs_available": [
+      "backtesting_101.md"
+    ],
+    "sandbox_image": "quant-bench-env:v3.0",
+    "network_enabled": false
+  },
+  "ground_truth": {
+    "required_capabilities": [
+      "Design a data handler that loads CSV data and provides a sequential bar replay interface",
+      "Build a backtest engine with position tracking and PnL computation",
+      "Implement strategy modules decoupled from the engine that only access current and past bars",
+      "Compute RSI incrementally on the available-so-far window only",
+      "Write a verification test that programmatically proves no look-ahead exists",
+      "Produce performance summaries for each strategy"
+    ],
+    "expected_outputs": [
+      {"path": "tests/test_no_lookahead.py", "type": "python"},
+      {
+        "path": "output/ma_crossover_metrics.json",
+        "type": "json",
+        "required_keys": ["total_return", "sharpe", "max_drawdown", "n_trades"]
+      },
+      {
+        "path": "output/rsi_meanrev_metrics.json",
+        "type": "json",
+        "required_keys": ["total_return", "sharpe", "max_drawdown", "n_trades"]
+      },
+      {
+        "path": "output/trade_log_ma.csv",
+        "type": "csv",
+        "required_columns": ["timestamp", "side", "price", "qty"]
+      },
+      {
+        "path": "output/trade_log_rsi.csv",
+        "type": "csv",
+        "required_columns": ["timestamp", "side", "price", "qty"]
+      },
+      {"path": "output/verification_report.json", "type": "json"}
+    ],
+    "verification_script": "tasks/test_scripts/L1/L1_BTE_01_lookahead_safe_engine.py"
+  },
+  "timeout_minutes": 35
+}

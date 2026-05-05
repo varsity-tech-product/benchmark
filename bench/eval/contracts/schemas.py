@@ -30,15 +30,20 @@ class Difficulty(str, Enum):
 
 
 class TaskCategory(str, Enum):
-    # Layer 2 categories (multi-turn tutoring scenarios)
-    DATA_ANALYSIS = "data_analysis"
-    STRATEGY = "strategy"
-    IMPLEMENTATION = "implementation"
-    BACKTEST = "backtest"
-    DEBUG = "debug"
+    # v3.0 L2 categories (multi-turn dialog scenarios)
+    DIAGNOSTIC = "diagnostic"
     END_TO_END = "end_to_end"
     ADVERSARIAL = "adversarial"
-    # Layer 1 categories (single-turn knowledge items)
+    # v3.0 L1 categories (single-shot agent execution)
+    ALPHA_RESEARCH = "alpha_research"
+    BACKTEST_ENGINE = "backtest_engine"
+    DATA_ENGINEERING = "data_engineering"
+    DEBUG = "debug"
+    IMPLEMENTATION = "implementation"
+    # Legacy (v2.2) categories — kept so legacy_v22 task files still parse.
+    DATA_ANALYSIS = "data_analysis"
+    STRATEGY = "strategy"
+    BACKTEST = "backtest"
     CONCEPTUAL_QA = "conceptual_qa"
     STRATEGY_EXPLANATION = "strategy_explanation"
     CODE_GENERATION = "code_generation"
@@ -48,6 +53,10 @@ class TaskCategory(str, Enum):
 
 
 class TaskType(str, Enum):
+    # v3.0
+    AGENT_EXECUTION = "agent_execution"  # L1 single-shot agentic task
+    MULTI_TURN_DIALOG = "multi_turn_dialog"  # L2 NPC dialog
+    # Legacy (v2.2)
     SINGLE_TURN = "single_turn"
     MULTI_TURN = "multi_turn"
 
@@ -105,6 +114,10 @@ class GroundTruth(BaseModel):
     expected_mcp_tools: list[str] = Field(default_factory=list)
     convenient_tools: list[str] = Field(default_factory=list)
     quant_validation: Optional[QuantValidation] = None
+    # v3.0 L1 fields — flat verification spec consumed by l1_verifier.
+    verification_script: Optional[str] = None
+    expected_outputs: list = Field(default_factory=list)
+    expected_outcome: Optional[str] = None  # L2 prose description
 
 
 class EnvironmentConfig(BaseModel):
@@ -149,11 +162,17 @@ class QuantTutorTask(BaseModel):
 
     task_id: str
     version: str = "1.0"
-    difficulty: Difficulty
+    layer: Optional[str] = None  # "L0" / "L1" / "L2" in v3.0; absent for legacy v2.2
+    difficulty: Optional[Difficulty] = None  # L0 knowledge primitives have no difficulty notion
     category: TaskCategory
+    subcategory: Optional[str] = None
     task_type: TaskType = TaskType.MULTI_TURN
-    description: str
-    # Layer 1 fields (single-turn Q&A)
+    description: str = ""  # L0 uses ``question`` instead
+    # v3.0 L0 — single-turn knowledge Q&A
+    question: Optional[str] = None
+    # v3.0 L1 — single-shot agentic prompt
+    agent_prompt: Optional[str] = None
+    # Legacy v2.2 layer-1 Q&A fields
     context: Optional[str] = None
     reference_answer: Optional[str] = None
     synthetic_response: Optional[str] = None

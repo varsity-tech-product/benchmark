@@ -1,0 +1,32 @@
+{
+  "task_id": "L0_convfinqa_convfinqa_train_1264",
+  "version": "3.0",
+  "layer": "L0",
+  "category": "multi_step_reasoning",
+  "task_type": "single_turn",
+  "requires_tool": false,
+  "question": "what was the percentage change in interest payments from 2006 to 2007?",
+  "reference_answer": "**Answer:** 13%\n\n**Reasoning:** subtract(102, 90), divide(#0, 90)",
+  "source_dataset": "convfinqa",
+  "source_id": "convfinqa_train_1264",
+  "tags": [
+    "conversational",
+    "numerical-reasoning",
+    "financial-reports"
+  ],
+  "context": "**Context:**\nnotes to the consolidated financial statements on march 18 , 2008 , ppg completed a public offering of $ 600 million in aggregate principal amount of its 5.75% ( 5.75 % ) notes due 2013 ( the 201c2013 notes 201d ) , $ 700 million in aggregate principal amount of its 6.65% ( 6.65 % ) notes due 2018 ( the 201c2018 notes 201d ) and $ 250 million in aggregate principal amount of its 7.70% ( 7.70 % ) notes due 2038 ( the 201c2038 notes 201d and , together with the 2013 notes and the 2018 notes , the 201cnotes 201d ) .\nthe notes were offered by the company pursuant to its existing shelf registration .\nthe proceeds of this offering of $ 1538 million ( net of discount and issuance costs ) and additional borrowings of $ 195 million under the 20ac650 million revolving credit facility were used to repay existing debt , including certain short-term debt and the amounts outstanding under the 20ac1 billion bridge loan .\nno further amounts can be borrowed under the 20ac1 billion bridge loan .\nthe discount and issuance costs related to the notes , which totaled $ 12 million , will be amortized to interest expense over the respective lives of the notes .\nshort-term debt outstanding as of december 31 , 2008 and 2007 , was as follows : ( millions ) 2008 2007 .\n\n**Table:**\n| ( millions ) | 2008 | 2007 |\n| --- | --- | --- |\n| 20ac1 billion bridge loan agreement 5.2% ( 5.2 % ) | $ 2014 | $ 1047 |\n| u.s . commercial paper 5.3% ( 5.3 % ) as of dec . 31 2008 | 222 | 617 |\n| 20ac650 million revolving credit facility weighted average 2.9% ( 2.9 % ) as of dec . 31 2008 ( 1 ) | 200 | 2014 |\n| other weighted average 4.0% ( 4.0 % ) as of dec . 31 2008 | 362 | 154 |\n| total | $ 784 | $ 1818 |\n\ntotal $ 784 $ 1818 ( 1 ) borrowings under this facility have a term of 30 days and can be rolled over monthly until the facility expires in 2010 .\nppg is in compliance with the restrictive covenants under its various credit agreements , loan agreements and indentures .\nthe company 2019s revolving credit agreements include a financial ratio covenant .\nthe covenant requires that the amount of total indebtedness not exceed 60% ( 60 % ) of the company 2019s total capitalization excluding the portion of accumulated other comprehensive income ( loss ) related to pensions and other postretirement benefit adjustments .\nas of december 31 , 2008 , total indebtedness was 45% ( 45 % ) of the company 2019s total capitalization excluding the portion of accumulated other comprehensive income ( loss ) related to pensions and other postretirement benefit adjustments .\nadditionally , substantially all of the company 2019s debt agreements contain customary cross- default provisions .\nthose provisions generally provide that a default on a debt service payment of $ 10 million or more for longer than the grace period provided ( usually 10 days ) under one agreement may result in an event of default under other agreements .\nnone of the company 2019s primary debt obligations are secured or guaranteed by the company 2019s affiliates .\ninterest payments in 2008 , 2007 and 2006 totaled $ 228 million , $ 102 million and $ 90 million , respectively .\nrental expense for operating leases was $ 267 million , $ 188 million and $ 161 million in 2008 , 2007 and 2006 , respectively .\nthe primary leased assets include paint stores , transportation equipment , warehouses and other distribution facilities , and office space , including the company 2019s corporate headquarters located in pittsburgh , pa .\nminimum lease commitments for operating leases that have initial or remaining lease terms in excess of one year as of december 31 , 2008 , are ( in millions ) $ 126 in 2009 , $ 107 in 2010 , $ 82 in 2011 , $ 65 in 2012 , $ 51 in 2013 and $ 202 thereafter .\nthe company had outstanding letters of credit of $ 82 million as of december 31 , 2008 .\nthe letters of credit secure the company 2019s performance to third parties under certain self-insurance programs and other commitments made in the ordinary course of business .\nas of december 31 , 2008 and 2007 guarantees outstanding were $ 70 million .\nthe guarantees relate primarily to debt of certain entities in which ppg has an ownership interest and selected customers of certain of the company 2019s businesses .\na portion of such debt is secured by the assets of the related entities .\nthe carrying values of these guarantees were $ 9 million and $ 3 million as of december 31 , 2008 and 2007 , respectively , and the fair values were $ 40 million and $ 17 million , as of december 31 , 2008 and 2007 , respectively .\nthe company does not believe any loss related to these letters of credit or guarantees is likely .\n10 .\nfinancial instruments , excluding derivative financial instruments included in ppg 2019s financial instrument portfolio are cash and cash equivalents , cash held in escrow , marketable equity securities , company-owned life insurance and short- and long-term debt instruments .\nthe fair values of the financial instruments approximated their carrying values , in the aggregate , except for long-term long-term debt ( excluding capital lease obligations ) , had carrying and fair values totaling $ 3122 million and $ 3035 million , respectively , as of december 31 , 2008 .\nthe corresponding amounts as of december 31 , 2007 , were $ 1201 million and $ 1226 million , respectively .\nthe fair values of the debt instruments were based on discounted cash flows and interest rates currently available to the company for instruments of the same remaining maturities .\n2008 ppg annual report and form 10-k 45 .",
+  "conversation_history": [
+    {
+      "question": "what is the net change in interest payments from 2006 to 2007?",
+      "answer": ""
+    },
+    {
+      "question": "what was the value in 2006?",
+      "answer": ""
+    },
+    {
+      "question": "what is the net change divided by the 2006 value?",
+      "answer": ""
+    }
+  ]
+}

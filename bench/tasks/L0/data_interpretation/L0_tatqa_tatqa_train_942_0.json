@@ -1,0 +1,17 @@
+{
+  "task_id": "L0_tatqa_tatqa_train_942_0",
+  "version": "3.0",
+  "layer": "L0",
+  "category": "data_interpretation",
+  "task_type": "single_turn",
+  "requires_tool": false,
+  "question": "What is included in Client solutions?",
+  "reference_answer": "**Answer:** Client solutions often include IBM software and systems and other suppliers’ products if the client solution requires it.\n\n**Type:** span",
+  "source_dataset": "tatqa",
+  "source_id": "tatqa_train_942_0",
+  "tags": [
+    "tabular-reasoning",
+    "financial-documents"
+  ],
+  "context": "**Table:**\n| ($ in millions) |  |  |  |\n| --- | --- | --- | --- |\n| For the year ended December 31: | 2019 | 2018 | 2017 |\n| Cloud & Cognitive Software* |  |  |  |\n| Software | $18,712 | $17,970** | $17,681** |\n| Services | 4,321 | 4,082** | 3,920** |\n| Systems | 166 | 156 | 150 |\n| Global Business Services* |  |  |  |\n| Services | $16,363 | $16,238** | $15,728** |\n| Software | 156 | 151** | 179** |\n| Systems | 115 | 206 | 165 |\n| Global Technology Services* |  |  |  |\n| Services | $20,768 | $22,222** | $21,913** |\n| Maintenance | 5,183 | 5,484 | 5,783 |\n| Systems | 1,072 | 1,069 | 1,207 |\n| Software | 338 | 371** | 310** |\n| Systems |  |  |  |\n| Servers | $ 3,746 | $ 3,996 | $ 3,993 |\n| Storage | 1,920 | 2,114 | 2,243 |\n| Software | 1,528 | 1,499** | 1,520** |\n| Services | 410 | 425** | 438** |\n| Global Financing |  |  |  |\n| Financing | $ 1,120 | $ 1,223 | $ 1,167 |\n| Used equipment sales | 281 | 366 | 530 |\n\n* Recast to conform to 2019 presentation.\n\n** Reclassified to conform to 2019 presentation. Refer to “Basis of\nPresentation” in note A, “Significant Accounting Policies,” for\nadditional information.\n\nThe following table presents external revenue for similar classes of products or services within the company’s reportable segments. Client solutions often include IBM software and systems and other suppliers’ products if the client solution requires it.\n\nFor each of the segments that include services, Software-as-a-Service, consulting, education, training and other product-related services are included as services. For each of these segments, software includes product license charges and ongoing subscriptions."
+}

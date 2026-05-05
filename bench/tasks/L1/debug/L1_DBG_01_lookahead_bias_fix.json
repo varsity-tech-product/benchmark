@@ -1,0 +1,66 @@
+{
+  "task_id": "L1_DBG_01_lookahead_bias_fix",
+  "version": "3.0",
+  "layer": "L1",
+  "category": "debug",
+  "subcategory": "lookahead",
+  "task_type": "agent_execution",
+  "difficulty": "easy",
+  "description": "Find and fix a look-ahead bias in an SMA crossover strategy where positions use today's signal without shifting, causing the strategy to act on information not yet available.",
+  "agent_prompt": "Read the buggy strategy at /workspace/student_code/lookahead.py. It runs an SMA crossover on /workspace/data/AAPL_2018_2024.csv but contains a look-ahead bias: Position is assigned directly from Signal without a one-bar shift, so the strategy trades using information from the current bar's close. (1) Identify the bug and write a one-paragraph explanation to /workspace/output/diagnosis.md describing why this is look-ahead and how the fix changes temporal alignment. (2) Produce a fixed version at /workspace/output/lookahead_fixed.py with shift(1) applied to Position. (3) Run both the buggy and fixed versions and write /workspace/output/comparison.json with keys buggy_total_return, fixed_total_return, buggy_sharpe, fixed_sharpe, return_drop_pct (the fix should reduce returns — the drop magnitude proves the bias was real).",
+  "sample_code": "user_code/lookahead.py",
+  "environment": {
+    "data_files": [
+      "AAPL_2018_2024.csv"
+    ],
+    "core_mcp_tools": [
+      "shell_exec",
+      "file_write",
+      "file_read",
+      "file_list",
+      "get_environment_info"
+    ],
+    "docs_available": [
+      "moving_averages.md",
+      "pandas_timeseries.md"
+    ],
+    "sandbox_image": "quant-bench-env:v3.0",
+    "network_enabled": false
+  },
+  "ground_truth": {
+    "required_capabilities": [
+      "Read and understand signal generation code",
+      "Identify the temporal alignment issue (no shift on position)",
+      "Explain why this constitutes look-ahead bias",
+      "Apply shift(1) to remove the bias",
+      "Verify quantitatively that returns drop after the fix"
+    ],
+    "expected_outputs": [
+      {
+        "path": "output/diagnosis.md",
+        "type": "markdown"
+      },
+      {
+        "path": "output/lookahead_fixed.py",
+        "type": "python"
+      },
+      {
+        "path": "output/comparison.json",
+        "type": "json",
+        "required_keys": [
+          "buggy_total_return",
+          "fixed_total_return",
+          "buggy_sharpe",
+          "fixed_sharpe",
+          "return_drop_pct"
+        ],
+        "constraints": [
+          {"key": "fixed_total_return", "op": "<", "ref": "buggy_total_return"},
+          {"key": "return_drop_pct", "op": ">", "value": 0}
+        ]
+      }
+    ],
+    "verification_script": "tasks/test_scripts/L1/L1_DBG_01_lookahead_bias_fix.py"
+  },
+  "timeout_minutes": 15
+}

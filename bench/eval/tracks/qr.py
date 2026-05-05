@@ -23,6 +23,18 @@ def _category_value(task: Any) -> str:
     return getattr(category, "value", category) or ""
 
 
+def _resolve_eval_script(gt: Any) -> str | None:
+    """Pick the eval script path, preferring v3.0 flat ``verification_script``
+    over legacy nested ``quant_validation.eval_script``."""
+    if gt is None:
+        return None
+    v3 = getattr(gt, "verification_script", None)
+    if v3:
+        return v3
+    quant_validation = getattr(gt, "quant_validation", None)
+    return getattr(quant_validation, "eval_script", None)
+
+
 def _programmatic_eval(
     *,
     task: Any,
@@ -32,8 +44,7 @@ def _programmatic_eval(
     tool_logs: list[Any],
 ) -> tuple[dict[str, Any], str | None]:
     gt = getattr(task, "ground_truth", None)
-    quant_validation = getattr(gt, "quant_validation", None) if gt else None
-    eval_script = getattr(quant_validation, "eval_script", None)
+    eval_script = _resolve_eval_script(gt)
     if not eval_script:
         return (
             {
@@ -68,6 +79,10 @@ def _programmatic_eval(
         if "data_files" in sig.parameters:
             kwargs["data_files"] = (
                 task.environment.data_files if task.environment else []
+            )
+        if "expected_outputs" in sig.parameters:
+            kwargs["expected_outputs"] = (
+                getattr(gt, "expected_outputs", None) or []
             )
         result = module.evaluate(workspace_path, tool_logs, conversation, **kwargs)
         if not isinstance(result, dict):

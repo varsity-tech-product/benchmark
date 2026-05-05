@@ -1,0 +1,17 @@
+{
+  "task_id": "L0_tatqa_tatqa_train_1697_3",
+  "version": "3.0",
+  "layer": "L0",
+  "category": "data_interpretation",
+  "task_type": "single_turn",
+  "requires_tool": false,
+  "question": "In which year was Research and development less than 80,000 thousands?",
+  "reference_answer": "**Answer:** 2018\n\n**Type:** span\n\n**Derivation:** locate and analyze Research and development in row 4",
+  "source_dataset": "tatqa",
+  "source_id": "tatqa_train_1697_3",
+  "tags": [
+    "tabular-reasoning",
+    "financial-documents"
+  ],
+  "context": "**Table:**\n| Fiscal Year Ended |  |  |  |  |\n| --- | --- | --- | --- | --- |\n|  | December 28, 2019 | December 29, 2018 | $ Change | % Change |\n| (Dollars in thousands) |  |  |  |  |\n| Research and development | $81,499 | $74,976 | $6,523 | 8.7 % |\n| % of revenues | 13.8 % | 14.2 % |  |  |\n| Fiscal Year Ended |  |  |  |  |\n|  | December 29, 2018 | December 30, 2017 | $ Change | % Change |\n| (Dollars in thousands) |  |  |  |  |\n| Research and development | $74,976 | $73,807 | $1,169 | 1.6 % |\n| % of revenues | 14.2 % | 13.5 % |  |  |\n\nResearch and Development\n\nThe increase in research and development expenses in fiscal 2019 compared to fiscal 2018 was primarily driven by an increase in employee compensation costs caused by increases in headcount, annual compensation and benefit adjustments and employee performance-based compensation, partially offset by a decrease in project material costs."
+}

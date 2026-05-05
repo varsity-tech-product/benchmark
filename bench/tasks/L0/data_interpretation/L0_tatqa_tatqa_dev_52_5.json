@@ -1,0 +1,17 @@
+{
+  "task_id": "L0_tatqa_tatqa_dev_52_5",
+  "version": "3.0",
+  "layer": "L0",
+  "category": "data_interpretation",
+  "task_type": "single_turn",
+  "requires_tool": false,
+  "question": "In which year was Unvested RSUs less than 100 thousands?",
+  "reference_answer": "**Answer:** 2018, 2017\n\n**Type:** multi-span\n\n**Derivation:** locate and analyze Unvested RSUs in row 4",
+  "source_dataset": "tatqa",
+  "source_id": "tatqa_dev_52_5",
+  "tags": [
+    "tabular-reasoning",
+    "financial-documents"
+  ],
+  "context": "**Table:**\n|  |  | Year Ended March 31, |  |\n| --- | --- | --- | --- |\n|  | 2019 | 2018 | 2017 |\n| Share options outstanding | 6,209 | 6,230 | 8,681 |\n| Unvested RSUs | 550 | 33 | 28 |\n\nNet Loss Per Ordinary Share\n\nThe Company calculates basic and diluted net loss per ordinary share by dividing net loss by the weighted-average number of ordinary shares outstanding during the period. The Company has excluded other potentially dilutive shares, which include outstanding options to purchase ordinary shares and unvested restricted share units (RSUs), from the weighted-average number of ordinary shares outstanding as their inclusion in the computation for all periods would be anti-dilutive due to net losses incurred.\n\nThe following potentially dilutive ordinary share equivalents have been excluded from the calculation of diluted weighted-average shares outstanding for the years ended March 31, 2019, 2018 and 2017 as their effect would have been anti-dilutive for the periods presented (in thousands):"
+}

@@ -1,0 +1,58 @@
+{
+  "task_id": "L2_DIA_03_data_quality_misconception",
+  "version": "3.0",
+  "layer": "L2",
+  "category": "diagnostic",
+  "subcategory": "data_quality",
+  "task_type": "multi_turn_dialog",
+  "difficulty": "medium",
+  "description": "The student presents a momentum strategy on QQQ with Sharpe 3.5 in 2019-2021 that 'crashed' afterwards. The agent diagnoses the issue as upstream data corruption (split-adjusted prices applied inconsistently across the sample) rather than a model problem, and pushes the student back to data validation rather than letting them tweak model parameters.",
+  "persona_id": "developer_crossover",
+  "user_opening": "I built a momentum strategy on QQQ daily and it shows Sharpe 3.5 in 2019-2021! But it only worked then — afterwards returns crashed to 0. I think my model is missing a regime filter or the lookback is wrong. Should I add a volatility filter or try shorter windows?",
+  "environment": {
+    "data_files": [
+      "QQQ_corrupted_2018_2024.csv",
+      "QQQ_clean_2018_2024.csv"
+    ],
+    "core_mcp_tools": [
+      "shell_exec",
+      "file_write",
+      "file_read",
+      "file_list",
+      "get_environment_info"
+    ],
+    "docs_available": [
+      "pandas_data_loading.md",
+      "pandas_timeseries.md",
+      "alpha_research_methodology.md"
+    ],
+    "sandbox_image": "quant-bench-env:v3.0",
+    "network_enabled": false
+  },
+  "ground_truth": {
+    "expected_outcome": "Agent recognizes the dramatic post-2021 performance drop as suspicious, asks about the data source before tweaking the model, runs a programmatic sanity check on the price series (e.g. checks for sudden level shifts, large day-over-day jumps, or compares against a clean reference source), and identifies that the corrupted file has split-adjustment applied inconsistently across the sample (causing fake momentum in the adjusted period and reversal afterward). Pushes the student back upstream to data validation; refuses to let them add complexity (regime filter, parameter retune) until the data issue is fixed.",
+    "termination_criteria": "Agent has identified the data corruption issue (not a model issue) by running a programmatic data sanity check, explained why the apparent momentum is an artifact of inconsistent price adjustments rather than a real signal, and steered the student to fix the data source before any model changes. The student has had at least one follow-up exchange and the agent maintained the position that the model is fine but the data is not.",
+    "required_capabilities": [
+      "Recognize data quality red flags from suspicious performance patterns",
+      "Run programmatic sanity checks on a price series (level shifts, jumps, comparison to reference)",
+      "Identify split-adjustment inconsistencies as the root cause",
+      "Resist letting the student over-complicate the model when data is the issue",
+      "Teach upstream data validation as a debugging principle"
+    ],
+    "expected_mcp_tools": [
+      "shell_exec",
+      "file_read",
+      "get_environment_info"
+    ],
+    "convenient_tools": [
+      "compute_statistics",
+      "plot_chart"
+    ],
+    "quant_validation": {
+      "eval_script": "tasks/test_scripts/L2/L2_DIA_03_data_quality_misconception.py"
+    }
+  },
+  "requires_code": true,
+  "sample_code": null,
+  "timeout_minutes": 15
+}
