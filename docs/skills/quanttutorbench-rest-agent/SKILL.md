@@ -1,14 +1,19 @@
 ---
 name: quanttutorbench-rest-agent
-description: "Use when an external AI agent needs to join QuantTutorBench, complete benchmark sessions through MCP or REST, call allowed tools, answer the user, monitor progress, and hand off terminal runs."
+description: "Use when an external AI agent needs to join QuantAgentBench, complete benchmark sessions through MCP or REST, call allowed tools, reply to the user message, monitor progress, and hand off terminal runs."
 ---
 
-# QuantTutorBench Agent Onboarding
+# QuantAgentBench Agent Onboarding
 
-Use this guide to connect an external tutor agent to QuantTutorBench and finish
-each assigned benchmark run end to end. The platform provides the user
-messages, task-visible background, available tools, and run state. Your job is
-to keep working through the API until the session reaches a terminal status.
+Use this guide to connect an external agent to QuantAgentBench and finish each
+assigned benchmark run end to end. The platform provides the user messages,
+task-visible background, available tools, and run state. Your job is to keep
+working through the API until the session reaches a terminal status.
+
+The role you play in any given run — what to produce, who you are talking to,
+what counts as success — is described by the active task bundle through
+`background` and the `user_message` you receive. Read those two before you
+decide your first action.
 
 ## Operating Rule
 
@@ -29,7 +34,7 @@ Use the operator-provided `BASE`. Production:
 BASE="https://benchmark-liard.vercel.app"
 ```
 
-Use long request timeouts. User simulation and tool calls can take minutes.
+Use long request timeouts. Server-side actors and tool calls can take minutes.
 A 900 second timeout is a practical default.
 
 ## Connection Modes
@@ -42,7 +47,7 @@ run/session lifecycle applies in both modes:
 3. Register and start a session.
 4. Read the user message.
 5. Call allowed tools when useful.
-6. Send the tutor reply.
+6. Send the reply.
 7. Repeat until the server returns `completed` or `failed`.
 8. Return the run summary to the operator.
 
@@ -73,8 +78,8 @@ tools are:
 
 After connecting, call `register_session` with `{}` or an operator-provided
 `persona_id`, then call `start_session`. Use `list_tools` to read the task tool
-catalog. Call task tools when their schemas match the current user need.
-Call `send_message` to deliver each tutor reply.
+catalog. Call task tools when their schemas match the current user need. Call
+`send_message` to deliver each reply.
 
 If a tool call happens outside the current phase, the response includes guidance
 such as `current_phase` and `next_allowed`. Follow that guidance and continue
@@ -174,8 +179,9 @@ Content-Type: application/json
 {}
 ```
 
-Use `{}` for persona auto-selection. Include `persona_id` only when the operator
-explicitly provides one. Save `session_id`.
+Use `{}` for default registration. Include `persona_id` only when the operator
+explicitly provides one; bundles that do not consume `persona_id` ignore it.
+Save `session_id`.
 
 ### 2. Start
 
@@ -187,7 +193,8 @@ Content-Type: application/json
 {}
 ```
 
-Save the first `user_message`. Save `background` when present.
+Save the first `user_message`. Save `background` when present. The
+`background` describes what the active bundle expects of you for this run.
 
 ### 3. Discover Tools
 
@@ -217,7 +224,7 @@ Authorization: Bearer <token>
 ```
 
 Continue polling until `status` is `completed` or `failed`. Use completed tool
-outputs to decide the next tutor message or tool call.
+outputs to decide the next reply or tool call.
 
 ### 4. Work Until Done
 
@@ -226,19 +233,19 @@ without asking the operator for step-by-step instructions. Continue until the
 server returns a terminal session status.
 
 The external agent owns the full loop for every assigned run: read, decide,
-call tools, answer the user, and repeat until terminal status.
+call tools, reply, and repeat until terminal status.
 
 Recommended loop:
 
 1. Read the latest `user_message` and visible `background`.
 2. Inspect available tools when tool use may help answer or produce artifacts.
 3. Call allowed tools and wait for results.
-4. Send a tutor reply that directly helps the user.
+4. Send a reply that directly addresses the latest `user_message`.
 5. Read the response status.
 6. If `active`, save the next `user_message` and continue.
 7. If `completed` or `failed`, stop the loop and hand off the run summary.
 
-Send a tutor reply:
+Send a reply:
 
 ```http
 POST /session/{session_id}/send
@@ -262,7 +269,7 @@ Handle the response:
 - `status: "completed"`: record `reason`, stop the session loop, and hand off.
 - `status: "failed"`: record `reason` or `error`, stop the session loop, and hand off.
 
-Every reply should reflect the latest user message. Repeated identical tutor
+Every reply should reflect the latest user message. Repeated identical reply
 text can trigger `agent_stuck`.
 
 ## Monitoring
@@ -353,19 +360,7 @@ Authorization: Bearer <token>
   "score_status": "completed_scored",
   "task_score": 0.93,
   "task_pass": null,
-  "detail": {
-    "dimensions": [
-      {"name": "result_judge", "track": "qr", "score": 5,    "status": "success"},
-      {"name": "task_planning", "track": "qp", "score": 4,   "status": "success"},
-      {"name": "tool_usage",    "track": "qp", "score": 0.85, "status": "success"}
-    ],
-    "tracks": {
-      "qr": {"score": 1.0,    "status": "success", "blockers": []},
-      "qp": {"score": 0.825, "status": "success", "blockers": []}
-    },
-    "judge_reliability": {},
-    "blocking_missing": []
-  }
+  "detail": { "...": "bundle-specific contents" }
 }
 ```
 
@@ -374,8 +369,9 @@ Public contract: `schema_version`, `score_id`, `score_status`, `task_score`,
 `pending | running | completed_scored | completed_not_computable | failed |
 interrupted`. Pending/running responses carry the same fields with
 `task_score` and `task_pass` set to `null`. Everything inside `detail` is
-opaque — depending on the dimension list or per-track shape is a beta
-dependency.
+opaque and bundle-defined: the `dimensions` list, per-track aggregates, and any
+reliability metadata are owned by the active evaluator. Depending on a specific
+shape inside `detail` is a beta dependency.
 
 `task_pass` is `null` until baseline calibration lands. Treat
 `task_score` as a diagnostic float during this window — the server will
@@ -426,8 +422,8 @@ with httpx.Client(base_url=BASE, timeout=TIMEOUT) as client:
 
     while True:
         tools = get_json(client, f"/session/{sid}/tools", token)["tools"]
-        tutor_text = compose_reply(latest_user, background, tools)
-        reply = post_json(client, f"/session/{sid}/send", {"text": tutor_text}, token)
+        reply_text = compose_reply(latest_user, background, tools)
+        reply = post_json(client, f"/session/{sid}/send", {"text": reply_text}, token)
         if reply.get("status") != "active":
             print({
                 "run_id": run["run_id"],
