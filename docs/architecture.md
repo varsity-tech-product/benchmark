@@ -385,6 +385,18 @@ valid mode. Batch drivers should be a thin wrapper around
 `EvalCoordinator` (or `eval.score()` for the no-persistence path), not
 a second evaluator architecture.
 
+### Baseline Run v1
+
+`bench/scripts/baseline_run.py` is the issue #185 Impl A baseline driver.
+It builds the v3 matrix from `bench/tasks/L0`, `bench/tasks/L1`, and
+`bench/tasks/L2`, creates run-token sessions through `/client/runs/start`,
+delegates agent execution to `bench/client/runner.py`, backfills completed
+server results into Bundle v1 alpha JSON, validates exported bundles, and
+writes `bench/data/baseline_run_v1/summary.json` plus
+`docs/baseline_run_v1_summary.md`. Generated manifests, traces, run logs, and
+bundles live under `bench/data/baseline_run_v1/`; `summary.json` is tracked as
+the paper-facing aggregate.
+
 ### Standalone Scoring
 
 `eval.score(bundle, *, bench_root, ...) → EvalOutput` runs the same

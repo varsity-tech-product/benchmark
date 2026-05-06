@@ -29,7 +29,6 @@ from .base_adapter import (
 from .config import (
     AGENT_USE_OPENROUTER,
     ANTHROPIC_AGENT_MODEL,
-    ANTHROPIC_AGENT_MODEL_OR,
     ANTHROPIC_ENABLE_THINKING,
     ANTHROPIC_THINKING_BUDGET,
     ANTHROPIC_USE_SDK,
@@ -39,6 +38,13 @@ from .config import (
 from .prompts import CLEAN_SYSTEM_PROMPT
 
 log = logging.getLogger(__name__)
+
+
+def _openrouter_anthropic_model(model: str) -> str:
+    model = str(model or ANTHROPIC_AGENT_MODEL).strip()
+    if model.startswith("anthropic/"):
+        return model
+    return f"anthropic/{model}"
 
 # --- Anthropic Python SDK (BetaToolRunner, direct API mode) ---
 try:
@@ -232,9 +238,7 @@ class ClaudeAgentAdapter(BaseAgentAdapter):
                 api_key = os.environ.get("OPENROUTER_API_KEY", "")
                 if not api_key:
                     raise ValueError("OPENROUTER_API_KEY not set in .env")
-                self.model = (
-                    ANTHROPIC_AGENT_MODEL_OR  # OR format: "anthropic/claude-..."
-                )
+                self.model = _openrouter_anthropic_model(self.model)
                 self._client = anthropic.Anthropic(
                     auth_token=api_key,  # Bearer header (OpenRouter Anthropic Skin)
                     base_url=OPENROUTER_ANTHROPIC_BASE_URL,
