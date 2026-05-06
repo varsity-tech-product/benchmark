@@ -339,11 +339,13 @@ async def run_cells(
         return [cell.to_record() | {"status": "dry_run"} for cell in selected]
 
     semaphore = asyncio.Semaphore(args.workers)
+    write_lock = asyncio.Lock()
 
     async def _one(cell: MatrixCell) -> dict[str, Any]:
         async with semaphore:
             record = await run_one_cell(args, cell)
-            append_jsonl(records_path, record)
+            async with write_lock:
+                append_jsonl(records_path, record)
             return record
 
     return list(await asyncio.gather(*[_one(cell) for cell in selected]))
