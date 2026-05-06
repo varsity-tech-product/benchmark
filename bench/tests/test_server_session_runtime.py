@@ -172,8 +172,13 @@ class SessionContextTests(unittest.TestCase):
             self.assertNotIn(phrase, raw)
 
     def test_reference_prompt_owns_user_behavior_rules(self):
-        from server.config.prompt_config import build_user_description
-        from server.reference.prompts import RefSystemPrompt
+        from server.config.prompt_config import (
+            build_user_description as compat_build_user_description,
+        )
+        from server.reference.prompts import (
+            RefSystemPrompt,
+            build_reference_user_description,
+        )
 
         persona = SimpleNamespace(
             description="Comfortable with Python and basic quant workflows.",
@@ -183,9 +188,10 @@ class SessionContextTests(unittest.TestCase):
             behavioral_rules=["Ask for clarification when confused."],
         )
 
-        prompt = build_user_description(persona)
+        prompt = build_reference_user_description(persona)
 
         self.assertEqual(prompt, RefSystemPrompt.build_user_description(persona))
+        self.assertEqual(prompt, compat_build_user_description(persona))
         self.assertIn("[If the agent asks you a question", prompt)
         self.assertIn("Ask for clarification when confused.", prompt)
 

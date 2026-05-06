@@ -14,9 +14,11 @@ from platform_api.contracts import (
     ToolLog,
     TranscriptMessage,
 )
-from server.config.prompt_config import build_scenario
 from server.core.user_sim import UserSimulator
-from server.reference.prompts import build_reference_user_description
+from server.reference.prompts import (
+    build_reference_scenario,
+    build_reference_user_description,
+)
 
 
 def _task_from_payload(payload: Mapping[str, Any]) -> QuantTutorTask:
@@ -76,7 +78,11 @@ class ReferenceNPCProvider(NPCProvider):
         model=None,
     ) -> UserSimulator:
         return UserSimulator(
-            scenario=build_scenario(task, persona.persona_id, has_incremental_tc=False),
+            scenario=build_reference_scenario(
+                task,
+                persona.persona_id,
+                has_incremental_tc=False,
+            ),
             user_description=build_reference_user_description(
                 persona,
                 has_incremental_tc=False,

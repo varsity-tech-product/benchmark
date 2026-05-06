@@ -99,12 +99,13 @@ The reference task corpus is indexed only from `bench/tasks/L0/`,
 `bench/tasks/L1/`, and `bench/tasks/L2/`; the v2.2 legacy task tree has been
 removed from Impl A discovery.
 
-`RefSystemPrompt` builds persona, interaction, and visible tool-log behavior
-text for the reference simulator. `ReferenceNPCProvider` delegates runtime user
-turns to `UserSimulator` and propagates the persona-emitted `task_end` flag.
+`server.reference.prompts` builds persona, scenario, interaction, and visible
+tool-log behavior text for the reference simulator. `ReferenceNPCProvider`
+delegates runtime user turns to `UserSimulator` and propagates the
+persona-emitted `task_end` flag.
 `ReferenceEvaluator` handles deterministic L0/L1 scoring and delegates Layer 2
 QR/QP scoring to the existing coordinator path. `server.config.prompt_config`
-keeps existing server call sites stable through compatibility wrappers.
+remains a source-compatibility shim and performs no prompt shaping.
 
 `server.core.session.build_background()` returns a JSON-able
 `platform_background.v1` fact object for sandbox image, resource limits,
