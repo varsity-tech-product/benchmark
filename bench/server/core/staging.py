@@ -9,6 +9,14 @@ import shutil
 import tempfile
 from pathlib import Path
 
+STAGED_DIR_MODE = 0o755
+
+
+def _mkdtemp_for_mount(prefix: str) -> str:
+    path = tempfile.mkdtemp(prefix=prefix)
+    os.chmod(path, STAGED_DIR_MODE)
+    return path
+
 
 def create_staged_dirs(
     data_files: list[str],
@@ -31,7 +39,7 @@ def create_staged_dirs(
     temp_dirs: list[str] = []
 
     if data_files:
-        staged_data = tempfile.mkdtemp(prefix="qtb_data_")
+        staged_data = _mkdtemp_for_mount(prefix="qtb_data_")
         temp_dirs.append(staged_data)
         for fname in data_files:
             for search_dir in data_search_dirs:
@@ -42,7 +50,7 @@ def create_staged_dirs(
                     shutil.copy2(src, dst)
                     break
     elif force_temp_data_dir and data_search_dirs:
-        staged_data = tempfile.mkdtemp(prefix="qtb_data_")
+        staged_data = _mkdtemp_for_mount(prefix="qtb_data_")
         temp_dirs.append(staged_data)
         for search_dir in data_search_dirs:
             if not os.path.isdir(search_dir):
@@ -59,7 +67,7 @@ def create_staged_dirs(
         staged_data = data_search_dirs[0] if data_search_dirs else ""
 
     if docs_available:
-        staged_docs = tempfile.mkdtemp(prefix="qtb_docs_")
+        staged_docs = _mkdtemp_for_mount(prefix="qtb_docs_")
         temp_dirs.append(staged_docs)
         for fname in docs_available:
             src = os.path.join(docs_dir, fname)
@@ -108,7 +116,7 @@ def create_staged_sample_code(
             f"Could not resolve sample_code '{sample_code}' from the staged task inputs."
         )
 
-    staged_dir = tempfile.mkdtemp(prefix="qtb_user_")
+    staged_dir = _mkdtemp_for_mount(prefix="qtb_user_")
     suffix = source.suffix or ".txt"
     destination = Path(staged_dir) / f"user_code{suffix}"
     shutil.copy2(source, destination)
