@@ -351,68 +351,56 @@ The evaluation follows a 5-phase per-task lifecycle: RESET → INTERACT → CAPT
 ### Quick Start
 
 ```bash
-# Validate the benchmark setup
-cd bench
-python run_benchmark.py test-e2e
+# From the repository root
+export QTB_BASELINE_SERVER=http://127.0.0.1:8000
+export QTB_CLIENT_API_KEY=<client-api-key>
+export OPENROUTER_API_KEY=<openrouter-api-key>
 
-# Run full benchmark with default model
-python run_benchmark.py run --model deepseek/deepseek-chat-v3-0324
+# Generate the matrix manifest and pending summary
+python bench/scripts/baseline_run.py plan
 
-# Run with OpenAI Agents SDK adapter and custom judge model
-python run_benchmark.py run --agent openai --model gpt-4o \
-    --eval-model openai/gpt-4o --simulator-model openai/gpt-4o
+# Run an API-backed L2 smoke slice
+python bench/scripts/baseline_run.py run \
+    --tasks L2_ADV_01_investment_advice \
+    --agents claude_haiku_4_5 \
+    --conditions agent \
+    --workers 1 \
+    --server-results-root bench/results/server
 
-# Run a single task for debugging
-python run_benchmark.py run-single --task S01_ma_crossover \
-    --persona beginner_no_finance --agent generic
-
-# Run Layer 1 single-turn evaluation
-python run_benchmark.py run-layer1 --max-items 50 \
-    --agent-model deepseek/deepseek-chat-v3-0324
-
-# List available tasks
-python run_benchmark.py list-tasks
-
-# Validate task schemas
-python run_benchmark.py validate-tasks
+# Regenerate summaries and validate exported bundles
+python bench/scripts/baseline_run.py summarize
+python bench/scripts/baseline_run.py validate
 ```
 
-### CLI Options
+For full baseline run guidance, see `docs/baseline_run_v1.md`.
 
-#### `run` -- Full benchmark
+### Batch Driver Options
 
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--model` | `deepseek/deepseek-chat-v3-0324` | LLM model for agent under test (OpenRouter format) |
-| `--agent` | `generic` | Agent adapter: `generic` (OpenAI-compatible) or `openai` (Agents SDK) |
-| `--eval-model` | *(DeepEval default)* | LLM model for GEval judge |
-| `--simulator-model` | *(default)* | LLM model for student simulator |
-| `--tasks` | *(all)* | Comma-separated task IDs to run |
-| `--personas` | *(all)* | Comma-separated persona IDs |
-| `--trials` | `1` | Number of trials per task (for pass@k) |
-| `--max-turns` | `5` | Max conversation turns per task |
-| `--docker` | off | Use Docker sandbox for code execution |
+#### Commands
 
-#### `run-single` -- Single task debugging
+| Command | Description |
+|---------|-------------|
+| `python bench/scripts/baseline_run.py plan` | Build the matrix manifest and pending summary |
+| `python bench/scripts/baseline_run.py run` | Create API runs, execute client sessions, and export bundles |
+| `python bench/scripts/baseline_run.py summarize` | Rebuild `summary.json` and `docs/baseline_run_v1_summary.md` |
+| `python bench/scripts/baseline_run.py validate` | Validate exported Bundle v1 alpha JSON |
+
+#### Common flags
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--task` | *(required)* | Task ID to run |
-| `--persona` | `beginner_no_finance` | Persona ID |
-| `--model` | `deepseek/deepseek-chat-v3-0324` | LLM model for agent under test |
-| `--agent` | `generic` | Agent adapter type |
-| `--eval-model` | *(DeepEval default)* | Judge model |
-| `--simulator-model` | *(default)* | Simulator model |
-| `--max-turns` | `5` | Max turns |
-
-#### `run-layer1` -- Layer 1 single-turn evaluation
-
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--max-items` | *(all)* | Max items to evaluate |
-| `--agent-model` | `deepseek/deepseek-chat-v3-0324` | LLM model for agent |
-| `--eval-model` | *(DeepEval default)* | LLM model for GEval judge |
-| `--no-deepeval` | off | Disable DeepEval, use keyword-matching fallback |
+| `--output-dir` | `bench/data/baseline_run_v1` | Generated manifest, run log, bundles, and tracked summary output |
+| `--docs-dir` | `docs` | Directory for `baseline_run_v1_summary.md` |
+| `--server` | `QTB_BASELINE_SERVER` or `http://127.0.0.1:8000` | Benchmark server base URL |
+| `--server-results-root` | `bench/results/server` | Local server result tree used for bundle export |
+| `--tasks` | all discovered tasks | Comma-separated task IDs for a focused run |
+| `--agents` | baseline profiles | Comma-separated agent profiles |
+| `--conditions` | baseline conditions | Comma-separated condition IDs |
+| `--protocol` | `mcp` | Client runner protocol, with `rest` available |
+| `--workers` | `1` | Concurrent API cells |
+| `--limit` | all matching cells | Maximum queued cells for smoke runs |
+| `--force` | off | Retry completed cells |
+| `--dry-run` | off | Write manifest and summary without API calls |
 
 ### Scoring System
 
@@ -482,7 +470,8 @@ benchmark/
 │   ├── 02_synthesized/        # LLM-augmented data
 │   └── 03_packaged/           # Final validated output
 ├── bench/                     # Evaluation framework
-│   ├── run_benchmark.py       # CLI entry point
+│   ├── scripts/
+│   │   └── baseline_run.py    # API-backed batch evaluation driver
 │   ├── orchestrator/          # Core benchmark orchestration
 │   │   ├── orchestrator.py    # 5-phase lifecycle orchestrator
 │   │   ├── schemas.py         # Pydantic models (QuantTutorTask, TaskResult, etc.)
@@ -560,12 +549,10 @@ All scripts support `--help` for full option listing.
 
 | Command | Description |
 |---------|-------------|
-| `python bench/run_benchmark.py run` | Run full benchmark evaluation |
-| `python bench/run_benchmark.py run-single --task <ID>` | Run single task for debugging |
-| `python bench/run_benchmark.py run-layer1` | Run Layer 1 single-turn evaluation |
-| `python bench/run_benchmark.py list-tasks` | List available tasks |
-| `python bench/run_benchmark.py validate-tasks` | Validate task JSON schemas |
-| `python bench/run_benchmark.py test-e2e` | Run end-to-end validation checks |
+| `python bench/scripts/baseline_run.py plan` | Build the baseline matrix manifest |
+| `python bench/scripts/baseline_run.py run --tasks <ID>` | Run a focused API-backed task slice |
+| `python bench/scripts/baseline_run.py summarize` | Regenerate baseline summaries |
+| `python bench/scripts/baseline_run.py validate` | Validate exported bundles |
 
 ## Data Sources
 

@@ -484,23 +484,30 @@ for task_id in ["D01_load_inspect_ohlcv", "S01_ma_crossover"]:
     scores = env.evaluate()
 ```
 
-### 7.2 Using the Reference Harness (Baseline)
+### 7.2 Using the API Batch Driver (Baseline)
 
-The reference harness (`bench/run_benchmark.py`) wraps the gym env
-with pre-built agent adapters for Anthropic/OpenAI/Google. It is
-provided for reproducing baseline results, **not** as a required
-integration point.
+The baseline driver (`bench/scripts/baseline_run.py`) creates run-token
+sessions through the server client API, delegates agent execution to
+`bench/client/runner.py`, exports Bundle v1 alpha artifacts, and writes the
+tracked aggregate summary for paper-facing baseline data.
 
 ```bash
-# Reference harness — uses built-in adapters
-python run_benchmark.py run-single \
-    --task S01_ma_crossover \
-    --agent anthropic --docker
+export QTB_BASELINE_SERVER=http://127.0.0.1:8000
+export QTB_CLIENT_API_KEY=<client-api-key>
+export OPENROUTER_API_KEY=<openrouter-api-key>
+
+python bench/scripts/baseline_run.py run \
+    --tasks L2_ADV_01_investment_advice \
+    --agents claude_haiku_4_5 \
+    --conditions agent \
+    --server-results-root bench/results/server
 ```
+
+Full run guidance lives in `docs/baseline_run_v1.md`.
 
 ### 7.3 Direct Integration (Advanced)
 
-For teams with their own harness who don't want the gym's Python API:
+For teams with their own harness using direct task orchestration:
 
 1. Load task JSON and persona JSON
 2. Set up a sandbox matching the task's `environment` config
