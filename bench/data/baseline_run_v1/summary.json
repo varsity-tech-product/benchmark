@@ -1,0 +1,45 @@
+{
+  "agents": {
+    "claude_haiku_4_5": {
+      "adapter": "anthropic",
+      "label": "Claude Haiku 4.5",
+      "model": "claude-haiku-4-5"
+    },
+    "claude_sonnet_4_6": {
+      "adapter": "anthropic",
+      "label": "Claude Sonnet 4.6",
+      "model": "claude-sonnet-4-6"
+    }
+  },
+  "baseline_version": "baseline_run_v1",
+  "by_agent": [],
+  "by_agent_condition": [],
+  "by_category": [],
+  "by_condition": [],
+  "by_layer": [],
+  "completed_cells": 0,
+  "conditions": {
+    "agent": {
+      "label": "Tool-using tutor agent",
+      "system_prompt": ""
+    },
+    "direct_answer_baseline": {
+      "label": "Direct-answer baseline",
+      "system_prompt": "You are a quantitative finance assistant. Solve the task directly, use tools only when computation or file inspection is necessary, and keep tutoring dialogue brief."
+    }
+  },
+  "coverage": {
+    "completed_task_count": 0,
+    "http_runnable_task_count": 19,
+    "planned_task_count": 142
+  },
+  "generated_at": "2026-05-06T05:35:01.619672Z",
+  "http_runnable_cells": 76,
+  "planned_cells": 568,
+  "rationale": "The full v3 corpus has 142 tasks. The current production HTTP run catalog exposes the 19 multi-turn L2 tasks, so the first executable HTTP slice is the L2 subset. L0/L1 coverage is planned after those single-turn tasks have run-token catalog support.",
+  "storage_policy": {
+    "bundle_json": "bench/data/baseline_run_v1/bundles/ is generated and gitignored",
+    "runs_jsonl": "bench/data/baseline_run_v1/runs.jsonl is generated and gitignored",
+    "summary_json": "bench/data/baseline_run_v1/summary.json is tracked"
+  }
+}

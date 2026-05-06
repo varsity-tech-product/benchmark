@@ -7,6 +7,11 @@ env/
 # Data files - managed via HuggingFace, never commit
 data/
 bench/data/
+!bench/data/
+bench/data/*
+!bench/data/baseline_run_v1/
+bench/data/baseline_run_v1/*
+!bench/data/baseline_run_v1/summary.json
 bench/reference/
 *.7z
 *.xml
@@ -66,6 +71,7 @@ bench/experiments/student_sim_stability/results/
 bench/experiments/student_sim_stability/pilot/
 bench/experiments/student_sim_stability/doc/
 bench/experiments/judge_validation/results/
+bench/experiments/human_review/*/local-dev.json
 
 # Claude Code local state
 # Claude Code config — local user settings stay private, but project-scoped
