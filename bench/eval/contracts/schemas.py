@@ -166,6 +166,7 @@ class QuantTutorTask(BaseModel):
     difficulty: Optional[Difficulty] = None  # L0 knowledge primitives have no difficulty notion
     category: TaskCategory
     subcategory: Optional[str] = None
+    rubric_profile: Optional[str] = None
     task_type: TaskType = TaskType.MULTI_TURN
     description: str = ""  # L0 uses ``question`` instead
     # v3.0 L0 — single-turn knowledge Q&A

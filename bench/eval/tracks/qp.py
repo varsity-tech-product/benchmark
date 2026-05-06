@@ -6,6 +6,7 @@ import threading
 from typing import Any
 
 from eval.contracts.output import TrackResult
+from eval.rubrics.task_profiles import rubric_profile_for_task
 from eval.tracks.common import (
     check_cancel,
     cost_by_model_from,
@@ -46,6 +47,7 @@ def evaluate(
     )
     tool_usage_result = None
     tool_usage_error = None
+    rubric_profile = rubric_profile_for_task(task)
 
     try:
         from eval.programmatic.tool_usage import evaluate_tool_usage
@@ -84,6 +86,7 @@ def evaluate(
             required_tools=(
                 task.ground_truth.expected_mcp_tools if task.ground_truth else []
             ),
+            rubric_profile=rubric_profile,
         )
         process["task_planning"] = {
             "score": None,
@@ -140,6 +143,7 @@ def evaluate(
                     if task.ground_truth
                     else None
                 ),
+                rubric_profile=rubric_profile,
             )
         except (
             Exception
@@ -162,7 +166,8 @@ def evaluate(
 
             finalize_process_metrics(process)
 
-    for dim in _QP_DIMS:
+    selected_dims = tuple((process.get("_weights_used") or {}).keys()) or _QP_DIMS
+    for dim in selected_dims:
         data = process.get(dim)
         if data is None:
             blockers.append(

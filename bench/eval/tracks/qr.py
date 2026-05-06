@@ -9,6 +9,12 @@ from pathlib import Path
 from typing import Any
 
 from eval.contracts.output import TrackResult
+from eval.rubrics.task_profiles import (
+    rubric_profile_for_task,
+    should_apply_data_source_check,
+    should_evaluate_code_lifecycle,
+    task_requires_code,
+)
 from eval.tracks.common import (
     check_cancel,
     cost_by_model_from,
@@ -33,6 +39,82 @@ def _resolve_eval_script(gt: Any) -> str | None:
         return v3
     quant_validation = getattr(gt, "quant_validation", None)
     return getattr(quant_validation, "eval_script", None)
+
+
+def _checklist_item_value(item: dict[str, Any]) -> float:
+    if "score" in item:
+        try:
+            return float(item.get("score") or 0.0)
+        except (TypeError, ValueError):
+            return 0.0
+    return 1.0 if item.get("passed") else 0.0
+
+
+def _apply_rubric_profile_to_programmatic_result(
+    result: dict[str, Any],
+    *,
+    task: Any,
+) -> dict[str, Any]:
+    profile = rubric_profile_for_task(task)
+    data_source_applicable = should_apply_data_source_check(task)
+    code_lifecycle_applicable = should_evaluate_code_lifecycle(task)
+    result["_rubric_profile"] = profile
+    result["_data_source_check_applicable"] = data_source_applicable
+    result["_code_lifecycle_applicable"] = code_lifecycle_applicable
+
+    if not data_source_applicable:
+        result.pop("data_source_verified", None)
+        result.pop("data_source_fraction", None)
+
+    checklist = result.get("_checklist")
+    if not isinstance(checklist, list):
+        return result
+
+    removed_items: list[str] = []
+    selected: list[dict[str, Any]] = []
+    for raw_item in checklist:
+        if not isinstance(raw_item, dict):
+            selected.append(raw_item)
+            continue
+        item_name = str(raw_item.get("item") or "")
+        if item_name == "code_saved_to_file" and not task_requires_code(task):
+            removed_items.append(item_name)
+            continue
+        if item_name == "code_lifecycle" and not code_lifecycle_applicable:
+            removed_items.append(item_name)
+            continue
+        if item_name == "data_source_verified" and not data_source_applicable:
+            removed_items.append(item_name)
+            continue
+        selected.append(raw_item)
+
+    if not removed_items:
+        return result
+
+    total_weight = sum(
+        float(item.get("weight") or 0.0) for item in selected if isinstance(item, dict)
+    )
+    if total_weight <= 0:
+        result["_checklist"] = selected
+        result["_removed_checklist_items"] = sorted(set(removed_items))
+        return result
+
+    normalized: list[dict[str, Any]] = []
+    score = 0.0
+    for item in selected:
+        if not isinstance(item, dict):
+            normalized.append(item)
+            continue
+        normalized_item = dict(item)
+        weight = float(normalized_item.get("weight") or 0.0) / total_weight
+        normalized_item["weight"] = round(weight, 4)
+        score += weight * _checklist_item_value(normalized_item)
+        normalized.append(normalized_item)
+
+    result["_checklist"] = normalized
+    result["_removed_checklist_items"] = sorted(set(removed_items))
+    result["score"] = round(score, 4)
+    return result
 
 
 def _programmatic_eval(
@@ -76,7 +158,7 @@ def _programmatic_eval(
         spec.loader.exec_module(module)
         sig = inspect.signature(module.evaluate)
         kwargs: dict[str, Any] = {}
-        if "data_files" in sig.parameters:
+        if "data_files" in sig.parameters and should_apply_data_source_check(task):
             kwargs["data_files"] = (
                 task.environment.data_files if task.environment else []
             )
@@ -87,6 +169,7 @@ def _programmatic_eval(
         result = module.evaluate(workspace_path, tool_logs, conversation, **kwargs)
         if not isinstance(result, dict):
             raise RuntimeError("eval_script.evaluate() must return a dict")
+        result = _apply_rubric_profile_to_programmatic_result(result, task=task)
         result.setdefault("status", "success")
         result.setdefault("required_for_track_score", True)
         return result, None

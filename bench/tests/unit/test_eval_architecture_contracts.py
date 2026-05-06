@@ -178,6 +178,191 @@ def test_qp_model_unavailable_preserves_programmatic_dimensions(monkeypatch):
     assert result.detail["_weights_effective"] == {}
 
 
+def test_qp_conversational_profile_drops_code_lifecycle(monkeypatch):
+    from eval.tracks import qp
+
+    monkeypatch.setattr(
+        "eval.programmatic.tool_usage.evaluate_tool_usage",
+        lambda **kwargs: {"score": 1.0, "status": "success", "reason": "ok"},
+    )
+    task = SimpleNamespace(
+        description="Discuss production readiness.",
+        category="end_to_end",
+        requires_code=False,
+        ground_truth=SimpleNamespace(
+            expected_mcp_tools=[],
+            convenient_tools=[],
+            required_capabilities=[],
+        ),
+    )
+
+    result = qp.evaluate(
+        task=task,
+        conversation=[{"role": "assistant", "content": "Use a phased rollout."}],
+        enriched_conversation=[],
+        tool_logs=[],
+        distractor_names=[],
+        eval_model=None,
+        preflight={
+            "track_blockers": {
+                "qp": [
+                    {
+                        "code": "eval_model_unavailable",
+                        "track": "qp",
+                        "reason": "missing key",
+                    }
+                ]
+            }
+        },
+    )
+
+    assert "code_lifecycle" not in result.detail
+    assert "code_lifecycle" not in result.detail["_weights_used"]
+    assert all(
+        blocker.get("dimension") != "code_lifecycle"
+        for blocker in result.blocking_missing
+    )
+
+
+def test_qp_conversational_profile_survives_tool_usage_failure(monkeypatch):
+    from eval.tracks import qp
+
+    def fail_tool_usage(**_kwargs):
+        raise RuntimeError("tool usage failed")
+
+    monkeypatch.setattr(
+        "eval.programmatic.tool_usage.evaluate_tool_usage",
+        fail_tool_usage,
+    )
+    task = SimpleNamespace(
+        description="Discuss production readiness.",
+        category="end_to_end",
+        requires_code=False,
+        ground_truth=SimpleNamespace(
+            expected_mcp_tools=[],
+            convenient_tools=[],
+            required_capabilities=[],
+        ),
+    )
+
+    result = qp.evaluate(
+        task=task,
+        conversation=[{"role": "assistant", "content": "Use a phased rollout."}],
+        enriched_conversation=[],
+        tool_logs=[],
+        distractor_names=[],
+        eval_model=None,
+        preflight={
+            "track_blockers": {
+                "qp": [
+                    {
+                        "code": "eval_model_unavailable",
+                        "track": "qp",
+                        "reason": "missing key",
+                    }
+                ]
+            }
+        },
+    )
+
+    assert "code_lifecycle" not in result.detail["_weights_used"]
+    assert all(
+        blocker.get("dimension") != "code_lifecycle"
+        for blocker in result.blocking_missing
+    )
+
+
+def test_qp_code_category_retains_code_lifecycle_without_requires_code(monkeypatch):
+    from eval.tracks import qp
+
+    monkeypatch.setattr(
+        "eval.programmatic.tool_usage.evaluate_tool_usage",
+        lambda **kwargs: {"score": 1.0, "status": "success", "reason": "ok"},
+    )
+    monkeypatch.setattr(
+        "eval.programmatic.code_process.evaluate_code_lifecycle",
+        lambda logs: {"score": 0.7, "status": "success", "reason": "code used"},
+    )
+    task = SimpleNamespace(
+        description="Implement a strategy.",
+        category="implementation",
+        requires_code=False,
+        ground_truth=SimpleNamespace(
+            expected_mcp_tools=[],
+            convenient_tools=[],
+            required_capabilities=[],
+        ),
+    )
+
+    result = qp.evaluate(
+        task=task,
+        conversation=[{"role": "assistant", "content": "I wrote code."}],
+        enriched_conversation=[],
+        tool_logs=[],
+        distractor_names=[],
+        eval_model=None,
+        preflight={
+            "track_blockers": {
+                "qp": [
+                    {
+                        "code": "eval_model_unavailable",
+                        "track": "qp",
+                        "reason": "missing key",
+                    }
+                ]
+            }
+        },
+    )
+
+    assert result.detail["code_lifecycle"]["score"] == 0.7
+    assert result.detail["_weights_used"]["code_lifecycle"] == 0.15
+
+
+def test_qr_conversational_profile_omits_data_source_check(tmp_path):
+    from eval.tracks.qr import _programmatic_eval
+
+    script = tmp_path / "fake_eval.py"
+    script.write_text(
+        "\n".join(
+            [
+                "def evaluate(workspace_path, tool_logs=None, conversation=None, *, data_files=None):",
+                "    return {",
+                "        'score': 0.5,",
+                "        'data_source_verified': False,",
+                "        'data_source_fraction': 0.0,",
+                "        '_checklist': [",
+                "            {'item': 'data_source_verified', 'weight': 0.5, 'passed': False},",
+                "            {'item': 'readiness_plan', 'weight': 0.5, 'passed': True},",
+                "        ],",
+                "        'data_files_were_passed': data_files is not None,",
+                "    }",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    task = SimpleNamespace(
+        category="end_to_end",
+        requires_code=False,
+        environment=SimpleNamespace(data_files=["AAPL_2018_2024.csv"]),
+        ground_truth=SimpleNamespace(verification_script="fake_eval.py"),
+    )
+
+    result, error = _programmatic_eval(
+        task=task,
+        bench_root=tmp_path,
+        workspace_path=str(tmp_path),
+        conversation=[],
+        tool_logs=[],
+    )
+
+    assert error is None
+    assert result["score"] == 1.0
+    assert result["data_files_were_passed"] is False
+    assert "data_source_verified" not in result
+    assert result["_data_source_check_applicable"] is False
+    assert result["_removed_checklist_items"] == ["data_source_verified"]
+
+
 def test_required_tool_coverage_is_post_hoc_programmatic():
     from eval.judges.process_metrics import compute_required_tool_coverage
 
