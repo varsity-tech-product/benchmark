@@ -124,8 +124,12 @@ def _data_mount_fact(item: Any) -> dict[str, Any]:
     return fact
 
 
-def build_background(task) -> dict[str, Any]:
-    """Build JSON-able platform facts for the session environment."""
+def build_background(task, *, agent_brief: str | None = None) -> dict[str, Any]:
+    """Build JSON-able platform facts for the session environment.
+
+    ``agent_brief`` is an optional bundle-authored framing string surfaced
+    verbatim under ``background.agent_brief`` for the AUT.
+    """
     env = _field(task, "environment")
     sandbox_image = _sandbox_image(env)
     data_files = [str(item) for item in _as_list(_field(env, "data_files"))]
@@ -167,7 +171,7 @@ def build_background(task) -> dict[str, Any]:
             }
         )
 
-    return {
+    background: dict[str, Any] = {
         "schema_version": "platform_background.v1",
         "domain": "quantitative_finance",
         "sandbox": {
@@ -196,6 +200,11 @@ def build_background(task) -> dict[str, Any]:
             "schema_source": "Tool inputSchema returned by MCP list_tools",
         },
     }
+
+    if agent_brief:
+        background["agent_brief"] = str(agent_brief)
+
+    return background
 
 
 # ---------------------------------------------------------------------------
@@ -443,7 +452,10 @@ class Session:
         )
         self._session_info_called = True
 
-        background = build_background(self._task)
+        background = build_background(
+            self._task,
+            agent_brief=getattr(self._eval_item, "agent_brief", None),
+        )
         return json.dumps(
             {
                 "background": background,
