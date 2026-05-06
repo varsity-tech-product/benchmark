@@ -1316,7 +1316,14 @@ class SessionState:
         if name == "get_background":
             from server.core.session import build_background
 
-            bg = build_background(self.task) if self.task else ""
+            bg = (
+                build_background(
+                    self.task,
+                    agent_brief=getattr(self.eval_item, "agent_brief", None),
+                )
+                if self.task
+                else ""
+            )
             return [TextContent(type="text", text=json.dumps(bg))]
 
         if name == "send_message":

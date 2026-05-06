@@ -82,6 +82,7 @@ class EvalItem:
     metadata: JsonObject = field(default_factory=dict)
     data_mounts: tuple[DataMount, ...] = ()
     sandbox_spec: SandboxSpec | None = None
+    agent_brief: str | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "data_mounts", tuple(self.data_mounts))

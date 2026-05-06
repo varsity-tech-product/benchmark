@@ -196,6 +196,12 @@ Content-Type: application/json
 Save the first `user_message`. Save `background` when present. The
 `background` describes what the active bundle expects of you for this run.
 
+If `background.agent_brief` is present, treat it as authoritative
+bundle-authored framing for this run — the active bundle uses it to tell
+you what role you are playing, what counts as success, and any constraints
+beyond the platform contract. When it is absent, infer the role from
+`background` and the first `user_message`.
+
 ### 3. Discover Tools
 
 ```http
