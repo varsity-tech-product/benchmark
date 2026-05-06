@@ -27,6 +27,13 @@ _CODE_CATEGORIES = {
 _V3_LEAN_CATEGORIES = {"implementation"}
 _TASK_LAYERS = ("L0", "L1", "L2")
 _TASK_PREFIXES = tuple(f"{layer}_" for layer in _TASK_LAYERS)
+DEFAULT_AGENT_BRIEF = (
+    "You are a tutoring agent. The user is a learner working on a "
+    "quantitative-finance task. Teach the concept and guide the learner "
+    "through the answer. Tool errors are diagnostic signals. When a tool "
+    "returns an error (PermissionError, missing path, timeout), explain "
+    "the constraint to the user and adjust your approach."
+)
 
 
 def _default_bench_root() -> Path:
@@ -84,6 +91,7 @@ class ReferenceTaskSuite(TaskSuite):
             metadata=metadata,
             data_mounts=self._translate_environment_mounts(env, task=task),
             sandbox_spec=self._sandbox_spec_for_task(task),
+            agent_brief=DEFAULT_AGENT_BRIEF,
         )
 
     def get_business_task(self, task_id: str) -> QuantTutorTask:
