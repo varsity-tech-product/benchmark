@@ -7,13 +7,13 @@ import json
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from eval.contracts.schemas import UserPersona
 from experiments.user_sim_stability.core.config import STABILITY_TASK_OPENINGS
 from experiments.user_sim_stability.core.io_utils import load_json
 from experiments.user_sim_stability.core.paths import RESOURCE_ROOT
-from server.config.prompt_config import (
-    build_user_description as _server_build_user_description,
+from server.reference.prompts import (
+    build_reference_user_description as _reference_build_user_description,
 )
-from eval.contracts.schemas import UserPersona
 
 if TYPE_CHECKING:
     from eval.contracts.schemas import QuantTutorTask
@@ -25,7 +25,7 @@ CONTRACT_VERSION = "v1.0.0"
 # of this file and bench/personas/emotional_profiles.json is enforced by
 # tests/test_persona_source_consistency.py so the judge side (which reads this
 # path) and the user side (which reads the canonical file through
-# server.config.prompt_config) never diverge.
+# server.reference.prompts) stay aligned.
 _EMOTIONAL_PROFILES_PATH = CONTRACTS_DIR / "emotional_profiles.json"
 
 
@@ -91,13 +91,13 @@ def load_user_persona(persona_id: str) -> UserPersona:
 def build_contract_user_description(persona_id: str) -> str:
     """Build simulator user_description for experiment trials.
 
-    This is a thin wrapper around ``server.config.prompt_config.build_user_description``
+    This is a thin wrapper around ``server.reference.prompts.build_reference_user_description``
     so that experiment user prompts are byte-identical to production REST session
     prompts. Experiment-private contract fields (``expected_*``, ``failure_modes``)
-    are intentionally not injected here — they are judge-side metadata and are
+    stay in judge-side metadata and are
     consumed through ``render_persona_contract_text`` in judge prompt rendering.
     """
-    return _server_build_user_description(load_user_persona(persona_id))
+    return _reference_build_user_description(load_user_persona(persona_id))
 
 
 def build_contract_scenario(task: "QuantTutorTask", persona_id: str) -> str:
@@ -155,8 +155,8 @@ def render_persona_contract_text(persona_id: str) -> str:
 
     Judges see the full contract including ``expected_*`` and ``failure_modes`` so
     they have the complete rubric anchor when scoring persona fidelity. The user
-    simulator does NOT see this text — user prompt is built from the slimmer
-    ``server.config.prompt_config.build_user_description`` via the thin wrapper.
+    simulator prompt is built from the slimmer reference prompt helper via
+    ``build_contract_user_description``.
     """
     contract = load_persona_contract(persona_id)
     familiar = json.dumps(contract["familiar_concepts"], ensure_ascii=False)

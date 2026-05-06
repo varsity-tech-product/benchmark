@@ -11,8 +11,8 @@ from config.prompt_config import (
     build_scenario as build_legacy_scenario,
     build_user_description as build_legacy_user_description,
 )
-from server.config.prompt_config import build_scenario
 from server.core.user_sim import _NEXT_MESSAGE_PROMPT
+from server.reference.prompts import build_reference_scenario
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -92,7 +92,7 @@ def test_scenario_builder_uses_deliverable_goals():
         ),
     )
 
-    scenario = build_scenario(task, persona_id="fullstack_practitioner")
+    scenario = build_reference_scenario(task, persona_id="fullstack_practitioner")
 
     assert "Deliverable goals:" in scenario
     assert "If the agent drifts" in scenario
@@ -112,7 +112,7 @@ def test_adversarial_scenario_preserves_required_pushback():
         ),
     )
 
-    scenario = build_scenario(task, persona_id="double_novice")
+    scenario = build_reference_scenario(task, persona_id="double_novice")
 
     assert "What you expect from the agent" in scenario
     assert "required follow-up, pushback" in scenario
