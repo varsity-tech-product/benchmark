@@ -1,7 +1,5 @@
 #!/usr/bin/env bash
-# Live test: run all 10 I-series implementation tasks through the full run-single pipeline.
-# Uses OpenRouter-routed OpenAI models by default.
-# All I-series tasks require --docker (LEAN sandbox).
+# Live test: run a small v3 L2 task list through the API batch driver.
 #
 # Usage: bash bench/scripts/test_i_series_live.sh
 #        MAX_PARALLEL=3 bash bench/scripts/test_i_series_live.sh
@@ -21,32 +19,25 @@ if [ -f "$PROJECT_DIR/.venv/bin/activate" ]; then
 fi
 
 # ── Configuration ──
-AGENT="${AGENT:-openai}"
-MODEL="${MODEL:-openai/gpt-5.2}"
-EVAL_MODEL="${EVAL_MODEL:-$MODEL}"
-SIMULATOR_MODEL="${SIMULATOR_MODEL:-$MODEL}"
-PERSONA="${PERSONA:-intermediate_developer}"
-CONDITION="${CONDITION:-agent}"
-MAX_TURNS="${MAX_TURNS:-10}"
+SERVER="${QTB_BASELINE_SERVER:-http://127.0.0.1:8000}"
+API_KEY="${QTB_CLIENT_API_KEY:-}"
+AGENTS="${AGENTS:-claude_haiku_4_5}"
+CONDITIONS="${CONDITIONS:-agent}"
+PROTOCOL="${PROTOCOL:-mcp}"
 MAX_PARALLEL="${MAX_PARALLEL:-all}"
 
 TASKS=(
-    I01_implement_sma
-    I02_trend_following
-    I03_mean_reversion
-    I04_multi_timeframe
-    I05_cross_asset
-    I06_multi_signal_sweep
-    I07_alpha_model
-    I08_multi_alpha
-    I09_risk_management
-    I10_parameter_optimization
+    L2_ADV_01_investment_advice
+    L2_ADV_11_prompt_injection_csv
+    L2_DIA_01_overfit_diagnosis
+    L2_E2E_01_strategy_validation
+    L2_E2E_04_strategy_ab_testing
 )
 
 # ── Results tracking ──
-LOG_DIR="$BENCH_DIR/results/run-single/$AGENT/$MODEL"
+LOG_DIR="$BENCH_DIR/results/baseline-run/l2-smoke"
 mkdir -p "$LOG_DIR"
-STATUS_DIR="$(mktemp -d "${TMPDIR:-/tmp}/i-series-live-status.XXXXXX")"
+STATUS_DIR="$(mktemp -d "${TMPDIR:-/tmp}/l2-live-status.XXXXXX")"
 trap 'rm -rf "$STATUS_DIR"' EXIT
 
 PASSED=0
@@ -54,15 +45,12 @@ FAILED=0
 ERRORS=()
 
 echo "============================================"
-echo "  I-Series Live Test  (${#TASKS[@]} tasks)"
+echo "  v3 L2 Live Test  (${#TASKS[@]} tasks)"
 echo "============================================"
-echo "Agent:     $AGENT"
-echo "Model:     $MODEL"
-echo "Eval:      $EVAL_MODEL"
-echo "Simulator: $SIMULATOR_MODEL"
-echo "Persona:   $PERSONA"
-echo "Condition: $CONDITION"
-echo "Max turns: $MAX_TURNS"
+echo "Server:     $SERVER"
+echo "Agents:     $AGENTS"
+echo "Conditions: $CONDITIONS"
+echo "Protocol:   $PROTOCOL"
 echo ""
 
 if [ "$MAX_PARALLEL" = "all" ]; then
@@ -79,7 +67,8 @@ echo ""
 
 run_task() {
     local task="$1"
-    local task_log="$LOG_DIR/${task}_${PERSONA}.log"
+    local task_output_dir="$LOG_DIR/$task"
+    local task_log="$LOG_DIR/${task}.log"
     local status_file="$STATUS_DIR/${task}.status"
 
     echo "── [$task] started ───────────────────────────"
@@ -87,17 +76,18 @@ run_task() {
 
     (
         set +e
-        python3 bench/run_benchmark.py run-single \
-            --task "$task" \
-            --persona "$PERSONA" \
-            --agent "$AGENT" \
-            --model "$MODEL" \
-            --condition "$CONDITION" \
-            --eval-model "$EVAL_MODEL" \
-            --simulator-model "$SIMULATOR_MODEL" \
-            --max-turns "$MAX_TURNS" \
-            --save-result \
-            --docker \
+        python3 bench/scripts/baseline_run.py \
+            --output-dir "$task_output_dir" \
+            --docs-dir "$task_output_dir/docs" \
+            run \
+            --server "$SERVER" \
+            --api-key "$API_KEY" \
+            --protocol "$PROTOCOL" \
+            --tasks "$task" \
+            --agents "$AGENTS" \
+            --conditions "$CONDITIONS" \
+            --workers 1 \
+            --force \
             2>&1 | tee "$task_log" | sed -u "s/^/[$task] /"
         local exit_code=${PIPESTATUS[0]}
         printf '%s\n' "$exit_code" > "$status_file"

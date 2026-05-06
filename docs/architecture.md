@@ -33,13 +33,13 @@ vercel-frontend/       Vercel-hosted frontend shell
 ```
 
 `bench/eval/` is the scoring engine, decoupled from `bench/server/` per #123:
-no `from server.*` imports, can be invoked from CI / notebooks / batch
-without starting the server. `bench/server/` is the live runtime that drives
-sessions and consumes `eval` as a library. `bench/orchestrator/` is legacy
-and should not be used as a new dependency for evaluation orchestration; it
-still backs `bench/run_benchmark.py` (the reference harness CLI) and houses
-the older DeepEval-based simulator. Issue B (filed after #123 lands)
-decommissions this path.
+it can be invoked from CI / notebooks / batch without starting the server.
+`bench/server/` is the live runtime that drives sessions and consumes `eval`
+as a library. `bench/orchestrator/` is legacy pre-server scaffolding for the
+older DeepEval-based simulator. API-backed batch evaluation is driven by
+`bench/scripts/baseline_run.py`, which creates run-token sessions through
+`/client/runs/start`, delegates agent execution to `bench/client/runner.py`,
+and exports Bundle v1 alpha artifacts.
 
 `vercel-frontend/` is a thin static preview package. Its build step copies the
 current UI shell from `bench/server/web/templates/index.html` and static assets
@@ -380,22 +380,26 @@ python -m server.scripts.eval_single get --session <session_id> --history
 python -m server.scripts.eval_single list
 ```
 
-`--mode` accepts `full` (default), `qr`, or `qp`. `tutor` is no longer a
-valid mode. Batch drivers should be a thin wrapper around
-`EvalCoordinator` (or `eval.score()` for the no-persistence path), not
-a second evaluator architecture.
+`--mode` accepts `full` (default), `qr`, or `qp`. Batch drivers should be a
+thin wrapper around `EvalCoordinator` for persisted server state or
+`eval.score()` for scratch scoring.
 
-### Baseline Run v1
+### Running Batch Evaluations
 
-`bench/scripts/baseline_run.py` is the issue #185 Impl A baseline driver.
-It builds the v3 matrix from `bench/tasks/L0`, `bench/tasks/L1`, and
-`bench/tasks/L2`, creates run-token sessions through `/client/runs/start`,
-delegates agent execution to `bench/client/runner.py`, backfills completed
-server results into Bundle v1 alpha JSON, validates exported bundles, and
-writes `bench/data/baseline_run_v1/summary.json` plus
-`docs/baseline_run_v1_summary.md`. Generated manifests, traces, run logs, and
-bundles live under `bench/data/baseline_run_v1/`; `summary.json` is tracked as
-the paper-facing aggregate.
+`bench/scripts/baseline_run.py` is the canonical API-backed batch driver for
+baseline and smoke evaluations. It builds the v3 matrix from `bench/tasks/L0`,
+`bench/tasks/L1`, and `bench/tasks/L2`, creates run-token sessions through
+`/client/runs/start`, delegates agent execution to `bench/client/runner.py`,
+backfills completed server results into Bundle v1 alpha JSON, validates
+exported bundles, and writes `bench/data/baseline_run_v1/summary.json` plus
+`docs/baseline_run_v1_summary.md`.
+
+Operators provide `QTB_CLIENT_API_KEY`, point `QTB_BASELINE_SERVER` at the
+target server, and use `--tasks`, `--agents`, and `--conditions` for focused
+smoke slices. Generated manifests, traces, run logs, and bundles live under
+`bench/data/baseline_run_v1/`; `summary.json` is tracked as the paper-facing
+aggregate. See `docs/baseline_run_v1.md` for the full command sequence and
+storage policy.
 
 ### Standalone Scoring
 

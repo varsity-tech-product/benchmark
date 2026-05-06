@@ -5,9 +5,8 @@ Promotes high-quality benchmark runs to scoring references, and provides
 list/show commands for inspecting existing references.
 
 Workflow:
-    1. Run benchmark with ``--condition reference`` (oracle prompt):
-       python -m run_benchmark run-single --task D01_load_csv \
-           --agent openai --condition reference --save-result --docker
+    1. Produce or import a completed server result directory containing
+       ``run_state.json`` under ``bench/results/server/...``.
 
     2. Review scores.md / trace.md in the results directory.
 

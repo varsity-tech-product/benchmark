@@ -57,6 +57,42 @@ def test_discover_tasks_and_matrix_mark_http_runnable_slice(tmp_path):
     ]
 
 
+def test_matrix_from_args_filters_tasks_in_requested_order(tmp_path):
+    _write_task(tmp_path, "L2", "L2_ADV_01_demo", persona_id="fullstack")
+    _write_task(tmp_path, "L2", "L2_ADV_02_demo", persona_id="fullstack")
+    parser = baseline_run.build_parser()
+    args = parser.parse_args(
+        [
+            "--bench-root",
+            str(tmp_path),
+            "plan",
+            "--layers",
+            "L2",
+            "--tasks",
+            "L2_ADV_02_demo,L2_ADV_01_demo,L2_ADV_02_demo",
+            "--agents",
+            "claude_haiku_4_5",
+            "--conditions",
+            "agent",
+        ]
+    )
+
+    matrix = baseline_run.matrix_from_args(args)
+
+    assert [cell.task.task_id for cell in matrix] == [
+        "L2_ADV_02_demo",
+        "L2_ADV_01_demo",
+    ]
+
+
+def test_select_tasks_rejects_unknown_id(tmp_path):
+    _write_task(tmp_path, "L2", "L2_ADV_01_demo", persona_id="fullstack")
+    tasks = baseline_run.discover_tasks(tmp_path, layers=("L2",))
+
+    with pytest.raises(ValueError, match="unknown task id"):
+        baseline_run.select_tasks(tasks, ("L2_ADV_missing",))
+
+
 def test_summary_aggregates_completed_scored_cells():
     task = baseline_run.TaskSpec(
         task_id="L2_ADV_01_demo",

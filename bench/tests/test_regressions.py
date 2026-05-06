@@ -30,7 +30,6 @@ from orchestrator.schemas import (
     TaskCategory,
 )
 from pydantic import BaseModel
-from run_benchmark import _collect_remote_endpoints
 
 
 def _make_persona() -> UserPersona:
@@ -86,33 +85,6 @@ class PricingTests(unittest.TestCase):
         self.assertTrue(
             any("No pricing for model" in str(item.message) for item in caught)
         )
-
-
-class NetworkPreflightTests(unittest.TestCase):
-    def test_collect_remote_endpoints_uses_openai_when_no_openrouter_key(self):
-        args = SimpleNamespace(
-            command="run-single",
-            agent="openai",
-            eval_model="gpt-4o-mini",
-            simulator_model="gpt-4o-mini",
-        )
-        with patch.dict("os.environ", {}, clear=False):
-            endpoints = _collect_remote_endpoints(args)
-        hosts = {host for _, host in endpoints}
-        self.assertIn("api.openai.com", hosts)
-        self.assertNotIn("openrouter.ai", hosts)
-
-    def test_collect_remote_endpoints_uses_openrouter_when_key_present(self):
-        args = SimpleNamespace(
-            command="run-single",
-            agent="openai",
-            eval_model="gpt-4o-mini",
-            simulator_model="gpt-4o-mini",
-        )
-        with patch.dict("os.environ", {"OPENROUTER_API_KEY": "test"}, clear=False):
-            endpoints = _collect_remote_endpoints(args)
-        hosts = {host for _, host in endpoints}
-        self.assertIn("openrouter.ai", hosts)
 
 
 class ClaudeCodeModelTests(unittest.TestCase):
