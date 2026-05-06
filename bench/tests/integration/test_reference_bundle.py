@@ -112,6 +112,19 @@ def test_reference_task_suite_bridges_v3_task(bench_root):
     }
 
 
+def test_reference_task_suite_populates_agent_brief(bench_root):
+    bundle = load_reference_bundle(bench_root=bench_root, eval_model="fake-model")
+
+    item = bundle.task_suite.get_task(V3_L2_TASK)
+
+    assert item.agent_brief is not None
+    assert "You are a tutoring agent" in item.agent_brief
+    assert "learner working on a quantitative-finance task" in item.agent_brief
+    assert "Tool errors are diagnostic signals" in item.agent_brief
+    assert "PermissionError" in item.agent_brief
+    assert "adjust your approach" in item.agent_brief
+
+
 def test_reference_task_suite_emits_hf_uri_without_local_cache(bench_root):
     bundle = load_reference_bundle(bench_root=bench_root, eval_model="fake-model")
 

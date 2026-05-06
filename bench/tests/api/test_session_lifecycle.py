@@ -75,6 +75,17 @@ class TestStart:
         assert len(body["user_message"]) > 0
 
     @pytest.mark.asyncio
+    async def test_start_returns_reference_agent_brief_for_l2_task(self, client):
+        sid = await register_session(client)
+        body = await start_session(client, sid)
+
+        brief = body["background"]["agent_brief"]
+        assert "You are a tutoring agent" in brief
+        assert "Tool errors are diagnostic signals" in brief
+        assert "PermissionError" in brief
+        assert "adjust your approach" in brief
+
+    @pytest.mark.asyncio
     async def test_start_before_register_fails(self, client):
         resp = await client.post("/session/nonexistent/start", json={})
         assert resp.status_code == 404
