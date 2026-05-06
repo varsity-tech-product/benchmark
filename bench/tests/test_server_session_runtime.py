@@ -141,6 +141,7 @@ class SessionContextTests(unittest.TestCase):
 
         json.dumps(background)
         self.assertEqual(background["schema_version"], "platform_background.v1")
+        self.assertNotIn("domain", background)
         self.assertEqual(background["sandbox"]["image"], "spec:image-lean")
         self.assertTrue(background["mounts"]["user_code"]["present"])
         self.assertNotIn("source", background["mounts"]["user_code"])
