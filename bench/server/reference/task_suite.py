@@ -9,6 +9,7 @@ from typing import Any
 
 from config.benchmark_config import BENCH_IMAGE_V3, BENCH_IMAGE_V3_LEAN
 from eval.contracts.schemas import QuantTutorTask
+from eval.rubrics.task_profiles import rubric_profile_for_task
 from platform_api.contracts import DataMount, EvalItem, SandboxSpec, TaskSuite
 from server.config.benchmark_config import DATASET_REPO_ID, DATASET_REVISION
 
@@ -80,6 +81,7 @@ class ReferenceTaskSuite(TaskSuite):
             "business_schema": "QuantTutorTask",
             "difficulty": _enum_value(task.difficulty),
             "category": _enum_value(task.category),
+            "rubric_profile": rubric_profile_for_task(task),
             "requires_code": bool(task.requires_code),
             "requires_tool": bool(task.requires_tool),
         }

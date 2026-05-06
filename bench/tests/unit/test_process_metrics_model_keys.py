@@ -38,10 +38,10 @@ def test_qp_metrics_accept_injected_client_object():
     assert result["_weights_used"] == {
         "tool_usage": 0.20,
         "action_economy": 0.15,
-        "code_lifecycle": 0.15,
         "task_planning": 0.25,
         "problem_solving": 0.25,
     }
+    assert "code_lifecycle" not in result
     assert result["_weights_effective"] == {
         "tool_usage": 0.3333,
         "action_economy": 0.25,

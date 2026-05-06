@@ -16,6 +16,7 @@ import threading
 import time as _time
 from typing import Optional
 
+from eval.rubrics.task_profiles import qp_dimension_weights
 from eval.tool_filters import NON_SUBSTANTIVE_TOOLS
 
 
@@ -330,10 +331,18 @@ def evaluate_programmatic_process_metrics(
     tool_usage_result: Optional[dict] = None,
     task_requires_code: bool = False,
     required_tools: Optional[list[str]] = None,
+    rubric_profile: str = "",
 ) -> dict:
     """Run QP dimensions that do not require an LLM judge."""
 
     results: dict = {}
+    dimension_weights = qp_dimension_weights(
+        _QP_DIMENSION_WEIGHTS,
+        category=category,
+        task_requires_code_value=task_requires_code,
+        rubric_profile=rubric_profile,
+    )
+    results["_dimension_weights"] = dimension_weights
 
     coverage = compute_required_tool_coverage(
         proxy_logs=proxy_logs,
@@ -346,9 +355,7 @@ def evaluate_programmatic_process_metrics(
     results["action_economy"] = ae_result
     print(f"      action_economy: {ae_result['score']}")
 
-    if category not in ("conceptual_qa",) and not (
-        is_adversarial and not task_requires_code
-    ):
+    if "code_lifecycle" in dimension_weights:
         try:
             from eval.programmatic.code_process import (
                 evaluate_code_lifecycle,
@@ -372,13 +379,7 @@ def evaluate_programmatic_process_metrics(
                 "error": str(e),
             }
     else:
-        results["code_lifecycle"] = {
-            "score": None,
-            "status": "skipped",
-            "skip_reason": "not_applicable",
-            "required_for_track_score": False,
-            "reason": "Code lifecycle is not applicable for this task.",
-        }
+        print("      code_lifecycle: not_applicable")
 
     if tool_usage_result is not None:
         results["tool_usage"] = _dimension_status(tool_usage_result, required=True)
@@ -397,9 +398,15 @@ def evaluate_programmatic_process_metrics(
 def finalize_process_metrics(results: dict) -> dict:
     """Attach aggregate, blocking, weights, and total cost to QP results."""
 
+    dimension_weights = dict(
+        results.pop(
+            "_dimension_weights",
+            results.get("_weights_used", _QP_DIMENSION_WEIGHTS),
+        )
+    )
     available_dims: dict[str, float] = {}
     blocking_missing: list[dict] = []
-    for dim in _QP_DIMENSION_WEIGHTS:
+    for dim in dimension_weights:
         v = results.get(dim)
         if not isinstance(v, dict):
             blocking_missing.append(
@@ -429,13 +436,13 @@ def finalize_process_metrics(results: dict) -> dict:
         aggregate = None
         effective_weights: dict[str, float] = {}
     elif available_dims:
-        total_weight = sum(_QP_DIMENSION_WEIGHTS[d] for d in available_dims)
+        total_weight = sum(dimension_weights[d] for d in available_dims)
         aggregate = sum(
-            _QP_DIMENSION_WEIGHTS[d] * available_dims[d] / total_weight
+            dimension_weights[d] * available_dims[d] / total_weight
             for d in available_dims
         )
         effective_weights = {
-            dim: round(_QP_DIMENSION_WEIGHTS[dim] / total_weight, 4)
+            dim: round(dimension_weights[dim] / total_weight, 4)
             for dim in available_dims
         }
     else:
@@ -446,7 +453,7 @@ def finalize_process_metrics(results: dict) -> dict:
         round(aggregate, 4) if aggregate is not None else None
     )
     results["_blocking_missing"] = blocking_missing
-    results["_weights_used"] = dict(_QP_DIMENSION_WEIGHTS)
+    results["_weights_used"] = dimension_weights
     results["_weights_effective"] = effective_weights
     print(f"      aggregate_process_score: {results['aggregate_process_score']}")
 
@@ -478,6 +485,7 @@ def evaluate_all_process_metrics(
     enriched_conversation: Optional[list[dict]] = None,
     required_capabilities: Optional[list[str]] = None,
     required_tools: Optional[list[str]] = None,
+    rubric_profile: str = "",
 ) -> dict:
     """Run all process-level metrics and return consolidated results.
 
@@ -523,6 +531,7 @@ def evaluate_all_process_metrics(
         tool_usage_result=tool_usage_result,
         task_requires_code=task_requires_code,
         required_tools=required_tools,
+        rubric_profile=rubric_profile,
     )
 
     # ── LLM: task_planning + problem_solving ──

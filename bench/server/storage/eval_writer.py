@@ -190,13 +190,14 @@ def _make_qp_track(eval_results: dict, duration: float) -> TrackResult:
                     "reason": str(eval_results[key]),
                 }
             )
-    for dim in (
+    selected_dims = tuple((process.get("_weights_used") or {}).keys()) or (
         "tool_usage",
         "action_economy",
         "code_lifecycle",
         "task_planning",
         "problem_solving",
-    ):
+    )
+    for dim in selected_dims:
         data = process.get(dim)
         if data is None:
             blockers.append(
