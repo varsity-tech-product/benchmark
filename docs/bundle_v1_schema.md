@@ -96,6 +96,7 @@ Top-level fields in `1.0.0-alpha`:
 | `tool_calls` | array | Generic tool calls with arbitrary args/result JSON. |
 | `artifacts` | object | Producer-specific payloads keyed by namespace. |
 | `workspace` | object | Workspace file tree snapshot. |
+| `human_reviews` | array | Optional score-bound human annotations and IRR summaries. Present when review records exist beside `evaluations/{score_id}`. |
 
 ## Message Shape
 
@@ -144,6 +145,16 @@ changing the envelope.
 optional `content_ref`, and metadata. The Stage 1 policy is path plus sha256 plus
 size. Inline content belongs in namespaced `artifacts` for alpha fixtures. Stage
 2 will decide long-term inline payload and external-reference rules.
+
+## Human Reviews
+
+`human_reviews[]` is optional. Backfill/export populates it from
+`evaluations/{score_id}/human_reviews/*.json` when quant reviewers submit rubric
+annotations through `/api/reviews/{score_id}`. Annotation records use
+`human_review_score_v1` and carry `score_id`, reviewer metadata, per-criterion
+1-5 scores, justifications, and evidence notes. Export also appends one
+`human_review_irr_v1` summary record per scored evaluation with available
+review annotations.
 
 ## TBD Decisions Resolved For Stage 1
 

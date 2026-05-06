@@ -178,6 +178,14 @@ def ui_routes(manager) -> list[Route]:
         include_org = scope == "org"
         return include_all, include_org
 
+    def _review_scope_flags(request: Request, user) -> tuple[bool, bool]:
+        if _mine_scope_requested(request):
+            return False, False
+        scope = request.query_params.get("scope", "").strip().lower()
+        include_all = bool(getattr(user, "is_reviewer", False)) and scope in ("", "all")
+        include_org = scope == "org"
+        return include_all, include_org
+
     def _run_access_from_cookie(run_service, run_id: str, user):
         if user is None:
             return None
@@ -509,10 +517,10 @@ def ui_routes(manager) -> list[Route]:
     # -----------------------------------------------------------------------
 
     async def list_review_bundles(request: Request) -> JSONResponse:
-        user, err = auth.require_user(request)
+        user, err = auth.require_reviewer(request)
         if err is not None:
             return err
-        include_all, include_org = _scope_flags(request, user)
+        include_all, include_org = _review_scope_flags(request, user)
         return JSONResponse(
             _sanitize_for_json(
                 {
@@ -526,11 +534,11 @@ def ui_routes(manager) -> list[Route]:
         )
 
     async def get_review_bundle(request: Request) -> JSONResponse:
-        user, err = auth.require_user(request)
+        user, err = auth.require_reviewer(request)
         if err is not None:
             return err
         bundle_id = request.path_params["bundle_id"]
-        include_all, include_org = _scope_flags(request, user)
+        include_all, include_org = _review_scope_flags(request, user)
         try:
             payload = review_store.get_bundle(
                 bundle_id,
@@ -552,11 +560,11 @@ def ui_routes(manager) -> list[Route]:
         return JSONResponse(_sanitize_for_json(payload))
 
     async def append_review_opinion(request: Request) -> JSONResponse:
-        user, err = auth.require_user(request)
+        user, err = auth.require_reviewer(request)
         if err is not None:
             return err
         bundle_id = request.path_params["bundle_id"]
-        include_all, include_org = _scope_flags(request, user)
+        include_all, include_org = _review_scope_flags(request, user)
         try:
             existing = review_store.get_bundle(
                 bundle_id,
@@ -606,11 +614,11 @@ def ui_routes(manager) -> list[Route]:
         return JSONResponse(_sanitize_for_json(payload))
 
     async def replace_review_opinions(request: Request) -> JSONResponse:
-        user, err = auth.require_user(request)
+        user, err = auth.require_reviewer(request)
         if err is not None:
             return err
         bundle_id = request.path_params["bundle_id"]
-        include_all, include_org = _scope_flags(request, user)
+        include_all, include_org = _review_scope_flags(request, user)
         try:
             existing = review_store.get_bundle(
                 bundle_id,
@@ -648,6 +656,33 @@ def ui_routes(manager) -> list[Route]:
             include_org=include_org,
         )
         return JSONResponse(_sanitize_for_json(payload or {"bundle_id": bundle_id}))
+
+    async def admin_review_irr(request: Request) -> JSONResponse:
+        user, err = auth.require_admin(request)
+        if err is not None:
+            return err
+        rows = []
+        for item in review_store.list_bundles(user, include_all=True):
+            bundle_id = str(item.get("bundle_id") or "")
+            if not bundle_id:
+                continue
+            bundle = review_store.get_bundle(bundle_id, user, include_all=True)
+            if not isinstance(bundle, dict):
+                continue
+            human_review = bundle.get("human_review") or {}
+            summary = human_review.get("summary") if isinstance(human_review, dict) else {}
+            irr = summary.get("irr") if isinstance(summary, dict) else {}
+            rows.append(
+                {
+                    "bundle_id": bundle_id,
+                    "task_id": item.get("task_id"),
+                    "score_id": human_review.get("score_id"),
+                    "review_count": summary.get("review_count"),
+                    "reviewer_count": summary.get("reviewer_count"),
+                    "irr": irr,
+                }
+            )
+        return JSONResponse(_sanitize_for_json({"sessions": rows}))
 
     # -----------------------------------------------------------------------
     # New: /ui/runs/*
@@ -1211,6 +1246,7 @@ def ui_routes(manager) -> list[Route]:
         Route("/ui/tasks/catalog", task_catalog, methods=["GET"]),
         Route("/ui/tasks/catalog/labels", task_catalog_labels, methods=["GET"]),
         # New: human review console
+        Route("/ui/review/admin/irr", admin_review_irr, methods=["GET"]),
         Route("/ui/review/bundles", list_review_bundles, methods=["GET"]),
         Route("/ui/review/bundles/{bundle_id}", get_review_bundle, methods=["GET"]),
         Route(

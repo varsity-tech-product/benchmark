@@ -30,6 +30,9 @@ Current routes:
 - `GET /ui/results/{session_id}/workspace`
 - `GET /ui/results/{session_id}/workspace/preview/{path:path}`
 - `GET /ui/results/{session_id}/files/{path:path}`
+- `GET /ui/review/bundles`
+- `GET /ui/review/bundles/{bundle_id}`
+- `POST /api/reviews/{score_id}`
 - `GET /skill.md`
 - `GET /skills/quanttutorbench-rest-agent`
 - `GET /skills/quanttutorbench-rest-agent/raw`

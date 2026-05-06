@@ -47,6 +47,7 @@ from server.run.jobs import (
     JOB_STATUS_RUNNING,
 )
 from server.run.models import RunStatus
+from server.api.review_api import review_api_routes
 from server.web.ui_app import extract_bearer_token, resolve_run_from_token, ui_routes
 
 from .limits import HEAVY_TOOLS, backtest_sem
@@ -2446,6 +2447,7 @@ def create_app(
         Route("/api/runs/{run_id}/resume", api_run_resume, methods=["POST"]),
         Route("/api/runs/{run_id}/replay", api_run_replay, methods=["GET"]),
         Route("/api/runs/{run_id}/state", api_run_state, methods=["GET"]),
+        *review_api_routes(manager),
         # Operator-only evaluation surface: not reachable from MCP or
         # client-facing /session tool dispatch.
         Route("/ops/session/{sid}/evaluate", ops_evaluate, methods=["POST"]),

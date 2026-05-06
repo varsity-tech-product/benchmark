@@ -82,6 +82,7 @@ class Bundle:
     tool_calls: list[ToolCall] = field(default_factory=list)
     artifacts: dict[str, Any] = field(default_factory=dict)
     workspace: WorkspaceSnapshot = field(default_factory=WorkspaceSnapshot)
+    human_reviews: list[dict[str, Any]] = field(default_factory=list)
 
     @property
     def reference_artifact(self) -> dict[str, Any]:

@@ -27,6 +27,9 @@ GITHUB_TOKEN_URL = "https://github.com/login/oauth/access_token"
 GITHUB_API_URL = "https://api.github.com"
 
 
+Role = Literal["admin", "reviewer", "user"]
+
+
 @dataclass(frozen=True)
 class UserContext:
     user_id: str
@@ -35,11 +38,15 @@ class UserContext:
     display_name: str
     avatar_url: str
     github_user_id: str = ""
-    role: Literal["admin", "user"] = "user"
+    role: Role = "user"
 
     @property
     def is_admin(self) -> bool:
         return self.role == "admin"
+
+    @property
+    def is_reviewer(self) -> bool:
+        return self.role in {"admin", "reviewer"}
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -53,7 +60,7 @@ class UserContext:
             email=str(data.get("email") or ""),
             display_name=str(data.get("display_name") or ""),
             avatar_url=str(data.get("avatar_url") or ""),
-            role="admin" if data.get("role") == "admin" else "user",
+            role=_normalize_role(data.get("role")),
         )
 
 
@@ -265,6 +272,16 @@ class AuthService:
         if user and user.is_admin:
             return user, None
         return None, JSONResponse({"error": "Admin access required"}, status_code=403)
+
+    def require_reviewer(
+        self, request: Request
+    ) -> tuple[UserContext | None, JSONResponse | None]:
+        user, err = self.require_user(request)
+        if err is not None:
+            return None, err
+        if user and user.is_reviewer:
+            return user, None
+        return None, JSONResponse({"error": "Reviewer access required"}, status_code=403)
 
     def resolve_client_user(
         self, request: Request
@@ -504,9 +521,14 @@ class AuthService:
         email = str(profile.get("email") or "")
         admin_logins = _csv_env("QTB_ADMIN_GITHUB_LOGINS")
         admin_emails = _csv_env("QTB_ADMIN_EMAILS")
-        role: Literal["admin", "user"] = "admin" if (
-            login.lower() in admin_logins or email.lower() in admin_emails
-        ) else "user"
+        reviewer_logins = _csv_env("QTB_REVIEWER_GITHUB_LOGINS")
+        reviewer_emails = _csv_env("QTB_REVIEWER_EMAILS")
+        if login.lower() in admin_logins or email.lower() in admin_emails:
+            role: Role = "admin"
+        elif login.lower() in reviewer_logins or email.lower() in reviewer_emails:
+            role = "reviewer"
+        else:
+            role = "user"
         return UserContext(
             user_id=f"github:{login.lower()}",
             github_login=login,
@@ -552,8 +574,8 @@ def _client_api_keys() -> dict[str, UserContext]:
     Format:
       ``key=user_id|github_login|email|role,key2=user_id2|login2``
 
-    ``github_login``, ``email``, and ``role`` are optional. Use role ``admin``
-    only for trusted automation.
+    ``github_login``, ``email``, and ``role`` are optional. Supported roles are
+    ``user``, ``reviewer``, and ``admin``.
     """
     raw = os.environ.get("QTB_CLIENT_API_KEYS", "").strip()
     if not raw:
@@ -571,7 +593,7 @@ def _client_api_keys() -> dict[str, UserContext]:
             continue
         github_login = parts[1] if len(parts) > 1 and parts[1] else user_id
         email = parts[2] if len(parts) > 2 else ""
-        role = "admin" if len(parts) > 3 and parts[3].lower() == "admin" else "user"
+        role = _normalize_role(parts[3] if len(parts) > 3 else "user")
         users[key] = UserContext(
             user_id=user_id,
             github_login=github_login,
@@ -611,6 +633,15 @@ def _bool_env(name: str, default: bool) -> bool:
     if raw in {"0", "false", "no", "off"}:
         return False
     return default
+
+
+def _normalize_role(value: object) -> Role:
+    role = str(value or "user").strip().lower()
+    if role == "admin":
+        return "admin"
+    if role == "reviewer":
+        return "reviewer"
+    return "user"
 
 
 def _sanitize_next_url(next_url: str) -> str:

@@ -77,6 +77,12 @@
     },
     "workspace": {
       "$ref": "#/$defs/workspace"
+    },
+    "human_reviews": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/human_review"
+      }
     }
   },
   "additionalProperties": true,
@@ -194,6 +200,43 @@
           "type": "string"
         },
         "metadata": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": true
+    },
+    "human_review": {
+      "type": "object",
+      "required": ["version", "record_type", "score_id"],
+      "properties": {
+        "version": {
+          "type": "string"
+        },
+        "record_type": {
+          "type": "string",
+          "enum": ["annotation", "irr_summary"]
+        },
+        "review_id": {
+          "type": "string"
+        },
+        "score_id": {
+          "type": "string"
+        },
+        "reviewer_id": {
+          "type": "string"
+        },
+        "submitted_at": {
+          "type": "string"
+        },
+        "criteria": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        },
+        "summary": {
           "type": "object",
           "additionalProperties": true
         }

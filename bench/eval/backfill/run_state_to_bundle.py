@@ -38,6 +38,7 @@ from eval.contracts.bundle import (
     WorkspaceFile,
     WorkspaceSnapshot,
 )
+from eval.storage.human_reviews import export_human_reviews_for_result
 
 logger = logging.getLogger(__name__)
 
@@ -86,6 +87,7 @@ def backfill(
             root="agent_files",
             files=_build_workspace_manifest(run_state_path.parent / "agent_files"),
         ),
+        human_reviews=export_human_reviews_for_result(run_state_path.parent),
     )
 
     out = output or run_state_path.parent / "bundle.json"

@@ -209,6 +209,7 @@ class ResultIndexer:
             "agent_name": self._extract_agent_name(model),
             "timestamp": timestamp_text,
             "evaluation_status": self._resolve_evaluation_status(latest_score),
+            "score_id": latest_score_id or "",
             "overall_score": self._extract_overall_score(latest_score),
             "has_client_trace": client_trace is not None,
             "has_content_blocks": self._has_content_blocks(client_trace, conversation),
@@ -243,6 +244,26 @@ class ResultIndexer:
             "max_turns": task_meta.get("max_turns"),
         }
         return detail
+
+    def resolve_result_dir(
+        self,
+        session_id: str,
+        *,
+        user: Any | None = None,
+        include_all: bool = False,
+        include_org: bool = False,
+    ) -> Path | None:
+        result_dir = self._find_result_dir(session_id)
+        if result_dir is None:
+            return None
+        run_state = self._load_json(result_dir / "run_state.json")
+        if not isinstance(run_state, dict):
+            return None
+        if not self._run_state_visible(
+            run_state, user=user, include_all=include_all, include_org=include_org
+        ):
+            raise PermissionError("Result access denied")
+        return result_dir
 
     def resolve_agent_file(
         self,
@@ -566,6 +587,7 @@ class ResultIndexer:
                 run_state.get("step_count"), default=len(raw_tool_logs)
             ),
             "evaluation_status": self._resolve_evaluation_status(latest_score),
+            "score_id": latest_score_id or "",
             "overall_score": self._extract_overall_score(latest_score),
             "has_client_trace": client_trace is not None,
             "has_content_blocks": self._has_content_blocks(client_trace, conversation),
