@@ -167,6 +167,7 @@
     var target = document.getElementById('nav-user');
     if (!target) return;
     var user = state.auth.user;
+    renderNavAccess();
     if (!user) {
       if (state.auth.authMode === 'github') {
         target.innerHTML = '<a class="btn btn-secondary btn-small" href="' + loginUrl() + '">Log in</a>';
@@ -201,6 +202,17 @@
         });
       });
     }
+  }
+
+  function canAccessReview() {
+    if (state.auth.authMode === 'disabled') return true;
+    var user = state.auth.user || {};
+    return user.role === 'admin' || user.role === 'reviewer';
+  }
+
+  function renderNavAccess() {
+    var reviewLink = document.querySelector('.nav-link[data-route="review"]');
+    if (reviewLink) reviewLink.hidden = !canAccessReview();
   }
 
   function formatDuration(value) {
@@ -1563,7 +1575,7 @@
           '<div class="page-title-wrap">' +
             '<p class="eyebrow">Human Review</p>' +
             '<h1>Human reviewer console.</h1>' +
-            '<p class="subtitle">Inspect archived session bundles across task, conversation, tool, workspace, and judge layers. Opinion cards are stored as structured JSON per bundle and GitHub reviewer.</p>' +
+            '<p class="subtitle">Score completed sessions against the review rubric, inspect evidence layers, and add structured opinion cards for audit context.</p>' +
           '</div>' +
           '<div class="summary-strip">' +
             buildSummaryPill('Bundles', String(bundles.length)) +
@@ -1624,6 +1636,7 @@
         '<div class="session-meta-row">' +
           '<span class="meta-chip">' + escapeHtml((item.turn_count || 0) + ' turns') + '</span>' +
           '<span class="meta-chip">' + escapeHtml((item.tool_count || 0) + ' tools') + '</span>' +
+          '<span class="meta-chip">' + escapeHtml((item.score_review_count || 0) + ' rubric review(s)') + '</span>' +
           '<span class="meta-chip">' + escapeHtml((item.review_count || 0) + ' review file(s)') + '</span>' +
           reviewed +
         '</div>' +
@@ -2012,6 +2025,7 @@
             '<h2>Structured Feedback</h2>' +
           '</div>' +
         '</header>' +
+        renderHumanReviewScoringForm(bundle) +
         renderReviewOpinionForm() +
         '<label class="filter-field">' +
           '<span class="filter-label">Section Filter</span>' +
@@ -2021,6 +2035,120 @@
           (visible.length ? visible.map(renderReviewOpinionCard).join('') : '<p class="detail-empty-note">Cards for the selected section will appear here.</p>') +
         '</div>' +
       '</aside>';
+  }
+
+  function renderHumanReviewScoringForm(bundle) {
+    var human = bundle.human_review || {};
+    var scoreId = human.score_id || '';
+    var summary = human.summary || {};
+    var current = human.current_user_review || {};
+    var criteria = humanReviewCriteria(bundle);
+    var latest = latestCriterionMap(current);
+    var irr = (summary.irr || {});
+    var irrText = irr.status === 'computed'
+      ? formatScore(irr.overall_cohen_kappa)
+      : titleCase(irr.status || 'pending');
+
+    if (!scoreId) {
+      return '' +
+        '<section class="review-score-editor">' +
+          '<div class="review-editor-title">' +
+            '<p class="eyebrow">Rubric Scores</p>' +
+            '<h3>Evaluation Pending</h3>' +
+          '</div>' +
+          '<p class="detail-empty-note">Automated score context must exist before rubric annotations can be submitted.</p>' +
+        '</section>';
+    }
+
+    return '' +
+      '<section class="review-score-editor">' +
+        '<div class="review-editor-title">' +
+          '<p class="eyebrow">Rubric Scores</p>' +
+          '<h3>Score Annotation</h3>' +
+        '</div>' +
+        '<div class="detail-chip-list">' +
+          '<span class="detail-chip">Score ' + escapeHtml(scoreId) + '</span>' +
+          '<span class="detail-chip">' + escapeHtml(String(summary.reviewer_count || 0)) + ' reviewer(s)</span>' +
+          '<span class="detail-chip">IRR ' + escapeHtml(irrText) + '</span>' +
+        '</div>' +
+        '<form id="human-review-form" class="review-score-form">' +
+          criteria.map(function (criterion) {
+            var existing = latest[criterion.criterion_id] || {};
+            return renderHumanReviewCriterion(criterion, existing);
+          }).join('') +
+          '<label class="filter-field">' +
+            '<span class="filter-label">Overall Comment</span>' +
+            '<textarea id="human-review-overall-comment" class="run-textarea" rows="3">' + escapeHtml(current.overall_comment || '') + '</textarea>' +
+          '</label>' +
+          '<div id="human-review-error" class="run-error" hidden></div>' +
+          '<div class="run-actions">' +
+            '<button class="btn btn-primary" type="submit">Submit Scores</button>' +
+          '</div>' +
+        '</form>' +
+      '</section>';
+  }
+
+  function humanReviewCriteria(bundle) {
+    var human = bundle.human_review || {};
+    var rubric = human.rubric || {};
+    var criteria = rubric.criteria || [];
+    if (criteria.length) return criteria;
+    return [
+      {criterion_id: 'task_completion.v1', dimension: 'task_completion', score_anchors: {}, required_evidence: []},
+      {criterion_id: 'quant_correctness.v1', dimension: 'quant_correctness', score_anchors: {}, required_evidence: []}
+    ];
+  }
+
+  function latestCriterionMap(review) {
+    var map = {};
+    (review.criteria || []).forEach(function (item) {
+      if (item && item.criterion_id) map[item.criterion_id] = item;
+    });
+    return map;
+  }
+
+  function renderHumanReviewCriterion(criterion, existing) {
+    var id = criterion.criterion_id || criterion.dimension || '';
+    var anchors = criterion.score_anchors || {};
+    var evidence = criterion.required_evidence || [];
+    var selected = existing.score == null ? '' : String(existing.score);
+    var anchorHtml = Object.keys(anchors).sort().map(function (key) {
+      return '<li><strong>' + escapeHtml(key) + '</strong> ' + escapeHtml(anchors[key]) + '</li>';
+    }).join('');
+    var evidenceHtml = evidence.length
+      ? '<p class="detail-empty-note">Evidence: ' + escapeHtml(evidence.join(', ')) + '</p>'
+      : '';
+    return '' +
+      '<article class="review-score-criterion" data-criterion-id="' + escapeHtml(id) + '">' +
+        '<header class="review-row-head">' +
+          '<div>' +
+            '<strong>' + escapeHtml(titleCase(criterion.dimension || id)) + '</strong>' +
+            '<span class="meta-chip">' + escapeHtml(id) + '</span>' +
+          '</div>' +
+          '<select class="filter-select human-review-score" data-criterion-id="' + escapeHtml(id) + '" required>' +
+            renderScoreOptions(selected) +
+          '</select>' +
+        '</header>' +
+        evidenceHtml +
+        (anchorHtml ? '<details><summary>Score Anchors</summary><ul class="review-anchor-list">' + anchorHtml + '</ul></details>' : '') +
+        '<label class="filter-field">' +
+          '<span class="filter-label">Justification</span>' +
+          '<textarea class="run-textarea human-review-justification" data-criterion-id="' + escapeHtml(id) + '" rows="3" required>' + escapeHtml(existing.justification || '') + '</textarea>' +
+        '</label>' +
+        '<label class="filter-field">' +
+          '<span class="filter-label">Evidence Notes</span>' +
+          '<textarea class="run-textarea human-review-evidence" data-criterion-id="' + escapeHtml(id) + '" rows="2">' + escapeHtml(existing.evidence || '') + '</textarea>' +
+        '</label>' +
+      '</article>';
+  }
+
+  function renderScoreOptions(selected) {
+    var html = '<option value="">Score</option>';
+    [1, 2, 3, 4, 5].forEach(function (score) {
+      var value = String(score);
+      html += '<option value="' + value + '"' + (selected === value ? ' selected' : '') + '>' + value + '</option>';
+    });
+    return html;
   }
 
   function renderReviewOpinionForm() {
@@ -2197,6 +2325,7 @@
       });
     }
     bindReviewOpinionForm(bundle);
+    bindHumanReviewForm(bundle);
   }
 
   function truncateReviewOption(value, limit) {
@@ -2330,6 +2459,58 @@
       if (errorEl) {
         errorEl.hidden = false;
         errorEl.textContent = error && error.message ? error.message : String(error || 'Unable to save card');
+      }
+    });
+  }
+
+  function bindHumanReviewForm(bundle) {
+    var form = document.getElementById('human-review-form');
+    if (!form) return;
+    form.addEventListener('submit', function (event) {
+      event.preventDefault();
+      submitHumanReviewScores(bundle);
+    });
+  }
+
+  function submitHumanReviewScores(bundle) {
+    var human = bundle.human_review || {};
+    var scoreId = human.score_id || '';
+    var errorEl = document.getElementById('human-review-error');
+    if (!scoreId) return;
+    var rows = Array.prototype.slice.call(document.querySelectorAll('.review-score-criterion'));
+    var criteria = rows.map(function (row) {
+      var criterionId = row.getAttribute('data-criterion-id') || '';
+      var score = row.querySelector('.human-review-score');
+      var justification = row.querySelector('.human-review-justification');
+      var evidence = row.querySelector('.human-review-evidence');
+      return {
+        criterion_id: criterionId,
+        score: score ? score.value : '',
+        justification: justification ? justification.value.trim() : '',
+        evidence: evidence ? evidence.value.trim() : ''
+      };
+    });
+    var comment = document.getElementById('human-review-overall-comment');
+    var payload = {
+      session_id: bundle.bundle_id,
+      bundle_id: bundle.bundle_id,
+      task_id: (bundle.detail || {}).task_id || '',
+      criteria: criteria,
+      overall_comment: comment ? comment.value.trim() : ''
+    };
+
+    restApi('/api/reviews/' + encodeURIComponent(scoreId) + '?session_id=' + encodeURIComponent(bundle.bundle_id), {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    }).then(function () {
+      state.review.bundles = null;
+      return ensureReviewBundle(bundle.bundle_id, true);
+    }).then(function (updated) {
+      renderReviewBundlePage(updated);
+    }).catch(function (error) {
+      if (errorEl) {
+        errorEl.hidden = false;
+        errorEl.textContent = error && error.message ? error.message : String(error || 'Unable to submit scores');
       }
     });
   }

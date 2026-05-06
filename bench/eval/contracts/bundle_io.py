@@ -24,7 +24,10 @@ class BundleError(RuntimeError):
 
 def to_dict(bundle: Bundle) -> dict[str, Any]:
     """Serialize a Bundle to a plain dict suitable for JSON dumping."""
-    return asdict(bundle)
+    payload = asdict(bundle)
+    if not payload.get("human_reviews"):
+        payload.pop("human_reviews", None)
+    return payload
 
 
 def to_json(bundle: Bundle, *, indent: int = 2) -> str:
@@ -77,6 +80,9 @@ def from_dict(data: dict[str, Any]) -> Bundle:
         ],
         artifacts=_dict_or_empty(data.get("artifacts")),
         workspace=_workspace_from_dict(data.get("workspace") or {}),
+        human_reviews=[
+            item for item in (data.get("human_reviews") or []) if isinstance(item, dict)
+        ],
     )
 
 

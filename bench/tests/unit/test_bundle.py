@@ -91,6 +91,21 @@ def _make_bundle() -> Bundle:
 
 def test_bundle_roundtrip_preserves_all_fields():
     b = _make_bundle()
+    b.human_reviews = [
+        {
+            "version": "human_review_score_v1",
+            "record_type": "annotation",
+            "score_id": "score_1",
+            "reviewer_id": "reviewer-1",
+            "criteria": [
+                {
+                    "criterion_id": "task_completion.v1",
+                    "score": 4,
+                    "justification": "Complete.",
+                }
+            ],
+        }
+    ]
     s = bundle_io.to_json(b)
     b2 = bundle_io.from_json(s)
     assert b2 == b

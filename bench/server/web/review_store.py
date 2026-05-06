@@ -10,6 +10,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from eval.rubrics.registry import load_rubric_registry
+from eval.storage.human_reviews import HumanReviewStore
 from server.auth import UserContext
 
 
@@ -33,6 +35,7 @@ class ReviewStore:
         self.bench_root = Path(bench_root)
         self.indexer = indexer
         self.review_root = self.bench_root / "experiments" / "human_review"
+        self.human_reviews = HumanReviewStore()
         self._lock = threading.Lock()
 
     def list_bundles(
@@ -57,12 +60,35 @@ class ReviewStore:
             review_count = (
                 len(list(review_dir.glob("*.json"))) if review_dir.is_dir() else 0
             )
+            score_review_summary = self._score_review_summary(bundle_id)
+            score_reviewed = False
+            if user and item.get("score_id"):
+                result_dir = self.indexer.resolve_result_dir(
+                    bundle_id,
+                    user=user,
+                    include_all=include_all,
+                    include_org=include_org,
+                )
+                if result_dir is not None:
+                    score_reviewed = self.human_reviews.reviewer_has_review(
+                        result_dir,
+                        str(item.get("score_id") or ""),
+                        user,
+                    )
             row = dict(item)
             row["bundle_id"] = bundle_id
             row["review_count"] = review_count
+            row["score_review_count"] = score_review_summary.get("review_count", 0)
+            row["score_reviewer_count"] = score_review_summary.get("reviewer_count", 0)
             row["reviewed_by_current_user"] = (
-                self._review_file(bundle_id, user).exists() if user else False
+                (
+                    self._review_file(bundle_id, user).exists()
+                    or score_reviewed
+                )
+                if user
+                else False
             )
+            row["score_reviewed_by_current_user"] = score_reviewed
             bundles.append(row)
         return bundles
 
@@ -105,6 +131,13 @@ class ReviewStore:
                 "judge_eval": self._build_judge_eval_layer(detail, score_json),
             },
             "review": self.load_review(canonical_id, user),
+            "human_review": self._build_human_review_payload(
+                canonical_id,
+                detail,
+                user,
+                include_all=include_all,
+                include_org=include_org,
+            ),
         }
 
     def load_review(
@@ -426,6 +459,89 @@ class ReviewStore:
             if isinstance(detail, dict):
                 rows.extend(self._extract_detail_rows(track, detail))
         return rows
+
+    def _build_human_review_payload(
+        self,
+        bundle_id: str,
+        detail: dict[str, Any],
+        user: UserContext | None,
+        *,
+        include_all: bool = False,
+        include_org: bool = False,
+    ) -> dict[str, Any]:
+        score_json = detail.get("score_json")
+        score_id = str((score_json or {}).get("score_id") or detail.get("score_id") or "")
+        rubric = self._human_review_rubric()
+        payload: dict[str, Any] = {
+            "score_id": score_id,
+            "rubric": rubric,
+            "summary": {
+                "score_id": score_id,
+                "review_count": 0,
+                "reviewer_count": 0,
+                "irr": {},
+            },
+            "current_user_review": None,
+        }
+        if not score_id or user is None:
+            return payload
+
+        try:
+            result_dir = self.indexer.resolve_result_dir(
+                bundle_id,
+                user=user,
+                include_all=include_all,
+                include_org=include_org,
+            )
+        except PermissionError:
+            raise
+        if result_dir is None:
+            return payload
+
+        payload["summary"] = self.human_reviews.summary(result_dir, score_id)
+        payload["current_user_review"] = self.human_reviews.latest_review_for_user(
+            result_dir,
+            score_id,
+            user,
+        )
+        return payload
+
+    def _human_review_rubric(self) -> dict[str, Any]:
+        registry = load_rubric_registry()
+        return {
+            "version": str(registry.get("version") or ""),
+            "score_scale": registry.get("score_scale") or {"min": 1, "max": 5},
+            "criteria": [
+                {
+                    "criterion_id": str(entry.get("rubric_id") or ""),
+                    "dimension": str(entry.get("dimension") or ""),
+                    "version": str(entry.get("version") or ""),
+                    "score_anchors": entry.get("score_anchors") or {},
+                    "required_evidence": entry.get("required_evidence") or [],
+                    "common_failure_cases": entry.get("common_failure_cases") or [],
+                    "mapped_judge_dimensions": entry.get("mapped_judge_dimensions")
+                    or [],
+                }
+                for entry in registry.get("rubrics", [])
+                if isinstance(entry, dict) and entry.get("rubric_id")
+            ],
+        }
+
+    def _score_review_summary(self, bundle_id: str) -> dict[str, Any]:
+        try:
+            detail = self.indexer.get_detail(bundle_id)
+            if not isinstance(detail, dict):
+                return {}
+            score_json = detail.get("score_json")
+            score_id = str((score_json or {}).get("score_id") or "")
+            if not score_id:
+                return {}
+            result_dir = self.indexer.resolve_result_dir(bundle_id)
+            if result_dir is None:
+                return {}
+            return self.human_reviews.summary(result_dir, score_id)
+        except Exception:
+            return {}
 
     def _extract_detail_rows(
         self, track: str, detail: dict[str, Any]

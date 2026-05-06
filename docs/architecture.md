@@ -484,6 +484,8 @@ inspection through `/ui/review/*`. The Vercel-facing shell serves `/review` and
 `/review/{bundle_id}` as SPA routes backed by the existing GitHub OAuth cookie.
 Any authenticated GitHub reviewer can inspect the task spec, transcript, tutor
 tool log, workspace tree, and judge evaluation for a completed bundle.
+Reviewer access is a distinct `reviewer` role; admins inherit reviewer access,
+and ordinary authenticated users stay on the run/results surfaces.
 
 The isolated frontend treats Session Flow as the live run monitor and Human
 Review as the archive-facing session view: active runs render their full
@@ -502,6 +504,22 @@ cards with `section`, optional `target`, `severity`, `comment`, `tags`, reviewer
 metadata, and optional judge-disagreement scores. Overlapping fields such as
 `sample_id`, `reviewer_id`, `label_version`, and `timestamp` are preserved for
 downstream joins with `judge_validation/human_labels*.json`.
+
+Score-bound rubric annotations live beside automated score artifacts:
+
+```text
+bench/results/server/{task_id}/{persona_id}/{run_dir}/evaluations/{score_id}/human_reviews/{review_id}.json
+```
+
+Each record follows `human_review_score_v1`, carries 1-5 scores plus
+justifications per rubric criterion, and is tied to the score id that provided
+the automated judge context. `POST /api/reviews/{score_id}` writes these
+records after reviewer auth. `bench/eval/storage/human_reviews.py` reads the
+records and `bench/eval/programmatic/inter_rater_reliability.py` computes the
+admin IRR summary surfaced through `/ui/review/admin/irr` and bundle detail.
+Bundle v1 alpha exports include a top-level `human_reviews` array when these
+annotations exist, with annotation records followed by an IRR summary record
+per scored evaluation.
 
 ## Public Reads
 
@@ -547,7 +565,9 @@ in-bundle `evaluations/index.json` plus `score_n/score.json` and `cost.json`.
 It also applies owner filtering for private/org/admin views.
 `bench/server/web/review_store.py` builds the review read model from the same
 result indexer and writes per-reviewer opinion files under
-`bench/experiments/human_review/`.
+`bench/experiments/human_review/`. Score-bound rubric annotations use
+`eval/storage/human_reviews.py` and stay under each evaluation's `score_n`
+directory.
 
 ## Tests
 

@@ -11,6 +11,7 @@ from starlette.testclient import TestClient
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from server.api.http_app import create_app
+from server.api.review_api import review_api_routes
 from server.auth import AuthService, SESSION_COOKIE, UserContext
 from server.web.ui_app import ui_routes
 from server.web.ui_indexer import ResultIndexer
@@ -514,6 +515,38 @@ class UiRoutesTests(unittest.TestCase):
                     ],
                 },
             )
+            _write_json(
+                result_dir / "evaluations" / "index.json",
+                {
+                    "version": "2.0",
+                    "next_score_number": 2,
+                    "latest_completed_score_id": "score_1",
+                    "scores": [
+                        {
+                            "score_id": "score_1",
+                            "status": "completed_scored",
+                            "eval_mode": "full",
+                            "eval_model": "judge-a",
+                            "created_at": "2026-01-01T01:01:01Z",
+                            "completed_at": "2026-01-01T01:01:02Z",
+                            "overall_score": 0.82,
+                            "score_path": "score_1/score.json",
+                            "cost_path": "score_1/cost.json",
+                        }
+                    ],
+                },
+            )
+            _write_json(
+                result_dir / "evaluations" / "score_1" / "score.json",
+                {
+                    "version": "2.0",
+                    "score_id": "score_1",
+                    "score_status": "completed_scored",
+                    "overall_score": 0.82,
+                    "qr": {"track": "qr", "score": 0.8, "status": "success"},
+                    "qp": {"track": "qp", "score": 0.84, "status": "success"},
+                },
+            )
             file_path = result_dir / "agent_files" / "artifacts" / "report.md"
             file_path.parent.mkdir(parents=True, exist_ok=True)
             file_path.write_text("report", encoding="utf-8")
@@ -524,7 +557,10 @@ class UiRoutesTests(unittest.TestCase):
             csv_path.parent.mkdir(parents=True, exist_ok=True)
             csv_path.write_text("col_a,col_b\n1,2\n3,4\n", encoding="utf-8")
 
-            app = Starlette(routes=ui_routes(_Manager(root)))
+            manager = _Manager(root)
+            app = Starlette(
+                routes=[*ui_routes(manager), *review_api_routes(manager)]
+            )
             client = TestClient(app)
 
             tasks_response = client.get("/ui/tasks")
@@ -583,6 +619,33 @@ class UiRoutesTests(unittest.TestCase):
                 f"/ui/review/bundles/{session_prefix}"
             )
             review_list_after_response = client.get("/ui/review/bundles")
+            score_review_response = client.post(
+                f"/api/reviews/score_1?session_id={session_id}",
+                json={
+                    "session_id": "wrong-session",
+                    "bundle_id": "wrong-bundle",
+                    "task_id": "wrong-task",
+                    "criteria": [
+                        {
+                            "criterion_id": "task_completion.v1",
+                            "score": 4,
+                            "justification": "The final answer addresses the task.",
+                        },
+                        {
+                            "criterion_id": "quant_correctness.v1",
+                            "score": 3,
+                            "justification": "The quant reasoning is adequate.",
+                        },
+                    ],
+                    "overall_comment": "Usable session.",
+                },
+            )
+            score_review_get_response = client.get(
+                f"/api/reviews/score_1?session_id={session_id}"
+            )
+            score_review_bundle_response = client.get(
+                f"/ui/review/bundles/{session_id}"
+            )
 
             self.assertEqual(tasks_response.status_code, 200)
             self.assertEqual(results_response.status_code, 200)
@@ -603,6 +666,9 @@ class UiRoutesTests(unittest.TestCase):
             self.assertEqual(review_prefix_post_response.status_code, 200)
             self.assertEqual(review_prefix_reload_response.status_code, 200)
             self.assertEqual(review_list_after_response.status_code, 200)
+            self.assertEqual(score_review_response.status_code, 201)
+            self.assertEqual(score_review_get_response.status_code, 200)
+            self.assertEqual(score_review_bundle_response.status_code, 200)
             self.assertEqual(file_response.text, "report")
             self.assertIn("QuantTutorBench REST Agent", skill_response.text)
             self.assertIn("POST /client/runs/start", skill_response.text)
@@ -718,6 +784,31 @@ class UiRoutesTests(unittest.TestCase):
                 / "local-dev.json"
             )
             self.assertFalse(alias_review_file.exists())
+            score_review_payload = score_review_response.json()
+            self.assertEqual(score_review_payload["review"]["score_id"], "score_1")
+            self.assertEqual(score_review_payload["review"]["session_id"], session_id)
+            self.assertEqual(score_review_payload["review"]["bundle_id"], session_id)
+            self.assertEqual(
+                score_review_payload["review"]["task_id"], "L2_DAT_01_demo"
+            )
+            self.assertEqual(
+                score_review_payload["review"]["criteria"][0]["score"], 4
+            )
+            score_review_files = list(
+                (result_dir / "evaluations" / "score_1" / "human_reviews").glob(
+                    "*.json"
+                )
+            )
+            self.assertEqual(len(score_review_files), 1)
+            self.assertEqual(
+                score_review_get_response.json()["summary"]["review_count"], 1
+            )
+            self.assertEqual(
+                score_review_bundle_response.json()["human_review"]["summary"][
+                    "review_count"
+                ],
+                1,
+            )
 
     def test_review_route_resolves_archives_without_session_id_file(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -761,7 +852,71 @@ class UiRoutesTests(unittest.TestCase):
             self.assertEqual(detail_response.json()["bundle_id"], session_id)
             self.assertEqual(prefix_response.json()["bundle_id"], session_id)
 
-    def test_review_routes_preserve_private_result_visibility(self):
+    def test_review_list_marks_score_only_reviewed_sessions(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            session_id = "score-only-session-001"
+            result_dir = _make_server_result_dir(
+                root, "L2_DAT_01_demo", "beginner_persona", session_id
+            )
+            _write_json(
+                result_dir / "run_state.json",
+                {
+                    "session_id": session_id,
+                    "task_id": "L2_DAT_01_demo",
+                    "persona_id": "beginner_persona",
+                    "conversation": [{"role": "assistant", "content": "Answer"}],
+                    "tool_logs": [],
+                    "workspace_files": [],
+                },
+            )
+            _write_json(
+                result_dir / "evaluations" / "index.json",
+                {
+                    "version": "2.0",
+                    "latest_completed_score_id": "score_1",
+                    "scores": [{"score_id": "score_1", "status": "completed_scored"}],
+                },
+            )
+            _write_json(
+                result_dir / "evaluations" / "score_1" / "score.json",
+                {
+                    "score_id": "score_1",
+                    "score_status": "completed_scored",
+                    "overall_score": 0.8,
+                },
+            )
+
+            manager = _Manager(root)
+            app = Starlette(
+                routes=[*ui_routes(manager), *review_api_routes(manager)]
+            )
+            client = TestClient(app)
+            response = client.post(
+                f"/api/reviews/score_1?session_id={session_id}",
+                json={
+                    "session_id": session_id,
+                    "task_id": "L2_DAT_01_demo",
+                    "criteria": [
+                        {
+                            "criterion_id": "task_completion.v1",
+                            "score": 4,
+                            "justification": "The session completes the task.",
+                        }
+                    ],
+                },
+            )
+            list_response = client.get("/ui/review/bundles")
+
+            self.assertEqual(response.status_code, 201)
+            self.assertEqual(list_response.status_code, 200)
+            row = list_response.json()["bundles"][0]
+            self.assertTrue(row["reviewed_by_current_user"])
+            self.assertTrue(row["score_reviewed_by_current_user"])
+            self.assertEqual(row["score_review_count"], 1)
+            self.assertEqual(row["review_count"], 0)
+
+    def test_review_routes_require_reviewer_role(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
             _write_json(
@@ -805,7 +960,7 @@ class UiRoutesTests(unittest.TestCase):
             with patch.dict("os.environ", {"QTB_AUTH_MODE": "github"}, clear=False):
                 app = Starlette(routes=ui_routes(_Manager(root)))
                 auth = AuthService(root)
-                alice_session = auth.store.create_session(
+                plain_session = auth.store.create_session(
                     UserContext(
                         user_id="github:alice",
                         github_login="alice",
@@ -813,6 +968,17 @@ class UiRoutesTests(unittest.TestCase):
                         display_name="Alice",
                         avatar_url="",
                         github_user_id="101",
+                    )
+                )
+                reviewer_session = auth.store.create_session(
+                    UserContext(
+                        user_id="github:reviewer",
+                        github_login="reviewer",
+                        email="reviewer@example.com",
+                        display_name="Reviewer",
+                        avatar_url="",
+                        github_user_id="202",
+                        role="reviewer",
                     )
                 )
                 admin_session = auth.store.create_session(
@@ -827,12 +993,20 @@ class UiRoutesTests(unittest.TestCase):
                     )
                 )
 
-                alice_client = TestClient(app)
-                alice_client.cookies.set(SESSION_COOKIE, alice_session)
-                alice_list = alice_client.get("/ui/review/bundles")
-                alice_own = alice_client.get("/ui/review/bundles/alice-session-001")
-                alice_bob = alice_client.get("/ui/review/bundles/bob-session-001")
-                alice_bob_post = alice_client.post(
+                plain_client = TestClient(app)
+                plain_client.cookies.set(SESSION_COOKIE, plain_session)
+                plain_list = plain_client.get("/ui/review/bundles")
+
+                reviewer_client = TestClient(app)
+                reviewer_client.cookies.set(SESSION_COOKIE, reviewer_session)
+                reviewer_list = reviewer_client.get("/ui/review/bundles")
+                reviewer_own = reviewer_client.get(
+                    "/ui/review/bundles/alice-session-001"
+                )
+                reviewer_bob = reviewer_client.get(
+                    "/ui/review/bundles/bob-session-001"
+                )
+                reviewer_bob_post = reviewer_client.post(
                     "/ui/review/bundles/bob-session-001/opinions",
                     json={
                         "opinion": {
@@ -846,13 +1020,14 @@ class UiRoutesTests(unittest.TestCase):
                 admin_client.cookies.set(SESSION_COOKIE, admin_session)
                 admin_list = admin_client.get("/ui/review/bundles")
 
-            self.assertEqual(alice_list.status_code, 200)
-            self.assertEqual(alice_own.status_code, 200)
-            self.assertEqual(alice_bob.status_code, 403)
-            self.assertEqual(alice_bob_post.status_code, 403)
+            self.assertEqual(plain_list.status_code, 403)
+            self.assertEqual(reviewer_list.status_code, 200)
+            self.assertEqual(reviewer_own.status_code, 200)
+            self.assertEqual(reviewer_bob.status_code, 200)
+            self.assertEqual(reviewer_bob_post.status_code, 200)
             self.assertEqual(
-                {item["bundle_id"] for item in alice_list.json()["bundles"]},
-                {"alice-session-001"},
+                {item["bundle_id"] for item in reviewer_list.json()["bundles"]},
+                {"alice-session-001", "bob-session-001"},
             )
             self.assertEqual(admin_list.status_code, 200)
             self.assertEqual(

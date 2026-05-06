@@ -191,6 +191,25 @@ class GithubOAuthAuthTests(unittest.TestCase):
                 self.assertEqual(user.role, "admin")
                 self.assertEqual(user.github_user_id, "12345")
 
+    def test_reviewer_role_can_match_login(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.dict(
+                "os.environ",
+                {"QTB_REVIEWER_GITHUB_LOGINS": "reviewer-one"},
+                clear=False,
+            ):
+                auth = AuthService(Path(tmp))
+                user = auth._build_user(
+                    {
+                        "id": 23456,
+                        "login": "reviewer-one",
+                        "email": "reviewer@example.com",
+                        "name": "Reviewer",
+                    }
+                )
+                self.assertEqual(user.role, "reviewer")
+                self.assertTrue(user.is_reviewer)
+
 
 if __name__ == "__main__":
     unittest.main()
