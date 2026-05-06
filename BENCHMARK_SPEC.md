@@ -169,7 +169,7 @@ class Scores:
     quant_result: float        # QR sub-score, 0-100
     quant_process: float       # QP sub-score, 0-100
     task_score: float          # 0.6 * QR + 0.4 * QP
-    task_pass: bool            # task_score >= THRESHOLD (TBD-1, see §6.5)
+    task_pass: bool            # normalized task_score >= 0.50
     process_metrics: dict      # Detailed process breakdown
 ```
 
@@ -180,8 +180,8 @@ REST clients consume the v1 envelope returned by
 `GET /session/{sid}/scores` (see `docs/architecture.md` Public Reads). The
 public top level is `schema_version`, `score_id`, `score_status`,
 `task_score`, `task_pass`; per-track scores and process metric breakdowns
-live under the opaque `detail` blob. `task_pass` is null until baseline
-calibration ships (TBD-1).
+live under the opaque `detail` blob. Completed scored responses populate
+`task_pass` from `task_pass_threshold_v1`.
 
 ### 3.4 Turn Definition
 
@@ -373,7 +373,7 @@ Per-task subscores:
 
 Per-task aggregate:
   task_score = 0.6 × QR_score + 0.4 × QP_score
-  task_pass  = (task_score ≥ THRESHOLD)            # THRESHOLD: TBD-1, §6.5
+  task_pass  = (normalized task_score ≥ 0.50)      # task_pass_threshold_v1
 
 Per-run-set aggregate (n_runs = 3):
   task_pass_majority = sum(task_pass across runs) ≥ 2
@@ -382,8 +382,8 @@ Benchmark headline:
   pass_rate = count(task_pass_majority) / N_tasks
 ```
 
-QR/QP weight (0.6/0.4) and THRESHOLD are tunable; both freeze in v2.0
-after baseline calibration (see §6.5).
+QR/QP weight (0.6/0.4) and `task_pass_threshold_v1` are frozen for the v2.0
+score contract.
 
 ### 6.2 Quant Result Score (QR)
 
@@ -441,10 +441,13 @@ are subsumed by QR.
 | `task_score_mean` (diagnostic) | Mean of `task_score` across all tasks |
 | `task_score_std` (diagnostic) | Std-dev of `task_score` |
 
-**TBD-1 — Pass threshold**: post-baseline. Plan: run weak baseline
-(GPT-4o + naive prompt) and strong baseline (Claude Opus + current best
-engineering); pick THRESHOLD where weak ≈ 25–30% pass, strong ≈ 60–70%
-pass. Lock in v2.0 spec; no further changes.
+**Pass Threshold**: `task_pass_threshold_v1` sets the normalized runtime
+threshold to `0.50`. Calibration source:
+`jv_20260429_stage3_combined` plus
+`bench/experiments/judge_validation/human_labels.json` and
+`bench/experiments/judge_validation/human_review_sample_map.json`. Human pass
+is raw score `3` on the 1-5 validation rubric, which maps to normalized
+score `0.50`.
 
 LLM dependencies in the scoring path: 2 (QR judge, QP judge). The NPC
 LLM (§5) sits in conversation runtime only; its outputs do not enter

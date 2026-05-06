@@ -241,8 +241,13 @@ GET /ops/session/abc123/scores
      "score_id": "score_1",
      "score_status": "completed_scored",
      "task_score": 0.72,
-     "task_pass": null,
-     "detail": {"dimensions": [...], "tracks": {"qr": {...}, "qp": {...}}, ...}
+     "task_pass": true,
+     "detail": {
+       "task_pass_threshold": {"version": "task_pass_threshold_v1", "value": 0.5},
+       "dimensions": [...],
+       "tracks": {"qr": {...}, "qp": {...}},
+       ...
+     }
    }
 ```
 

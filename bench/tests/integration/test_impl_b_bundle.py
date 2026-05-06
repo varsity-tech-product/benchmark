@@ -207,4 +207,5 @@ async def test_impl_b_rest_register_complete_score_flow(bench_root):
 
     assert score_body["score_status"] == "completed_scored"
     assert score_body["task_score"] == 1.0
+    assert score_body["task_pass"] is True
     assert score_body["detail"]["dimensions"][0]["name"] == "programmatic"
