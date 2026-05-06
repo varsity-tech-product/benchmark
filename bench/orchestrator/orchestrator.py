@@ -10,11 +10,9 @@ Manages the per-task lifecycle:
 
 import json
 import os
-import shutil
 
 # Use relative imports that work both as package and standalone
 import sys
-import tempfile
 import time
 from pathlib import Path
 from typing import Optional
@@ -30,6 +28,7 @@ from config.prompt_config import (
     build_user_description,
 )
 from mcp_servers.registry import create_proxy_for_task, register_session_tools
+from server.core.staging import cleanup_staged_dirs, create_staged_dirs
 from eval.core.scoring import compute_benchmark_kpis, compute_task_score
 
 from orchestrator.agent_adapters.base_adapter import BaseAgentAdapter
@@ -523,6 +522,11 @@ class BenchmarkOrchestrator:
                 # Clear task context for next task+persona
                 agent.set_task_context("")
 
+            if self.container_manager.use_docker:
+                self.container_manager.restore_workspace_host_ownership(
+                    container.container_id,
+                )
+
             # === PHASE 3: CAPTURE ===
             # Capture workspace file list before teardown destroys the container.
             # Uses os.walk to include files in subdirectories (e.g. data/).
@@ -820,54 +824,17 @@ class BenchmarkOrchestrator:
         Returns:
             (staged_data_dir, staged_docs_dir, temp_dirs_to_cleanup)
         """
-        temp_dirs: list[str] = []
-
-        if data_files:
-            staged_data = tempfile.mkdtemp(prefix="qtb_data_")
-            temp_dirs.append(staged_data)
-            for fname in data_files:
-                for search_dir in data_search_dirs:
-                    src = os.path.join(search_dir, fname)
-                    if os.path.isfile(src):
-                        dst = os.path.join(staged_data, fname)
-                        os.makedirs(os.path.dirname(dst), exist_ok=True)
-                        shutil.copy2(src, dst)
-                        break
-        elif force_temp_data_dir and data_search_dirs:
-            staged_data = tempfile.mkdtemp(prefix="qtb_data_")
-            temp_dirs.append(staged_data)
-            for search_dir in data_search_dirs:
-                if not os.path.isdir(search_dir):
-                    continue
-                for name in os.listdir(search_dir):
-                    src = os.path.join(search_dir, name)
-                    dst = os.path.join(staged_data, name)
-                    if os.path.isdir(src):
-                        shutil.copytree(src, dst, dirs_exist_ok=True)
-                    elif os.path.isfile(src):
-                        os.makedirs(os.path.dirname(dst), exist_ok=True)
-                        shutil.copy2(src, dst)
-        else:
-            staged_data = data_search_dirs[0] if data_search_dirs else ""
-
-        if docs_available:
-            staged_docs = tempfile.mkdtemp(prefix="qtb_docs_")
-            temp_dirs.append(staged_docs)
-            for fname in docs_available:
-                src = os.path.join(docs_dir, fname)
-                if os.path.isfile(src):
-                    dst = os.path.join(staged_docs, fname)
-                    shutil.copy2(src, dst)
-        else:
-            staged_docs = docs_dir
-
-        return staged_data, staged_docs, temp_dirs
+        return create_staged_dirs(
+            data_files,
+            docs_available,
+            data_search_dirs,
+            docs_dir,
+            force_temp_data_dir=force_temp_data_dir,
+        )
 
     def _cleanup_staged_dirs(self, temp_dirs: list[str]) -> None:
         """Remove temporary staged directories."""
-        for d in temp_dirs:
-            if os.path.exists(d):
-                shutil.rmtree(d, ignore_errors=True)
+        cleanup_staged_dirs(temp_dirs)
 
     def save_results(self, report: BenchmarkReport, output_dir: Optional[str] = None):
         """Save benchmark results to disk."""

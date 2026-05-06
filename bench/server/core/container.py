@@ -61,6 +61,7 @@ class ContainerManager:
         "_default": ("768m", "1"),
     }
     _RESUME_WORKSPACE_DIR = "/opt/bench/resume_workspace"
+    _HOST_MOUNT_DIR_MODE = 0o755
 
     def __init__(
         self, docker_image: str = "quant-tutor-env:v2.2", use_docker: bool = True
@@ -104,6 +105,84 @@ class ContainerManager:
         if cpu_value not in (None, ""):
             cpu_limit = str(cpu_value)
         return mem_limit, cpu_limit
+
+    @staticmethod
+    def _make_host_mount_dir_readable(path: str) -> None:
+        os.chmod(path, ContainerManager._HOST_MOUNT_DIR_MODE)
+
+    @staticmethod
+    def _chown_workspace_to_sandbox(container_id: str) -> None:
+        result = subprocess.run(
+            [
+                "docker",
+                "exec",
+                "--user",
+                "root",
+                container_id,
+                "chown",
+                "-R",
+                "sandbox:sandbox",
+                "/workspace",
+            ],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            raise RuntimeError(
+                "docker workspace chown failed: "
+                f"{result.stderr.strip() or result.stdout.strip()}"
+            )
+
+    @staticmethod
+    def _restore_workspace_host_ownership_once(
+        container_id: str,
+    ) -> subprocess.CompletedProcess:
+        uid = os.getuid()
+        gid = os.getgid()
+        return subprocess.run(
+            [
+                "docker",
+                "exec",
+                "--user",
+                "root",
+                container_id,
+                "sh",
+                "-c",
+                (
+                    f"chown -R {uid}:{gid} /workspace 2>/dev/null "
+                    "|| chmod -R a+rwX /workspace 2>/dev/null || true"
+                ),
+            ],
+            capture_output=True,
+            text=True,
+        )
+
+    @classmethod
+    def _restore_workspace_host_ownership(cls, container_id: str) -> bool:
+        result = cls._restore_workspace_host_ownership_once(container_id)
+        if result.returncode == 0:
+            return True
+
+        state = subprocess.run(
+            ["docker", "inspect", "-f", "{{.State.Running}}", container_id],
+            capture_output=True,
+            text=True,
+        )
+        if state.returncode == 0 and state.stdout.strip().lower() == "false":
+            started = subprocess.run(
+                ["docker", "start", container_id],
+                capture_output=True,
+                text=True,
+            )
+            if started.returncode == 0:
+                result = cls._restore_workspace_host_ownership_once(container_id)
+                return result.returncode == 0
+        return False
+
+    def restore_workspace_host_ownership(self, container_id: str) -> bool:
+        if not self.use_docker or container_id.startswith("local_"):
+            return True
+        return self._restore_workspace_host_ownership(container_id)
 
     @staticmethod
     def _normalize_data_mounts(data_mounts: Sequence[object] | None):
@@ -192,6 +271,7 @@ class ContainerManager:
         normalized_data_mounts = self._normalize_data_mounts(data_mounts)
 
         if self.use_docker:
+            self._make_host_mount_dir_readable(workspace)
             if custom_data_dir and data_dir and os.path.isdir(data_dir):
                 os.makedirs(os.path.join(data_dir, "custom"), exist_ok=True)
 
@@ -383,8 +463,7 @@ class ContainerManager:
                             f"test -d {self._RESUME_WORKSPACE_DIR}; "
                             "find /workspace -mindepth 1 -maxdepth 1 "
                             "-exec rm -rf {} +; "
-                            f"cp -a {self._RESUME_WORKSPACE_DIR}/. /workspace/; "
-                            "chown -R sandbox:sandbox /workspace 2>/dev/null || true"
+                            f"cp -a {self._RESUME_WORKSPACE_DIR}/. /workspace/"
                         ),
                     ],
                     capture_output=True,
@@ -395,6 +474,7 @@ class ContainerManager:
                         "docker workspace restore failed: "
                         f"{restored.stderr.strip() or restored.stdout.strip()}"
                     )
+            self._chown_workspace_to_sandbox(container_id)
         else:
             container_id = f"local_{task_id}_{int(time.time())}"
             # Local fallback cannot enforce isolation; use host networking semantics.
@@ -636,6 +716,7 @@ class ContainerManager:
     def destroy_container(self, container_id: str) -> None:
         self.stop_executor(container_id)
         if self.use_docker and not container_id.startswith("local_"):
+            self.restore_workspace_host_ownership(container_id)
             subprocess.run(
                 f"docker rm -f {container_id}", shell=True, capture_output=True
             )

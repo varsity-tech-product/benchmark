@@ -1407,6 +1407,7 @@ class SessionState:
     def _copy_active_workspace_snapshot(self) -> Path | None:
         if self.container is None:
             return None
+        self._restore_workspace_for_host_access()
         source = Path(self.container.workspace_path)
         if not source.is_dir():
             return None
@@ -1618,6 +1619,8 @@ class SessionState:
 
         from server.storage.result_writer import save_run_state
 
+        self._restore_workspace_for_host_access()
+
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
         dir_name = f"{ts}_{self.session_id[:12]}"
         result_dir = (
@@ -1807,6 +1810,13 @@ class SessionState:
             except Exception as exc:
                 logger.warning("Container cleanup failed: %s", exc)
             self.container = None
+
+    def _restore_workspace_for_host_access(self) -> None:
+        if not self.container_manager or not self.container:
+            return
+        restore = getattr(self.container_manager, "restore_workspace_host_ownership", None)
+        if callable(restore):
+            restore(self.container.container_id)
 
         from server.core.staging import cleanup_staged_dirs
 
