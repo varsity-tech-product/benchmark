@@ -1,0 +1,40 @@
+{
+  "task_id": "IMPLB_JSON_02_risk_flags",
+  "version": "1.0",
+  "difficulty": "easy",
+  "category": "data_engineering",
+  "subcategory": "impl_b_json",
+  "description": "Create a JSON risk flag report.",
+  "prompt": "Create output/risk_flags.json with keys risk_count, approved, and notes. risk_count must be non-negative and approved must be true.",
+  "data_mounts": [
+    {
+      "uri": "file://tasks/impl_b/fixtures/reference_numbers.csv",
+      "target_path": "/data/reference_numbers.csv",
+      "read_only": true
+    }
+  ],
+  "expected_outputs": [
+    {
+      "path": "output/risk_flags.json",
+      "type": "json",
+      "required_keys": ["risk_count", "approved", "notes"],
+      "constraints": [
+        {"key": "risk_count", "op": ">=", "value": 0},
+        {"key": "approved", "op": "==", "value": true}
+      ]
+    }
+  ],
+  "required_capabilities": ["write_json_artifact"],
+  "sandbox": {
+    "image_uri": "quant-bench-env:v3.0",
+    "resource_limits": {
+      "cpu_count": 1,
+      "memory_mb": 512,
+      "wall_timeout_seconds": 120,
+      "network_enabled": false
+    }
+  },
+  "persona_id": "double_novice",
+  "max_turns": 2,
+  "timeout_minutes": 5
+}

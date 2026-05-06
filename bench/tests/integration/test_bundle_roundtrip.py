@@ -1,4 +1,4 @@
-"""Bundle v1 round-trip coverage for the reference plugin contract."""
+"""Bundle v1 round-trip coverage for plugin contracts."""
 
 from __future__ import annotations
 
@@ -33,6 +33,7 @@ from platform_api.contracts import (
     TranscriptMessage,
 )
 from platform_api.plugins import PluginLoader
+from server.impl_b import load_impl_b_bundle
 from server.reference import REFERENCE_BUNDLE_CONFIG, load_reference_bundle
 
 
@@ -527,6 +528,109 @@ def test_reference_bundle_roundtrip_re_evaluates_to_same_score(
         item=reconstructed_item,
         bench_root=bench_root,
         workspace=tmp_path / "replay" / task_id / "workspace",
+    )
+    reproduced_score = fresh_bundle.evaluator.evaluate(
+        reconstructed_item,
+        reconstructed_sample,
+    )
+
+    assert stored_score.value == pytest.approx(original_score.value)
+    assert reproduced_score.value == pytest.approx(original_score.value)
+    assert reproduced_score.status == original_score.status
+    assert reproduced_score.metrics == original_score.metrics
+
+
+def _impl_b_sample_for_task(
+    *,
+    item: EvalItem,
+    tmp_path: Path,
+) -> EvalSample:
+    workspace = tmp_path / item.task_id / "workspace"
+    _write_expected_outputs(workspace, list(item.payload["expected_outputs"]))
+    return EvalSample(
+        sample_id=f"{item.task_id}-roundtrip",
+        task_id=item.task_id,
+        transcript=(
+            TranscriptMessage(role="user", content=str(item.payload["prompt"])),
+            TranscriptMessage(role="assistant", content="Artifacts are ready."),
+        ),
+        files=_file_artifacts(workspace),
+        payload={
+            "eval_model": "fake-model",
+            "workspace_path": str(workspace),
+        },
+    )
+
+
+def _impl_b_contract_bundle(
+    *,
+    item: EvalItem,
+    sample: EvalSample,
+    score: Score,
+) -> Bundle:
+    return Bundle(
+        bundle_id=sample.sample_id,
+        schema_version=SCHEMA_VERSION,
+        task_id=item.task_id,
+        timestamps=BundleTimestamps(created_at="2026-05-06T00:00:00Z"),
+        agent_id="impl-b-roundtrip-fixture",
+        sandbox_digest={
+            "image_uri": item.sandbox_spec.image_uri if item.sandbox_spec else "",
+        },
+        telemetry={"eval_model": sample.payload.get("eval_model")},
+        messages=_bundle_messages(sample),
+        tool_calls=_bundle_tool_calls(sample),
+        artifacts={
+            REFERENCE_ARTIFACT_KEY: {
+                "plugin": "impl_b_programmatic",
+                "session_id": sample.sample_id,
+                "termination_reason": "roundtrip_fixture",
+                "task_version": item.version,
+            },
+            CONTRACT_ARTIFACT_KEY: {
+                "eval_item": _eval_item_to_json(item),
+                "eval_sample": _eval_sample_to_json(sample),
+                "original_score": _score_to_json(score),
+            },
+            WORKSPACE_CONTENTS_ARTIFACT_KEY: _workspace_content_store(sample),
+        },
+        workspace=_workspace_snapshot(sample),
+    )
+
+
+def test_impl_b_bundle_roundtrip_re_evaluates_to_same_score(
+    bench_root: Path,
+    tmp_path: Path,
+):
+    task_id = "IMPLB_JSON_01_summary"
+    bundle = load_impl_b_bundle(bench_root=bench_root, eval_model="fake-model")
+    item = bundle.task_suite.get_task(task_id)
+    sample = _impl_b_sample_for_task(item=item, tmp_path=tmp_path)
+    original_score = bundle.evaluator.evaluate(item, sample)
+
+    bundle_json = bundle_io.to_json(
+        _impl_b_contract_bundle(item=item, sample=sample, score=original_score)
+    )
+    validate_bundle_dict(json.loads(bundle_json))
+
+    imported_bundle = bundle_io.from_json(bundle_json)
+    contract = imported_bundle.artifacts[CONTRACT_ARTIFACT_KEY]
+    stored_score = _score_from_json(contract["original_score"])
+
+    fresh_bundle = load_impl_b_bundle(bench_root=bench_root, eval_model="fake-model")
+    reconstructed_item = fresh_bundle.task_suite.get_task(imported_bundle.task_id)
+    replay_workspace = tmp_path / "replay" / task_id / "workspace"
+    files = _materialize_replay_workspace(imported_bundle, replay_workspace)
+    reconstructed_sample = EvalSample(
+        sample_id=imported_bundle.session_id,
+        task_id=imported_bundle.task_id,
+        transcript=_transcript_from_bundle(imported_bundle),
+        tool_logs=_tool_logs_from_bundle(imported_bundle),
+        files=files,
+        payload={
+            "eval_model": "fake-model",
+            "workspace_path": str(replay_workspace),
+        },
     )
     reproduced_score = fresh_bundle.evaluator.evaluate(
         reconstructed_item,

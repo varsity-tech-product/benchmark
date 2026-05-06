@@ -262,7 +262,10 @@ class BenchSessionManager:
         self._task_group: anyio.abc.TaskGroup | None = None
 
         # Run layer
-        self._catalog = TaskCatalog(self.bench_root)
+        self._catalog = TaskCatalog(
+            self.bench_root,
+            plugin_task_suites=(self.plugin_bundle.task_suite,),
+        )
         self._run_store = RunStore(self.bench_root / "results" / "runs")
         self._run_service = RunService(self._catalog, self._run_store)
 

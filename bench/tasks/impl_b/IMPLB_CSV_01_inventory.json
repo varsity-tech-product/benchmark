@@ -1,0 +1,37 @@
+{
+  "task_id": "IMPLB_CSV_01_inventory",
+  "version": "1.0",
+  "difficulty": "easy",
+  "category": "data_engineering",
+  "subcategory": "impl_b_csv",
+  "description": "Create a simple inventory CSV with required columns.",
+  "prompt": "Use the mounted reference data at /data/reference_numbers.csv if helpful. Create output/inventory.csv with columns sku, quantity, and location. Include at least three data rows.",
+  "data_mounts": [
+    {
+      "uri": "file://tasks/impl_b/fixtures/reference_numbers.csv",
+      "target_path": "/data/reference_numbers.csv",
+      "read_only": true
+    }
+  ],
+  "expected_outputs": [
+    {
+      "path": "output/inventory.csv",
+      "type": "csv",
+      "required_columns": ["sku", "quantity", "location"],
+      "min_rows": 3
+    }
+  ],
+  "required_capabilities": ["write_csv_artifact"],
+  "sandbox": {
+    "image_uri": "quant-bench-env:v3.0",
+    "resource_limits": {
+      "cpu_count": 1,
+      "memory_mb": 512,
+      "wall_timeout_seconds": 120,
+      "network_enabled": false
+    }
+  },
+  "persona_id": "double_novice",
+  "max_turns": 2,
+  "timeout_minutes": 5
+}

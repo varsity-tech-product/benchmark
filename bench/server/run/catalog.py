@@ -6,8 +6,10 @@ mapping from public labels to full task_ids. v3 labels use the full task_id.
 
 import json
 import logging
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -35,10 +37,17 @@ class TaskCatalog:
     Accepts both public labels and full task_ids via :meth:`resolve`.
     """
 
-    def __init__(self, bench_root: Path):
+    def __init__(
+        self,
+        bench_root: Path,
+        *,
+        plugin_task_suites: Iterable[Any] = (),
+    ):
         self._entries: dict[str, TaskEntry] = {}  # label -> entry
         self._by_id: dict[str, TaskEntry] = {}  # task_id -> entry
         self._scan(bench_root / "tasks")
+        for suite in plugin_task_suites:
+            self._scan_plugin_suite(suite)
         logger.info(
             "TaskCatalog: %d tasks loaded (%d labels)",
             len(self._by_id),
@@ -72,26 +81,86 @@ class TaskCatalog:
                 logger.debug("TaskCatalog: no label pattern in %s", task_id)
                 continue
 
-            if label in self._entries:
-                existing = self._entries[label]
-                raise ValueError(
-                    f"TaskCatalog: duplicate public label '{label}' — "
-                    f"'{task_id}' conflicts with '{existing.task_id}'"
+            self._add_entry(
+                TaskEntry(
+                    public_label=label,
+                    task_id=task_id,
+                    category=data.get("category", ""),
+                    difficulty=data.get("difficulty", ""),
+                    persona_id=data.get("persona_id", ""),
+                    max_turns=data.get("max_turns", 30),
+                    timeout_minutes=data.get("timeout_minutes", 15),
+                    source_path=json_path,
                 )
-
-            entry = TaskEntry(
-                public_label=label,
-                task_id=task_id,
-                category=data.get("category", ""),
-                difficulty=data.get("difficulty", ""),
-                persona_id=data.get("persona_id", ""),
-                max_turns=data.get("max_turns", 30),
-                timeout_minutes=data.get("timeout_minutes", 15),
-                source_path=json_path,
             )
 
-            self._entries[label] = entry
-            self._by_id[task_id] = entry
+    def _scan_plugin_suite(self, suite: Any) -> None:
+        supported_tasks = getattr(suite, "supported_tasks", None)
+        get_task = getattr(suite, "get_task", None)
+        if not callable(supported_tasks) or not callable(get_task):
+            return
+
+        for task_id in sorted(supported_tasks()):
+            try:
+                item = get_task(task_id)
+            except Exception as exc:
+                logger.warning(
+                    "TaskCatalog: plugin task %s skipped: %s",
+                    task_id,
+                    exc,
+                )
+                continue
+
+            metadata = getattr(item, "metadata", {}) or {}
+            if (
+                not isinstance(metadata, Mapping)
+                or not metadata.get("public_run_task")
+            ):
+                continue
+
+            payload = getattr(item, "payload", {}) or {}
+            if not isinstance(payload, Mapping):
+                payload = {}
+            business_task = payload.get("impl_b_task", {})
+            if not isinstance(business_task, Mapping):
+                business_task = {}
+
+            public_label = str(
+                metadata.get("public_label")
+                or business_task.get("public_label")
+                or item.task_id
+            )
+            self._add_entry(
+                TaskEntry(
+                    public_label=public_label,
+                    task_id=str(item.task_id),
+                    category=str(
+                        metadata.get("category")
+                        or business_task.get("category")
+                        or "plugin"
+                    ),
+                    difficulty=str(
+                        metadata.get("difficulty")
+                        or business_task.get("difficulty")
+                        or "unknown"
+                    ),
+                    persona_id=str(business_task.get("persona_id") or ""),
+                    max_turns=int(business_task.get("max_turns") or 30),
+                    timeout_minutes=int(business_task.get("timeout_minutes") or 15),
+                    source_path=Path(f"<plugin:{suite.__class__.__name__}>"),
+                )
+            )
+
+    def _add_entry(self, entry: TaskEntry) -> None:
+        if entry.public_label in self._entries:
+            existing = self._entries[entry.public_label]
+            raise ValueError(
+                f"TaskCatalog: duplicate public label '{entry.public_label}' — "
+                f"'{entry.task_id}' conflicts with '{existing.task_id}'"
+            )
+
+        self._entries[entry.public_label] = entry
+        self._by_id[entry.task_id] = entry
 
     def resolve(self, label_or_id: str) -> TaskEntry | None:
         """Accept both public labels and full task_ids."""

@@ -5,6 +5,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -82,6 +83,41 @@ class TaskCatalogTests(unittest.TestCase):
 
             self.assertEqual([{"label": "L2_ADV_01_demo"}], cat.list_labels_only())
             self.assertIsNone(cat.resolve("L1_DAT_01_demo"))
+
+    def test_public_plugin_tasks_are_available_for_run_creation(self):
+        class PublicPluginSuite:
+            def supported_tasks(self):
+                return {"IMPLB_JSON_01_summary"}
+
+            def get_task(self, task_id):
+                return SimpleNamespace(
+                    task_id=task_id,
+                    metadata={"public_run_task": True},
+                    payload={
+                        "impl_b_task": {
+                            "category": "data_engineering",
+                            "difficulty": "easy",
+                            "persona_id": "impl_b_trivial",
+                            "max_turns": 2,
+                            "timeout_minutes": 5,
+                        }
+                    },
+                )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            cat = TaskCatalog(
+                Path(tmp),
+                plugin_task_suites=(PublicPluginSuite(),),
+            )
+
+            entry = cat.resolve("IMPLB_JSON_01_summary")
+
+            self.assertIsNotNone(entry)
+            self.assertEqual("IMPLB_JSON_01_summary", entry.task_id)
+            self.assertEqual(
+                [{"label": "IMPLB_JSON_01_summary"}],
+                cat.list_labels_only(),
+            )
 
 
 if __name__ == "__main__":

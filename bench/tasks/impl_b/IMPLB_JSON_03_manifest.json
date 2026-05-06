@@ -1,0 +1,39 @@
+{
+  "task_id": "IMPLB_JSON_03_manifest",
+  "version": "1.0",
+  "difficulty": "easy",
+  "category": "data_engineering",
+  "subcategory": "impl_b_json",
+  "description": "Create a JSON manifest.",
+  "prompt": "Create output/manifest.json with keys source, records, and schema_version. records must be at least 3.",
+  "data_mounts": [
+    {
+      "uri": "file://tasks/impl_b/fixtures/reference_numbers.csv",
+      "target_path": "/data/reference_numbers.csv",
+      "read_only": true
+    }
+  ],
+  "expected_outputs": [
+    {
+      "path": "output/manifest.json",
+      "type": "json",
+      "required_keys": ["source", "records", "schema_version"],
+      "constraints": [
+        {"key": "records", "op": ">=", "value": 3}
+      ]
+    }
+  ],
+  "required_capabilities": ["write_json_artifact"],
+  "sandbox": {
+    "image_uri": "quant-bench-env:v3.0",
+    "resource_limits": {
+      "cpu_count": 1,
+      "memory_mb": 512,
+      "wall_timeout_seconds": 120,
+      "network_enabled": false
+    }
+  },
+  "persona_id": "double_novice",
+  "max_turns": 2,
+  "timeout_minutes": 5
+}
