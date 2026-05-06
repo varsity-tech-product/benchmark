@@ -396,10 +396,10 @@ The first reference bundle integration (#168 → #170 / #175 / #178 / #181) expo
 
 ### 12.8 Bundle export / re-import round-trip not exercised in Stage 1
 
-- **Symptom**: No code path in Stage 1 tests `EvalItem` + `EvalSample` → bundle JSON → reimport → re-evaluate → identical `Score`. The platform contract was exercised in-process only.
+- **Symptom**: Stage 1 tests exercised `EvalItem` + `EvalSample` in process. #183 adds Bundle v1 JSON round-trip coverage for Impl A across L0 / L1 / L2.
 - **Severity**: P1 — the platform's offline-evaluation claim is not verified end-to-end.
-- **Why it surfaced**: Stage 1 acceptance was wired up to live HTTP server health, not to bundle round-trip. Bundle v1 alpha schema (#161) has fixtures but no full round-trip test against Impl A.
-- **Disposition**: Stage 2 freeze (#160) done-criteria explicitly adds bundle round-trip parity. The same harness covers Impl C / Impl D once those land.
+- **Why it surfaced**: Stage 1 acceptance targeted live HTTP server health. Bundle v1 alpha schema (#161) shipped fixtures before #183 added full round-trip testing against Impl A.
+- **Disposition**: Covered for Impl A in Stage 1.5 by `bench/tests/integration/test_bundle_roundtrip.py`. Stage 2 freeze (#160) extends the same harness to Impl C / Impl D when those implementations land.
 
 ### 12.9 Score parity coverage methodology
 
@@ -413,3 +413,4 @@ The first reference bundle integration (#168 → #170 / #175 / #178 / #181) expo
 
 - **2026-05-05**: Initial RFC-A v0 doc — extracted from delivered code in #152 / #153 / #154 / #155.
 - **2026-05-05** (Stage 1 closure): Expanded §12 Contract gaps with severity / disposition structure; added gaps 12.7 (`TaskSuite` ID surface), 12.8 (bundle round-trip), 12.9 (parity methodology). Updated §11 Impl A status to complete (bundle path live in prod via #170 / #175 / #178 / #181; gates 1.2 + 1.4 flipped in #150). Documents Stage 1 → Stage 2 transition.
+- **2026-05-06** (#183 Stage 1.5): Added Impl A Bundle v1 round-trip coverage for representative L0 / L1 / L2 tasks and marked §12.8 covered for Impl A.
