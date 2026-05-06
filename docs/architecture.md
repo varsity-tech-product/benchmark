@@ -498,6 +498,12 @@ Any authenticated GitHub reviewer can inspect the task spec, transcript, tutor
 tool log, workspace tree, and judge evaluation for a completed bundle.
 Reviewer access is a distinct `reviewer` role; admins inherit reviewer access,
 and ordinary authenticated users stay on the run/results surfaces.
+Reviewer role assignment accepts explicit `QTB_REVIEWER_GITHUB_LOGINS` and
+`QTB_REVIEWER_EMAILS` matches, plus org/team membership through
+`QTB_REVIEWER_GITHUB_ORGS` and `QTB_REVIEWER_GITHUB_TEAMS`. Reviewer team
+values use org-qualified `org/slug` form. When both reviewer org/team variables
+are empty, `QTB_GITHUB_ALLOWED_ORGS` and `QTB_GITHUB_ALLOWED_TEAMS` are the
+default reviewer membership groups.
 
 The isolated frontend treats Session Flow as the live run monitor and Human
 Review as the archive-facing session view: active runs render their full
