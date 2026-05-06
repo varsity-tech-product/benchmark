@@ -173,7 +173,6 @@ def build_background(task, *, agent_brief: str | None = None) -> dict[str, Any]:
 
     background: dict[str, Any] = {
         "schema_version": "platform_background.v1",
-        "domain": "quantitative_finance",
         "sandbox": {
             "image": sandbox_image,
             "resource_limits": _resource_limits(env),
