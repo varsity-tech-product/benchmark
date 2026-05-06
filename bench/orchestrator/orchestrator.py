@@ -678,7 +678,7 @@ class BenchmarkOrchestrator:
 
         return result
 
-    def run_benchmark(
+    def run_suite(
         self,
         agent: BaseAgentAdapter,
         task_filter: Optional[list[str]] = None,
@@ -687,7 +687,7 @@ class BenchmarkOrchestrator:
         max_turns_override: Optional[int] = None,
         tools_enabled: bool = True,
     ) -> BenchmarkReport:
-        """Run the full benchmark suite."""
+        """Run the full legacy orchestrator suite."""
         report = BenchmarkReport(agent_name=agent.agent_name)
 
         # Discover tasks

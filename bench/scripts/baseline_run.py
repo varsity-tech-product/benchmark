@@ -153,6 +153,31 @@ def build_matrix(
     return cells
 
 
+def parse_task_ids(value: str) -> tuple[str, ...]:
+    return tuple(item.strip() for item in value.split(",") if item.strip())
+
+
+def select_tasks(
+    tasks: list[TaskSpec],
+    task_ids: tuple[str, ...],
+) -> list[TaskSpec]:
+    if not task_ids:
+        return tasks
+    by_id = {task.task_id: task for task in tasks}
+    missing = [task_id for task_id in task_ids if task_id not in by_id]
+    if missing:
+        raise ValueError(f"unknown task id(s): {', '.join(missing)}")
+
+    selected: list[TaskSpec] = []
+    seen: set[str] = set()
+    for task_id in task_ids:
+        if task_id in seen:
+            continue
+        selected.append(by_id[task_id])
+        seen.add(task_id)
+    return selected
+
+
 def load_run_records(path: Path) -> list[dict[str, Any]]:
     if not path.exists():
         return []
@@ -315,6 +340,7 @@ def write_summary_doc(summary: dict[str, Any], path: Path) -> None:
         str(summary.get("rationale") or ""),
         "",
     ]
+    path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(lines), encoding="utf-8")
 
 
@@ -587,10 +613,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--bench-root", type=Path, default=_BENCH_ROOT)
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
+    parser.add_argument("--docs-dir", type=Path, default=_BENCH_ROOT.parent / "docs")
     sub = parser.add_subparsers(dest="command", required=True)
 
     def add_matrix_args(p: argparse.ArgumentParser) -> None:
         p.add_argument("--layers", default=",".join(DEFAULT_LAYERS))
+        p.add_argument("--tasks", default="", help="Comma-separated task IDs")
         p.add_argument("--agents", default=",".join(AGENT_PROFILES))
         p.add_argument("--conditions", default=",".join(CONDITION_PROFILES))
 
@@ -625,10 +653,11 @@ def build_parser() -> argparse.ArgumentParser:
 
 def matrix_from_args(args: argparse.Namespace) -> list[MatrixCell]:
     layers = parse_csv(args.layers, set(DEFAULT_LAYERS))
+    task_ids = parse_task_ids(args.tasks)
     agent_ids = parse_csv(args.agents, set(AGENT_PROFILES))
     condition_ids = parse_csv(args.conditions, set(CONDITION_PROFILES))
     return build_matrix(
-        discover_tasks(args.bench_root, layers=layers),
+        select_tasks(discover_tasks(args.bench_root, layers=layers), task_ids),
         agent_ids=agent_ids,
         condition_ids=condition_ids,
     )
@@ -639,11 +668,15 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     args.bench_root = args.bench_root.resolve()
     args.output_dir = args.output_dir.resolve()
+    args.docs_dir = args.docs_dir.resolve()
 
     if args.command == "validate":
         return 1 if validate_bundles(args.output_dir) else 0
 
-    matrix = matrix_from_args(args)
+    try:
+        matrix = matrix_from_args(args)
+    except ValueError as exc:
+        parser.error(str(exc))
     write_manifest(args.output_dir, matrix)
 
     if args.command == "run":
@@ -651,7 +684,7 @@ def main(argv: list[str] | None = None) -> int:
 
     records = load_run_records(args.output_dir / "runs.jsonl")
     summary = summarize_records(records, matrix)
-    write_outputs(args.output_dir, summary, docs_dir=args.bench_root.parent / "docs")
+    write_outputs(args.output_dir, summary, docs_dir=args.docs_dir)
     print(json.dumps(summary["coverage"], indent=2, sort_keys=True))
     return 0
 

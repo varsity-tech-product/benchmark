@@ -168,8 +168,7 @@ def run_single_job(job: JobSpec, create_agent_fn=None, cancel_event=None) -> Job
 def _create_agent_from_spec(job: JobSpec):
     """Create the appropriate agent adapter from a JobSpec.
 
-    Mirrors the logic of _create_agent() in run_benchmark.py but uses
-    JobSpec fields instead of argparse.
+    Uses JobSpec fields to choose the legacy orchestrator adapter.
     """
     from config.conditions import CONDITIONS
     from config.llm_config import OPENROUTER_BASE_URL
