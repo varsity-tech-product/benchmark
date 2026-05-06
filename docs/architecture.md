@@ -22,7 +22,7 @@ bench/
   server/              HTTP/MCP service, run control, session storage, UI
   client/              External client adapters for MCP and REST
   orchestrator/        Legacy pre-server batch scaffolding
-  tasks/               Active task definitions in L0/, L1/, and L2/
+  tasks/               Active task definitions in L0/, L1/, L2/, and impl_b/
   personas/            User persona profiles
   data/                Market/reference data
   experiments/         Validation experiments and generated report pipelines
@@ -106,6 +106,18 @@ persona-emitted `task_end` flag.
 `ReferenceEvaluator` handles deterministic L0/L1 scoring and delegates Layer 2
 QR/QP scoring to the existing coordinator path. `server.config.prompt_config`
 remains a source-compatibility shim and performs no prompt shaping.
+
+`bench/server/impl_b/` owns the second concrete plugin bundle. It uses the same
+`PluginLoader` and platform ABCs as the reference bundle, while keeping business
+logic intentionally small: `ImplBTaskSuite` wraps deterministic JSON/CSV artifact
+tasks from `bench/tasks/impl_b/`, `TrivialNPCProvider` returns the task prompt and
+closes after one agent turn, and `ProgrammaticEvaluator` scores only structured
+`expected_outputs` through `eval.programmatic.l1_verifier`. The bundle config is
+`bench/server/impl_b/bundle.json`; it requires no LLM judge path and declares
+file-backed `DataMount` inputs plus the standard v3 sandbox image. When this
+bundle is active, its `public_run_task` metadata lets `server.run.catalog`
+publish the Impl B task IDs through the same `/client/runs/start` flow as L2
+tasks.
 
 `server.core.session.build_background()` returns a JSON-able
 `platform_background.v1` fact object for sandbox image, resource limits,

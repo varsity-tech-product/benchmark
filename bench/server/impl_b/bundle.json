@@ -1,0 +1,15 @@
+{
+  "plugins": [
+    {
+      "name": "impl_b_programmatic",
+      "task_suite": "server.impl_b.task_suite:ImplBTaskSuite",
+      "npc_provider": "server.impl_b.npc_provider:TrivialNPCProvider",
+      "evaluator": "server.impl_b.evaluator:ProgrammaticEvaluator",
+      "metadata": {
+        "business_schema": "ImplBTask",
+        "version": "1.0",
+        "llm_judge_used": false
+      }
+    }
+  ]
+}
