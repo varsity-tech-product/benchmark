@@ -13,7 +13,7 @@ working in this repo also see a thin invocation shim at
 
 This repo intentionally does not provide a runnable auto-driver that emits
 tutor messages. Agent-in-the-loop runs are evaluated as live tutoring
-conversations: the tutor must read each `student_message` and decide the next
+conversations: the tutor must read each `user_message` and decide the next
 reply from that message.
 
 Issue #57 captures the design decisions and the empirical evidence behind
@@ -64,7 +64,7 @@ This is **not** the right reference for:
 ```
 POST /client/runs/start    → run_id, token
 POST /session/register     → session_id     (Authorization: Bearer <token>)
-POST /session/{sid}/start  → background, opening student_message
+POST /session/{sid}/start  → background, opening user_message
 POST /session/{sid}/send   → student reply, status, reason     (loop)
 ```
 
@@ -86,13 +86,13 @@ SID=$(curl -sS -X POST "$BASE/session/register" \
         -d "{\"persona_id\":\"$PERSONA\"}" | jq -r .session_id)
 
 START=$(curl -sS -X POST "$BASE/session/$SID/start")
-OPENER=$(echo "$START" | jq -r .student_message)
+OPENER=$(echo "$START" | jq -r .user_message)
 # ... loop send_message until terminal ...
 ```
 
 This guide gives the protocol lifecycle only. Do not wrap it in a static
 reply queue. If you build a client, its reply function must call a live tutor
-model or a human operator on every turn using the latest `student_message`.
+model or a human operator on every turn using the latest `user_message`.
 
 ---
 
@@ -100,14 +100,14 @@ model or a human operator on every turn using the latest `student_message`.
 
 Each turn:
 
-1. You have the most recent `student_message` (from `/start` on turn 1, or
+1. You have the most recent `user_message` (from `/start` on turn 1, or
    from the previous `/send` response on subsequent turns).
 2. **You read it carefully and compose the next reply based on what the
    student actually said.** Not a preset list. Not a template. Address the
    specific question or concern in their last message.
 3. POST to `/session/{sid}/send` with `{"text": "<your reply>"}`.
 4. Response shape (verified against `bench/server/core/session.py::TutoringSession._result`):
-   `{"student_message": "...", "status": "active|completed|failed", "reason": "...", "sim_error": {...}?, "current_phase": "...", "next_allowed": [...]}`.
+   `{"user_message": "...", "status": "active|completed|failed", "reason": "...", "sim_error": {...}?, "current_phase": "...", "next_allowed": [...]}`.
    `reason` is omitted on `active`; `sim_error` only appears on
    `student_sim_error:*` failures. There is **no** `tool_calls` field —
    the student persona has no tools to call.
@@ -190,7 +190,7 @@ Each one is grounded in a live failure mode (sessions `01e84317` and
    pre-written messages indexed by turn number will eventually emit the
    same closing line three times in a row. The server's repeat-detector
    fires `reason=agent_stuck` and the session ends `failed`. Always
-   compose each reply from the actual `student_message` you just received.
+   compose each reply from the actual `user_message` you just received.
 
 2. **`/session/{sid}/send` can take 5–15 seconds** per call (student-sim
    LLM round-trip). Use a generous client timeout — `--max-time 900` or
@@ -275,7 +275,7 @@ Before driving a non-trivial session, confirm:
       you chose is in that task's `persona_ids`.
 - [ ] Your reply strategy calls a live LLM or human operator on every turn.
       If you're an LLM doing this in-session, the strategy is "read
-      `student_message`, think, respond".
+      `user_message`, think, respond".
 - [ ] HTTP client timeout ≥ 900 s on `/send`.
 - [ ] You're prepared for the session to take many turns (15 for I01,
       higher for E-series). Don't bail early.
