@@ -200,11 +200,14 @@ class TestGetScores:
         assert data["score_status"] == "completed_scored"
         assert isinstance(data["task_score"], float)
         assert data["task_score"] == 0.775
-        # task_pass is None until PASS_THRESHOLD_CALIBRATED flips True (D-2).
-        assert data["task_pass"] is None
+        assert data["task_pass"] is True
         assert isinstance(data["detail"], dict)
         assert data["detail"]["tracks"]["qr"]["score"] == 0.85
         assert data["detail"]["tracks"]["qp"]["score"] == 0.70
+        assert data["detail"]["task_pass_threshold"]["version"] == (
+            "task_pass_threshold_v1"
+        )
+        assert data["detail"]["task_pass_threshold"]["value"] == 0.5
         assert isinstance(data["detail"]["dimensions"], list)
         assert "cost" not in data["detail"]  # public path strips the cost blob
 
@@ -246,6 +249,19 @@ class TestGetScores:
             "score_2",
             "score_3",
         ]
+        assert [s["task_pass"] for s in data["scores"]] == [True, True, True]
+        assert all(
+            s["task_pass_threshold"]["version"] == "task_pass_threshold_v1"
+            for s in data["scores"]
+        )
+        assert all("cost" not in s for s in data["scores"])
+
+        resp = await client.get(f"/session/{sid}/scores?scores=score_1,score_2")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["status"] == "completed"
+        assert [s["task_pass"] for s in data["scores"]] == [True, True]
         assert all("cost" not in s for s in data["scores"])
 
 

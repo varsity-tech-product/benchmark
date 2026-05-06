@@ -1997,6 +1997,9 @@ def _public_score_entry(entry: dict) -> dict:
         "created_at",
         "completed_at",
         "overall_score",
+        "task_score",
+        "task_pass",
+        "task_pass_threshold",
         "error",
     }
     out = {key: entry.get(key) for key in allowed if key in entry}
@@ -2020,6 +2023,7 @@ def _v1_single_score_response(payload: dict, *, public: bool) -> dict:
         SCORE_RESPONSE_SCHEMA_VERSION,
         build_v1_response,
     )
+    from eval.core.scoring import task_pass_threshold_metadata
 
     score = payload.get("score") if isinstance(payload.get("score"), dict) else None
     cost = payload.get("cost") if isinstance(payload.get("cost"), dict) else None
@@ -2032,7 +2036,7 @@ def _v1_single_score_response(payload: dict, *, public: bool) -> dict:
             "score_status": payload.get("score_status") or payload.get("status"),
             "task_score": None,
             "task_pass": None,
-            "detail": {},
+            "detail": {"task_pass_threshold": task_pass_threshold_metadata()},
         }
         if "error" in payload:
             body["error"] = payload["error"]

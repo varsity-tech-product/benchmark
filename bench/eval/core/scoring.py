@@ -2,7 +2,7 @@
 
 Per BENCHMARK_SPEC.md §6 (post-#122):
     task_score = RESULT_WEIGHT * QR + PROCESS_WEIGHT * QP
-    task_pass = task_score >= THRESHOLD (TBD-1 via baseline calibration)
+    task_pass = task_score >= PASS_THRESHOLD
 
 Benchmark-level KPIs:
     pass_rate (headline)
@@ -19,16 +19,46 @@ RESULT_WEIGHT = 0.60
 PROCESS_WEIGHT = 0.40
 LAYER1_RESULT_WEIGHT = 0.40  # λ: Layer 1 contribution to Result Sub-score
 
-# Pass threshold per #122 TBD-1: placeholder until baseline calibration.
-# The plan is to run weak (GPT-4o + naive prompt) and strong (Claude Opus +
-# best engineering) baselines, then pick a value where weak ≈ 25-30% pass
-# and strong ≈ 60-70% pass. Lock in v2.0 spec, freeze.
+PASS_THRESHOLD_VERSION = "task_pass_threshold_v1"
 PASS_THRESHOLD = 0.5
+PASS_THRESHOLD_CALIBRATED = True
+PASS_THRESHOLD_CALIBRATED_AT = "2026-05-06"
+PASS_THRESHOLD_VALIDATION_RUN_ID = "jv_20260429_stage3_combined"
+PASS_THRESHOLD_HUMAN_LABELS_VERSION = "judge_validation_human_labels_v1"
+PASS_THRESHOLD_HUMAN_PASS_RAW_SCORE = 3.0
+PASS_THRESHOLD_SCORE_SCALE_MIN = 1.0
+PASS_THRESHOLD_SCORE_SCALE_MAX = 5.0
 
-# Per #131 D-2: until baseline calibration ships, the v1 score response masks
-# task_pass to None so external clients don't see misleading pass/fail signals.
-# Flip this to True in the same change that sets a calibrated PASS_THRESHOLD.
-PASS_THRESHOLD_CALIBRATED = False
+
+def task_pass_threshold_metadata() -> dict[str, Any]:
+    """Return public metadata for the calibrated task-pass threshold."""
+
+    return {
+        "version": PASS_THRESHOLD_VERSION,
+        "value": PASS_THRESHOLD,
+        "calibrated": PASS_THRESHOLD_CALIBRATED,
+        "calibrated_at": PASS_THRESHOLD_CALIBRATED_AT,
+        "source": {
+            "validation_run_id": PASS_THRESHOLD_VALIDATION_RUN_ID,
+            "human_labels_version": PASS_THRESHOLD_HUMAN_LABELS_VERSION,
+            "human_pass_raw_score": PASS_THRESHOLD_HUMAN_PASS_RAW_SCORE,
+            "score_scale": {
+                "min": PASS_THRESHOLD_SCORE_SCALE_MIN,
+                "max": PASS_THRESHOLD_SCORE_SCALE_MAX,
+            },
+            "artifacts": {
+                "judge_runs_path": (
+                    "bench/experiments/judge_validation/results/judge_runs.json"
+                ),
+                "human_labels_path": (
+                    "bench/experiments/judge_validation/human_labels.json"
+                ),
+                "sample_map_path": (
+                    "bench/experiments/judge_validation/human_review_sample_map.json"
+                ),
+            },
+        },
+    }
 
 
 def _score_value(value: Any) -> float | None:
@@ -42,6 +72,17 @@ def _score_value(value: Any) -> float | None:
 def _round_score(value: Any) -> float | None:
     score = _score_value(value)
     return round(score, 4) if score is not None else None
+
+
+def compute_task_pass(task_score: Any) -> bool | None:
+    """Return the calibrated pass/fail label for a normalized task score."""
+
+    score = _score_value(task_score)
+    if score is None:
+        return None
+    if PASS_THRESHOLD_CALIBRATED:
+        return score >= PASS_THRESHOLD
+    return None
 
 
 def _mean_score(values: list[Any]) -> float | None:
@@ -121,16 +162,13 @@ def compute_task_score(
         overall = RESULT_WEIGHT * qr_score + PROCESS_WEIGHT * qp_score
 
     overall_rounded = _round_score(overall)
-    task_pass = (
-        overall_rounded is not None and overall_rounded >= PASS_THRESHOLD
-    )
     return {
         "quant_result_score": _round_score(qr_score),
         "quant_process_score": _round_score(qp_score),
         "quant_agent_score": overall_rounded,
         "overall_score": overall_rounded,
         "task_score": overall_rounded,
-        "task_pass": task_pass,
+        "task_pass": compute_task_pass(overall),
     }
 
 

@@ -365,8 +365,14 @@ Authorization: Bearer <token>
   "score_id": "score_1",
   "score_status": "completed_scored",
   "task_score": 0.93,
-  "task_pass": null,
-  "detail": { "...": "bundle-specific contents" }
+  "task_pass": true,
+  "detail": {
+    "task_pass_threshold": {
+      "version": "task_pass_threshold_v1",
+      "value": 0.5
+    },
+    "...": "bundle-specific contents"
+  }
 }
 ```
 
@@ -374,16 +380,16 @@ Public contract: `schema_version`, `score_id`, `score_status`, `task_score`,
 `task_pass`, `detail`, plus envelope `status`. `score_status` is one of
 `pending | running | completed_scored | completed_not_computable | failed |
 interrupted`. Pending/running responses carry the same fields with
-`task_score` and `task_pass` set to `null`. Everything inside `detail` is
-opaque and bundle-defined: the `dimensions` list, per-track aggregates, and any
-reliability metadata are owned by the active evaluator. Depending on a specific
-shape inside `detail` is a beta dependency.
+`task_score` and `task_pass` set to `null`. `detail.task_pass_threshold` is
+stable threshold metadata. Other `detail` fields are bundle-defined: the
+`dimensions` list, per-track aggregates, and any reliability metadata are owned
+by the active evaluator. Depending on those fields is a beta dependency.
 
-`task_pass` is `null` until baseline calibration lands. Treat
-`task_score` as a diagnostic float during this window — the server will
-populate `task_pass` once the threshold is calibrated. Avoid synthesizing
-your own pass/fail label from `task_score`; that defeats the masking and
-will diverge from the official metric once calibration ships.
+`task_pass` is the official pass/fail label for completed scored responses. The
+calibrated threshold is `0.5` under `task_pass_threshold_v1`, exposed at
+`detail.task_pass_threshold`. Pending, running, failed, and
+completed-not-computable responses carry `task_score: null` and
+`task_pass: null`.
 
 The external agent completes the job at terminal session status. Evaluation is
 operator-owned.

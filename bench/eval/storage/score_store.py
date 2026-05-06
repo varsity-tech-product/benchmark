@@ -252,13 +252,15 @@ def summarize_score(
 ) -> dict[str, Any]:
     qr = score_data.get("qr") or {}
     qp = score_data.get("qp") or {}
+    task_fields = _task_pass_fields(score_data.get("overall_score"))
     summary = {
         "score_id": score_data.get("score_id"),
         "score_status": score_data.get("score_status"),
         "quant_result": qr.get("score") if isinstance(qr, dict) else None,
         "quant_process": qp.get("score") if isinstance(qp, dict) else None,
-        "overall": score_data.get("overall_score"),
-        "overall_score": score_data.get("overall_score"),
+        "overall": task_fields["task_score"],
+        "overall_score": task_fields["task_score"],
+        **task_fields,
         "judge_reliability": score_data.get("judge_reliability") or {},
         "blocking_missing": score_data.get("blocking_missing", []),
     }
@@ -326,6 +328,23 @@ def _track_view(track_data: Any) -> dict[str, Any] | None:
     }
 
 
+def _task_pass_fields(overall_score: Any) -> dict[str, Any]:
+    from eval.core.scoring import compute_task_pass, task_pass_threshold_metadata
+
+    task_score = _coerce_dim_score(overall_score)
+    return {
+        "task_score": task_score,
+        "task_pass": compute_task_pass(task_score),
+        "task_pass_threshold": task_pass_threshold_metadata(),
+    }
+
+
+def _entry_with_task_pass_fields(entry: dict[str, Any]) -> dict[str, Any]:
+    out = dict(entry)
+    out.update(_task_pass_fields(out.get("overall_score")))
+    return out
+
+
 def build_v1_response(
     score_data: dict[str, Any],
     cost_data: dict[str, Any] | None = None,
@@ -336,19 +355,15 @@ def build_v1_response(
     ``score_status``, ``schema_version``. Everything else lives in
     ``detail`` so adding fields later is non-breaking.
 
-    ``task_pass`` is masked to ``None`` while ``PASS_THRESHOLD_CALIBRATED``
-    is False (#131 D-2) — clients should treat absence as "not yet known".
+    ``task_pass`` is computed from the calibrated pass threshold for every
+    completed score with a numeric ``task_score``.
     """
-    from eval.core.scoring import PASS_THRESHOLD, PASS_THRESHOLD_CALIBRATED
+    from eval.core.scoring import task_pass_threshold_metadata
 
     qr = score_data.get("qr") if isinstance(score_data.get("qr"), dict) else None
     qp = score_data.get("qp") if isinstance(score_data.get("qp"), dict) else None
     overall = _coerce_dim_score(score_data.get("overall_score"))
-
-    if PASS_THRESHOLD_CALIBRATED and overall is not None:
-        task_pass: bool | None = overall >= PASS_THRESHOLD
-    else:
-        task_pass = None
+    task_fields = _task_pass_fields(overall)
 
     dimensions: list[dict[str, Any]] = []
     qr_detail = qr.get("detail") if qr and isinstance(qr.get("detail"), dict) else {}
@@ -368,6 +383,7 @@ def build_v1_response(
             "qr": _track_view(qr),
             "qp": _track_view(qp),
         },
+        "task_pass_threshold": task_pass_threshold_metadata(),
         "judge_reliability": score_data.get("judge_reliability") or {},
         "blocking_missing": score_data.get("blocking_missing", []),
     }
@@ -382,8 +398,8 @@ def build_v1_response(
         "schema_version": SCORE_RESPONSE_SCHEMA_VERSION,
         "score_id": score_data.get("score_id"),
         "score_status": score_data.get("score_status"),
-        "task_score": overall,
-        "task_pass": task_pass,
+        "task_score": task_fields["task_score"],
+        "task_pass": task_fields["task_pass"],
         "detail": detail,
     }
 
@@ -402,7 +418,7 @@ def get_scores_payload(
 
     if history:
         entries = [
-            entry
+            _entry_with_task_pass_fields(entry)
             for entry in scores
             if _entry_matches_status(entry, status_set if status_set else None)
         ]
@@ -417,6 +433,7 @@ def get_scores_payload(
             score = _load_score_file(result_dir, sid)
             if score:
                 cost = _load_cost_file(result_dir, sid)
+                task_fields = _task_pass_fields(score.get("overall_score"))
                 status = str(
                     (entry or {}).get("status") or score.get("score_status") or ""
                 )
@@ -427,17 +444,23 @@ def get_scores_payload(
                             "completed" if status.startswith("completed") else status
                         ),
                         "score_status": score.get("score_status", status),
+                        "overall_score": task_fields["task_score"],
+                        **task_fields,
+                        "scores": summarize_score(score, cost),
                         "score": score,
                         "cost": cost,
                     }
                 )
             elif entry:
                 status = str(entry.get("status") or "pending")
+                task_fields = _task_pass_fields(entry.get("overall_score"))
                 out.append(
                     {
                         "score_id": sid,
                         "status": status,
                         "score_status": status,
+                        "overall_score": task_fields["task_score"],
+                        **task_fields,
                         "score": None,
                         "cost": None,
                         "index": entry,

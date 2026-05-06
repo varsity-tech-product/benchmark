@@ -366,7 +366,9 @@ conversation runtime; its replies do not enter scoring.
 
 The headline KPI is `pass_rate`: per-task `task_score = 0.60 * QR +
 0.40 * QP`, then `task_pass = task_score >= PASS_THRESHOLD`
-(placeholder 0.5; freezes after baseline calibration per #122 TBD-1).
+where `PASS_THRESHOLD = 0.50` under `task_pass_threshold_v1`. The threshold
+comes from the `jv_20260429_stage3_combined` human-alignment corpus: human
+rubric pass at raw score 3 on the 1-5 scale maps to normalized score 0.50.
 Wilson 95% CI on `pass_rate` is exposed alongside per-category pass
 rates (sub-headline) and `task_score_mean / std` (diagnostic).
 
@@ -564,14 +566,14 @@ just these fields:
 | `score_id` | str \| null | `score_n` allocated by the score store. |
 | `score_status` | enum | One of `pending \| running \| completed_scored \| completed_not_computable \| failed \| interrupted`. |
 | `task_score` | float \| null | `0.6 * QR + 0.4 * QP`; null when not yet computable. |
-| `task_pass` | bool \| null | `task_score >= PASS_THRESHOLD`; null while `PASS_THRESHOLD_CALIBRATED = False`. |
-| `detail` | object | Opaque forward-compat blob — see below. |
+| `task_pass` | bool \| null | `task_score >= 0.50` for completed scored responses; null for pending, running, failed, interrupted, and completed-not-computable responses. |
+| `detail` | object | Opaque forward-compat blob; includes `task_pass_threshold` metadata. |
 | `status` | str | Envelope state from the score store (`pending \| running \| completed \| failed \| partial \| not_found \| history`). `partial` only appears for multi-id `?score_ids=` lookups when requested entries mix terminal and in-flight states. |
 
-Everything else lives in `detail` and is **not part of the public contract**
-— clients depending on `detail.dimensions[*].name`, `detail.tracks.{qr,qp}`,
-or `detail.judge_reliability` are taking a beta dependency that may shift as
-the eval pipeline evolves (multi-judge panel, variable rubric, etc.).
+`detail.task_pass_threshold` is the stable threshold metadata field. Other
+`detail` fields such as `detail.dimensions[*].name`, `detail.tracks.{qr,qp}`,
+and `detail.judge_reliability` remain beta fields that may shift as the eval
+pipeline evolves (multi-judge panel, variable rubric, etc.).
 `detail.cost` is omitted from the public response and only surfaced via the
 operator path.
 
