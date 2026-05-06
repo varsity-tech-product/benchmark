@@ -365,7 +365,7 @@ class AuthService:
         if not self._is_allowed(profile, token):
             return JSONResponse({"error": "GitHub account is outside allowlist"}, 403)
 
-        user = self._build_user(profile)
+        user = self._build_user(profile, token)
         session_id = self.store.create_session(user)
         response = RedirectResponse(next_url, status_code=302)
         self._set_session_cookie(request, response, session_id)
@@ -510,13 +510,12 @@ class AuthService:
     def _github_oauth_scope(self) -> str:
         scopes = ["read:user", "user:email"]
         _, allowed_orgs, allowed_teams = self._github_allowlists()
-        if not _bool_env("QTB_GITHUB_ALLOW_ALL", False) and (
-            allowed_orgs or allowed_teams
-        ):
+        reviewer_orgs, reviewer_teams = self._github_reviewer_membership_allowlists()
+        if allowed_orgs or allowed_teams or reviewer_orgs or reviewer_teams:
             scopes.append("read:org")
         return " ".join(scopes)
 
-    def _build_user(self, profile: dict) -> UserContext:
+    def _build_user(self, profile: dict, token: str = "") -> UserContext:
         login = str(profile.get("login") or "")
         email = str(profile.get("email") or "")
         admin_logins = _csv_env("QTB_ADMIN_GITHUB_LOGINS")
@@ -525,7 +524,11 @@ class AuthService:
         reviewer_emails = _csv_env("QTB_REVIEWER_EMAILS")
         if login.lower() in admin_logins or email.lower() in admin_emails:
             role: Role = "admin"
-        elif login.lower() in reviewer_logins or email.lower() in reviewer_emails:
+        elif (
+            login.lower() in reviewer_logins
+            or email.lower() in reviewer_emails
+            or self._is_reviewer_member(token)
+        ):
             role = "reviewer"
         else:
             role = "user"
@@ -538,6 +541,43 @@ class AuthService:
             avatar_url=str(profile.get("avatar_url") or ""),
             role=role,
         )
+
+    def _github_reviewer_membership_allowlists(self) -> tuple[set[str], set[str]]:
+        reviewer_orgs = _csv_env("QTB_REVIEWER_GITHUB_ORGS")
+        reviewer_teams = _csv_env("QTB_REVIEWER_GITHUB_TEAMS")
+        if reviewer_orgs or reviewer_teams:
+            return reviewer_orgs, reviewer_teams
+        return _csv_env("QTB_GITHUB_ALLOWED_ORGS"), _csv_env(
+            "QTB_GITHUB_ALLOWED_TEAMS"
+        )
+
+    def _is_reviewer_member(self, token: str) -> bool:
+        if not token:
+            return False
+
+        reviewer_orgs, reviewer_teams = self._github_reviewer_membership_allowlists()
+        if reviewer_orgs:
+            orgs = self._github_get(token, "/user/orgs")
+            org_logins = {
+                str(org.get("login") or "").lower()
+                for org in orgs
+                if isinstance(org, dict)
+            }
+            if org_logins & reviewer_orgs:
+                return True
+
+        if reviewer_teams:
+            teams = self._github_get(token, "/user/teams")
+            for team in teams if isinstance(teams, list) else []:
+                if not isinstance(team, dict):
+                    continue
+                slug = str(team.get("slug") or "").lower()
+                org = team.get("organization") or {}
+                org_login = str(org.get("login") or "").lower()
+                if f"{org_login}/{slug}" in reviewer_teams:
+                    return True
+
+        return False
 
     def _callback_url(self, request: Request) -> str:
         public_base = os.environ.get("QTB_PUBLIC_BASE_URL", "").strip().rstrip("/")

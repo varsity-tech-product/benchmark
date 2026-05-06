@@ -64,7 +64,7 @@ class GithubOAuthAuthTests(unittest.TestCase):
                 self.assertEqual(user.github_user_id, "12345")
                 self.assertEqual(user.role, "admin")
 
-    def test_public_login_does_not_request_org_scope(self):
+    def test_public_login_requests_org_scope_for_org_reviewer_split(self):
         with tempfile.TemporaryDirectory() as tmp:
             with patch.dict(
                 "os.environ",
@@ -86,7 +86,7 @@ class GithubOAuthAuthTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 302)
         query = parse_qs(urlparse(response.headers["location"]).query)
-        self.assertEqual(query["scope"], ["read:user user:email"])
+        self.assertEqual(query["scope"], ["read:user user:email read:org"])
 
     def test_invite_only_org_login_requests_org_scope(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -207,6 +207,162 @@ class GithubOAuthAuthTests(unittest.TestCase):
                         "name": "Reviewer",
                     }
                 )
+                self.assertEqual(user.role, "reviewer")
+                self.assertTrue(user.is_reviewer)
+
+    def test_allowed_org_member_gets_reviewer_role(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.dict(
+                "os.environ",
+                {
+                    "QTB_GITHUB_ALLOW_ALL": "true",
+                    "QTB_GITHUB_ALLOWED_ORGS": "varsity-tech-product",
+                },
+                clear=True,
+            ):
+                auth = AuthService(Path(tmp))
+                with patch.object(
+                    auth,
+                    "_github_get",
+                    return_value=[{"login": "varsity-tech-product"}],
+                ):
+                    user = auth._build_user(
+                        {
+                            "id": 34567,
+                            "login": "org-member",
+                            "email": "member@example.com",
+                            "name": "Org Member",
+                        },
+                        "tok",
+                    )
+                self.assertEqual(user.role, "reviewer")
+                self.assertTrue(user.is_reviewer)
+
+    def test_external_public_user_keeps_user_role(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.dict(
+                "os.environ",
+                {
+                    "QTB_GITHUB_ALLOW_ALL": "true",
+                    "QTB_GITHUB_ALLOWED_ORGS": "varsity-tech-product",
+                },
+                clear=True,
+            ):
+                auth = AuthService(Path(tmp))
+                with patch.object(
+                    auth,
+                    "_github_get",
+                    return_value=[{"login": "external-org"}],
+                ):
+                    user = auth._build_user(
+                        {
+                            "id": 45678,
+                            "login": "external",
+                            "email": "external@example.com",
+                            "name": "External",
+                        },
+                        "tok",
+                    )
+                self.assertEqual(user.role, "user")
+                self.assertFalse(user.is_reviewer)
+
+    def test_explicit_reviewer_team_suppresses_allowed_org_default(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.dict(
+                "os.environ",
+                {
+                    "QTB_GITHUB_ALLOW_ALL": "true",
+                    "QTB_GITHUB_ALLOWED_ORGS": "varsity-tech-product",
+                    "QTB_REVIEWER_GITHUB_TEAMS": "varsity-tech-product/reviewers",
+                },
+                clear=True,
+            ):
+                auth = AuthService(Path(tmp))
+                with patch.object(
+                    auth,
+                    "_github_get",
+                    return_value=[
+                        {
+                            "slug": "engineering",
+                            "organization": {"login": "varsity-tech-product"},
+                        }
+                    ],
+                ):
+                    user = auth._build_user(
+                        {
+                            "id": 56789,
+                            "login": "engineer",
+                            "email": "engineer@example.com",
+                            "name": "Engineer",
+                        },
+                        "tok",
+                    )
+                self.assertEqual(user.role, "user")
+                self.assertFalse(user.is_reviewer)
+
+    def test_reviewer_team_requires_org_qualified_match(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.dict(
+                "os.environ",
+                {
+                    "QTB_GITHUB_ALLOW_ALL": "true",
+                    "QTB_REVIEWER_GITHUB_TEAMS": "reviewers",
+                },
+                clear=True,
+            ):
+                auth = AuthService(Path(tmp))
+                with patch.object(
+                    auth,
+                    "_github_get",
+                    return_value=[
+                        {
+                            "slug": "reviewers",
+                            "organization": {"login": "external-org"},
+                        }
+                    ],
+                ):
+                    user = auth._build_user(
+                        {
+                            "id": 67890,
+                            "login": "external-reviewer",
+                            "email": "external-reviewer@example.com",
+                            "name": "External Reviewer",
+                        },
+                        "tok",
+                    )
+                self.assertEqual(user.role, "user")
+                self.assertFalse(user.is_reviewer)
+
+    def test_org_qualified_reviewer_team_gets_reviewer_role(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.dict(
+                "os.environ",
+                {
+                    "QTB_GITHUB_ALLOW_ALL": "true",
+                    "QTB_REVIEWER_GITHUB_TEAMS": "varsity-tech-product/reviewers",
+                },
+                clear=True,
+            ):
+                auth = AuthService(Path(tmp))
+                with patch.object(
+                    auth,
+                    "_github_get",
+                    return_value=[
+                        {
+                            "slug": "reviewers",
+                            "organization": {"login": "varsity-tech-product"},
+                        }
+                    ],
+                ):
+                    user = auth._build_user(
+                        {
+                            "id": 78901,
+                            "login": "team-reviewer",
+                            "email": "team-reviewer@example.com",
+                            "name": "Team Reviewer",
+                        },
+                        "tok",
+                    )
                 self.assertEqual(user.role, "reviewer")
                 self.assertTrue(user.is_reviewer)
 
